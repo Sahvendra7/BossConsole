@@ -63,6 +63,7 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material)
+            implementation(compose.materialIconsExtended)
             implementation(compose.ui)
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
@@ -105,6 +106,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.foundation.layout.android)
+    implementation(libs.androidx.ui.android)
     debugImplementation(compose.uiTooling)
 }
 
