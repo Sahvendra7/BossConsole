@@ -1,6 +1,5 @@
 package ai.rever.boss
 
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -12,49 +11,64 @@ import androidx.compose.ui.unit.dp
 fun HomeScreen(onNavigateToWorklist: () -> Unit) {
     var promptText by remember { mutableStateOf("") }
     var showSourceSelector by remember { mutableStateOf(false) }
-    
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
+    var source by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Lighthouse", style = MaterialTheme.typography.h4)
-            OutlinedTextField(
-                value = promptText,
-                onValueChange = { promptText = it },
-                label = { Text("Enter your work description") },
-                modifier = Modifier.padding(16.dp)
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Button(onClick = onNavigateToWorklist) {
-                    Text("Get it done!")
+                Text("Lighthouse", style = MaterialTheme.typography.h4)
+                OutlinedTextField(
+                    value = promptText,
+                    onValueChange = { promptText = it },
+                    label = { Text("Enter your work description") },
+                    modifier = Modifier.padding(16.dp)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(onClick = onNavigateToWorklist) {
+                        Text("Get it done!")
+                    }
+                    OutlinedButton(onClick = onNavigateToWorklist) {
+                        Text("Worklist >")
+                    }
                 }
-                OutlinedButton(onClick = onNavigateToWorklist) {
-                    Text("Worklist >")
+            }
+            BottomBar(
+                onNavigateToWorklist = onNavigateToWorklist,
+                onAddWorklistSource = { showSourceSelector = true }
+            )
+        }
+
+        if (showSourceSelector) {
+            SourceSelectorDialog(
+                onDismiss = { showSourceSelector = false },
+                onSourceSelected = { selectedSource ->
+                    // Handle source selection
+                    source = selectedSource
+                    showSourceSelector = false
                 }
+            )
+        }
+
+        if (source.isNotBlank()) {
+            LaunchedEffect(source) {
+                snackbarHostState.showSnackbar("Selected source: $source")
             }
         }
-        BottomBar(
-            onNavigateToWorklist = onNavigateToWorklist,
-            onAddWorklistSource = { showSourceSelector = true }
-        )
-    }
-
-    if (showSourceSelector) {
-        SourceSelectorDialog(
-            onDismiss = { showSourceSelector = false },
-            onSourceSelected = { source ->
-                // Handle source selection
-                showSourceSelector = false
-            }
-        )
     }
 }
 

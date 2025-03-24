@@ -8,18 +8,22 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.launch
 
 @Composable
 fun SourceSelectorDialog(
     onDismiss: () -> Unit,
     onSourceSelected: (String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val fileSelector = remember { getFileSelector() }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
@@ -58,7 +62,14 @@ fun SourceSelectorDialog(
                     icon = Icons.Default.UploadFile,
                     title = "File Upload",
                     description = "Import from CSV, Excel, or other files",
-                    onClick = { onSourceSelected("file") }
+                    onClick = {
+                        scope.launch {
+                            val filePath = fileSelector.selectFile()
+                            if (filePath != null) {
+                                onSourceSelected("file:$filePath")
+                            }
+                        }
+                    }
                 )
 
                 SourceOption(
