@@ -44,6 +44,9 @@ kotlin {
             // put your Multiplatform dependencies here
         }
     }
+    sourceSets.jvmMain.dependencies {
+        implementation(libs.kotlinx.coroutines.core)
+    }
 }
 
 android {

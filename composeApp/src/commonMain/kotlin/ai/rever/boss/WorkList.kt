@@ -16,13 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun Worklist(onNavigateToDetails: (work: Work) -> Unit, onNavigateBack: () -> Unit) {
+fun WorkList(onNavigateToDetails: (work: Work) -> Unit, onNavigateBack: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Header("Worklist", "BOSS", onNavigateBack)
+        Header("WorkList", "Lighthouse", onNavigateBack)
         
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f)

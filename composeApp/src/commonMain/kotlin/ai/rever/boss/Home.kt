@@ -1,17 +1,23 @@
 package ai.rever.boss
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import boss_kotlin.composeapp.generated.resources.Res
+import boss_kotlin.composeapp.generated.resources.compose_multiplatform
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
-fun HomeScreen(onNavigateToWorklist: () -> Unit) {
+fun HomeScreen(
+    onScreenChange: (Screen) -> Unit
+) {
     var promptText by remember { mutableStateOf("") }
     var showSourceSelector by remember { mutableStateOf(false) }
-    var source by remember { mutableStateOf("") }
+    var file by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -29,6 +35,13 @@ fun HomeScreen(onNavigateToWorklist: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
+                Image(
+                    painter = painterResource(Res.drawable.compose_multiplatform),
+                    contentDescription = "Lighthouse Logo",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .padding(bottom = 16.dp)
+                )
                 Text("Lighthouse", style = MaterialTheme.typography.h4)
                 OutlinedTextField(
                     value = promptText,
@@ -39,16 +52,16 @@ fun HomeScreen(onNavigateToWorklist: () -> Unit) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Button(onClick = onNavigateToWorklist) {
+                    Button(onClick = { onScreenChange(Screen.WorkList) } ) {
                         Text("Get it done!")
                     }
-                    OutlinedButton(onClick = onNavigateToWorklist) {
-                        Text("Worklist >")
+                    OutlinedButton(onClick = { onScreenChange(Screen.WorkList) } ) {
+                        Text("WorkList >")
                     }
                 }
             }
             BottomBar(
-                onNavigateToWorklist = onNavigateToWorklist,
+                onNavigateToWorklist = { onScreenChange(Screen.WorkList) },
                 onAddWorklistSource = { showSourceSelector = true }
             )
         }
@@ -56,24 +69,35 @@ fun HomeScreen(onNavigateToWorklist: () -> Unit) {
         if (showSourceSelector) {
             SourceSelectorDialog(
                 onDismiss = { showSourceSelector = false },
-                onSourceSelected = { selectedSource ->
-                    // Handle source selection
-                    source = selectedSource
+                onSourceSelected = { selectedSource, selectedFile ->
+
                     showSourceSelector = false
+                    // Now we can change the screen directly if needed
+                    // onScreenChange("someOtherScreen")
+                    when (selectedSource) {
+                        SourceType.API -> onScreenChange(Screen.APIIntegration)
+                        SourceType.ERP -> onScreenChange(Screen.ERPIntegration)
+                        SourceType.FILE -> {
+                            selectedFile?.let {
+                                file = it
+//                                onScreenChange(Screen.PreviewFileForWorkList)
+                            }
+                        }
+                    }
                 }
             )
         }
 
-        if (source.isNotBlank()) {
-            LaunchedEffect(source) {
-                snackbarHostState.showSnackbar("Selected source: $source")
+        if (file != "") {
+            LaunchedEffect(file) {
+                snackbarHostState.showSnackbar("Selected source: $file")
             }
         }
     }
 }
 
 @Composable
-private fun BottomBar(
+fun BottomBar(
     onNavigateToWorklist: () -> Unit,
     onAddWorklistSource: () -> Unit
 ) {
@@ -86,12 +110,11 @@ private fun BottomBar(
         OutlinedButton(onClick = onAddWorklistSource) {
             Text("add worklist sources")
         }
-        OutlinedButton(onClick = onNavigateToWorklist) {
-            Text("add history of records")
+        OutlinedButton(onClick = onAddWorklistSource) {
+            Text("add system of records")
         }
         OutlinedButton(onClick = onNavigateToWorklist) {
             Text("add organisation context")
         }
     }
 }
-

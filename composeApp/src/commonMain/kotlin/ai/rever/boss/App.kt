@@ -8,24 +8,31 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 @Preview
 fun App() {
     MaterialTheme {
-        var currentScreen by remember { mutableStateOf("home") }
+        var currentScreen by remember { mutableStateOf(Screen.Home) }
         var selectedItem by remember { mutableStateOf(works[0]) }
 
         when (currentScreen) {
-            "home" -> HomeScreen(
-                onNavigateToWorklist = { currentScreen = "work" }
+            Screen.Home -> HomeScreen(
+                onScreenChange = { newScreen -> currentScreen = newScreen }
             )
-            "work" -> Worklist(
+            Screen.WorkList -> WorkList(
                 onNavigateToDetails = { work ->
                     selectedItem = work
-                    currentScreen = "details"
+                    currentScreen = Screen.Details
                 },
-                onNavigateBack = { currentScreen = "home" }
+                onNavigateBack = { currentScreen = Screen.Home }
             )
-            "details" -> WorkDetails(
+            Screen.Details -> WorkDetails(
                 work = selectedItem,
-                onBack = { currentScreen = "work" }
+                onBack = { currentScreen = Screen.WorkList }
             )
+            Screen.APIIntegration -> ApiIntegration(onBack = { currentScreen = Screen.Home })
+            Screen.ERPIntegration -> ERPIntegration(onBack = { currentScreen = Screen.Home })
+            Screen.PreviewFileForWorkList -> PreviewFileForWorkList(onBack = { currentScreen = Screen.WorkList })
         }
     }
+}
+
+enum class Screen {
+    Home, WorkList, Details, APIIntegration, ERPIntegration, PreviewFileForWorkList
 }

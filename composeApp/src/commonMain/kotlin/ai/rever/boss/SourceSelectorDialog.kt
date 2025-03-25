@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SourceSelectorDialog(
     onDismiss: () -> Unit,
-    onSourceSelected: (String) -> Unit
+    onSourceSelected: (SourceType, filePath: String?) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val fileSelector = remember { getFileSelector() }
@@ -55,7 +55,7 @@ fun SourceSelectorDialog(
                     icon = Icons.Default.Cloud,
                     title = "API Integration",
                     description = "Connect through REST APIs",
-                    onClick = { onSourceSelected("api") }
+                    onClick = { onSourceSelected(SourceType.API, null) }
                 )
 
                 SourceOption(
@@ -64,9 +64,8 @@ fun SourceSelectorDialog(
                     description = "Import from CSV, Excel, or other files",
                     onClick = {
                         scope.launch {
-                            val filePath = fileSelector.selectFile()
-                            if (filePath != null) {
-                                onSourceSelected("file:$filePath")
+                            fileSelector.selectFile()?.let {
+                                onSourceSelected(SourceType.FILE, it)
                             }
                         }
                     }
@@ -76,7 +75,7 @@ fun SourceSelectorDialog(
                     icon = Icons.Default.Business,
                     title = "ERP/EHR Systems",
                     description = "Connect to enterprise systems",
-                    onClick = { onSourceSelected("erp") }
+                    onClick = { onSourceSelected(SourceType.ERP, null) }
                 )
             }
         }
@@ -118,3 +117,5 @@ private fun SourceOption(
         }
     }
 }
+
+enum class SourceType { API, FILE, ERP }
