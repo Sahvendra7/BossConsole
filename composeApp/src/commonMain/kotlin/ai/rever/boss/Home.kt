@@ -13,7 +13,7 @@ import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun HomeScreen(
-    onScreenChange: (Screen) -> Unit
+    onScreenChange: (Screenn) -> Unit
 ) {
     var promptText by remember { mutableStateOf("") }
     var showSourceSelector by remember { mutableStateOf(false) }
@@ -52,16 +52,16 @@ fun HomeScreen(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Button(onClick = { onScreenChange(Screen.WorkList) } ) {
+                    Button(onClick = { onScreenChange(Screenn.WorkList) } ) {
                         Text("Get it done!")
                     }
-                    OutlinedButton(onClick = { onScreenChange(Screen.WorkList) } ) {
+                    OutlinedButton(onClick = { onScreenChange(Screenn.WorkList) } ) {
                         Text("WorkList >")
                     }
                 }
             }
             BottomBar(
-                onNavigateToWorklist = { onScreenChange(Screen.WorkList) },
+                onNavigateToWorklist = { onScreenChange(Screenn.WorkList) },
                 onAddWorklistSource = { showSourceSelector = true }
             )
         }
@@ -75,8 +75,8 @@ fun HomeScreen(
                     // Now we can change the screen directly if needed
                     // onScreenChange("someOtherScreen")
                     when (selectedSource) {
-                        SourceType.API -> onScreenChange(Screen.APIIntegration)
-                        SourceType.ERP -> onScreenChange(Screen.ERPIntegration)
+                        SourceType.API -> onScreenChange(Screenn.APIIntegration)
+                        SourceType.ERP -> onScreenChange(Screenn.ERPIntegration)
                         SourceType.FILE -> {
                             selectedFile?.let {
                                 file = it

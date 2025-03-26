@@ -1,4 +1,5 @@
 package ai.rever.boss
+import ai.rever.boss.ui.common.BossHeader
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +23,7 @@ fun WorkList(onNavigateToDetails: (work: Work) -> Unit, onNavigateBack: () -> Un
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Header("WorkList", "Lighthouse", onNavigateBack)
+        BossHeader("WorkList", "Lighthouse", onNavigateBack = onNavigateBack)
         
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f)

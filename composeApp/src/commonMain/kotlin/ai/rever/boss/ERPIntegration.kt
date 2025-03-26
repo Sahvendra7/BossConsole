@@ -1,5 +1,6 @@
 package ai.rever.boss
 
+import ai.rever.boss.ui.common.BossHeader
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +15,6 @@ fun ERPIntegration(onBack: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top,
     ) {
-        Header("ERP Integration", "Home", onNavigateBack = onBack)
+        BossHeader("ERP Integration", "Home", onNavigateBack = onBack)
     }
 }

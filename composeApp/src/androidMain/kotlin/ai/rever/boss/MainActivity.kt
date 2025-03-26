@@ -1,5 +1,6 @@
 package ai.rever.boss
 
+import ai.rever.boss.ui.App
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
