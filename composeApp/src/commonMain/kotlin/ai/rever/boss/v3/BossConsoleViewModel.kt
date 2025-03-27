@@ -32,11 +32,11 @@ data class NavigationItem(
     val section: Section
 )
 
-class AppViewModel : ViewModel() {
+class BossConsoleViewModel : ViewModel() {
     var currentScreen by mutableStateOf<Screen>(Screen.Worklist)
         private set
         
-    var expandedSections by mutableStateOf<Set<Section>>(setOf(Section.LIGHTHOUSE))
+    var expandedSections by mutableStateOf(setOf(Section.LIGHTHOUSE))
         private set
 
     val navigationItems = listOf(

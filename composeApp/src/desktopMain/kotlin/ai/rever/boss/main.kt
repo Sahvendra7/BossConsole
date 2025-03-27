@@ -1,6 +1,6 @@
 package ai.rever.boss
 
-import ai.rever.boss.v3.App
+import ai.rever.boss.v3.BossApp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 
@@ -9,6 +9,6 @@ fun main() = application {
         onCloseRequest = ::exitApplication,
         title = "BOSS-Kotlin",
     ) {
-        App()
+        BossApp()
     }
 }
