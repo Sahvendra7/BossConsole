@@ -70,6 +70,9 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
+            implementation(libs.precompose)
+            implementation(libs.precompose.molecule)
+            implementation(libs.precompose.viewmodel)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)

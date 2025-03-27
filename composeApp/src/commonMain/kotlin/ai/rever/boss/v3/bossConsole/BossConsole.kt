@@ -3,17 +3,24 @@ package ai.rever.boss.v3.bossConsole
 import SystemOfRecordsScreen
 import ai.rever.boss.v3.bossConsole.components.*
 import ai.rever.boss.v3.bossConsole.screens.*
+import ai.rever.boss.v3.navigation.Screen
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import moe.tlaster.precompose.navigation.NavHost
+import moe.tlaster.precompose.navigation.rememberNavigator
+import moe.tlaster.precompose.viewmodel.viewModel
 
 @Composable
 fun BossConsole() {
-    val viewModel = remember { BossConsoleViewModel() }
+    val viewModel = viewModel(
+        modelClass = BossConsoleViewModel::class,
+        creator = { BossConsoleViewModel() }
+    )
+    val navigator = rememberNavigator()
     val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
     val scope = rememberCoroutineScope()
     
@@ -33,29 +40,40 @@ fun BossConsole() {
             }
         },
         drawerContent = if (isSmallScreen.value) {
-            { BossDrawerContent(viewModel, scope, scaffoldState) }
+            { BossDrawerContent(viewModel, scope, scaffoldState, navigator) }
         } else null,
     ) { paddingValues ->
         Row(modifier = Modifier.padding(paddingValues)) {
             // Show NavigationRail only on larger screens
             if (!isSmallScreen.value) {
-                BossNavigationRail(viewModel)
+                BossNavigationRail(viewModel, navigator)
             }
             Surface(
                 modifier = Modifier.fillMaxSize().weight(1f),
                 elevation = 2.dp,
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Box(
-                    contentAlignment = Alignment.Center
+                NavHost(
+                    navigator = navigator,
+                    initialRoute = Screen.Worklist.route
                 ) {
-                    when (viewModel.currentScreen) {
-                        is Screen.Worklist -> WorklistScreen()
-                        is Screen.SystemOfRecords -> SystemOfRecordsScreen()
-                        is Screen.OrgValues -> OrgValuesScreen()
-                        is Screen.GlobalLanager -> GlobalLanagerScreen()
-                        is Screen.MasteryRegistry -> MasteryRegisteryScreen()
-                        is Screen.TaskResolverRegistry -> TaskResolverRegisteryScreen()
+                    scene(Screen.Worklist.route) {
+                        WorklistScreen()
+                    }
+                    scene(Screen.SystemOfRecords.route) {
+                        SystemOfRecordsScreen()
+                    }
+                    scene(Screen.OrgValues.route) {
+                        OrgValuesScreen()
+                    }
+                    scene(Screen.GlobalLanager.route) {
+                        GlobalLanagerScreen()
+                    }
+                    scene(Screen.MasteryRegistry.route) {
+                        MasteryRegisteryScreen()
+                    }
+                    scene(Screen.TaskResolverRegistry.route) {
+                        TaskResolverRegisteryScreen()
                     }
                 }
             }

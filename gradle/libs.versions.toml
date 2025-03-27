@@ -20,9 +20,12 @@ kotlinxCoroutinesSwing = "1.7.3"
 ktor = "3.0.3"
 logback = "1.5.16"
 foundationLayoutAndroid = "1.7.8"
+navigationCompose = "2.8.9"
+precompose = "1.5.7"
 uiAndroid = "1.7.8"
 
 [libraries]
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -45,6 +48,9 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty-jvm", version.ref = "k
 ktor-server-tests = { module = "io.ktor:ktor-server-tests-jvm", version.ref = "ktor" }
 androidx-foundation-layout-android = { group = "androidx.compose.foundation", name = "foundation-layout-android", version.ref = "foundationLayoutAndroid" }
 androidx-ui-android = { group = "androidx.compose.ui", name = "ui-android", version.ref = "uiAndroid" }
+precompose = { module = "moe.tlaster:precompose", version.ref = "precompose" }
+precompose-molecule = { module = "moe.tlaster:precompose-molecule", version.ref = "precompose" }
+precompose-viewmodel = { module = "moe.tlaster:precompose-viewmodel", version.ref = "precompose" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

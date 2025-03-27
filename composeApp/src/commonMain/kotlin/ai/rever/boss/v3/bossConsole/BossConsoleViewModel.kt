@@ -1,24 +1,14 @@
 package ai.rever.boss.v3.bossConsole
 
+import ai.rever.boss.v3.navigation.Screen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.lifecycle.ViewModel
-
-sealed class Screen {
-    // Lighthouse screens
-    object Worklist : Screen()
-    object SystemOfRecords : Screen()
-    object OrgValues : Screen()
-    
-    // Lanager screens
-    object GlobalLanager : Screen()
-    object MasteryRegistry : Screen()
-    object TaskResolverRegistry : Screen()
-}
+import moe.tlaster.precompose.navigation.Navigator
+import moe.tlaster.precompose.viewmodel.ViewModel
 
 enum class Section {
     LIGHTHOUSE,
@@ -51,8 +41,10 @@ class BossConsoleViewModel : ViewModel() {
         NavigationItem("TaskResolver Registry", Screen.TaskResolverRegistry, Icons.Default.AppRegistration, Section.LANAGER)
     )
     
-    fun navigateTo(screen: Screen) {
+    fun navigateTo(screen: Screen, navigator: Navigator) {
         currentScreen = screen
+        navigator.navigate(screen.route)
+        
         // Ensure the section for this screen is expanded
         val section = navigationItems.first { it.screen == screen }.section
         if (!expandedSections.contains(section)) {
