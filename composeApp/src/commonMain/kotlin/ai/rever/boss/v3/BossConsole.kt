@@ -1,6 +1,5 @@
 package ai.rever.boss.v3
 
-import BossTheme
 import GitHubDarkAccent
 import GitHubDarkBackground
 import GitHubDarkBorder
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,52 +26,114 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun BossConsole() {
     val viewModel = remember { BossConsoleViewModel() }
+    val scaffoldState = rememberScaffoldState(rememberDrawerState(DrawerValue.Closed))
+    val scope = rememberCoroutineScope()
+    
+    // Determine if we're on a small screen where we should use drawer instead of rail
+    val isSmallScreen = remember { mutableStateOf(false) }
 
-    Row {
-        // Navigation Rail
-        NavigationRail(
-            modifier = Modifier
-                .width(220.dp)
-                .fillMaxHeight(),
-            header = navigationRailHeader()
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+    BoxWithConstraints {
+        // Use drawer for screens narrower than 600dp
+        isSmallScreen.value = maxWidth < 600.dp
+    }
 
-                // Lighthouse Section
-                BossSection(Section.LIGHTHOUSE, viewModel)
-
-                // Lanager Section
-                BossSection(Section.LANAGER, viewModel)
+    Scaffold(
+        scaffoldState = scaffoldState,
+        topBar = {
+            if (isSmallScreen.value) {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Terminal,
+                                contentDescription = "Boss Logo"
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "BOSS console",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            scope.launch {
+                                scaffoldState.drawerState.open()
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Open Navigation Drawer"
+                            )
+                        }
+                    },
+                    backgroundColor = GitHubDarkSurface,
+                    contentColor = GitHubDarkTextPrimary
+                )
             }
-        }
-
-        // Content area
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .background(GitHubDarkBackground)
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                elevation = 2.dp,
-                shape = RoundedCornerShape(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier.padding(24.dp),
-                    contentAlignment = Alignment.Center
+        },
+        drawerContent = if (isSmallScreen.value) {
+            {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                        .background(GitHubDarkSurface)
                 ) {
-                    when (viewModel.currentScreen) {
-                        is Screen.Worklist -> WorklistScreen()
-                        is Screen.SystemOfRecords -> SystemOfRecordsScreen()
-                        is Screen.OrgValues -> OrgValuesScreen()
-                        is Screen.GlobalLanager -> GlobalLanagerScreen()
-                        is Screen.MasteryRegistry -> MasteryRegisteryScreen()
-                        is Screen.TaskResolverRegistry -> TaskResolverRegisteryScreen()
+                    navigationRailHeader()()
+                    BossConsoleSiteMap(
+                        viewModel = viewModel,
+                        onNavigationItemClick = {
+                            scope.launch {
+                                scaffoldState.drawerState.close()
+                            }
+                        }
+                    )
+                }
+            }
+        } else null,
+    ) { paddingValues ->
+        Row(modifier = Modifier.padding(paddingValues)) {
+            // Show NavigationRail only on larger screens
+            if (!isSmallScreen.value) {
+                NavigationRail(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .fillMaxHeight(),
+                    header = navigationRailHeader()
+                ) {
+                    BossConsoleSiteMap(viewModel = viewModel)
+                }
+            }
+
+            // Content area
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(GitHubDarkBackground)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (viewModel.currentScreen) {
+                            is Screen.Worklist -> WorklistScreen()
+                            is Screen.SystemOfRecords -> SystemOfRecordsScreen()
+                            is Screen.OrgValues -> OrgValuesScreen()
+                            is Screen.GlobalLanager -> GlobalLanagerScreen()
+                            is Screen.MasteryRegistry -> MasteryRegisteryScreen()
+                            is Screen.TaskResolverRegistry -> TaskResolverRegisteryScreen()
+                        }
                     }
                 }
             }
@@ -80,7 +142,25 @@ fun BossConsole() {
 }
 
 @Composable
-private fun BossSection(section: Section, viewModel: BossConsoleViewModel) {
+private fun BossConsoleSiteMap(
+    viewModel: BossConsoleViewModel,
+    onNavigationItemClick: () -> Unit = {}
+) {
+    Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+        // Lighthouse Section
+        BossSection(Section.LIGHTHOUSE, viewModel, onNavigationItemClick)
+
+        // Lanager Section
+        BossSection(Section.LANAGER, viewModel, onNavigationItemClick)
+    }
+}
+
+@Composable
+private fun BossSection(
+    section: Section,
+    viewModel: BossConsoleViewModel,
+    onNavigationItemClick: () -> Unit = {}
+) {
     SectionHeader(
         title = section.name,
         isExpanded = section in viewModel.expandedSections,
@@ -92,7 +172,10 @@ private fun BossSection(section: Section, viewModel: BossConsoleViewModel) {
             NavigationItem(
                 item = item,
                 isSelected = viewModel.currentScreen == item.screen,
-                onClick = { viewModel.navigateTo(item.screen) },
+                onClick = {
+                    viewModel.navigateTo(item.screen)
+                    onNavigationItemClick()
+                          },
                 selectedColor = GitHubDarkAccent
             )
         }
