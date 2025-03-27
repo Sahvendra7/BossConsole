@@ -7,12 +7,10 @@ import androidx.compose.material.NavigationRail
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import moe.tlaster.precompose.navigation.Navigator
 
 @Composable
 fun BossNavigationRail(
-    viewModel: BossConsoleViewModel,
-    navController: Navigator
+    viewModel: BossConsoleViewModel
 ) {
     NavigationRail(
         modifier = Modifier
@@ -21,8 +19,7 @@ fun BossNavigationRail(
         header = { BossNavigationRailHeader() }
     ) {
         BossConsoleSiteMap(
-            viewModel = viewModel,
-            navController = navController
+            viewModel = viewModel
         )
     }
 }

@@ -8,13 +8,11 @@ import ai.rever.boss.v3.bossConsole.BossConsoleViewModel
 import ai.rever.boss.v3.bossConsole.Section
 import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
-import moe.tlaster.precompose.navigation.Navigator
 
 @Composable
 fun BossSection(
     section: Section,
     viewModel: BossConsoleViewModel,
-    navController: Navigator,
     onNavigationItemClick: () -> Unit = {}
 ) {
     BossSectionHeader(
@@ -29,7 +27,7 @@ fun BossSection(
                 item = item,
                 isSelected = viewModel.currentScreen == item.screen,
                 onClick = {
-                    viewModel.navigateTo(item.screen, navController)
+                    viewModel.navigateTo(item.screen)
                     onNavigationItemClick()
                 },
                 selectedColor = GitHubDarkAccent

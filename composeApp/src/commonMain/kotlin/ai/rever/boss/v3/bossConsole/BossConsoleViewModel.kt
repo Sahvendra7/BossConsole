@@ -28,6 +28,12 @@ class BossConsoleViewModel : ViewModel() {
         
     var expandedSections by mutableStateOf(setOf(Section.LIGHTHOUSE))
         private set
+        
+    private lateinit var navigator: Navigator
+    
+    fun initialize(navigator: Navigator) {
+        this.navigator = navigator
+    }
 
     val navigationItems = listOf(
         // Lighthouse section
@@ -41,7 +47,13 @@ class BossConsoleViewModel : ViewModel() {
         NavigationItem("TaskResolver Registry", Screen.TaskResolverRegistry, Icons.Default.AppRegistration, Section.LANAGER)
     )
     
-    fun navigateTo(screen: Screen, navigator: Navigator) {
+    fun navigateTo(screen: Screen) {
+        if (!::navigator.isInitialized) {
+            // Just update UI state if navigator isn't available yet
+            currentScreen = screen
+            return
+        }
+        
         currentScreen = screen
         navigator.navigate(screen.route)
         

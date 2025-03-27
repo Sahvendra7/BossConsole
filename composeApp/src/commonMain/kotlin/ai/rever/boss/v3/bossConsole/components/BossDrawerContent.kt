@@ -10,14 +10,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.tlaster.precompose.navigation.Navigator
 
 @Composable
 fun BossDrawerContent(
     viewModel: BossConsoleViewModel,
     scope: CoroutineScope,
-    scaffoldState: ScaffoldState,
-    navController: Navigator
+    scaffoldState: ScaffoldState
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -26,7 +24,6 @@ fun BossDrawerContent(
         BossNavigationRailHeader()
         BossConsoleSiteMap(
             viewModel = viewModel,
-            navController = navController,
             onNavigationItemClick = {
                 scope.launch {
                     scaffoldState.drawerState.close()
