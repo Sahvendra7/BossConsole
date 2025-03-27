@@ -1,4 +1,4 @@
-package ai.rever.boss
+package ai.rever.boss.v1
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*

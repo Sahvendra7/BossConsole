@@ -1,4 +1,4 @@
-package ai.rever.boss.ui.common
+package ai.rever.boss.v2.ui.common
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

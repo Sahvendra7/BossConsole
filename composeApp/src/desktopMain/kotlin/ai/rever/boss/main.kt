@@ -1,6 +1,6 @@
 package ai.rever.boss
 
-import ai.rever.boss.ui.App
+import ai.rever.boss.v3.App
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 

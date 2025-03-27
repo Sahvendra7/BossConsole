@@ -1,5 +1,6 @@
-package ai.rever.boss
+package ai.rever.boss.v1
 
+import ai.rever.boss.getFileSelector
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*

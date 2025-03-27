@@ -1,9 +1,8 @@
-package ai.rever.boss.ui.lighthouse
+package ai.rever.boss.v2.ui.lighthouse
 
-import ai.rever.boss.ui.Screen
-import ai.rever.boss.ui.common.BossColumn
-import ai.rever.boss.ui.common.BossHeader
-import ai.rever.boss.ui.common.BossItem
+import ai.rever.boss.v2.ui.Screen
+import ai.rever.boss.v2.ui.common.BossColumn
+import ai.rever.boss.v2.ui.common.BossItem
 import ai.rever.boss.works
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn

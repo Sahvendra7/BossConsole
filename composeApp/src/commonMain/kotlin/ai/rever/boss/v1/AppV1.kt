@@ -1,12 +1,13 @@
-package ai.rever.boss
+package ai.rever.boss.v1
 
+import ai.rever.boss.works
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Composable
 @Preview
-fun Appp() {
+fun AppV1() {
     MaterialTheme {
         var currentScreenn by remember { mutableStateOf(Screenn.Home) }
         var selectedItem by remember { mutableStateOf(works[0]) }

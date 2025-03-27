@@ -1,6 +1,6 @@
-package ai.rever.boss
+package ai.rever.boss.v1
 
-import ai.rever.boss.ui.common.BossHeader
+import ai.rever.boss.v2.ui.common.BossHeader
 import androidx.compose.runtime.Composable
 
 @Composable

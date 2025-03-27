@@ -1,10 +1,9 @@
-package ai.rever.boss.ui.lighthouse
+package ai.rever.boss.v2.ui.lighthouse
 
-import ai.rever.boss.ui.Screen
-import ai.rever.boss.ui.common.BossCard
-import ai.rever.boss.ui.common.BossColumn
-import ai.rever.boss.ui.common.BossRow
-import ai.rever.boss.ui.common.BossHeader
+import ai.rever.boss.v2.ui.Screen
+import ai.rever.boss.v2.ui.common.BossCard
+import ai.rever.boss.v2.ui.common.BossColumn
+import ai.rever.boss.v2.ui.common.BossRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable

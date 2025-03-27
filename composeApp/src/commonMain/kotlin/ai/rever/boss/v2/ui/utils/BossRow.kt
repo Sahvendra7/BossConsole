@@ -1,4 +1,4 @@
-package ai.rever.boss.ui.utils
+package ai.rever.boss.v2.ui.utils
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row

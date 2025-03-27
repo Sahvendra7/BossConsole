@@ -1,4 +1,4 @@
-package ai.rever.boss.ui.common
+package ai.rever.boss.v2.ui.common
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable

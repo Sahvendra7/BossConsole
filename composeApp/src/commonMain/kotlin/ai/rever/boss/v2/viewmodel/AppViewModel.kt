@@ -1,6 +1,6 @@
-package ai.rever.boss.viewmodel
+package ai.rever.boss.v2.viewmodel
 
-import ai.rever.boss.ui.Screen
+import ai.rever.boss.v2.ui.Screen
 import ai.rever.boss.Work
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

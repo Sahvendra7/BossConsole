@@ -1,5 +1,7 @@
-package ai.rever.boss
-import ai.rever.boss.ui.common.BossHeader
+package ai.rever.boss.v1
+import ai.rever.boss.Work
+import ai.rever.boss.v2.ui.common.BossHeader
+import ai.rever.boss.works
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement

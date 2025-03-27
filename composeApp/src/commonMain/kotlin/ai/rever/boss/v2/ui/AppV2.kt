@@ -1,12 +1,12 @@
-package ai.rever.boss.ui
+package ai.rever.boss.v2.ui
 
-import ai.rever.boss.ui.common.BossHeader
-import ai.rever.boss.ui.lanager.LanagerScreen
-import ai.rever.boss.ui.lighthouse.LighthouseScreen
-import ai.rever.boss.ui.lighthouse.SystemOfRecordsScreen
-import ai.rever.boss.ui.lighthouse.WorklistActions
-import ai.rever.boss.ui.lighthouse.WorklistScreen
-import ai.rever.boss.viewmodel.AppViewModel
+import ai.rever.boss.v2.ui.common.BossHeader
+import ai.rever.boss.v2.ui.lanager.LanagerScreen
+import ai.rever.boss.v2.ui.lighthouse.LighthouseScreen
+import ai.rever.boss.v2.ui.lighthouse.SystemOfRecordsScreen
+import ai.rever.boss.v2.ui.lighthouse.WorklistActions
+import ai.rever.boss.v2.ui.lighthouse.WorklistScreen
+import ai.rever.boss.v2.viewmodel.AppViewModel
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.runtime.*
@@ -14,7 +14,7 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 
 @Preview
 @Composable
-fun App() {
+fun AppV2() {
     MaterialTheme {
         // Create and remember the ViewModel
         val viewModel = remember { AppViewModel() }
@@ -73,6 +73,6 @@ enum class Screen(
     BossConsole,
     Lighthouse(parent = BossConsole),
     Lanager(parent = Lighthouse),
-    Worklist(parent = Lighthouse, actions = { WorklistActions(onScreenChange = {})}),
+    Worklist(parent = Lighthouse, actions = { WorklistActions(onScreenChange = {}) }),
     SystemOfRecords(parent = Lighthouse)
 }
