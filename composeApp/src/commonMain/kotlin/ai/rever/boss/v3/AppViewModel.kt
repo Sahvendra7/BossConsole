@@ -41,7 +41,7 @@ class AppViewModel : ViewModel() {
 
     val navigationItems = listOf(
         // Lighthouse section
-        NavigationItem("Worklist", Screen.Worklist, Icons.Default.CellTower, Section.LIGHTHOUSE),
+        NavigationItem("Worklist", Screen.Worklist, Icons.Default.WorkHistory, Section.LIGHTHOUSE),
         NavigationItem("System of Records", Screen.SystemOfRecords, Icons.Default.DatasetLinked, Section.LIGHTHOUSE),
         NavigationItem("Org Values", Screen.OrgValues, Icons.Default.GraphicEq, Section.LIGHTHOUSE),
         

@@ -18,17 +18,37 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// GitHub Dark Mode Theme Colors
+private val GitHubDarkBackground = Color(0xFF0D1117)
+private val GitHubDarkSurface = Color(0xFF161B22)
+private val GitHubDarkBorder = Color(0xFF3F4448)
+private val GitHubDarkTextPrimary = Color(0xFFF0F6FC)
+private val GitHubDarkTextSecondary = Color(0xFF8B949E)
+private val GitHubDarkAccent = Color(0xFF58A6FF)
+
 @Composable
 fun App() {
     val viewModel = remember { AppViewModel() }
 
-    MaterialTheme {
+    MaterialTheme(
+        colors = darkColors(
+            primary = GitHubDarkAccent,
+            primaryVariant = GitHubDarkAccent,
+            background = GitHubDarkBackground,
+            surface = GitHubDarkSurface,
+            onPrimary = GitHubDarkTextPrimary,
+            onSecondary = GitHubDarkTextPrimary,
+            onBackground = GitHubDarkTextPrimary,
+            onSurface = GitHubDarkTextPrimary,
+        )
+    ) {
         Row {
             // Navigation Rail
             NavigationRail(
                 modifier = Modifier
                     .width(220.dp)
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .background(GitHubDarkSurface),
                 header = {
                     Box(
                         modifier = Modifier
@@ -40,18 +60,23 @@ fun App() {
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(8.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Terminal, contentDescription = "Boss Logo")
+                            Icon(
+                                imageVector = Icons.Default.Terminal, 
+                                contentDescription = "Boss Logo",
+                                tint = GitHubDarkTextPrimary
+                            )
 
                             Spacer(modifier = Modifier.width(8.dp))
                             // App name
                             Text(
-                                "boss console",
+                                "BOSS console",
                                 fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = GitHubDarkTextPrimary
                             )
                         }
                     }
-                    Divider()
+                    Divider(color = GitHubDarkBorder)
                 }
             ) {
                 Column(modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -60,7 +85,8 @@ fun App() {
                     SectionHeader(
                         title = "Lighthouse",
                         isExpanded = Section.LIGHTHOUSE in viewModel.expandedSections,
-                        onClick = { viewModel.toggleSection(Section.LIGHTHOUSE) }
+                        onClick = { viewModel.toggleSection(Section.LIGHTHOUSE) },
+                        textColor = GitHubDarkTextSecondary
                     )
                     
                     if (Section.LIGHTHOUSE in viewModel.expandedSections) {
@@ -68,18 +94,20 @@ fun App() {
                             NavigationItem(
                                 item = item,
                                 isSelected = viewModel.currentScreen == item.screen,
-                                onClick = { viewModel.navigateTo(item.screen) }
+                                onClick = { viewModel.navigateTo(item.screen) },
+                                selectedColor = GitHubDarkAccent
                             )
                         }
                     }
                     
-                    Divider(color = Color(0xFFDEE2E6))
+                    Divider(color = GitHubDarkBorder)
                     
                     // Lanager Section
                     SectionHeader(
                         title = "Lanager",
                         isExpanded = Section.LANAGER in viewModel.expandedSections,
-                        onClick = { viewModel.toggleSection(Section.LANAGER) }
+                        onClick = { viewModel.toggleSection(Section.LANAGER) },
+                        textColor = GitHubDarkTextSecondary
                     )
                     
                     if (Section.LANAGER in viewModel.expandedSections) {
@@ -88,6 +116,7 @@ fun App() {
                                 item = item,
                                 isSelected = viewModel.currentScreen == item.screen,
                                 onClick = { viewModel.navigateTo(item.screen) },
+                                selectedColor = GitHubDarkAccent
                             )
                         }
                     }
@@ -99,24 +128,25 @@ fun App() {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(24.dp)
+                    .background(GitHubDarkBackground)
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     elevation = 2.dp,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    color = GitHubDarkSurface
                 ) {
                     Box(
                         modifier = Modifier.padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         when (viewModel.currentScreen) {
-                            is Screen.Worklist -> Text("Worklist", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            is Screen.SystemOfRecords -> Text("System of Records", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            is Screen.OrgValues -> Text("Org Values", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            is Screen.GlobalLanager -> Text("Global Lanager", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            is Screen.MasteryRegistry -> Text("Mastery Registry", fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            is Screen.TaskResolverRegistry -> Text("TaskResolver Registry", fontSize = 24.sp, fontWeight = FontWeight.Medium)
+                            is Screen.Worklist -> Text("Worklist", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
+                            is Screen.SystemOfRecords -> Text("System of Records", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
+                            is Screen.OrgValues -> Text("Org Values", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
+                            is Screen.GlobalLanager -> Text("Global Lanager", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
+                            is Screen.MasteryRegistry -> Text("Mastery Registry", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
+                            is Screen.TaskResolverRegistry -> Text("TaskResolver Registry", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = GitHubDarkTextPrimary)
                         }
                     }
                 }
@@ -130,26 +160,29 @@ fun SectionHeader(
     title: String,
     isExpanded: Boolean,
     onClick: () -> Unit,
+    textColor: Color = Color.Unspecified
 ) {
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .clickable { onClick() }
-                .padding(4.dp)
-            ,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title.uppercase(),
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                letterSpacing = 1.sp
-            )
-            Text(
-                text = if (isExpanded) "▼" else "▶",
-                fontSize = 10.sp
-            )
-        }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title.uppercase(),
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            letterSpacing = 1.sp,
+            color = textColor
+        )
+        Text(
+            text = if (isExpanded) "▼" else "▶",
+            fontSize = 10.sp,
+            color = textColor
+        )
+    }
 }
 
 @Composable
@@ -157,23 +190,27 @@ fun NavigationItem(
     item: NavigationItem,
     isSelected: Boolean,
     onClick: () -> Unit,
+    selectedColor: Color = Color(0xFF673AB7)
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     
     val backgroundColor = when {
-        isSelected -> Color.White
-        isHovered -> Color(0xFFF5F5F5) // Light gray for hover
+        isSelected -> GitHubDarkSurface.copy(alpha = 0.5f)
+        isHovered -> GitHubDarkBorder.copy(alpha = 0.3f)
         else -> Color.Transparent
     }
     
-    val textColor = if (isSelected) Color(0xFF673AB7) else Color.Black.copy(alpha = 0.6f)
+    val textColor = if (isSelected) selectedColor else GitHubDarkTextPrimary
     
     TextButton(
         onClick = onClick,
         interactionSource = interactionSource,
         elevation = ButtonDefaults.elevation(
-            defaultElevation = if (isSelected) 2.dp else 0.dp,
+            defaultElevation = 0.dp,
+            pressedElevation = 0.dp,
+            hoveredElevation = 0.dp,
+            focusedElevation = 0.dp
         ),
         shape = RoundedCornerShape(4.dp),
         colors = ButtonDefaults.textButtonColors(
@@ -183,10 +220,12 @@ fun NavigationItem(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 2.dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Icon container
