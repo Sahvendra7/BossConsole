@@ -1,4 +1,4 @@
-package ai.rever.boss.v3
+package ai.rever.boss.v3.bossConsole
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
