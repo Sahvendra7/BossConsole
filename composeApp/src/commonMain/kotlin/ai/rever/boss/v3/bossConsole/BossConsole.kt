@@ -76,7 +76,7 @@ fun BossConsole() {
                         MasteryRegisteryScreen()
                     }
                     scene(Screen.TaskResolverRegistry.route) {
-                        TaskResolverRegisteryScreen()
+                        TaskResolverRegistryScreen()
                     }
                 }
             }

@@ -5,6 +5,6 @@ import androidx.compose.runtime.Composable
 
 
 @Composable
-fun TaskResolverRegisteryScreen() {
-    Text("Task Resolver Registery Screen")
+fun TaskResolverRegistryScreen() {
+    Text("Task Resolver Registry Screen")
 }
