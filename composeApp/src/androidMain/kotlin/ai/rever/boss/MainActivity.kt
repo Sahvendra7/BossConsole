@@ -1,7 +1,6 @@
 package ai.rever.boss
 
-import ai.rever.boss.ui.App
-import ai.rever.boss.v3.BossApp
+import ai.rever.boss.v3.AppV3
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,7 +12,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            BossApp()
+            AppV3()
         }
     }
 }
@@ -21,5 +20,5 @@ class MainActivity : ComponentActivity() {
 @Preview
 @Composable
 fun AppAndroidPreview() {
-    BossApp()
+    AppV3()
 }

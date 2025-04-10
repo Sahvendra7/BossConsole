@@ -1,13 +1,20 @@
 package ai.rever.boss
 
-import ai.rever.boss.v3.BossApp
+import ai.rever.boss.v4.BossApp
+import ai.rever.boss.v4.createRootComponent
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    ComposeViewport(document.body!!) {
-        BossApp()
+    document.body?.let { body ->
+        ComposeViewport(body) {
+            // Create root component with iOS lifecycle
+            val rootComponent = createRootComponent()
+
+            // Display the app
+            BossApp(rootComponent)
+        }
     }
 }

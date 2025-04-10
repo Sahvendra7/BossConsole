@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
@@ -25,6 +26,11 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            
+            // Export Decompose and Essenty for iOS
+            export(libs.decompose)
+            export(libs.essenty.lifecycle)
+            export(libs.essenty.state.keeper)
         }
     }
     
@@ -71,6 +77,15 @@ kotlin {
             implementation(libs.precompose)
             implementation(libs.precompose.molecule)
             implementation(libs.precompose.viewmodel)
+
+            // Decompose dependencies
+            implementation(libs.decompose)
+            implementation(libs.decompose.extensions.compose)
+            implementation(libs.decompose.extensions.compose.experimental)
+            implementation(libs.essenty.lifecycle)
+            implementation(libs.essenty.state.keeper)
+            implementation(libs.kotlinx.serialization.core)
+            implementation(libs.kotlinx.serialization.json)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
