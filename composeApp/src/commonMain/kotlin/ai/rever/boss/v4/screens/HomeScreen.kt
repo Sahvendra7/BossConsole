@@ -1,5 +1,6 @@
-package ai.rever.boss.v4
+package ai.rever.boss.v4.screens
 
+import ai.rever.boss.v4.BossAppComponent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -10,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.decompose.router.stack.StackNavigation
+import com.arkivanov.decompose.router.stack.push
 
 /**
  * Home screen UI
@@ -41,5 +45,22 @@ fun HomeScreen(component: HomeComponent) {
                 Text("Go to Details")
             }
         }
+    }
+}
+
+/**
+ * Home screen component
+ */
+class HomeComponent(
+    componentContext: ComponentContext,
+    private val navigation: StackNavigation<BossAppComponent.Config>
+) : ComponentContext by componentContext {
+
+    fun onSettingsClicked() {
+        navigation.push(BossAppComponent.Config.Settings)
+    }
+
+    fun onDetailClicked(id: String) {
+        navigation.push(BossAppComponent.Config.Detail(id))
     }
 }

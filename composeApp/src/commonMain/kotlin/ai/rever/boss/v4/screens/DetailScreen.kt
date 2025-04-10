@@ -1,5 +1,6 @@
-package ai.rever.boss.v4
+package ai.rever.boss.v4.screens
 
+import ai.rever.boss.v4.BossAppComponent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.decompose.router.stack.StackNavigation
+import com.arkivanov.decompose.router.stack.pop
 
 /**
  * Detail screen UI
@@ -37,5 +41,19 @@ fun DetailScreen(component: DetailComponent) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Detail screen component
+ */
+class DetailComponent(
+    componentContext: ComponentContext,
+    private val navigation: StackNavigation<BossAppComponent.Config>,
+    val id: String
+) : ComponentContext by componentContext {
+
+    fun onBackClicked() {
+        navigation.pop()
     }
 }

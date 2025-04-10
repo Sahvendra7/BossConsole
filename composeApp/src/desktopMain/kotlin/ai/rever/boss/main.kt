@@ -1,13 +1,13 @@
 package ai.rever.boss
 
 import ai.rever.boss.v4.BossApp
-import ai.rever.boss.v4.createRootComponent
+import ai.rever.boss.v4.createBossAppComponent
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 
 fun main() = application {
     // Create root component
-    val rootComponent = createRootComponent()
+    val rootComponent = createBossAppComponent()
 
     Window(
         onCloseRequest = ::exitApplication,
