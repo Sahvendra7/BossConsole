@@ -1,6 +1,6 @@
 package ai.rever.boss.v4.screens
 
-import ai.rever.boss.v4.BossAppComponent
+import ai.rever.boss.v4.BossConsoleComponent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -53,14 +53,14 @@ fun HomeScreen(component: HomeComponent) {
  */
 class HomeComponent(
     componentContext: ComponentContext,
-    private val navigation: StackNavigation<BossAppComponent.Config>
+    private val navigation: StackNavigation<BossConsoleComponent.Config>
 ) : ComponentContext by componentContext {
 
     fun onSettingsClicked() {
-        navigation.push(BossAppComponent.Config.Settings)
+        navigation.push(BossConsoleComponent.Config.Settings)
     }
 
     fun onDetailClicked(id: String) {
-        navigation.push(BossAppComponent.Config.Detail(id))
+        navigation.push(BossConsoleComponent.Config.Detail(id))
     }
 }

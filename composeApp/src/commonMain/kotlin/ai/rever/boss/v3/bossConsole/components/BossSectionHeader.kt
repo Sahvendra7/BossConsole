@@ -34,12 +34,12 @@ fun BossSectionHeader(
             fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
             letterSpacing = 1.sp,
-            color = GitHubDarkTextSecondary
+            color = BossDarkTextSecondary
         )
         Icon(
             imageVector = if (isExpanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = if (isExpanded) "Collapse" else "Expand",
-            tint = GitHubDarkTextSecondary
+            tint = BossDarkTextSecondary
         )
     }
 }

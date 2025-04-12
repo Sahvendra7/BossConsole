@@ -1,6 +1,6 @@
 package ai.rever.boss
 
-import ai.rever.boss.v4.BossApp
+import ai.rever.boss.v4.BossConsoleApp
 import ai.rever.boss.v4.createBossAppComponent
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
@@ -14,7 +14,7 @@ fun main() {
             val rootComponent = createBossAppComponent()
 
             // Display the app
-            BossApp(rootComponent)
+            BossConsoleApp(rootComponent)
         }
     }
 }

@@ -1,6 +1,6 @@
 package ai.rever.boss.v4.screens
 
-import ai.rever.boss.v4.BossAppComponent
+import ai.rever.boss.v4.BossConsoleComponent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +49,7 @@ fun SettingsScreen(component: SettingsComponent) {
  */
 class SettingsComponent(
     componentContext: ComponentContext,
-    private val navigation: StackNavigation<BossAppComponent.Config>
+    private val navigation: StackNavigation<BossConsoleComponent.Config>
 ) : ComponentContext by componentContext {
 
     fun onBackClicked() {

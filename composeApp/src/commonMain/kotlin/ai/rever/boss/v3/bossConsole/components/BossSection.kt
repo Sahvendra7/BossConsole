@@ -2,8 +2,8 @@ package ai.rever.boss.v3.bossConsole.components
 
 import BossNavigationItem
 import BossSectionHeader
-import GitHubDarkAccent
-import GitHubDarkBorder
+import BossDarkAccent
+import BossDarkBorder
 import ai.rever.boss.v3.bossConsole.BossConsoleViewModel
 import ai.rever.boss.v3.bossConsole.Section
 import androidx.compose.material.Divider
@@ -30,10 +30,10 @@ fun BossSection(
                     viewModel.navigateTo(item.screen)
                     onNavigationItemClick()
                 },
-                selectedColor = GitHubDarkAccent
+                selectedColor = BossDarkAccent
             )
         }
     }
 
-    Divider(color = GitHubDarkBorder)
+    Divider(color = BossDarkBorder)
 }

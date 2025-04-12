@@ -1,6 +1,6 @@
 package ai.rever.boss.v3.bossConsole.components
 
-import GitHubDarkBorder
+import BossDarkBorder
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
@@ -40,6 +40,6 @@ fun BossNavigationRailHeader() {
             )
         }
     }
-    Divider(color = GitHubDarkBorder)
+    Divider(color = BossDarkBorder)
 }
 

@@ -29,12 +29,12 @@ fun BossNavigationItem(
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     val backgroundColor = when {
-        isSelected -> GitHubDarkSurface.copy(alpha = 0.5f)
-        isHovered -> GitHubDarkBorder.copy(alpha = 0.3f)
+        isSelected -> BossDarkSurface.copy(alpha = 0.5f)
+        isHovered -> BossDarkBorder.copy(alpha = 0.3f)
         else -> Color.Transparent
     }
 
-    val textColor = if (isSelected) selectedColor else GitHubDarkTextPrimary
+    val textColor = if (isSelected) selectedColor else BossDarkTextPrimary
 
     TextButton(
         onClick = onClick,

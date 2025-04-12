@@ -1,6 +1,6 @@
 package ai.rever.boss.v3.bossConsole.components
 
-import GitHubDarkSurface
+import BossDarkSurface
 import ai.rever.boss.v3.bossConsole.BossConsoleViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -19,7 +19,7 @@ fun BossDrawerContent(
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
-            .background(GitHubDarkSurface)
+            .background(BossDarkSurface)
     ) {
         BossNavigationRailHeader()
         BossConsoleSiteMap(

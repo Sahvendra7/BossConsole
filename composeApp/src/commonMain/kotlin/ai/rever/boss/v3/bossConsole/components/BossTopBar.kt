@@ -1,7 +1,7 @@
 package ai.rever.boss.v3.bossConsole.components
 
-import GitHubDarkSurface
-import GitHubDarkTextPrimary
+import BossDarkSurface
+import BossDarkTextPrimary
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -50,8 +50,8 @@ fun BossTopBar(
                 )
             }
         },
-        backgroundColor = GitHubDarkSurface,
-        contentColor = GitHubDarkTextPrimary
+        backgroundColor = BossDarkSurface,
+        contentColor = BossDarkTextPrimary
     )
 }
 
