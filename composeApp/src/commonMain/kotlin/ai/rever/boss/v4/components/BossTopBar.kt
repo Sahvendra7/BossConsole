@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.twotone.Logout
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.twotone.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,7 +13,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun BossTopBar() {
-    HorizontalBar(50.dp) {
+    HorizontalBar(40.dp) {
         Row(
             modifier = Modifier
                 .fillMaxHeight()

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun BossApp(bossConsoleComponent: BossConsoleComponent) {
@@ -30,14 +31,18 @@ fun BossApp(bossConsoleComponent: BossConsoleComponent) {
             // Add border below top bar
             Divider()
             // Main content
-            Row(modifier = Modifier.fillMaxSize()) {
+            Row(modifier = Modifier.weight(1f)) {
                 BossLeftSideBar()
+                VDivider()
                 BossConsoleApp(
                     modifier = Modifier.weight(1f),
                     bossConsoleComponent = bossConsoleComponent
                 )
+                VDivider()
                 BossRightSideBar()
             }
+            Divider()
+            BossBottomBar()
         }
     }
 }
