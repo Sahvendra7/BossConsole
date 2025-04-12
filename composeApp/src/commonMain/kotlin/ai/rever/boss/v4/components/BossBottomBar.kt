@@ -1,31 +1,44 @@
 package ai.rever.boss.v4.components
 
-import BossDarkTextPrimary
 import BossDarkTextSecondary
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Text
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun BossBottomBar() {
-    HorizontalBar(28.dp) {
-
-        Text(
-            text = "Boss Bottom Bar",
-            color = BossDarkTextSecondary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-        )
+    HorizontalBar(36.dp) {
+        HorizontalBarRow {
+            LeftBottomBar()
+            Spacer(modifier = Modifier.weight(1f))
+            RightBottomBar()
+        }
     }
+}
+
+@Composable
+fun RightArrow() {
+    Icon(imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        contentDescription = "Right Arrow",
+        tint = BossDarkTextSecondary)
+}
+
+@Composable
+fun LeftBottomBar() {
+    BossActionButton(text = "Lanager", color = BossDarkTextSecondary, onClick = {})
+    RightArrow()
+    BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
+    RightArrow()
+    BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+}
+
+@Composable
+fun RightBottomBar() {
+    BossActionButton(text = "UTF-8", color = BossDarkTextSecondary, onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.Info, text = "Info", color = BossDarkTextSecondary, onClick = {})
 }

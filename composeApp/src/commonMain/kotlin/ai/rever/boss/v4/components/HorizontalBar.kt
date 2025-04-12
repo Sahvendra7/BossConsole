@@ -22,9 +22,11 @@ fun HorizontalBar(height: Dp, content: @Composable BoxScope.() -> Unit) {
 }
 
 @Composable
-fun BoxScope.HorizontalBarRow(modifier: Modifier = Modifier
-    .fillMaxHeight()
-    .padding(horizontal = 16.dp)
-    .align(Alignment.CenterStart), content: @Composable RowScope.() -> Unit) {
-    Row(modifier = modifier, content = content)
+fun HorizontalBarRow(modifier: Modifier =
+                                  Modifier
+                                      .fillMaxHeight()
+                                      .padding(horizontal = 16.dp),
+                     vertical: Alignment.Vertical = Alignment.CenterVertically,
+                              content: @Composable RowScope.() -> Unit) {
+    Row(modifier = modifier, verticalAlignment = vertical, content = content)
 }
