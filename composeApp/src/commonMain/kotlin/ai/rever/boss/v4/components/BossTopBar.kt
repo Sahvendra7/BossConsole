@@ -5,11 +5,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.twotone.Logout
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.twotone.Description
-import androidx.compose.material.icons.twotone.Folder
-import androidx.compose.material.icons.twotone.ModeEditOutline
-import androidx.compose.material.icons.twotone.Search
+import androidx.compose.material.icons.twotone.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,7 +15,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun BossTopBar() {
-    HorizontalBar(36.dp) {
+    HorizontalBar(50.dp) {
         Row(
             modifier = Modifier
                 .fillMaxHeight()
@@ -25,15 +23,15 @@ fun BossTopBar() {
                 .align(Alignment.CenterStart),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BossActionButton(imageVector = Icons.TwoTone.Description, text = "File", onClick = {})
-            BossActionButton(imageVector = Icons.TwoTone.ModeEditOutline, text = "Edit", onClick = {})
-            BossActionButton(imageVector = Icons.TwoTone.Search, text = "View", onClick = {})
+            BossActionButton(text = "File", onClick = {})
+            BossActionButton(text = "Edit", onClick = {})
+            BossActionButton(text = "View", onClick = {})
             BossActionButton(text = "Navigate", onClick = {})
             BossActionButton(text = "Code", onClick = {})
 
             Spacer(modifier = Modifier.weight(1f))
 
-            BossActionButton(text = "Code", onClick = {})
+            BossActionButton(imageVector = Icons.AutoMirrored.TwoTone.Logout, text = "Sign Out", onClick = {})
         }
     }
 }

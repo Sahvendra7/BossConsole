@@ -3,6 +3,7 @@ package ai.rever.boss.v4
 import BossTheme
 import ai.rever.boss.v4.screens.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
@@ -21,17 +22,16 @@ import kotlinx.serialization.Serializable
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossConsoleApp(bossConsoleComponent: BossConsoleComponent) {
-    BossTheme {
-        Children(
-            stack = bossConsoleComponent.childStack,
-            animation = stackAnimation(fade() + scale()),
-        ) { child ->
-            when (val instance = child.instance) {
-                is BossConsoleComponent.Child.Home -> HomeScreen(instance.component)
-                is BossConsoleComponent.Child.Settings -> SettingsScreen(instance.component)
-                is BossConsoleComponent.Child.Detail -> DetailScreen(instance.component)
-            }
+fun BossConsoleApp(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
+    Children(
+        stack = bossConsoleComponent.childStack,
+        animation = stackAnimation(fade() + scale()),
+        modifier = modifier,
+    ) { child ->
+        when (val instance = child.instance) {
+            is BossConsoleComponent.Child.Home -> HomeScreen(instance.component)
+            is BossConsoleComponent.Child.Settings -> SettingsScreen(instance.component)
+            is BossConsoleComponent.Child.Detail -> DetailScreen(instance.component)
         }
     }
 }
