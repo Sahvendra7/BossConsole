@@ -1,22 +1,27 @@
 package ai.rever.boss.v4.components
 
 import BossDarkTextSecondary
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+
 @Composable
 fun BossBottomBar() {
-    HorizontalBar(36.dp) {
+    HorizontalBar(30.dp) {
         HorizontalBarRow {
-            LeftBottomBar()
-            Spacer(modifier = Modifier.weight(1f))
-            RightBottomBar()
+            BossLeftBottomBar()
+            Spacer(modifier = Modifier.weight(0.1f))
+            BossRightBottomBar()
         }
     }
 }
@@ -24,21 +29,49 @@ fun BossBottomBar() {
 @Composable
 fun RightArrow() {
     Icon(imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        modifier = Modifier.size(18.dp),
         contentDescription = "Right Arrow",
         tint = BossDarkTextSecondary)
 }
 
 @Composable
-fun LeftBottomBar() {
-    BossActionButton(text = "Lanager", color = BossDarkTextSecondary, onClick = {})
-    RightArrow()
-    BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
-    RightArrow()
-    BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+fun RowScope.BossLeftBottomBar() {
+    Column(modifier = Modifier.weight(2f).padding(horizontal = 8.dp)) {
+        Row(
+            modifier = Modifier
+                .horizontalScrollWithScrollbar(
+                    rememberScrollState(),
+                    scrollbarConfig = ScrollbarConfig(
+                        indicatorThickness = 2.dp,
+                        indicatorColor = BossDarkTextSecondary,
+                        indicatorCornerRadius = 4.dp,
+                        horizontalScrollbarAtTop = true
+                    )
+                )
+            ,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BossActionButton(text = "Lanager", color = BossDarkTextSecondary, onClick = {})
+            RightArrow()
+            BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
+            RightArrow()
+            BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+
+            RightArrow()
+            BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
+            RightArrow()
+            BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+
+            RightArrow()
+            BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
+            RightArrow()
+            BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+        }
+    }
 }
 
 @Composable
-fun RightBottomBar() {
+fun BossRightBottomBar() {
     BossActionButton(text = "UTF-8", color = BossDarkTextSecondary, onClick = {})
     BossActionButton(imageVector = Icons.Outlined.Info, text = "Info", color = BossDarkTextSecondary, onClick = {})
 }
