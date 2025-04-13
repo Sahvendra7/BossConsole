@@ -3,6 +3,8 @@ package ai.rever.boss.v4.components
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.Divider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
@@ -17,13 +19,25 @@ fun BossLeftSideBar() {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BossActionButton(imageVector = Icons.Outlined.Folder, text = "Folder", onClick = {})
-            BossActionButton(imageVector = Icons.Outlined.PhoneIphone, text = "Phone Iphone", onClick = {})
-            BossActionButton(imageVector = Icons.Outlined.FormatShapes, text = "Format Shapes", onClick = {})
-            BossActionButton(imageVector = Icons.Outlined.Build, text = "Build", onClick = {})
+            BossLeftTopSideBar()
             Spacer(modifier = Modifier.weight(1f))
-            BossActionButton(imageVector = Icons.Outlined.RunCircle, text = "Run", onClick = {})
-            BossActionButton(imageVector = Icons.Outlined.Code, text = "Code", onClick = {})
+            BossLeftBottomSideBar()
         }
     }
+}
+
+@Composable
+fun BossLeftTopSideBar() {
+    BossActionButton(imageVector = Icons.Outlined.Folder, text = "Folder", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.PhoneIphone, text = "Phone Iphone", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.FormatShapes, text = "Format Shapes", onClick = {})
+    SDivider()
+    BossActionButton(imageVector = Icons.Outlined.Build, text = "Build", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.MoreHoriz, text = "More Tools", onClick = {})
+}
+
+@Composable
+fun BossLeftBottomSideBar() {
+    BossActionButton(imageVector = Icons.Outlined.RunCircle, text = "Run", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.Code, text = "Code", onClick = {})
 }

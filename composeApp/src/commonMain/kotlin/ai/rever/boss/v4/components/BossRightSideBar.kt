@@ -22,6 +22,7 @@ fun BossRightSideBar() {
             BossActionButton(imageVector = Icons.Outlined.VideoFile, text = "Phone Iphone", onClick = {})
             BossActionButton(imageVector = Icons.Outlined.Replay, text = "Phone Iphone", onClick = {})
             BossActionButton(imageVector = Icons.Outlined.Cast, text = "Phone Iphone", onClick = {})
+            SDivider()
             BossActionButton(imageVector = Icons.Outlined.Anchor, text = "Phone Iphone", onClick = {})
             BossActionButton(imageVector = Icons.Outlined.Android, text = "Phone Iphone", onClick = {})
         }
