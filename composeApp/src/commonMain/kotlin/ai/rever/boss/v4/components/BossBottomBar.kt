@@ -56,16 +56,6 @@ fun RowScope.BossLeftBottomBar() {
             BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
             RightArrow()
             BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
-
-            RightArrow()
-            BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
-            RightArrow()
-            BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
-
-            RightArrow()
-            BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
-            RightArrow()
-            BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
         }
     }
 }

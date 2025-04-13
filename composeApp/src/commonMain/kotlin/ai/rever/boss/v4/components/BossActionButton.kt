@@ -4,6 +4,7 @@ import BossDarkTextPrimary
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -25,13 +26,14 @@ fun BossActionButton(imageVector: ImageVector? = null,
                      onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
-        modifier = modifier.defaultMinSize(minHeight = 16.dp, minWidth = 16.dp),
+        modifier = modifier.defaultMinSize(minHeight = 2.dp, minWidth = 2.dp),
         contentPadding = contentPadding,
     ) {
         if (imageVector != null) {
             Icon(
                 imageVector = imageVector,
                 contentDescription = text,
+                modifier = Modifier.size(22.dp),
                 tint = color
             )
         } else {

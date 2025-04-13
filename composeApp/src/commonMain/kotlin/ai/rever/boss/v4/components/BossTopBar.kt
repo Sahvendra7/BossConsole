@@ -13,6 +13,8 @@ fun BossTopBar() {
         HorizontalBarRow {
             BossTopLeftBar()
             Spacer(modifier = Modifier.weight(1f))
+            BossTopRunBar()
+            Spacer(modifier = Modifier.weight(0.1f))
             BossTopRightBar()
         }
     }
@@ -25,6 +27,14 @@ fun BossTopLeftBar() {
     BossActionButton(text = "View", onClick = {})
     BossActionButton(text = "Navigate", onClick = {})
     BossActionButton(text = "Code", onClick = {})
+}
+
+@Composable
+fun BossTopRunBar() {
+    BossActionButton(imageVector = Icons.Outlined.PlayArrow, text = "Run", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.BugReport, text = "Bug", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.Stop, text = "Stop", onClick = {})
+    BossActionButton(imageVector = Icons.Outlined.MoreVert, text = "Stop", onClick = {})
 }
 
 @Composable
