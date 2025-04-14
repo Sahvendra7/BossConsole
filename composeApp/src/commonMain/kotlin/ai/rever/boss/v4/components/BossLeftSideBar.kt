@@ -3,41 +3,25 @@ package ai.rever.boss.v4.components
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Divider
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossLeftSideBar() {
+fun BossLeftSideBar(sidebarModel: DraggableSidebarModel) {
     VerticalBar(40.dp) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            BossLeftTopSideBar()
+            DraggableSidebarSection(slot = SidebarSlot.LEFT_TOP_TOP, sidebarModel = sidebarModel)
+            SDivider()
+            DraggableSidebarSection(slot = SidebarSlot.LEFT_TOP_BOTTOM, sidebarModel = sidebarModel)
+            
             Spacer(modifier = Modifier.weight(1f))
-            BossLeftBottomSideBar()
+            
+            DraggableSidebarSection(slot = SidebarSlot.LEFT_BOTTOM, sidebarModel = sidebarModel)
         }
     }
-}
-
-@Composable
-fun BossLeftTopSideBar() {
-    BossActionButton(imageVector = Icons.Outlined.Folder, text = "Folder", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.PhoneIphone, text = "Phone Iphone", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.FormatShapes, text = "Format Shapes", onClick = {})
-    SDivider()
-    BossActionButton(imageVector = Icons.Outlined.Build, text = "Build", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.MoreHoriz, text = "More Tools", onClick = {})
-}
-
-@Composable
-fun BossLeftBottomSideBar() {
-    BossActionButton(imageVector = Icons.Outlined.RunCircle, text = "Run", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.Code, text = "Code", onClick = {})
 }

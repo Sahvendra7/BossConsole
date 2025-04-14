@@ -1,0 +1,171 @@
+package ai.rever.boss.v4.components
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.vector.ImageVector
+import kotlin.math.abs
+
+// Defines the possible drop locations for sidebar items
+enum class SidebarSlot {
+    LEFT_TOP_TOP,
+    LEFT_TOP_BOTTOM,
+    LEFT_BOTTOM,
+    RIGHT_TOP_TOP,
+    RIGHT_TOP_BOTTOM
+}
+
+// Represents a single draggable item in the sidebar
+data class SidebarItem(
+    val id: String, // Unique identifier for the item
+    val icon: ImageVector,
+    val label: String,
+    val onClick: () -> Unit // Action to perform on click (when not dragging)
+)
+
+// Holds the state and logic for the draggable sidebar system
+@Stable
+class DraggableSidebarModel {
+    // The item currently being dragged, and its original slot
+    var draggingItem by mutableStateOf<Pair<SidebarItem, SidebarSlot>?>(null)
+        private set
+
+    // Absolute position where the drag started
+    var dragStartPosition by mutableStateOf<Offset?>(null)
+        private set
+
+    // Accumulated delta since the drag started
+    var dragDelta by mutableStateOf(Offset.Zero)
+        private set
+
+    // The slot currently being hovered over by the dragged item, or null
+    var dropTargetSlot by mutableStateOf<SidebarSlot?>(null)
+        private set
+
+    // Internal state to track drop target bounds for hover calculation
+    internal val slotBounds = mutableMapOf<SidebarSlot, Rect>()
+
+    // A map holding the list of items for each slot, backed by mutable state
+    val itemsBySlot = mutableStateMapOf<SidebarSlot, List<SidebarItem>>()
+
+    init {
+        // Initialize with default items in their respective slots
+        itemsBySlot[SidebarSlot.LEFT_TOP_TOP] = listOf(
+            SidebarItem("folder", Icons.Outlined.Folder, "Folder", {}),
+            SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone", {}),
+            SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes", {})
+        )
+        itemsBySlot[SidebarSlot.LEFT_TOP_BOTTOM] = listOf(
+            SidebarItem("build", Icons.Outlined.Build, "Build", {}),
+            SidebarItem("more", Icons.Outlined.MoreHoriz, "More", {})
+        )
+        itemsBySlot[SidebarSlot.LEFT_BOTTOM] = listOf(
+            SidebarItem("run", Icons.Outlined.RunCircle, "Run", {}),
+            SidebarItem("code", Icons.Outlined.Code, "Code", {})
+        )
+        itemsBySlot[SidebarSlot.RIGHT_TOP_TOP] = listOf(
+            SidebarItem("attach", Icons.Outlined.AttachFile, "Attach", {}),
+            SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio", {}),
+            SidebarItem("video", Icons.Outlined.VideoFile, "Video", {})
+        )
+        itemsBySlot[SidebarSlot.RIGHT_TOP_BOTTOM] = listOf(
+            SidebarItem("replay", Icons.Outlined.Replay, "Replay", {}),
+            SidebarItem("cast", Icons.Outlined.Cast, "Cast", {}),
+            SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor", {}),
+            SidebarItem("android", Icons.Outlined.Android, "Android", {})
+        )
+    }
+
+    // Get items for a specific slot, returning an empty list if the slot is unknown
+    fun getItemsForSlot(slot: SidebarSlot): List<SidebarItem> {
+        return itemsBySlot[slot] ?: emptyList()
+    }
+
+    // Called when dragging starts
+    fun startDragging(item: SidebarItem, sourceSlot: SidebarSlot, startPosition: Offset) {
+        if (draggingItem != null) return
+//        itemsBySlot[sourceSlot] = itemsBySlot[sourceSlot]?.filter { it.id != item.id } ?: emptyList()
+        draggingItem = item to sourceSlot
+        dragStartPosition = startPosition
+        dragDelta = Offset.Zero
+        updateHoverTarget()
+    }
+
+    // Called repeatedly during a drag gesture to update the delta
+    fun updateDragDelta(delta: Offset) {
+        if (draggingItem == null || dragStartPosition == null) return
+        dragDelta += delta
+        updateHoverTarget()
+    }
+
+    // Recalculates the dropTargetSlot based on the current calculated absolute position
+    private fun updateHoverTarget() {
+        val start = dragStartPosition ?: return
+        val currentPosition = start + dragDelta // Calculate current absolute position
+
+        var newTarget: SidebarSlot? = null
+        for ((slot, bounds) in slotBounds) {
+            if (bounds.contains(currentPosition)) {
+                newTarget = slot
+                break
+            }
+        }
+        if (dropTargetSlot != newTarget) {
+            dropTargetSlot = newTarget
+        }
+    }
+
+    // Called when dragging ends
+    fun stopDragging() {
+        val currentDraggingItem = draggingItem
+        val currentDropTarget = dropTargetSlot
+
+        // Reset dragging state immediately
+        draggingItem = null
+        dragStartPosition = null // Reset start position
+        dragDelta = Offset.Zero // Reset delta
+        dropTargetSlot = null
+
+        if (currentDraggingItem != null) {
+            val (item, sourceSlot) = currentDraggingItem
+
+            val sourceList = itemsBySlot[sourceSlot]?.toMutableList() ?: mutableListOf()
+            val removed = sourceList.removeAll { it.id == item.id }
+            if (removed) {
+                itemsBySlot[sourceSlot] = sourceList // Update source list only if removed
+            }
+
+            if (currentDropTarget != null && sourceSlot != currentDropTarget) {
+                // Move item to the target slot if it's different from the source
+                val targetList = itemsBySlot[currentDropTarget]?.toMutableList() ?: mutableListOf()
+                // Add the item (simple add to end for now)
+                if (!targetList.any { it.id == item.id }) { // Avoid duplicates if logic error
+                     targetList.add(item)
+                }
+                itemsBySlot[currentDropTarget] = targetList
+            } else {
+                // No valid target OR dropped back onto the source slot, return item to its original slot
+                val updatedSourceList = itemsBySlot[sourceSlot]?.toMutableList() ?: mutableListOf()
+                // Add the item back (simple add to end for now)
+                 if (!updatedSourceList.any { it.id == item.id }) { // Avoid duplicates
+                     updatedSourceList.add(item)
+                 }
+                itemsBySlot[sourceSlot] = updatedSourceList
+            }
+        }
+    }
+}
+
+// Composable function to remember the DraggableSidebarModel instance
+@Composable
+fun rememberDraggableSidebarModel(): DraggableSidebarModel {
+    return remember { DraggableSidebarModel() }
+} 
