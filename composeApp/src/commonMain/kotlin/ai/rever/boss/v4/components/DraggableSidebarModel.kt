@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlin.math.abs
+import kotlin.math.max
 
 // Defines the possible drop locations for sidebar items
 enum class SidebarSlot {
@@ -54,7 +55,7 @@ class DraggableSidebarModel {
     internal val slotBounds = mutableMapOf<SidebarSlot, Rect>()
 
     // A map holding the list of items for each slot, backed by mutable state
-    val itemsBySlot = mutableStateMapOf<SidebarSlot, List<SidebarItem>>()
+    private val itemsBySlot = mutableStateMapOf<SidebarSlot, List<SidebarItem>>()
 
     init {
         // Initialize with default items in their respective slots
@@ -92,7 +93,6 @@ class DraggableSidebarModel {
     // Called when dragging starts
     fun startDragging(item: SidebarItem, sourceSlot: SidebarSlot, startPosition: Offset) {
         if (draggingItem != null) return
-//        itemsBySlot[sourceSlot] = itemsBySlot[sourceSlot]?.filter { it.id != item.id } ?: emptyList()
         draggingItem = item to sourceSlot
         dragStartPosition = startPosition
         dragDelta = Offset.Zero
@@ -128,6 +128,8 @@ class DraggableSidebarModel {
         val currentDraggingItem = draggingItem
         val currentDropTarget = dropTargetSlot
 
+        val finalDropPosition = if (dragStartPosition != null) dragStartPosition!! + dragDelta else null
+
         // Reset dragging state immediately
         draggingItem = null
         dragStartPosition = null // Reset start position
@@ -143,12 +145,40 @@ class DraggableSidebarModel {
                 itemsBySlot[sourceSlot] = sourceList // Update source list only if removed
             }
 
-            if (currentDropTarget != null && sourceSlot != currentDropTarget) {
+            if (currentDropTarget != null) {
                 // Move item to the target slot if it's different from the source
-                val targetList = itemsBySlot[currentDropTarget]?.toMutableList() ?: mutableListOf()
+                val targetSlotBounds = slotBounds[currentDropTarget]
+                val currentTargetItems = itemsBySlot[currentDropTarget]?.toList() ?: emptyList() // Use current items in target
+                var targetIndex = currentTargetItems.size // Default to end
                 // Add the item (simple add to end for now)
-                if (!targetList.any { it.id == item.id }) { // Avoid duplicates if logic error
-                     targetList.add(item)
+                if (targetSlotBounds != null && finalDropPosition != null && currentTargetItems.isNotEmpty()) {
+                    // Estimate item height based on slot bounds and item count
+                    // Add small epsilon to height to avoid division by zero if bounds are tiny
+                    val totalSlotHeight = max(1f, targetSlotBounds.height) // Ensure positive height
+                    val itemHeightEstimate = totalSlotHeight / currentTargetItems.size
+
+                    for (i in currentTargetItems.indices) {
+                        // Calculate the Y-coordinate of the midpoint of the i-th item's estimated area
+                        val itemMidpointY = targetSlotBounds.top + (i * itemHeightEstimate) + (itemHeightEstimate / 2f)
+
+                        // If the drop position is above this item's midpoint, insert before it
+                        if (finalDropPosition.y < itemMidpointY) {
+                            targetIndex = i
+                            break // Found the insertion point
+                        }
+                    }
+                    // If loop completes, targetIndex remains currentTargetItems.size (append)
+                } else if (currentTargetItems.isEmpty()) {
+                    // If the target slot is empty, index is 0
+                    targetIndex = 0
+                }
+
+                // Add item to the target slot at the calculated index
+                val targetList = itemsBySlot[currentDropTarget]?.toMutableList() ?: mutableListOf()
+                if (!targetList.any { it.id == item.id }) {
+                    // Ensure index is within bounds before adding
+                    val safeIndex = targetIndex.coerceIn(0, targetList.size)
+                    targetList.add(safeIndex, item)
                 }
                 itemsBySlot[currentDropTarget] = targetList
             } else {

@@ -37,39 +37,27 @@ fun DraggableActionButton(
     var pendingDragStartOffset by remember { mutableStateOf<Offset?>(null) }
 
     // Log recomposition state
-    println("--- DraggableActionButton Recomposing: Item=${item.id}, Slot=${slot}, isDragged=${isBeingDragged}, Pos=${componentPositionInWindow}, PendingOffset=${pendingDragStartOffset}")
 
     LaunchedEffect(componentPositionInWindow, pendingDragStartOffset) {
         val startOffset = pendingDragStartOffset
         val currentPos = componentPositionInWindow
 
-        println(">>> LaunchedEffect Check: Item=${item.id}, Pos=${currentPos}, PendingOffset=${startOffset}")
 
         if (startOffset != null && currentPos != null) {
-            println(">>> LaunchedEffect Firing DRAG START: Item=${item.id}, Pos=${currentPos}, Offset=${startOffset}")
             val startPosition = currentPos + startOffset
             sidebarModel.startDragging(currentItem, currentSlot, startPosition)
             // Reset pending offset AFTER starting the drag
             pendingDragStartOffset = null
-        } else {
-            if (startOffset != null && currentPos == null){
-                println(">>> LaunchedEffect Condition NOT MET (Position Null): Item=${item.id}, PendingOffset=${startOffset}")
-            } else if (startOffset == null && currentPos != null) {
-                // This case is normal on layout changes without pending drag
-                // println(">>> LaunchedEffect Condition NOT MET (No Pending Drag): Item=${item.id}, Pos=${currentPos}")
-            }
         }
     }
 
     IconButton(
         onClick = {
-            println("--- IconButton Click: Item=${item.id}")
             if (sidebarModel.draggingItem == null) item.onClick()
         },
         modifier = modifier
             .onGloballyPositioned { layoutCoordinates ->
                 val newPos = layoutCoordinates.positionInWindow()
-                println("+++ onGloballyPositioned Update: Item=${item.id}, NewPos=${newPos}")
                 // Only update state if the position actually changed to avoid redundant recompositions/effect triggers
                 if (componentPositionInWindow != newPos) {
                     componentPositionInWindow = newPos
@@ -80,37 +68,28 @@ fun DraggableActionButton(
             .pointerInput(Unit) { // Keep Unit key
                 detectDragGesturesAfterLongPress(
                     onDragStart = { touchOffset ->
-                        println("===> onDragStart Received: Item=${item.id}, TouchOffset=${touchOffset}")
                         // Just record the intention to drag
                         pendingDragStartOffset = touchOffset
                     },
                     onDragEnd = {
-                        println("===> onDragEnd: Item=${item.id}, PendingOffsetBeforeReset=${pendingDragStartOffset}")
                         if (pendingDragStartOffset != null) {
                             pendingDragStartOffset = null
                         }
                         if (sidebarModel.draggingItem != null) {
-                            println("===> onDragEnd Stopping Model Drag: Item=${item.id}")
                             sidebarModel.stopDragging()
                         }
                     },
                     onDragCancel = {
-                        println("===> onDragCancel: Item=${item.id}, PendingOffsetBeforeReset=${pendingDragStartOffset}")
                         pendingDragStartOffset = null
                         if (sidebarModel.draggingItem != null) {
-                            println("===> onDragCancel Stopping Model Drag: Item=${item.id}")
                             sidebarModel.stopDragging()
                         }
                     },
                     onDrag = { change: PointerInputChange, dragAmount: Offset ->
                         // Check model state directly to see if drag has officially started
                         if (sidebarModel.draggingItem?.first?.id == item.id) {
-                            // println("===> onDrag Update: Item=${item.id}, Delta=${dragAmount}") // Can be noisy
                             change.consume()
                             sidebarModel.updateDragDelta(dragAmount)
-                        } else {
-                            // This might happen if the drag hasn't started yet due to timing
-                            // println("===> onDrag Update IGNORED (Not dragging this item / drag not started): Item=${item.id}")
                         }
                     }
                 )
