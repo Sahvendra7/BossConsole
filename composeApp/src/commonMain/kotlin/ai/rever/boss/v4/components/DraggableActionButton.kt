@@ -33,7 +33,7 @@ fun DraggableActionButton(
     val currentSlot by rememberUpdatedState(slot)
     val isBeingDragged = sidebarModel.draggingItem?.first?.id == item.id
 
-    var componentPositionInWindow by remember { mutableStateOf<Offset?>(null) } // Nullable
+    var componentPositionInWindow by remember { mutableStateOf<Offset?>(null) }
     var pendingDragStartOffset by remember { mutableStateOf<Offset?>(null) }
 
     // Log recomposition state
