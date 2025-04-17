@@ -1,18 +1,13 @@
 package ai.rever.boss.v4
 
-import BossDarkTextPrimary
 import BossTheme
 import ai.rever.boss.platform.CursorUtil.cursorForHorizontalResize
 import ai.rever.boss.platform.CursorUtil.cursorForVerticalResize
 import ai.rever.boss.v4.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Divider
-import androidx.compose.material.Icon
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -23,15 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.round
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
+import kotlin.ranges.coerceIn
 
 @Composable
 fun BossApp(bossConsoleComponent: BossConsoleComponent) {
@@ -62,75 +54,6 @@ fun BossApp(bossConsoleComponent: BossConsoleComponent) {
     }
 }
 
-// Resizable divider for vertical resizing (left/right panels)
-@Composable
-fun VerticalResizeHandle(
-    onResize: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-
-    Box(modifier = modifier.width(8.dp).fillMaxHeight()) {
-        Divider(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxHeight()
-                .width(if (isHovered) 2.dp else 1.dp)
-                .background(if (isHovered) Color.Gray else Color(0xFF555555))
-                .hoverable(interactionSource)
-                .cursorForHorizontalResize()
-        )
-        
-        // This invisible box covers the entire area to make dragging easier
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .cursorForHorizontalResize()
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        onResize(dragAmount.x)
-                    }
-                }
-        )
-    }
-}
-
-// Resizable divider for horizontal resizing (bottom panel)
-@Composable
-fun HorizontalResizeHandle(
-    onResize: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-
-    Box(modifier = modifier.height(8.dp).fillMaxWidth()) {
-        Divider(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .height(if (isHovered) 2.dp else 1.dp)
-                .background(if (isHovered) Color.Gray else Color(0xFF555555))
-                .hoverable(interactionSource)
-                .cursorForVerticalResize()
-        )
-        
-        // This invisible box covers the entire area to make dragging easier
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .cursorForVerticalResize()
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        onResize(dragAmount.y)
-                    }
-                }
-        )
-    }
-}
 
 @Composable
 fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
@@ -163,7 +86,7 @@ fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
                 .weight(1f)
                 .fillMaxWidth()
             ) {
-                // Left panel with resize handle
+                // Left panel
                 if (isLeftPanelVisible) {
                     Surface(
                         modifier = Modifier
@@ -194,15 +117,7 @@ fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
                         }
                     }
                     
-                    // Vertical resize handle for left panel
-                    VerticalResizeHandle(
-                        onResize = { delta ->
-                            with(density) {
-                                val newWidth = leftPanelWidth + delta.toDp()
-                                leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
-                            }
-                        }
-                    )
+                    VDivider()
                 }
                 
                 // Main center panel
@@ -218,18 +133,9 @@ fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
                     )
                 }
                 
-                // Right panel with resize handle
+                // Right panel
                 if (isRightPanelVisible) {
-                    // Vertical resize handle for right panel (positioned before the panel)
-                    VerticalResizeHandle(
-                        onResize = { delta ->
-                            with(density) {
-                                // Negative delta because we're resizing from right to left
-                                val newWidth = rightPanelWidth - delta.toDp()
-                                rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
-                            }
-                        }
-                    )
+                    VDivider()
                     
                     Surface(
                         modifier = Modifier
@@ -262,18 +168,9 @@ fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
                 }
             }
             
-            // Bottom panel with resize handle
+            // Bottom panel
             if (isBottomPanelVisible) {
-                // Horizontal resize handle for bottom panel (positioned before the panel)
-                HorizontalResizeHandle(
-                    onResize = { delta ->
-                        with(density) {
-                            // Negative delta because we're resizing from bottom to top
-                            val newHeight = bottomPanelHeight - delta.toDp()
-                            bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
-                        }
-                    }
-                )
+                Divider()
                 
                 Surface(
                     modifier = Modifier
@@ -304,6 +201,72 @@ fun RowScope.WindowPanel(bossConsoleComponent: BossConsoleComponent) {
                     }
                 }
             }
+        }
+        
+        // Transparent overlays for resizing - positioned in fixed locations
+        if (isLeftPanelVisible) {
+            // Left panel resize overlay
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(leftPanelWidth.roundToPx() - 8.dp.roundToPx(), 0) }
+                    .width(16.dp)
+                    .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
+                    .alpha(0f)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            with(density) {
+                                val newWidth = leftPanelWidth + dragAmount.x.toDp()
+                                leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
+                            }
+                        }
+                    }
+                    .cursorForHorizontalResize()
+            )
+        }
+        
+        if (isRightPanelVisible) {
+            // Right panel resize overlay
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset { IntOffset(-rightPanelWidth.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx(), 0) }
+                    .width(16.dp)
+                    .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
+                    .alpha(0f)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            with(density) {
+                                val newWidth = rightPanelWidth - dragAmount.x.toDp()
+                                rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
+                            }
+                        }
+                    }
+                    .cursorForHorizontalResize()
+            )
+        }
+        
+        if (isBottomPanelVisible) {
+            // Bottom panel resize overlay
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset { IntOffset(0, -bottomPanelHeight.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx()) }
+                    .fillMaxWidth()
+                    .height(16.dp)
+                    .alpha(0f)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            with(density) {
+                                val newHeight = bottomPanelHeight - dragAmount.y.toDp()
+                                bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
+                            }
+                        }
+                    }
+                    .cursorForVerticalResize()
+            )
         }
     }
 }
