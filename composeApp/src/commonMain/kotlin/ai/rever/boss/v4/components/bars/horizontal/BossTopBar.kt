@@ -2,6 +2,7 @@ package ai.rever.boss.v4.components.bars.horizontal
 
 import ai.rever.boss.v4.components.buttons.BossActionButton
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.Divider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
@@ -19,6 +20,7 @@ fun BossTopBar() {
             BossTopRightBar()
         }
     }
+    Divider()
 }
 
 @Composable

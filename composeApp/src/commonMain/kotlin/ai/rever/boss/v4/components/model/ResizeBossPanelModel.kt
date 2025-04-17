@@ -8,6 +8,10 @@ class ResizeBossPanelModel {
     var leftPanelWidth by mutableStateOf(250.dp)
     var rightPanelWidth by mutableStateOf(250.dp)
     var bottomPanelHeight by mutableStateOf(200.dp)
+
+    var isLeftPanelVisible by mutableStateOf(true)
+    var isRightPanelVisible by mutableStateOf(true)
+    var isBottomPanelVisible by mutableStateOf(true)
 }
 
 @Composable

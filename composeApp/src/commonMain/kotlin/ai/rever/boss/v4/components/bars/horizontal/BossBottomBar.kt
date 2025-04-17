@@ -6,6 +6,7 @@ import ai.rever.boss.v4.components.bars.ScrollbarConfig
 import ai.rever.boss.v4.components.bars.horizontalScrollWithScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun BossBottomBar() {
+    Divider()
     HorizontalBar(30.dp) {
         HorizontalBarRow {
             BossLeftBottomBar()

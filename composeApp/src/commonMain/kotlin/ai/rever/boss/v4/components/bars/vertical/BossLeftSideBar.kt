@@ -1,12 +1,14 @@
 package ai.rever.boss.v4.components.bars.vertical
 
 import ai.rever.boss.v4.components.dividers.SDivider
+import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
 import ai.rever.boss.v4.components.model.DraggableSidebarModel
 import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,4 +30,5 @@ fun BossLeftSideBar(sidebarModel: DraggableSidebarModel) {
             DraggableSidebarSection(slot = SidebarSlot.LEFT_BOTTOM, sidebarModel = sidebarModel)
         }
     }
+    VDivider()
 }
