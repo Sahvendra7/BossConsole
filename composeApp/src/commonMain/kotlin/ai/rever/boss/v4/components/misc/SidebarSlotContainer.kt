@@ -1,14 +1,14 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.misc
 
-import BossDarkTextPrimary
+import ai.rever.boss.v4.components.buttons.DraggableActionButton
+import ai.rever.boss.v4.components.model.DraggableSidebarModel
+import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.Icon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned

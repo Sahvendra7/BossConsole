@@ -2,7 +2,7 @@ package ai.rever.boss
 
 import BossDarkSurface
 import ai.rever.boss.v4.BossApp
-import ai.rever.boss.v4.createBossAppComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.createBossAppComponent
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState

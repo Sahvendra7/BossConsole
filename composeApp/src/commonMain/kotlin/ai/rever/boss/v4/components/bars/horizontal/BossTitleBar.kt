@@ -1,4 +1,4 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.bars.horizontal
 
 import BossDarkTextPrimary
 import androidx.compose.foundation.layout.fillMaxWidth

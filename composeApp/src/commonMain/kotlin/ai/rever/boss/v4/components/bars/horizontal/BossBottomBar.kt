@@ -1,8 +1,9 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.bars.horizontal
 
 import BossDarkTextSecondary
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.horizontalScroll
+import ai.rever.boss.v4.components.buttons.BossActionButton
+import ai.rever.boss.v4.components.bars.ScrollbarConfig
+import ai.rever.boss.v4.components.bars.horizontalScrollWithScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Icon

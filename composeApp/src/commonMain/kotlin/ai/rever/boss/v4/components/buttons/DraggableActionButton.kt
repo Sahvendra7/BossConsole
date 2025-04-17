@@ -1,8 +1,10 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.buttons
 
 import BossDarkTextPrimary
+import ai.rever.boss.v4.components.model.DraggableSidebarModel
+import ai.rever.boss.v4.components.model.SidebarItem
+import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton

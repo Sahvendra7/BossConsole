@@ -1,4 +1,4 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.dividers
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Divider

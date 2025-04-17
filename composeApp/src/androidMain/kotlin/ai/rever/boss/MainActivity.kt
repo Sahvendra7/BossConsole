@@ -1,8 +1,8 @@
 package ai.rever.boss
 
 import ai.rever.boss.v3.AppV3
-import ai.rever.boss.v4.BossConsoleApp
-import ai.rever.boss.v4.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainWindowPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         val bossConsoleComponent = BossConsoleComponent(defaultComponentContext())
 
         setContent {
-            BossConsoleApp(bossConsoleComponent)
+            BossMainWindowPanel(bossConsoleComponent)
         }
     }
 }

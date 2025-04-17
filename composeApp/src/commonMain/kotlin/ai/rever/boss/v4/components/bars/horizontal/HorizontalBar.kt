@@ -1,4 +1,4 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.bars.horizontal
 
 import BossDarkSurface
 import androidx.compose.foundation.background

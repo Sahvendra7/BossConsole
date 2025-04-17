@@ -1,4 +1,4 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.bars
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState

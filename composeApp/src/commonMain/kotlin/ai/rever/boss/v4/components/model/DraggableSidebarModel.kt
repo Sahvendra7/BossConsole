@@ -1,4 +1,4 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.model
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -12,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
-import kotlin.math.abs
 import kotlin.math.max
 
 // Defines the possible drop locations for sidebar items

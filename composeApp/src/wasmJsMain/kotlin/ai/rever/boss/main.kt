@@ -1,7 +1,7 @@
 package ai.rever.boss
 
-import ai.rever.boss.v4.BossConsoleApp
-import ai.rever.boss.v4.createBossAppComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainWindowPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.createBossAppComponent
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import kotlinx.browser.document
@@ -14,7 +14,7 @@ fun main() {
             val rootComponent = createBossAppComponent()
 
             // Display the app
-            BossConsoleApp(rootComponent)
+            BossMainWindowPanel(rootComponent)
         }
     }
 }

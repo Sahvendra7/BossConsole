@@ -1,6 +1,7 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.overlays
 
 import BossDarkTextPrimary
+import ai.rever.boss.v4.components.model.DraggableSidebarModel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size

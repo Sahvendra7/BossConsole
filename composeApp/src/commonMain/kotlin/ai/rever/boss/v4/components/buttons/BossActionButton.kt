@@ -1,9 +1,8 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.buttons
 
 import BossDarkTextPrimary
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.*
 import androidx.compose.runtime.Composable

@@ -1,6 +1,6 @@
-package ai.rever.boss.v4
+package ai.rever.boss.v4.components.window_panel.components.main_window_panel
 
-import ai.rever.boss.v4.screens.*
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.screens.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext
@@ -21,7 +21,7 @@ import kotlinx.serialization.Serializable
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossConsoleApp(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
+fun BossMainWindowPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
     Children(
         stack = bossConsoleComponent.childStack,
         animation = stackAnimation(fade() + scale()),

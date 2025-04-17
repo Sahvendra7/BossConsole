@@ -1,7 +1,6 @@
-package ai.rever.boss.v4.components
+package ai.rever.boss.v4.components.dividers
 
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
