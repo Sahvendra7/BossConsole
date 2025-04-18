@@ -1,7 +1,7 @@
 package ai.rever.boss.v4.components.window_panel
 
 import ai.rever.boss.v4.components.dividers.VDivider
-import ai.rever.boss.v4.components.model.rememberResizeBossPanelModel
+import ai.rever.boss.v4.components.model.rememberWindowPanelModel
 import ai.rever.boss.v4.components.overlays.ResizeOverlay
 import ai.rever.boss.v4.components.window_panel.components.*
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
@@ -16,21 +16,15 @@ import androidx.compose.ui.Modifier
 @Composable
 fun BossWindowPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
     // State to control panel visibility
-    val resizeBossPanelModel = rememberResizeBossPanelModel()
-
-    val leftPanelWidth by derivedStateOf { resizeBossPanelModel.leftPanelWidth }
-    val rightPanelWidth by derivedStateOf { resizeBossPanelModel.rightPanelWidth }
-    val bottomPanelHeight by derivedStateOf { resizeBossPanelModel.bottomPanelHeight }
-    val isLeftPanelVisible by derivedStateOf { resizeBossPanelModel.isLeftPanelVisible }
-    val isRightPanelVisible by derivedStateOf { resizeBossPanelModel.isRightPanelVisible }
-    val isBottomPanelVisible by derivedStateOf { resizeBossPanelModel.isBottomPanelVisible }
+    val windowPanelModel = rememberWindowPanelModel()
 
     Box(modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Top area with left, center, and right panels
             Row(modifier = Modifier.weight(1f)) {
                 // Left panel
-                BossLeftWindowPanel(isLeftPanelVisible, leftPanelWidth)
+
+                BossSideWindowPanel(windowPanelModel, Panel.LEFT) {}
 
                 BossMainWindowPanel(
                     modifier = Modifier
@@ -39,14 +33,14 @@ fun BossWindowPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossCon
                 )
 
                 // Right panel
-                BossRightWindowPanel(isRightPanelVisible, rightPanelWidth)
+                BossSideWindowPanel(windowPanelModel, Panel.RIGHT) {}
             }
 
             // Bottom panel
-            BossBottomWindowPanel(isBottomPanelVisible, bottomPanelHeight)
+            BossSideWindowPanel(windowPanelModel, Panel.BOTTOM) {}
         }
 
-        ResizeOverlay(resizeBossPanelModel)
+        ResizeOverlay(windowPanelModel)
     }
 
     VDivider()

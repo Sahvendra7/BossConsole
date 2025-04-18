@@ -2,7 +2,8 @@ package ai.rever.boss.v4.components.overlays
 
 import ai.rever.boss.platform.CursorUtil.cursorForHorizontalResize
 import ai.rever.boss.platform.CursorUtil.cursorForVerticalResize
-import ai.rever.boss.v4.components.model.ResizeBossPanelModel
+import ai.rever.boss.v4.components.model.WindowPanelModel
+import ai.rever.boss.v4.components.window_panel.components.Panel
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
@@ -17,21 +18,19 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BoxScope.ResizeOverlay(resizeBossPanelModel: ResizeBossPanelModel) {
+fun BoxScope.ResizeOverlay(resizeBossPanelModel: WindowPanelModel) {
 
     // Transparent overlays for resizing - positioned in fixed locations
-    ResizeHandle(resizeBossPanelModel, ResizeDirection.LEFT)
-    ResizeHandle(resizeBossPanelModel, ResizeDirection.RIGHT)
-    ResizeHandle(resizeBossPanelModel, ResizeDirection.BOTTOM)
+    ResizeHandle(resizeBossPanelModel, Panel.LEFT)
+    ResizeHandle(resizeBossPanelModel, Panel.RIGHT)
+    ResizeHandle(resizeBossPanelModel, Panel.BOTTOM)
 
 }
 
-enum class ResizeDirection {
-    LEFT, RIGHT, BOTTOM
-}
+
 
 @Composable
-private fun BoxScope.ResizeHandle(resizeBossPanelModel: ResizeBossPanelModel, resizeDirection: ResizeDirection) {
+private fun BoxScope.ResizeHandle(resizeBossPanelModel: WindowPanelModel, panel: Panel) {
 
     // Min and max constraints for panel sizes
     val minPanelWidth = 150.dp
@@ -50,42 +49,42 @@ private fun BoxScope.ResizeHandle(resizeBossPanelModel: ResizeBossPanelModel, re
     val rightPanelWidth by derivedStateOf { resizeBossPanelModel.rightPanelWidth }
     val bottomPanelHeight by derivedStateOf {  resizeBossPanelModel.bottomPanelHeight }
 
-    if (resizeDirection == ResizeDirection.LEFT && !isLeftPanelVisible
-        || resizeDirection == ResizeDirection.RIGHT && !isRightPanelVisible
-        || resizeDirection == ResizeDirection.BOTTOM && !isBottomPanelVisible) {
+    if (panel == Panel.LEFT && !isLeftPanelVisible
+        || panel == Panel.RIGHT && !isRightPanelVisible
+        || panel == Panel.BOTTOM && !isBottomPanelVisible) {
         return
     }
 
     Box(
         modifier = Modifier
             .run {
-                when (resizeDirection) {
-                    ResizeDirection.LEFT -> Modifier.align(Alignment.TopStart)
-                    ResizeDirection.RIGHT -> Modifier.align(Alignment.TopEnd)
-                    ResizeDirection.BOTTOM -> Modifier.align(Alignment.BottomCenter)
+                when (panel) {
+                    Panel.LEFT -> Modifier.align(Alignment.TopStart)
+                    Panel.RIGHT -> Modifier.align(Alignment.TopEnd)
+                    Panel.BOTTOM -> Modifier.align(Alignment.BottomCenter)
                 }
             }
             .offset {
-                when (resizeDirection) {
-                    ResizeDirection.LEFT -> IntOffset(leftPanelWidth.roundToPx() - 8.dp.roundToPx(), 0)
-                    ResizeDirection.RIGHT -> IntOffset(
+                when (panel) {
+                    Panel.LEFT -> IntOffset(leftPanelWidth.roundToPx() - 8.dp.roundToPx(), 0)
+                    Panel.RIGHT -> IntOffset(
                         -rightPanelWidth.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx(),
                         0
                     )
-                    ResizeDirection.BOTTOM -> IntOffset(
+                    Panel.BOTTOM -> IntOffset(
                         0,
                         -bottomPanelHeight.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx()
                     )
                 }
             }
             .run {
-                when (resizeDirection) {
-                    ResizeDirection.LEFT, ResizeDirection.RIGHT -> {
+                when (panel) {
+                    Panel.LEFT, Panel.RIGHT -> {
                         width(16.dp)
                             .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
                             .cursorForHorizontalResize()
                     }
-                    ResizeDirection.BOTTOM -> {
+                    Panel.BOTTOM -> {
                         height(16.dp)
                             .fillMaxWidth()
                             .cursorForVerticalResize()
@@ -97,16 +96,16 @@ private fun BoxScope.ResizeHandle(resizeBossPanelModel: ResizeBossPanelModel, re
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     with(density) {
-                        when (resizeDirection) {
-                            ResizeDirection.LEFT -> {
-                                val newWidth = rightPanelWidth - dragAmount.x.toDp()
+                        when (panel) {
+                            Panel.LEFT -> {
+                                val newWidth = leftPanelWidth + dragAmount.x.toDp()
                                 resizeBossPanelModel.leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
                             }
-                            ResizeDirection.RIGHT -> {
-                                val newWidth = leftPanelWidth - dragAmount.x.toDp()
+                            Panel.RIGHT -> {
+                                val newWidth = rightPanelWidth - dragAmount.x.toDp()
                                 resizeBossPanelModel.rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
                             }
-                            ResizeDirection.BOTTOM -> {
+                            Panel.BOTTOM -> {
                                 val newHeight = bottomPanelHeight - dragAmount.y.toDp()
                                 resizeBossPanelModel.bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
                             }
