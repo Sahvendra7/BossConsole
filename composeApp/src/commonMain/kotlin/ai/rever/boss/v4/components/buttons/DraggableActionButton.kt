@@ -53,10 +53,9 @@ fun DraggableActionButton(
         }
     }
 
-    IconButton(
-        onClick = {
-            if (sidebarModel.draggingItem == null) item.onClick()
-        },
+    BossActionButton(
+        imageVector = item.icon,
+        text = item.label,
         modifier = modifier
             .onGloballyPositioned { layoutCoordinates ->
                 val newPos = layoutCoordinates.positionInWindow()
@@ -97,11 +96,6 @@ fun DraggableActionButton(
                 )
             }
     ) {
-        Icon(
-            imageVector = item.icon,
-            contentDescription = item.label,
-            modifier = Modifier.size(22.dp),
-            tint = BossDarkTextPrimary
-        )
+        if (sidebarModel.draggingItem == null) item.onClick()
     }
 }
