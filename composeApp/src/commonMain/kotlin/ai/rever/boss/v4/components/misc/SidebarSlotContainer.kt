@@ -1,7 +1,7 @@
 package ai.rever.boss.v4.components.misc
 
 import ai.rever.boss.v4.components.buttons.DraggableActionButton
-import ai.rever.boss.v4.components.model.DraggableSidebarModel
+import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SidebarSlotContainer(
     slot: SidebarSlot,
-    sidebarModel: DraggableSidebarModel,
+    sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -58,7 +58,7 @@ fun SidebarSlotContainer(
 @Composable
 fun DraggableSidebarSection(
     slot: SidebarSlot,
-    sidebarModel: DraggableSidebarModel,
+    sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {
     SidebarSlotContainer(

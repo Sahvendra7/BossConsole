@@ -16,10 +16,11 @@ import androidx.compose.ui.Modifier
 
 @Composable
 fun BossApp(bossConsoleComponent: BossConsoleComponent) {
-    BossTheme {
-        // Create and remember the model here to share state across sidebars
-        val sidebarModel = rememberDraggableSidebarModel()
 
+    // Create and remember the model here to share state across sidebars
+    val sidebarModel = rememberDraggableSidebarModel()
+
+    BossTheme {
         Box(modifier = Modifier.fillMaxSize()) { // Use Box to allow overlaying the drag ghost
             Column(modifier = Modifier.fillMaxSize()) {
                 BossTitleBar()
@@ -29,7 +30,8 @@ fun BossApp(bossConsoleComponent: BossConsoleComponent) {
                     BossLeftSideBar(sidebarModel)
                     BossWindowPanel(
                         modifier = Modifier.weight(1f),
-                        bossConsoleComponent = bossConsoleComponent)
+                        bossConsoleComponent = bossConsoleComponent,
+                        windowPanelModel = sidebarModel)
                     BossRightSideBar(sidebarModel)
                 }
                 BossBottomBar()

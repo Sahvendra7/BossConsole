@@ -12,7 +12,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import kotlin.math.max
+
+enum class Panel {
+    LEFT, RIGHT, BOTTOM
+}
 
 // Defines the possible drop locations for sidebar items
 enum class SidebarSlot {
@@ -33,7 +38,7 @@ data class SidebarItem(
 
 // Holds the state and logic for the draggable sidebar system
 @Stable
-class DraggableSidebarModel {
+class BossWindowPanelModel {
     // The item currently being dragged, and its original slot
     var draggingItem by mutableStateOf<Pair<SidebarItem, SidebarSlot>?>(null)
         private set
@@ -56,31 +61,74 @@ class DraggableSidebarModel {
     // A map holding the list of items for each slot, backed by mutable state
     private val itemsBySlot = mutableStateMapOf<SidebarSlot, List<SidebarItem>>()
 
+
+    var leftPanelWidth by mutableStateOf(250.dp)
+    var rightPanelWidth by mutableStateOf(250.dp)
+    var bottomPanelHeight by mutableStateOf(200.dp)
+
+    var isLeftPanelVisible by mutableStateOf(true)
+    var isRightPanelVisible by mutableStateOf(true)
+    var isBottomPanelVisible by mutableStateOf(true)
+
+    val title = mapOf(
+        Panel.LEFT to "Project",
+        Panel.RIGHT to "Structure",
+        Panel.BOTTOM to "Terminal"
+    )
+
     init {
         // Initialize with default items in their respective slots
         itemsBySlot[SidebarSlot.LEFT_TOP_TOP] = listOf(
-            SidebarItem("folder", Icons.Outlined.Folder, "Folder", {}),
-            SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone", {}),
-            SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes", {})
+            SidebarItem("folder", Icons.Outlined.Folder, "Folder") {
+                isLeftPanelVisible = !isLeftPanelVisible
+            },
+            SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone") {
+                isLeftPanelVisible = !isLeftPanelVisible
+            },
+            SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes") {
+                isLeftPanelVisible = !isLeftPanelVisible
+            }
         )
         itemsBySlot[SidebarSlot.LEFT_TOP_BOTTOM] = listOf(
-            SidebarItem("build", Icons.Outlined.Build, "Build", {}),
-            SidebarItem("more", Icons.Outlined.MoreHoriz, "More", {})
+            SidebarItem("build", Icons.Outlined.Build, "Build") {
+                isLeftPanelVisible = !isLeftPanelVisible
+            },
+            SidebarItem("more", Icons.Outlined.MoreHoriz, "More") {
+                isLeftPanelVisible = !isLeftPanelVisible
+            }
         )
         itemsBySlot[SidebarSlot.LEFT_BOTTOM] = listOf(
-            SidebarItem("run", Icons.Outlined.RunCircle, "Run", {}),
-            SidebarItem("code", Icons.Outlined.Code, "Code", {})
+            SidebarItem("run", Icons.Outlined.RunCircle, "Run") {
+                isBottomPanelVisible = !isBottomPanelVisible
+            },
+            SidebarItem("code", Icons.Outlined.Code, "Code") {
+                isBottomPanelVisible = !isBottomPanelVisible
+            }
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_TOP] = listOf(
-            SidebarItem("attach", Icons.Outlined.AttachFile, "Attach", {}),
-            SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio", {}),
-            SidebarItem("video", Icons.Outlined.VideoFile, "Video", {})
+            SidebarItem("attach", Icons.Outlined.AttachFile, "Attach") {
+                isRightPanelVisible = !isRightPanelVisible
+            },
+            SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio") {
+                isRightPanelVisible = !isRightPanelVisible
+            },
+            SidebarItem("video", Icons.Outlined.VideoFile, "Video") {
+                isRightPanelVisible = !isRightPanelVisible
+            }
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_BOTTOM] = listOf(
-            SidebarItem("replay", Icons.Outlined.Replay, "Replay", {}),
-            SidebarItem("cast", Icons.Outlined.Cast, "Cast", {}),
-            SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor", {}),
-            SidebarItem("android", Icons.Outlined.Android, "Android", {})
+            SidebarItem("replay", Icons.Outlined.Replay, "Replay") {
+                isRightPanelVisible = !isRightPanelVisible
+            },
+            SidebarItem("cast", Icons.Outlined.Cast, "Cast") {
+                isRightPanelVisible = !isRightPanelVisible
+            },
+            SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor") {
+                isRightPanelVisible = !isRightPanelVisible
+            },
+            SidebarItem("android", Icons.Outlined.Android, "Android") {
+                isRightPanelVisible = !isRightPanelVisible
+            }
         )
     }
 
@@ -195,6 +243,6 @@ class DraggableSidebarModel {
 
 // Composable function to remember the DraggableSidebarModel instance
 @Composable
-fun rememberDraggableSidebarModel(): DraggableSidebarModel {
-    return remember { DraggableSidebarModel() }
+fun rememberDraggableSidebarModel(): BossWindowPanelModel {
+    return remember { BossWindowPanelModel() }
 } 

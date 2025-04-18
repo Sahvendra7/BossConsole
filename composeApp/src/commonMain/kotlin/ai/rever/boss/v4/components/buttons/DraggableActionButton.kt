@@ -1,7 +1,7 @@
 package ai.rever.boss.v4.components.buttons
 
 import BossDarkTextPrimary
-import ai.rever.boss.v4.components.model.DraggableSidebarModel
+import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.SidebarItem
 import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 fun DraggableActionButton(
     item: SidebarItem,
     slot: SidebarSlot,
-    sidebarModel: DraggableSidebarModel,
+    sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {
     val currentItem by rememberUpdatedState(item)

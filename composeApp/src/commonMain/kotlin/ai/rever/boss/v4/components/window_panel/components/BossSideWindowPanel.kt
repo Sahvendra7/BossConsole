@@ -3,7 +3,8 @@ package ai.rever.boss.v4.components.window_panel.components
 import BossDarkBackground
 import BossDarkSurface
 import ai.rever.boss.v4.components.dividers.VDivider
-import ai.rever.boss.v4.components.model.WindowPanelModel
+import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.Panel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Divider
@@ -19,13 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Panel {
-    LEFT, RIGHT, BOTTOM
-}
 
 @Composable
 fun BossSideWindowPanel(
-    windowPanelModel: WindowPanelModel,
+    windowPanelModel: BossWindowPanelModel,
     panel: Panel,
     content: @Composable () -> Unit) {
 
@@ -68,7 +66,7 @@ fun BossSideWindowPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(28.dp)
+                    .height(42.dp)
                     .background(BossDarkSurface),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -77,11 +75,11 @@ fun BossSideWindowPanel(
                 Text(
                     text = windowPanelModel.title[panel] ?: "Title",
                     color = Color.White,
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier
-                        .fillMaxHeight()
                         .align(Alignment.CenterVertically)
+                        .padding(bottom = 4.dp)
                 )
             }
             content()

@@ -1,6 +1,5 @@
 package ai.rever.boss.v4.components.window_panel.components.main_window_panel
 
-import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.screens.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier

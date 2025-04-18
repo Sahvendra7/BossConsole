@@ -2,8 +2,8 @@ package ai.rever.boss.v4.components.overlays
 
 import ai.rever.boss.platform.CursorUtil.cursorForHorizontalResize
 import ai.rever.boss.platform.CursorUtil.cursorForVerticalResize
-import ai.rever.boss.v4.components.model.WindowPanelModel
-import ai.rever.boss.v4.components.window_panel.components.Panel
+import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.Panel
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BoxScope.ResizeOverlay(resizeBossPanelModel: WindowPanelModel) {
+fun BoxScope.ResizeOverlay(resizeBossPanelModel: BossWindowPanelModel) {
 
     // Transparent overlays for resizing - positioned in fixed locations
     ResizeHandle(resizeBossPanelModel, Panel.LEFT)
@@ -30,7 +30,7 @@ fun BoxScope.ResizeOverlay(resizeBossPanelModel: WindowPanelModel) {
 
 
 @Composable
-private fun BoxScope.ResizeHandle(resizeBossPanelModel: WindowPanelModel, panel: Panel) {
+private fun BoxScope.ResizeHandle(resizeBossPanelModel: BossWindowPanelModel, panel: Panel) {
 
     // Min and max constraints for panel sizes
     val minPanelWidth = 150.dp

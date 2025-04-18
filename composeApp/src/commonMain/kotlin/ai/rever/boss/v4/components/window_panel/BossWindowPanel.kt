@@ -1,7 +1,8 @@
 package ai.rever.boss.v4.components.window_panel
 
 import ai.rever.boss.v4.components.dividers.VDivider
-import ai.rever.boss.v4.components.model.rememberWindowPanelModel
+import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.overlays.ResizeOverlay
 import ai.rever.boss.v4.components.window_panel.components.*
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
@@ -14,9 +15,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 
 @Composable
-fun BossWindowPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
-    // State to control panel visibility
-    val windowPanelModel = rememberWindowPanelModel()
+fun BossWindowPanel(
+    modifier: Modifier = Modifier,
+    bossConsoleComponent: BossConsoleComponent,
+    windowPanelModel: BossWindowPanelModel) {
 
     Box(modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize()) {
