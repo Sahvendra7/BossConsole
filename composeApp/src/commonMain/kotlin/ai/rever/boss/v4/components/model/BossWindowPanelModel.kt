@@ -243,6 +243,6 @@ class BossWindowPanelModel {
 
 // Composable function to remember the DraggableSidebarModel instance
 @Composable
-fun rememberDraggableSidebarModel(): BossWindowPanelModel {
+fun rememberBossWindowPanelModel(): BossWindowPanelModel {
     return remember { BossWindowPanelModel() }
 } 
