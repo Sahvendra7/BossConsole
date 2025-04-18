@@ -23,19 +23,21 @@ fun BossActionButton(imageVector: ImageVector? = null,
                      modifier: Modifier = Modifier,
                      contentPadding: PaddingValues = PaddingValues(4.dp),
                      onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        modifier = modifier.defaultMinSize(minHeight = 2.dp, minWidth = 2.dp),
-        contentPadding = contentPadding,
-    ) {
-        if (imageVector != null) {
+    if (imageVector != null) {
+        IconButton(onClick = onClick, modifier = modifier.size(32.dp)) {
             Icon(
                 imageVector = imageVector,
                 contentDescription = text,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
                 tint = color
             )
-        } else {
+        }
+    } else {
+        TextButton(
+            onClick = onClick,
+            modifier = modifier.defaultMinSize(minHeight = 2.dp, minWidth = 2.dp),
+            contentPadding = contentPadding,
+        ) {
             Text(
                 text = text,
                 color = color,
