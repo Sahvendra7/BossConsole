@@ -2,7 +2,6 @@ package ai.rever.boss.v4.components.window_panel.components
 
 import BossDarkBackground
 import BossDarkSurface
-import BossDarkTextPrimary
 import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
@@ -11,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -19,7 +17,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,13 +31,15 @@ fun BossSideWindowPanel(
     val leftPanelWidth by derivedStateOf { windowPanelModel.leftPanelWidth }
     val rightPanelWidth by derivedStateOf { windowPanelModel.rightPanelWidth }
     val bottomPanelHeight by derivedStateOf { windowPanelModel.bottomPanelHeight }
-    val isLeftPanelVisible by derivedStateOf { windowPanelModel.isLeftPanelVisible }
-    val isRightPanelVisible by derivedStateOf { windowPanelModel.isRightPanelVisible }
-    val isBottomPanelVisible by derivedStateOf { windowPanelModel.isBottomPanelVisible }
+    val isVisible by derivedStateOf {
+        when (panel) {
+            Panel.LEFT -> windowPanelModel.isLeftPanelVisible
+            Panel.RIGHT -> windowPanelModel.isRightPanelVisible
+            Panel.BOTTOM -> windowPanelModel.isBottomPanelVisible
+        }
+    }
 
-    if ((panel == Panel.LEFT && !isLeftPanelVisible)
-        || (panel == Panel.RIGHT && !isRightPanelVisible)
-        || (panel == Panel.BOTTOM && !isBottomPanelVisible)) {
+    if (!isVisible) {
         return
     }
 
@@ -67,7 +66,12 @@ fun BossSideWindowPanel(
                 .background(BossDarkBackground)
         ) {
 
-            BossSideWindowPanelTopBar(windowPanelModel.title[panel] ?: "Title")
+            BossSideWindowPanelTopBar(
+                title = windowPanelModel.title[panel],
+                onMinimize = {
+                    windowPanelModel.setPanelVisible(panel, false)
+                }
+            )
 
             content()
         }
@@ -79,7 +83,10 @@ fun BossSideWindowPanel(
 }
 
 @Composable
-fun BossSideWindowPanelTopBar(title: String) {
+fun BossSideWindowPanelTopBar(title: String?,
+                              onMore: () -> Unit = {},
+                              onMinimize: () -> Unit,
+                              content: (@Composable () -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -90,7 +97,7 @@ fun BossSideWindowPanelTopBar(title: String) {
         Spacer(modifier = Modifier.width(16.dp))
 
         Text(
-            text = title,
+            text = title ?: "",
             color = Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
@@ -101,20 +108,22 @@ fun BossSideWindowPanelTopBar(title: String) {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Compact button group
-        Row(modifier = Modifier.padding(end = 4.dp)) {
+
+        Row (modifier = Modifier.padding(end = 4.dp)) {
+            content?.invoke()
+
             BossActionButton(
                 imageVector = Icons.Outlined.MoreVert,
                 text = "More",
                 color = Color.White,
-                onClick = {}
+                onClick = onMore
             )
-            
+
             BossActionButton(
                 imageVector = Icons.Outlined.Remove,
                 text = "Minimize",
                 color = Color.White,
-                onClick = {},
+                onClick = onMinimize
             )
         }
     }

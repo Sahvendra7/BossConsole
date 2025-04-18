@@ -239,6 +239,14 @@ class BossWindowPanelModel {
             }
         }
     }
+
+    fun setPanelVisible(panel: Panel, isVisible: Boolean) {
+        when (panel) {
+            Panel.LEFT -> isLeftPanelVisible = isVisible
+            Panel.RIGHT -> isRightPanelVisible = isVisible
+            Panel.BOTTOM -> isBottomPanelVisible = isVisible
+        }
+    }
 }
 
 // Composable function to remember the DraggableSidebarModel instance
