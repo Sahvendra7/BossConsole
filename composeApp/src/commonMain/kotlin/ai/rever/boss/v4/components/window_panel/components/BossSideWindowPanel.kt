@@ -44,19 +44,20 @@ fun BossSideWindowPanel(
         Divider()
     }
 
+    fun Modifier.fillSize() = run {
+        when (panel) {
+            Panel.LEFT_TOP,
+            Panel.LEFT_BOTTOM ->
+                fillMaxHeight().width(leftPanelWidth)
+            Panel.RIGHT_TOP,
+            Panel.RIGHT_BOTTOM ->
+                fillMaxHeight().width(rightPanelWidth)
+            Panel.BOTTOM -> fillMaxWidth().height(bottomPanelHeight)
+        }
+    }
+
     Surface(
-        modifier = Modifier
-            .run {
-                when (panel) {
-                    Panel.LEFT_TOP,
-                    Panel.LEFT_BOTTOM ->
-                        fillMaxHeight().width(leftPanelWidth)
-                    Panel.RIGHT_TOP,
-                    Panel.RIGHT_BOTTOM ->
-                        fillMaxHeight().width(rightPanelWidth)
-                    Panel.BOTTOM -> fillMaxWidth().height(bottomPanelHeight)
-                }
-            },
+        modifier = Modifier.fillSize(),
         elevation = 1.dp
     ) {
         Column(
