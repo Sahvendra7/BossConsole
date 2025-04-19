@@ -7,10 +7,7 @@ import ai.rever.boss.v4.components.overlays.ResizeOverlay
 import ai.rever.boss.v4.components.window_panel.components.*
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainWindowPanel
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 
@@ -25,8 +22,8 @@ fun BossWindowPanel(
             // Top area with left, center, and right panels
             Row(modifier = Modifier.weight(1f)) {
                 // Left panel
-
-                BossSideWindowPanel(windowPanelModel, Panel.LEFT) {}
+                BossSideWindowPanel(windowPanelModel, Panel.LEFT_TOP) {}
+                BossSideWindowPanel(windowPanelModel, Panel.LEFT_BOTTOM) {}
 
                 BossMainWindowPanel(
                     modifier = Modifier
@@ -35,7 +32,8 @@ fun BossWindowPanel(
                 )
 
                 // Right panel
-                BossSideWindowPanel(windowPanelModel, Panel.RIGHT) {}
+                BossSideWindowPanel(windowPanelModel, Panel.RIGHT_TOP) {}
+                BossSideWindowPanel(windowPanelModel, Panel.RIGHT_BOTTOM) {}
             }
 
             // Bottom panel

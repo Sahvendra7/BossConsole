@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
@@ -21,16 +23,15 @@ import androidx.compose.ui.unit.dp
 fun BoxScope.ResizeOverlay(resizeBossPanelModel: BossWindowPanelModel) {
 
     // Transparent overlays for resizing - positioned in fixed locations
-    ResizeHandle(resizeBossPanelModel, Panel.LEFT)
-    ResizeHandle(resizeBossPanelModel, Panel.RIGHT)
-    ResizeHandle(resizeBossPanelModel, Panel.BOTTOM)
-
+    for (panel in Panel.entries) {
+        ResizeHandle(resizeBossPanelModel, panel)
+    }
 }
 
 
 
 @Composable
-private fun BoxScope.ResizeHandle(resizeBossPanelModel: BossWindowPanelModel, panel: Panel) {
+private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel: Panel) {
 
     // Min and max constraints for panel sizes
     val minPanelWidth = 150.dp
@@ -38,81 +39,87 @@ private fun BoxScope.ResizeHandle(resizeBossPanelModel: BossWindowPanelModel, pa
     val minPanelHeight = 100.dp
     val maxPanelHeight = 500.dp
 
-    // Density for converting between dp and pixels
-    val density = LocalDensity.current
 
-    val isLeftPanelVisible by derivedStateOf {  resizeBossPanelModel.isLeftPanelVisible }
-    val isRightPanelVisible by derivedStateOf {  resizeBossPanelModel.isRightPanelVisible }
-    val isBottomPanelVisible by derivedStateOf {  resizeBossPanelModel.isBottomPanelVisible }
+    val leftPanelWidth by derivedStateOf { windowPanelModel.leftPanelWidth }
+    val rightPanelWidth by derivedStateOf { windowPanelModel.rightPanelWidth }
+    val bottomPanelHeight by derivedStateOf { windowPanelModel.bottomPanelHeight }
 
-    val leftPanelWidth by derivedStateOf { resizeBossPanelModel.leftPanelWidth }
-    val rightPanelWidth by derivedStateOf { resizeBossPanelModel.rightPanelWidth }
-    val bottomPanelHeight by derivedStateOf {  resizeBossPanelModel.bottomPanelHeight }
+    val isBottomPanelVisible by derivedStateOf { windowPanelModel.isVisible(Panel.BOTTOM) }
 
-    if (panel == Panel.LEFT && !isLeftPanelVisible
-        || panel == Panel.RIGHT && !isRightPanelVisible
-        || panel == Panel.BOTTOM && !isBottomPanelVisible) {
+    val isVisible by derivedStateOf { windowPanelModel.isVisible(panel) }
+
+    if (!isVisible) {
         return
+    }
+
+    fun Modifier.offset() = offset {
+        val x = when (panel) {
+            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> (leftPanelWidth - 8.dp)
+            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> (-rightPanelWidth - 1.dp + 8.dp)
+            Panel.BOTTOM -> 0.dp
+        }.roundToPx()
+        val y = when (panel) {
+            Panel.LEFT_TOP, Panel.LEFT_BOTTOM, Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> 0.dp
+            Panel.BOTTOM -> -bottomPanelHeight - 1.dp + 8.dp
+        }.roundToPx()
+        IntOffset(x, y)
+    }
+
+    fun Modifier.resizable() = run {
+        when (panel) {
+            Panel.LEFT_TOP, Panel.LEFT_BOTTOM,
+            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> {
+                width(16.dp)
+                    .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
+                    .cursorForHorizontalResize()
+            }
+            Panel.BOTTOM -> {
+                height(16.dp)
+                    .fillMaxWidth()
+                    .cursorForVerticalResize()
+            }
+        }
+    }
+
+    fun PointerInputScope.onDrag(dragAmount: Offset) {
+        when (panel) {
+            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> {
+                val newWidth = leftPanelWidth + dragAmount.x.toDp()
+                windowPanelModel.leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
+            }
+            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> {
+                val newWidth = rightPanelWidth - dragAmount.x.toDp()
+                windowPanelModel.rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
+            }
+            Panel.BOTTOM -> {
+                val newHeight = bottomPanelHeight - dragAmount.y.toDp()
+                windowPanelModel.bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
+            }
+        }
+    }
+
+    val alignDirection by derivedStateOf {
+        when (panel) {
+            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> Alignment.TopStart
+            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> Alignment.TopEnd
+            Panel.BOTTOM -> Alignment.BottomCenter
+        }
     }
 
     Box(
         modifier = Modifier
-            .run {
-                when (panel) {
-                    Panel.LEFT -> Modifier.align(Alignment.TopStart)
-                    Panel.RIGHT -> Modifier.align(Alignment.TopEnd)
-                    Panel.BOTTOM -> Modifier.align(Alignment.BottomCenter)
-                }
-            }
-            .offset {
-                when (panel) {
-                    Panel.LEFT -> IntOffset(leftPanelWidth.roundToPx() - 8.dp.roundToPx(), 0)
-                    Panel.RIGHT -> IntOffset(
-                        -rightPanelWidth.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx(),
-                        0
-                    )
-                    Panel.BOTTOM -> IntOffset(
-                        0,
-                        -bottomPanelHeight.roundToPx() - 1.dp.roundToPx() + 8.dp.roundToPx()
-                    )
-                }
-            }
-            .run {
-                when (panel) {
-                    Panel.LEFT, Panel.RIGHT -> {
-                        width(16.dp)
-                            .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
-                            .cursorForHorizontalResize()
-                    }
-                    Panel.BOTTOM -> {
-                        height(16.dp)
-                            .fillMaxWidth()
-                            .cursorForVerticalResize()
-                    }
-                }
-            }
+            .align(alignDirection)
+            .offset()
+            .resizable()
             .alpha(0f)
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    with(density) {
-                        when (panel) {
-                            Panel.LEFT -> {
-                                val newWidth = leftPanelWidth + dragAmount.x.toDp()
-                                resizeBossPanelModel.leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
-                            }
-                            Panel.RIGHT -> {
-                                val newWidth = rightPanelWidth - dragAmount.x.toDp()
-                                resizeBossPanelModel.rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
-                            }
-                            Panel.BOTTOM -> {
-                                val newHeight = bottomPanelHeight - dragAmount.y.toDp()
-                                resizeBossPanelModel.bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
-                            }
-                        }
-                    }
+                    onDrag(dragAmount)
                 }
             }
     )
 }
+
+
 

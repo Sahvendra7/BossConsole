@@ -31,19 +31,14 @@ fun BossSideWindowPanel(
     val leftPanelWidth by derivedStateOf { windowPanelModel.leftPanelWidth }
     val rightPanelWidth by derivedStateOf { windowPanelModel.rightPanelWidth }
     val bottomPanelHeight by derivedStateOf { windowPanelModel.bottomPanelHeight }
-    val isVisible by derivedStateOf {
-        when (panel) {
-            Panel.LEFT -> windowPanelModel.isLeftPanelVisible
-            Panel.RIGHT -> windowPanelModel.isRightPanelVisible
-            Panel.BOTTOM -> windowPanelModel.isBottomPanelVisible
-        }
-    }
+
+    val isVisible by derivedStateOf { windowPanelModel.isVisible(panel) }
 
     if (!isVisible) {
         return
     }
 
-    if (panel == Panel.RIGHT) {
+    if (panel in arrayOf(Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM)) {
         VDivider()
     } else if (panel == Panel.BOTTOM) {
         Divider()
@@ -53,8 +48,12 @@ fun BossSideWindowPanel(
         modifier = Modifier
             .run {
                 when (panel) {
-                    Panel.LEFT -> fillMaxHeight().width(leftPanelWidth)
-                    Panel.RIGHT -> fillMaxHeight().width(rightPanelWidth)
+                    Panel.LEFT_TOP,
+                    Panel.LEFT_BOTTOM ->
+                        fillMaxHeight().width(leftPanelWidth)
+                    Panel.RIGHT_TOP,
+                    Panel.RIGHT_BOTTOM ->
+                        fillMaxHeight().width(rightPanelWidth)
                     Panel.BOTTOM -> fillMaxWidth().height(bottomPanelHeight)
                 }
             },
@@ -77,7 +76,7 @@ fun BossSideWindowPanel(
         }
     }
 
-    if (panel == Panel.LEFT) {
+    if (panel in  arrayOf(Panel.LEFT_TOP, Panel.LEFT_BOTTOM)) {
         VDivider()
     }
 }

@@ -16,7 +16,11 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.max
 
 enum class Panel {
-    LEFT, RIGHT, BOTTOM
+    LEFT_TOP,
+    LEFT_BOTTOM,
+    RIGHT_TOP,
+    RIGHT_BOTTOM,
+    BOTTOM
 }
 
 // Defines the possible drop locations for sidebar items
@@ -66,13 +70,20 @@ class BossWindowPanelModel {
     var rightPanelWidth by mutableStateOf(250.dp)
     var bottomPanelHeight by mutableStateOf(200.dp)
 
-    var isLeftPanelVisible by mutableStateOf(true)
-    var isRightPanelVisible by mutableStateOf(true)
-    var isBottomPanelVisible by mutableStateOf(true)
+    private val visibility = mutableStateMapOf(
+        Panel.LEFT_TOP to true,
+        Panel.LEFT_BOTTOM to false,
+        Panel.RIGHT_TOP to true,
+        Panel.RIGHT_BOTTOM to false,
+        Panel.BOTTOM to true
+    )
+
 
     val title = mapOf(
-        Panel.LEFT to "Project",
-        Panel.RIGHT to "Structure",
+        Panel.LEFT_TOP to "Project",
+        Panel.LEFT_BOTTOM to "Editor",
+        Panel.RIGHT_TOP to "Structure",
+        Panel.RIGHT_BOTTOM to "Diagram",
         Panel.BOTTOM to "Terminal"
     )
 
@@ -80,54 +91,54 @@ class BossWindowPanelModel {
         // Initialize with default items in their respective slots
         itemsBySlot[SidebarSlot.LEFT_TOP_TOP] = listOf(
             SidebarItem("folder", Icons.Outlined.Folder, "Folder") {
-                isLeftPanelVisible = !isLeftPanelVisible
+                toggleVisibility(Panel.LEFT_TOP)
             },
             SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone") {
-                isLeftPanelVisible = !isLeftPanelVisible
+                toggleVisibility(Panel.LEFT_TOP)
             },
             SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes") {
-                isLeftPanelVisible = !isLeftPanelVisible
+                toggleVisibility(Panel.LEFT_TOP)
             }
         )
         itemsBySlot[SidebarSlot.LEFT_TOP_BOTTOM] = listOf(
             SidebarItem("build", Icons.Outlined.Build, "Build") {
-                isLeftPanelVisible = !isLeftPanelVisible
+                toggleVisibility(Panel.LEFT_BOTTOM)
             },
             SidebarItem("more", Icons.Outlined.MoreHoriz, "More") {
-                isLeftPanelVisible = !isLeftPanelVisible
+                toggleVisibility(Panel.LEFT_BOTTOM)
             }
         )
         itemsBySlot[SidebarSlot.LEFT_BOTTOM] = listOf(
             SidebarItem("run", Icons.Outlined.RunCircle, "Run") {
-                isBottomPanelVisible = !isBottomPanelVisible
+                toggleVisibility(Panel.BOTTOM)
             },
             SidebarItem("code", Icons.Outlined.Code, "Code") {
-                isBottomPanelVisible = !isBottomPanelVisible
+                toggleVisibility(Panel.BOTTOM)
             }
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_TOP] = listOf(
             SidebarItem("attach", Icons.Outlined.AttachFile, "Attach") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_TOP)
             },
             SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_TOP)
             },
             SidebarItem("video", Icons.Outlined.VideoFile, "Video") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_TOP)
             }
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_BOTTOM] = listOf(
             SidebarItem("replay", Icons.Outlined.Replay, "Replay") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_BOTTOM)
             },
             SidebarItem("cast", Icons.Outlined.Cast, "Cast") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_BOTTOM)
             },
             SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_BOTTOM)
             },
             SidebarItem("android", Icons.Outlined.Android, "Android") {
-                isRightPanelVisible = !isRightPanelVisible
+                toggleVisibility(Panel.RIGHT_BOTTOM)
             }
         )
     }
@@ -240,12 +251,14 @@ class BossWindowPanelModel {
         }
     }
 
+    fun isVisible(panel: Panel) = visibility[panel] ?: false
+
+    fun toggleVisibility(panel: Panel) {
+        setPanelVisible(panel, !(visibility[panel] ?: false))
+    }
+
     fun setPanelVisible(panel: Panel, isVisible: Boolean) {
-        when (panel) {
-            Panel.LEFT -> isLeftPanelVisible = isVisible
-            Panel.RIGHT -> isRightPanelVisible = isVisible
-            Panel.BOTTOM -> isBottomPanelVisible = isVisible
-        }
+        visibility[panel] = isVisible
     }
 }
 
