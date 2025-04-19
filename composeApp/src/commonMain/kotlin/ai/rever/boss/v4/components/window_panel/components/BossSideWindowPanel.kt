@@ -38,7 +38,7 @@ fun BossSideWindowPanel(
         return
     }
 
-    if (panel in arrayOf(Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM)) {
+    if (panel == Panel.RIGHT()) {
         VDivider()
     } else if (panel == Panel.BOTTOM) {
         Divider()
@@ -46,13 +46,15 @@ fun BossSideWindowPanel(
 
     fun Modifier.fillSize() = run {
         when (panel) {
-            Panel.LEFT_TOP,
-            Panel.LEFT_BOTTOM ->
+            Panel.LEFT(),
+            Panel.LEFT(Panel.TOP),
+            Panel.LEFT(Panel.BOTTOM) ->
                 fillMaxHeight().width(leftPanelWidth)
-            Panel.RIGHT_TOP,
-            Panel.RIGHT_BOTTOM ->
+            Panel.RIGHT(),
+            Panel.RIGHT(Panel.TOP),
+            Panel.RIGHT(Panel.BOTTOM) ->
                 fillMaxHeight().width(rightPanelWidth)
-            Panel.BOTTOM -> fillMaxWidth().height(bottomPanelHeight)
+            else -> fillMaxWidth().height(bottomPanelHeight)
         }
     }
 
@@ -66,18 +68,55 @@ fun BossSideWindowPanel(
                 .background(BossDarkBackground)
         ) {
 
-            BossSideWindowPanelTopBar(
-                title = windowPanelModel.title[panel],
-                onMinimize = {
-                    windowPanelModel.setPanelVisible(panel, false)
+            if (panel == Panel.LEFT()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    val isTopVisible = windowPanelModel.isVisible(Panel.LEFT(Panel.TOP))
+                    val isBottomVisible = windowPanelModel.isVisible(Panel.LEFT(Panel.BOTTOM))
+
+                    if (isTopVisible) {
+                        Box(modifier = Modifier.weight(if (isBottomVisible) 1f else 2f)) {
+                            BossSideWindowPanel(windowPanelModel, Panel.LEFT(Panel.TOP)) {}
+                        }
+                    }
+
+                    if (isBottomVisible) {
+                        Box(modifier = Modifier.weight(if (isTopVisible) 1f else 2f)) {
+                            BossSideWindowPanel(windowPanelModel, Panel.LEFT(Panel.BOTTOM)) {}
+                        }
+                    }
                 }
-            )
+            } else if (panel == Panel.RIGHT()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    val isTopVisible = windowPanelModel.isVisible(Panel.RIGHT(Panel.TOP))
+                    val isBottomVisible = windowPanelModel.isVisible(Panel.RIGHT(Panel.BOTTOM))
+
+                    if (isTopVisible) {
+                        Box(modifier = Modifier.weight(if (isBottomVisible) 1f else 2f)) {
+                            BossSideWindowPanel(windowPanelModel, Panel.RIGHT(Panel.TOP)) {}
+                        }
+                    }
+
+                    if (isBottomVisible) {
+                        Box(modifier = Modifier.weight(if (isTopVisible) 1f else 2f)) {
+                            BossSideWindowPanel(windowPanelModel, Panel.RIGHT(Panel.BOTTOM)) {}
+                        }
+                    }
+                }
+            } else {
+
+                BossSideWindowPanelTopBar(
+                    title = windowPanelModel.getPanelTitle(panel),
+                    onMinimize = {
+                        windowPanelModel.setPanelVisible(panel, false)
+                    }
+                )
+            }
 
             content()
         }
     }
 
-    if (panel in  arrayOf(Panel.LEFT_TOP, Panel.LEFT_BOTTOM)) {
+    if (panel == Panel.LEFT()) {
         VDivider()
     }
 }

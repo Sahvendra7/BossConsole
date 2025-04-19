@@ -2,25 +2,28 @@ package ai.rever.boss.v4.components.model
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.Serializable
 import kotlin.math.max
 
-enum class Panel {
-    LEFT_TOP,
-    LEFT_BOTTOM,
-    RIGHT_TOP,
-    RIGHT_BOTTOM,
-    BOTTOM
+@Serializable
+open class Panel {
+
+    @Serializable
+    data object TOP: Panel()
+
+    @Serializable
+    data class LEFT(val panel: Panel? = null): Panel()
+
+    @Serializable
+    data class RIGHT(val panel: Panel? = null): Panel()
+
+    @Serializable
+    data object BOTTOM: Panel()
 }
 
 // Defines the possible drop locations for sidebar items
@@ -31,6 +34,9 @@ enum class SidebarSlot {
     RIGHT_TOP_TOP,
     RIGHT_TOP_BOTTOM
 }
+
+data class PanelData(var title: String,
+                     var visibility: MutableState<Boolean>)
 
 // Represents a single draggable item in the sidebar
 data class SidebarItem(
@@ -70,42 +76,35 @@ class BossWindowPanelModel {
     var rightPanelWidth by mutableStateOf(250.dp)
     var bottomPanelHeight by mutableStateOf(200.dp)
 
-    private val visibility = mutableStateMapOf(
-        Panel.LEFT_TOP to true,
-        Panel.LEFT_BOTTOM to false,
-        Panel.RIGHT_TOP to true,
-        Panel.RIGHT_BOTTOM to false,
-        Panel.BOTTOM to true
+
+    private val panelsData = mutableStateMapOf<Panel, PanelData>(
+        Panel.LEFT(Panel.TOP) to PanelData("Project", mutableStateOf(true)),
+        Panel.LEFT(Panel.BOTTOM) to PanelData("Editor", mutableStateOf(false)),
+        Panel.RIGHT(Panel.TOP) to PanelData("Structure", mutableStateOf(true)),
+        Panel.RIGHT(Panel.BOTTOM) to PanelData("Diagram", mutableStateOf(false)),
+        Panel.BOTTOM to PanelData("Terminal", mutableStateOf(true))
     )
 
-
-    val title = mapOf(
-        Panel.LEFT_TOP to "Project",
-        Panel.LEFT_BOTTOM to "Editor",
-        Panel.RIGHT_TOP to "Structure",
-        Panel.RIGHT_BOTTOM to "Diagram",
-        Panel.BOTTOM to "Terminal"
-    )
 
     init {
         // Initialize with default items in their respective slots
         itemsBySlot[SidebarSlot.LEFT_TOP_TOP] = listOf(
             SidebarItem("folder", Icons.Outlined.Folder, "Folder") {
-                toggleVisibility(Panel.LEFT_TOP)
+                toggleVisibility(Panel.LEFT(Panel.TOP))
             },
             SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone") {
-                toggleVisibility(Panel.LEFT_TOP)
+                toggleVisibility(Panel.LEFT(Panel.TOP))
             },
             SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes") {
-                toggleVisibility(Panel.LEFT_TOP)
+                toggleVisibility(Panel.LEFT(Panel.TOP))
             }
         )
         itemsBySlot[SidebarSlot.LEFT_TOP_BOTTOM] = listOf(
             SidebarItem("build", Icons.Outlined.Build, "Build") {
-                toggleVisibility(Panel.LEFT_BOTTOM)
+                toggleVisibility(Panel.LEFT(Panel.BOTTOM))
             },
             SidebarItem("more", Icons.Outlined.MoreHoriz, "More") {
-                toggleVisibility(Panel.LEFT_BOTTOM)
+                toggleVisibility(Panel.LEFT(Panel.BOTTOM))
             }
         )
         itemsBySlot[SidebarSlot.LEFT_BOTTOM] = listOf(
@@ -118,27 +117,27 @@ class BossWindowPanelModel {
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_TOP] = listOf(
             SidebarItem("attach", Icons.Outlined.AttachFile, "Attach") {
-                toggleVisibility(Panel.RIGHT_TOP)
+                toggleVisibility(Panel.RIGHT(Panel.TOP))
             },
             SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio") {
-                toggleVisibility(Panel.RIGHT_TOP)
+                toggleVisibility(Panel.RIGHT(Panel.TOP))
             },
             SidebarItem("video", Icons.Outlined.VideoFile, "Video") {
-                toggleVisibility(Panel.RIGHT_TOP)
+                toggleVisibility(Panel.RIGHT(Panel.TOP))
             }
         )
         itemsBySlot[SidebarSlot.RIGHT_TOP_BOTTOM] = listOf(
             SidebarItem("replay", Icons.Outlined.Replay, "Replay") {
-                toggleVisibility(Panel.RIGHT_BOTTOM)
+                toggleVisibility(Panel.RIGHT(Panel.BOTTOM))
             },
             SidebarItem("cast", Icons.Outlined.Cast, "Cast") {
-                toggleVisibility(Panel.RIGHT_BOTTOM)
+                toggleVisibility(Panel.RIGHT(Panel.BOTTOM))
             },
             SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor") {
-                toggleVisibility(Panel.RIGHT_BOTTOM)
+                toggleVisibility(Panel.RIGHT(Panel.BOTTOM))
             },
             SidebarItem("android", Icons.Outlined.Android, "Android") {
-                toggleVisibility(Panel.RIGHT_BOTTOM)
+                toggleVisibility(Panel.RIGHT(Panel.BOTTOM))
             }
         )
     }
@@ -251,15 +250,24 @@ class BossWindowPanelModel {
         }
     }
 
-    fun isVisible(panel: Panel) = visibility[panel] ?: false
+    fun isVisible(panel: Panel): Boolean {
+        if (panel == Panel.RIGHT()) {
+            return isVisible(Panel.RIGHT(Panel.TOP)) || isVisible(Panel.RIGHT(Panel.BOTTOM))
+        } else if (panel == Panel.LEFT()) {
+            return isVisible(Panel.LEFT(Panel.TOP)) || isVisible(Panel.LEFT(Panel.BOTTOM))
+        }
+        return panelsData[panel]?.visibility?.value ?: false
+    }
 
-    fun toggleVisibility(panel: Panel) {
-        setPanelVisible(panel, !(visibility[panel] ?: false))
+    private fun toggleVisibility(panel: Panel) {
+        setPanelVisible(panel, !(panelsData[panel]?.visibility?.value ?: false))
     }
 
     fun setPanelVisible(panel: Panel, isVisible: Boolean) {
-        visibility[panel] = isVisible
+        panelsData[panel]?.visibility?.value = isVisible
     }
+
+    fun getPanelTitle(panel: Panel) = panelsData[panel]?.title ?: ""
 }
 
 // Composable function to remember the DraggableSidebarModel instance

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -20,12 +19,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BoxScope.ResizeOverlay(resizeBossPanelModel: BossWindowPanelModel) {
+fun BoxScope.ResizeOverlay(windowPanelModel: BossWindowPanelModel) {
 
     // Transparent overlays for resizing - positioned in fixed locations
-    for (panel in Panel.entries) {
-        ResizeHandle(resizeBossPanelModel, panel)
-    }
+    ResizeHandle(windowPanelModel, panel = Panel.LEFT())
+    ResizeHandle(windowPanelModel, panel = Panel.RIGHT())
+    ResizeHandle(windowPanelModel, panel = Panel.BOTTOM)
 }
 
 
@@ -54,26 +53,27 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
 
     fun Modifier.offset() = offset {
         val x = when (panel) {
-            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> (leftPanelWidth - 8.dp)
-            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> (-rightPanelWidth - 1.dp + 8.dp)
-            Panel.BOTTOM -> 0.dp
+            Panel.LEFT() -> (leftPanelWidth - 8.dp)
+            Panel.RIGHT() -> (-rightPanelWidth - 1.dp + 8.dp)
+            else -> { 0.dp }
         }.roundToPx()
         val y = when (panel) {
-            Panel.LEFT_TOP, Panel.LEFT_BOTTOM, Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> 0.dp
+            Panel.LEFT(), Panel.RIGHT() -> 0.dp
             Panel.BOTTOM -> -bottomPanelHeight - 1.dp + 8.dp
+            else -> { 0.dp }
         }.roundToPx()
         IntOffset(x, y)
     }
 
     fun Modifier.resizable() = run {
         when (panel) {
-            Panel.LEFT_TOP, Panel.LEFT_BOTTOM,
-            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> {
+            Panel.LEFT(),
+            Panel.RIGHT() -> {
                 width(16.dp)
                     .fillMaxHeight(if (isBottomPanelVisible) 1f - (bottomPanelHeight / 1000.dp) else 1f)
                     .cursorForHorizontalResize()
             }
-            Panel.BOTTOM -> {
+            else -> {
                 height(16.dp)
                     .fillMaxWidth()
                     .cursorForVerticalResize()
@@ -83,15 +83,15 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
 
     fun PointerInputScope.onDrag(dragAmount: Offset) {
         when (panel) {
-            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> {
+            Panel.LEFT()-> {
                 val newWidth = leftPanelWidth + dragAmount.x.toDp()
                 windowPanelModel.leftPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
             }
-            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> {
+            Panel.RIGHT() -> {
                 val newWidth = rightPanelWidth - dragAmount.x.toDp()
                 windowPanelModel.rightPanelWidth = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
             }
-            Panel.BOTTOM -> {
+            else -> {
                 val newHeight = bottomPanelHeight - dragAmount.y.toDp()
                 windowPanelModel.bottomPanelHeight = newHeight.coerceIn(minPanelHeight, maxPanelHeight)
             }
@@ -100,9 +100,9 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
 
     val alignDirection by derivedStateOf {
         when (panel) {
-            Panel.LEFT_TOP, Panel.LEFT_BOTTOM -> Alignment.TopStart
-            Panel.RIGHT_TOP, Panel.RIGHT_BOTTOM -> Alignment.TopEnd
-            Panel.BOTTOM -> Alignment.BottomCenter
+            Panel.LEFT()-> Alignment.TopStart
+            Panel.RIGHT()-> Alignment.TopEnd
+            else -> Alignment.BottomCenter
         }
     }
 

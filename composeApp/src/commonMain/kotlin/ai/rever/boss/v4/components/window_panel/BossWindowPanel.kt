@@ -22,8 +22,7 @@ fun BossWindowPanel(
             // Top area with left, center, and right panels
             Row(modifier = Modifier.weight(1f)) {
                 // Left panel
-                BossSideWindowPanel(windowPanelModel, Panel.LEFT_TOP) {}
-                BossSideWindowPanel(windowPanelModel, Panel.LEFT_BOTTOM) {}
+                BossSideWindowPanel(windowPanelModel, Panel.LEFT()) {}
 
                 BossMainWindowPanel(
                     modifier = Modifier
@@ -32,8 +31,7 @@ fun BossWindowPanel(
                 )
 
                 // Right panel
-                BossSideWindowPanel(windowPanelModel, Panel.RIGHT_TOP) {}
-                BossSideWindowPanel(windowPanelModel, Panel.RIGHT_BOTTOM) {}
+                BossSideWindowPanel(windowPanelModel, Panel.RIGHT()) {}
             }
 
             // Bottom panel
