@@ -22,7 +22,7 @@ fun BossWindowPanel(
             // Top area with left, center, and right panels
             Row(modifier = Modifier.weight(1f)) {
                 // Left panel
-                BossSideWindowPanel(windowPanelModel, Panel.LEFT()) {}
+                BossSideWindowPanel(windowPanelModel, Panel.left) {}
 
                 BossMainWindowPanel(
                     modifier = Modifier
@@ -31,11 +31,11 @@ fun BossWindowPanel(
                 )
 
                 // Right panel
-                BossSideWindowPanel(windowPanelModel, Panel.RIGHT()) {}
+                BossSideWindowPanel(windowPanelModel, Panel.right) {}
             }
 
             // Bottom panel
-            BossSideWindowPanel(windowPanelModel, Panel.BOTTOM) {}
+            BossSideWindowPanel(windowPanelModel, Panel.bottom) {}
         }
 
         ResizeOverlay(windowPanelModel)

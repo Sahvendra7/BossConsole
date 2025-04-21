@@ -2,7 +2,7 @@ package ai.rever.boss.v4.components.misc
 
 import ai.rever.boss.v4.components.buttons.DraggableActionButton
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
-import ai.rever.boss.v4.components.model.SidebarSlot
+import ai.rever.boss.v4.components.model.Panel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 // A container for a specific sidebar slot, handling hover feedback
 @Composable
 fun SidebarSlotContainer(
-    slot: SidebarSlot,
+    slot: Panel,
     sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
@@ -57,7 +57,7 @@ fun SidebarSlotContainer(
 // Renders a specific section of the sidebar using the DraggableSidebarModel
 @Composable
 fun DraggableSidebarSection(
-    slot: SidebarSlot,
+    slot: Panel,
     sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {

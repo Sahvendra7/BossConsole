@@ -40,19 +40,19 @@ fun BossSideWindowPanel(
 
     if (panel == Panel.RIGHT()) {
         VDivider()
-    } else if (panel == Panel.BOTTOM) {
+    } else if (panel == Panel.BOTTOM()) {
         Divider()
     }
 
     fun Modifier.fillSize() = run {
         when (panel) {
-            Panel.LEFT(),
-            Panel.LEFT(Panel.TOP),
-            Panel.LEFT(Panel.BOTTOM) ->
+            Panel.left,
+            Panel.leftTop,
+            Panel.leftBottom ->
                 fillMaxHeight().width(leftPanelWidth)
-            Panel.RIGHT(),
-            Panel.RIGHT(Panel.TOP),
-            Panel.RIGHT(Panel.BOTTOM) ->
+            Panel.right,
+            Panel.rightTop,
+            Panel.rightBottom ->
                 fillMaxHeight().width(rightPanelWidth)
             else -> fillMaxWidth().height(bottomPanelHeight)
         }
@@ -68,56 +68,40 @@ fun BossSideWindowPanel(
                 .background(BossDarkBackground)
         ) {
 
-            if (panel == Panel.LEFT()) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    val isTopVisible = windowPanelModel.isVisible(Panel.LEFT(Panel.TOP))
-                    val isBottomVisible = windowPanelModel.isVisible(Panel.LEFT(Panel.BOTTOM))
-
-                    if (isTopVisible) {
-                        Box(modifier = Modifier.weight(if (isBottomVisible) 1f else 2f)) {
-                            BossSideWindowPanel(windowPanelModel, Panel.LEFT(Panel.TOP)) {}
-                        }
-                    }
-
-                    if (isBottomVisible) {
-                        Box(modifier = Modifier.weight(if (isTopVisible) 1f else 2f)) {
-                            BossSideWindowPanel(windowPanelModel, Panel.LEFT(Panel.BOTTOM)) {}
-                        }
-                    }
+            when (panel) {
+                Panel.left -> {
+                    BossSideWindowPanels(windowPanelModel, listOf( Panel.leftTop, Panel.leftBottom))
                 }
-            } else if (panel == Panel.RIGHT()) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    val isTopVisible = windowPanelModel.isVisible(Panel.RIGHT(Panel.TOP))
-                    val isBottomVisible = windowPanelModel.isVisible(Panel.RIGHT(Panel.BOTTOM))
-
-                    if (isTopVisible) {
-                        Box(modifier = Modifier.weight(if (isBottomVisible) 1f else 2f)) {
-                            BossSideWindowPanel(windowPanelModel, Panel.RIGHT(Panel.TOP)) {}
-                        }
-                    }
-
-                    if (isBottomVisible) {
-                        Box(modifier = Modifier.weight(if (isTopVisible) 1f else 2f)) {
-                            BossSideWindowPanel(windowPanelModel, Panel.RIGHT(Panel.BOTTOM)) {}
-                        }
-                    }
+                Panel.right -> {
+                    BossSideWindowPanels(windowPanelModel, listOf( Panel.rightTop, Panel.rightBottom))
                 }
-            } else {
-
-                BossSideWindowPanelTopBar(
-                    title = windowPanelModel.getPanelTitle(panel),
-                    onMinimize = {
-                        windowPanelModel.setPanelVisible(panel, false)
-                    }
-                )
+                else -> {
+                    BossSideWindowPanelTopBar(
+                        title = windowPanelModel.getPanelTitle(panel),
+                        onMinimize = {
+                            windowPanelModel.setPanelVisible(panel, false)
+                        }
+                    )
+                }
             }
 
             content()
         }
     }
 
-    if (panel == Panel.LEFT()) {
+    if (panel == Panel.left) {
         VDivider()
+    }
+}
+
+@Composable
+fun ColumnScope.BossSideWindowPanels(windowPanelModel: BossWindowPanelModel, panel: List<Panel>) {
+    panel.forEach {
+        if (windowPanelModel.isVisible(it)) {
+            Box(modifier = Modifier.weight(1f)) {
+                BossSideWindowPanel(windowPanelModel, it) {}
+            }
+        }
     }
 }
 

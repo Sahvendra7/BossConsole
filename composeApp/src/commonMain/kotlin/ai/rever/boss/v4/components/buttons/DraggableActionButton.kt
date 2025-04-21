@@ -2,8 +2,8 @@ package ai.rever.boss.v4.components.buttons
 
 import BossDarkTextPrimary
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.SidebarItem
-import ai.rever.boss.v4.components.model.SidebarSlot
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Icon
@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun DraggableActionButton(
     item: SidebarItem,
-    slot: SidebarSlot,
+    slot: Panel,
     sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {

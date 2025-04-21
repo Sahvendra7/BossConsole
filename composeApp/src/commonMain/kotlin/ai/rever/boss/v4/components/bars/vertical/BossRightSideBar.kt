@@ -3,7 +3,7 @@ package ai.rever.boss.v4.components.bars.vertical
 import ai.rever.boss.v4.components.dividers.SDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
-import ai.rever.boss.v4.components.model.SidebarSlot
+import ai.rever.boss.v4.components.model.Panel
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,9 +19,9 @@ fun BossRightSideBar(sidebarModel: BossWindowPanelModel) {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            DraggableSidebarSection(slot = SidebarSlot.RIGHT_TOP_TOP, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = Panel.rightToptTop, sidebarModel = sidebarModel)
             SDivider()
-            DraggableSidebarSection(slot = SidebarSlot.RIGHT_TOP_BOTTOM, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = Panel.rightTopBottom, sidebarModel = sidebarModel)
             
             Spacer(modifier = Modifier.weight(1f))
         }

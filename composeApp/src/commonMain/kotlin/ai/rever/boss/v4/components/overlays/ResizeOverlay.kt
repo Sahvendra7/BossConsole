@@ -22,9 +22,9 @@ import androidx.compose.ui.unit.dp
 fun BoxScope.ResizeOverlay(windowPanelModel: BossWindowPanelModel) {
 
     // Transparent overlays for resizing - positioned in fixed locations
-    ResizeHandle(windowPanelModel, panel = Panel.LEFT())
-    ResizeHandle(windowPanelModel, panel = Panel.RIGHT())
-    ResizeHandle(windowPanelModel, panel = Panel.BOTTOM)
+    ResizeHandle(windowPanelModel, panel = Panel.left)
+    ResizeHandle(windowPanelModel, panel = Panel.right)
+    ResizeHandle(windowPanelModel, panel = Panel.bottom)
 }
 
 
@@ -43,7 +43,7 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
     val rightPanelWidth by derivedStateOf { windowPanelModel.rightPanelWidth }
     val bottomPanelHeight by derivedStateOf { windowPanelModel.bottomPanelHeight }
 
-    val isBottomPanelVisible by derivedStateOf { windowPanelModel.isVisible(Panel.BOTTOM) }
+    val isBottomPanelVisible by derivedStateOf { windowPanelModel.isVisible(Panel.BOTTOM()) }
 
     val isVisible by derivedStateOf { windowPanelModel.isVisible(panel) }
 
@@ -53,13 +53,13 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
 
     fun Modifier.offset() = offset {
         val x = when (panel) {
-            Panel.LEFT() -> (leftPanelWidth - 8.dp)
-            Panel.RIGHT() -> (-rightPanelWidth - 1.dp + 8.dp)
+            Panel.left -> (leftPanelWidth - 8.dp)
+            Panel.right -> (-rightPanelWidth - 1.dp + 8.dp)
             else -> { 0.dp }
         }.roundToPx()
         val y = when (panel) {
-            Panel.LEFT(), Panel.RIGHT() -> 0.dp
-            Panel.BOTTOM -> -bottomPanelHeight - 1.dp + 8.dp
+            Panel.left, Panel.RIGHT() -> 0.dp
+            Panel.bottom -> -bottomPanelHeight - 1.dp + 8.dp
             else -> { 0.dp }
         }.roundToPx()
         IntOffset(x, y)
