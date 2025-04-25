@@ -36,7 +36,6 @@ fun BossApp(bossConsoleComponent: BossConsoleComponent) {
                 }
                 BossBottomBar()
             }
-
             // Draw the dragging item overlay (ghost) if an item is being dragged
             DraggingItemOverlay(bossWindowPanelModel)
         }

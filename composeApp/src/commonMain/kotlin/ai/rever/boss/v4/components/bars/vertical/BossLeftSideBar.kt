@@ -5,6 +5,9 @@ import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
+import ai.rever.boss.v4.components.model.Panel.Companion.bottom
+import ai.rever.boss.v4.components.model.Panel.Companion.left
+import ai.rever.boss.v4.components.model.Panel.Companion.top
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,13 +23,11 @@ fun BossLeftSideBar(sidebarModel: BossWindowPanelModel) {
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            DraggableSidebarSection(slot = Panel.leftTopTop, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = left.top.top, sidebarModel = sidebarModel)
             SDivider()
-            DraggableSidebarSection(slot = Panel.leftTopBottom, sidebarModel = sidebarModel)
-            
+            DraggableSidebarSection(slot = left.top.bottom, sidebarModel = sidebarModel)
             Spacer(modifier = Modifier.weight(1f))
-            
-            DraggableSidebarSection(slot = Panel.leftBottom, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = left.bottom, sidebarModel = sidebarModel)
         }
     }
     VDivider()

@@ -3,6 +3,9 @@ package ai.rever.boss.v4.components.window_panel
 import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
+import ai.rever.boss.v4.components.model.Panel.Companion.bottom
+import ai.rever.boss.v4.components.model.Panel.Companion.left
+import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.overlays.ResizeOverlay
 import ai.rever.boss.v4.components.window_panel.components.*
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
@@ -22,7 +25,7 @@ fun BossWindowPanel(
             // Top area with left, center, and right panels
             Row(modifier = Modifier.weight(1f)) {
                 // Left panel
-                BossSideWindowPanel(windowPanelModel, Panel.left) {}
+                BossSideWindowPanel(windowPanelModel, left) {}
 
                 BossMainWindowPanel(
                     modifier = Modifier
@@ -31,11 +34,11 @@ fun BossWindowPanel(
                 )
 
                 // Right panel
-                BossSideWindowPanel(windowPanelModel, Panel.right) {}
+                BossSideWindowPanel(windowPanelModel, right) {}
             }
 
             // Bottom panel
-            BossSideWindowPanel(windowPanelModel, Panel.bottom) {}
+            BossSideWindowPanel(windowPanelModel, bottom) {}
         }
 
         ResizeOverlay(windowPanelModel)

@@ -6,14 +6,16 @@ import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
+import ai.rever.boss.v4.components.model.Panel.Companion.bottom
+import ai.rever.boss.v4.components.model.Panel.Companion.left
+import ai.rever.boss.v4.components.model.Panel.Companion.right
+import ai.rever.boss.v4.components.model.Panel.Companion.top
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,33 +30,27 @@ fun BossSideWindowPanel(
     panel: Panel,
     content: @Composable () -> Unit) {
 
-    val leftPanelWidth by derivedStateOf { windowPanelModel.leftPanelWidth }
-    val rightPanelWidth by derivedStateOf { windowPanelModel.rightPanelWidth }
-    val bottomPanelHeight by derivedStateOf { windowPanelModel.bottomPanelHeight }
-
-    val isVisible by derivedStateOf { windowPanelModel.isVisible(panel) }
-
-    if (!isVisible) {
+    if (!windowPanelModel.isVisible(panel)) {
         return
     }
 
-    if (panel == Panel.RIGHT()) {
+    if (panel == right) {
         VDivider()
-    } else if (panel == Panel.BOTTOM()) {
+    } else if (panel == bottom) {
         Divider()
     }
 
     fun Modifier.fillSize() = run {
         when (panel) {
-            Panel.left,
-            Panel.leftTop,
-            Panel.leftBottom ->
-                fillMaxHeight().width(leftPanelWidth)
-            Panel.right,
-            Panel.rightTop,
-            Panel.rightBottom ->
-                fillMaxHeight().width(rightPanelWidth)
-            else -> fillMaxWidth().height(bottomPanelHeight)
+            left,
+            left.top,
+            left.bottom ->
+                fillMaxHeight().width(windowPanelModel.getSize(left))
+            right,
+            right.top,
+            right.bottom ->
+                fillMaxHeight().width(windowPanelModel.getSize(right))
+            else -> fillMaxWidth().height(windowPanelModel.getSize(bottom))
         }
     }
 
@@ -69,11 +65,11 @@ fun BossSideWindowPanel(
         ) {
 
             when (panel) {
-                Panel.left -> {
-                    BossSideWindowPanels(windowPanelModel, listOf( Panel.leftTop, Panel.leftBottom))
+                left -> {
+                    BossSideWindowPanels(windowPanelModel, listOf(left.top, left.bottom))
                 }
-                Panel.right -> {
-                    BossSideWindowPanels(windowPanelModel, listOf( Panel.rightTop, Panel.rightBottom))
+                right -> {
+                    BossSideWindowPanels(windowPanelModel, listOf(right.top, right.bottom))
                 }
                 else -> {
                     BossSideWindowPanelTopBar(
@@ -89,17 +85,17 @@ fun BossSideWindowPanel(
         }
     }
 
-    if (panel == Panel.left) {
+    if (panel == left) {
         VDivider()
     }
 }
 
 @Composable
-fun ColumnScope.BossSideWindowPanels(windowPanelModel: BossWindowPanelModel, panel: List<Panel>) {
-    panel.forEach {
-        if (windowPanelModel.isVisible(it)) {
-            Box(modifier = Modifier.weight(1f)) {
-                BossSideWindowPanel(windowPanelModel, it) {}
+fun ColumnScope.BossSideWindowPanels(windowPanelModel: BossWindowPanelModel, panels: List<Panel>) {
+    panels.forEach { panel ->
+        if (windowPanelModel.isVisible(panel)) {
+            Column (modifier = Modifier.weight(1f)) {
+                BossSideWindowPanel(windowPanelModel, panel) {}
             }
         }
     }
