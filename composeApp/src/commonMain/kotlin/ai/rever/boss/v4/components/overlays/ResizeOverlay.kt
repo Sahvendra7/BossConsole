@@ -17,22 +17,28 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BoxScope.ResizeOverlay(windowPanelModel: BossWindowPanelModel) {
-
+fun BoxScope.ResizeOverlay(
+    windowPanelModel: BossWindowPanelModel,
+    windowHeight: Dp,
+    windowWidth: Dp
+) {
     // Transparent overlays for resizing - positioned in fixed locations
-    ResizeHandle(windowPanelModel, left)
-    ResizeHandle(windowPanelModel, right)
-    ResizeHandle(windowPanelModel, bottom)
+    ResizeHandle(windowPanelModel, left, windowHeight, windowWidth)
+    ResizeHandle(windowPanelModel, right, windowHeight, windowWidth)
+    ResizeHandle(windowPanelModel, bottom, windowHeight, windowWidth)
 }
 
-
-
 @Composable
-private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel: Panel) {
-
+private fun BoxScope.ResizeHandle(
+    windowPanelModel: BossWindowPanelModel, 
+    panel: Panel,
+    windowHeight: Dp,
+    windowWidth: Dp
+) {
     // Min and max constraints for panel sizes
     val minPanelWidth = 150.dp
     val maxPanelWidth = 500.dp
@@ -50,7 +56,6 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
             else -> { 0.dp }
         }.roundToPx()
         val y = when (panel) {
-            left, right -> 0.dp
             bottom -> -windowPanelModel.getSize(bottom) - 1.dp + 8.dp
             else -> { 0.dp }
         }.roundToPx()
@@ -64,7 +69,7 @@ private fun BoxScope.ResizeHandle(windowPanelModel: BossWindowPanelModel, panel:
                 width(16.dp)
                     .fillMaxHeight(
                         if (windowPanelModel.isVisible(bottom))
-                            1f - (windowPanelModel.getSize(bottom) / 1000.dp)
+                            1f - (windowPanelModel.getSize(bottom) / (windowHeight))
                         else 1f)
                     .cursorForHorizontalResize()
             }
