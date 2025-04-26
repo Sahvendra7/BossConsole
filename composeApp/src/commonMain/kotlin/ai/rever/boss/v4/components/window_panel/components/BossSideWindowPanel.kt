@@ -199,8 +199,7 @@ fun BossWinPanel(modifier: Modifier,
                 modifier = Modifier
                     .align(alignDirection)
                     .resizable()
-                    .background(color = Color.Yellow)
-//                    .alpha(0f)
+                    .alpha(0f)
                     .pointerInput(Unit) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
