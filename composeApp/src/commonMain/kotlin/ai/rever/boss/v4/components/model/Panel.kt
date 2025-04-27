@@ -5,16 +5,16 @@ import kotlinx.serialization.Serializable
 @Serializable
 open class Panel() {
     @Serializable
-    data class TOP(val panel: Panel? = null): Panel()
+    data class TOP(val child: Panel? = null): Panel()
 
     @Serializable
-    data class LEFT(val panel: Panel? = null): Panel()
+    data class LEFT(val child: Panel? = null): Panel()
 
     @Serializable
-    data class RIGHT(val panel: Panel? = null): Panel()
+    data class RIGHT(val child: Panel? = null): Panel()
 
     @Serializable
-    data class BOTTOM(val panel: Panel? = null): Panel()
+    data class BOTTOM(val child: Panel? = null): Panel()
 
     companion object {
         val top = TOP()
@@ -70,24 +70,24 @@ open class Panel() {
             else -> this
         }
 
-        val TOP.top: TOP get() = this.copy(panel = this.panel?.top ?: Panel.top)
-        val TOP.left: TOP get() = this.copy(panel = this.panel?.left ?: Panel.left)
-        val TOP.right: TOP get() = this.copy(panel = this.panel?.right ?: Panel.right)
-        val TOP.bottom: TOP get() = this.copy(panel = this.panel?.bottom ?: Panel.bottom)
+        val TOP.top: TOP get() = this.copy(child = this.child?.top ?: Panel.top)
+        val TOP.left: TOP get() = this.copy(child = this.child?.left ?: Panel.left)
+        val TOP.right: TOP get() = this.copy(child = this.child?.right ?: Panel.right)
+        val TOP.bottom: TOP get() = this.copy(child = this.child?.bottom ?: Panel.bottom)
 
-        val LEFT.top: LEFT get() = this.copy(panel = this.panel?.top ?: Panel.top)
-        val LEFT.left: LEFT get() = this.copy(panel = this.panel?.left ?: Panel.left)
-        val LEFT.right: LEFT get() = this.copy(panel = this.panel?.right ?: Panel.right)
-        val LEFT.bottom: LEFT get() = this.copy(panel = this.panel?.bottom ?: Panel.bottom)
+        val LEFT.top: LEFT get() = this.copy(child = this.child?.top ?: Panel.top)
+        val LEFT.left: LEFT get() = this.copy(child = this.child?.left ?: Panel.left)
+        val LEFT.right: LEFT get() = this.copy(child = this.child?.right ?: Panel.right)
+        val LEFT.bottom: LEFT get() = this.copy(child = this.child?.bottom ?: Panel.bottom)
 
-        val RIGHT.top: RIGHT get() = this.copy(panel = this.panel?.top ?: Panel.top)
-        val RIGHT.left: RIGHT get() = this.copy(panel = this.panel?.left ?: Panel.left)
-        val RIGHT.right: RIGHT get() = this.copy(panel = this.panel?.right ?: Panel.right)
-        val RIGHT.bottom: RIGHT get() = this.copy(panel = this.panel?.bottom ?: Panel.bottom)
+        val RIGHT.top: RIGHT get() = this.copy(child = this.child?.top ?: Panel.top)
+        val RIGHT.left: RIGHT get() = this.copy(child = this.child?.left ?: Panel.left)
+        val RIGHT.right: RIGHT get() = this.copy(child = this.child?.right ?: Panel.right)
+        val RIGHT.bottom: RIGHT get() = this.copy(child = this.child?.bottom ?: Panel.bottom)
 
-        val BOTTOM.top: BOTTOM get() = this.copy(panel = this.panel?.top ?: Panel.top)
-        val BOTTOM.left: BOTTOM get() = this.copy(panel = this.panel?.left ?: Panel.left)
-        val BOTTOM.right: BOTTOM get() = this.copy(panel = this.panel?.right ?: Panel.right)
-        val BOTTOM.bottom: BOTTOM get() = this.copy(panel = this.panel?.bottom ?: Panel.bottom)
+        val BOTTOM.top: BOTTOM get() = this.copy(child = this.child?.top ?: Panel.top)
+        val BOTTOM.left: BOTTOM get() = this.copy(child = this.child?.left ?: Panel.left)
+        val BOTTOM.right: BOTTOM get() = this.copy(child = this.child?.right ?: Panel.right)
+        val BOTTOM.bottom: BOTTOM get() = this.copy(child = this.child?.bottom ?: Panel.bottom)
     }
 }
