@@ -1,12 +1,8 @@
 package ai.rever.boss.v4.components.window_panel.components
 
-import BossDarkBackground
-import BossDarkSurface
 import ai.rever.boss.platform.CursorUtil.cursorForHorizontalResize
 import ai.rever.boss.platform.CursorUtil.cursorForVerticalResize
-import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.dividers.VDivider
-import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.isFirst
@@ -15,14 +11,10 @@ import ai.rever.boss.v4.components.model.Panel.Companion.isLast
 import ai.rever.boss.v4.components.model.Panel.Companion.isVertical
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
-import ai.rever.boss.v4.components.model.Panel.Companion.root
 import ai.rever.boss.v4.components.model.Panel.Companion.top
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,23 +24,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
-fun BossWinPanel(modifier: Modifier,
-                 panel: Panel,
-                 isPanelVisible: Boolean = false,
-                 isMainVisible: Boolean = true,
-                 relativeResize: Boolean = true,
-                 panelContent: (@Composable BoxScope.() -> Unit)? = null,
-                 content: (@Composable BoxScope.() -> Unit)? = null) {
+fun BossPanel(modifier: Modifier,
+              panel: Panel,
+              isPanelVisible: Boolean = false,
+              isMainVisible: Boolean = true,
+              relativeResize: Boolean = true,
+              panelContent: (@Composable BoxScope.() -> Unit)? = null,
+              mainContent: (@Composable BoxScope.() -> Unit)? = null) {
 
     val defaultPanelWidth = 250.dp
     val defaultPanelHeight = 200.dp
@@ -165,7 +154,7 @@ fun BossWinPanel(modifier: Modifier,
                     }
                 }
             }
-            content?.let {
+            mainContent?.let {
                 if (isMainVisible) {
                     Box(modifier = modifier) {
                         it()

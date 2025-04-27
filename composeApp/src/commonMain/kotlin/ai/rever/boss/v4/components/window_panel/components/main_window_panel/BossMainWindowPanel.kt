@@ -21,7 +21,7 @@ import kotlinx.serialization.Serializable
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossMainWindowPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
+fun BossMainPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
     Children(
         stack = bossConsoleComponent.childStack,
         animation = stackAnimation(fade() + scale()),

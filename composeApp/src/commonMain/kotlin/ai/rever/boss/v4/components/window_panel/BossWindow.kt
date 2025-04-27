@@ -9,20 +9,20 @@ import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
 import ai.rever.boss.v4.components.window_panel.components.*
 import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
-import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainWindowPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 
 @Composable
-fun BossWindowPanel(
+fun BossWindow(
     modifier: Modifier = Modifier,
     bossConsoleComponent: BossConsoleComponent,
     windowPanelModel: BossWindowPanelModel) {
 
     @Composable
-    fun SidePanel(panel: Panel) {
+    fun BossPanel(panel: Panel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -38,38 +38,44 @@ fun BossWindowPanel(
     }
 
     @Composable
-    fun WithSidePanel(panel: Panel,
-                      isPanelVisible: Boolean = windowPanelModel.isVisible(panel),
-                      isMainVisible: Boolean = true,
-                      panelContent: @Composable BoxScope.() -> Unit = { SidePanel(panel) },
-                      content: (@Composable BoxScope.() -> Unit)? = null) {
-        BossWinPanel(
+    fun WithPanel(panel: Panel,
+                  isPanelVisible: Boolean = windowPanelModel.isVisible(panel),
+                  isMainVisible: Boolean = true,
+                  panelContent: @Composable BoxScope.() -> Unit = { BossPanel(panel) },
+                  mainContent: (@Composable BoxScope.() -> Unit)? = null) {
+        BossPanel(
             modifier = modifier,
             panel = panel,
             isPanelVisible = isPanelVisible,
             isMainVisible = isMainVisible,
             panelContent = panelContent,
-            content = content
+            mainContent = mainContent
         )
     }
 
     @Composable
-    fun WithHorizontalPanel(panel: Panel,
-                            content: @Composable BoxScope.() -> Unit) {
-        WithSidePanel(panel, panelContent = {
-            WithSidePanel(bottom,
-                isPanelVisible = windowPanelModel.isVisible(panel.bottom),
-                isMainVisible = windowPanelModel.isVisible(panel.top),
-                panelContent = { SidePanel(panel.bottom) }) {
-                SidePanel(panel.top)
-            }
-        }, content = content)
+    fun WithNestedPanel(panel: Panel,
+                        secondaryPanel: Panel = bottom,
+                        isFirstPanelVisible: Boolean = windowPanelModel.isVisible(panel.bottom),
+                        isLastPanelVisible: Boolean = windowPanelModel.isVisible(panel.top),
+                        firstPanel: @Composable BoxScope.() -> Unit = { BossPanel(panel.bottom) },
+                        lastPanel: @Composable BoxScope.() -> Unit = { BossPanel(panel.top) },
+                        mainContent: @Composable BoxScope.() -> Unit) {
+        WithPanel(panel,
+            panelContent = {
+                WithPanel(secondaryPanel,
+                    isPanelVisible = isFirstPanelVisible,
+                    isMainVisible = isLastPanelVisible,
+                    panelContent = firstPanel,
+                    mainContent = lastPanel
+                )},
+            mainContent = mainContent)
     }
 
-    WithSidePanel(bottom) {
-        WithHorizontalPanel(left) {
-            WithHorizontalPanel(right) {
-                BossMainWindowPanel(
+    WithPanel(bottom) {
+        WithNestedPanel(left) {
+            WithNestedPanel(right) {
+                BossMainPanel(
                     modifier = Modifier.fillMaxSize(),
                     bossConsoleComponent = bossConsoleComponent
                 )
