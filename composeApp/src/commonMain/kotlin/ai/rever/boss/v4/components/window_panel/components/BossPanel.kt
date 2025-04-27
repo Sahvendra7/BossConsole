@@ -100,7 +100,7 @@ fun BossPanel(modifier: Modifier,
 
 
         fun Modifier.fillSize() = run {
-            if (!isMainVisible) {
+            if (!isMainVisible || mainContent == null) {
                 fillMaxSize()
             } else if (panel.isHorizontal) {
                 fillMaxHeight().fillMaxWidth(panelWeight)
