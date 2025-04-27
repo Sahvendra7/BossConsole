@@ -38,6 +38,38 @@ open class Panel() {
 
         val Panel.isLast get() = this is RIGHT || this is BOTTOM
 
+        val Panel.top get() = when (this) {
+            is TOP -> this.top
+            is LEFT -> this.top
+            is RIGHT -> this.top
+            is BOTTOM -> this.top
+            else -> this
+        }
+
+        val Panel.left get() = when (this) {
+            is TOP -> this.left
+            is LEFT -> this.left
+            is RIGHT -> this.left
+            is BOTTOM -> this.left
+            else -> this
+        }
+
+        val Panel.right get() = when (this) {
+            is TOP -> this.right
+            is LEFT -> this.right
+            is RIGHT -> this.right
+            is BOTTOM -> this.right
+            else -> this
+        }
+
+        val Panel.bottom get() = when (this) {
+            is TOP -> this.bottom
+            is LEFT -> this.bottom
+            is RIGHT -> this.bottom
+            is BOTTOM -> this.bottom
+            else -> this
+        }
+
         val TOP.top: TOP
             get() = when (this.panel) {
                 is TOP -> this.copy(panel = this.panel.top)

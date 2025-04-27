@@ -44,7 +44,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun BossWinPanel(modifier: Modifier,
                  panel: Panel,
-                 isVisible: Boolean = false,
+                 isPanelVisible: Boolean = false,
+                 isMainVisible: Boolean = true,
                  relativeResize: Boolean = true,
                  panelContent: (@Composable BoxScope.() -> Unit)? = null,
                  content: (@Composable BoxScope.() -> Unit)? = null) {
@@ -153,7 +154,7 @@ fun BossWinPanel(modifier: Modifier,
         fun Body(modifier: Modifier) {
 
             panelContent?.let {
-                if (panel.isFirst && isVisible) {
+                if (panel.isFirst && isPanelVisible) {
                     Box(modifier = Modifier.fillSize()) {
                         it()
                     }
@@ -165,12 +166,14 @@ fun BossWinPanel(modifier: Modifier,
                 }
             }
             content?.let {
-                Box(modifier = modifier) {
-                    it()
+                if (isMainVisible) {
+                    Box(modifier = modifier) {
+                        it()
+                    }
                 }
             }
             panelContent?.let {
-                if (panel.isLast && isVisible) {
+                if (panel.isLast && isPanelVisible) {
                     if (panel.isHorizontal) {
                         VDivider()
                     } else {
@@ -194,7 +197,7 @@ fun BossWinPanel(modifier: Modifier,
             }
         }
 
-        if (isVisible) {
+        if (isPanelVisible) {
             Box(
                 modifier = Modifier
                     .align(alignDirection)
@@ -206,124 +209,6 @@ fun BossWinPanel(modifier: Modifier,
                             onDrag(dragAmount)
                         }
                     }
-            )
-        }
-    }
-}
-
-@Composable
-fun BossSideWindowPanel(
-    windowPanelModel: BossWindowPanelModel,
-    panel: Panel,
-    content: @Composable () -> Unit) {
-
-    if (!windowPanelModel.isVisible(panel)) {
-        return
-    }
-
-    if (panel == right) {
-        VDivider()
-    } else if (panel == bottom) {
-        Divider()
-    }
-
-    fun Modifier.fillSize() = run {
-        when (panel.root) {
-            left -> fillMaxHeight().width(windowPanelModel.getSize(left))
-            right -> fillMaxHeight().width(windowPanelModel.getSize(right))
-            else -> fillMaxWidth().height(windowPanelModel.getSize(bottom))
-        }
-    }
-
-    Surface(
-        modifier = Modifier.fillSize(),
-        elevation = 1.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(BossDarkBackground)
-        ) {
-
-            when (panel) {
-                left -> {
-                    BossSideWindowPanels(windowPanelModel, listOf(left.top, left.bottom))
-                }
-                right -> {
-                    BossSideWindowPanels(windowPanelModel, listOf(right.top, right.bottom))
-                }
-                else -> {
-                    BossSideWindowPanelTopBar(
-                        title = windowPanelModel.getPanelTitle(panel),
-                        onMinimize = {
-                            windowPanelModel.setPanelVisible(panel, false)
-                        }
-                    )
-                }
-            }
-
-            content()
-        }
-    }
-
-    if (panel == left) {
-        VDivider()
-    }
-}
-
-@Composable
-fun ColumnScope.BossSideWindowPanels(windowPanelModel: BossWindowPanelModel, panels: List<Panel>) {
-    panels.forEach { panel ->
-        if (windowPanelModel.isVisible(panel)) {
-            Column (modifier = Modifier.weight(1f)) {
-                BossSideWindowPanel(windowPanelModel, panel) {}
-            }
-        }
-    }
-}
-
-@Composable
-fun BossSideWindowPanelTopBar(title: String?,
-                              onMore: () -> Unit = {},
-                              onMinimize: () -> Unit,
-                              content: (@Composable () -> Unit)? = null) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(42.dp)
-            .background(BossDarkSurface),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Text(
-            text = title ?: "",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier
-                .align(Alignment.CenterVertically)
-                .padding(bottom = 4.dp)
-        )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-
-        Row (modifier = Modifier.padding(end = 4.dp)) {
-            content?.invoke()
-
-            BossActionButton(
-                imageVector = Icons.Outlined.MoreVert,
-                text = "More",
-                color = Color.White,
-                onClick = onMore
-            )
-
-            BossActionButton(
-                imageVector = Icons.Outlined.Remove,
-                text = "Minimize",
-                color = Color.White,
-                onClick = onMinimize
             )
         }
     }
