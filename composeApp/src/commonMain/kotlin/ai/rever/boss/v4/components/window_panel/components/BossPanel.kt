@@ -35,50 +35,43 @@ fun BossPanel(modifier: Modifier,
               panel: Panel,
               isPanelVisible: Boolean = false,
               isMainVisible: Boolean = true,
-              relativeResize: Boolean = true,
+              isRelative: Boolean = false,
+              defaultWeight: Float = 1f,
               panelContent: (@Composable BoxScope.() -> Unit)? = null,
               mainContent: (@Composable BoxScope.() -> Unit)? = null) {
 
-    val defaultPanelWidth = 250.dp
-    val defaultPanelHeight = 200.dp
-
-    val minPanelWidth = 150.dp
-    val maxPanelWidth = 500.dp
-    val minPanelHeight = 100.dp
-    val maxPanelHeight = 500.dp
+    val defaultPanelSize = run { if (panel.isHorizontal) 250.dp else 200.dp }
+    val minPanelSize = run { if (panel.isHorizontal) 150.dp else 100.dp }
+    val maxPanelSize = 500.dp
     val resizeAreaSize = 16.dp
     val dividerHeight = 1.dp
 
-    var panelWidth: Dp? = null
-    var panelHeight: Dp? = null
+    var panelSize: Dp? = null
 
     BoxWithConstraints (modifier = modifier) {
-        if ((panelWidth == null || panelHeight == null) || !relativeResize) {
-            panelWidth = maxWidth
-            panelHeight = maxHeight
+        if (panelSize == null || !isRelative) {
+            panelSize = if (panel.isHorizontal) {
+                maxWidth
+            } else {
+                maxHeight
+            }
         }
+
+        val maxSize = run { if (panel.isHorizontal)  maxWidth else maxHeight }
 
         var size by remember {
             mutableStateOf(
-                if (panel.isHorizontal) defaultPanelWidth else defaultPanelHeight
+                if (isRelative) {
+                    ((maxSize.value * defaultWeight)/2f).dp
+                } else {
+                    defaultPanelSize
+                }
             )
         }
 
-        val panelWeight: Float = run {
-            if (panel.isHorizontal) {
-                (size.value / panelWidth.value)
-            } else {
-                (size.value / panelHeight.value)
-            }
-        }
+        val panelWeight: Float = run { size.value / panelSize.value }
 
-        val relativeSize: Dp = run {
-            if (panel.isHorizontal) {
-                (panelWeight * maxWidth.value).dp
-            } else {
-                (panelWeight * maxHeight.value).dp
-            }
-        }
+        val relativeSize: Dp = run { (panelWeight * maxSize.value).dp }
 
         val alignDirection = run {
             when (panel) {
@@ -128,15 +121,13 @@ fun BossPanel(modifier: Modifier,
             }
         }
 
+        fun Offset.axis() = run { if (panel.isHorizontal) x  else y }
+
+        fun Dp.direction() = run { this * (if (panel.isLast) - 1 else 1) }
 
         fun PointerInputScope.onDrag(dragAmount: Offset) {
-            if (panel.isHorizontal) {
-                val newWidth = size + (dragAmount.x.toDp() * (if (panel.isLast) -1 else 1))
-                size = newWidth.coerceIn(minPanelWidth, maxPanelWidth)
-            } else  {
-                val newWidth = size + (dragAmount.y.toDp() * (if (panel.isLast) -1 else 1))
-                size = newWidth.coerceIn(minPanelHeight, maxPanelHeight)
-            }
+            size = (size + (dragAmount.axis().toDp().direction()))
+                .coerceIn(minPanelSize, maxPanelSize)
         }
 
         @Composable

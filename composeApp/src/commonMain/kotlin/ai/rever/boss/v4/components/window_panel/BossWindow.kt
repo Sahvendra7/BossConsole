@@ -22,7 +22,7 @@ fun BossWindow(
     windowPanelModel: BossWindowPanelModel) {
 
     @Composable
-    fun BossPanel(panel: Panel) {
+    fun Panel(panel: Panel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -41,13 +41,15 @@ fun BossWindow(
     fun WithPanel(panel: Panel,
                   isPanelVisible: Boolean = windowPanelModel.isVisible(panel),
                   isMainVisible: Boolean = true,
-                  panelContent: @Composable BoxScope.() -> Unit = { BossPanel(panel) },
+                  isRelative: Boolean = false,
+                  panelContent: @Composable BoxScope.() -> Unit = { Panel(panel) },
                   mainContent: (@Composable BoxScope.() -> Unit)? = null) {
         BossPanel(
             modifier = modifier,
             panel = panel,
             isPanelVisible = isPanelVisible,
             isMainVisible = isMainVisible,
+            isRelative = isRelative,
             panelContent = panelContent,
             mainContent = mainContent
         )
@@ -58,14 +60,16 @@ fun BossWindow(
                         secondaryPanel: Panel = bottom,
                         isFirstPanelVisible: Boolean = windowPanelModel.isVisible(panel.bottom),
                         isLastPanelVisible: Boolean = windowPanelModel.isVisible(panel.top),
-                        firstPanel: @Composable BoxScope.() -> Unit = { BossPanel(panel.bottom) },
-                        lastPanel: @Composable BoxScope.() -> Unit = { BossPanel(panel.top) },
+                        isNestedRelative: Boolean = true,
+                        firstPanel: @Composable BoxScope.() -> Unit = { Panel(panel.bottom) },
+                        lastPanel: @Composable BoxScope.() -> Unit = { Panel(panel.top) },
                         mainContent: @Composable BoxScope.() -> Unit) {
         WithPanel(panel,
             panelContent = {
                 WithPanel(secondaryPanel,
                     isPanelVisible = isFirstPanelVisible,
                     isMainVisible = isLastPanelVisible,
+                    isRelative = isNestedRelative,
                     panelContent = firstPanel,
                     mainContent = lastPanel
                 )},
