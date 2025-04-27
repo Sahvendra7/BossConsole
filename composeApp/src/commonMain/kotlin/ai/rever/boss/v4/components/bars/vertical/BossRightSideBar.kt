@@ -1,6 +1,7 @@
 package ai.rever.boss.v4.components.bars.vertical
 
 import ai.rever.boss.v4.components.dividers.SDivider
+import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun BossRightSideBar(sidebarModel: BossWindowPanelModel) {
+    VDivider()
     VerticalBar(40.dp) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -25,7 +27,6 @@ fun BossRightSideBar(sidebarModel: BossWindowPanelModel) {
             DraggableSidebarSection(slot = right.top.top, sidebarModel = sidebarModel)
             SDivider()
             DraggableSidebarSection(slot = right.top.bottom, sidebarModel = sidebarModel)
-            
             Spacer(modifier = Modifier.weight(1f))
         }
     }

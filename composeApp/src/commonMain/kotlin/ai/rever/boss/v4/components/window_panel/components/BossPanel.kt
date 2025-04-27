@@ -100,7 +100,9 @@ fun BossPanel(modifier: Modifier,
 
 
         fun Modifier.fillSize() = run {
-            if (panel.isHorizontal) {
+            if (!isMainVisible) {
+                fillMaxSize()
+            } else if (panel.isHorizontal) {
                 fillMaxHeight().fillMaxWidth(panelWeight)
             } else {
                 fillMaxWidth().fillMaxHeight(panelWeight)
@@ -131,18 +133,24 @@ fun BossPanel(modifier: Modifier,
         }
 
         @Composable
-        fun Body(modifier: Modifier) {
+        fun PanelDivider() {
+            if (isMainVisible) {
+                if (panel.isHorizontal) {
+                    VDivider()
+                } else {
+                    Divider()
+                }
+            }
+        }
 
+        @Composable
+        fun Body(modifier: Modifier) {
             panelContent?.let {
                 if (panel.isFirst && isPanelVisible) {
                     Box(modifier = Modifier.fillSize()) {
                         it()
                     }
-                    if (panel.isHorizontal) {
-                        VDivider()
-                    } else {
-                        Divider()
-                    }
+                    PanelDivider()
                 }
             }
             mainContent?.let {
@@ -154,18 +162,13 @@ fun BossPanel(modifier: Modifier,
             }
             panelContent?.let {
                 if (panel.isLast && isPanelVisible) {
-                    if (panel.isHorizontal) {
-                        VDivider()
-                    } else {
-                        Divider()
-                    }
+                    PanelDivider()
                     Box(modifier = Modifier.fillSize()) {
                         it()
                     }
                 }
             }
         }
-
 
         if (panel.isVertical) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -177,7 +180,7 @@ fun BossPanel(modifier: Modifier,
             }
         }
 
-        if (isPanelVisible) {
+        if (isPanelVisible && isMainVisible) {
             Box(
                 modifier = Modifier
                     .align(alignDirection)
