@@ -51,13 +51,6 @@ class BossWindowPanelModel {
     // A map holding the list of items for each slot, backed by mutable state
     private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>()
 
-
-    private val size = mutableStateMapOf<Panel, Dp> (
-        left to 250.dp,
-        right to 250.dp,
-        bottom to 200.dp
-    )
-
     private val panelsData = mutableStateMapOf<Panel, PanelData>(
         left.top to PanelData("Project", true),
         left.bottom to PanelData("Editor", false),
@@ -65,7 +58,6 @@ class BossWindowPanelModel {
         right.bottom to PanelData("Diagram", false),
         bottom to PanelData("Terminal", true)
     )
-
 
     init {
         // Initialize with default items in their respective slots
@@ -229,12 +221,6 @@ class BossWindowPanelModel {
                 itemsBySlot[sourceSlot] = updatedSourceList
             }
         }
-    }
-
-    fun getSize(panel: Panel) = size[panel] ?: 0.dp
-
-    fun setSize(panel: Panel, size: Dp) {
-        this.size[panel] = size
     }
 
     fun isVisible(panel: Panel): Boolean {
