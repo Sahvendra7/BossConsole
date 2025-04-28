@@ -31,14 +31,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossPanel(modifier: Modifier,
-              panel: Panel,
-              isPanelVisible: Boolean = false,
-              isMainVisible: Boolean = true,
-              isRelative: Boolean = false,
-              defaultWeight: Float = 1f,
-              panelContent: (@Composable BoxScope.() -> Unit)? = null,
-              mainContent: (@Composable BoxScope.() -> Unit)? = null) {
+fun BossResizablePanel(modifier: Modifier,
+                       panel: Panel,
+                       isPanelVisible: Boolean = false,
+                       isMainVisible: Boolean = true,
+                       isRelative: Boolean = false,
+                       defaultWeight: Float = 1f,
+                       panelContent: (@Composable BoxScope.() -> Unit)? = null,
+                       mainContent: (@Composable BoxScope.() -> Unit)? = null) {
 
     val defaultPanelSize = run { if (panel.isHorizontal) 250.dp else 200.dp }
     val minPanelSize = run { if (panel.isHorizontal) 150.dp else 100.dp }

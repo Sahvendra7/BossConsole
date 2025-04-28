@@ -13,9 +13,9 @@ kotlinx-coroutines = "1.10.1"
 kotlinx-serialization = "1.7.3"
 ktor = "3.0.3"
 logback = "1.5.16"
-foundationLayoutAndroid = "1.7.8"
+foundationLayoutAndroid = "1.8.0"
 precompose = "1.6.2"
-uiAndroid = "1.7.8"
+uiAndroid = "1.8.0"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }

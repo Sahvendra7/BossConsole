@@ -10,12 +10,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import kotlin.to
 
-data class PanelData(val title: String,
+data class PanelData(val sidebarItem: SidebarItem,
                      val visibility: Boolean)
 
 // Represents a single draggable item in the sidebar
@@ -23,8 +21,10 @@ data class SidebarItem(
     val id: String, // Unique identifier for the item
     val icon: ImageVector,
     val label: String,
-    val onClick: () -> Unit // Action to perform on click (when not dragging)
+    val onClick: SidebarItem.() -> Unit // Action to perform on click (when not dragging)
 )
+
+
 
 // Holds the state and logic for the draggable sidebar system
 @Stable
@@ -51,69 +51,59 @@ class BossWindowPanelModel {
     // A map holding the list of items for each slot, backed by mutable state
     private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>()
 
+
+    private val onClick: SidebarItem.() -> Unit = {
+        when(slot) {
+            left.top.top -> toggleVisibility(left.top)
+            left.top.bottom -> toggleVisibility(left.bottom)
+            left.bottom -> toggleVisibility(bottom)
+            right.top.top -> toggleVisibility(right.top)
+            right.top.bottom -> toggleVisibility(right.bottom)
+        }
+    }
+
+
+    val folder = SidebarItem("folder", Icons.Outlined.Folder, "Folder", onClick)
+    val phone = SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone", onClick)
+    val shape = SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes", onClick)
+
+    val build = SidebarItem("build", Icons.Outlined.Build, "Build", onClick)
+    val more = SidebarItem("more", Icons.Outlined.MoreHoriz, "More", onClick)
+
+    val run = SidebarItem("run", Icons.Outlined.RunCircle, "Run", onClick)
+    val code = SidebarItem("code", Icons.Outlined.Code, "Code", onClick)
+
+    val attach = SidebarItem("attach", Icons.Outlined.AttachFile, "Attach", onClick)
+    val audio = SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio", onClick)
+    val video = SidebarItem("video", Icons.Outlined.VideoFile, "Video", onClick)
+
+    val replay = SidebarItem("replay", Icons.Outlined.Replay, "Replay", onClick)
+    val cast = SidebarItem("cast", Icons.Outlined.Cast, "Cast", onClick)
+    val anchor = SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor", onClick)
+    val android = SidebarItem("android", Icons.Outlined.Android, "Android", onClick)
+
     private val panelsData = mutableStateMapOf<Panel, PanelData>(
-        left.top to PanelData("Project", true),
-        left.bottom to PanelData("Editor", false),
-        right.top to PanelData("Structure", true),
-        right.bottom to PanelData("Diagram", false),
-        bottom to PanelData("Terminal", true)
+        left.top to PanelData(folder, true),
+        left.bottom to PanelData(build, false),
+        right.top to PanelData(run, true),
+        right.bottom to PanelData(attach, false),
+        bottom to PanelData(replay, true)
     )
 
     init {
         // Initialize with default items in their respective slots
-        itemsBySlot[left.top.top] = listOf(
-            SidebarItem("folder", Icons.Outlined.Folder, "Folder") {
-                toggleVisibility(left.top)
-            },
-            SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone") {
-                toggleVisibility(left.top)
-            },
-            SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes") {
-                toggleVisibility(left.top)
-            }
-        )
-        itemsBySlot[left.top.bottom] = listOf(
-            SidebarItem("build", Icons.Outlined.Build, "Build") {
-                toggleVisibility(left.bottom)
-            },
-            SidebarItem("more", Icons.Outlined.MoreHoriz, "More") {
-                toggleVisibility(left.bottom)
-            }
-        )
-        itemsBySlot[left.bottom] = listOf(
-            SidebarItem("run", Icons.Outlined.RunCircle, "Run") {
-                toggleVisibility(bottom)
-            },
-            SidebarItem("code", Icons.Outlined.Code, "Code") {
-                toggleVisibility(bottom)
-            }
-        )
-        itemsBySlot[right.top.top] = listOf(
-            SidebarItem("attach", Icons.Outlined.AttachFile, "Attach") {
-                toggleVisibility(right.top)
-            },
-            SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio") {
-                toggleVisibility(right.top)
-            },
-            SidebarItem("video", Icons.Outlined.VideoFile, "Video") {
-                toggleVisibility(right.top)
-            }
-        )
-        itemsBySlot[right.top.bottom] = listOf(
-            SidebarItem("replay", Icons.Outlined.Replay, "Replay") {
-                toggleVisibility(right.bottom)
-            },
-            SidebarItem("cast", Icons.Outlined.Cast, "Cast") {
-                toggleVisibility(right.bottom)
-            },
-            SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor") {
-                toggleVisibility(right.bottom)
-            },
-            SidebarItem("android", Icons.Outlined.Android, "Android") {
-                toggleVisibility(right.bottom)
-            }
-        )
+        itemsBySlot[left.top.top] = listOf(folder, phone, shape)
+        itemsBySlot[left.top.bottom] = listOf(build, more)
+        itemsBySlot[left.bottom] = listOf(run, code)
+        itemsBySlot[right.top.top] = listOf(attach, audio, video)
+        itemsBySlot[right.top.bottom] = listOf(replay, cast, anchor, android)
     }
+
+    val SidebarItem.slot: Panel
+        get() = itemsBySlot
+            .filter { it.value.find { sideItem -> id == sideItem.id } != null }
+            .keys.first()
+
 
     // Get items for a specific slot, returning an empty list if the slot is unknown
     fun getItemsForSlot(slot: Panel): List<SidebarItem> {
@@ -232,8 +222,15 @@ class BossWindowPanelModel {
         return panelsData[panel]?.visibility == true
     }
 
-    private fun toggleVisibility(panel: Panel) {
-        setPanelVisible(panel, panelsData[panel]?.visibility != true)
+    private fun SidebarItem.toggleVisibility(panel: Panel) {
+        if (panelsData[panel]?.sidebarItem?.id == id) {
+            setPanelVisible(panel, panelsData[panel]?.visibility != true)
+        } else {
+            setPanelVisible(panel, true)
+        }
+        panelsData[panel]?.let {
+            panelsData[panel] = it.copy(this)
+        }
     }
 
     fun setPanelVisible(panel: Panel, isVisible: Boolean) {
@@ -242,7 +239,7 @@ class BossWindowPanelModel {
         }
     }
 
-    fun getPanelTitle(panel: Panel) = panelsData[panel]?.title ?: ""
+    fun getPanelTitle(panel: Panel) = panelsData[panel]?.sidebarItem?.label ?: ""
 }
 
 // Composable function to remember the DraggableSidebarModel instance

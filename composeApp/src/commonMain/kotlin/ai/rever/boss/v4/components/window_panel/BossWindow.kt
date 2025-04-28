@@ -44,7 +44,7 @@ fun BossWindow(
                   isRelative: Boolean = false,
                   panelContent: @Composable BoxScope.() -> Unit = { Panel(panel) },
                   mainContent: (@Composable BoxScope.() -> Unit)? = null) {
-        BossPanel(
+        BossResizablePanel(
             modifier = modifier,
             panel = panel,
             isPanelVisible = isPanelVisible,

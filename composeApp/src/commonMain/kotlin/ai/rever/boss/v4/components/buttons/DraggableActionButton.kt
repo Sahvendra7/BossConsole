@@ -96,6 +96,6 @@ fun DraggableActionButton(
                 )
             }
     ) {
-        if (sidebarModel.draggingItem == null) item.onClick()
+        if (sidebarModel.draggingItem == null) item.onClick(item)
     }
 }
