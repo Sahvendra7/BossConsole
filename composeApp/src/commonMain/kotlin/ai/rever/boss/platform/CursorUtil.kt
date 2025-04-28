@@ -18,4 +18,5 @@ expect object CursorUtil {
      * Used for horizontal dividers that can be dragged vertically.
      */
     fun Modifier.cursorForVerticalResize(): Modifier
-} 
+
+}

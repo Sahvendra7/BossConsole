@@ -24,8 +24,6 @@ data class SidebarItem(
     val onClick: SidebarItem.() -> Unit // Action to perform on click (when not dragging)
 )
 
-
-
 // Holds the state and logic for the draggable sidebar system
 @Stable
 class BossWindowPanelModel {
@@ -50,7 +48,6 @@ class BossWindowPanelModel {
 
     // A map holding the list of items for each slot, backed by mutable state
     private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>()
-
 
     private val onClick: SidebarItem.() -> Unit = {
         when(slot) {

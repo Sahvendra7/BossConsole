@@ -2,6 +2,9 @@ package ai.rever.boss.v4.components.window_panel.components
 
 import BossDarkSurface
 import ai.rever.boss.v4.components.buttons.BossActionButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun BossPanelTopBar(title: String?,
+                    isHovered: Boolean,
                     onMore: () -> Unit = {},
                     onMinimize: () -> Unit,
                     content: (@Composable () -> Unit)? = null) {
@@ -47,23 +51,29 @@ fun BossPanelTopBar(title: String?,
 
         Spacer(modifier = Modifier.weight(1f))
 
+        AnimatedVisibility(
+            visible = isHovered,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
 
-        Row (modifier = Modifier.padding(end = 4.dp)) {
-            content?.invoke()
+            Row(modifier = Modifier.padding(end = 4.dp)) {
+                content?.invoke()
 
-            BossActionButton(
-                imageVector = Icons.Outlined.MoreVert,
-                text = "More",
-                color = Color.White,
-                onClick = onMore
-            )
+                BossActionButton(
+                    imageVector = Icons.Outlined.MoreVert,
+                    text = "More",
+                    color = Color.White,
+                    onClick = onMore
+                )
 
-            BossActionButton(
-                imageVector = Icons.Outlined.Remove,
-                text = "Minimize",
-                color = Color.White,
-                onClick = onMinimize
-            )
+                BossActionButton(
+                    imageVector = Icons.Outlined.Remove,
+                    text = "Minimize",
+                    color = Color.White,
+                    onClick = onMinimize
+                )
+            }
         }
     }
 }

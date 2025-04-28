@@ -18,4 +18,4 @@ actual object CursorUtil {
         // In a real implementation, this would use JS interop to set CSS cursor
         return this
     }
-} 
+}

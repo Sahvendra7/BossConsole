@@ -9,4 +9,4 @@ import androidx.compose.ui.Modifier
 actual object CursorUtil {
     actual fun Modifier.cursorForHorizontalResize(): Modifier = this
     actual fun Modifier.cursorForVerticalResize(): Modifier = this
-} 
+}
