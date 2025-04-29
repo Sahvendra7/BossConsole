@@ -56,6 +56,7 @@ fun DraggableActionButton(
     BossActionButton(
         imageVector = item.icon,
         text = item.label,
+        isSelected = sidebarModel.isSelected(item),
         modifier = modifier
             .onGloballyPositioned { layoutCoordinates ->
                 val newPos = layoutCoordinates.positionInWindow()
@@ -96,6 +97,9 @@ fun DraggableActionButton(
                 )
             }
     ) {
-        if (sidebarModel.draggingItem == null) item.onClick(item)
+        item.onClick?.invoke() ?:
+        sidebarModel.run {
+            if (draggingItem == null) item.onClick()
+        }
     }
 }

@@ -8,8 +8,8 @@ import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
 import ai.rever.boss.v4.components.window_panel.components.*
-import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
-import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossMainPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossMainPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource

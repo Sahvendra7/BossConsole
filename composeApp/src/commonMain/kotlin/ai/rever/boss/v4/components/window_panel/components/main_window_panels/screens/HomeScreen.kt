@@ -1,6 +1,6 @@
-package ai.rever.boss.v4.components.window_panel.components.main_window_panel.screens
+package ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens
 
-import ai.rever.boss.v4.components.window_panel.components.main_window_panel.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossConsoleComponent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding

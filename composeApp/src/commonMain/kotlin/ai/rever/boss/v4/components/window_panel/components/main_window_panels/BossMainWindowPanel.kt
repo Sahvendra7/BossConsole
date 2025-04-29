@@ -1,6 +1,6 @@
-package ai.rever.boss.v4.components.window_panel.components.main_window_panel
+package ai.rever.boss.v4.components.window_panel.components.main_window_panels
 
-import ai.rever.boss.v4.components.window_panel.components.main_window_panel.screens.*
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext

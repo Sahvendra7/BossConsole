@@ -4,8 +4,6 @@ import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -13,7 +11,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlin.math.max
 import kotlin.to
 
-data class PanelData(val sidebarItem: SidebarItem,
+data class PanelData(val sidebarItem: SidebarItem? = null,
                      val visibility: Boolean)
 
 // Represents a single draggable item in the sidebar
@@ -21,12 +19,12 @@ data class SidebarItem(
     val id: String, // Unique identifier for the item
     val icon: ImageVector,
     val label: String,
-    val onClick: SidebarItem.() -> Unit // Action to perform on click (when not dragging)
+    val onClick: (() -> Unit)? = null,
 )
 
 // Holds the state and logic for the draggable sidebar system
 @Stable
-class BossWindowPanelModel {
+class BossWindowPanelModel(_itemsBySlot: Map<Panel, List<SidebarItem>>, _panelData: Map<Panel, PanelData>) {
     // The item currently being dragged, and its original slot
     var draggingItem by mutableStateOf<Pair<SidebarItem, Panel>?>(null)
         private set
@@ -49,7 +47,7 @@ class BossWindowPanelModel {
     // A map holding the list of items for each slot, backed by mutable state
     private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>()
 
-    private val onClick: SidebarItem.() -> Unit = {
+    val onClick: SidebarItem.() -> Unit = {
         when(slot) {
             left.top.top -> toggleVisibility(left.top)
             left.top.bottom -> toggleVisibility(left.bottom)
@@ -60,40 +58,16 @@ class BossWindowPanelModel {
     }
 
 
-    val folder = SidebarItem("folder", Icons.Outlined.Folder, "Folder", onClick)
-    val phone = SidebarItem("phone", Icons.Outlined.PhoneIphone, "Phone", onClick)
-    val shape = SidebarItem("shapes", Icons.Outlined.FormatShapes, "Shapes", onClick)
-
-    val build = SidebarItem("build", Icons.Outlined.Build, "Build", onClick)
-    val more = SidebarItem("more", Icons.Outlined.MoreHoriz, "More", onClick)
-
-    val run = SidebarItem("run", Icons.Outlined.RunCircle, "Run", onClick)
-    val code = SidebarItem("code", Icons.Outlined.Code, "Code", onClick)
-
-    val attach = SidebarItem("attach", Icons.Outlined.AttachFile, "Attach", onClick)
-    val audio = SidebarItem("audio", Icons.Outlined.Audiotrack, "Audio", onClick)
-    val video = SidebarItem("video", Icons.Outlined.VideoFile, "Video", onClick)
-
-    val replay = SidebarItem("replay", Icons.Outlined.Replay, "Replay", onClick)
-    val cast = SidebarItem("cast", Icons.Outlined.Cast, "Cast", onClick)
-    val anchor = SidebarItem("anchor", Icons.Outlined.Anchor, "Anchor", onClick)
-    val android = SidebarItem("android", Icons.Outlined.Android, "Android", onClick)
-
-    private val panelsData = mutableStateMapOf<Panel, PanelData>(
-        left.top to PanelData(folder, true),
-        left.bottom to PanelData(build, false),
-        right.top to PanelData(run, true),
-        right.bottom to PanelData(attach, false),
-        bottom to PanelData(replay, true)
-    )
+    private val panelsData = mutableStateMapOf<Panel, PanelData>()
 
     init {
-        // Initialize with default items in their respective slots
-        itemsBySlot[left.top.top] = listOf(folder, phone, shape)
-        itemsBySlot[left.top.bottom] = listOf(build, more)
-        itemsBySlot[left.bottom] = listOf(run, code)
-        itemsBySlot[right.top.top] = listOf(attach, audio, video)
-        itemsBySlot[right.top.bottom] = listOf(replay, cast, anchor, android)
+//         Initialize with default items in their respective slots
+        _itemsBySlot.forEach { (panel, items) ->
+            itemsBySlot[panel] = items
+        }
+        _panelData.forEach { (panel, panelData) ->
+            panelsData[panel] = panelData
+        }
     }
 
     val SidebarItem.slot: Panel
@@ -237,10 +211,8 @@ class BossWindowPanelModel {
     }
 
     fun getPanelTitle(panel: Panel) = panelsData[panel]?.sidebarItem?.label ?: ""
-}
 
-// Composable function to remember the DraggableSidebarModel instance
-@Composable
-fun rememberBossWindowPanelModel(): BossWindowPanelModel {
-    return remember { BossWindowPanelModel() }
-} 
+    fun isSelected(item: SidebarItem): Boolean {
+        return panelsData.values.any { (it.sidebarItem?.id == item.id) && it.visibility }
+    }
+}

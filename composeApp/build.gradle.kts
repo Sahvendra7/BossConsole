@@ -86,6 +86,10 @@ kotlin {
             implementation(libs.essenty.state.keeper)
             implementation(libs.kotlinx.serialization.core)
             implementation(libs.kotlinx.serialization.json)
+            
+            // Compose Icons dependencies
+            implementation(libs.compose.icons.feather)
+            implementation(libs.compose.icons.fontawesome)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)

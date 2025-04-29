@@ -67,13 +67,24 @@ fun DraggableSidebarSection(
         modifier = modifier
     ) {
         val items = sidebarModel.getItemsForSlot(slot)
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
 
             key (item.id) {
                 DraggableActionButton(
                     item = item,
                     slot = slot,
-                    sidebarModel = sidebarModel
+                    sidebarModel = sidebarModel,
+                    modifier = Modifier
+                        .run {
+                            if (index == 0) {
+                                padding(bottom = 4.dp)
+                            } else if (index == items.size) {
+                                padding(top = 4.dp)
+                            } else {
+                                padding(vertical = 4.dp)
+                            }
+                        }
+                        .size(32.dp)
                 )
             }
         }
