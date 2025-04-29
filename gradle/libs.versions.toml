@@ -6,7 +6,7 @@ android-targetSdk = "34"
 androidx-activityCompose = "1.10.1"
 androidx-lifecycle = "2.8.4"
 compose-multiplatform = "1.7.0"
-compose-icons = "1.1.0"
+compose-icons = "1.1.1"
 decompose = "3.3.0"
 essenty = "2.5.0"
 kotlin = "2.1.0"
@@ -37,7 +37,7 @@ decompose-extensions-compose-experimental = { module = "com.arkivanov.decompose:
 essenty-lifecycle = { module = "com.arkivanov.essenty:lifecycle", version.ref = "essenty" }
 essenty-state-keeper = { module = "com.arkivanov.essenty:state-keeper", version.ref = "essenty" }
 precompose = { module = "moe.tlaster:precompose", version.ref = "precompose" }
-precompose-molecule = { module = "moe.tlaster:precompose-molecule", version.ref = "precompose" }
+#precompose-molecule = { module = "moe.tlaster:precompose-molecule", version.ref = "precompose" }
 precompose-viewmodel = { module = "moe.tlaster:precompose-viewmodel", version.ref = "precompose" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
