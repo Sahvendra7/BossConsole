@@ -1,6 +1,7 @@
 package ai.rever.boss.v4.components.bars.horizontal
 
 import BossDarkTextSecondary
+import BossDarkBorder
 import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.bars.ScrollbarConfig
 import ai.rever.boss.v4.components.bars.horizontalScrollWithScrollbar
@@ -19,7 +20,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun BossBottomBar() {
-    Divider()
+    Divider(color = BossDarkBorder)
     HorizontalBar(30.dp) {
         HorizontalBarRow {
             BossLeftBottomBar()

@@ -1,5 +1,6 @@
 package ai.rever.boss.v4.components.dividers
 
+import BossDarkBorder
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.Divider
@@ -13,6 +14,7 @@ fun VDivider(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxHeight()
             .width(1.dp),
+        color = BossDarkBorder
     )
 }
 

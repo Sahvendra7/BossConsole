@@ -45,6 +45,8 @@ import androidx.compose.material.icons.outlined.Fireplace
 import androidx.compose.material.icons.outlined.Grain
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Mediation
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.PrecisionManufacturing
 import androidx.compose.material.icons.outlined.Replay
@@ -124,6 +126,7 @@ fun BossApp(bossConsoleComponent: BossConsoleComponent) {
     val rightBottom = listOf(
         SidebarItem("rpa", FontAwesomeIcons.Brands.React, "RPA"),
         SidebarItem("ehr_explorer", FontAwesomeIcons.Brands.Gripfire, "EHR Explorer"),
+        SidebarItem("more_plugin", Icons.Outlined.MoreHoriz, "More Plugin"),
     )
 
 

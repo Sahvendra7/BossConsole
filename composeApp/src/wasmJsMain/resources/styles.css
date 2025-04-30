@@ -4,4 +4,11 @@ html, body {
     margin: 0;
     padding: 0;
     overflow: hidden;
+    background-color: #2B2B2B; /* Same as BossDarkBackground */
+    color: #F2F2F2; /* Same as BossDarkTextPrimary */
+}
+
+/* Force dark theme for all elements */
+* {
+    color-scheme: dark;
 }

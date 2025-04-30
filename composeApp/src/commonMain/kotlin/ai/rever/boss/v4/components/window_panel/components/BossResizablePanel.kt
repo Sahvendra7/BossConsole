@@ -1,5 +1,6 @@
 package ai.rever.boss.v4.components.window_panel.components
 
+import BossDarkBorder
 import ai.rever.boss.platform.CursorUtil.cursorForHorizontalResize
 import ai.rever.boss.platform.CursorUtil.cursorForVerticalResize
 import ai.rever.boss.v4.components.dividers.VDivider
@@ -138,7 +139,7 @@ fun BossResizablePanel(modifier: Modifier,
                 if (panel.isHorizontal) {
                     VDivider()
                 } else {
-                    Divider()
+                    Divider(color = BossDarkBorder)
                 }
             }
         }

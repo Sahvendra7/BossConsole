@@ -1,7 +1,9 @@
 package ai.rever.boss.v4.components.bars.horizontal
 
+import BossDarkBorder
 import BossDarkTextPrimary
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.Divider
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,4 +28,5 @@ fun BossTitleBar(title: String = "Boss Console", height: Dp = 26.dp) {
                 .align(Alignment.Center)
         )
     }
+    Divider(color = BossDarkBorder)
 }
