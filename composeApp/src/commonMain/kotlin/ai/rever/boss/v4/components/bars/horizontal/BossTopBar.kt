@@ -1,43 +1,29 @@
 package ai.rever.boss.v4.components.bars.horizontal
 
 import BossDarkBorder
-import BossDarkTextPrimary
 import ai.rever.boss.v4.components.buttons.BossActionButton
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
+import ai.rever.boss.v4.components.overlays.ContextMenuItem
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Divider
-import androidx.compose.material.Icon
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.GitPullRequest
 
 @Composable
 fun BossTopBar() {
@@ -75,32 +61,116 @@ fun Logo(name: String) {
 }
 
 @Composable
-fun BossActionButtonWithLogo(text: String, onClick: () -> Unit) {
+fun BossActionButtonWithLogo(
+    text: String, 
+    contextMenuItems: List<ContextMenuItem>,
+    hintText: String? = null,
+    onClick: () -> Unit = {}
+) {
     BossActionButton(
         leftLogo = { Logo(text) },
         text = text,
+        contextMenuItems = contextMenuItems,
+        hintText = hintText,
         onClick = onClick
     )
 }
 
 @Composable
 fun BossTopLeftBar() {
-    BossActionButtonWithLogo("Nycbs") { }
-    BossActionButton(leftIcon = FeatherIcons.GitBranch, text = "main") { }
+    BossActionButtonWithLogo(
+        text = "Nycbs", 
+        contextMenuItems = emptyList(),
+        hintText = "BOSS Platform - Based on NYCBS"
+    )
+    BossActionButton(
+        leftIcon = FeatherIcons.GitBranch, 
+        text = "main",
+        hintText = "Current Git Branch: main"
+    ) { }
 }
+
+val lanagerContextMenuItems get() = listOf(
+    ContextMenuItem(
+        text = "Start Lanager",
+        icon = Icons.Outlined.PlayArrow,
+        onClick = { /* Handle start lanager action */ }
+    ),
+    ContextMenuItem(
+        text = "View Agents",
+        icon = Icons.Outlined.People,
+        onClick = { /* Handle view agents action */ }
+    ),
+    ContextMenuItem(isDivider = true),
+    ContextMenuItem(
+        text = "Configure Lanager",
+        icon = Icons.Outlined.Settings,
+        onClick = { /* Handle configure action */ }
+    ),
+    ContextMenuItem(isDivider = true),
+    ContextMenuItem(
+        text = "Restart Lanager",
+        icon = Icons.Outlined.Refresh,
+        onClick = { /* Handle restart action */ }
+    ),
+    ContextMenuItem(
+        text = "Stop Lanager",
+        icon = Icons.Outlined.Stop,
+        onClick = { /* Handle stop action */ }
+    )
+)
 
 @Composable
 fun BossTopRunBar() {
-    BossActionButton(leftIcon = Icons.Outlined.Diversity2, text = "lanager [boss]") { }
-    BossActionButton(imageVector = Icons.Outlined.PlayArrow, text = "Run", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.BugReport, text = "Bug", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.Stop, text = "Stop", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.MoreVert, text = "Stop", onClick = {})
+    BossActionButton(
+        leftIcon = Icons.Outlined.Diversity2,
+        text = "lanager [boss]",
+        contextMenuItems = lanagerContextMenuItems,
+        hintText = "Lanager: Manage AI agent swarm for collaborative tasks"
+    )
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.PlayArrow,
+        text = "Run",
+        hintText = "Run the current configuration"
+    ) {}
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.BugReport,
+        text = "Bug",
+        hintText = "Debug the current execution"
+    ) {}
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.Stop,
+        text = "Stop",
+        hintText = "Stop all running processes"
+    ) {}
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.MoreVert,
+        text = "More",
+        hintText = "Additional actions and settings"
+    ) {}
 }
 
 @Composable
 fun BossTopRightBar() {
-    BossActionButton(imageVector = Icons.Outlined.PersonAdd, text = "Sign Out", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.Search, text = "Search", onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.Settings, text = "Settings", onClick = {})
+    BossActionButton(
+        imageVector = Icons.Outlined.PersonAdd,
+        text = "Sign Out",
+        hintText = "Sign out of your account"
+    ) {}
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.Search,
+        text = "Search",
+        hintText = "Search for files, commands, or actions"
+    ) {}
+    
+    BossActionButton(
+        imageVector = Icons.Outlined.Settings,
+        text = "Settings",
+        hintText = "Configure application settings"
+    ) {}
 }

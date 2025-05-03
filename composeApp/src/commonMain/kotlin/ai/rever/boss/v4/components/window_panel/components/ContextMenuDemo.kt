@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +31,7 @@ fun ContextMenuDemo() {
     val contextMenuItems = listOf(
         ContextMenuItem(
             text = "New File",
-            icon = Icons.Outlined.InsertDriveFile,
+            icon = Icons.AutoMirrored.Outlined.InsertDriveFile,
             onClick = { actionMessage = "New File clicked" }
         ),
         ContextMenuItem(

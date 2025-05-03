@@ -37,24 +37,24 @@ fun HomeScreen(component: HomeComponent) {
             if (showContextMenuDemo) {
                 ContextMenuDemo()
             } else {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Welcome to BOSS v4")
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Welcome to BOSS v4")
 
-                    Button(
-                        onClick = { component.onSettingsClicked() },
-                        modifier = Modifier.padding(8.dp)
-                    ) {
-                        Text("Go to Settings")
-                    }
+            Button(
+                onClick = { component.onSettingsClicked() },
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Text("Go to Settings")
+            }
 
-                    Button(
-                        onClick = { component.onDetailClicked("sample-id") },
-                        modifier = Modifier.padding(8.dp)
-                    ) {
-                        Text("Go to Details")
+            Button(
+                onClick = { component.onDetailClicked("sample-id") },
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Text("Go to Details")
                     }
                     
                     Button(
