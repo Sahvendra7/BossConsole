@@ -1,5 +1,6 @@
 package ai.rever.boss.v4.components.overlays
 
+import BossDarkSurface
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +51,7 @@ data class ContextMenuItem(
 fun ContextMenu(
     items: List<ContextMenuItem>,
     offset: IntOffset = IntOffset.Zero,
+    modifier: Modifier = Modifier,
     onDismissRequest: () -> Unit
 ) {
     Popup(
@@ -59,9 +61,9 @@ fun ContextMenu(
         properties = PopupProperties(focusable = true)
     ) {
         Column(
-            modifier = Modifier
+            modifier = modifier
                 .background(
-                    color = Color(0xFF2D2D2D),
+                    color = BossDarkSurface,
                     shape = RoundedCornerShape(4.dp)
                 )
                 .padding(vertical = 4.dp)

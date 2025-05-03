@@ -1,6 +1,12 @@
 package ai.rever.boss.v4.components.buttons
 
+import BossDarkSurface
 import BossDarkTextPrimary
+import ai.rever.boss.v4.components.model.Panel
+import ai.rever.boss.v4.components.model.Panel.Companion.bottom
+import ai.rever.boss.v4.components.model.Panel.Companion.left
+import ai.rever.boss.v4.components.model.Panel.Companion.right
+import ai.rever.boss.v4.components.model.Panel.Companion.top
 import ai.rever.boss.v4.components.overlays.ContextMenu
 import ai.rever.boss.v4.components.overlays.ContextMenuItem
 import androidx.compose.foundation.background
@@ -8,10 +14,15 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,6 +65,7 @@ fun BossActionButton(
     text: String,
     isSelected: Boolean,
     modifier: Modifier,
+    hintDirection: Panel = bottom,
     onClick: () -> Unit
 ) = BossActionButton(
     imageVector = imageVector,
@@ -62,6 +74,7 @@ fun BossActionButton(
     modifier = modifier,
     hintText = text,
     showHintWithDelay = false,
+    hintDirection = hintDirection,
     onClick = onClick
 )
 
@@ -77,18 +90,52 @@ fun BossActionButton(
     contentPadding: PaddingValues = PaddingValues(2.dp),
     isSelected: Boolean = false,
     contextMenuItems: List<ContextMenuItem>? = null,
+    contextDirection: Panel = bottom,
     hintText: String? = null,
     showHintWithDelay: Boolean = true,
+    hintDirection:  Panel = bottom,
     onClick: () -> Unit = {}
 ) {
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
-    var menuPosition by remember { mutableStateOf(IntOffset.Zero) }
     var buttonPosition by remember { mutableStateOf(Offset.Zero) }
+    var buttonSize by remember { mutableStateOf(IntOffset(0, 0)) }
+    var contextMenuSize by remember { mutableStateOf(IntOffset(0, 0)) }
+    var hintPopupSize by remember { mutableStateOf(IntOffset(0, 0)) }
     
+    val menuPosition = run {
+        val x = buttonPosition.x.toInt() +
+                when (contextDirection) {
+                    right -> buttonSize.x
+                    left -> -contextMenuSize.x - 50
+                    else -> (buttonSize.x - contextMenuSize.x) / 2
+                }
+        val y = buttonPosition.y.toInt() +
+                when (contextDirection) {
+                    top -> -contextMenuSize.y
+                    bottom -> buttonSize.y
+                    else -> 0
+                }
+        IntOffset(x, y)
+    }
+
     // State for hover popup
     var showHoverPopup by remember { mutableStateOf(false) }
-    var hoverPopupPosition by remember { mutableStateOf(IntOffset.Zero) }
+    val hoverPopupPosition = run {
+        val x = buttonPosition.x.toInt() +
+                when (hintDirection) {
+                    right -> buttonSize.x
+                    left -> -hintPopupSize.x - 50
+                    else -> (buttonSize.x - hintPopupSize.x) / 2
+                }
+        val y = buttonPosition.y.toInt() +
+                when (hintDirection) {
+                    top -> -hintPopupSize.y
+                    bottom -> buttonSize.y
+                    else -> 0
+                }
+        IntOffset(x, y)
+    }
 
     // Use interaction source to track states
     val interactionSource = remember { MutableInteractionSource() }
@@ -97,7 +144,7 @@ fun BossActionButton(
 
     // Determine active state based on hover, focus or selection
     val isActive = isHovered || isFocused || isSelected
-    
+
     // Handle hover popup delay
     LaunchedEffect(isHovered) {
         if (isHovered && hintText != null) {
@@ -105,9 +152,6 @@ fun BossActionButton(
                 delay(500) // 500 millisecond delay
             }
             if (isHovered) { // Check if still hovering after delay
-                val x = buttonPosition.x.toInt()
-                val y = buttonPosition.y.toInt() + 80
-                hoverPopupPosition = IntOffset(x, y)
                 showHoverPopup = true
             }
         } else {
@@ -120,7 +164,13 @@ fun BossActionButton(
         ContextMenu(
             items = contextMenuItems,
             offset = menuPosition,
-            onDismissRequest = { showContextMenu = false }
+            onDismissRequest = { showContextMenu = false },
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                contextMenuSize = IntOffset(
+                    coordinates.size.width,
+                    coordinates.size.height
+                )
+            }
         )
     }
     
@@ -131,19 +181,28 @@ fun BossActionButton(
             offset = hoverPopupPosition,
             properties = PopupProperties(focusable = false)
         ) {
-            Box(
+            Surface(
                 modifier = Modifier
-                    .background(
-                        color = Color(0xFF2D2D2D),
-                        shape = RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .onGloballyPositioned { coordinates ->
+                        hintPopupSize = IntOffset(
+                            coordinates.size.width,
+                            coordinates.size.height
+                        )
+                    },
+                color = BossDarkSurface,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Text(
-                    text = hintText,
-                    color = Color.White,
-                    fontSize = 12.sp
-                )
+                Row(modifier = Modifier.defaultMinSize(2.dp)
+                    .padding(vertical = 0.dp, horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = hintText,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -183,10 +242,6 @@ fun BossActionButton(
     // Define button click handler
     val handleClick = {
         if (contextMenuItems != null) {
-            // Show context menu at the right position
-            val x = buttonPosition.x.toInt()
-            val y = buttonPosition.y.toInt() + 80 // Position below button
-            menuPosition = IntOffset(x, y)
             showContextMenu = true
             showHoverPopup = false // Hide hover popup when showing context menu
         }
@@ -214,6 +269,10 @@ fun BossActionButton(
             }
             .onGloballyPositioned { coordinates ->
                 buttonPosition = coordinates.positionInParent()
+                buttonSize = IntOffset(
+                    coordinates.size.width,
+                    coordinates.size.height
+                )
             }
     ) {
         if (_leftLogo != null) {

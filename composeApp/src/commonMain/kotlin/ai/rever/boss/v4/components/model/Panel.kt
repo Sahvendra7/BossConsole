@@ -30,6 +30,14 @@ open class Panel() {
             else -> this
         }
 
+        val Panel.opposite get() = when (this) {
+            is TOP -> Panel.bottom
+            is LEFT -> Panel.right
+            is RIGHT -> Panel.left
+            is BOTTOM -> Panel.top
+            else -> this
+        }
+
         val Panel.isHorizontal get() = this is LEFT || this is RIGHT
 
         val Panel.isVertical get() = this is TOP || this is BOTTOM

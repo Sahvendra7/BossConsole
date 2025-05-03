@@ -3,6 +3,11 @@ package ai.rever.boss.v4.components.buttons
 import BossDarkTextPrimary
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
+import ai.rever.boss.v4.components.model.Panel.Companion.bottom
+import ai.rever.boss.v4.components.model.Panel.Companion.left
+import ai.rever.boss.v4.components.model.Panel.Companion.opposite
+import ai.rever.boss.v4.components.model.Panel.Companion.right
+import ai.rever.boss.v4.components.model.Panel.Companion.root
 import ai.rever.boss.v4.components.model.SidebarItem
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.size
@@ -56,6 +61,7 @@ fun DraggableActionButton(
     BossActionButton(
         imageVector = item.icon,
         text = item.label,
+        hintDirection = slot.opposite,
         isSelected = sidebarModel.isSelected(item),
         modifier = modifier
             .onGloballyPositioned { layoutCoordinates ->
