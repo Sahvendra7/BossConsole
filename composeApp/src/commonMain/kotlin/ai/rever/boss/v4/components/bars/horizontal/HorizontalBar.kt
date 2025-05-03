@@ -9,10 +9,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 
 @Composable
-fun HorizontalBar(height: Dp, content: @Composable BoxScope.() -> Unit) {
+fun HorizontalBar(modifier: Modifier = Modifier, height: Dp, content: @Composable BoxScope.() -> Unit) {
     // Title bar with BOSS centered
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(height)
             .background(BossDarkSurface),

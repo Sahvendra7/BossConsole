@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun BossBottomBar() {
     Divider(color = BossDarkBorder)
-    HorizontalBar(30.dp) {
+    HorizontalBar(height = 30.dp) {
         HorizontalBarRow {
             BossLeftBottomBar()
             Spacer(modifier = Modifier.weight(0.1f))

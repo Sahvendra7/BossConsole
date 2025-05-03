@@ -96,7 +96,9 @@ fun ContextMenu(
                         Text(
                             text = item.text,
                             color = Color.White,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                                .padding(bottom = 4.dp)
                         )
                     }
                 }

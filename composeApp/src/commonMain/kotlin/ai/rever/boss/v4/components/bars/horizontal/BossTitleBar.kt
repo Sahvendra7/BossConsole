@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun BossTitleBar(title: String = "Boss Console", height: Dp = 26.dp) {
-    HorizontalBar(height) {
+    HorizontalBar(height = height) {
         Text(
             text = title,
             color = BossDarkTextPrimary,

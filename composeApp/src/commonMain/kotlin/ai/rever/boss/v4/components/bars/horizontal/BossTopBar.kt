@@ -4,6 +4,7 @@ import BossDarkAccent
 import BossDarkBorder
 import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.overlays.ContextMenuItem
+import ai.rever.boss.v4.components.overlays.contextMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -11,24 +12,34 @@ import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
 
+
 @Composable
 fun BossTopBar() {
-    HorizontalBar(40.dp) {
+
+    val items = listOf(
+        ContextMenuItem(
+            text = "Edit",
+            icon = Icons.Outlined.Edit,
+            onClick = { /* Handle edit action */ }
+        ),
+        ContextMenuItem(isDivider = true),
+        ContextMenuItem(
+            text = "Save",
+            icon = Icons.Outlined.Save,
+            onClick = { /* Handle save action */ }
+        )
+    )
+
+
+    HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
             BossTopLeftBar()
             Spacer(modifier = Modifier.weight(1f))
