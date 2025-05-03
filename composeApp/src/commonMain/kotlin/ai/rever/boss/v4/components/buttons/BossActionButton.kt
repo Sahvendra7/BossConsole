@@ -30,7 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.positionInWindow
@@ -104,7 +106,7 @@ fun BossActionButton(
             }
             if (isHovered) { // Check if still hovering after delay
                 val x = buttonPosition.x.toInt()
-                val y = buttonPosition.y.toInt() + 40
+                val y = buttonPosition.y.toInt() + 80
                 hoverPopupPosition = IntOffset(x, y)
                 showHoverPopup = true
             }
@@ -178,20 +180,12 @@ fun BossActionButton(
         _leftLogo = { MainIcon(it) }
     }
 
-    // Calculate position tracking modifier for context menu and hover popup
-    val positionModifier = Modifier.onGloballyPositioned { coordinates ->
-        buttonPosition = coordinates.positionInRoot()
-    }
-
-    // Add position tracking modifier to existing modifier
-    val combinedModifier = modifier.then(positionModifier)
-    
     // Define button click handler
     val handleClick = {
         if (contextMenuItems != null) {
             // Show context menu at the right position
             val x = buttonPosition.x.toInt()
-            val y = buttonPosition.y.toInt() + 40 // Position below button
+            val y = buttonPosition.y.toInt() + 80 // Position below button
             menuPosition = IntOffset(x, y)
             showContextMenu = true
             showHoverPopup = false // Hide hover popup when showing context menu
@@ -209,7 +203,7 @@ fun BossActionButton(
             contentColor = color
         ),
         contentPadding = _contentPadding,
-        modifier = combinedModifier
+        modifier = modifier
             .defaultMinSize(minHeight = 2.dp, minWidth = 2.dp)
             .run {
                 if (imageVector != null) {
@@ -217,6 +211,9 @@ fun BossActionButton(
                 } else {
                     hoverable(interactionSource)
                 }
+            }
+            .onGloballyPositioned { coordinates ->
+                buttonPosition = coordinates.positionInParent()
             }
     ) {
         if (_leftLogo != null) {
