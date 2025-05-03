@@ -1,5 +1,6 @@
 package ai.rever.boss.v4.components.bars.horizontal
 
+import BossDarkAccent
 import BossDarkBorder
 import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.overlays.ContextMenuItem
@@ -48,7 +49,7 @@ fun Logo(name: String) {
             .width(22.dp)
         ,
         shape = RoundedCornerShape(4.dp),
-        color = Color(0xFF3592C4),
+        color = BossDarkAccent,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Text(text = name.substring(0, 2).uppercase(),

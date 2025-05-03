@@ -1,6 +1,6 @@
 package ai.rever.boss.v4.components.buttons
 
-import BossDarkSurface
+import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
@@ -9,52 +9,26 @@ import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
 import ai.rever.boss.v4.components.overlays.ContextMenu
 import ai.rever.boss.v4.components.overlays.ContextMenuItem
-import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
@@ -107,7 +81,7 @@ fun BossActionButton(
         val x = buttonPosition.x.toInt() +
                 when (contextDirection) {
                     right -> buttonSize.x
-                    left -> -contextMenuSize.x - 50
+                    left -> -contextMenuSize.x
                     else -> (buttonSize.x - contextMenuSize.x) / 2
                 }
         val y = buttonPosition.y.toInt() +
@@ -125,7 +99,7 @@ fun BossActionButton(
         val x = buttonPosition.x.toInt() +
                 when (hintDirection) {
                     right -> buttonSize.x
-                    left -> -hintPopupSize.x - 50
+                    left -> -hintPopupSize.x
                     else -> (buttonSize.x - hintPopupSize.x) / 2
                 }
         val y = buttonPosition.y.toInt() +
@@ -189,7 +163,7 @@ fun BossActionButton(
                             coordinates.size.height
                         )
                     },
-                color = BossDarkSurface,
+                color = BossDarkBorder,
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Row(modifier = Modifier.defaultMinSize(2.dp)

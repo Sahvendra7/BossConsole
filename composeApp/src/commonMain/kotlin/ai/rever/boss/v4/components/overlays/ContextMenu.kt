@@ -1,10 +1,9 @@
 package ai.rever.boss.v4.components.overlays
 
-import BossDarkSurface
+import BossDarkBorder
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -14,10 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +60,7 @@ fun ContextMenu(
         Column(
             modifier = modifier
                 .background(
-                    color = BossDarkSurface,
+                    color = BossDarkBorder,
                     shape = RoundedCornerShape(4.dp)
                 )
                 .padding(vertical = 4.dp)
@@ -110,11 +107,11 @@ fun ContextMenu(
 
 /**
  * Extension function to make any Compose UI element show a context menu.
- * 
+ *
  * Uses platform-specific implementations:
  * - On desktop/web: Right-click activation
  * - On mobile (iOS/Android): Long press activation
- * 
+ *
  * @param enabled Whether the context menu functionality is enabled
  * @param items The items to show in the context menu
  * @return A modifier that enables platform-appropriate context menu functionality
@@ -125,10 +122,10 @@ fun Modifier.contextMenu(
 ): Modifier = composed {
     var showMenu by remember { mutableStateOf(false) }
     var menuPosition by remember { mutableStateOf(IntOffset.Zero) }
-    
+
     // Get the platform-specific handler
     val handler = remember { ContextMenuHandler() }
-    
+
     if (showMenu && enabled) {
         ContextMenu(
             items = items,
@@ -136,7 +133,7 @@ fun Modifier.contextMenu(
             onDismissRequest = { showMenu = false }
         )
     }
-    
+
     // Apply platform-specific behavior
     with(handler) {
         this@composed.applyContextMenuBehavior(
