@@ -88,18 +88,41 @@ fun BossActionButtonWithLogo(
     )
 }
 
+val projectSelectContextMenuItems get() = listOf(
+    ContextMenuItem(
+        text = "OneOncology",
+        onClick = { /* Handle project 1 action */ }
+    ),
+    ContextMenuItem(
+        text = "Mayo",
+        onClick = { /* Handle project 2 action */ }
+    ),
+    ContextMenuItem(
+        text = "Atlantis",
+        onClick = { /* Handle project 3 action */ }
+    )
+)
+
+val gitContextMenuItems get() = listOf(
+    ContextMenuItem(
+        text = "dev",
+        onClick = { /* Handle branch 1 action */ }
+    )
+)
+
 @Composable
 fun BossTopLeftBar() {
     BossActionButtonWithLogo(
         text = "Nycbs", 
-        contextMenuItems = emptyList(),
+        contextMenuItems = projectSelectContextMenuItems,
         hintText = "BOSS Platform - Based on NYCBS"
     )
     BossActionButton(
         leftIcon = FeatherIcons.GitBranch, 
         text = "main",
+        contextMenuItems = gitContextMenuItems,
         hintText = "Current Git Branch: main"
-    ) { }
+    )
 }
 
 val lanagerContextMenuItems get() = listOf(
