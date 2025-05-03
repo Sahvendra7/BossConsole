@@ -1,5 +1,6 @@
 package ai.rever.boss.v4.components.buttons
 
+import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.v4.components.model.Panel
@@ -228,7 +229,15 @@ fun BossActionButton(
         onClick = handleClick,
         interactionSource = interactionSource,
         colors = ButtonDefaults.buttonColors(
-            backgroundColor = if (isSelected) color.copy(alpha = 0.1f) else Color.Transparent,
+            backgroundColor = if (isSelected) {
+                if (isFocused) {
+                    BossDarkAccent
+                } else {
+                    color.copy(alpha = 0.1f)
+                }
+            } else {
+                Color.Transparent
+            },
             contentColor = color
         ),
         contentPadding = _contentPadding,
