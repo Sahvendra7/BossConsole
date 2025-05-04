@@ -1,6 +1,7 @@
 package ai.rever.boss.v4.components.window_panel
 
 import BossDarkBackground
+import BossDarkBorder
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
@@ -15,6 +16,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.Divider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 
@@ -42,6 +44,7 @@ fun BossWindow(
                     windowPanelModel.setPanelVisible(panel, false)
                 }
             )
+            Divider(color = BossDarkBorder)
         }
     }
 
