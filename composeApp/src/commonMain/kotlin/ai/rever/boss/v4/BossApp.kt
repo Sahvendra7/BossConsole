@@ -7,12 +7,6 @@ import ai.rever.boss.v4.components.bars.horizontal.BossTopBar
 import ai.rever.boss.v4.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.v4.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
-import ai.rever.boss.v4.components.model.Panel
-import ai.rever.boss.v4.components.model.Panel.Companion.bottom
-import ai.rever.boss.v4.components.model.Panel.Companion.left
-import ai.rever.boss.v4.components.model.Panel.Companion.right
-import ai.rever.boss.v4.components.model.Panel.Companion.top
-import ai.rever.boss.v4.components.model.PanelData
 import ai.rever.boss.v4.components.model.SidebarItem
 import ai.rever.boss.v4.components.overlays.DraggingItemOverlay
 import ai.rever.boss.v4.components.window_panel.BossWindow
@@ -71,32 +65,33 @@ val rightBottomItems get() = listOf(
 )
 
 @Composable
-fun BossApp(tabsComponent: BossTabsComponent) {
+fun BossTabsComponent.BossApp() {
 
     // Create and remember the model here to share state across sidebars
     val windowPanelModel = remember {
         BossWindowPanelModel()
     }
 
-    BossTheme {
-        Box(modifier = Modifier.fillMaxSize()) { // Use Box to allow overlaying the drag ghost
-            Column(modifier = Modifier.fillMaxSize()) {
-                BossTitleBar()
-                BossTopBar()
-                Row(modifier = Modifier.weight(1f)) {
-                    // Pass the shared model down to both sidebars
-                    BossLeftSideBar(windowPanelModel)
-                    BossWindow(
-                        modifier = Modifier.weight(1f),
-                        tabsComponent = tabsComponent,
-                        windowPanelModel = windowPanelModel
-                    )
-                    BossRightSideBar(windowPanelModel)
+    with(windowPanelModel) {
+        BossTheme {
+            Box(modifier = Modifier.fillMaxSize()) { // Use Box to allow overlaying the drag ghost
+                Column(modifier = Modifier.fillMaxSize()) {
+                    BossTitleBar()
+                    BossTopBar()
+                    Row(modifier = Modifier.weight(1f)) {
+                        // Pass the shared model down to both sidebars
+                        BossLeftSideBar()
+                        BossWindow(
+                            modifier = Modifier.weight(1f),
+                            tabsComponent = run { this@BossApp },
+                        )
+                        BossRightSideBar()
+                    }
+                    BossBottomBar()
                 }
-                BossBottomBar()
+                // Draw the dragging item overlay (ghost) if an item is being dragged
+                DraggingItemOverlay(windowPanelModel)
             }
-            // Draw the dragging item overlay (ghost) if an item is being dragged
-            DraggingItemOverlay(windowPanelModel)
         }
     }
 }

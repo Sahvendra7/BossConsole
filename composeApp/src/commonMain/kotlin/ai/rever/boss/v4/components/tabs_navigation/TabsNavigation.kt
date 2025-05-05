@@ -12,7 +12,7 @@ class TabsNavigation<C : Any>(
     private val initialActive: Int = -1
 ) {
     private val _tabs = MutableValue(TabsState(tabs = initial, activeIndex = initialActive))
-    val state: Value<TabsState<C>> get() = _tabs
+    val state: Value<TabsState<C>> = _tabs
 
     fun addTab(config: C): Int {
         val newIndex = _tabs.value.tabs.size
@@ -22,6 +22,7 @@ class TabsNavigation<C : Any>(
                 activeIndex = newIndex
             )
         }
+        println("newIndex: $newIndex, config: $config")
         return newIndex
     }
 
@@ -61,7 +62,7 @@ class TabsComponentContext<C : Any>(
     private val childFactory: (C, ComponentContext) -> Child
 ) : ComponentContext by componentContext {
 
-    val tabsState: Value<TabsNavigation.TabsState<C>> get() = tabsNavigation.state
+    val tabsState: Value<TabsNavigation.TabsState<C>> = tabsNavigation.state
 
     val children: Value<List<Any>> = MutableValue<List<Any>>(emptyList()).also { mutableList ->
         tabsState.subscribe { state ->
@@ -71,7 +72,6 @@ class TabsComponentContext<C : Any>(
         }
     }
 
-    // Create an object to represent "no value"
     val activeChild: Value<Child> = MutableValue<Child>(NoChild).also { mutableValue ->
         tabsState.subscribe { state ->
             mutableValue.update {

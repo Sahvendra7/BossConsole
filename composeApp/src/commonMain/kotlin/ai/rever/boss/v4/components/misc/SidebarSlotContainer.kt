@@ -56,24 +56,22 @@ fun SidebarSlotContainer(
 
 // Renders a specific section of the sidebar using the DraggableSidebarModel
 @Composable
-fun DraggableSidebarSection(
+fun BossWindowPanelModel.DraggableSidebarSection(
     slot: Panel,
-    sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {
     SidebarSlotContainer(
         slot = slot,
-        sidebarModel = sidebarModel,
+        sidebarModel = this,
         modifier = modifier
     ) {
-        val items = sidebarModel.getItemsForSlot(slot)
+        val items = getItemsForSlot(slot)
         items.forEachIndexed { index, item ->
 
             key (item.id) {
                 DraggableActionButton(
                     item = item,
                     slot = slot,
-                    sidebarModel = sidebarModel,
                     modifier = Modifier
                         .run {
                             if (index == 0) {

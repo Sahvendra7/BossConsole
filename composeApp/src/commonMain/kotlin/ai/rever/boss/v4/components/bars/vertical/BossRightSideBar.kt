@@ -16,16 +16,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossRightSideBar(sidebarModel: BossWindowPanelModel) {
+fun BossWindowPanelModel.BossRightSideBar() {
     VDivider()
     VerticalBar(40.dp) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            DraggableSidebarSection(slot = right.top.top, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = right.top.top)
             SDivider()
-            DraggableSidebarSection(slot = right.top.bottom, sidebarModel = sidebarModel)
+            DraggableSidebarSection(slot = right.top.bottom)
             Spacer(modifier = Modifier.weight(1f))
         }
     }

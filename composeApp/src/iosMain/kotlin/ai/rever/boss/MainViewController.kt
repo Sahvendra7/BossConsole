@@ -6,8 +6,9 @@ import androidx.compose.ui.window.ComposeUIViewController
 
 fun MainViewControllerV4() = ComposeUIViewController {
     // Create root component with iOS lifecycle
-    val rootComponent = createBossAppComponent()
+    with(createBossAppComponent()) {
+        // Display the app
+        BossApp()
+    }
 
-    // Display the app
-    BossApp(rootComponent)
 }

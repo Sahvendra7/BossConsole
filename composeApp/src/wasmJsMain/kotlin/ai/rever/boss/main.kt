@@ -12,10 +12,10 @@ fun main() {
     document.body?.let { body ->
         ComposeViewport(body) {
             // Create root component with iOS lifecycle
-            val rootComponent = createBossAppComponent()
-
-            // Display the app
-            BossApp(rootComponent)
+            with(createBossAppComponent()) {
+                // Display the app
+                BossApp()
+            }
         }
     }
 }

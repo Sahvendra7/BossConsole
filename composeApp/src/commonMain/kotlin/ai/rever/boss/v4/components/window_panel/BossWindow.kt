@@ -26,10 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 @Composable
-fun BossWindow(
+fun BossWindowPanelModel.BossWindow(
     modifier: Modifier = Modifier,
-    tabsComponent: BossTabsComponent,
-    windowPanelModel: BossWindowPanelModel) {
+    tabsComponent: BossTabsComponent) {
 
     @Composable
     fun Panel(panel: Panel) {
@@ -43,10 +42,10 @@ fun BossWindow(
                 .hoverable(interactionSource)
         ) {
             BossPanelTopBar(
-                title = windowPanelModel.getPanelTitle(panel),
+                title = getPanelTitle(panel),
                 isHovered = isHovered,
                 onMinimize = {
-                    windowPanelModel.setPanelVisible(panel, false)
+                    setPanelVisible(panel, false)
                 }
             )
             Divider(color = BossDarkBorder)
@@ -55,7 +54,7 @@ fun BossWindow(
 
     @Composable
     fun WithPanel(panel: Panel,
-                  isPanelVisible: Boolean = windowPanelModel.isVisible(panel),
+                  isPanelVisible: Boolean = isVisible(panel),
                   isMainVisible: Boolean = true,
                   isRelative: Boolean = false,
                   panelContent: @Composable BoxScope.() -> Unit = { Panel(panel) },
@@ -74,8 +73,8 @@ fun BossWindow(
     @Composable
     fun WithNestedPanel(panel: Panel,
                         secondaryPanel: Panel = bottom,
-                        isFirstPanelVisible: Boolean = windowPanelModel.isVisible(panel.bottom),
-                        isLastPanelVisible: Boolean = windowPanelModel.isVisible(panel.top),
+                        isFirstPanelVisible: Boolean = isVisible(panel.bottom),
+                        isLastPanelVisible: Boolean = isVisible(panel.top),
                         isNestedRelative: Boolean = true,
                         firstPanel: @Composable BoxScope.() -> Unit = { Panel(panel.bottom) },
                         lastPanel: @Composable BoxScope.() -> Unit = { Panel(panel.top) },
@@ -95,10 +94,9 @@ fun BossWindow(
     WithPanel(bottom) {
         WithNestedPanel(left) {
             WithNestedPanel(right) {
-                BossMainPanel(
-                    modifier = Modifier.fillMaxSize(),
-                    bossTabsComponent = tabsComponent
-                )
+                with (tabsComponent) {
+                    BossMainPanel()
+                }
             }
         }
     }

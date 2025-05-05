@@ -15,12 +15,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Create root component with the activity's component context
-        val bossTabsComponent = BossTabsComponent(defaultComponentContext())
-
-        setContent {
-            BossApp(bossTabsComponent)
+        with(BossTabsComponent(defaultComponentContext())) {
+            setContent {
+                BossApp()
+            }
         }
+
     }
 }
 
@@ -32,5 +32,7 @@ class MainActivity : ComponentActivity() {
 )
 @Composable
 fun AppAndroidPreview() {
-    BossApp(createBossAppComponent())
+    with(createBossAppComponent()) {
+        BossApp()
+    }
 }

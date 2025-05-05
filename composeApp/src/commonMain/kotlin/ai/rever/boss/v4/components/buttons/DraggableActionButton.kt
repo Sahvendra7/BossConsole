@@ -30,15 +30,14 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun DraggableActionButton(
+fun BossWindowPanelModel.DraggableActionButton(
     item: SidebarItem,
     slot: Panel,
-    sidebarModel: BossWindowPanelModel,
     modifier: Modifier = Modifier
 ) {
     val currentItem by rememberUpdatedState(item)
     val currentSlot by rememberUpdatedState(slot)
-    val isBeingDragged = sidebarModel.draggingItem?.first?.id == item.id
+    val isBeingDragged = draggingItem?.first?.id == item.id
 
     var componentPositionInWindow by remember { mutableStateOf<Offset?>(null) }
     var pendingDragStartOffset by remember { mutableStateOf<Offset?>(null) }
@@ -52,7 +51,7 @@ fun DraggableActionButton(
 
         if (startOffset != null && currentPos != null) {
             val startPosition = currentPos + startOffset
-            sidebarModel.startDragging(currentItem, currentSlot, startPosition)
+            startDragging(currentItem, currentSlot, startPosition)
             // Reset pending offset AFTER starting the drag
             pendingDragStartOffset = null
         }
@@ -62,7 +61,7 @@ fun DraggableActionButton(
         imageVector = item.icon,
         text = item.label,
         hintDirection = slot.opposite,
-        isSelected = sidebarModel.isSelected(item),
+        isSelected = isSelected(item),
         modifier = modifier
             .onGloballyPositioned { layoutCoordinates ->
                 val newPos = layoutCoordinates.positionInWindow()
@@ -83,28 +82,28 @@ fun DraggableActionButton(
                         if (pendingDragStartOffset != null) {
                             pendingDragStartOffset = null
                         }
-                        if (sidebarModel.draggingItem != null) {
-                            sidebarModel.stopDragging()
+                        if (draggingItem != null) {
+                            stopDragging()
                         }
                     },
                     onDragCancel = {
                         pendingDragStartOffset = null
-                        if (sidebarModel.draggingItem != null) {
-                            sidebarModel.stopDragging()
+                        if (draggingItem != null) {
+                            stopDragging()
                         }
                     },
                     onDrag = { change: PointerInputChange, dragAmount: Offset ->
                         // Check model state directly to see if drag has officially started
-                        if (sidebarModel.draggingItem?.first?.id == item.id) {
+                        if (draggingItem?.first?.id == item.id) {
                             change.consume()
-                            sidebarModel.updateDragDelta(dragAmount)
+                            updateDragDelta(dragAmount)
                         }
                     }
                 )
             }
     ) {
         item.onClick?.invoke() ?:
-        sidebarModel.run {
+        run {
             if (draggingItem == null) item.onClick()
         }
     }

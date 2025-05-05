@@ -57,8 +57,8 @@ fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-fun BossMainTabBar(bossTabsComponent: BossTabsComponent) {
-    val tabsState = bossTabsComponent.tabsState.subscribeAsState()
+fun BossTabsComponent.BossMainTabBar() {
+    val tabsState = tabsState.subscribeAsState()
 
     HorizontalBar(height = 42.dp, backgroundColor = BossDarkBackground) {
         HorizontalBarRow {
@@ -71,8 +71,8 @@ fun BossMainTabBar(bossTabsComponent: BossTabsComponent) {
                             is WebBrowserConfig -> tabConfig.url
                         },
                         isSelected = isSelected,
-                        onClick = { bossTabsComponent.selectTab(index) },
-                        onClose = { bossTabsComponent.closeTab(index) }
+                        onClick = { selectTab(index) },
+                        onClose = { closeTab(index) }
                     )
                 }
 
@@ -83,11 +83,11 @@ fun BossMainTabBar(bossTabsComponent: BossTabsComponent) {
 }
 
 @Composable
-fun BossMainPanel(modifier: Modifier = Modifier, bossTabsComponent: BossTabsComponent) {
-    Column(modifier = modifier) {
-        BossMainTabBar(bossTabsComponent)
+fun BossTabsComponent.BossMainPanel(modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+        BossMainTabBar()
         Divider(color = BossDarkBorder)
-        BossMainPanelContent(bossTabsComponent)
+        BossMainPanelContent()
     }
 }
 
@@ -95,10 +95,8 @@ fun BossMainPanel(modifier: Modifier = Modifier, bossTabsComponent: BossTabsComp
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossMainPanelContent(
-    bossTabsComponent: BossTabsComponent
-) {
-    val activeChild = bossTabsComponent.activeChild.subscribeAsState()
+fun BossTabsComponent.BossMainPanelContent() {
+    val activeChild = activeChild.subscribeAsState()
 
     Box(modifier = Modifier) {
         when (val child = activeChild.value) {
@@ -124,7 +122,7 @@ class BossTabsComponent(
     componentContext: ComponentContext
 ) : ComponentContext by componentContext {
 
-    private val tabsNavigation = TabsNavigation<TabConfig>()
+    val tabsNavigation = TabsNavigation<TabConfig>()
 
     private val tabsComponentContext = childTabs (
         tabsNavigation = tabsNavigation,
