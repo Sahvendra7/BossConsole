@@ -1,9 +1,14 @@
 package ai.rever.boss.v4.components.model
 
+import ai.rever.boss.v4.bottomItems
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
+import ai.rever.boss.v4.leftBottomItems
+import ai.rever.boss.v4.leftTopItems
+import ai.rever.boss.v4.rightBottomItems
+import ai.rever.boss.v4.rightTopItems
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -24,7 +29,7 @@ data class SidebarItem(
 
 // Holds the state and logic for the draggable sidebar system
 @Stable
-class BossWindowPanelModel(_itemsBySlot: Map<Panel, List<SidebarItem>>, _panelData: Map<Panel, PanelData>) {
+class BossWindowPanelModel {
     // The item currently being dragged, and its original slot
     var draggingItem by mutableStateOf<Pair<SidebarItem, Panel>?>(null)
         private set
@@ -45,30 +50,31 @@ class BossWindowPanelModel(_itemsBySlot: Map<Panel, List<SidebarItem>>, _panelDa
     internal val slotBounds = mutableMapOf<Panel, Rect>()
 
     // A map holding the list of items for each slot, backed by mutable state
-    private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>()
+    private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>(
+        left.top.top to leftTopItems,
+        left.top.bottom to leftBottomItems,
+        left.bottom to bottomItems,
+        right.top.top to rightTopItems,
+        right.top.bottom to rightBottomItems
+    )
 
     val onClick: SidebarItem.() -> Unit = {
         when(slot) {
-            left.top.top -> toggleVisibility(left.top)
-            left.top.bottom -> toggleVisibility(left.bottom)
             left.bottom -> toggleVisibility(bottom)
+            left.top.top -> toggleVisibility(left.top)
             right.top.top -> toggleVisibility(right.top)
+            left.top.bottom -> toggleVisibility(left.bottom)
             right.top.bottom -> toggleVisibility(right.bottom)
         }
     }
 
-
-    private val panelsData = mutableStateMapOf<Panel, PanelData>()
-
-    init {
-//         Initialize with default items in their respective slots
-        _itemsBySlot.forEach { (panel, items) ->
-            itemsBySlot[panel] = items
-        }
-        _panelData.forEach { (panel, panelData) ->
-            panelsData[panel] = panelData
-        }
-    }
+    private val panelsData = mutableStateMapOf<Panel, PanelData>(
+        bottom to PanelData(bottomItems.first(), true),
+        left.top to PanelData(leftTopItems.first(), true),
+        right.top to PanelData(rightTopItems.first(), true),
+        left.bottom to PanelData(leftBottomItems.first(), false),
+        right.bottom to PanelData(rightBottomItems.first(), false),
+    )
 
     val SidebarItem.slot: Panel
         get() = itemsBySlot

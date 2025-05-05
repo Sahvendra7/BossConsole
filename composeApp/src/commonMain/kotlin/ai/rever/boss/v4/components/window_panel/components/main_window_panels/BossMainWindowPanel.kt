@@ -1,48 +1,38 @@
 package ai.rever.boss.v4.components.window_panel.components.main_window_panels
 
-import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
 import ai.rever.boss.v4.components.bars.ScrollbarConfig
 import ai.rever.boss.v4.components.bars.horizontal.HorizontalBar
 import ai.rever.boss.v4.components.bars.horizontal.HorizontalBarRow
-import ai.rever.boss.v4.components.bars.horizontal.RightArrow
 import ai.rever.boss.v4.components.bars.horizontalScrollWithScrollbar
-import ai.rever.boss.v4.components.buttons.BossActionButton
 import ai.rever.boss.v4.components.buttons.BossTabButton
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.*
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import ai.rever.boss.v4.components.tabs_navigation.TabsNavigation
+import ai.rever.boss.v4.components.tabs_navigation.childTabs
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.Child.CodeEditor
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.Child.WebBrowser
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.TabConfig.CodeEditorConfig
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.TabConfig.WebBrowserConfig
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.CodeEditorComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.CodeEditorPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.WebBrowserComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens.WebBrowserPanel
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Divider
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Navigation
-import androidx.compose.material.icons.outlined.Web
+import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
-import com.arkivanov.essenty.lifecycle.LifecycleRegistry
-import com.arkivanov.decompose.extensions.compose.stack.Children
-import com.arkivanov.decompose.extensions.compose.stack.animation.fade
-import com.arkivanov.decompose.extensions.compose.stack.animation.plus
-import com.arkivanov.decompose.extensions.compose.stack.animation.scale
-import com.arkivanov.decompose.extensions.compose.stack.animation.stackAnimation
-import com.arkivanov.decompose.router.stack.ChildStack
-import com.arkivanov.decompose.router.stack.StackNavigation
-import com.arkivanov.decompose.router.stack.childStack
+import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import com.arkivanov.decompose.value.MutableValue
 import com.arkivanov.decompose.value.Value
+import com.arkivanov.decompose.value.update
+import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kotlinx.serialization.Serializable
 
 @Composable
@@ -67,17 +57,25 @@ fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-fun BossMainTabBar() {
+fun BossMainTabBar(bossTabsComponent: BossTabsComponent) {
+    val tabsState = bossTabsComponent.tabsState.subscribeAsState()
+
     HorizontalBar(height = 42.dp, backgroundColor = BossDarkBackground) {
         HorizontalBarRow {
             BossLeftTabBar {
-                BossTabButton(fileName = "https://risalabs.ai", onClick = {})
-                BossTabButton(fileName = "ContextMenu.kt", isSelected = true, onClick = {})
-                BossTabButton(fileName = "BossWindow.kt", onClick = {})
-                BossTabButton(fileName = "google.com", onClick = {})
-                BossTabButton(fileName = "BossWindow.kt", onClick = {})
-                BossTabButton(fileName = "ContextMenu.kt", onClick = {})
-                BossTabButton(fileName = "google.com", onClick = {})
+                tabsState.value.tabs.forEachIndexed { index, tabConfig ->
+                    val isSelected = index == tabsState.value.activeIndex
+                    BossTabButton(
+                        fileName = when(tabConfig) {
+                            is CodeEditorConfig -> tabConfig.filePath.substringAfterLast('/')
+                            is WebBrowserConfig -> tabConfig.url
+                        },
+                        isSelected = isSelected,
+                        onClick = { bossTabsComponent.selectTab(index) },
+                        onClose = { bossTabsComponent.closeTab(index) }
+                    )
+                }
+
             }
             Spacer(modifier = Modifier.weight(0.1f))
         }
@@ -85,11 +83,11 @@ fun BossMainTabBar() {
 }
 
 @Composable
-fun BossMainPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
+fun BossMainPanel(modifier: Modifier = Modifier, bossTabsComponent: BossTabsComponent) {
     Column(modifier = modifier) {
-        BossMainTabBar()
+        BossMainTabBar(bossTabsComponent)
         Divider(color = BossDarkBorder)
-        BossMainPan(bossConsoleComponent = bossConsoleComponent)
+        BossMainPanelContent(bossTabsComponent)
     }
 }
 
@@ -97,16 +95,16 @@ fun BossMainPanel(modifier: Modifier = Modifier, bossConsoleComponent: BossConso
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossMainPan(modifier: Modifier = Modifier, bossConsoleComponent: BossConsoleComponent) {
-    Children(
-        stack = bossConsoleComponent.childStack,
-        animation = stackAnimation(fade() + scale()),
-        modifier = modifier,
-    ) { child ->
-        when (val instance = child.instance) {
-            is BossConsoleComponent.Child.Home -> HomeScreen(instance.component)
-            is BossConsoleComponent.Child.Settings -> SettingsScreen(instance.component)
-            is BossConsoleComponent.Child.Detail -> DetailScreen(instance.component)
+fun BossMainPanelContent(
+    bossTabsComponent: BossTabsComponent
+) {
+    val activeChild = bossTabsComponent.activeChild.subscribeAsState()
+
+    Box(modifier = Modifier) {
+        when (val child = activeChild.value) {
+            is CodeEditor -> CodeEditorPanel(child.component)
+            is WebBrowser -> WebBrowserPanel(child.component)
+            else -> Text("No tabs open")
         }
     }
 }
@@ -114,55 +112,62 @@ fun BossMainPan(modifier: Modifier = Modifier, bossConsoleComponent: BossConsole
 /**
  * Helper function to create bossApp component with DefaultComponentContext
  */
-fun createBossAppComponent(): BossConsoleComponent {
+fun createBossAppComponent(): BossTabsComponent {
     val lifecycle = LifecycleRegistry()
-    return BossConsoleComponent(DefaultComponentContext(lifecycle))
+    return BossTabsComponent(DefaultComponentContext(lifecycle))
 }
 
 /**
  * Root component for the BOSS app using Decompose for navigation
  */
-class BossConsoleComponent(
+class BossTabsComponent(
     componentContext: ComponentContext
 ) : ComponentContext by componentContext {
 
-    // Navigation controller
-    private val navigation = StackNavigation<Config>()
+    private val tabsNavigation = TabsNavigation<TabConfig>()
 
-    // Stack state for child components
-    val childStack: Value<ChildStack<Config, Child>> = childStack(
-        source = navigation,
-        serializer = Config.serializer(),
-        initialConfiguration = Config.Home,
-        handleBackButton = true,
+    private val tabsComponentContext = childTabs (
+        tabsNavigation = tabsNavigation,
         childFactory = ::createChild
     )
 
-    // Configuration classes for different screens
-    @Serializable
-    sealed class Config {
-        @Serializable
-        data object Home : Config()
+    // Expose tab state for UI
+    val tabsState: Value<TabsNavigation.TabsState<TabConfig>> = tabsComponentContext.tabsState
 
-        @Serializable
-        data object Settings : Config()
+    object NoChild : Child()
 
-        @Serializable
-        data class Detail(val id: String) : Config()
-    }
-
-    // Child classes for different screens
-    sealed class Child {
-        data class Home(val component: HomeComponent) : Child()
-        data class Settings(val component: SettingsComponent) : Child()
-        data class Detail(val component: DetailComponent) : Child()
+    // Active child for display
+    val activeChild: Value<Child> = MutableValue<Child>(NoChild).also { mutableValue ->
+        tabsComponentContext.activeChild.subscribe { value ->
+            mutableValue.update { value }
+        }
     }
 
     // Factory method to create children based on configuration
-    private fun createChild(config: Config, componentContext: ComponentContext): Child =
-        when (config) {
-            is Config.Home -> Child.Home(HomeComponent(componentContext, navigation))
-            is Config.Settings -> Child.Settings(SettingsComponent(componentContext, navigation))
-            is Config.Detail -> Child.Detail(DetailComponent(componentContext, navigation, config.id))
+    private fun createChild(tabConfig: TabConfig, componentContext: ComponentContext): Child =
+        when (tabConfig) {
+            is CodeEditorConfig -> CodeEditor(CodeEditorComponent(componentContext, this, tabConfig))
+            is WebBrowserConfig -> WebBrowser(WebBrowserComponent(componentContext, this, tabConfig))
         }
+
+    // Tab management methods
+    fun openTab(config: TabConfig) = tabsComponentContext.addTab(config)
+    fun closeTab(index: Int) = tabsComponentContext.removeTab(index)
+    fun selectTab(index: Int) = tabsComponentContext.selectTab(index)
+}
+
+// Child classes for different screens
+sealed class Child {
+    data class CodeEditor(val component: CodeEditorComponent) : Child()
+    data class WebBrowser(val component: WebBrowserComponent) : Child()
+}
+
+// Configuration classes for different screens
+@Serializable
+sealed class TabConfig {
+    @Serializable
+    data class CodeEditorConfig(val filePath: String) : TabConfig()
+
+    @Serializable
+    data class WebBrowserConfig(val url: String) : TabConfig()
 }

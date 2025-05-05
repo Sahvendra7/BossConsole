@@ -8,22 +8,27 @@ import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
-import ai.rever.boss.v4.components.window_panel.components.*
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.BossPanelTopBar
+import ai.rever.boss.v4.components.window_panel.components.BossResizablePanel
 import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossMainPanel
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossTabsComponent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Divider
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 @Composable
 fun BossWindow(
     modifier: Modifier = Modifier,
-    bossConsoleComponent: BossConsoleComponent,
+    tabsComponent: BossTabsComponent,
     windowPanelModel: BossWindowPanelModel) {
 
     @Composable
@@ -92,7 +97,7 @@ fun BossWindow(
             WithNestedPanel(right) {
                 BossMainPanel(
                     modifier = Modifier.fillMaxSize(),
-                    bossConsoleComponent = bossConsoleComponent
+                    bossTabsComponent = tabsComponent
                 )
             }
         }

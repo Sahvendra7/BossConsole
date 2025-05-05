@@ -1,6 +1,7 @@
 package ai.rever.boss.v4.components.window_panel.components.main_window_panels.screens
 
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.TabConfig.WebBrowserConfig
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,14 +14,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.arkivanov.decompose.ComponentContext
-import com.arkivanov.decompose.router.stack.StackNavigation
-import com.arkivanov.decompose.router.stack.pop
 
 /**
  * Detail screen UI
  */
 @Composable
-fun DetailScreen(component: DetailComponent) {
+fun WebBrowserPanel(component: WebBrowserComponent) {
     Scaffold(
         topBar = {
             Text("Details", modifier = Modifier.padding(16.dp))
@@ -31,7 +30,7 @@ fun DetailScreen(component: DetailComponent) {
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Detail Screen for ID: ${component.id}")
+                Text("Web Browser: ${component.url}")
 
                 Button(
                     onClick = { component.onBackClicked() },
@@ -47,13 +46,15 @@ fun DetailScreen(component: DetailComponent) {
 /**
  * Detail screen component
  */
-class DetailComponent(
+class WebBrowserComponent(
     componentContext: ComponentContext,
-    private val navigation: StackNavigation<BossConsoleComponent.Config>,
-    val id: String
+    private val navigation: BossTabsComponent,
+    private val config: WebBrowserConfig,
 ) : ComponentContext by componentContext {
 
+    val url get() = config.url
+
     fun onBackClicked() {
-        navigation.pop()
+        navigation.closeTab(navigation.tabsState.value.activeIndex)
     }
 }

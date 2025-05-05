@@ -41,7 +41,7 @@ fun BossTabButton(
     isFocused: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onCloseClick: () -> Unit = {}
+    onClose: () -> Unit = {}
 ) {
 
     val interactionSource = remember { MutableInteractionSource() }
@@ -82,7 +82,7 @@ fun BossTabButton(
                     .size(13.dp)
                     .offset(x = 8.dp)
                     .alpha(if (isSelected || isHovered) 1f else 0f)
-                    .clickable(onClick = onCloseClick)
+                    .clickable(onClick = onClose)
             )
         }
         if (isSelected) {

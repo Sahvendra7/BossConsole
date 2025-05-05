@@ -4,7 +4,6 @@ import ai.rever.boss.v4.components.dividers.SDivider
 import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
-import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top

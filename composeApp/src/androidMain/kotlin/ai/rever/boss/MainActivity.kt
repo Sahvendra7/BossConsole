@@ -1,11 +1,8 @@
 package ai.rever.boss
 
-import ai.rever.boss.v3.AppV3
 import ai.rever.boss.v4.BossApp
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossConsoleComponent
+import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.v4.components.window_panel.components.main_window_panels.createBossAppComponent
-import android.content.res.Configuration.SCREENLAYOUT_SIZE_XLARGE
-import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,10 +16,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // Create root component with the activity's component context
-        val bossConsoleComponent = BossConsoleComponent(defaultComponentContext())
+        val bossTabsComponent = BossTabsComponent(defaultComponentContext())
 
         setContent {
-            BossApp(bossConsoleComponent)
+            BossApp(bossTabsComponent)
         }
     }
 }

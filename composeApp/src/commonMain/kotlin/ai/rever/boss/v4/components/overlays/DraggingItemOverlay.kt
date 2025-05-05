@@ -16,12 +16,12 @@ import androidx.compose.ui.unit.round
 
 // Overlay composable to draw the ghost item following the pointer
 @Composable
-fun DraggingItemOverlay(sidebarModel: BossWindowPanelModel) {
+fun DraggingItemOverlay(windowPanelModel: BossWindowPanelModel) {
     // Observe the dragging item and its position from the model
-    val draggedItemInfo = sidebarModel.draggingItem
+    val draggedItemInfo = windowPanelModel.draggingItem
     // Get the start position and delta from the model
-    val startPosition = sidebarModel.dragStartPosition
-    val delta = sidebarModel.dragDelta
+    val startPosition = windowPanelModel.dragStartPosition
+    val delta = windowPanelModel.dragDelta
 
     if (draggedItemInfo != null && startPosition != null) {
         val (item, _) = draggedItemInfo
