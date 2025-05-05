@@ -18,7 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 @Composable
-fun BossWindowPanelModel.SideWindowPanel(panel: Panel) {
+fun BossWindowPanelModel.SidePanel(panel: Panel) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 

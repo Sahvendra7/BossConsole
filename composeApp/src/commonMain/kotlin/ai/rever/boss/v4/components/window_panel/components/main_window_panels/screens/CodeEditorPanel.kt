@@ -15,10 +15,10 @@ import androidx.compose.ui.unit.dp
 import com.arkivanov.decompose.ComponentContext
 
 /**
- * Code screen UI
+ * Code Editor UI
  */
 @Composable
-fun CodeEditorPanel(component: CodeEditorComponent) {
+fun CodeEditorComponent.CodeEditorPanel() {
     Scaffold(
         topBar = {
             Text("Home", modifier = Modifier.padding(16.dp))

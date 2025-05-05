@@ -19,7 +19,7 @@ import com.arkivanov.decompose.ComponentContext
  * Detail screen UI
  */
 @Composable
-fun WebBrowserPanel(component: WebBrowserComponent) {
+fun WebBrowserComponent.WebBrowserPanel() {
     Scaffold(
         topBar = {
             Text("Details", modifier = Modifier.padding(16.dp))
@@ -30,10 +30,10 @@ fun WebBrowserPanel(component: WebBrowserComponent) {
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Web Browser: ${component.url}")
+                Text("Web Browser: $url")
 
                 Button(
-                    onClick = { component.onBackClicked() },
+                    onClick = { onBackClicked() },
                     modifier = Modifier.padding(8.dp)
                 ) {
                     Text("Go Back")

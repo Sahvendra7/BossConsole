@@ -1,28 +1,17 @@
 package ai.rever.boss.v4.components.window_panel
 
-import BossDarkBackground
-import BossDarkBorder
 import ai.rever.boss.v4.components.model.BossWindowPanelModel
 import ai.rever.boss.v4.components.model.Panel
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
-import ai.rever.boss.v4.components.window_panel.components.BossPanelTopBar
 import ai.rever.boss.v4.components.window_panel.components.BossResizablePanel
 import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossMainPanel
 import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossTabsComponent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import ai.rever.boss.v4.components.window_panel.components.side_window_panel.SidePanel
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 @Composable
@@ -31,33 +20,11 @@ fun BossWindowPanelModel.BossWindow(
     tabsComponent: BossTabsComponent) {
 
     @Composable
-    fun Panel(panel: Panel) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isHovered by interactionSource.collectIsHoveredAsState()
-        
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(BossDarkBackground)
-                .hoverable(interactionSource)
-        ) {
-            BossPanelTopBar(
-                title = getPanelTitle(panel),
-                isHovered = isHovered,
-                onMinimize = {
-                    setPanelVisible(panel, false)
-                }
-            )
-            Divider(color = BossDarkBorder)
-        }
-    }
-
-    @Composable
     fun WithPanel(panel: Panel,
                   isPanelVisible: Boolean = isVisible(panel),
                   isMainVisible: Boolean = true,
                   isRelative: Boolean = false,
-                  panelContent: @Composable BoxScope.() -> Unit = { Panel(panel) },
+                  panelContent: @Composable BoxScope.() -> Unit = { SidePanel(panel) },
                   mainContent: (@Composable BoxScope.() -> Unit)? = null) {
         BossResizablePanel(
             modifier = modifier,
@@ -76,8 +43,8 @@ fun BossWindowPanelModel.BossWindow(
                         isFirstPanelVisible: Boolean = isVisible(panel.bottom),
                         isLastPanelVisible: Boolean = isVisible(panel.top),
                         isNestedRelative: Boolean = true,
-                        firstPanel: @Composable BoxScope.() -> Unit = { Panel(panel.bottom) },
-                        lastPanel: @Composable BoxScope.() -> Unit = { Panel(panel.top) },
+                        firstPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.bottom) },
+                        lastPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.top) },
                         mainContent: @Composable BoxScope.() -> Unit) {
         WithPanel(panel,
             panelContent = {

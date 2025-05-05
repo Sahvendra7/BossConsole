@@ -100,8 +100,8 @@ fun BossTabsComponent.BossMainPanelContent() {
 
     Box(modifier = Modifier) {
         when (val child = activeChild.value) {
-            is CodeEditor -> CodeEditorPanel(child.component)
-            is WebBrowser -> WebBrowserPanel(child.component)
+            is CodeEditor -> child.component.CodeEditorPanel()
+            is WebBrowser -> child.component.WebBrowserPanel()
             else -> Text("No tabs open")
         }
     }
