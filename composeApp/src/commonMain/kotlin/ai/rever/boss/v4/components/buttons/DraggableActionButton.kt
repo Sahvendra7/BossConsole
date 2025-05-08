@@ -1,18 +1,11 @@
 package ai.rever.boss.v4.components.buttons
 
-import BossDarkTextPrimary
-import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.BossDraggableComponent
 import ai.rever.boss.v4.components.model.Panel
-import ai.rever.boss.v4.components.model.Panel.Companion.bottom
-import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.opposite
-import ai.rever.boss.v4.components.model.Panel.Companion.right
-import ai.rever.boss.v4.components.model.Panel.Companion.root
 import ai.rever.boss.v4.components.model.SidebarItem
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +23,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossWindowPanelModel.DraggableActionButton(
+fun BossDraggableComponent.DraggableActionButton(
     item: SidebarItem,
     slot: Panel,
     modifier: Modifier = Modifier

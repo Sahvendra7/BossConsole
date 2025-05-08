@@ -3,7 +3,7 @@ package ai.rever.boss.v4.components.bars.vertical
 import ai.rever.boss.v4.components.dividers.SDivider
 import ai.rever.boss.v4.components.dividers.VDivider
 import ai.rever.boss.v4.components.misc.DraggableSidebarSection
-import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.BossDraggableComponent
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.top
@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun BossWindowPanelModel.BossLeftSideBar() {
+fun BossDraggableComponent.BossLeftSideBar() {
 
     VerticalBar(40.dp) {
         Column(

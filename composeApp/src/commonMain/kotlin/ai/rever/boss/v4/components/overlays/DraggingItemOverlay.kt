@@ -1,7 +1,7 @@
 package ai.rever.boss.v4.components.overlays
 
 import BossDarkTextPrimary
-import ai.rever.boss.v4.components.model.BossWindowPanelModel
+import ai.rever.boss.v4.components.model.BossDraggableComponent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -16,12 +16,12 @@ import androidx.compose.ui.unit.round
 
 // Overlay composable to draw the ghost item following the pointer
 @Composable
-fun DraggingItemOverlay(windowPanelModel: BossWindowPanelModel) {
+fun BossDraggableComponent.DraggingItemOverlay() {
     // Observe the dragging item and its position from the model
-    val draggedItemInfo = windowPanelModel.draggingItem
+    val draggedItemInfo = draggingItem
     // Get the start position and delta from the model
-    val startPosition = windowPanelModel.dragStartPosition
-    val delta = windowPanelModel.dragDelta
+    val startPosition = dragStartPosition
+    val delta = dragDelta
 
     if (draggedItemInfo != null && startPosition != null) {
         val (item, _) = draggedItemInfo

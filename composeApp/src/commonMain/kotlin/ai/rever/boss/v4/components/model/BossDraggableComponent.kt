@@ -1,14 +1,11 @@
 package ai.rever.boss.v4.components.model
 
-import ai.rever.boss.v4.bottomItems
 import ai.rever.boss.v4.components.model.Panel.Companion.bottom
 import ai.rever.boss.v4.components.model.Panel.Companion.left
 import ai.rever.boss.v4.components.model.Panel.Companion.right
 import ai.rever.boss.v4.components.model.Panel.Companion.top
-import ai.rever.boss.v4.leftBottomItems
-import ai.rever.boss.v4.leftTopItems
-import ai.rever.boss.v4.rightBottomItems
-import ai.rever.boss.v4.rightTopItems
+import ai.rever.boss.v4.components.registery.PanelId
+import ai.rever.boss.v4.components.registery.PanelRegistry
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -16,20 +13,25 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlin.math.max
 import kotlin.to
 
-data class PanelData(val sidebarItem: SidebarItem? = null,
-                     val visibility: Boolean)
+data class PanelData(
+    val sidebarItem: SidebarItem? = null,
+    val visibility: Boolean,
+)
 
 // Represents a single draggable item in the sidebar
 data class SidebarItem(
-    val id: String, // Unique identifier for the item
+    val pluginContentId: PanelId, // Unique identifier for the item
     val icon: ImageVector,
     val label: String,
     val onClick: (() -> Unit)? = null,
-)
+) {
+    val id: String get() = pluginContentId.panelId
+}
+
 
 // Holds the state and logic for the draggable sidebar system
 @Stable
-class BossWindowPanelModel {
+class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     // The item currently being dragged, and its original slot
     var draggingItem by mutableStateOf<Pair<SidebarItem, Panel>?>(null)
         private set
@@ -50,13 +52,38 @@ class BossWindowPanelModel {
     internal val slotBounds = mutableMapOf<Panel, Rect>()
 
     // A map holding the list of items for each slot, backed by mutable state
-    private val itemsBySlot = mutableStateMapOf<Panel, List<SidebarItem>>(
-        left.top.top to leftTopItems,
-        left.top.bottom to leftBottomItems,
-        left.bottom to bottomItems,
-        right.top.top to rightTopItems,
-        right.top.bottom to rightBottomItems
-    )
+    private val itemsBySlot by lazy {
+        panelRegistry
+            .getDefaultSidebarMap()
+            .map { it.key to it.value }
+            .toMutableStateMap()
+    }
+
+
+    private val panelsData by lazy {
+        mutableStateMapOf<Panel, PanelData>(
+            bottom to PanelData(visibility =  false),
+            left.top to PanelData(visibility =  false),
+            right.top to PanelData(visibility =  false),
+            left.bottom to PanelData(visibility =  false),
+            right.bottom to PanelData(visibility =  false),
+        )
+    }
+
+    fun update() {
+        panelRegistry.getDefaultSidebarMap().forEach {
+            itemsBySlot[it.key] = it.value
+
+            panelsData[it.key] = panelsData[it.key]
+                ?.copy(sidebarItem = it.value.firstOrNull())
+                ?: PanelData(visibility = false)
+            when (it.key) {
+                left.top.top,
+                right.top.top,
+                left.bottom  -> it.value.firstOrNull()?.onClick()
+            }
+        }
+    }
 
     val onClick: SidebarItem.() -> Unit = {
         when(slot) {
@@ -68,13 +95,10 @@ class BossWindowPanelModel {
         }
     }
 
-    private val panelsData = mutableStateMapOf<Panel, PanelData>(
-        bottom to PanelData(bottomItems.first(), true),
-        left.top to PanelData(leftTopItems.first(), true),
-        right.top to PanelData(rightTopItems.first(), true),
-        left.bottom to PanelData(leftBottomItems.first(), false),
-        right.bottom to PanelData(rightBottomItems.first(), false),
-    )
+
+    fun getPanelContentId(panel: Panel): PanelId? {
+        return panelsData[panel]?.sidebarItem?.pluginContentId
+    }
 
     val SidebarItem.slot: Panel
         get() = itemsBySlot
@@ -206,7 +230,7 @@ class BossWindowPanelModel {
             setPanelVisible(panel, true)
         }
         panelsData[panel]?.let {
-            panelsData[panel] = it.copy(this)
+            panelsData[panel] = it.copy(sidebarItem = this)
         }
     }
 
@@ -216,7 +240,7 @@ class BossWindowPanelModel {
         }
     }
 
-    fun getPanelTitle(panel: Panel) = panelsData[panel]?.sidebarItem?.label ?: ""
+//    fun getPanelTitle(panel: Panel) = panelsData[panel]?.sidebarItem?.label ?: ""
 
     fun isSelected(item: SidebarItem): Boolean {
         return panelsData.values.any { (it.sidebarItem?.id == item.id) && it.visibility }
