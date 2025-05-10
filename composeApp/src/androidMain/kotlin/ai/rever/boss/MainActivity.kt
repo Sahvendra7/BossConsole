@@ -1,22 +1,20 @@
 package ai.rever.boss
 
-import ai.rever.boss.v4.BossApp
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.BossTabsComponent
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.createBossAppComponent
+import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.Devices
+import androidx.compose.ui.tooling.preview.Preview
 import com.arkivanov.decompose.defaultComponentContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        with(BossTabsComponent(defaultComponentContext())) {
-            setContent {
+        setContent {
+            with((defaultComponentContext())) {
                 BossApp()
             }
         }
@@ -32,7 +30,7 @@ class MainActivity : ComponentActivity() {
 )
 @Composable
 fun AppAndroidPreview() {
-    with(createBossAppComponent()) {
+    with(createBossAppContext) {
         BossApp()
     }
 }

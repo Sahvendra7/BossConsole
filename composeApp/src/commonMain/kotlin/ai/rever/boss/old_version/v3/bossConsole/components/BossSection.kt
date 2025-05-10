@@ -1,0 +1,39 @@
+package ai.rever.boss.old_version.v3.bossConsole.components
+
+import BossNavigationItem
+import BossSectionHeader
+import BossDarkAccent
+import BossDarkBorder
+import ai.rever.boss.old_version.v3.bossConsole.BossConsoleViewModel
+import ai.rever.boss.old_version.v3.bossConsole.Section
+import androidx.compose.material.Divider
+import androidx.compose.runtime.Composable
+
+@Composable
+fun BossSection(
+    section: Section,
+    viewModel: BossConsoleViewModel,
+    onNavigationItemClick: () -> Unit = {}
+) {
+    BossSectionHeader(
+        title = section.name,
+        isExpanded = section in viewModel.expandedSections,
+        onClick = { viewModel.toggleSection(section) },
+    )
+
+    if (section in viewModel.expandedSections) {
+        viewModel.getItemsBySection(section).forEach { item ->
+            BossNavigationItem(
+                item = item,
+                isSelected = viewModel.currentScreen == item.screen,
+                onClick = {
+                    viewModel.navigateTo(item.screen)
+                    onNavigationItemClick()
+                },
+                selectedColor = BossDarkAccent
+            )
+        }
+    }
+
+    Divider(color = BossDarkBorder)
+}

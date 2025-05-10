@@ -1,8 +1,7 @@
 package ai.rever.boss
 
 import BossDarkSurface
-import ai.rever.boss.v4.BossApp
-import ai.rever.boss.v4.components.window_panel.components.main_window_panels.createBossAppContext
+import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
