@@ -254,12 +254,17 @@ fun TerminalView(viewModel: TerminalViewModel) {
         }
     }
     
-    // Auto-scroll to bottom when terminal updates
+    // Auto-scroll to bottom when terminal updates (only if already at bottom)
     LaunchedEffect(terminalLines.size) {
         if (terminalLines.isNotEmpty()) {
-            // Auto-scroll to bottom when new content is added
-            coroutineScope.launch {
-                scrollState.animateScrollTo(scrollState.maxValue)
+            // Check if we're already at or near the bottom
+            val isAtBottom = scrollState.value >= (scrollState.maxValue - 100) // 100px tolerance
+            
+            // Only auto-scroll if we're already following the output
+            if (isAtBottom && scrollState.maxValue > 0) {
+                coroutineScope.launch {
+                    scrollState.animateScrollTo(scrollState.maxValue)
+                }
             }
         }
     }
