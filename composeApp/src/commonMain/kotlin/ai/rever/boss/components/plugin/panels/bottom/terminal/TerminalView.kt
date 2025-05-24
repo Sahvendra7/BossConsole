@@ -63,7 +63,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
     // Character dimensions for size calculation
     // Match the cursor positioning width for consistency
     val fontSize = 14.sp
-    val charWidthDp = 9.0.dp  // Slightly wider to prevent wrapping
+    val charWidthDp = 8.4.dp  // Slightly wider to prevent wrapping
     val charHeightDp = 17.dp   // Same as cursor height
     val charWidthPx = with(density) { charWidthDp.toPx() }
     val charHeightPx = with(density) { charHeightDp.toPx() }
@@ -204,15 +204,11 @@ fun TerminalView(viewModel: TerminalViewModel) {
                             val verticalPaddingPx = 16.dp.toPx()
                             val availableWidth = size.width - horizontalPaddingPx
                             val availableHeight = size.height - verticalPaddingPx
-                            val widthInDp = availableWidth.toDp()
-                            val heightInDp = availableHeight.toDp()
-                            
+
                             // Calculate columns and rows based on character dimensions in pixels
                             val calculatedColumns = kotlin.math.floor(availableWidth / charWidthPx).toInt()
                             val newColumns = max(20, calculatedColumns) // No artificial cap
                             val newRows = max(5, kotlin.math.floor(availableHeight / charHeightPx).toInt())
-                            
-                            // println("[TerminalView] Size: ${size.width}x${size.height}px, available: ${availableWidth}x${availableHeight}px -> ${newColumns}x${newRows} cols/rows (char width: ${charWidthPx}px)")
                             
                             // Only resize if dimensions actually changed
                             if (terminalSize.first != newColumns || terminalSize.second != newRows) {
