@@ -4,6 +4,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,11 +15,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,33 +77,43 @@ fun TerminalView(viewModel: TerminalViewModel) {
                 .fillMaxSize()
                 .padding(8.dp)
         ) {
-            // Terminal output area
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = scrollState
+            // Terminal output area with custom scroll behavior
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
             ) {
-                itemsIndexed(terminalLines) { rowIndex, line ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = line,
-                            style = terminalTextStyle,
-                            modifier = Modifier.weight(1f)
-                        )
-                        
-                        // Show cursor if this is the cursor row
-                        if (rowIndex == terminalCursorPosition.first && hasFocus) {
-                            // Calculate cursor position
-                            val cursorCol = terminalCursorPosition.second
-                            Box(
-                                modifier = Modifier
-                                    .offset(x = (cursorCol * 7).dp) // Approximate character width
-                                    .width(7.dp)
-                                    .height(16.dp)
-                                    .alpha(cursorAlpha)
-                                    .background(cursorColor)
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = scrollState,
+                    // Adjust content padding to prevent over-scrolling
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    // Fine-tune the fling behavior for smoother scrolling
+                    flingBehavior = ScrollableDefaults.flingBehavior()
+                ) {
+                    itemsIndexed(terminalLines) { rowIndex, line ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = line,
+                                style = terminalTextStyle,
+                                modifier = Modifier.weight(1f)
                             )
+                            
+                            // Show cursor if this is the cursor row
+                            if (rowIndex == terminalCursorPosition.first && hasFocus) {
+                                // Calculate cursor position
+                                val cursorCol = terminalCursorPosition.second
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = (cursorCol * 7).dp) // Approximate character width
+                                        .width(7.dp)
+                                        .height(16.dp)
+                                        .alpha(cursorAlpha)
+                                        .background(cursorColor)
+                                )
+                            }
                         }
                     }
                 }
@@ -114,11 +128,6 @@ fun TerminalView(viewModel: TerminalViewModel) {
                 .focusable()
                 .onFocusChanged { focusState ->
                     hasFocus = focusState.hasFocus
-                    if (hasFocus) {
-                        println("Terminal gained focus")
-                    } else {
-                        println("Terminal lost focus")
-                    }
                 }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -147,7 +156,21 @@ fun TerminalView(viewModel: TerminalViewModel) {
     // Auto-scroll to bottom when terminal updates
     LaunchedEffect(terminalLines.size) {
         if (terminalLines.isNotEmpty()) {
-            scrollState.animateScrollToItem(terminalLines.size - 1)
+            // Only auto-scroll if we're already near the bottom
+            val visibleItemsInfo = scrollState.layoutInfo.visibleItemsInfo
+            if (visibleItemsInfo.isNotEmpty()) {
+                val lastVisibleItem = visibleItemsInfo.last()
+                val totalItems = scrollState.layoutInfo.totalItemsCount
+                
+                // Check if we're viewing the last few items (within 5 lines of bottom)
+                if (lastVisibleItem.index >= totalItems - 5) {
+                    // Smooth scroll to bottom
+                    scrollState.animateScrollToItem(
+                        index = terminalLines.size - 1,
+                        scrollOffset = 0
+                    )
+                }
+            }
         }
     }
 }

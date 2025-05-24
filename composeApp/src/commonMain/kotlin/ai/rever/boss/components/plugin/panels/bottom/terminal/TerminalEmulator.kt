@@ -89,12 +89,6 @@ class TerminalEmulator(
     private fun processCsiSequence(params: String, command: Char) {
         val args = params.split(';').mapNotNull { it.toIntOrNull() }
         
-        // Debug output for cursor-related commands
-        when (command) {
-            'H', 'f' -> println("CSI: Set cursor position to ${args.getOrElse(0) { 1 }}, ${args.getOrElse(1) { 1 }}")
-            'J' -> println("CSI: Clear screen mode ${args.getOrElse(0) { 0 }}")
-        }
-        
         when (command) {
             'A' -> moveCursorUp(args.getOrElse(0) { 1 }) // Cursor up
             'B' -> moveCursorDown(args.getOrElse(0) { 1 }) // Cursor down
@@ -290,13 +284,8 @@ class TerminalEmulator(
     }
     
     private fun setCursorPosition(row: Int, col: Int) {
-        val oldRow = cursorRow
-        val oldCol = cursorCol
         cursorRow = minOf(rows - 1, maxOf(0, row - 1))
         cursorCol = minOf(columns - 1, maxOf(0, col - 1))
-        if (oldRow != cursorRow || oldCol != cursorCol) {
-            println("Cursor moved from ($oldRow, $oldCol) to ($cursorRow, $cursorCol)")
-        }
     }
     
     private fun clearScreen(mode: Int) {

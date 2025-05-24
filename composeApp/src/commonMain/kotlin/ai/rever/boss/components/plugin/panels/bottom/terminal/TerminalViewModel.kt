@@ -46,8 +46,6 @@ class TerminalViewModel {
                         return@launch
                     }
                     
-                    println("Terminal: Started successfully, waiting for output...")
-                    
                     // Collect terminal output
                     term.output.collect { output ->
                         processOutput(output)
@@ -82,12 +80,6 @@ class TerminalViewModel {
     }
     
     fun sendInput(input: String) {
-        if (input == "\n") {
-            println("Terminal: Sending ENTER")
-        } else if (input.length == 1 && input[0].code >= 32) {
-            println("Terminal: Sending '${input}'")
-        }
-        
         coroutineScope.launch {
             terminal?.write(input)
         }

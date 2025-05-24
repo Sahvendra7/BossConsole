@@ -16,14 +16,10 @@ actual fun rememberTerminalFontFamily(): FontFamily = remember {
         val typeface = fontManager.matchFamilyStyle(fontName, SkiaFontStyle.NORMAL)
         if (typeface != null) {
             // Found a Nerd Font, use it
-            println("Terminal: Using Nerd Font: $fontName")
             return@remember FontFamily(Typeface(typeface))
         }
     }
     
     // No Nerd Font found, use default monospace
-    println("Terminal: No Nerd Font found. Using default monospace font.")
-    println("Terminal: To get powerline symbols, install one of: ${NERD_FONT_NAMES.take(5).joinToString(", ")}")
-    println("Terminal: Download from: https://www.nerdfonts.com/")
     FontFamily.Monospace
 } 
