@@ -21,14 +21,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -192,6 +189,10 @@ private fun handleKeyEvent(keyEvent: KeyEvent, viewModel: TerminalViewModel): Bo
         }
         Key.Delete -> {
             viewModel.sendInput("\u001B[3~") // Delete key sequence
+            true
+        }
+        Key.Escape -> {
+            viewModel.sendInput("\u001B") // ESC character
             true
         }
         Key.DirectionLeft -> {
