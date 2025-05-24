@@ -8,6 +8,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 class TerminalViewModel {
+    companion object {
+        const val MAX_BUFFER_SIZE = 2000 // Maximum lines to keep in buffer
+    }
+    
     private val terminalFactory = TerminalFactory()
     private var terminal: Terminal? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -95,5 +99,11 @@ class TerminalViewModel {
     fun dispose() {
         terminal?.stop()
         coroutineScope.cancel()
+    }
+    
+    private fun getPlainTextLines(): List<String> {
+        return _terminalLines.value.takeLast(MAX_BUFFER_SIZE).map { annotatedString ->
+            annotatedString.text
+        }
     }
 } 

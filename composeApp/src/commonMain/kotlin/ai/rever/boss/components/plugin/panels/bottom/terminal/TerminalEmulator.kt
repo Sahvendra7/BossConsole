@@ -41,9 +41,10 @@ class TerminalEmulator(
     private val escapeSequence = StringBuilder()
     private var inEscapeSequence = false
     
-    // Scrollback buffer
+    // Scrollback buffer with limit
     private val scrollbackLines = mutableListOf<Array<TerminalCell>>()
-    private val maxScrollback = 1000
+    private val maxBufferSize = 2000 // Total lines limit (scrollback + visible)
+    private val maxScrollback = maxBufferSize - rows // Reserve space for visible rows
     
     fun processInput(input: String) {
         for (char in input) {
@@ -359,6 +360,9 @@ class TerminalEmulator(
             scrollbackLines.removeAt(0)
         }
         
+        // Ensure total buffer doesn't exceed limit
+        trimBuffer()
+        
         // Shift all lines up
         for (row in 0 until rows - 1) {
             buffer[row] = buffer[row + 1]
@@ -423,6 +427,9 @@ class TerminalEmulator(
     fun getAnnotatedLines(): List<AnnotatedString> {
         val allLines = mutableListOf<AnnotatedString>()
         
+        // Ensure we don't exceed buffer limit
+        trimBuffer()
+        
         // Add scrollback lines
         scrollbackLines.forEach { row ->
             allLines.add(buildAnnotatedString {
@@ -467,6 +474,19 @@ class TerminalEmulator(
     }
     
     fun getCursorPosition(): Pair<Int, Int> = (scrollbackLines.size + cursorRow) to cursorCol
+    
+    private fun trimBuffer() {
+        // Ensure total lines don't exceed maxBufferSize
+        val totalLines = scrollbackLines.size + rows
+        if (totalLines > maxBufferSize) {
+            val linesToRemove = totalLines - maxBufferSize
+            repeat(linesToRemove) {
+                if (scrollbackLines.isNotEmpty()) {
+                    scrollbackLines.removeAt(0)
+                }
+            }
+        }
+    }
     
     fun resize(newColumns: Int, newRows: Int) {
         // TODO: Implement proper resizing logic

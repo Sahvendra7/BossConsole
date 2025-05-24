@@ -185,17 +185,8 @@ compose.desktop {
 }
 
 // Manually extract pty4j native libraries
-tasks.register<Copy>("extractPty4jNative") {
-    from(project.configurations.getByName("desktopRuntimeClasspath")) {
-        include("**/pty4j-*.jar")
-        include("**/purejavacomm-*.jar")
-        include("**/jna-*.jar")
-    }
-    
-    into(layout.buildDirectory.dir("tmpJars"))
-    
+tasks.register("extractPty4jNative") {
     doLast {
-        val tmpJarsDir = layout.buildDirectory.dir("tmpJars").get().asFile
         val pty4jNativeDir = layout.buildDirectory.dir("pty4j-native").get().asFile
         val tmpDir = layout.buildDirectory.dir("tmp").get().asFile
         
@@ -203,30 +194,43 @@ tasks.register<Copy>("extractPty4jNative") {
         pty4jNativeDir.mkdirs()
         tmpDir.mkdirs()
         
-        // Extract native libraries from jars
-        tmpJarsDir.listFiles()?.forEach { jarFile ->
-            if (jarFile.name.startsWith("pty4j-")) {
-                println("Extracting from ${jarFile.name}")
-                copy {
-                    from(zipTree(jarFile)) {
-                        include("**/libpty.dylib")
-                        include("**/darwin/**")
-                        include("**/linux/**")
-                        include("**/win/**")
-                        include("**/os/**")
+        // Find PTY4J jar in classpath
+        val pty4jJar = project.configurations.getByName("desktopRuntimeClasspath").files.find { 
+            it.name.startsWith("pty4j-") && it.name.endsWith(".jar")
+        }
+        
+        if (pty4jJar != null) {
+            println("Extracting from ${pty4jJar.name}")
+            
+            // Extract using built-in copy function
+            copy {
+                from(zipTree(pty4jJar)) {
+                    include("**/native/**")
+                }
+                into(pty4jNativeDir)
+                includeEmptyDirs = false
+                
+                eachFile {
+                    // Remove the path prefix before 'native'
+                    val nativeIndex = path.indexOf("native/")
+                    if (nativeIndex >= 0) {
+                        path = path.substring(nativeIndex + "native/".length)
                     }
-                    into(pty4jNativeDir)
                 }
             }
+            
+            // Make native libraries executable
+            pty4jNativeDir.walkTopDown().forEach { file ->
+                if (file.isFile && (file.name.endsWith(".so") || file.name.endsWith(".dylib"))) {
+                    file.setExecutable(true)
+                }
+            }
+        } else {
+            println("Warning: PTY4J jar not found in classpath")
         }
         
         // Print the extracted files for debugging
         println("Extracted PTY4J native libraries to: ${pty4jNativeDir.absolutePath}")
-        pty4jNativeDir.walk().forEach { file ->
-            if (file.isFile) {
-                println(" - ${file.relativeTo(pty4jNativeDir)}")
-            }
-        }
     }
 }
 
