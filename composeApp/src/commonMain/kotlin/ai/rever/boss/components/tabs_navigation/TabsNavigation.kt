@@ -22,7 +22,6 @@ class TabsNavigation<C : Any>(
                 activeIndex = newIndex
             )
         }
-        println("newIndex: $newIndex, config: $config")
         return newIndex
     }
 

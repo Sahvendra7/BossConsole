@@ -19,17 +19,9 @@ class TerminalViewModel {
     private val _terminalLines = MutableStateFlow<List<AnnotatedString>>(emptyList())
     val terminalLines: StateFlow<List<AnnotatedString>> = _terminalLines.asStateFlow()
     
-    // Current input line
-    var currentInput by mutableStateOf("")
-        private set
-    
     // Terminal running state
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
-    
-    // Cursor position in input
-    var cursorPosition by mutableStateOf(0)
-        private set
     
     // Terminal cursor position
     private val _terminalCursorPosition = MutableStateFlow(0 to 0)
@@ -53,6 +45,8 @@ class TerminalViewModel {
                         updateDisplay()
                         return@launch
                     }
+                    
+                    println("Terminal: Started successfully, waiting for output...")
                     
                     // Collect terminal output
                     term.output.collect { output ->
@@ -87,68 +81,15 @@ class TerminalViewModel {
         _terminalCursorPosition.value = terminalEmulator.getCursorPosition()
     }
     
-    fun onInputChange(input: String) {
-        currentInput = input
-        cursorPosition = input.length
-    }
-    
-    fun onKeyPress(key: TerminalKey) {
-        when (key) {
-            is TerminalKey.Character -> {
-                val newInput = currentInput.substring(0, cursorPosition) + 
-                    key.char + 
-                    currentInput.substring(cursorPosition)
-                currentInput = newInput
-                cursorPosition++
-            }
-            TerminalKey.Enter -> {
-                sendCommand(currentInput)
-                currentInput = ""
-                cursorPosition = 0
-            }
-            TerminalKey.Backspace -> {
-                if (cursorPosition > 0) {
-                    currentInput = currentInput.removeRange(cursorPosition - 1, cursorPosition)
-                    cursorPosition--
-                }
-            }
-            TerminalKey.Delete -> {
-                if (cursorPosition < currentInput.length) {
-                    currentInput = currentInput.removeRange(cursorPosition, cursorPosition + 1)
-                }
-            }
-            TerminalKey.Left -> {
-                if (cursorPosition > 0) {
-                    cursorPosition--
-                }
-            }
-            TerminalKey.Right -> {
-                if (cursorPosition < currentInput.length) {
-                    cursorPosition++
-                }
-            }
-            TerminalKey.Home -> {
-                cursorPosition = 0
-            }
-            TerminalKey.End -> {
-                cursorPosition = currentInput.length
-            }
-            is TerminalKey.ControlKey -> {
-                // Send control character directly
-                sendControlChar(key.char)
-            }
+    fun sendInput(input: String) {
+        if (input == "\n") {
+            println("Terminal: Sending ENTER")
+        } else if (input.length == 1 && input[0].code >= 32) {
+            println("Terminal: Sending '${input}'")
         }
-    }
-    
-    private fun sendCommand(command: String) {
+        
         coroutineScope.launch {
-            terminal?.write(command + "\n")
-        }
-    }
-    
-    private fun sendControlChar(char: Char) {
-        coroutineScope.launch {
-            terminal?.write(char.toString())
+            terminal?.write(input)
         }
     }
     
@@ -163,16 +104,4 @@ class TerminalViewModel {
         terminal?.stop()
         coroutineScope.cancel()
     }
-}
-
-sealed class TerminalKey {
-    data class Character(val char: Char) : TerminalKey()
-    data class ControlKey(val char: Char) : TerminalKey()
-    object Enter : TerminalKey()
-    object Backspace : TerminalKey()
-    object Delete : TerminalKey()
-    object Left : TerminalKey()
-    object Right : TerminalKey()
-    object Home : TerminalKey()
-    object End : TerminalKey()
 } 

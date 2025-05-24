@@ -39,6 +39,7 @@ class DesktopTerminal : Terminal {
                     .setInitialColumns(120)
                     .setInitialRows(24)
                     .setConsole(false)
+                    .setWindowsAnsiColorEnabled(true)
                 
                 ptyProcess = builder.start()
                 
@@ -47,6 +48,15 @@ class DesktopTerminal : Terminal {
                     writer = OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
                     
                     _isRunning.value = true
+                    
+                    // Give the shell a moment to initialize
+                    delay(100)
+                    
+                    // Send a clear screen command to refresh the terminal
+                    writer?.let {
+                        it.write("\u000C") // Ctrl+L to clear and redraw
+                        it.flush()
+                    }
                     
                     // Start reading output in a coroutine
                     coroutineScope.launch {
