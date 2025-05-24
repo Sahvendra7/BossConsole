@@ -22,6 +22,19 @@ class TerminalEmulator(
     // Screen buffer - array of lines, each line is array of cells
     private var buffer = Array(rows) { Array(columns) { TerminalCell() } }
     
+    // Alternate screen buffer support
+    private var primaryBuffer = buffer
+    private var alternateBuffer = Array(rows) { Array(columns) { TerminalCell() } }
+    private var usingAlternateBuffer = false
+    
+    // Saved primary buffer cursor position
+    private var savedPrimaryCursorRow = 0
+    private var savedPrimaryCursorCol = 0
+    
+    // Scrolling region
+    private var scrollTop = 0
+    private var scrollBottom = rows - 1
+    
     // Cursor position (0-based)
     private var cursorRow = 0
     private var cursorCol = 0
@@ -190,7 +203,7 @@ class TerminalEmulator(
             'd' -> cursorRow = minOf(rows - 1, maxOf(0, args.getOrElse(0) { 1 } - 1)) // Line position absolute
             'm' -> processColorAndStyle(args) // SGR - Select Graphic Rendition
             'n' -> {} // Device status report - ignore for now
-            'r' -> {} // Set scrolling region - TODO
+            'r' -> setScrollingRegion(args.getOrElse(0) { 1 }, args.getOrElse(1) { rows }) // Set scrolling region
             's' -> saveCursor() // Save cursor position
             'u' -> restoreCursor() // Restore cursor position
             'h' -> handleModeSet(params) // Set mode - pass original params with intermediates
@@ -449,34 +462,48 @@ class TerminalEmulator(
     
     private fun scrollUp(count: Int = 1) {
         repeat(count) {
-            // Save the top line to scrollback
-            scrollbackLines.add(buffer[0].copyOf())
-            if (scrollbackLines.size > maxScrollback) {
-                scrollbackLines.removeAt(0)
+            if (usingAlternateBuffer || scrollTop > 0 || scrollBottom < rows - 1) {
+                // In alternate buffer or with custom scroll region, only scroll within the region
+                if (scrollBottom > scrollTop) {
+                    // Shift lines up within scroll region
+                    for (row in scrollTop until scrollBottom) {
+                        buffer[row] = buffer[row + 1]
+                    }
+                    // Clear the bottom line of scroll region
+                    buffer[scrollBottom] = Array(columns) { TerminalCell() }
+                }
+            } else {
+                // Normal scrolling in primary buffer - save to scrollback
+                scrollbackLines.add(buffer[0].copyOf())
+                if (scrollbackLines.size > maxScrollback) {
+                    scrollbackLines.removeAt(0)
+                }
+                
+                // Ensure total buffer doesn't exceed limit
+                trimBuffer()
+                
+                // Shift all lines up
+                for (row in 0 until rows - 1) {
+                    buffer[row] = buffer[row + 1]
+                }
+                
+                // Clear the bottom line
+                buffer[rows - 1] = Array(columns) { TerminalCell() }
             }
-            
-            // Ensure total buffer doesn't exceed limit
-            trimBuffer()
-            
-            // Shift all lines up
-            for (row in 0 until rows - 1) {
-                buffer[row] = buffer[row + 1]
-            }
-            
-            // Clear the bottom line
-            buffer[rows - 1] = Array(columns) { TerminalCell() }
         }
     }
     
     private fun scrollDown(count: Int = 1) {
         repeat(count) {
-            // Shift all lines down
-            for (row in rows - 1 downTo 1) {
-                buffer[row] = buffer[row - 1]
+            if (scrollBottom > scrollTop) {
+                // Shift lines down within scroll region
+                for (row in scrollBottom downTo scrollTop + 1) {
+                    buffer[row] = buffer[row - 1]
+                }
+                
+                // Clear the top line of scroll region
+                buffer[scrollTop] = Array(columns) { TerminalCell() }
             }
-            
-            // Clear the top line
-            buffer[0] = Array(columns) { TerminalCell() }
         }
     }
     
@@ -591,21 +618,29 @@ class TerminalEmulator(
             return // No change needed
         }
         
-        // Create new buffer with new dimensions
-        val newBuffer = Array(newRows) { Array(newColumns) { TerminalCell() } }
+        // println("[TerminalEmulator] Resizing from ${columns}x${rows} to ${newColumns}x${newRows}")
         
-        // Copy existing content to new buffer
+        // Resize both buffers
+        val newPrimaryBuffer = Array(newRows) { Array(newColumns) { TerminalCell() } }
+        val newAlternateBuffer = Array(newRows) { Array(newColumns) { TerminalCell() } }
+        
+        // Copy existing content to new buffers
         val rowsToCopy = minOf(rows, newRows)
+        val colsToCopy = minOf(columns, newColumns)
+        
+        // Copy primary buffer
+        val currentBuffer = if (usingAlternateBuffer) alternateBuffer else primaryBuffer
         for (row in 0 until rowsToCopy) {
-            val colsToCopy = minOf(columns, newColumns)
             for (col in 0 until colsToCopy) {
-                newBuffer[row][col] = buffer[row][col]
+                newPrimaryBuffer[row][col] = primaryBuffer[row][col]
+                newAlternateBuffer[row][col] = alternateBuffer[row][col]
             }
-            // If new buffer is wider, the extra cells are already initialized with empty TerminalCell()
         }
         
-        // Update buffer and dimensions
-        buffer = newBuffer
+        // Update buffers and dimensions
+        primaryBuffer = newPrimaryBuffer
+        alternateBuffer = newAlternateBuffer
+        buffer = if (usingAlternateBuffer) alternateBuffer else primaryBuffer
         columns = newColumns
         rows = newRows
         
@@ -616,8 +651,15 @@ class TerminalEmulator(
         // Adjust saved cursor position
         savedCursorRow = minOf(savedCursorRow, newRows - 1)
         savedCursorCol = minOf(savedCursorCol, newColumns - 1)
+        savedPrimaryCursorRow = minOf(savedPrimaryCursorRow, newRows - 1)
+        savedPrimaryCursorCol = minOf(savedPrimaryCursorCol, newColumns - 1)
+        
+        // Adjust scrolling region
+        scrollBottom = minOf(scrollBottom, newRows - 1)
+        scrollTop = minOf(scrollTop, scrollBottom)
         
         // Update max scrollback based on new rows
+        // Scrollback only applies to primary buffer
         val newMaxScrollback = maxBufferSize - newRows
         
         // Trim scrollback if necessary
@@ -629,7 +671,9 @@ class TerminalEmulator(
     private fun handleModeSet(params: String) {
         when (params) {
             "?25" -> {} // Show cursor - TODO
-            "?1049" -> {} // Use alternate screen buffer - TODO
+            "?1049" -> switchToAlternateBuffer() // Use alternate screen buffer
+            "?47" -> switchToAlternateBuffer() // Alternate screen (older version)
+            "?1047" -> switchToAlternateBuffer() // Alternate screen
             else -> {} // Other modes - ignore
         }
     }
@@ -637,9 +681,68 @@ class TerminalEmulator(
     private fun handleModeReset(params: String) {
         when (params) {
             "?25" -> {} // Hide cursor - TODO
-            "?1049" -> {} // Use normal screen buffer - TODO
+            "?1049" -> switchToPrimaryBuffer() // Use normal screen buffer
+            "?47" -> switchToPrimaryBuffer() // Normal screen (older version)
+            "?1047" -> switchToPrimaryBuffer() // Normal screen
             else -> {} // Other modes - ignore
         }
+    }
+    
+    private fun switchToAlternateBuffer() {
+        if (!usingAlternateBuffer) {
+            // Save current cursor position in primary buffer
+            savedPrimaryCursorRow = cursorRow
+            savedPrimaryCursorCol = cursorCol
+            
+            // Save primary buffer and switch to alternate
+            primaryBuffer = buffer
+            buffer = alternateBuffer
+            usingAlternateBuffer = true
+            
+            // Clear the alternate buffer
+            for (row in 0 until rows) {
+                for (col in 0 until columns) {
+                    buffer[row][col] = TerminalCell()
+                }
+            }
+            
+            // Reset cursor position
+            cursorRow = 0
+            cursorCol = 0
+            
+            // Reset scrolling region
+            scrollTop = 0
+            scrollBottom = rows - 1
+        }
+    }
+    
+    private fun switchToPrimaryBuffer() {
+        if (usingAlternateBuffer) {
+            // Save alternate buffer
+            alternateBuffer = buffer
+            
+            // Switch back to primary buffer
+            buffer = primaryBuffer
+            usingAlternateBuffer = false
+            
+            // Restore cursor position
+            cursorRow = savedPrimaryCursorRow
+            cursorCol = savedPrimaryCursorCol
+            
+            // Reset scrolling region
+            scrollTop = 0
+            scrollBottom = rows - 1
+        }
+    }
+    
+    private fun setScrollingRegion(top: Int, bottom: Int) {
+        // Convert 1-based to 0-based and validate
+        scrollTop = maxOf(0, minOf(rows - 1, top - 1))
+        scrollBottom = maxOf(scrollTop, minOf(rows - 1, bottom - 1))
+        
+        // Move cursor to home position when scrolling region is set
+        cursorRow = scrollTop
+        cursorCol = 0
     }
     
     private fun processCharacterSetDesignation(intermediate: Char, final: Char) {
