@@ -39,6 +39,9 @@ class TerminalEmulator(
     private var cursorRow = 0
     private var cursorCol = 0
     
+    // Cursor visibility
+    private var cursorVisible = true
+    
     // Saved cursor position for save/restore operations
     private var savedCursorRow = 0
     private var savedCursorCol = 0
@@ -234,7 +237,7 @@ class TerminalEmulator(
             'H' -> {} // Tab set - ignore for now
             '=' -> {} // Application keypad mode - ignore for now
             '>' -> {} // Normal keypad mode - ignore for now
-            'c' -> {} // Reset - TODO: implement full reset
+            'c' -> performFullReset() // Reset
             else -> {
                 // Unknown two-char sequence - silently ignore
             }
@@ -600,6 +603,8 @@ class TerminalEmulator(
     
     fun getCursorPosition(): Pair<Int, Int> = (scrollbackLines.size + cursorRow) to cursorCol
     
+    fun isCursorVisible(): Boolean = cursorVisible
+    
     private fun trimBuffer() {
         // Ensure total lines don't exceed maxBufferSize
         val totalLines = scrollbackLines.size + rows
@@ -670,7 +675,7 @@ class TerminalEmulator(
     
     private fun handleModeSet(params: String) {
         when (params) {
-            "?25" -> {} // Show cursor - TODO
+            "?25" -> cursorVisible = true // Show cursor
             "?1049" -> switchToAlternateBuffer() // Use alternate screen buffer
             "?47" -> switchToAlternateBuffer() // Alternate screen (older version)
             "?1047" -> switchToAlternateBuffer() // Alternate screen
@@ -680,7 +685,7 @@ class TerminalEmulator(
     
     private fun handleModeReset(params: String) {
         when (params) {
-            "?25" -> {} // Hide cursor - TODO
+            "?25" -> cursorVisible = false // Hide cursor
             "?1049" -> switchToPrimaryBuffer() // Use normal screen buffer
             "?47" -> switchToPrimaryBuffer() // Normal screen (older version)
             "?1047" -> switchToPrimaryBuffer() // Normal screen
@@ -749,5 +754,42 @@ class TerminalEmulator(
         // Character set designation sequences like ESC(B, ESC)0, etc.
         // For now, we'll ignore these as they affect character rendering
         // which we don't fully support yet
+    }
+    
+    private fun performFullReset() {
+        // Reset to initial state
+        
+        // Switch to primary buffer if in alternate
+        if (usingAlternateBuffer) {
+            switchToPrimaryBuffer()
+        }
+        
+        // Clear the entire screen
+        for (row in 0 until rows) {
+            for (col in 0 until columns) {
+                buffer[row][col] = TerminalCell()
+            }
+        }
+        
+        // Reset cursor position
+        cursorRow = 0
+        cursorCol = 0
+        savedCursorRow = 0
+        savedCursorCol = 0
+        savedPrimaryCursorRow = 0
+        savedPrimaryCursorCol = 0
+        
+        // Reset attributes
+        resetAttributes()
+        
+        // Reset cursor visibility
+        cursorVisible = true
+        
+        // Reset scrolling region
+        scrollTop = 0
+        scrollBottom = rows - 1
+        
+        // Clear scrollback in primary buffer
+        scrollbackLines.clear()
     }
 } 

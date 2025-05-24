@@ -42,6 +42,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
     val terminalLines by viewModel.terminalLines.collectAsState()
     val isRunning by viewModel.isRunning.collectAsState()
     val terminalCursorPosition by viewModel.terminalCursorPosition.collectAsState()
+    val terminalCursorVisible by viewModel.terminalCursorVisible.collectAsState()
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
@@ -263,7 +264,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
                         )
                         
                         // Show cursor if this is the cursor row
-                        if (rowIndex == terminalCursorPosition.first && hasFocus) {
+                        if (rowIndex == terminalCursorPosition.first && hasFocus && terminalCursorVisible) {
                             // Calculate cursor position using same char width
                             val cursorCol = terminalCursorPosition.second
                             Box(

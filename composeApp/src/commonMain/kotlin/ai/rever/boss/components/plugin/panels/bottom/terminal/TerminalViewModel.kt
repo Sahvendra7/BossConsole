@@ -33,6 +33,10 @@ class TerminalViewModel {
     private val _terminalCursorPosition = MutableStateFlow(0 to 0)
     val terminalCursorPosition: StateFlow<Pair<Int, Int>> = _terminalCursorPosition.asStateFlow()
     
+    // Terminal cursor visibility
+    private val _terminalCursorVisible = MutableStateFlow(true)
+    val terminalCursorVisible: StateFlow<Boolean> = _terminalCursorVisible.asStateFlow()
+    
     fun ensureStarted() {
         if (terminal == null) {
             coroutineScope.launch {
@@ -87,9 +91,14 @@ class TerminalViewModel {
     private fun updateDisplay() {
         val lines = terminalEmulator.getAnnotatedLines()
         val cursorPos = terminalEmulator.getCursorPosition()
+        val cursorVisible = terminalEmulator.isCursorVisible()
         // Only log significant display updates
+        if (lines.size % 10 == 0 || lines.size < 5) {
+            // println("[TerminalViewModel-$instanceId] Display update: ${lines.size} lines")
+        }
         _terminalLines.value = lines
         _terminalCursorPosition.value = cursorPos
+        _terminalCursorVisible.value = cursorVisible
     }
     
     fun sendInput(input: String) {
