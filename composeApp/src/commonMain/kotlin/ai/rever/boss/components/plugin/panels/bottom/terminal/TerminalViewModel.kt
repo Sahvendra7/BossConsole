@@ -114,7 +114,8 @@ class TerminalViewModel {
         terminal?.stop()
         coroutineScope.cancel()
     }
-    
+
+    // could be used to for clipboard
     private fun getPlainTextLines(): List<String> {
         return _terminalLines.value.takeLast(MAX_BUFFER_SIZE).map { annotatedString ->
             annotatedString.text

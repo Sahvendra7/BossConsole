@@ -166,6 +166,54 @@ fun TerminalView(viewModel: TerminalViewModel) {
                                 viewModel.sendInput("\t")
                                 true
                             }
+                            Key.F1 -> {
+                                viewModel.sendInput("\u001BOP")
+                                true
+                            }
+                            Key.F2 -> {
+                                viewModel.sendInput("\u001BOQ")
+                                true
+                            }
+                            Key.F3 -> {
+                                viewModel.sendInput("\u001BOR")
+                                true
+                            }
+                            Key.F4 -> {
+                                viewModel.sendInput("\u001BOS")
+                                true
+                            }
+                            Key.F5 -> {
+                                viewModel.sendInput("\u001B[15~")
+                                true
+                            }
+                            Key.F6 -> {
+                                viewModel.sendInput("\u001B[17~")
+                                true
+                            }
+                            Key.F7 -> {
+                                viewModel.sendInput("\u001B[18~")
+                                true
+                            }
+                            Key.F8 -> {
+                                viewModel.sendInput("\u001B[19~")
+                                true
+                            }
+                            Key.F9 -> {
+                                viewModel.sendInput("\u001B[20~")
+                                true
+                            }
+                            Key.F10 -> {
+                                viewModel.sendInput("\u001B[21~")
+                                true
+                            }
+                            Key.F11 -> {
+                                viewModel.sendInput("\u001B[23~")
+                                true
+                            }
+                            Key.F12 -> {
+                                viewModel.sendInput("\u001B[24~")
+                                true
+                            }
                             Key.MoveHome -> {
                                 viewModel.sendInput("\u001B[H")
                                 true
