@@ -1,22 +1,24 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class TerminalViewModel {
     companion object {
         const val MAX_BUFFER_SIZE = 2000 // Maximum lines to keep in buffer
+        private var instanceCounter = 0
     }
+    
+    private val instanceId = ++instanceCounter
     
     private val terminalFactory = TerminalFactory()
     private var terminal: Terminal? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
-    // Terminal emulator
+    // Terminal emulator - start with conservative default size
     private val terminalEmulator = TerminalEmulator(columns = 120, rows = 24)
     
     // Terminal display lines
@@ -31,8 +33,12 @@ class TerminalViewModel {
     private val _terminalCursorPosition = MutableStateFlow(0 to 0)
     val terminalCursorPosition: StateFlow<Pair<Int, Int>> = _terminalCursorPosition.asStateFlow()
     
-    init {
-        startTerminal()
+    fun ensureStarted() {
+        if (terminal == null) {
+            coroutineScope.launch {
+                startTerminal()
+            }
+        }
     }
     
     private fun startTerminal() {
@@ -79,8 +85,11 @@ class TerminalViewModel {
     }
     
     private fun updateDisplay() {
-        _terminalLines.value = terminalEmulator.getAnnotatedLines()
-        _terminalCursorPosition.value = terminalEmulator.getCursorPosition()
+        val lines = terminalEmulator.getAnnotatedLines()
+        val cursorPos = terminalEmulator.getCursorPosition()
+        // Only log significant display updates
+        _terminalLines.value = lines
+        _terminalCursorPosition.value = cursorPos
     }
     
     fun sendInput(input: String) {

@@ -22,25 +22,34 @@ class DesktopTerminal : Terminal {
     override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
     
     override suspend fun start() {
+        if (_isRunning.value) {
+            return
+        }
+        
         withContext(Dispatchers.IO) {
             try {
                 // Get the user's shell
                 val shell = System.getenv("SHELL") ?: "/bin/bash"
                 val env = System.getenv().toMutableMap()
                 
+
                 // Use full terminal support for oh-my-zsh and powerline
                 env["TERM"] = "xterm-256color"
+                // Ensure COLUMNS and LINES are not set - let PTY handle it
+                env.remove("COLUMNS")
+                env.remove("LINES")
                 
                 // Build the PTY process
                 val builder = PtyProcessBuilder()
                     .setCommand(arrayOf(shell))
                     .setEnvironment(env)
                     .setDirectory(System.getProperty("user.home"))
-                    .setInitialColumns(120)
+                    .setInitialColumns(120)  // Start with a wider default
                     .setInitialRows(24)
                     .setConsole(false)
                     .setWindowsAnsiColorEnabled(true)
                 
+                // println("[DesktopTerminal] Creating PTY process...")
                 ptyProcess = builder.start()
                 
                 ptyProcess?.let { process ->
@@ -52,20 +61,18 @@ class DesktopTerminal : Terminal {
                     // Give the shell a moment to initialize
                     delay(100)
                     
-                    // Send a clear screen command to refresh the terminal
-                    writer?.let {
-                        it.write("\u000C") // Ctrl+L to clear and redraw
-                        it.flush()
-                    }
-                    
                     // Start reading output in a coroutine
                     coroutineScope.launch {
+                        // println("[DesktopTerminal] Starting output reader coroutine")
                         try {
                             val buffer = CharArray(1024)
+                            var totalBytesRead = 0
                             while (isActive && _isRunning.value) {
                                 val count = reader?.read(buffer) ?: -1
                                 if (count > 0) {
+                                    totalBytesRead += count
                                     val output = String(buffer, 0, count)
+                                    // Only log significant reads
                                     _output.emit(output)
                                 } else if (count == -1) {
                                     break
@@ -99,7 +106,9 @@ class DesktopTerminal : Terminal {
     
     override suspend fun resize(columns: Int, rows: Int) {
         withContext(Dispatchers.IO) {
-            ptyProcess?.winSize = com.pty4j.WinSize(columns, rows)
+            ptyProcess?.let {
+                it.winSize = com.pty4j.WinSize(columns, rows)
+            }
         }
     }
     

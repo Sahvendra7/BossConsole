@@ -16,11 +16,11 @@ data class TerminalCell(
 )
 
 class TerminalEmulator(
-    private val columns: Int = 120,
-    private val rows: Int = 24
+    private var columns: Int = 120,
+    private var rows: Int = 24
 ) {
     // Screen buffer - array of lines, each line is array of cells
-    private val buffer = Array(rows) { Array(columns) { TerminalCell() } }
+    private var buffer = Array(rows) { Array(columns) { TerminalCell() } }
     
     // Cursor position (0-based)
     private var cursorRow = 0
@@ -44,7 +44,8 @@ class TerminalEmulator(
     // Scrollback buffer with limit
     private val scrollbackLines = mutableListOf<Array<TerminalCell>>()
     private val maxBufferSize = 2000 // Total lines limit (scrollback + visible)
-    private val maxScrollback = maxBufferSize - rows // Reserve space for visible rows
+    private val maxScrollback: Int
+        get() = maxBufferSize - rows // Dynamically calculate based on current rows
     
     fun processInput(input: String) {
         for (char in input) {
@@ -489,6 +490,42 @@ class TerminalEmulator(
     }
     
     fun resize(newColumns: Int, newRows: Int) {
-        // TODO: Implement proper resizing logic
+        if (newColumns == columns && newRows == rows) {
+            return // No change needed
+        }
+        
+        // Create new buffer with new dimensions
+        val newBuffer = Array(newRows) { Array(newColumns) { TerminalCell() } }
+        
+        // Copy existing content to new buffer
+        val rowsToCopy = minOf(rows, newRows)
+        for (row in 0 until rowsToCopy) {
+            val colsToCopy = minOf(columns, newColumns)
+            for (col in 0 until colsToCopy) {
+                newBuffer[row][col] = buffer[row][col]
+            }
+            // If new buffer is wider, the extra cells are already initialized with empty TerminalCell()
+        }
+        
+        // Update buffer and dimensions
+        buffer = newBuffer
+        columns = newColumns
+        rows = newRows
+        
+        // Adjust cursor position if necessary
+        cursorRow = minOf(cursorRow, newRows - 1)
+        cursorCol = minOf(cursorCol, newColumns - 1)
+        
+        // Adjust saved cursor position
+        savedCursorRow = minOf(savedCursorRow, newRows - 1)
+        savedCursorCol = minOf(savedCursorCol, newColumns - 1)
+        
+        // Update max scrollback based on new rows
+        val newMaxScrollback = maxBufferSize - newRows
+        
+        // Trim scrollback if necessary
+        while (scrollbackLines.size > newMaxScrollback && scrollbackLines.isNotEmpty()) {
+            scrollbackLines.removeAt(0)
+        }
     }
 } 

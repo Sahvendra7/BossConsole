@@ -1,15 +1,18 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import BossDarkTextSecondary
-import ai.rever.boss.components.bars.DraggableVerticalScrollbar
+import ai.rever.boss.components.bars.ScrollbarConfig
+import ai.rever.boss.components.bars.verticalScrollWithScrollbar
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -20,18 +23,18 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -47,6 +50,23 @@ fun TerminalView(viewModel: TerminalViewModel) {
     
     // Use a text field value to capture input
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    
+    // Track if user has manually scrolled
+    var userHasScrolled by remember { mutableStateOf(false) }
+    
+    // Terminal size tracking
+    var terminalSize by remember { mutableStateOf(Pair(120, 24)) } // Default columns x rows
+    var hasInitialSize by remember { mutableStateOf(false) }
+    var pendingResize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val density = LocalDensity.current
+    
+    // Character dimensions for size calculation
+    // Match the cursor positioning width for consistency
+    val fontSize = 14.sp
+    val charWidthDp = 9.0.dp  // Slightly wider to prevent wrapping
+    val charHeightDp = 17.dp   // Same as cursor height
+    val charWidthPx = with(density) { charWidthDp.toPx() }
+    val charHeightPx = with(density) { charHeightDp.toPx() }
     
     // Cursor blink animation
     val cursorAlpha by rememberInfiniteTransition().animateFloat(
@@ -174,7 +194,34 @@ fun TerminalView(viewModel: TerminalViewModel) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp)
+                .onSizeChanged { size ->
+                    // Skip if size is zero (during initial layout)
+                    if (size.width > 0 && size.height > 0) {
+                        // Calculate terminal size in columns and rows
+                        with(density) {
+                            // Account for padding (8dp on each side = 16dp total) and scrollbar (4dp)
+                            val horizontalPaddingPx = 16.dp.toPx() + 4.dp.toPx() // padding + scrollbar
+                            val verticalPaddingPx = 16.dp.toPx()
+                            val availableWidth = size.width - horizontalPaddingPx
+                            val availableHeight = size.height - verticalPaddingPx
+                            val widthInDp = availableWidth.toDp()
+                            val heightInDp = availableHeight.toDp()
+                            
+                            // Calculate columns and rows based on character dimensions in pixels
+                            val calculatedColumns = kotlin.math.floor(availableWidth / charWidthPx).toInt()
+                            val newColumns = max(20, calculatedColumns) // No artificial cap
+                            val newRows = max(5, kotlin.math.floor(availableHeight / charHeightPx).toInt())
+                            
+                            // println("[TerminalView] Size: ${size.width}x${size.height}px, available: ${availableWidth}x${availableHeight}px -> ${newColumns}x${newRows} cols/rows (char width: ${charWidthPx}px)")
+                            
+                            // Only resize if dimensions actually changed
+                            if (terminalSize.first != newColumns || terminalSize.second != newRows) {
+                                // Store the pending resize instead of applying immediately
+                                pendingResize = Pair(newColumns, newRows)
+                            }
+                        }
+                    }
+                }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -183,16 +230,24 @@ fun TerminalView(viewModel: TerminalViewModel) {
                     focusRequester.requestFocus()
                 }
         ) {
-            // Terminal output area
+            // Terminal output area with padding
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(scrollState)
+                    .padding(8.dp)
+                    .verticalScrollWithScrollbar(
+                        scrollState = scrollState,
+                        scrollbarConfig = ScrollbarConfig(
+                            indicatorThickness = 6.dp,
+                            indicatorColor = BossDarkTextSecondary,
+                            padding = PaddingValues(end = 0.dp)
+                        )
+                    )
             ) {
-                // If terminal is not running, show status
-                if (!isRunning) {
+                // If terminal is not running or no lines yet, show status
+                if (!isRunning || terminalLines.isEmpty()) {
                     Text(
-                        text = "Terminal starting...",
+                        text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
                         style = terminalTextStyle,
                         color = Color.Yellow
                     )
@@ -205,35 +260,28 @@ fun TerminalView(viewModel: TerminalViewModel) {
                         Text(
                             text = line,
                             style = terminalTextStyle,
-                            color = textColor
+                            color = textColor,
+                            modifier = Modifier.fillMaxWidth(),
+                            softWrap = false,
+                            overflow = TextOverflow.Visible
                         )
                         
                         // Show cursor if this is the cursor row
                         if (rowIndex == terminalCursorPosition.first && hasFocus) {
-                            // Calculate cursor position
+                            // Calculate cursor position using same char width
                             val cursorCol = terminalCursorPosition.second
                             Box(
                                 modifier = Modifier
-                                    .offset(x = (cursorCol * 8.4f).dp) // More accurate character width
-                                    .width(8.4f.dp)
-                                    .height(16.dp)
-                                    .alpha(if (hasFocus) cursorAlpha else 0f)
+                                    .offset(x = charWidthDp * cursorCol)
+                                    .width(charWidthDp)
+                                    .height(charHeightDp)
+                                    .alpha(cursorAlpha)
                                     .background(cursorColor)
                             )
                         }
                     }
                 }
             }
-            
-            // Draggable scrollbar
-            DraggableVerticalScrollbar(
-                scrollState = scrollState,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 2.dp),
-                indicatorThickness = 6.dp,
-                indicatorColor = BossDarkTextSecondary
-            )
         }
     }
     
@@ -241,6 +289,54 @@ fun TerminalView(viewModel: TerminalViewModel) {
     LaunchedEffect(Unit) {
         delay(100)
         focusRequester.requestFocus()
+        
+        // Fallback: ensure terminal starts after a timeout
+        delay(1000)
+        if (!hasInitialSize) {
+            // println("[TerminalView] Fallback startup - starting terminal with default size")
+            hasInitialSize = true
+            viewModel.ensureStarted()
+            viewModel.resize(terminalSize.first, terminalSize.second)
+        }
+    }
+    
+    // Handle pending resize with debouncing
+    LaunchedEffect(pendingResize) {
+        pendingResize?.let { (cols, rows) ->
+            // println("[TerminalView] Pending resize: ${cols}x${rows}")
+            
+            // Wait for resize events to settle
+            delay(300)
+            
+            // Check if we still have the same pending resize
+            if (pendingResize == Pair(cols, rows)) {
+                // println("[TerminalView] Applying resize: ${cols}x${rows}, hasInitialSize=$hasInitialSize")
+                
+                // First time setup
+                if (!hasInitialSize) {
+                    hasInitialSize = true
+                    // Start the terminal
+                    viewModel.ensureStarted()
+                    // Wait for terminal to start
+                    delay(500)
+                }
+                
+                // Apply the resize
+                if (terminalSize.first != cols || terminalSize.second != rows) {
+                    val oldCols = terminalSize.first
+                    terminalSize = Pair(cols, rows)
+                    viewModel.resize(cols, rows)
+                    
+                    // Clear screen after significant column change to remove artifacts
+                    if (kotlin.math.abs(oldCols - cols) > 10 && hasInitialSize) {
+                        delay(200)
+                        viewModel.sendInput("\u000C") // Ctrl+L
+                    }
+                }
+                
+                pendingResize = null
+            }
+        }
     }
     
     // Keep requesting focus if we lose it
@@ -254,17 +350,29 @@ fun TerminalView(viewModel: TerminalViewModel) {
         }
     }
     
-    // Auto-scroll to bottom when terminal updates (only if already at bottom)
-    LaunchedEffect(terminalLines.size) {
-        if (terminalLines.isNotEmpty()) {
-            // Check if we're already at or near the bottom
-            val isAtBottom = scrollState.value >= (scrollState.maxValue - 100) // 100px tolerance
+    // Track user scroll interactions
+    LaunchedEffect(scrollState.value) {
+        // Check if this scroll was user-initiated (not from auto-scroll)
+        if (scrollState.isScrollInProgress) {
+            val currentMax = scrollState.maxValue
+            val currentValue = scrollState.value
             
-            // Only auto-scroll if we're already following the output
-            if (isAtBottom && scrollState.maxValue > 0) {
-                coroutineScope.launch {
-                    scrollState.animateScrollTo(scrollState.maxValue)
-                }
+            // User scrolled up if they're not at the bottom
+            userHasScrolled = currentValue < (currentMax - 50) // 50px tolerance for being "at bottom"
+            
+            // If user scrolled to bottom, reset the flag
+            if (currentValue >= (currentMax - 50)) {
+                userHasScrolled = false
+            }
+        }
+    }
+    
+    // Auto-scroll to bottom when terminal updates
+    LaunchedEffect(terminalLines.size) {
+        if (terminalLines.isNotEmpty() && !userHasScrolled) {
+            // Auto-scroll to bottom if user hasn't manually scrolled up
+            coroutineScope.launch {
+                scrollState.animateScrollTo(scrollState.maxValue)
             }
         }
     }
