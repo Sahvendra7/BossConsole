@@ -69,27 +69,100 @@ class TerminalEmulator(
         
         // Check if we have a complete sequence
         when {
-            // CSI sequences: ESC [ ... letter
-            escapeSequence.startsWith("[") && char.isLetter() -> {
-                processCsiSequence(escapeSequence.substring(1, escapeSequence.length - 1), char)
+            // CSI sequences: ESC [ ... letter (@ through ~)
+            escapeSequence.startsWith("[") && escapeSequence.length > 1 && char >= '@' && char <= '~' -> {
+                // Extract parameters (everything between [ and the command char)
+                val params = if (escapeSequence.length > 2) {
+                    escapeSequence.substring(1, escapeSequence.length - 1)
+                } else {
+                    "" // No parameters, just ESC[<command>
+                }
+                processCsiSequence(params, char)
                 inEscapeSequence = false
             }
             // OSC sequences: ESC ] ... BEL or ESC \
             escapeSequence.startsWith("]") && (char == '\u0007' || 
                 (escapeSequence.length > 1 && escapeSequence.endsWith("\\"))) -> {
-                processOscSequence(escapeSequence.substring(1))
+                val content = if (escapeSequence.length > 1) {
+                    escapeSequence.substring(1)
+                } else {
+                    ""
+                }
+                processOscSequence(content)
                 inEscapeSequence = false
             }
-            // Two-character sequences
-            escapeSequence.length == 1 && char != '[' && char != ']' -> {
-                processTwoCharSequence(char)
+            // DCS sequences: ESC P ... ESC \
+            escapeSequence.startsWith("P") && escapeSequence.length > 1 && 
+                escapeSequence.endsWith("\\") && escapeSequence[escapeSequence.length - 2] == '\u001B' -> {
+                // Device Control String - ignore for now
+                inEscapeSequence = false
+            }
+            // PM sequences: ESC ^ ... ESC \
+            escapeSequence.startsWith("^") && escapeSequence.length > 1 && 
+                escapeSequence.endsWith("\\") && escapeSequence[escapeSequence.length - 2] == '\u001B' -> {
+                // Privacy Message - ignore for now
+                inEscapeSequence = false
+            }
+            // APC sequences: ESC _ ... ESC \
+            escapeSequence.startsWith("_") && escapeSequence.length > 1 && 
+                escapeSequence.endsWith("\\") && escapeSequence[escapeSequence.length - 2] == '\u001B' -> {
+                // Application Program Command - ignore for now
+                inEscapeSequence = false
+            }
+            // Two-character sequences (ESC followed by a single character)
+            escapeSequence.length == 1 -> {
+                when (char) {
+                    '[', ']', 'P', '^', '_' -> {
+                        // Start of multi-character sequence, continue building
+                    }
+                    '(', ')', '*', '+' -> {
+                        // Character set selection - start of three-character sequence, continue building
+                    }
+                    else -> {
+                        // Other two-character sequences
+                        processTwoCharSequence(char)
+                        inEscapeSequence = false
+                    }
+                }
+            }
+            // Character set designation: ESC ( A, ESC ) 0, etc.
+            (escapeSequence.length == 2 && 
+                (escapeSequence[0] == '(' || escapeSequence[0] == ')' || 
+                 escapeSequence[0] == '*' || escapeSequence[0] == '+')) -> {
+                // Character set designation complete
+                processCharacterSetDesignation(escapeSequence[0], char)
+                inEscapeSequence = false
+            }
+            // Handle malformed sequences - if we get too long, just abort
+            escapeSequence.length > 100 -> {
+                // Malformed sequence, just ignore it
                 inEscapeSequence = false
             }
         }
     }
     
     private fun processCsiSequence(params: String, command: Char) {
-        val args = params.split(';').mapNotNull { it.toIntOrNull() }
+        // Extract intermediate characters (?, >, =, etc.) from the beginning of params
+        var intermediates = ""
+        var actualParams = params
+        
+        if (params.isNotEmpty()) {
+            // Check for intermediate characters at the start
+            val firstChar = params[0]
+            if (firstChar == '?' || firstChar == '>' || firstChar == '=' || firstChar == '<' || firstChar == '!') {
+                intermediates = firstChar.toString()
+                actualParams = params.substring(1)
+            }
+        }
+        
+        // Parse parameters more carefully - handle empty params and non-numeric values
+        val args = if (actualParams.isEmpty()) {
+            emptyList()
+        } else {
+            actualParams.split(';').map { param ->
+                param.toIntOrNull() ?: 0  // Default to 0 for invalid params
+            }
+        }
         
         when (command) {
             'A' -> moveCursorUp(args.getOrElse(0) { 1 }) // Cursor up
@@ -111,13 +184,22 @@ class TerminalEmulator(
             'L' -> insertLines(args.getOrElse(0) { 1 }) // Insert lines
             'M' -> deleteLines(args.getOrElse(0) { 1 }) // Delete lines
             'P' -> deleteCharacters(args.getOrElse(0) { 1 }) // Delete characters
+            'S' -> scrollUp(args.getOrElse(0) { 1 }) // Scroll up
+            'T' -> scrollDown(args.getOrElse(0) { 1 }) // Scroll down
             'X' -> eraseCharacters(args.getOrElse(0) { 1 }) // Erase characters
             'd' -> cursorRow = minOf(rows - 1, maxOf(0, args.getOrElse(0) { 1 } - 1)) // Line position absolute
             'm' -> processColorAndStyle(args) // SGR - Select Graphic Rendition
+            'n' -> {} // Device status report - ignore for now
+            'r' -> {} // Set scrolling region - TODO
             's' -> saveCursor() // Save cursor position
             'u' -> restoreCursor() // Restore cursor position
-            'h' -> if (params == "?25") { /* Show cursor - TODO */ } // DEC Private Mode Set
-            'l' -> if (params == "?25") { /* Hide cursor - TODO */ } // DEC Private Mode Reset
+            'h' -> handleModeSet(params) // Set mode - pass original params with intermediates
+            'l' -> handleModeReset(params) // Reset mode - pass original params with intermediates
+            '!' -> {} // Soft reset - ignore for now
+            'c' -> {} // Device attributes - ignore for now
+            else -> {
+                // Unknown CSI sequence, ignore
+            }
         }
     }
     
@@ -132,6 +214,17 @@ class TerminalEmulator(
             '8' -> restoreCursor() // Restore cursor
             'D' -> scrollUp() // Index
             'M' -> scrollDown() // Reverse index
+            'E' -> { // Next line
+                cursorCol = 0
+                moveCursorDown(1)
+            }
+            'H' -> {} // Tab set - ignore for now
+            '=' -> {} // Application keypad mode - ignore for now
+            '>' -> {} // Normal keypad mode - ignore for now
+            'c' -> {} // Reset - TODO: implement full reset
+            else -> {
+                // Unknown two-char sequence - silently ignore
+            }
         }
     }
     
@@ -354,33 +447,37 @@ class TerminalEmulator(
         cursorCol = savedCursorCol
     }
     
-    private fun scrollUp() {
-        // Save the top line to scrollback
-        scrollbackLines.add(buffer[0].copyOf())
-        if (scrollbackLines.size > maxScrollback) {
-            scrollbackLines.removeAt(0)
+    private fun scrollUp(count: Int = 1) {
+        repeat(count) {
+            // Save the top line to scrollback
+            scrollbackLines.add(buffer[0].copyOf())
+            if (scrollbackLines.size > maxScrollback) {
+                scrollbackLines.removeAt(0)
+            }
+            
+            // Ensure total buffer doesn't exceed limit
+            trimBuffer()
+            
+            // Shift all lines up
+            for (row in 0 until rows - 1) {
+                buffer[row] = buffer[row + 1]
+            }
+            
+            // Clear the bottom line
+            buffer[rows - 1] = Array(columns) { TerminalCell() }
         }
-        
-        // Ensure total buffer doesn't exceed limit
-        trimBuffer()
-        
-        // Shift all lines up
-        for (row in 0 until rows - 1) {
-            buffer[row] = buffer[row + 1]
-        }
-        
-        // Clear the bottom line
-        buffer[rows - 1] = Array(columns) { TerminalCell() }
     }
     
-    private fun scrollDown() {
-        // Shift all lines down
-        for (row in rows - 1 downTo 1) {
-            buffer[row] = buffer[row - 1]
+    private fun scrollDown(count: Int = 1) {
+        repeat(count) {
+            // Shift all lines down
+            for (row in rows - 1 downTo 1) {
+                buffer[row] = buffer[row - 1]
+            }
+            
+            // Clear the top line
+            buffer[0] = Array(columns) { TerminalCell() }
         }
-        
-        // Clear the top line
-        buffer[0] = Array(columns) { TerminalCell() }
     }
     
     private fun insertLines(count: Int) {
@@ -527,5 +624,27 @@ class TerminalEmulator(
         while (scrollbackLines.size > newMaxScrollback && scrollbackLines.isNotEmpty()) {
             scrollbackLines.removeAt(0)
         }
+    }
+    
+    private fun handleModeSet(params: String) {
+        when (params) {
+            "?25" -> {} // Show cursor - TODO
+            "?1049" -> {} // Use alternate screen buffer - TODO
+            else -> {} // Other modes - ignore
+        }
+    }
+    
+    private fun handleModeReset(params: String) {
+        when (params) {
+            "?25" -> {} // Hide cursor - TODO
+            "?1049" -> {} // Use normal screen buffer - TODO
+            else -> {} // Other modes - ignore
+        }
+    }
+    
+    private fun processCharacterSetDesignation(intermediate: Char, final: Char) {
+        // Character set designation sequences like ESC(B, ESC)0, etc.
+        // For now, we'll ignore these as they affect character rendering
+        // which we don't fully support yet
     }
 } 
