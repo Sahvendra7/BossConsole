@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
@@ -22,13 +21,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -56,6 +52,16 @@ fun TerminalView(viewModel: TerminalViewModel) {
     val backgroundColor = Color(0xFF1E1E1E)
     val textColor = Color(0xFFD4D4D4)
     val cursorColor = Color(0xFF608B4E)
+    
+    // Terminal font - try to use Nerd Fonts for powerline symbols
+    val terminalFontFamily = rememberTerminalFontFamily()
+    
+    // Terminal text style
+    val terminalTextStyle = TextStyle(
+        fontFamily = terminalFontFamily,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Normal
+    )
     
     Surface(
         modifier = Modifier
@@ -93,11 +99,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
                         ) {
                             Text(
                                 text = line,
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Normal
-                                ),
+                                style = terminalTextStyle,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             
@@ -126,11 +128,8 @@ fun TerminalView(viewModel: TerminalViewModel) {
                             // Simple prompt indicator
                             Text(
                                 text = "$ ",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF569CD6),
-                                    fontWeight = FontWeight.Normal
+                                style = terminalTextStyle.copy(
+                                    color = Color(0xFF569CD6)
                                 )
                             )
                             
@@ -146,11 +145,8 @@ fun TerminalView(viewModel: TerminalViewModel) {
                                         .onPreviewKeyEvent { keyEvent ->
                                             handleKeyEvent(keyEvent, viewModel)
                                         },
-                                    textStyle = TextStyle(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 14.sp,
-                                        color = textColor,
-                                        fontWeight = FontWeight.Normal
+                                    textStyle = terminalTextStyle.copy(
+                                        color = textColor
                                     ),
                                     cursorBrush = SolidColor(cursorColor),
                                     singleLine = true
