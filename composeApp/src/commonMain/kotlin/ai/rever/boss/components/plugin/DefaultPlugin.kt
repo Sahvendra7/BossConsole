@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.components.plugin.panels.bottom.*
+import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.registerLanager
 import ai.rever.boss.components.plugin.panels.left_bottom.registerMastery
 import ai.rever.boss.components.plugin.panels.left_bottom.registerTaskResolver
