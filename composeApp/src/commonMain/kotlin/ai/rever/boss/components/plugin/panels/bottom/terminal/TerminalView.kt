@@ -191,7 +191,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
             cursorBrush = SolidColor(Color.Transparent)
         )
         
-        // Terminal content with draggable scrollbar
+        // Terminal content
         Box(
             modifier = Modifier
                 .fillMaxSize()

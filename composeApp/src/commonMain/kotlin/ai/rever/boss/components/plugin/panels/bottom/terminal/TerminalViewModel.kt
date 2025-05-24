@@ -92,10 +92,6 @@ class TerminalViewModel {
         val lines = terminalEmulator.getAnnotatedLines()
         val cursorPos = terminalEmulator.getCursorPosition()
         val cursorVisible = terminalEmulator.isCursorVisible()
-        // Only log significant display updates
-        if (lines.size % 10 == 0 || lines.size < 5) {
-            // println("[TerminalViewModel-$instanceId] Display update: ${lines.size} lines")
-        }
         _terminalLines.value = lines
         _terminalCursorPosition.value = cursorPos
         _terminalCursorVisible.value = cursorVisible

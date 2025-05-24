@@ -53,6 +53,25 @@ class TerminalEmulator(
     private var currentItalic = false
     private var currentUnderline = false
     
+    // Character sets (G0, G1, G2, G3)
+    private enum class CharacterSet {
+        ASCII,      // US ASCII
+        GRAPHICS,   // Line drawing/special graphics
+        UK,         // UK charset
+        UNCHANGED   // Keep as-is
+    }
+    
+    private var g0CharSet = CharacterSet.ASCII
+    private var g1CharSet = CharacterSet.ASCII
+    private var g2CharSet = CharacterSet.ASCII
+    private var g3CharSet = CharacterSet.ASCII
+    
+    // Currently active character set (GL)
+    private var currentCharSet = 0 // 0=G0, 1=G1, 2=G2, 3=G3
+    
+    // Single shift state
+    private var singleShift = -1 // -1=none, 2=SS2(G2), 3=SS3(G3)
+    
     // Parser state
     private val escapeSequence = StringBuilder()
     private var inEscapeSequence = false
@@ -62,6 +81,10 @@ class TerminalEmulator(
     private val maxBufferSize = 2000 // Total lines limit (scrollback + visible)
     private val maxScrollback: Int
         get() = maxBufferSize - rows // Dynamically calculate based on current rows
+    
+    // Window title
+    private var windowTitle = ""
+    private var iconTitle = ""
     
     fun processInput(input: String) {
         for (char in input) {
@@ -221,26 +244,162 @@ class TerminalEmulator(
     
     private fun processOscSequence(content: String) {
         // Handle OSC sequences (e.g., setting window title)
-        // For now, we'll ignore these
+        // OSC sequences have the format: OSC number ; text ST
+        // Where ST can be BEL (\u0007) or ESC \
+        
+        // Remove the terminator if present
+        val cleanContent = content.removeSuffix("\\").removeSuffix("\u0007")
+        
+        // Split into command number and parameters
+        val parts = cleanContent.split(';', limit = 2)
+        if (parts.isEmpty()) return
+        
+        val command = parts[0].toIntOrNull() ?: return
+        val text = parts.getOrElse(1) { "" }
+        
+        when (command) {
+            0 -> {
+                // Set icon name and window title
+                iconTitle = text
+                windowTitle = text
+            }
+            1 -> {
+                // Set icon name
+                iconTitle = text
+            }
+            2 -> {
+                // Set window title
+                windowTitle = text
+            }
+            4 -> {
+                // Set/change color palette
+                // Format: OSC 4 ; index ; color ST
+                val colorParts = text.split(';', limit = 2)
+                if (colorParts.size == 2) {
+                    val index = colorParts[0].toIntOrNull()
+                    val colorSpec = colorParts[1]
+                    if (index != null) {
+                        setColorPalette(index, colorSpec)
+                    }
+                }
+            }
+            7 -> {
+                // Set current working directory (used by some terminals)
+                // We'll store but not use this for now
+            }
+            8 -> {
+                // Hyperlink
+                // Format: OSC 8 ; params ; uri ST
+                // For now, we'll ignore hyperlinks
+            }
+            10 -> {
+                // Set foreground color
+                setDefaultForeground(text)
+            }
+            11 -> {
+                // Set background color
+                setDefaultBackground(text)
+            }
+            12 -> {
+                // Set cursor color
+                // We could implement this by adding a cursor color state
+            }
+            52 -> {
+                // Clipboard operations
+                // Format: OSC 52 ; clipboard ; base64-data ST
+                // For security reasons, we'll ignore clipboard operations for now
+            }
+            104 -> {
+                // Reset color palette
+                // Format: OSC 104 ; index ST or OSC 104 ST (reset all)
+                if (text.isEmpty()) {
+                    resetColorPalette()
+                } else {
+                    val index = text.toIntOrNull()
+                    if (index != null) {
+                        resetColorPaletteEntry(index)
+                    }
+                }
+            }
+            110 -> {
+                // Reset foreground color
+                resetDefaultForeground()
+            }
+            111 -> {
+                // Reset background color
+                resetDefaultBackground()
+            }
+            112 -> {
+                // Reset cursor color
+            }
+        }
     }
     
-    private fun processTwoCharSequence(char: Char) {
-        when (char) {
-            '7' -> saveCursor() // Save cursor
-            '8' -> restoreCursor() // Restore cursor
-            'D' -> scrollUp() // Index
-            'M' -> scrollDown() // Reverse index
-            'E' -> { // Next line
-                cursorCol = 0
-                moveCursorDown(1)
+    // Color palette for custom colors
+    private val customColorPalette = mutableMapOf<Int, Color>()
+    private var defaultForegroundColor: Color? = null
+    private var defaultBackgroundColor: Color? = null
+    
+    private fun setColorPalette(index: Int, colorSpec: String) {
+        // Parse color specification (e.g., "rgb:ff/00/00" or "#ff0000")
+        val color = parseColorSpec(colorSpec)
+        if (color != null && index in 0..255) {
+            customColorPalette[index] = color
+        }
+    }
+    
+    private fun setDefaultForeground(colorSpec: String) {
+        defaultForegroundColor = parseColorSpec(colorSpec)
+    }
+    
+    private fun setDefaultBackground(colorSpec: String) {
+        defaultBackgroundColor = parseColorSpec(colorSpec)
+    }
+    
+    private fun resetColorPalette() {
+        customColorPalette.clear()
+    }
+    
+    private fun resetColorPaletteEntry(index: Int) {
+        customColorPalette.remove(index)
+    }
+    
+    private fun resetDefaultForeground() {
+        defaultForegroundColor = null
+    }
+    
+    private fun resetDefaultBackground() {
+        defaultBackgroundColor = null
+    }
+    
+    private fun parseColorSpec(spec: String): Color? {
+        return when {
+            // RGB format: rgb:rr/gg/bb or rgb:rrrr/gggg/bbbb
+            spec.startsWith("rgb:") -> {
+                val rgb = spec.substring(4).split('/')
+                if (rgb.size == 3) {
+                    try {
+                        val r = rgb[0].padEnd(4, rgb[0].last()).substring(0, 2).toInt(16)
+                        val g = rgb[1].padEnd(4, rgb[1].last()).substring(0, 2).toInt(16)
+                        val b = rgb[2].padEnd(4, rgb[2].last()).substring(0, 2).toInt(16)
+                        Color(r, g, b)
+                    } catch (e: Exception) {
+                        null
+                    }
+                } else null
             }
-            'H' -> {} // Tab set - ignore for now
-            '=' -> {} // Application keypad mode - ignore for now
-            '>' -> {} // Normal keypad mode - ignore for now
-            'c' -> performFullReset() // Reset
-            else -> {
-                // Unknown two-char sequence - silently ignore
+            // Hex format: #rrggbb
+            spec.startsWith("#") && spec.length == 7 -> {
+                try {
+                    val r = spec.substring(1, 3).toInt(16)
+                    val g = spec.substring(3, 5).toInt(16)
+                    val b = spec.substring(5, 7).toInt(16)
+                    Color(r, g, b)
+                } catch (e: Exception) {
+                    null
+                }
             }
+            else -> null
         }
     }
     
@@ -261,12 +420,17 @@ class TerminalEmulator(
                 val nextTab = ((cursorCol / 8) + 1) * 8
                 cursorCol = minOf(nextTab, columns - 1)
             }
+            '\u000E' -> currentCharSet = 1 // SO - Shift Out (use G1)
+            '\u000F' -> currentCharSet = 0 // SI - Shift In (use G0)
             else -> {
                 if (char.code >= 32) {
+                    // Translate character based on active character set
+                    val displayChar = translateCharacter(char)
+                    
                     // Place character at cursor position
                     if (cursorCol < columns) {
                         buffer[cursorRow][cursorCol] = TerminalCell(
-                            char = char,
+                            char = displayChar,
                             foregroundColor = currentForeground,
                             backgroundColor = currentBackground,
                             bold = currentBold,
@@ -283,8 +447,82 @@ class TerminalEmulator(
                             }
                         }
                     }
+                    
+                    // Reset single shift if used
+                    if (singleShift >= 0) {
+                        singleShift = -1
+                    }
                 }
             }
+        }
+    }
+    
+    private fun translateCharacter(char: Char): Char {
+        // Determine which character set to use
+        val activeSet = when {
+            singleShift >= 0 -> singleShift
+            else -> currentCharSet
+        }
+        
+        val charSet = when (activeSet) {
+            0 -> g0CharSet
+            1 -> g1CharSet
+            2 -> g2CharSet
+            3 -> g3CharSet
+            else -> CharacterSet.ASCII
+        }
+        
+        // Translate character based on character set
+        return when (charSet) {
+            CharacterSet.GRAPHICS -> translateGraphicsChar(char)
+            CharacterSet.UK -> translateUKChar(char)
+            else -> char // ASCII or UNCHANGED
+        }
+    }
+    
+    private fun translateGraphicsChar(char: Char): Char {
+        // DEC Special Graphics character set (line drawing)
+        return when (char) {
+            '`' -> '◆' // Diamond
+            'a' -> '▒' // Checkerboard
+            'b' -> '␉' // HT
+            'c' -> '␌' // FF
+            'd' -> '␍' // CR
+            'e' -> '␊' // LF
+            'f' -> '°' // Degree
+            'g' -> '±' // Plus/minus
+            'h' -> '␤' // NL
+            'i' -> '␋' // VT
+            'j' -> '┘' // Lower right corner
+            'k' -> '┐' // Upper right corner
+            'l' -> '┌' // Upper left corner
+            'm' -> '└' // Lower left corner
+            'n' -> '┼' // Crossing lines
+            'o' -> '⎺' // Scan line 1
+            'p' -> '⎻' // Scan line 3
+            'q' -> '─' // Horizontal line
+            'r' -> '⎼' // Scan line 5
+            's' -> '⎽' // Scan line 7
+            't' -> '├' // T pointing right
+            'u' -> '┤' // T pointing left
+            'v' -> '┴' // T pointing up
+            'w' -> '┬' // T pointing down
+            'x' -> '│' // Vertical line
+            'y' -> '≤' // Less than or equal
+            'z' -> '≥' // Greater than or equal
+            '{' -> 'π' // Pi
+            '|' -> '≠' // Not equal
+            '}' -> '£' // UK pound
+            '~' -> '·' // Centered dot
+            else -> char // Keep unchanged
+        }
+    }
+    
+    private fun translateUKChar(char: Char): Char {
+        // UK character set - only difference from US ASCII is # -> £
+        return when (char) {
+            '#' -> '£' // UK pound symbol
+            else -> char
         }
     }
     
@@ -346,6 +584,9 @@ class TerminalEmulator(
     }
     
     private fun xterm256ColorToCompose(code: Int): Color {
+        // Check custom palette first
+        customColorPalette[code]?.let { return it }
+        
         // Implement 256-color palette
         return when (code) {
             in 0..15 -> {
@@ -564,9 +805,9 @@ class TerminalEmulator(
                 for (cell in row) {
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            Color(0xFFD4D4D4) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFD4D4D4) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
-                            cell.backgroundColor else Color.Unspecified,
+                            cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
                         fontStyle = if (cell.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
                         textDecoration = if (cell.underline) 
@@ -584,9 +825,9 @@ class TerminalEmulator(
                 for (cell in row) {
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            Color(0xFFD4D4D4) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFD4D4D4) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
-                            cell.backgroundColor else Color.Unspecified,
+                            cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
                         fontStyle = if (cell.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
                         textDecoration = if (cell.underline) 
@@ -752,8 +993,23 @@ class TerminalEmulator(
     
     private fun processCharacterSetDesignation(intermediate: Char, final: Char) {
         // Character set designation sequences like ESC(B, ESC)0, etc.
-        // For now, we'll ignore these as they affect character rendering
-        // which we don't fully support yet
+        val charSet = when (final) {
+            'A' -> CharacterSet.UK
+            'B' -> CharacterSet.ASCII
+            '0' -> CharacterSet.GRAPHICS
+            '1' -> CharacterSet.ASCII // Alternate character ROM - treat as ASCII
+            '2' -> CharacterSet.GRAPHICS // Alternate character ROM special graphics
+            else -> CharacterSet.UNCHANGED
+        }
+        
+        if (charSet != CharacterSet.UNCHANGED) {
+            when (intermediate) {
+                '(' -> g0CharSet = charSet // Designate G0
+                ')' -> g1CharSet = charSet // Designate G1
+                '*' -> g2CharSet = charSet // Designate G2
+                '+' -> g3CharSet = charSet // Designate G3
+            }
+        }
     }
     
     private fun performFullReset() {
@@ -791,5 +1047,49 @@ class TerminalEmulator(
         
         // Clear scrollback in primary buffer
         scrollbackLines.clear()
+        
+        // Reset character sets to defaults
+        g0CharSet = CharacterSet.ASCII
+        g1CharSet = CharacterSet.ASCII
+        g2CharSet = CharacterSet.ASCII
+        g3CharSet = CharacterSet.ASCII
+        currentCharSet = 0
+        singleShift = -1
+        
+        // Reset window titles
+        windowTitle = ""
+        iconTitle = ""
+        
+        // Reset custom colors
+        customColorPalette.clear()
+        defaultForegroundColor = null
+        defaultBackgroundColor = null
+    }
+    
+    fun getWindowTitle(): String = windowTitle
+    fun getIconTitle(): String = iconTitle
+    
+    private fun processTwoCharSequence(char: Char) {
+        when (char) {
+            '7' -> saveCursor() // Save cursor
+            '8' -> restoreCursor() // Restore cursor
+            'D' -> scrollUp() // Index
+            'M' -> scrollDown() // Reverse index
+            'E' -> { // Next line
+                cursorCol = 0
+                moveCursorDown(1)
+            }
+            'H' -> {} // Tab set - ignore for now
+            '=' -> {} // Application keypad mode - ignore for now
+            '>' -> {} // Normal keypad mode - ignore for now
+            'c' -> performFullReset() // Reset
+            'N' -> singleShift = 2 // SS2 - Single shift to G2
+            'O' -> singleShift = 3 // SS3 - Single shift to G3
+            'n' -> currentCharSet = 2 // LS2 - Locking shift to G2
+            'o' -> currentCharSet = 3 // LS3 - Locking shift to G3
+            else -> {
+                // Unknown two-char sequence - silently ignore
+            }
+        }
     }
 } 
