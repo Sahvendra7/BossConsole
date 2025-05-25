@@ -9,10 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class TerminalViewModel {
     companion object {
         const val MAX_BUFFER_SIZE = 2000 // Maximum lines to keep in buffer
-        private var instanceCounter = 0
     }
-    
-    private val instanceId = ++instanceCounter
     
     private val terminalFactory = TerminalFactory()
     private var terminal: Terminal? = null
