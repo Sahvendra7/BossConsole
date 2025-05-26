@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -60,9 +61,18 @@ fun ComponentContext.BossApp() {
             override val title = "SomeFile.kt"
             override val icon = Icons.Outlined.Code
         }
+        
+        // Add a Fluck browser tab
+        val fluckTab = object : TabInfo {
+            override val id = "browser1"
+            override val typeId = TabTypeId("fluck")
+            override val title = "Web Browser"
+            override val icon = Icons.Outlined.Language
+        }
 
         tabsComponent.addTab(file1)
         tabsComponent.addTab(file2)
+        tabsComponent.addTab(fluckTab)
 
         onDispose { /* cleanup */ }
     }

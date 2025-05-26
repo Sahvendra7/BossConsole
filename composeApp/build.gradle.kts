@@ -107,6 +107,9 @@ kotlin {
             // Logging
             implementation(libs.slf4j.api)
             implementation(libs.slf4j.simple)
+            
+            // JCEF for web browser
+            implementation(libs.jcef.main)
         }
     }
 }
@@ -164,7 +167,13 @@ compose.desktop {
             "-Dpty4j.preferred.native.folder=${layout.buildDirectory.dir("pty4j-native").get().asFile.absolutePath}",
             "-Djna.nosys=true",
             "-Dpty4j.tmpdir=${layout.buildDirectory.dir("tmp").get().asFile.absolutePath}",
-            "-Djava.io.tmpdir=${layout.buildDirectory.dir("tmp").get().asFile.absolutePath}"
+            "-Djava.io.tmpdir=${layout.buildDirectory.dir("tmp").get().asFile.absolutePath}",
+            // JCEF arguments
+            "-Djcef.path=${layout.buildDirectory.dir("jcef-natives").get().asFile.absolutePath}",
+            "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            "-Dapple.awt.application.appearance=system"
         )
         
         nativeDistributions {
@@ -234,7 +243,22 @@ tasks.register("extractPty4jNative") {
     }
 }
 
-// Make run tasks depend on the extraction task
+// Extract JCEF natives
+tasks.register("extractJcefNatives") {
+    doLast {
+        val jcefNativeDir = layout.buildDirectory.dir("jcef-natives").get().asFile
+        jcefNativeDir.mkdirs()
+        
+        // The jcefmaven library will download natives automatically
+        // We just need to ensure the directory exists
+        println("JCEF natives directory: ${jcefNativeDir.absolutePath}")
+    }
+}
+
+// Make run tasks depend on the extraction tasks
 afterEvaluate {
-    tasks.findByName("run")?.dependsOn("extractPty4jNative")
+    tasks.findByName("run")?.apply {
+        dependsOn("extractPty4jNative")
+        dependsOn("extractJcefNatives")
+    }
 }

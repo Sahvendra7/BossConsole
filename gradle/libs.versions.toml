@@ -25,6 +25,7 @@ purejavacomm = "0.0.11.1"
 jna = "5.13.0"
 slf4j = "2.0.16"
 uiAndroid = "1.8.1"
+jcef = "116.0.19.1"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
@@ -61,6 +62,7 @@ purejavacomm = { module = "org.jetbrains.pty4j:purejavacomm", version.ref = "pur
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+jcef-main = { module = "me.friwi:jcefmaven", version.ref = "jcef" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
