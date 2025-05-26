@@ -66,7 +66,7 @@ fun ComponentContext.BossApp() {
         val fluckTab = object : TabInfo {
             override val id = "browser1"
             override val typeId = TabTypeId("fluck")
-            override val title = "Web Browser"
+            override val title = "Fluck"
             override val icon = Icons.Outlined.Language
         }
 

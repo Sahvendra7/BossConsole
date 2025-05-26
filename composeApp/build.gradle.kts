@@ -9,6 +9,17 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    id("com.teamdev.jxbrowser") version "1.2.1"
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
+}
+
+jxbrowser {
+    version = "8.2.1"
 }
 
 kotlin {
@@ -108,8 +119,9 @@ kotlin {
             implementation(libs.slf4j.api)
             implementation(libs.slf4j.simple)
             
-            // JCEF for web browser
-            implementation(libs.jcef.main)
+            // JxBrowser with Swing support
+            implementation(jxbrowser.currentPlatform)
+            implementation(jxbrowser.swing)
         }
     }
 }
