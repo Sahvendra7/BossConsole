@@ -9,7 +9,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
-    id("com.teamdev.jxbrowser") version "1.2.1"
+    id("com.teamdev.jxbrowser") version "2.0.0"
 }
 
 repositories {
@@ -19,7 +19,7 @@ repositories {
 }
 
 jxbrowser {
-    version = "8.2.1"
+    version = "8.7.0"
 }
 
 kotlin {
@@ -119,9 +119,9 @@ kotlin {
             implementation(libs.slf4j.api)
             implementation(libs.slf4j.simple)
             
-            // JxBrowser with Swing support
+            // JxBrowser with Compose support
             implementation(jxbrowser.currentPlatform)
-            implementation(jxbrowser.swing)
+            implementation(jxbrowser.compose)
         }
     }
 }

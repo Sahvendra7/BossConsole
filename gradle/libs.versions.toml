@@ -24,11 +24,7 @@ pty4j = "0.12.13"
 purejavacomm = "0.0.11.1"
 jna = "5.13.0"
 slf4j = "2.0.16"
-uiAndroid = "1.8.1"
-jcef = "122.1.10"
-jb-compose = "1.7.0"
-jxbrowser = "7.41.2"
-javafx = "21.0.1"
+uiAndroid = "1.8.2"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
@@ -65,14 +61,6 @@ purejavacomm = { module = "org.jetbrains.pty4j:purejavacomm", version.ref = "pur
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
-jcef-main = { module = "me.friwi:jcefmaven", version.ref = "jcef" }
-kcef = { module = "dev.datlag:kcef", version = "2025.03.23" }
-jxbrowser-cross-platform = { module = "com.teamdev:jxbrowser-cross-platform", version.ref = "jxbrowser" }
-jxbrowser-swing = { module = "com.teamdev:jxbrowser-swing", version.ref = "jxbrowser" }
-jxbrowser-compose = { module = "com.teamdev.jxbrowser:jxbrowser-compose", version.ref = "jxbrowser" }
-javafx-controls = { module = "org.openjfx:javafx-controls", version.ref = "javafx" }
-javafx-web = { module = "org.openjfx:javafx-web", version.ref = "javafx" }
-javafx-swing = { module = "org.openjfx:javafx-swing", version.ref = "javafx" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

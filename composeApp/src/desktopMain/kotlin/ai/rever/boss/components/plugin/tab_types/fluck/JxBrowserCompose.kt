@@ -3,31 +3,29 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.unit.dp
-import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.engine.RenderingMode
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
-import com.teamdev.jxbrowser.view.swing.BrowserView
+import com.teamdev.jxbrowser.view.compose.BrowserView
+import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import javax.swing.JPanel
-import java.awt.BorderLayout
 
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
     initialUrl: String = "https://www.google.com"
 ) {
-    var engine by remember { mutableStateOf<Engine?>(null) }
-    var browser by remember { mutableStateOf<Browser?>(null) }
     var currentUrl by remember { mutableStateOf(initialUrl) }
     var urlInput by remember { mutableStateOf(initialUrl) }
     var isLoading by remember { mutableStateOf(false) }
@@ -35,49 +33,50 @@ fun JxBrowserCompose(
     var canGoForward by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     
-    val browserPanel = remember {
-        JPanel(BorderLayout()).also { panel ->
-            val engineInstance = Engine.newInstance(
-                EngineOptions.newBuilder(RenderingMode.HARDWARE_ACCELERATED)
-                    .licenseKey("OK6AEKNYF3K41B5WB4FEKK1C3H7UH3C6ZI1UL63J6E5VJTT3RXZ711M87XU8PLPO0EXR4PNTJWDLDF7FSVO658N5GSB7ZAMNXZ66L8QR115B9B1INDPS5KWSA4RYSUHG1QLPHFPL108ZS9IHW")
-                    .build()
-            )
-            val browserInstance = engineInstance.newBrowser()
-            
-            // Set up navigation listeners
-            browserInstance.navigation().on(LoadStarted::class.java) {
-                coroutineScope.launch(Dispatchers.Main) {
-                    isLoading = true
-                    currentUrl = browserInstance.url()
-                    urlInput = browserInstance.url()
-                    canGoBack = browserInstance.navigation().canGoBack()
-                    canGoForward = browserInstance.navigation().canGoForward()
-                }
-            }
-            
-            browserInstance.navigation().on(LoadFinished::class.java) {
-                coroutineScope.launch(Dispatchers.Main) {
-                    isLoading = false
-                    canGoBack = browserInstance.navigation().canGoBack()
-                    canGoForward = browserInstance.navigation().canGoForward()
-                }
-            }
-            
-            engine = engineInstance
-            browser = browserInstance
-            
-            // Create and add BrowserView
-            val browserView = BrowserView.newInstance(browserInstance)
-            panel.add(browserView, BorderLayout.CENTER)
-            
-            browserInstance.navigation().loadUrl(initialUrl)
-        }
+    val engine = remember {
+        Engine.newInstance(
+            EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+                .licenseKey("OK6AEKNYF3K41B5WB4FEKK1C3H7UH3C6ZI1UL63J6E5VJTT3RXZ711M87XU8PLPO0EXR4PNTJWDLDF7FSVO658N5GSB7ZAMNXZ66L8QR115B9B1INDPS5KWSA4RYSUHG1QLPHFPL108ZS9IHW")
+                .build()
+        )
     }
     
-    DisposableEffect(Unit) {
+    val browser = remember {
+        engine.newBrowser().apply {
+            // Set up navigation listeners
+            navigation().on(LoadStarted::class.java) {
+                coroutineScope.launch(Dispatchers.Main) {
+                    isLoading = true
+                    currentUrl = url()
+                    urlInput = url()
+                    canGoBack = navigation().canGoBack()
+                    canGoForward = navigation().canGoForward()
+                }
+            }
+            
+            navigation().on(LoadFinished::class.java) {
+                coroutineScope.launch(Dispatchers.Main) {
+                    isLoading = false
+                    canGoBack = navigation().canGoBack()
+                    canGoForward = navigation().canGoForward()
+                }
+            }
+        }
+    }
+
+    // Create BrowserViewState using rememberBrowserViewState
+    val browserViewState = remember(browser) {
+
+        val window =java.awt.Window.getWindows().firstOrNull() ?: java.awt.Frame()
+        BrowserViewState(browser, coroutineScope, window)
+    }
+    
+    DisposableEffect(browser) {
+        browser.navigation().loadUrl(initialUrl)
+        
         onDispose {
-            browser?.close()
-            engine?.close()
+            browser.close()
+            engine.close()
         }
     }
     
@@ -97,7 +96,7 @@ fun JxBrowserCompose(
                 ) {
                     // Back button
                     IconButton(
-                        onClick = { browser?.navigation()?.goBack() },
+                        onClick = { browser.navigation().goBack() },
                         enabled = canGoBack
                     ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -105,7 +104,7 @@ fun JxBrowserCompose(
                     
                     // Forward button
                     IconButton(
-                        onClick = { browser?.navigation()?.goForward() },
+                        onClick = { browser.navigation().goForward() },
                         enabled = canGoForward
                     ) {
                         Icon(Icons.Default.ArrowForward, contentDescription = "Forward")
@@ -113,7 +112,7 @@ fun JxBrowserCompose(
                     
                     // Refresh button
                     IconButton(
-                        onClick = { browser?.navigation()?.reload() }
+                        onClick = { browser.navigation().reload() }
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -136,7 +135,7 @@ fun JxBrowserCompose(
                                         if (!url.startsWith("http://") && !url.startsWith("https://")) {
                                             url = "https://$url"
                                         }
-                                        browser?.navigation()?.loadUrl(url)
+                                        browser.navigation().loadUrl(url)
                                     }
                                 ) {
                                     Icon(Icons.Default.Search, contentDescription = "Go")
@@ -154,12 +153,12 @@ fun JxBrowserCompose(
                 }
             }
         }
-        
-        // Browser content using SwingPanel
-        SwingPanel(
-            modifier = Modifier.fillMaxSize(),
-            factory = { browserPanel },
-            update = { }
+
+
+        // Browser content using native Compose BrowserView
+        BrowserView(
+            state = browserViewState,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
