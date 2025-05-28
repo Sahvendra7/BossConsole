@@ -11,7 +11,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlin.math.max
-import kotlin.to
 
 data class PanelData(
     val sidebarItem: SidebarItem? = null,
@@ -61,7 +60,7 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
 
 
     private val panelsData by lazy {
-        mutableStateMapOf<Panel, PanelData>(
+        mutableStateMapOf(
             bottom to PanelData(visibility =  false),
             left.top to PanelData(visibility =  false),
             right.top to PanelData(visibility =  false),

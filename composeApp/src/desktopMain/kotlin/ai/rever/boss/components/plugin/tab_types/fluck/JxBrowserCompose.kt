@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -13,18 +14,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
-import com.teamdev.jxbrowser.engine.RenderingMode
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.awt.Frame
+import java.awt.Window.getWindows
 
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
-    initialUrl: String = "https://www.google.com"
+    initialUrl: String = JxBrowserConfig.defaultUrl
 ) {
     var currentUrl by remember { mutableStateOf(initialUrl) }
     var urlInput by remember { mutableStateOf(initialUrl) }
@@ -35,8 +37,8 @@ fun JxBrowserCompose(
     
     val engine = remember {
         Engine.newInstance(
-            EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                .licenseKey("OK6AEKNYF3K41B5WB4FEKK1C3H7UH3C6ZI1UL63J6E5VJTT3RXZ711M87XU8PLPO0EXR4PNTJWDLDF7FSVO658N5GSB7ZAMNXZ66L8QR115B9B1INDPS5KWSA4RYSUHG1QLPHFPL108ZS9IHW")
+            EngineOptions.newBuilder(JxBrowserConfig.renderingMode)
+                .licenseKey(JxBrowserConfig.licenseKey)
                 .build()
         )
     }
@@ -66,8 +68,7 @@ fun JxBrowserCompose(
 
     // Create BrowserViewState using rememberBrowserViewState
     val browserViewState = remember(browser) {
-
-        val window =java.awt.Window.getWindows().firstOrNull() ?: java.awt.Frame()
+        val window = getWindows().firstOrNull() ?: Frame()
         BrowserViewState(browser, coroutineScope, window)
     }
     
