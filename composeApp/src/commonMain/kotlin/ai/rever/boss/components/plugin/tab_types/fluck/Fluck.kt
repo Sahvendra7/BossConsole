@@ -6,7 +6,7 @@ import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabTypeId
 import ai.rever.boss.components.registery.TabTypeInfo
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import com.arkivanov.decompose.ComponentContext
@@ -14,7 +14,7 @@ import com.arkivanov.decompose.ComponentContext
 object Fluck: TabTypeInfo {
     override val typeId = TabTypeId("fluck")
     override val displayName = "FLUCK"
-    override val icon = Icons.Outlined.Code
+    override val icon = Icons.Outlined.Language
 }
 
 class FluckTabComponent(
