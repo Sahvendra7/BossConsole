@@ -4,13 +4,14 @@ import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
@@ -100,7 +101,7 @@ fun JxBrowserCompose(
                         onClick = { browser.navigation().goBack() },
                         enabled = canGoBack
                     ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                     
                     // Forward button
@@ -108,7 +109,7 @@ fun JxBrowserCompose(
                         onClick = { browser.navigation().goForward() },
                         enabled = canGoForward
                     ) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Forward")
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
                     }
                     
                     // Refresh button
@@ -122,7 +123,20 @@ fun JxBrowserCompose(
                     TextField(
                         value = urlInput,
                         onValueChange = { urlInput = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
+                                    var url = urlInput
+                                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                                        url = "https://$url"
+                                    }
+                                    browser.navigation().loadUrl(url)
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
                         singleLine = true,
                         colors = TextFieldDefaults.textFieldColors(
                             backgroundColor = MaterialTheme.colors.surface
@@ -139,7 +153,7 @@ fun JxBrowserCompose(
                                         browser.navigation().loadUrl(url)
                                     }
                                 ) {
-                                    Icon(Icons.Default.Search, contentDescription = "Go")
+                                    Icon(Icons.Default.OpenInBrowser, contentDescription = "Go")
                                 }
                             }
                         }
@@ -154,7 +168,6 @@ fun JxBrowserCompose(
                 }
             }
         }
-
 
         // Browser content using native Compose BrowserView
         BrowserView(
