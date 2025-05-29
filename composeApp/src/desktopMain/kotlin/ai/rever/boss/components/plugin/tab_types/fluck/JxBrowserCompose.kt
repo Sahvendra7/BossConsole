@@ -1,12 +1,15 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.components.overlays.ContextMenuItem
+import ai.rever.boss.components.overlays.contextMenu
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,7 +27,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.awt.Frame
 import java.awt.Window.getWindows
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.geometry.Offset
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
@@ -34,6 +45,8 @@ fun JxBrowserCompose(
     var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
+    var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
+    var hasVideoAtClick by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     
     val engine = remember {
@@ -79,6 +92,107 @@ fun JxBrowserCompose(
         onDispose {
             browser.close()
             engine.close()
+        }
+    }
+    
+    // Create context menu items dynamically based on browser state
+    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick) {
+        buildList {
+            // Navigation items
+            if (canGoBack) {
+                add(ContextMenuItem(
+                    text = "Back",
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    onClick = { browser.navigation().goBack() }
+                ))
+            }
+            
+            if (canGoForward) {
+                add(ContextMenuItem(
+                    text = "Forward",
+                    icon = Icons.AutoMirrored.Filled.ArrowForward,
+                    onClick = { browser.navigation().goForward() }
+                ))
+            }
+            
+            // Always show reload
+            add(ContextMenuItem(
+                text = "Reload",
+                icon = Icons.Default.Refresh,
+                onClick = { browser.navigation().reload() }
+            ))
+            
+            add(ContextMenuItem(isDivider = true))
+            
+            // Picture-in-Picture option if clicking on a video
+            if (hasVideoAtClick) {
+                add(ContextMenuItem(
+                    text = "Picture in Picture",
+                    icon = Icons.Outlined.PictureInPictureAlt,
+                    onClick = {
+                        browser.mainFrame().ifPresent { frame ->
+                            // Execute JavaScript to enable PiP on the video
+                            frame.executeJavaScript<Unit>("""
+                                (function() {
+                                    // Find all video elements on the page
+                                    const videos = document.querySelectorAll('video');
+                                    
+                                    // For YouTube and similar sites, find the main video player
+                                    let targetVideo = null;
+                                    
+                                    // Check for YouTube specific video
+                                    const ytVideo = document.querySelector('video.html5-main-video, video.video-stream');
+                                    if (ytVideo) {
+                                        targetVideo = ytVideo;
+                                    } else if (videos.length === 1) {
+                                        // If there's only one video, use it
+                                        targetVideo = videos[0];
+                                    } else if (videos.length > 1) {
+                                        // If multiple videos, try to find the visible one
+                                        for (let video of videos) {
+                                            const rect = video.getBoundingClientRect();
+                                            if (rect.width > 100 && rect.height > 100 && 
+                                                video.readyState >= 2) { // HAVE_CURRENT_DATA
+                                                targetVideo = video;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (targetVideo) {
+                                        if (document.pictureInPictureElement) {
+                                            document.exitPictureInPicture();
+                                        } else if (targetVideo.requestPictureInPicture) {
+                                            targetVideo.requestPictureInPicture().catch(err => {
+                                                console.error('PiP failed:', err);
+                                            });
+                                        }
+                                    }
+                                })();
+                            """.trimIndent())
+                        }
+                    }
+                ))
+                
+                add(ContextMenuItem(isDivider = true))
+            }
+            
+            // Copy current URL
+            add(ContextMenuItem(
+                text = "Copy URL",
+                icon = Icons.Outlined.ContentCopy,
+                onClick = {
+                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                    clipboard.setContents(StringSelection(browser.url()), null)
+                }
+            ))
+            
+            // Developer tools
+            add(ContextMenuItem(
+                text = "Inspect Element",
+                icon = Icons.Outlined.Code,
+                onClick = { browser.devTools().show() }
+            ))
         }
     }
     
@@ -160,10 +274,41 @@ fun JxBrowserCompose(
             }
         }
 
-        // Browser content using native Compose BrowserView
+        // Browser content using native Compose BrowserView with custom context menu
         BrowserView(
             state = browserViewState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .onPointerEvent(PointerEventType.Press) { event ->
+                    if (event.buttons.isSecondaryPressed) {
+                        // Store the click position
+                        val change = event.changes.firstOrNull()
+                        if (change != null) {
+                            rightClickPosition = change.position
+                            
+                            // Check if there's a video element on the page
+                            browser.mainFrame().ifPresent { frame ->
+                                val hasVideo = frame.executeJavaScript<Boolean>("""
+                                    (function() {
+                                        // Check for any video elements on the page
+                                        const videos = document.querySelectorAll('video');
+                                        
+                                        // Also check for YouTube specific selectors
+                                        const ytVideo = document.querySelector('video.html5-main-video, video.video-stream');
+                                        
+                                        // Return true if we found any video
+                                        return videos.length > 0 || ytVideo !== null;
+                                    })();
+                                """.trimIndent())
+                                
+                                coroutineScope.launch(Dispatchers.Main) {
+                                    hasVideoAtClick = hasVideo ?: false
+                                }
+                            }
+                        }
+                    }
+                }
+                .contextMenu(items = contextMenuItems)
         )
     }
 }

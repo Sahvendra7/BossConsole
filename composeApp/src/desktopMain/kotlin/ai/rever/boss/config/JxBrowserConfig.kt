@@ -23,6 +23,8 @@ object JxBrowserConfig {
     // Other JxBrowser configuration options
     val defaultUrl: String = ConfigLoader.getConfig("jxbrowser.default.url",
         "https://www.rilslabs.ai") ?: "https://www.risalabs.ai"
+    
+    // Using OFF_SCREEN mode with custom context menu implementation
     val renderingMode = com.teamdev.jxbrowser.engine.RenderingMode.OFF_SCREEN
 
 } 
