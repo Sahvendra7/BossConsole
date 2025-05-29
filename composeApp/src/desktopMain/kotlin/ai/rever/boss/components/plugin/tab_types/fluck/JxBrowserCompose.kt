@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
@@ -28,7 +30,7 @@ fun JxBrowserCompose(
     modifier: Modifier = Modifier,
     initialUrl: String = JxBrowserConfig.defaultUrl
 ) {
-    var urlInput by remember { mutableStateOf(initialUrl) }
+    var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
@@ -48,7 +50,8 @@ fun JxBrowserCompose(
             navigation().on(LoadStarted::class.java) {
                 coroutineScope.launch(Dispatchers.Main) {
                     isLoading = true
-                    urlInput = url()
+                    val newUrl = url()
+                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
                     canGoBack = navigation().canGoBack()
                     canGoForward = navigation().canGoForward()
                 }
@@ -117,7 +120,7 @@ fun JxBrowserCompose(
                             .weight(1f)
                             .onPreviewKeyEvent { keyEvent ->
                                 if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
-                                    var url = urlInput
+                                    var url = urlInput.text
                                     if (!url.startsWith("http://") && !url.startsWith("https://")) {
                                         url = "https://$url"
                                     }
@@ -135,7 +138,7 @@ fun JxBrowserCompose(
                         trailingIcon = {
                             IconButton(
                                 onClick = {
-                                    var url = urlInput
+                                    var url = urlInput.text
                                     if (!url.startsWith("http://") && !url.startsWith("https://")) {
                                         url = "https://$url"
                                     }
