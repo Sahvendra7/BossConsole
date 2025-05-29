@@ -39,7 +39,8 @@ import androidx.compose.ui.geometry.Offset
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
-    initialUrl: String = JxBrowserConfig.defaultUrl
+    initialUrl: String = JxBrowserConfig.defaultUrl,
+    onTitleChange: (String) -> Unit = {}
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -75,9 +76,38 @@ fun JxBrowserCompose(
                     isLoading = false
                     canGoBack = navigation().canGoBack()
                     canGoForward = navigation().canGoForward()
+                    
+                    // Update title when page finishes loading
+                    val title = title()
+                    val url = url()
+                    
+                    println("Page loaded - URL: $url, Title: $title") // Debug log
+                    
+                    if (title.isNotEmpty()) {
+                        onTitleChange(title)
+                    } else {
+                        // Fallback to domain name if no title
+                        try {
+                            val host = java.net.URL(url).host.removePrefix("www.")
+                            onTitleChange(host)
+                        } catch (e: Exception) {
+                            onTitleChange("New Tab")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    // Set initial title
+    LaunchedEffect(browser) {
+        // Use the initial URL's domain as the initial title
+        val initialTitle = try {
+            java.net.URL(initialUrl).host.removePrefix("www.")
+        } catch (e: Exception) {
+            "New Tab"
+        }
+        onTitleChange(initialTitle)
     }
 
     // Create BrowserViewState using rememberBrowserViewState

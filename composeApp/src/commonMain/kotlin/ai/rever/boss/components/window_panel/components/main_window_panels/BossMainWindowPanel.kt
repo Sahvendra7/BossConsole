@@ -111,7 +111,6 @@ class BossTabsComponent(
 ) : ComponentContext by componentContext {
 
     private val tabComponents = mutableStateMapOf<String, TabComponentWithUI>()
-
     private val tabsNavigation = TabsNavigation<TabInfo>()
 
     // Expose tab state for UI
@@ -121,18 +120,17 @@ class BossTabsComponent(
     fun addTab(config: TabInfo): Int {
         // Create component for this tab
         val component = tabRegistry.createTabComponent(config, this)
-
+        
         if (component != null) {
             // Store component
             tabComponents[config.id] = component
-
+            
             // Add to navigation
             return tabsNavigation.addTab(config)
         }
-
+        
         return -1 // Failed to create component
     }
-
 
     // Remove a tab
     fun removeTab(index: Int) {
@@ -145,19 +143,16 @@ class BossTabsComponent(
     fun selectTab(index: Int) {
         tabsNavigation.selectTab(index)
     }
+    
+    // Update a tab
+    fun updateTab(index: Int, config: TabInfo) {
+        tabsNavigation.updateTab(index, config)
+    }
 
     // Get active tab component
     fun getActiveComponent(): TabComponentWithUI? {
         val activeTab = tabsState.value.activeTab ?: return null
         return tabComponents[activeTab.id]
-    }
-
-    // Empty child placeholder
-    object NoChild : Child {
-        @Composable
-        override fun Content() {
-            // Empty content
-        }
     }
 }
 

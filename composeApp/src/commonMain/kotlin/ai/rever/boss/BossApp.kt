@@ -9,6 +9,7 @@ import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.components.overlays.DraggingItemOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
@@ -62,13 +63,13 @@ fun ComponentContext.BossApp() {
             override val icon = Icons.Outlined.Code
         }
         
-        // Add a Fluck browser tab
-        val fluckTab = object : TabInfo {
-            override val id = "browser1"
-            override val typeId = TabTypeId("fluck")
-            override val title = "Fluck"
-            override val icon = Icons.Outlined.Language
-        }
+        // Add a Fluck browser tab with dynamic title support
+        val fluckTab = FluckTabInfo(
+            id = "browser1",
+            typeId = TabTypeId("fluck"),
+            _title = "New Tab",
+            icon = Icons.Outlined.Language
+        )
 
         tabsComponent.addTab(file1)
         tabsComponent.addTab(file2)

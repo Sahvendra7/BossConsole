@@ -1,7 +1,5 @@
 package ai.rever.boss.components.tabs_navigation
 
-import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent.NoChild
-import ai.rever.boss.components.window_panel.components.main_window_panels.Child
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.value.MutableValue
 import com.arkivanov.decompose.value.Value
@@ -41,6 +39,16 @@ class TabsNavigation<C : Any>(
     fun selectTab(index: Int) {
         _tabs.update { it.copy(activeIndex = index) }
     }
+    
+    fun updateTab(index: Int, config: C) {
+        _tabs.update { currentState ->
+            val newTabs = currentState.tabs.toMutableList()
+            if (index in newTabs.indices) {
+                newTabs[index] = config
+            }
+            currentState.copy(tabs = newTabs)
+        }
+    }
 
     data class TabsState<C>(
         val tabs: List<C> = emptyList(),
@@ -50,20 +58,25 @@ class TabsNavigation<C : Any>(
     }
 }
 
-fun <T: Any> ComponentContext.childTabs(
+sealed interface ChildWrapper<out R : Any> {
+    object None : ChildWrapper<Nothing>
+    data class Child<R : Any>(val value: R) : ChildWrapper<R>
+}
+
+fun <T: Any, R: Any> ComponentContext.childTabs(
     tabsNavigation: TabsNavigation<T>,
-    childFactory: (T, ComponentContext) -> Child
+    childFactory: (T, ComponentContext) -> R
 ) = TabsComponentContext(this, tabsNavigation, childFactory)
 
-class TabsComponentContext<C : Any>(
+class TabsComponentContext<C : Any, R : Any>(
     componentContext: ComponentContext,
     private val tabsNavigation: TabsNavigation<C>,
-    private val childFactory: (C, ComponentContext) -> Child
+    private val childFactory: (C, ComponentContext) -> R
 ) : ComponentContext by componentContext {
 
     val tabsState: Value<TabsNavigation.TabsState<C>> = tabsNavigation.state
 
-    val children: Value<List<Any>> = MutableValue<List<Any>>(emptyList()).also { mutableList ->
+    val children: Value<List<R>> = MutableValue<List<R>>(emptyList()).also { mutableList ->
         tabsState.subscribe { state ->
             mutableList.update {
                 state.tabs.map { config -> childFactory(config, this) }
@@ -71,10 +84,12 @@ class TabsComponentContext<C : Any>(
         }
     }
 
-    val activeChild: Value<Child> = MutableValue<Child>(NoChild).also { mutableValue ->
+    val activeChild: Value<ChildWrapper<R>> = MutableValue<ChildWrapper<R>>(ChildWrapper.None).also { mutableValue ->
         tabsState.subscribe { state ->
             mutableValue.update {
-                state.activeTab?.let { config -> childFactory(config, this) } ?: NoChild
+                state.activeTab?.let { config -> 
+                    ChildWrapper.Child(childFactory(config, this)) 
+                } ?: ChildWrapper.None
             }
         }
     }
@@ -82,4 +97,5 @@ class TabsComponentContext<C : Any>(
     fun addTab(config: C) = tabsNavigation.addTab(config)
     fun removeTab(index: Int) = tabsNavigation.removeTab(index)
     fun selectTab(index: Int) = tabsNavigation.selectTab(index)
+    fun updateTab(index: Int, config: C) = tabsNavigation.updateTab(index, config)
 }

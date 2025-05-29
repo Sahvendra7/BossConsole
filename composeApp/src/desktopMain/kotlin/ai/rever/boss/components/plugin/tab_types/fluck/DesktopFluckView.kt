@@ -4,9 +4,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun FluckView(fileId: String, content: String, onContentChange: (String) -> Unit) {
+actual fun FluckView(
+    fileId: String, 
+    content: String, 
+    onContentChange: (String) -> Unit,
+    onTitleChange: (String) -> Unit
+) {
     JxBrowserCompose(
         modifier = Modifier,
-        initialUrl = content.ifBlank { "https://www.google.com" }
+        initialUrl = content.ifBlank { "https://www.google.com" },
+        onTitleChange = onTitleChange
     )
 }
