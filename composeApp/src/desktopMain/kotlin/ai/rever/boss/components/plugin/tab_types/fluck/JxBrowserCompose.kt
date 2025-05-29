@@ -6,7 +6,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +28,6 @@ fun JxBrowserCompose(
     modifier: Modifier = Modifier,
     initialUrl: String = JxBrowserConfig.defaultUrl
 ) {
-    var currentUrl by remember { mutableStateOf(initialUrl) }
     var urlInput by remember { mutableStateOf(initialUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
@@ -50,7 +48,6 @@ fun JxBrowserCompose(
             navigation().on(LoadStarted::class.java) {
                 coroutineScope.launch(Dispatchers.Main) {
                     isLoading = true
-                    currentUrl = url()
                     urlInput = url()
                     canGoBack = navigation().canGoBack()
                     canGoForward = navigation().canGoForward()
@@ -112,13 +109,6 @@ fun JxBrowserCompose(
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
                     }
                     
-                    // Refresh button
-                    IconButton(
-                        onClick = { browser.navigation().reload() }
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                    
                     // URL Input
                     TextField(
                         value = urlInput,
@@ -143,18 +133,16 @@ fun JxBrowserCompose(
                         ),
                         placeholder = { Text("Enter URL") },
                         trailingIcon = {
-                            if (urlInput != currentUrl) {
-                                IconButton(
-                                    onClick = {
-                                        var url = urlInput
-                                        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                                            url = "https://$url"
-                                        }
-                                        browser.navigation().loadUrl(url)
+                            IconButton(
+                                onClick = {
+                                    var url = urlInput
+                                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                                        url = "https://$url"
                                     }
-                                ) {
-                                    Icon(Icons.Default.OpenInBrowser, contentDescription = "Go")
+                                    browser.navigation().loadUrl(url)
                                 }
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                             }
                         }
                     )

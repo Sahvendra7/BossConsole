@@ -558,26 +558,26 @@ class TerminalEmulator(
     private fun ansiColorToCompose(code: Int, bright: Boolean = false): Color {
         return if (bright) {
             when (code) {
-                0 -> Color(0xFF808080) // Bright black (gray)
-                1 -> Color(0xFFFF0000) // Bright red
-                2 -> Color(0xFF00FF00) // Bright green
-                3 -> Color(0xFFFFFF00) // Bright yellow
-                4 -> Color(0xFF0080FF) // Bright blue
-                5 -> Color(0xFFFF00FF) // Bright magenta
-                6 -> Color(0xFF00FFFF) // Bright cyan
-                7 -> Color(0xFFFFFFFF) // Bright white
+                0 -> Color(0xFFB8B8C8) // Bright black (pastel gray)
+                1 -> Color(0xFFFFB3BA) // Bright red (pastel pink)
+                2 -> Color(0xFFBAE1B3) // Bright green (pastel mint)
+                3 -> Color(0xFFFFF5BA) // Bright yellow (pastel lemon)
+                4 -> Color(0xFFBAD7FF) // Bright blue (pastel sky)
+                5 -> Color(0xFFE8BAFF) // Bright magenta (pastel lavender)
+                6 -> Color(0xFFBAFFFF) // Bright cyan (pastel aqua)
+                7 -> Color(0xFFFFF8F8) // Bright white (pastel cream)
                 else -> Color.Unspecified
             }
         } else {
             when (code) {
-                0 -> Color(0xFF000000) // Black
-                1 -> Color(0xFF800000) // Red
-                2 -> Color(0xFF008000) // Green
-                3 -> Color(0xFF808000) // Yellow
-                4 -> Color(0xFF000080) // Blue
-                5 -> Color(0xFF800080) // Magenta
-                6 -> Color(0xFF008080) // Cyan
-                7 -> Color(0xFFC0C0C0) // White
+                0 -> Color(0xFF2E2E3A) // Black (soft charcoal)
+                1 -> Color(0xFFD48A94) // Red (muted rose)
+                2 -> Color(0xFF94C48A) // Green (sage)
+                3 -> Color(0xFFE0D49B) // Yellow (soft gold)
+                4 -> Color(0xFF8AA9D4) // Blue (periwinkle)
+                5 -> Color(0xFFBD94D4) // Magenta (soft purple)
+                6 -> Color(0xFF8AD4D4) // Cyan (soft teal)
+                7 -> Color(0xFFE8E8E8) // White (soft white)
                 else -> Color.Unspecified
             }
         }
@@ -805,7 +805,7 @@ class TerminalEmulator(
                 for (cell in row) {
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFD4D4D4) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFE8D5E8) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
@@ -825,7 +825,7 @@ class TerminalEmulator(
                 for (cell in row) {
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFD4D4D4) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFE8D5E8) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,

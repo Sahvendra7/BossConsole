@@ -11,16 +11,6 @@ import org.w3c.dom.events.Event
 import kotlinx.browser.document
 import org.w3c.dom.get
 
-// External declaration for JavaScript console
-external val console: Console
-
-external interface Console {
-    fun log(vararg message: Any?): Unit
-    fun error(vararg message: Any?): Unit
-    fun warn(vararg message: Any?): Unit
-    fun info(vararg message: Any?): Unit
-}
-
 /**
  * Web/WasmJS implementation of ContextMenuHandler.
  * Uses right-click for desktop browsers and long press for touch devices.
@@ -42,7 +32,7 @@ actual class ContextMenuHandler actual constructor() {
             }
         } catch (e: Throwable) {
             // Ignore errors in case we're not in a browser environment
-            console.error("Error setting up context menu prevention: ${e.message}")
+            // Error logging removed due to WasmJS interop limitations
         }
     }
     

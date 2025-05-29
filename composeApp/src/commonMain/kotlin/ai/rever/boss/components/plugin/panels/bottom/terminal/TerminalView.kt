@@ -79,11 +79,11 @@ fun TerminalView(viewModel: TerminalViewModel) {
         )
     )
     
-    // Terminal colors
-    val backgroundColor = Color(0xFF1E1E1E)
-    val textColor = Color(0xFFD4D4D4)
-    val cursorColor = Color(0xFF608B4E)
-    val borderColor = if (hasFocus) Color(0xFF007ACC) else Color(0xFF3E3E3E)
+    // Terminal colors - Pastel theme with black background
+    val backgroundColor = Color(0xFF000000)
+    val textColor = Color(0xFFE8D5E8)
+    val cursorColor = Color(0xFFB8E0B8)
+    val borderColor = if (hasFocus) Color(0xFF9FC5E8) else Color(0xFF3E3E3E)
     
     // Terminal font - try to use Nerd Fonts for powerline symbols
     val terminalFontFamily = rememberTerminalFontFamily()
@@ -294,7 +294,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
                     Text(
                         text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
                         style = terminalTextStyle,
-                        color = Color.Yellow
+                        color = Color(0xFFFFFFB3) // Pastel yellow
                     )
                 }
 
