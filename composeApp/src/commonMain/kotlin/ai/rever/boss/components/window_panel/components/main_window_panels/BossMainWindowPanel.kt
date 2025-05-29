@@ -85,8 +85,15 @@ fun BossTabsComponent.BossMainPanel(modifier: Modifier = Modifier) {
  */
 @Composable
 fun BossTabsComponent.BossMainPanelContent(modifier: Modifier) {
+    // Subscribe to tab state changes to trigger recomposition
+    val tabsState = tabsState.subscribeAsState()
+    
     Box(modifier = modifier) {
-        getActiveComponent()?.Content() ?: EmptyContent()
+        // Force recomposition when tab changes by reading the state
+        val activeIndex = tabsState.value.activeIndex
+        val activeComponent = getActiveComponent()
+        
+        activeComponent?.Content() ?: EmptyContent()
     }
 }
 

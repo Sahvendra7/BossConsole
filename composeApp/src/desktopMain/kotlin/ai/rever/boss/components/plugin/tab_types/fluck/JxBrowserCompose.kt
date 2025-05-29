@@ -1,22 +1,31 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
@@ -26,21 +35,24 @@ import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.awt.Frame
-import java.awt.Window.getWindows
 import java.awt.Toolkit
+import java.awt.Window.getWindows
 import java.awt.datatransfer.StringSelection
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
-import androidx.compose.ui.input.pointer.isSecondaryPressed
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.SolidColor
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
+    browser: Browser,
+    browserViewState: BrowserViewState,
     initialUrl: String = JxBrowserConfig.defaultUrl,
-    onTitleChange: (String) -> Unit = {}
+    onTitleChange: (String) -> Unit = {},
+    onOpenInNewTab: (String) -> Unit = {}
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -48,85 +60,159 @@ fun JxBrowserCompose(
     var canGoForward by remember { mutableStateOf(false) }
     var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hasVideoAtClick by remember { mutableStateOf(false) }
+    var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
-    val engine = remember {
-        Engine.newInstance(
-            EngineOptions.newBuilder(JxBrowserConfig.renderingMode)
-                .licenseKey(JxBrowserConfig.licenseKey)
-                .build()
-        )
-    }
-    
-    val browser = remember {
-        engine.newBrowser().apply {
-            // Set up navigation listeners
-            navigation().on(LoadStarted::class.java) {
-                coroutineScope.launch(Dispatchers.Main) {
-                    isLoading = true
-                    val newUrl = url()
-                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
-                    canGoBack = navigation().canGoBack()
-                    canGoForward = navigation().canGoForward()
+    // Set up browser navigation listeners
+    LaunchedEffect(browser) {
+        // Initial state
+        canGoBack = browser.navigation().canGoBack()
+        canGoForward = browser.navigation().canGoForward()
+        urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
+        
+        // Set up navigation listeners
+        browser.navigation().on(LoadStarted::class.java) {
+            coroutineScope.launch(Dispatchers.Main) {
+                isLoading = true
+                val newUrl = browser.url()
+                urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                canGoBack = browser.navigation().canGoBack()
+                canGoForward = browser.navigation().canGoForward()
+            }
+        }
+        
+        browser.navigation().on(LoadFinished::class.java) {
+            coroutineScope.launch(Dispatchers.Main) {
+                isLoading = false
+                canGoBack = browser.navigation().canGoBack()
+                canGoForward = browser.navigation().canGoForward()
+                
+                // Inject JavaScript to handle cmd+click on links
+                browser.mainFrame().ifPresent { frame ->
+                    frame.executeJavaScript<Unit>("""
+                        // Override link click behavior
+                        if (!window.linkClickHandlerAdded) {
+                            document.addEventListener('click', function(event) {
+                                // Check if it's a link click
+                                const link = event.target.closest('a');
+                                if (link && link.href) {
+                                    // Check for cmd (Mac) or ctrl (Windows/Linux)
+                                    if (event.metaKey || event.ctrlKey) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        // Store the URL to open in new tab
+                                        window._newTabUrl = link.href;
+                                        // Trigger custom event
+                                        window.dispatchEvent(new CustomEvent('openInNewTab', { detail: link.href }));
+                                        return false;
+                                    }
+                                }
+                            }, true);
+                            window.linkClickHandlerAdded = true;
+                        }
+                        
+                        // Also handle right clicks to store link URL
+                        if (!window.rightClickHandlerAdded) {
+                            document.addEventListener('contextmenu', function(event) {
+                                const link = event.target.closest('a');
+                                if (link && link.href) {
+                                    window._rightClickedLinkUrl = link.href;
+                                } else {
+                                    window._rightClickedLinkUrl = null;
+                                }
+                            }, true);
+                            window.rightClickHandlerAdded = true;
+                        }
+                    """)
+                    
+                    // Set up listener for the custom event
+                    frame.executeJavaScript<String?>("""
+                        (function() {
+                            if (window._newTabUrl) {
+                                const url = window._newTabUrl;
+                                window._newTabUrl = null;
+                                return url;
+                            }
+                            return null;
+                        })();
+                    """)?.let { newTabUrl ->
+                        if (newTabUrl.isNotEmpty()) {
+                            coroutineScope.launch(Dispatchers.Main) {
+                                onOpenInNewTab(newTabUrl)
+                            }
+                        }
+                    }
+                }
+                
+                // Update title when page finishes loading
+                val title = browser.title()
+                val url = browser.url()
+                
+                // println("Page loaded - URL: $url, Title: $title") // Debug log
+                
+                if (title.isNotEmpty()) {
+                    onTitleChange(title)
+                } else {
+                    // Fallback to domain name if no title
+                    try {
+                        val host = java.net.URL(url).host.removePrefix("www.")
+                        onTitleChange(host)
+                    } catch (e: Exception) {
+                        onTitleChange("New Tab")
+                    }
                 }
             }
+        }
+        
+        // Load initial URL if browser hasn't loaded anything yet
+        if (browser.url() == "about:blank" || browser.url().isEmpty()) {
+            browser.navigation().loadUrl(initialUrl)
+        } else {
+            // Browser already has content loaded, update the title with current state
+            val currentTitle = browser.title()
+            val currentUrl = browser.url()
             
-            navigation().on(LoadFinished::class.java) {
-                coroutineScope.launch(Dispatchers.Main) {
-                    isLoading = false
-                    canGoBack = navigation().canGoBack()
-                    canGoForward = navigation().canGoForward()
-                    
-                    // Update title when page finishes loading
-                    val title = title()
-                    val url = url()
-                    
-                    println("Page loaded - URL: $url, Title: $title") // Debug log
-                    
-                    if (title.isNotEmpty()) {
-                        onTitleChange(title)
-                    } else {
-                        // Fallback to domain name if no title
-                        try {
-                            val host = java.net.URL(url).host.removePrefix("www.")
-                            onTitleChange(host)
-                        } catch (e: Exception) {
-                            onTitleChange("New Tab")
+            if (currentTitle.isNotEmpty()) {
+                onTitleChange(currentTitle)
+            } else {
+                // Fallback to domain name if no title
+                try {
+                    val host = java.net.URL(currentUrl).host.removePrefix("www.")
+                    onTitleChange(host)
+                } catch (e: Exception) {
+                    onTitleChange("New Tab")
+                }
+            }
+        }
+    }
+    
+    // Set up polling for new tab requests
+    LaunchedEffect(browser) {
+        coroutineScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(100) // Check every 100ms
+                browser.mainFrame().ifPresent { frame ->
+                    frame.executeJavaScript<String?>("""
+                        (function() {
+                            if (window._newTabUrl) {
+                                const url = window._newTabUrl;
+                                window._newTabUrl = null;
+                                return url;
+                            }
+                            return null;
+                        })();
+                    """)?.let { newTabUrl ->
+                        if (newTabUrl.isNotEmpty()) {
+                            onOpenInNewTab(newTabUrl)
                         }
                     }
                 }
             }
         }
     }
-
-    // Set initial title
-    LaunchedEffect(browser) {
-        // Use the initial URL's domain as the initial title
-        val initialTitle = try {
-            java.net.URL(initialUrl).host.removePrefix("www.")
-        } catch (e: Exception) {
-            "New Tab"
-        }
-        onTitleChange(initialTitle)
-    }
-
-    // Create BrowserViewState using rememberBrowserViewState
-    val browserViewState = remember(browser) {
-        val window = getWindows().firstOrNull() ?: Frame()
-        BrowserViewState(browser, coroutineScope, window)
-    }
-    
-    DisposableEffect(browser) {
-        browser.navigation().loadUrl(initialUrl)
-        
-        onDispose {
-            browser.close()
-            engine.close()
-        }
-    }
     
     // Create context menu items dynamically based on browser state
-    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick) {
+    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl) {
         buildList {
             // Navigation items
             if (canGoBack) {
@@ -217,6 +303,21 @@ fun JxBrowserCompose(
                 }
             ))
             
+            // Open link in new tab option - only show if right-clicked on a link
+            if (!rightClickedLinkUrl.isNullOrEmpty()) {
+                add(ContextMenuItem(
+                    text = "Open Link in New Tab",
+                    icon = Icons.AutoMirrored.Filled.OpenInNew,
+                    onClick = {
+                        coroutineScope.launch(Dispatchers.Main) {
+                            rightClickedLinkUrl?.let { url ->
+                                onOpenInNewTab(url)
+                            }
+                        }
+                    }
+                ))
+            }
+            
             // Developer tools
             add(ContextMenuItem(
                 text = "Inspect Element",
@@ -230,38 +331,49 @@ fun JxBrowserCompose(
         // Navigation Bar
         Card(
             modifier = Modifier.fillMaxWidth(),
-            elevation = 4.dp
+            elevation = 1.dp
         ) {
             Column {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
+                        .padding(vertical = 2.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     // Back button
                     IconButton(
                         onClick = { browser.navigation().goBack() },
-                        enabled = canGoBack
+                        enabled = canGoBack,
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack, 
+                            contentDescription = "Back",
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                     
                     // Forward button
                     IconButton(
                         onClick = { browser.navigation().goForward() },
-                        enabled = canGoForward
+                        enabled = canGoForward,
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward, 
+                            contentDescription = "Forward",
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                     
                     // URL Input
-                    TextField(
+                    BasicTextField(
                         value = urlInput,
                         onValueChange = { urlInput = it },
                         modifier = Modifier
                             .weight(1f)
+                            .height(28.dp)
                             .onPreviewKeyEvent { keyEvent ->
                                 if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
                                     var url = urlInput.text
@@ -275,21 +387,50 @@ fun JxBrowserCompose(
                                 }
                             },
                         singleLine = true,
-                        colors = TextFieldDefaults.textFieldColors(
-                            backgroundColor = MaterialTheme.colors.surface
-                        ),
-                        placeholder = { Text("Enter URL") },
-                        trailingIcon = {
-                            IconButton(
-                                onClick = {
-                                    var url = urlInput.text
-                                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                                        url = "https://$url"
-                                    }
-                                    browser.navigation().loadUrl(url)
-                                }
+                        textStyle = MaterialTheme.typography.body2.copy(color = MaterialTheme.colors.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colors.primary),
+                        decorationBox = { innerTextField ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        MaterialTheme.colors.surface,
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colors.onSurface.copy(alpha = 0.3f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (urlInput.text.isEmpty()) {
+                                        Text(
+                                            "Enter URL",
+                                            style = MaterialTheme.typography.body2,
+                                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                                IconButton(
+                                    onClick = {
+                                        var url = urlInput.text
+                                        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                                            url = "https://$url"
+                                        }
+                                        browser.navigation().loadUrl(url)
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
                     )
@@ -298,7 +439,7 @@ fun JxBrowserCompose(
                 // Loading indicator
                 if (isLoading) {
                     LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(2.dp)
                     )
                 }
             }
@@ -316,8 +457,20 @@ fun JxBrowserCompose(
                         if (change != null) {
                             rightClickPosition = change.position
                             
-                            // Check if there's a video element on the page
+                            // Get the right-clicked link URL and check for video
                             browser.mainFrame().ifPresent { frame ->
+                                // Get the right-clicked link URL
+                                val linkUrl = frame.executeJavaScript<String?>("""
+                                    (function() {
+                                        return window._rightClickedLinkUrl || null;
+                                    })();
+                                """.trimIndent())
+                                
+                                coroutineScope.launch(Dispatchers.Main) {
+                                    rightClickedLinkUrl = linkUrl
+                                }
+                                
+                                // Check if there's a video element on the page
                                 val hasVideo = frame.executeJavaScript<Boolean>("""
                                     (function() {
                                         // Check for any video elements on the page

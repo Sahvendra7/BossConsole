@@ -68,7 +68,8 @@ fun ComponentContext.BossApp() {
             id = "browser1",
             typeId = TabTypeId("fluck"),
             _title = "New Tab",
-            icon = Icons.Outlined.Language
+            icon = Icons.Outlined.Language,
+            url = "https://www.google.com"
         )
 
         tabsComponent.addTab(file1)
