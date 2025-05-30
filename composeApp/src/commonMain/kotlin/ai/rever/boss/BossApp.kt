@@ -12,6 +12,8 @@ import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.registery.*
+import ai.rever.boss.components.dialogs.NewTabDialog
+import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import androidx.compose.foundation.layout.Box
@@ -23,7 +25,11 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 
 
@@ -37,6 +43,9 @@ fun ComponentContext.BossApp() {
 
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
     val tabsComponent = remember { BossTabsComponent(this, tabRegistry) }
+    
+    // State for showing new tab dialog
+    var showNewTabDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(panelRegistry, tabRegistry) {
         DefaultPlugin(panelRegistry, tabRegistry)
@@ -72,7 +81,31 @@ fun ComponentContext.BossApp() {
 
     with(draggablePanelComponent) {
         BossTheme {
-            Box(modifier = Modifier.fillMaxSize()) { // Use Box to allow overlaying the drag ghost
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        when {
+                            event.isMetaPressed && event.key == Key.N -> {
+                                showNewTabDialog = true
+                                true
+                            }
+                            event.isMetaPressed && event.key == Key.W -> {
+                                // Close current tab
+                                val tabs = tabsComponent.tabsState.value.tabs
+                                val activeIndex = tabsComponent.tabsState.value.activeIndex
+                                if (activeIndex >= 0 && activeIndex < tabs.size) {
+                                    tabsComponent.removeTab(activeIndex)
+                                }
+                                true
+                            }
+                            else -> false
+                        }
+                    } else {
+                        false
+                    }
+                }
+            ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
                     BossTitleBar()
                     BossTopBar()
@@ -90,6 +123,36 @@ fun ComponentContext.BossApp() {
                 }
                 // Draw the dragging item overlay (ghost) if an item is being dragged
                 DraggingItemOverlay()
+            }
+            
+            // Show new tab dialog
+            if (showNewTabDialog) {
+                NewTabDialog(
+                    onDismiss = { showNewTabDialog = false },
+                    onCreateTab = { type, path ->
+                        when (type) {
+                            TabType.URL -> {
+                                val tab = FluckTabInfo(
+                                    id = "browser-${kotlin.random.Random.nextLong()}",
+                                    typeId = TabTypeId("fluck"),
+                                    _title = "Loading...",
+                                    url = path
+                                )
+                                tabsComponent.addTab(tab)
+                            }
+                            TabType.FILE -> {
+                                val fileName = path.substringAfterLast('/')
+                                val tab = EditorTabInfo(
+                                    id = "editor-${kotlin.random.Random.nextLong()}",
+                                    typeId = TabTypeId("editor"),
+                                    title = fileName,
+                                    filePath = path
+                                )
+                                tabsComponent.addTab(tab)
+                            }
+                        }
+                    }
+                )
             }
         }
     }

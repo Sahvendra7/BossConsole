@@ -32,7 +32,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -81,27 +80,6 @@ fun BossTabsComponent.BossMainTabBar() {
         height = 42.dp, 
         backgroundColor = BossDarkBackground,
         modifier = Modifier
-            .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown) {
-                    when {
-                        event.isCtrlPressed && event.key == Key.N -> {
-                            showNewTabDialog = true
-                            true
-                        }
-                        event.isCtrlPressed && event.key == Key.W -> {
-                            // Close current tab
-                            val activeIndex = tabsState.value.activeIndex
-                            if (activeIndex >= 0 && tabsState.value.tabs.isNotEmpty()) {
-                                removeTab(activeIndex)
-                            }
-                            true
-                        }
-                        else -> false
-                    }
-                } else {
-                    false
-                }
-            }
             .contextMenu(
                 items = listOf(
                     ContextMenuItem("New Tab", Icons.Default.Add) {

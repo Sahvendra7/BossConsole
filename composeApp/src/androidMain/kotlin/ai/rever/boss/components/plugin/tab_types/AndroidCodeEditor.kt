@@ -1,7 +1,16 @@
 package ai.rever.boss.components.plugin.tab_types
 
-// For Android, file reading would need context and permissions
+import java.io.File
+
 actual fun readFileContent(filePath: String): String? {
-    // TODO: Implement Android file reading with proper permissions
-    return null
+    return try {
+        val file = File(filePath)
+        if (file.exists() && file.isFile) {
+            file.readText()
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        null
+    }
 }
