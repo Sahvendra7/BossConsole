@@ -123,28 +123,10 @@ fun ComponentContext.BossApp() {
             .launchIn(this)
     }
 
-    // Create example tab (could be triggered by user action)
+    // No default tabs - clean slate for distribution
     DisposableEffect(tabsComponent) {
-        // Open BossApp.kt by default
-        val bossAppTab = EditorTabInfo(
-            id = "bossapp",
-            typeId = TabTypeId("editor"),
-            title = "BossApp.kt",
-            icon = Icons.Outlined.Code,
-            filePath = "/Users/kshivang/Development/BOSS-Kotlin/composeApp/src/commonMain/kotlin/ai/rever/boss/BossApp.kt"
-        )
-        
-        // Add a Fluck browser tab with dynamic title support
-        val fluckTab = FluckTabInfo(
-            id = "browser1",
-            typeId = TabTypeId("fluck"),
-            _title = "New Tab",
-            url = "https://www.risalabs.ai"
-        )
-
-        tabsComponent.addTab(bossAppTab)
-        tabsComponent.addTab(fluckTab)
-
+        // Application starts with no tabs open
+        // Users can create new tabs using Cmd+N or the + button
         onDispose { /* cleanup */ }
     }
 

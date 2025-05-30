@@ -16,7 +16,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "BOSS-Kotlin",
+        title = "BOSS - Business Operating System Service",
         state = windowState
     ) {
         window.background = Color(BossDarkSurface.value.toInt())
