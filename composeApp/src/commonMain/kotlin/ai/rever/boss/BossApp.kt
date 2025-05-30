@@ -123,10 +123,30 @@ fun ComponentContext.BossApp() {
             .launchIn(this)
     }
 
-    // No default tabs - clean slate for distribution
+    // Add default tabs
     DisposableEffect(tabsComponent) {
-        // Application starts with no tabs open
-        // Users can create new tabs using Cmd+N or the + button
+        // Create default web tabs
+        val defaultUrls = listOf(
+            "https://www.risalabs.ai",
+            "https://pa-dashboard.web.app",
+            "https://accounts.flatiron.com/account/login"
+        )
+        
+        defaultUrls.forEach { url ->
+            val tab = FluckTabInfo(
+                id = "browser-${kotlin.random.Random.nextLong()}",
+                typeId = TabTypeId("fluck"),
+                _title = "Loading...",
+                url = url
+            )
+            tabsComponent.addTab(tab)
+        }
+        
+        // Select the first tab
+        if (tabsComponent.tabsState.value.tabs.isNotEmpty()) {
+            tabsComponent.selectTab(0)
+        }
+        
         onDispose { /* cleanup */ }
     }
 
