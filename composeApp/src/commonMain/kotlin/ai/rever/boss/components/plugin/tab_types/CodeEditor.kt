@@ -5,6 +5,7 @@ import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabTypeInfo
 import ai.rever.boss.components.registery.TabTypeId
+import ai.rever.boss.components.registery.TabIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -258,6 +259,19 @@ object CodeEditor: TabTypeInfo {
     override val icon = Icons.Outlined.Code
 }
 
+// Platform-specific file reading
+expect fun readFileContent(filePath: String): String?
+
+// EditorTabInfo to store file path
+data class EditorTabInfo(
+    override val id: String,
+    override val typeId: TabTypeId,
+    override val title: String,
+    override val icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.Code,
+    override val tabIcon: TabIcon? = null,
+    val filePath: String = ""
+) : TabInfo
+
 class CodeEditorTabComponent(
     override val config: TabInfo,
     componentContext: ComponentContext
@@ -272,12 +286,45 @@ class CodeEditorTabComponent(
     override val tabTypeInfo = CodeEditor
     
     init {
-        // Initialize with sample code if this is a new file
-        _content.value = """// Welcome to BOSS Code Editor
-fun main() {
-    println("Hello, World!")
-}
+        // Load file content if path is provided
+        if (config is EditorTabInfo && config.filePath.isNotEmpty()) {
+            loadFile(config.filePath)
+        } else {
+            // Default content if no file path
+            _content.value = """// New file
+// Start typing...
 """.trimIndent()
+        }
+    }
+    
+    private fun loadFile(filePath: String) {
+        val fileContent = readFileContent(filePath)
+        if (fileContent != null) {
+            _content.value = fileContent
+            // Update language based on file extension
+            updateLanguageFromPath(filePath)
+        } else {
+            _content.value = "// File not found or error loading: $filePath"
+        }
+    }
+    
+    private fun updateLanguageFromPath(path: String) {
+        val extension = path.substringAfterLast('.', "")
+        _language.value = when (extension) {
+            "kt", "kts" -> "kotlin"
+            "java" -> "java"
+            "js", "jsx" -> "javascript"
+            "ts", "tsx" -> "typescript"
+            "py" -> "python"
+            "json" -> "json"
+            "xml" -> "xml"
+            "html", "htm" -> "html"
+            "css" -> "css"
+            "md" -> "markdown"
+            "toml" -> "toml"
+            "gradle" -> "groovy"
+            else -> "text"
+        }
     }
 
     @Composable

@@ -12,13 +12,27 @@ import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
+import ai.rever.boss.components.dialogs.NewTabDialog
+import ai.rever.boss.components.dialogs.TabType
+import ai.rever.boss.components.overlays.ContextMenuItem
+import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.plugin.tab_types.CodeEditor
+import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
+import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.components.registery.TabTypeId
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.Divider
+import androidx.compose.material.Icon
 import androidx.compose.material.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -27,6 +41,15 @@ import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
+
+// Simple implementation of TabInfo
+data class SimpleTabInfo(
+    override val id: String,
+    override val title: String,
+    override val typeId: TabTypeId,
+    override val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    override val tabIcon: TabIcon? = null
+) : TabInfo
 
 @Composable
 fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
@@ -52,8 +75,41 @@ fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
 @Composable
 fun BossTabsComponent.BossMainTabBar() {
     val tabsState = tabsState.subscribeAsState()
+    var showNewTabDialog by remember { mutableStateOf(false) }
 
-    HorizontalBar(height = 42.dp, backgroundColor = BossDarkBackground) {
+    HorizontalBar(
+        height = 42.dp, 
+        backgroundColor = BossDarkBackground,
+        modifier = Modifier
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when {
+                        event.isCtrlPressed && event.key == Key.N -> {
+                            showNewTabDialog = true
+                            true
+                        }
+                        event.isCtrlPressed && event.key == Key.W -> {
+                            // Close current tab
+                            val activeIndex = tabsState.value.activeIndex
+                            if (activeIndex >= 0 && tabsState.value.tabs.isNotEmpty()) {
+                                removeTab(activeIndex)
+                            }
+                            true
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            }
+            .contextMenu(
+                items = listOf(
+                    ContextMenuItem("New Tab", Icons.Default.Add) {
+                        showNewTabDialog = true
+                    }
+                )
+            )
+    ) {
         HorizontalBarRow {
             BossLeftTabBar {
                 tabsState.value.tabs.forEachIndexed { index, config ->
@@ -67,9 +123,69 @@ fun BossTabsComponent.BossMainTabBar() {
                         onClose = { removeTab(index) }
                     )
                 }
+                
+                // Plus button for new tab
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(32.dp)
+                        .padding(4.dp)
+                        .background(
+                            color = Color(0xFF3C3F41),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                        )
+                        .clickable { showNewTabDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Tab",
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
             Spacer(modifier = Modifier.weight(0.1f))
         }
+    }
+    
+    // New Tab Dialog
+    if (showNewTabDialog) {
+        NewTabDialog(
+            onDismiss = { showNewTabDialog = false },
+            onCreateTab = { type, path ->
+                when (type) {
+                    TabType.URL -> {
+                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+                            id = "fluck-$timestamp",
+                            typeId = Fluck.typeId,
+                            _title = "Loading...",
+                            url = path
+                        )
+                        val tabIndex = addTab(fluckTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                    TabType.FILE -> {
+                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+                            id = "editor-$timestamp",
+                            title = fileName,
+                            typeId = CodeEditor.typeId,
+                            icon = CodeEditor.icon,
+                            filePath = path
+                        )
+                        val tabIndex = addTab(editorTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                }
+            }
+        )
     }
 }
 
@@ -145,7 +261,11 @@ class BossTabsComponent(
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let { 
-            tabComponents.remove(it.id)
+            // Dispose the component if it has a dispose method
+            val component = tabComponents.remove(it.id)
+            if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                component.dispose()
+            }
         }
         tabsNavigation.removeTab(index)
     }
@@ -167,7 +287,3 @@ class BossTabsComponent(
     }
 }
 
-interface Child {
-    @Composable
-    fun Content()
-}

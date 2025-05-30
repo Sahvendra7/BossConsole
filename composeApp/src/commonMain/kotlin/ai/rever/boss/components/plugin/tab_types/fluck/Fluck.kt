@@ -7,9 +7,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.painter.Painter
 import com.arkivanov.decompose.ComponentContext
-import androidx.compose.runtime.DisposableEffect
 
 object Fluck: TabTypeInfo {
     override val typeId = TabTypeId("fluck")
@@ -72,35 +70,36 @@ class FluckTabComponent(
     private val initialUrl = if (config is FluckTabInfo) config.url else "https://www.risalabs.ai"
     
     // Create browser instance that persists for the lifetime of this component
+    // Create immediately to avoid timing issues
     val browser: Any = createBrowser()
-    
-    // Create browser view state that persists for the lifetime of this component
     val browserViewState: Any = createBrowserViewState(browser)
+    private var isDisposed = false
 
     override val tabTypeInfo = Fluck
 
     @Composable
     override fun Content() {
-        // Use DisposableEffect to handle cleanup when the composable leaves the composition
-        androidx.compose.runtime.DisposableEffect(config.id) {
-            onDispose {
-                // Clean up when tab is removed
-                disposeBrowserViewState(browserViewState)
-                disposeBrowser(browser)
-            }
+        if (!isDisposed) {
+            FluckView(
+                fileId = config.id,
+                content = initialUrl,
+                browser = browser,
+                browserViewState = browserViewState,
+                onContentChange = { }, // Not used for browser
+                onTitleChange = onTitleUpdate,
+                onIconChange = onIconUpdate,
+                onTabIconUpdate = onTabIconUpdate,
+                onOpenInNewTab = onOpenInNewTab
+            )
         }
-        
-        FluckView(
-            fileId = config.id,
-            content = initialUrl,
-            browser = browser,
-            browserViewState = browserViewState,
-            onContentChange = { }, // Not used for browser
-            onTitleChange = onTitleUpdate,
-            onIconChange = onIconUpdate,
-            onTabIconUpdate = onTabIconUpdate,
-            onOpenInNewTab = onOpenInNewTab
-        )
+    }
+    
+    fun dispose() {
+        if (!isDisposed) {
+            isDisposed = true
+            disposeBrowserViewState(browserViewState)
+            disposeBrowser(browser)
+        }
     }
 }
 
@@ -158,7 +157,7 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
         onOpenInNewTab = { url ->
             // Create a new tab with the specified URL
             parentComponent?.let { parent ->
-                val newTabId = "browser_${System.currentTimeMillis()}"
+                val newTabId = "browser_${kotlinx.datetime.Clock.System.now().toEpochMilliseconds()}"
                 val newTab = FluckTabInfo(
                     id = newTabId,
                     typeId = TabTypeId("fluck"),

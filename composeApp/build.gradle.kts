@@ -97,6 +97,7 @@ kotlin {
             implementation(libs.essenty.state.keeper)
             implementation(libs.kotlinx.serialization.core)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.datetime)
             
             // Compose Icons dependencies
             implementation(libs.compose.icons.feather)

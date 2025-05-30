@@ -10,6 +10,7 @@ import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.components.overlays.DraggingItemOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -47,21 +47,14 @@ fun ComponentContext.BossApp() {
 
     // Create example tab (could be triggered by user action)
     DisposableEffect(tabsComponent) {
-        // Open an example editor tab
-        val file1 = object : TabInfo {
-            override val id = "file1"
-            override val typeId = TabTypeId("editor")
-            override val title = "Main.kt"
-            override val icon = Icons.Outlined.Code
-        }
-
-
-        val file2 = object : TabInfo {
-            override val id = "file2"
-            override val typeId = TabTypeId("editor")
-            override val title = "SomeFile.kt"
-            override val icon = Icons.Outlined.Code
-        }
+        // Open BossApp.kt by default
+        val bossAppTab = EditorTabInfo(
+            id = "bossapp",
+            typeId = TabTypeId("editor"),
+            title = "BossApp.kt",
+            icon = Icons.Outlined.Code,
+            filePath = "/Users/kshivang/Development/BOSS-Kotlin/composeApp/src/commonMain/kotlin/ai/rever/boss/BossApp.kt"
+        )
         
         // Add a Fluck browser tab with dynamic title support
         val fluckTab = FluckTabInfo(
@@ -71,8 +64,7 @@ fun ComponentContext.BossApp() {
             url = "https://www.risalabs.ai"
         )
 
-        tabsComponent.addTab(file1)
-        tabsComponent.addTab(file2)
+        tabsComponent.addTab(bossAppTab)
         tabsComponent.addTab(fluckTab)
 
         onDispose { /* cleanup */ }

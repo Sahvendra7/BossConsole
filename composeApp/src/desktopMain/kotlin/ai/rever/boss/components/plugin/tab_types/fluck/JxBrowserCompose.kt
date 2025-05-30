@@ -3,21 +3,25 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.config.JxBrowserConfig
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -26,27 +30,14 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.browser.Browser
-import com.teamdev.jxbrowser.engine.Engine
-import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.awt.Frame
 import java.awt.Toolkit
-import java.awt.Window.getWindows
 import java.awt.datatransfer.StringSelection
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 
 // Map popular domains to Material icons as a temporary solution
 private fun getDomainIcon(url: String): ImageVector {
@@ -155,11 +146,25 @@ fun JxBrowserCompose(
     val coroutineScope = rememberCoroutineScope()
     
     // Set up browser navigation listeners
-    LaunchedEffect(browser) {
-        // Initial state
-        canGoBack = browser.navigation().canGoBack()
-        canGoForward = browser.navigation().canGoForward()
-        urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
+    LaunchedEffect(browser, initialUrl) {
+        // Check if browser is disposed
+        if (browser.isClosed) return@LaunchedEffect
+        
+        // Load initial URL if browser is on blank page
+        try {
+            val currentUrl = browser.url()
+            if (currentUrl.isBlank() || currentUrl == "about:blank") {
+                browser.navigation().loadUrl(initialUrl)
+            }
+            
+            // Initial state
+            canGoBack = browser.navigation().canGoBack()
+            canGoForward = browser.navigation().canGoForward()
+            urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
+        } catch (e: Exception) {
+            // Browser might be disposed
+            return@LaunchedEffect
+        }
         
         // Set up navigation listeners
         browser.navigation().on(LoadStarted::class.java) {
@@ -236,6 +241,7 @@ fun JxBrowserCompose(
                 }
                 
                 // Update title when page finishes loading
+                if (browser.isClosed) return@launch
                 val title = browser.title()
                 val url = browser.url()
                 
@@ -286,7 +292,7 @@ fun JxBrowserCompose(
                             }
                             
                             // Method 3: Try default favicon.ico
-                            if (!favicon) {
+                            if (!favicon && window.location.origin && window.location.origin !== 'null') {
                                 favicon = window.location.origin + '/favicon.ico';
                             }
                             
@@ -360,7 +366,7 @@ fun JxBrowserCompose(
                         }
                         
                         // Method 3: Try default favicon.ico
-                        if (!favicon) {
+                        if (!favicon && window.location.origin && window.location.origin !== 'null') {
                             favicon = window.location.origin + '/favicon.ico';
                         }
                         
@@ -383,23 +389,29 @@ fun JxBrowserCompose(
     // Set up polling for new tab requests
     LaunchedEffect(browser) {
         coroutineScope.launch {
-            while (true) {
+            while (!browser.isClosed) {
                 kotlinx.coroutines.delay(100) // Check every 100ms
-                browser.mainFrame().ifPresent { frame ->
-                    frame.executeJavaScript<String?>("""
-                        (function() {
-                            if (window._newTabUrl) {
-                                const url = window._newTabUrl;
-                                window._newTabUrl = null;
-                                return url;
+                if (browser.isClosed) break
+                try {
+                    browser.mainFrame().ifPresent { frame ->
+                        frame.executeJavaScript<String?>("""
+                            (function() {
+                                if (window._newTabUrl) {
+                                    const url = window._newTabUrl;
+                                    window._newTabUrl = null;
+                                    return url;
+                                }
+                                return null;
+                            })();
+                        """)?.let { newTabUrl ->
+                            if (newTabUrl.isNotEmpty()) {
+                                onOpenInNewTab(newTabUrl)
                             }
-                            return null;
-                        })();
-                    """)?.let { newTabUrl ->
-                        if (newTabUrl.isNotEmpty()) {
-                            onOpenInNewTab(newTabUrl)
                         }
                     }
+                } catch (e: Exception) {
+                    // Browser might be closed, exit the loop
+                    break
                 }
             }
         }
@@ -413,7 +425,7 @@ fun JxBrowserCompose(
                 add(ContextMenuItem(
                     text = "Back",
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    onClick = { browser.navigation().goBack() }
+                    onClick = { if (!browser.isClosed) browser.navigation().goBack() }
                 ))
             }
             
@@ -421,7 +433,7 @@ fun JxBrowserCompose(
                 add(ContextMenuItem(
                     text = "Forward",
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
-                    onClick = { browser.navigation().goForward() }
+                    onClick = { if (!browser.isClosed) browser.navigation().goForward() }
                 ))
             }
             
@@ -429,7 +441,7 @@ fun JxBrowserCompose(
             add(ContextMenuItem(
                 text = "Reload",
                 icon = Icons.Default.Refresh,
-                onClick = { browser.navigation().reload() }
+                onClick = { if (!browser.isClosed) browser.navigation().reload() }
             ))
             
             add(ContextMenuItem(isDivider = true))
@@ -440,9 +452,10 @@ fun JxBrowserCompose(
                     text = "Picture in Picture",
                     icon = Icons.Outlined.PictureInPictureAlt,
                     onClick = {
-                        browser.mainFrame().ifPresent { frame ->
-                            // Execute JavaScript to enable PiP on the video
-                            frame.executeJavaScript<Unit>("""
+                        if (!browser.isClosed) {
+                            browser.mainFrame().ifPresent { frame ->
+                                // Execute JavaScript to enable PiP on the video
+                                frame.executeJavaScript<Unit>("""
                                 (function() {
                                     // Find all video elements on the page
                                     const videos = document.querySelectorAll('video');
@@ -480,6 +493,7 @@ fun JxBrowserCompose(
                                     }
                                 })();
                             """.trimIndent())
+                            }
                         }
                     }
                 ))
@@ -492,8 +506,10 @@ fun JxBrowserCompose(
                 text = "Copy URL",
                 icon = Icons.Outlined.ContentCopy,
                 onClick = {
-                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-                    clipboard.setContents(StringSelection(browser.url()), null)
+                    if (!browser.isClosed) {
+                        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                        clipboard.setContents(StringSelection(browser.url()), null)
+                    }
                 }
             ))
             
@@ -516,7 +532,7 @@ fun JxBrowserCompose(
             add(ContextMenuItem(
                 text = "Inspect Element",
                 icon = Icons.Outlined.Code,
-                onClick = { browser.devTools().show() }
+                onClick = { if (!browser.isClosed) browser.devTools().show() }
             ))
         }
     }
@@ -537,7 +553,7 @@ fun JxBrowserCompose(
                 ) {
                     // Back button
                     IconButton(
-                        onClick = { browser.navigation().goBack() },
+                        onClick = { if (!browser.isClosed) browser.navigation().goBack() },
                         enabled = canGoBack,
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -550,7 +566,7 @@ fun JxBrowserCompose(
                     
                     // Forward button
                     IconButton(
-                        onClick = { browser.navigation().goForward() },
+                        onClick = { if (!browser.isClosed) browser.navigation().goForward() },
                         enabled = canGoForward,
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -574,7 +590,7 @@ fun JxBrowserCompose(
                                     if (!url.startsWith("http://") && !url.startsWith("https://")) {
                                         url = "https://$url"
                                     }
-                                    browser.navigation().loadUrl(url)
+                                    if (!browser.isClosed) browser.navigation().loadUrl(url)
                                     true
                                 } else {
                                     false
@@ -615,7 +631,7 @@ fun JxBrowserCompose(
                                         if (!url.startsWith("http://") && !url.startsWith("https://")) {
                                             url = "https://$url"
                                         }
-                                        browser.navigation().loadUrl(url)
+                                        if (!browser.isClosed) browser.navigation().loadUrl(url)
                                     },
                                     modifier = Modifier.size(20.dp)
                                 ) {

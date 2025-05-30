@@ -26,13 +26,7 @@ actual fun FluckView(
     val jxBrowserViewState = browserViewState as? BrowserViewState
     val coroutineScope = rememberCoroutineScope()
     
-    // Get the parent component to access onTabIconUpdate
-    val parentComponent = androidx.compose.runtime.currentRecomposeScope?.let {
-        // Try to find FluckTabComponent in the composition
-        null as? FluckTabComponent
-    }
-    
-    if (jxBrowser != null && jxBrowserViewState != null) {
+    if (jxBrowser != null && jxBrowserViewState != null && !jxBrowser.isClosed) {
         JxBrowserCompose(
             modifier = Modifier,
             browser = jxBrowser,
