@@ -6,6 +6,7 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import javax.swing.SwingUtilities
+import javax.swing.UIManager
 
 @Composable
 actual fun rememberDirectoryPicker(
@@ -22,6 +23,14 @@ class DesktopDirectoryPicker(
     
     override fun pickDirectory() {
         SwingUtilities.invokeLater {
+            // Set system look and feel for native appearance
+            try {
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
+            } catch (e: Exception) {
+                // If setting system L&F fails, continue with default
+                e.printStackTrace()
+            }
+            
             // Use native file dialog for better macOS integration
             val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
             
