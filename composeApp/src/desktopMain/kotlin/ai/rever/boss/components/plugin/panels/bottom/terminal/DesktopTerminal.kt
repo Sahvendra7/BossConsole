@@ -40,20 +40,27 @@ class DesktopTerminal : Terminal {
                 env.remove("LINES")
                 
                 // Build the PTY process
+                val cmd = when {
+                    shell.contains("zsh") -> arrayOf(shell, "-i")
+                    shell.contains("bash") -> arrayOf(shell, "-i")
+                    else -> arrayOf(shell)
+                }
+                
+                
                 val builder = PtyProcessBuilder()
-                    .setCommand(arrayOf(shell))
+                    .setCommand(cmd)
                     .setEnvironment(env)
                     .setDirectory(System.getProperty("user.home"))
                     .setInitialColumns(120)  // Start with a wider default
                     .setInitialRows(24)
                     .setConsole(false)
                     .setWindowsAnsiColorEnabled(true)
+                    .setRedirectErrorStream(true)
                 
-                // println("[DesktopTerminal] Creating PTY process...")
                 ptyProcess = builder.start()
                 
                 ptyProcess?.let { process ->
-                    reader = BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
+                    reader = BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8), 8192)
                     writer = OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
                     
                     _isRunning.value = true
@@ -63,27 +70,42 @@ class DesktopTerminal : Terminal {
                     
                     // Start reading output in a coroutine
                     coroutineScope.launch {
-                        // println("[DesktopTerminal] Starting output reader coroutine")
                         try {
-                            val buffer = CharArray(1024)
+                            val buffer = CharArray(4096)
                             var totalBytesRead = 0
-                            while (isActive && _isRunning.value) {
-                                val count = reader?.read(buffer) ?: -1
-                                if (count > 0) {
-                                    totalBytesRead += count
-                                    val output = String(buffer, 0, count)
-                                    // Only log significant reads
-                                    _output.emit(output)
-                                } else if (count == -1) {
-                                    break
+                            
+                            while (isActive && process.isAlive) {
+                                try {
+                                    val count = reader?.read(buffer) ?: -1
+                                    if (count > 0) {
+                                        totalBytesRead += count
+                                        val output = String(buffer, 0, count)
+                                        _output.emit(output)
+                                    } else if (count == -1) {
+                                        // End of stream reached
+                                            break
+                                    }
+                                } catch (e: Exception) {
+                                    if (!process.isAlive) break
+                                    delay(100)
                                 }
                             }
                         } catch (e: Exception) {
-                            if (_isRunning.value) {
+                            if (process.isAlive) {
                                 e.printStackTrace()
                             }
                         } finally {
                             _isRunning.value = false
+                        }
+                    }
+                    
+                    // Monitor the process itself
+                    coroutineScope.launch {
+                        try {
+                            process.waitFor()
+                            _isRunning.value = false
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }

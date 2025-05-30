@@ -43,7 +43,6 @@ fun BossResizablePanel(modifier: Modifier,
 
     val defaultPanelSize = run { if (panel.isHorizontal) 250.dp else 200.dp }
     val minPanelSize = run { if (panel.isHorizontal) 150.dp else 100.dp }
-    val maxPanelSize = 500.dp
     val resizeAreaSize = 16.dp
     val dividerHeight = 1.dp
 
@@ -130,7 +129,7 @@ fun BossResizablePanel(modifier: Modifier,
 
         fun PointerInputScope.onDrag(dragAmount: Offset) {
             size = (size + (dragAmount.axis().toDp().direction()))
-                .coerceIn(minPanelSize, maxPanelSize)
+                .coerceIn(minPanelSize, maxSize)
         }
 
         @Composable

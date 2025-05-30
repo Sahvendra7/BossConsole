@@ -17,6 +17,7 @@ import ai.rever.boss.components.plugin.panels.right_bottom.registerRpa
 import ai.rever.boss.components.plugin.panels.right_top.*
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
+import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.components.registery.TabRegistry
 
@@ -51,6 +52,7 @@ class DefaultPlugin(
 
         registerCodeEditor()
         registerFluck()
+        registerTerminalTab()
     }
 }
 

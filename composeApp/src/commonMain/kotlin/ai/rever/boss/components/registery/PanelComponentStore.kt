@@ -23,4 +23,18 @@ class PanelComponentStore(
         activeComponents[panelId] = component
         return component
     }
+    
+    // Remove a component when panel is closed
+    fun removeComponent(panelId: PanelId) {
+        activeComponents.remove(panelId)
+    }
+    
+    // Force create a new component (removes existing if any)
+    fun forceCreateComponent(panelId: PanelId): PanelComponentWithUI? {
+        // Remove existing component if any
+        removeComponent(panelId)
+        
+        // Create new component
+        return getOrCreateComponent(panelId)
+    }
 }

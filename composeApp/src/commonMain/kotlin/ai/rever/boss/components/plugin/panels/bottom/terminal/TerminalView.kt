@@ -1,6 +1,10 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import BossDarkTextSecondary
+import BossDarkBackground
+import BossDarkTextPrimary
+import BossDarkAccent
+import BossDarkBorder
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.verticalScrollWithScrollbar
 import androidx.compose.animation.core.*
@@ -79,11 +83,11 @@ fun TerminalView(viewModel: TerminalViewModel) {
         )
     )
     
-    // Terminal colors - Pastel theme with black background
-    val backgroundColor = Color(0xFF000000)
-    val textColor = Color(0xFFE8D5E8)
-    val cursorColor = Color(0xFFB8E0B8)
-    val borderColor = if (hasFocus) Color(0xFF9FC5E8) else Color(0xFF3E3E3E)
+    // Terminal colors - Using Boss theme colors
+    val backgroundColor = BossDarkBackground  // Boss dark background
+    val textColor = BossDarkTextPrimary      // Boss text color
+    val cursorColor = Color(0xFF00FF00)      // Bright green cursor (keep for visibility)
+    val borderColor = if (hasFocus) BossDarkAccent else BossDarkBorder
     
     // Terminal font - try to use Nerd Fonts for powerline symbols
     val terminalFontFamily = rememberTerminalFontFamily()
@@ -294,7 +298,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
                     Text(
                         text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
                         style = terminalTextStyle,
-                        color = Color(0xFFFFFFB3) // Pastel yellow
+                        color = BossDarkTextSecondary // Use theme secondary text color
                     )
                 }
 
@@ -330,11 +334,8 @@ fun TerminalView(viewModel: TerminalViewModel) {
         }
     }
     
-    // Request focus when terminal becomes visible
+    // Initialize terminal without requesting focus
     LaunchedEffect(Unit) {
-        delay(100)
-        focusRequester.requestFocus()
-        
         // Fallback: ensure terminal starts after a timeout
         delay(1000)
         if (!hasInitialSize) {
@@ -384,16 +385,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
         }
     }
     
-    // Keep requesting focus if we lose it
-    LaunchedEffect(hasFocus) {
-        if (!hasFocus) {
-            // Wait a bit then try to regain focus
-            delay(200)
-            if (!hasFocus) { // Check again to avoid focus fighting
-                focusRequester.requestFocus()
-            }
-        }
-    }
+    // Don't automatically grab focus - let user click to focus
     
     // Track user scroll interactions
     LaunchedEffect(scrollState.value) {
@@ -418,6 +410,18 @@ fun TerminalView(viewModel: TerminalViewModel) {
             // Auto-scroll to bottom if user hasn't manually scrolled up
             coroutineScope.launch {
                 scrollState.animateScrollTo(scrollState.maxValue)
+            }
+        }
+    }
+    
+    // Force scroll to bottom when terminal content changes
+    LaunchedEffect(terminalLines) {
+        if (terminalLines.isNotEmpty() && !userHasScrolled) {
+            // Ensure we're always at the bottom when new content arrives
+            coroutineScope.launch {
+                // Small delay to let the UI update
+                delay(10)
+                scrollState.scrollTo(scrollState.maxValue)
             }
         }
     }

@@ -161,6 +161,18 @@ fun BossTabsComponent.BossMainTabBar() {
                             selectTab(tabIndex)
                         }
                     }
+                    TabType.TERMINAL -> {
+                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                            id = "terminal-$timestamp",
+                            typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                            title = "Terminal"
+                        )
+                        val tabIndex = addTab(terminalTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
                 }
             }
         )

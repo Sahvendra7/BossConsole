@@ -7,9 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class TerminalViewModel {
-    companion object {
-        const val MAX_BUFFER_SIZE = 2000 // Maximum lines to keep in buffer
-    }
     
     private val terminalFactory = TerminalFactory()
     private var terminal: Terminal? = null
@@ -34,6 +31,10 @@ class TerminalViewModel {
     private val _terminalCursorVisible = MutableStateFlow(true)
     val terminalCursorVisible: StateFlow<Boolean> = _terminalCursorVisible.asStateFlow()
     
+    // Track if terminal was ever started
+    var wasStarted = false
+        private set
+    
     fun ensureStarted() {
         if (terminal == null) {
             coroutineScope.launch {
@@ -47,32 +48,47 @@ class TerminalViewModel {
             try {
                 terminal = terminalFactory.createTerminal()
                 terminal?.let { term ->
-                    term.start()
-                    
-                    // If the terminal doesn't start (stub implementation), show a message
-                    if (!term.isRunning.value) {
-                        terminalEmulator.processInput("Terminal is not available on this platform.\n")
-                        terminalEmulator.processInput("Terminal functionality is only supported on desktop (Windows, macOS, Linux).\n")
-                        updateDisplay()
-                        return@launch
+                    // First set up the monitoring
+                    launch {
+                        term.isRunning.collect { running ->
+                            _isRunning.value = running
+                            if (running && !wasStarted) {
+                                wasStarted = true
+                            }
+                        }
                     }
                     
-                    // Collect terminal output
-                    term.output.collect { output ->
-                        processOutput(output)
+                    // Set up the output collection
+                    launch {
+                        term.output.collect { output ->
+                            processOutput(output)
+                        }
+                    }
+                    
+                    // Give coroutines a moment to set up
+                    delay(50)
+                    
+                    // Then start the terminal
+                    term.start()
+                    
+                    // Give terminal a moment to initialize
+                    delay(200)
+                    
+                    // Check if terminal is available on this platform
+                    if (!term.isRunning.value) {
+                        // Wait a bit more for stub implementations
+                        delay(500)
+                        if (!term.isRunning.value) {
+                            terminalEmulator.processInput("Terminal is not available on this platform.\n")
+                            terminalEmulator.processInput("Terminal functionality is only supported on desktop (Windows, macOS, Linux).\n")
+                            updateDisplay()
+                        }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 terminalEmulator.processInput("Error starting terminal: ${e.message}\n")
                 updateDisplay()
-            }
-        }
-        
-        // Monitor running state
-        coroutineScope.launch {
-            terminal?.isRunning?.collect { running ->
-                _isRunning.value = running
             }
         }
     }
@@ -112,10 +128,4 @@ class TerminalViewModel {
         coroutineScope.cancel()
     }
 
-    // could be used to for clipboard
-    private fun getPlainTextLines(): List<String> {
-        return _terminalLines.value.takeLast(MAX_BUFFER_SIZE).map { annotatedString ->
-            annotatedString.text
-        }
-    }
 } 

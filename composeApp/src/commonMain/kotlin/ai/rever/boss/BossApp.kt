@@ -7,6 +7,11 @@ import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
+import ai.rever.boss.components.model.Panel
+import ai.rever.boss.components.model.Panel.Companion.bottom
+import ai.rever.boss.components.model.Panel.Companion.left
+import ai.rever.boss.components.model.Panel.Companion.right
+import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.overlays.DraggingItemOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -32,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.PanelEventBus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
@@ -90,6 +96,32 @@ fun ComponentContext.BossApp() {
             }
             .launchIn(this)
     }
+    
+    // Listen for panel close events
+    LaunchedEffect(draggablePanelComponent) {
+        PanelEventBus.panelCloseEvents
+            .onEach { event ->
+                // Find which panel contains this component
+                val panels = listOf(
+                    bottom,
+                    left.top,
+                    left.bottom,
+                    right.top,
+                    right.bottom
+                )
+                
+                for (panel in panels) {
+                    val panelContentId = draggablePanelComponent.getPanelContentId(panel)
+                    if (panelContentId == event.panelId) {
+                        draggablePanelComponent.setPanelVisible(panel, false)
+                        // Remove the component from store to ensure fresh instance next time
+                        panelComponentStore.removeComponent(event.panelId)
+                        break
+                    }
+                }
+            }
+            .launchIn(this)
+    }
 
     // Create example tab (could be triggered by user action)
     DisposableEffect(tabsComponent) {
@@ -125,6 +157,16 @@ fun ComponentContext.BossApp() {
                         when {
                             event.isMetaPressed && event.key == Key.N -> {
                                 showNewTabDialog = true
+                                true
+                            }
+                            event.isMetaPressed && event.key == Key.T -> {
+                                // Open terminal tab
+                                val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                                    id = "terminal-${kotlin.random.Random.nextLong()}",
+                                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                                    title = "Terminal"
+                                )
+                                tabsComponent.addTab(terminalTab)
                                 true
                             }
                             event.isMetaPressed && event.key == Key.W -> {
@@ -184,6 +226,14 @@ fun ComponentContext.BossApp() {
                                     typeId = TabTypeId("editor"),
                                     title = fileName,
                                     filePath = path
+                                )
+                                tabsComponent.addTab(tab)
+                            }
+                            TabType.TERMINAL -> {
+                                val tab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                                    id = "terminal-${kotlin.random.Random.nextLong()}",
+                                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                                    title = "Terminal"
                                 )
                                 tabsComponent.addTab(tab)
                             }

@@ -558,26 +558,26 @@ class TerminalEmulator(
     private fun ansiColorToCompose(code: Int, bright: Boolean = false): Color {
         return if (bright) {
             when (code) {
-                0 -> Color(0xFFB8B8C8) // Bright black (pastel gray)
-                1 -> Color(0xFFFFB3BA) // Bright red (pastel pink)
-                2 -> Color(0xFFBAE1B3) // Bright green (pastel mint)
-                3 -> Color(0xFFFFF5BA) // Bright yellow (pastel lemon)
-                4 -> Color(0xFFBAD7FF) // Bright blue (pastel sky)
-                5 -> Color(0xFFE8BAFF) // Bright magenta (pastel lavender)
-                6 -> Color(0xFFBAFFFF) // Bright cyan (pastel aqua)
-                7 -> Color(0xFFFFF8F8) // Bright white (pastel cream)
+                0 -> Color(0xFF767676) // Bright black (gray)
+                1 -> Color(0xFFE74856) // Bright red
+                2 -> Color(0xFF16C60C) // Bright green
+                3 -> Color(0xFFF9F1A5) // Bright yellow
+                4 -> Color(0xFF3B78FF) // Bright blue
+                5 -> Color(0xFFB4009E) // Bright magenta
+                6 -> Color(0xFF61D6D6) // Bright cyan
+                7 -> Color(0xFFF2F2F2) // Bright white
                 else -> Color.Unspecified
             }
         } else {
             when (code) {
-                0 -> Color(0xFF2E2E3A) // Black (soft charcoal)
-                1 -> Color(0xFFD48A94) // Red (muted rose)
-                2 -> Color(0xFF94C48A) // Green (sage)
-                3 -> Color(0xFFE0D49B) // Yellow (soft gold)
-                4 -> Color(0xFF8AA9D4) // Blue (periwinkle)
-                5 -> Color(0xFFBD94D4) // Magenta (soft purple)
-                6 -> Color(0xFF8AD4D4) // Cyan (soft teal)
-                7 -> Color(0xFFE8E8E8) // White (soft white)
+                0 -> Color(0xFF000000) // Black
+                1 -> Color(0xFFC50F1F) // Red
+                2 -> Color(0xFF13A10E) // Green
+                3 -> Color(0xFFC19C00) // Yellow
+                4 -> Color(0xFF0037DA) // Blue
+                5 -> Color(0xFF881798) // Magenta
+                6 -> Color(0xFF3A96DD) // Cyan
+                7 -> Color(0xFFCCCCCC) // White
                 else -> Color.Unspecified
             }
         }
@@ -802,10 +802,12 @@ class TerminalEmulator(
         // Add scrollback lines
         scrollbackLines.forEach { row ->
             allLines.add(buildAnnotatedString {
+                var hasContent = false
                 for (cell in row) {
+                    hasContent = true
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFE8D5E8) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFCCCCCC) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
@@ -816,16 +818,22 @@ class TerminalEmulator(
                     
                     append(AnnotatedString(cell.char.toString(), style))
                 }
+                // Ensure line has at least one character for proper rendering
+                if (!hasContent || length == 0) {
+                    append(" ")
+                }
             })
         }
         
         // Add current buffer lines
         buffer.forEach { row ->
             allLines.add(buildAnnotatedString {
+                var hasContent = false
                 for (cell in row) {
+                    hasContent = true
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFE8D5E8) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFCCCCCC) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
@@ -835,6 +843,10 @@ class TerminalEmulator(
                     )
                     
                     append(AnnotatedString(cell.char.toString(), style))
+                }
+                // Ensure line has at least one character for proper rendering
+                if (!hasContent || length == 0) {
+                    append(" ")
                 }
             })
         }

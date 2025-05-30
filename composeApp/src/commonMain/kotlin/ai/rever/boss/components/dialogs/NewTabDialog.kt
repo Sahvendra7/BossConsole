@@ -10,6 +10,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,7 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 enum class TabType {
-    URL, FILE
+    URL, FILE, TERMINAL
 }
 
 @Composable
@@ -34,7 +35,17 @@ fun NewTabDialog(
     onCreateTab: (type: TabType, path: String) -> Unit
 ) {
     var selectedType by remember { mutableStateOf(TabType.URL) }
-    var inputText by remember { mutableStateOf("") }
+    var urlText by remember { mutableStateOf("") }
+    var fileText by remember { mutableStateOf("/Users/kshivang/Development/BOSS-Kotlin/README.md") }
+    var inputText by remember { 
+        mutableStateOf(
+            when (selectedType) {
+                TabType.URL -> urlText
+                TabType.FILE -> fileText
+                TabType.TERMINAL -> "Terminal"
+            }
+        )
+    }
     val focusRequester = remember { FocusRequester() }
     
     LaunchedEffect(Unit) {
@@ -86,10 +97,13 @@ fun NewTabDialog(
                         label = "URL",
                         isSelected = selectedType == TabType.URL,
                         onClick = { 
-                            selectedType = TabType.URL
-                            if (inputText.isEmpty() || inputText.startsWith("/") || inputText.contains("\\")) {
-                                inputText = ""
+                            // Save current text before switching
+                            when (selectedType) {
+                                TabType.FILE -> fileText = inputText
+                                else -> {}
                             }
+                            selectedType = TabType.URL
+                            inputText = urlText
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -99,10 +113,30 @@ fun NewTabDialog(
                         label = "File",
                         isSelected = selectedType == TabType.FILE,
                         onClick = { 
-                            selectedType = TabType.FILE
-                            if (inputText.isEmpty() || inputText.startsWith("http")) {
-                                inputText = "/Users/kshivang/Development/BOSS-Kotlin/README.md"
+                            // Save current text before switching
+                            when (selectedType) {
+                                TabType.URL -> urlText = inputText
+                                else -> {}
                             }
+                            selectedType = TabType.FILE
+                            inputText = fileText
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    TabTypeOption(
+                        icon = Icons.Outlined.Terminal,
+                        label = "Terminal",
+                        isSelected = selectedType == TabType.TERMINAL,
+                        onClick = { 
+                            // Save current text before switching
+                            when (selectedType) {
+                                TabType.URL -> urlText = inputText
+                                TabType.FILE -> fileText = inputText
+                                else -> {}
+                            }
+                            selectedType = TabType.TERMINAL
+                            inputText = "Terminal"
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -110,46 +144,58 @@ fun NewTabDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Input field
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    label = { 
-                        Text(
+                // Input field (hide for Terminal type)
+                if (selectedType != TabType.TERMINAL) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { newValue ->
+                            inputText = newValue
+                            // Update the appropriate state based on current type
                             when (selectedType) {
-                                TabType.URL -> "Enter URL (e.g., https://example.com)"
-                                TabType.FILE -> "Enter file path (e.g., /Users/kshivang/Development/BOSS-Kotlin/README.md)"
-                            },
-                            color = Color(0xFF999999)
+                                TabType.URL -> urlText = newValue
+                                TabType.FILE -> fileText = newValue
+                                else -> {}
+                            }
+                        },
+                        label = { 
+                            Text(
+                                when (selectedType) {
+                                    TabType.URL -> "Enter URL (e.g., https://example.com)"
+                                    TabType.FILE -> "Enter file path (e.g., /Users/kshivang/Development/BOSS-Kotlin/README.md)"
+                                    else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                },
+                                color = Color(0xFF999999)
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                when (selectedType) {
+                                    TabType.URL -> "https://"
+                                    TabType.FILE -> "/Users/kshivang/Development/BOSS-Kotlin/README.md"
+                                    else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                },
+                                color = Color(0xFF666666)
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = Color.White,
+                            cursorColor = Color.White,
+                            focusedBorderColor = Color(0xFF4A9EFF),
+                            unfocusedBorderColor = Color(0xFF555555),
+                            backgroundColor = Color(0xFF1E1F22)
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                            }
                         )
-                    },
-                    placeholder = {
-                        Text(
-                            when (selectedType) {
-                                TabType.URL -> "https://"
-                                TabType.FILE -> "/Users/kshivang/Development/BOSS-Kotlin/README.md"
-                            },
-                            color = Color(0xFF666666)
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = Color.White,
-                        focusedBorderColor = Color(0xFF4A9EFF),
-                        unfocusedBorderColor = Color(0xFF555555),
-                        backgroundColor = Color(0xFF1E1F22)
-                    ),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
-                        }
                     )
-                )
+                }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
@@ -174,7 +220,7 @@ fun NewTabDialog(
                         onClick = {
                             handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
                         },
-                        enabled = inputText.isNotBlank(),
+                        enabled = selectedType == TabType.TERMINAL || inputText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = Color(0xFF4A9EFF),
                             contentColor = Color.White,
@@ -186,6 +232,7 @@ fun NewTabDialog(
                             when (selectedType) {
                                 TabType.URL -> "Fluck it"
                                 TabType.FILE -> "Open"
+                                TabType.TERMINAL -> "Open Terminal"
                             }
                         )
                     }
@@ -240,7 +287,7 @@ private fun handleCreateTab(
     onCreateTab: (TabType, String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    if (input.isBlank()) return
+    if (type != TabType.TERMINAL && input.isBlank()) return
     
     val processedInput = when (type) {
         TabType.URL -> {
@@ -252,6 +299,9 @@ private fun handleCreateTab(
         }
         TabType.FILE -> {
             input.trim()
+        }
+        TabType.TERMINAL -> {
+            "Terminal" // Terminal doesn't need input
         }
     }
     
