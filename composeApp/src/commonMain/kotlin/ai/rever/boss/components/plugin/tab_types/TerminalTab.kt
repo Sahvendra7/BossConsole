@@ -43,6 +43,7 @@ class TerminalTabComponent(
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
     init {
+        
         // Dispose terminal when component is destroyed
         lifecycle.subscribe(
             callbacks = object : Lifecycle.Callbacks {
@@ -83,8 +84,8 @@ class TerminalTabComponent(
     override fun Content() {
         TerminalView(terminalViewModel)
         
-        // Ensure terminal is started
-        LaunchedEffect(Unit) {
+        // Ensure terminal is started - use the terminal instance as key
+        LaunchedEffect(terminalViewModel) {
             terminalViewModel.ensureStarted()
         }
     }
