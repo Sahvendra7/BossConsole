@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -51,6 +52,7 @@ fun BossTabButton(
         modifier = modifier
             .fillMaxHeight()
             .width(IntrinsicSize.Min)
+            .widthIn(min = 80.dp, max = 200.dp)
             .hoverable(interactionSource)
     ) {
         TextButton(
@@ -59,7 +61,7 @@ fun BossTabButton(
                 backgroundColor = Color.Transparent,
                 contentColor = if (isSelected) BossDarkTextPrimary else BossDarkTextPrimary.copy(0.8f)
             ),
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp),
             onClick = onClick
         ) {
             Icon(
@@ -71,7 +73,9 @@ fun BossTabButton(
                 text = fileName,
                 fontSize = 13.sp,
                 fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
             // Small close icon with click functionality but no visual hover effect
@@ -80,7 +84,7 @@ fun BossTabButton(
                 contentDescription = "Close $fileName",
                 modifier = Modifier
                     .size(13.dp)
-                    .offset(x = 8.dp)
+                    .offset(x = 4.dp)
                     .alpha(if (isSelected || isHovered) 1f else 0f)
                     .clickable(onClick = onClose)
             )
