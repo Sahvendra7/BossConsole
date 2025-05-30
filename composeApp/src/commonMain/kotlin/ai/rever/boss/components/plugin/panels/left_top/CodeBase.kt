@@ -65,35 +65,47 @@ data class Project(
     val lastOpened: Long = 0L
 )
 
-// Global project state
+// Global project state with LRU cache
 object ProjectState {
+    private const val MAX_RECENT_PROJECTS = 10
+    
     private val _selectedProject = MutableStateFlow(
         Project(
             name = "BOSS-Kotlin",
-            path = "/Users/kshivang/Development/BOSS-Kotlin"
+            path = "/Users/kshivang/Development/BOSS-Kotlin",
+            lastOpened = 0L
         )
     )
     val selectedProject: StateFlow<Project> = _selectedProject.asStateFlow()
     
     private val _recentProjects = MutableStateFlow(
         listOf(
-            Project("BOSS-Kotlin", "/Users/kshivang/Development/BOSS-Kotlin"),
-            Project("OneOncology", "/Users/kshivang/Development/OneOncology"),
-            Project("Mayo", "/Users/kshivang/Development/Mayo"),
-            Project("Atlantis", "/Users/kshivang/Development/Atlantis")
+            Project(
+                name = "BOSS-Kotlin", 
+                path = "/Users/kshivang/Development/BOSS-Kotlin",
+                lastOpened = 0L
+            )
         )
     )
     val recentProjects: StateFlow<List<Project>> = _recentProjects.asStateFlow()
     
     fun selectProject(project: Project) {
         _selectedProject.value = project
-        // Update recent projects list
+        
+        // Update recent projects list with LRU behavior
         val updated = _recentProjects.value.toMutableList()
+        
+        // Remove if already exists
         updated.removeAll { it.path == project.path }
-        updated.add(0, project.copy(lastOpened = kotlin.random.Random.nextLong()))
-        if (updated.size > 10) {
+        
+        // Add to front - being at position 0 means most recently used
+        updated.add(0, project)
+        
+        // Keep only MAX_RECENT_PROJECTS
+        while (updated.size > MAX_RECENT_PROJECTS) {
             updated.removeLast()
         }
+        
         _recentProjects.value = updated
     }
 }
