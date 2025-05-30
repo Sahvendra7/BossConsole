@@ -204,7 +204,7 @@ compose.desktop {
             
             macOS {
                 bundleID = "ai.rever.boss"
-                iconFile.set(project.file("src/desktopMain/resources/risa_icon.icns"))
+                iconFile.set(project.file("src/desktopMain/resources/boss_icon.icns"))
                 packageName = "BOSS"
                 dmgPackageVersion = "1.0.0"
                 dmgPackageBuildVersion = "1"
