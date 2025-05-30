@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.components.registery.TabIcon
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -10,14 +11,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
-actual fun FluckView(fileId: String, content: String, onContentChange: (String) -> Unit) {
+actual fun FluckView(
+    fileId: String, 
+    content: String,
+    browser: Any?,
+    browserViewState: Any?,
+    onContentChange: (String) -> Unit,
+    onTitleChange: (String) -> Unit,
+    onIconChange: (ImageVector) -> Unit,
+    onTabIconUpdate: (TabIcon) -> Unit,
+    onOpenInNewTab: (String) -> Unit
+) {
     // For WASM/JS, we could potentially use an iframe or similar
     // For now, we'll show a placeholder
-    var urlInput by remember { mutableStateOf("https://www.google.com") }
+    var urlInput by remember { mutableStateOf("https://www.risalabs.ai") }
     
     Column(modifier = Modifier.fillMaxSize()) {
         // Navigation Bar

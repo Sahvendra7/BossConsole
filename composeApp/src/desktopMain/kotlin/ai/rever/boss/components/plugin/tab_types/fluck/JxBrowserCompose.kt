@@ -43,6 +43,95 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+
+// Map popular domains to Material icons as a temporary solution
+private fun getDomainIcon(url: String): ImageVector {
+    return try {
+        val host = java.net.URL(url).host.lowercase().removePrefix("www.")
+        when {
+            host.contains("google") -> Icons.Filled.Search
+            host.contains("youtube") -> Icons.Filled.PlayArrow
+            host.contains("github") -> Icons.Outlined.Code
+            host.contains("twitter") || host.contains("x.com") -> Icons.Filled.Tag
+            host.contains("facebook") -> Icons.Filled.People
+            host.contains("linkedin") -> Icons.Outlined.Work
+            host.contains("reddit") -> Icons.Outlined.Forum
+            host.contains("stackoverflow") -> Icons.Filled.Help
+            host.contains("amazon") -> Icons.Filled.ShoppingCart
+            host.contains("wikipedia") -> Icons.Outlined.MenuBook
+            host.contains("risalabs") || host.contains("risa") -> Icons.Filled.Biotech
+            host.contains("mail") || host.contains("gmail") -> Icons.Filled.Email
+            host.contains("maps") -> Icons.Filled.Map
+            host.contains("drive") -> Icons.Filled.CloudUpload
+            host.contains("calendar") -> Icons.Filled.CalendarToday
+            host.contains("slack") -> Icons.Filled.Chat
+            host.contains("discord") -> Icons.Filled.Forum
+            host.contains("spotify") -> Icons.Filled.MusicNote
+            host.contains("netflix") -> Icons.Filled.Movie
+            host.contains("news") -> Icons.Filled.Newspaper
+            else -> Icons.Filled.Language
+        }
+    } catch (e: Exception) {
+        Icons.Filled.Language
+    }
+}
+
+// Helper function to intelligently truncate long titles
+private fun truncateTitle(title: String, url: String): String {
+    // Special case for RISA Labs - always show full name
+    if (title.startsWith("RISA Labs")) {
+        return "RISA Labs"
+    }
+    
+    // If title is reasonably short, use it as is
+    if (title.length <= 40) return title
+    
+    // Try to extract site name from title or URL
+    val urlHost = try {
+        java.net.URL(url).host.removePrefix("www.")
+    } catch (e: Exception) {
+        ""
+    }
+    
+    // Common patterns for site names in titles
+    val patterns = listOf(
+        " - ", " | ", " — ", " · ", " :: "
+    )
+    
+    // Try to find a pattern and use the first part (usually the site name)
+    for (pattern in patterns) {
+        if (title.contains(pattern)) {
+            val parts = title.split(pattern)
+            val firstPart = parts.firstOrNull()?.trim() ?: ""
+            // If the first part is reasonable, use it
+            if (firstPart.isNotEmpty() && firstPart.length <= 30) {
+                return firstPart
+            }
+        }
+    }
+    
+    // If title starts with the domain name, try to extract just that part
+    if (urlHost.isNotEmpty()) {
+        val hostParts = urlHost.split(".")
+        val siteName = hostParts.firstOrNull() ?: urlHost
+        
+        // Check if title starts with site name (case insensitive)
+        if (title.lowercase().startsWith(siteName.lowercase())) {
+            // Find where the site name ends in the title
+            val endIndex = title.indexOfAny(patterns.map { it.first() }.toCharArray())
+            if (endIndex > 0) {
+                return title.substring(0, endIndex).trim()
+            }
+        }
+    }
+    
+    // Last resort: truncate to reasonable length with ellipsis
+    return title.take(35) + "..."
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -52,6 +141,8 @@ fun JxBrowserCompose(
     browserViewState: BrowserViewState,
     initialUrl: String = JxBrowserConfig.defaultUrl,
     onTitleChange: (String) -> Unit = {},
+    onIconChange: (ImageVector) -> Unit = {},
+    onTabIconChange: (String) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {}
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
@@ -151,7 +242,7 @@ fun JxBrowserCompose(
                 // println("Page loaded - URL: $url, Title: $title") // Debug log
                 
                 if (title.isNotEmpty()) {
-                    onTitleChange(title)
+                    onTitleChange(truncateTitle(title, url))
                 } else {
                     // Fallback to domain name if no title
                     try {
@@ -161,6 +252,58 @@ fun JxBrowserCompose(
                         onTitleChange("New Tab")
                     }
                 }
+                
+                // Try to extract favicon
+                browser.mainFrame().ifPresent { frame ->
+                    frame.executeJavaScript<String?>("""
+                        (function() {
+                            // Try to find favicon in various ways
+                            let favicon = null;
+                            
+                            // Method 1: Look for rel="icon" or rel="shortcut icon"
+                            const icons = document.querySelectorAll('link[rel*="icon"]');
+                            if (icons.length > 0) {
+                                // Prefer larger icons
+                                for (let icon of icons) {
+                                    const sizes = icon.getAttribute('sizes');
+                                    if (sizes && (sizes.includes('32x32') || sizes.includes('64x64') || sizes.includes('128x128'))) {
+                                        favicon = icon.href;
+                                        break;
+                                    }
+                                }
+                                // If no sized icon found, use the first one
+                                if (!favicon) {
+                                    favicon = icons[0].href;
+                                }
+                            }
+                            
+                            // Method 2: Check for apple-touch-icon (often higher quality)
+                            if (!favicon) {
+                                const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+                                if (appleIcon) {
+                                    favicon = appleIcon.href;
+                                }
+                            }
+                            
+                            // Method 3: Try default favicon.ico
+                            if (!favicon) {
+                                favicon = window.location.origin + '/favicon.ico';
+                            }
+                            
+                            return favicon;
+                        })();
+                    """.trimIndent())?.let { faviconUrl ->
+                        if (faviconUrl.isNotEmpty()) {
+                            // Pass favicon URL to the callback
+                            coroutineScope.launch(Dispatchers.Main) {
+                                onTabIconChange(faviconUrl)
+                            }
+                        }
+                    }
+                }
+                
+                // Update icon to filled version when page loads (fallback)
+                onIconChange(Icons.Filled.Language)
             }
         }
         
@@ -173,7 +316,7 @@ fun JxBrowserCompose(
             val currentUrl = browser.url()
             
             if (currentTitle.isNotEmpty()) {
-                onTitleChange(currentTitle)
+                onTitleChange(truncateTitle(currentTitle, currentUrl))
             } else {
                 // Fallback to domain name if no title
                 try {
@@ -183,6 +326,57 @@ fun JxBrowserCompose(
                     onTitleChange("New Tab")
                 }
             }
+            
+            // Try to extract favicon for already loaded page
+            browser.mainFrame().ifPresent { frame ->
+                frame.executeJavaScript<String?>("""
+                    (function() {
+                        // Try to find favicon in various ways
+                        let favicon = null;
+                        
+                        // Method 1: Look for rel="icon" or rel="shortcut icon"
+                        const icons = document.querySelectorAll('link[rel*="icon"]');
+                        if (icons.length > 0) {
+                            // Prefer larger icons
+                            for (let icon of icons) {
+                                const sizes = icon.getAttribute('sizes');
+                                if (sizes && (sizes.includes('32x32') || sizes.includes('64x64') || sizes.includes('128x128'))) {
+                                    favicon = icon.href;
+                                    break;
+                                }
+                            }
+                            // If no sized icon found, use the first one
+                            if (!favicon) {
+                                favicon = icons[0].href;
+                            }
+                        }
+                        
+                        // Method 2: Check for apple-touch-icon (often higher quality)
+                        if (!favicon) {
+                            const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+                            if (appleIcon) {
+                                favicon = appleIcon.href;
+                            }
+                        }
+                        
+                        // Method 3: Try default favicon.ico
+                        if (!favicon) {
+                            favicon = window.location.origin + '/favicon.ico';
+                        }
+                        
+                        return favicon;
+                    })();
+                """.trimIndent())?.let { faviconUrl ->
+                    if (faviconUrl.isNotEmpty()) {
+                        coroutineScope.launch(Dispatchers.Main) {
+                            onTabIconChange(faviconUrl)
+                        }
+                    }
+                }
+            }
+            
+            // Update icon for already loaded page
+            onIconChange(Icons.Filled.Language)
         }
     }
     

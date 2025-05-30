@@ -78,9 +78,9 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
                 ?: PanelData(visibility = false)
 
             // make left.top.top clicked by default
-            when (it.key) {
-                left.top.top -> it.value.firstOrNull()?.onClick()
-            }
+//            when (it.key) {
+//                left.top.top -> it.value.firstOrNull()?.onClick()
+//            }
         }
     }
 

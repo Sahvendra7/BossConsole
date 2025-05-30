@@ -3,6 +3,11 @@ package ai.rever.boss.components.buttons
 import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
+import ai.rever.boss.components.registery.TabIcon
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -12,48 +17,125 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Icon
+import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Diversity2
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-fun findLogo(fileName: String) : ImageVector {
-    return Icons.Outlined.Diversity2
-}
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
 
 @Composable
 fun BossTabButton(
     fileName: String,
+    icon: ImageVector? = null,
+    iconPainter: Painter? = null,
+    tabIcon: TabIcon? = null,
     isSelected: Boolean = false,
     isFocused: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onClose: () -> Unit = {}
 ) {
+    // Determine which icon to use
+    val painter = when {
+        tabIcon != null -> tabIcon.asPainter()
+        iconPainter != null -> iconPainter
+        icon != null -> rememberVectorPainter(icon)
+        else -> null
+    }
 
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
+    
+    // State for tooltip
+    var showTooltip by remember { mutableStateOf(false) }
+    var buttonPosition by remember { mutableStateOf(Offset.Zero) }
+    var buttonSize by remember { mutableStateOf(IntOffset(0, 0)) }
+    var tooltipSize by remember { mutableStateOf(IntOffset(0, 0)) }
+    
+    // Calculate tooltip position - centered above the button
+    val tooltipPosition = IntOffset(
+        x = buttonPosition.x.toInt() + (buttonSize.x - tooltipSize.x) / 2,
+        y = buttonPosition.y.toInt() - tooltipSize.y - 5
+    )
+    
+    // Handle hover tooltip delay
+    LaunchedEffect(isHovered) {
+        if (isHovered) {
+            delay(500) // 500ms delay before showing tooltip
+            if (isHovered) { // Check if still hovering after delay
+                showTooltip = true
+            }
+        } else {
+            showTooltip = false
+        }
+    }
+    
+    // Show tooltip popup if hovering
+    if (showTooltip) {
+        Popup(
+            alignment = Alignment.TopStart,
+            offset = tooltipPosition,
+            properties = PopupProperties(
+                focusable = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            Surface(
+                modifier = Modifier
+                    .onGloballyPositioned { coordinates ->
+                        tooltipSize = IntOffset(
+                            coordinates.size.width,
+                            coordinates.size.height
+                        )
+                    },
+                color = BossDarkBorder,
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = fileName,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxHeight()
             .width(IntrinsicSize.Min)
-            .widthIn(min = 80.dp, max = 200.dp)
+            .widthIn(min = 180.dp, max = 450.dp)
             .hoverable(interactionSource)
+            .onGloballyPositioned { coordinates ->
+                buttonPosition = coordinates.positionInParent()
+                buttonSize = IntOffset(
+                    coordinates.size.width,
+                    coordinates.size.height
+                )
+            }
     ) {
         TextButton(
             modifier = Modifier.fillMaxHeight(),
@@ -61,18 +143,34 @@ fun BossTabButton(
                 backgroundColor = Color.Transparent,
                 contentColor = if (isSelected) BossDarkTextPrimary else BossDarkTextPrimary.copy(0.8f)
             ),
-            contentPadding = PaddingValues(horizontal = 12.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp),
             onClick = onClick
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = findLogo(fileName),
-                    contentDescription = fileName,
-                    modifier = Modifier.size(16.dp)
-                )
+                // Render icon based on type
+                when {
+                    // For bitmap images (favicons), use Image to preserve colors
+                    tabIcon is TabIcon.Image && painter != null -> {
+                        Image(
+                            painter = painter,
+                            contentDescription = fileName,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    // For vector icons, use Icon with tint
+                    painter != null -> {
+                        Icon(
+                            painter = painter,
+                            contentDescription = fileName,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+                
                 Text(
                     text = fileName,
                     fontSize = 13.sp,
@@ -80,19 +178,22 @@ fun BossTabButton(
                     textAlign = TextAlign.Start,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.weight(1f),
+                    softWrap = false
                 )
-                // Small close icon with click functionality but no visual hover effect
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = "Close $fileName",
-                    modifier = Modifier
-                        .size(13.dp)
-                        .alpha(if (isSelected || isHovered) 1f else 0f)
-                        .clickable(onClick = onClose)
-                )
+                // Only show close icon when needed to save space
+                if (isSelected || isHovered) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Close $fileName",
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clickable(onClick = onClose)
+                    )
+                }
             }
         }
+        
         if (isSelected) {
             Box(
                 modifier = Modifier

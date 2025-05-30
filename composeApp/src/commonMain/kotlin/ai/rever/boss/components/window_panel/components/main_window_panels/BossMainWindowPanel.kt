@@ -60,6 +60,8 @@ fun BossTabsComponent.BossMainTabBar() {
                     val isSelected = index == tabsState.value.activeIndex
                     BossTabButton(
                         fileName = config.title,
+                        icon = config.icon,
+                        tabIcon = config.tabIcon,
                         isSelected = isSelected,
                         onClick = { selectTab(index) },
                         onClose = { removeTab(index) }
@@ -142,7 +144,9 @@ class BossTabsComponent(
     // Remove a tab
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
-        config?.let { tabComponents.remove(it.id) }
+        config?.let { 
+            tabComponents.remove(it.id)
+        }
         tabsNavigation.removeTab(index)
     }
 

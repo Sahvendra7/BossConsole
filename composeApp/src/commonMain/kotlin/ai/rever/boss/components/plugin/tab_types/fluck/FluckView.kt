@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.components.registery.TabIcon
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
 
 // Platform-specific implementation
 @Composable
@@ -10,7 +12,9 @@ expect fun FluckView(
     browser: Any? = null, // Browser instance (platform-specific type)
     browserViewState: Any? = null, // Browser view state (platform-specific type)
     onContentChange: (String) -> Unit,
-    onTitleChange: (String) -> Unit,
+    onTitleChange: (String) -> Unit = {},
+    onIconChange: (ImageVector) -> Unit = {},
+    onTabIconUpdate: (TabIcon) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {}
 )
 

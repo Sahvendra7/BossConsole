@@ -1,16 +1,15 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.registery.TabComponentWithUI
-import ai.rever.boss.components.registery.TabInfo
-import ai.rever.boss.components.registery.TabTypeId
-import ai.rever.boss.components.registery.TabTypeInfo
+import ai.rever.boss.components.registery.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
 import com.arkivanov.decompose.ComponentContext
+import androidx.compose.runtime.DisposableEffect
 
 object Fluck: TabTypeInfo {
     override val typeId = TabTypeId("fluck")
@@ -18,18 +17,33 @@ object Fluck: TabTypeInfo {
     override val icon = Icons.Outlined.Language
 }
 
-// Mutable tab info for dynamic title updates
+// Mutable tab info for dynamic title and icon updates
 data class FluckTabInfo(
     override val id: String,
     override val typeId: TabTypeId,
     private var _title: String,
-    override val icon: ImageVector,
+    private var _icon: ImageVector = Icons.Outlined.Language,
+    private var _tabIcon: TabIcon? = null,
     val url: String = "" // Add URL to store the initial URL
 ) : TabInfo {
     override val title: String get() = _title
+    override val icon: ImageVector get() = _icon
+    override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
     
     fun updateTitle(newTitle: String): FluckTabInfo {
         return copy(_title = newTitle)
+    }
+    
+    fun updateIcon(newIcon: ImageVector): FluckTabInfo {
+        return copy(_icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
+    }
+    
+    fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
+        return copy(_tabIcon = newTabIcon)
+    }
+    
+    fun updateTitleAndIcon(newTitle: String, newIcon: ImageVector): FluckTabInfo {
+        return copy(_title = newTitle, _icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
     }
 }
 
@@ -43,17 +57,19 @@ expect fun createBrowserViewState(browser: Any): Any
 expect fun disposeBrowser(browser: Any)
 
 // Platform-specific browser view state disposal
-expect fun disposeBrowserViewState(viewState: Any)
+expect fun disposeBrowserViewState(browserViewState: Any)
 
 class FluckTabComponent(
     override val config: TabInfo,
     private val componentContext: ComponentContext,
     private val onTitleUpdate: (String) -> Unit,
+    private val onIconUpdate: (ImageVector) -> Unit,
+    private val onTabIconUpdate: (TabIcon) -> Unit,
     private val onOpenInNewTab: (String) -> Unit
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     // Store the URL to load
-    private val initialUrl = if (config is FluckTabInfo) config.url else "https://www.google.com"
+    private val initialUrl = if (config is FluckTabInfo) config.url else "https://www.risalabs.ai"
     
     // Create browser instance that persists for the lifetime of this component
     val browser: Any = createBrowser()
@@ -65,6 +81,15 @@ class FluckTabComponent(
 
     @Composable
     override fun Content() {
+        // Use DisposableEffect to handle cleanup when the composable leaves the composition
+        androidx.compose.runtime.DisposableEffect(config.id) {
+            onDispose {
+                // Clean up when tab is removed
+                disposeBrowserViewState(browserViewState)
+                disposeBrowser(browser)
+            }
+        }
+        
         FluckView(
             fileId = config.id,
             content = initialUrl,
@@ -72,14 +97,10 @@ class FluckTabComponent(
             browserViewState = browserViewState,
             onContentChange = { }, // Not used for browser
             onTitleChange = onTitleUpdate,
+            onIconChange = onIconUpdate,
+            onTabIconUpdate = onTabIconUpdate,
             onOpenInNewTab = onOpenInNewTab
         )
-    }
-    
-    // Clean up browser when component is destroyed
-    fun dispose() {
-        disposeBrowserViewState(browserViewState)
-        disposeBrowser(browser)
     }
 }
 
@@ -106,6 +127,34 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                 }
             }
         },
+        onIconUpdate = { newIcon ->
+            // Update the tab icon when the favicon is loaded
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+                
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is FluckTabInfo) {
+                        parent.updateTab(tabIndex, currentTab.updateIcon(newIcon))
+                    }
+                }
+            }
+        },
+        onTabIconUpdate = { newTabIcon ->
+            // Update the tab icon with the actual favicon
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+                
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is FluckTabInfo) {
+                        parent.updateTab(tabIndex, currentTab.updateTabIcon(newTabIcon))
+                    }
+                }
+            }
+        },
         onOpenInNewTab = { url ->
             // Create a new tab with the specified URL
             parentComponent?.let { parent ->
@@ -114,7 +163,6 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                     id = newTabId,
                     typeId = TabTypeId("fluck"),
                     _title = "Loading...",
-                    icon = Icons.Outlined.Language,
                     url = url
                 )
                 parent.addTab(newTab)
