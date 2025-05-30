@@ -6,6 +6,7 @@ import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -21,10 +22,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
+import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.components.dialogs.ProjectSelectionDialog
+import ai.rever.boss.components.model.BossDraggableComponent
+import ai.rever.boss.components.model.Panel.Companion.left
+import ai.rever.boss.components.model.Panel.Companion.top
 
 
 @Composable
-fun BossTopBar() {
+fun BossDraggableComponent.BossTopBar() {
 
     val items = listOf(
         ContextMenuItem(
@@ -91,7 +97,7 @@ fun BossActionButtonWithLogo(
 }
 
 @Composable
-fun getProjectSelectContextMenuItems(
+fun BossDraggableComponent.getProjectSelectContextMenuItems(
     showProjectDialog: () -> Unit
 ): List<ContextMenuItem> {
     val recentProjects by ProjectState.recentProjects.collectAsState()
@@ -102,7 +108,11 @@ fun getProjectSelectContextMenuItems(
             ContextMenuItem(
                 text = project.name,
                 icon = Icons.Outlined.Folder,
-                onClick = { ProjectState.selectProject(project) }
+                onClick = { 
+                    ProjectState.selectProject(project)
+                    // Show CodeBase panel when project is selected
+                    setPanelVisible(left.top, true)
+                }
             )
         })
         
@@ -127,7 +137,7 @@ val gitContextMenuItems get() = listOf(
 )
 
 @Composable
-fun BossTopLeftBar() {
+fun BossDraggableComponent.BossTopLeftBar() {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
     
@@ -145,11 +155,32 @@ fun BossTopLeftBar() {
         hintText = "Current Git Branch: main"
     )
     
-    // TODO: Add project selection dialog
+    // Directory picker for native file selection
+    val directoryPicker = rememberDirectoryPicker { path ->
+        path?.let {
+            val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+            ProjectState.selectProject(
+                Project(
+                    name = projectName,
+                    path = it
+                )
+            )
+            // Show CodeBase panel when project is selected
+            setPanelVisible(left.top, true)
+            // Close the dialog after selection
+            showProjectDialog = false
+        }
+    }
+    
+    // Project selection dialog
     if (showProjectDialog) {
-        // For now, just reset the flag
-        // In a real implementation, show a file picker dialog
-        showProjectDialog = false
+        ProjectSelectionDialog(
+            onDismiss = { showProjectDialog = false },
+            onOpenDirectoryPicker = {
+                showProjectDialog = false
+                directoryPicker.pickDirectory()
+            }
+        )
     }
 }
 
