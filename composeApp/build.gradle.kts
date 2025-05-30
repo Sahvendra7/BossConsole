@@ -191,8 +191,11 @@ compose.desktop {
         
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "ai.rever.boss"
+            packageName = "BOSS"
             packageVersion = "1.0.0"
+            description = "Business Operating System Service - Intelligent service automation platform"
+            copyright = "© 2024 Risa Labs Inc. All rights reserved."
+            vendor = "Risa Labs Inc."
             
             windows {
                 menuGroup = "Boss"
@@ -201,6 +204,26 @@ compose.desktop {
             
             macOS {
                 bundleID = "ai.rever.boss"
+                iconFile.set(project.file("src/desktopMain/resources/risa_icon.icns"))
+                packageName = "BOSS"
+                dmgPackageVersion = "1.0.0"
+                dmgPackageBuildVersion = "1"
+                
+                // DMG customization
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>LSMinimumSystemVersion</key>
+                        <string>10.15</string>
+                        <key>CFBundleShortVersionString</key>
+                        <string>1.0.0</string>
+                        <key>CFBundleVersion</key>
+                        <string>1</string>
+                        <key>NSHighResolutionCapable</key>
+                        <true/>
+                        <key>NSSupportsAutomaticGraphicsSwitching</key>
+                        <true/>
+                    """.trimIndent()
+                }
             }
         }
     }
