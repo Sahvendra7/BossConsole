@@ -152,7 +152,8 @@ fun ComponentContext.BossApp() {
         BossTheme {
             Box(modifier = Modifier
                 .fillMaxSize()
-                .onKeyEvent { event ->
+                .onPreviewKeyEvent { event ->
+                    // Use onPreviewKeyEvent to catch events before they reach children
                     if (event.type == KeyEventType.KeyDown) {
                         when {
                             event.isMetaPressed && event.key == Key.N -> {
