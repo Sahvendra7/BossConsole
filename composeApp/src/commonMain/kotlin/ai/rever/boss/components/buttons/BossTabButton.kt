@@ -64,30 +64,34 @@ fun BossTabButton(
             contentPadding = PaddingValues(horizontal = 12.dp),
             onClick = onClick
         ) {
-            Icon(
-                imageVector = findLogo(fileName),
-                contentDescription = fileName,
-                modifier = Modifier.offset(x = -4.dp).size(16.dp),
-            )
-            Text(
-                text = fileName,
-                fontSize = 13.sp,
-                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            // Small close icon with click functionality but no visual hover effect
-            Icon(
-                imageVector = Icons.Outlined.Close,
-                contentDescription = "Close $fileName",
-                modifier = Modifier
-                    .size(13.dp)
-                    .offset(x = 4.dp)
-                    .alpha(if (isSelected || isHovered) 1f else 0f)
-                    .clickable(onClick = onClose)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = findLogo(fileName),
+                    contentDescription = fileName,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = fileName,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                    textAlign = TextAlign.Start,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                // Small close icon with click functionality but no visual hover effect
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Close $fileName",
+                    modifier = Modifier
+                        .size(13.dp)
+                        .alpha(if (isSelected || isHovered) 1f else 0f)
+                        .clickable(onClick = onClose)
+                )
+            }
         }
         if (isSelected) {
             Box(
