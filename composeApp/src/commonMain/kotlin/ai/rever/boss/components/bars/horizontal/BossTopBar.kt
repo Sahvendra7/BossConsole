@@ -5,14 +5,16 @@ import BossDarkBorder
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -88,20 +90,34 @@ fun BossActionButtonWithLogo(
     )
 }
 
-val projectSelectContextMenuItems get() = listOf(
-    ContextMenuItem(
-        text = "OneOncology",
-        onClick = { /* Handle project 1 action */ }
-    ),
-    ContextMenuItem(
-        text = "Mayo",
-        onClick = { /* Handle project 2 action */ }
-    ),
-    ContextMenuItem(
-        text = "Atlantis",
-        onClick = { /* Handle project 3 action */ }
-    )
-)
+@Composable
+fun getProjectSelectContextMenuItems(
+    showProjectDialog: () -> Unit
+): List<ContextMenuItem> {
+    val recentProjects by ProjectState.recentProjects.collectAsState()
+    
+    return buildList {
+        // Recent projects
+        addAll(recentProjects.map { project ->
+            ContextMenuItem(
+                text = project.name,
+                icon = Icons.Outlined.Folder,
+                onClick = { ProjectState.selectProject(project) }
+            )
+        })
+        
+        if (recentProjects.isNotEmpty()) {
+            add(ContextMenuItem(isDivider = true))
+        }
+        
+        // Add option to open a new project
+        add(ContextMenuItem(
+            text = "Open Project...",
+            icon = Icons.Filled.Add,
+            onClick = showProjectDialog
+        ))
+    }
+}
 
 val gitContextMenuItems get() = listOf(
     ContextMenuItem(
@@ -112,10 +128,15 @@ val gitContextMenuItems get() = listOf(
 
 @Composable
 fun BossTopLeftBar() {
+    val selectedProject by ProjectState.selectedProject.collectAsState()
+    var showProjectDialog by remember { mutableStateOf(false) }
+    
     BossActionButtonWithLogo(
-        text = "Nycbs", 
-        contextMenuItems = projectSelectContextMenuItems,
-        hintText = "BOSS Platform - Based on NYCBS"
+        text = selectedProject.name, 
+        contextMenuItems = getProjectSelectContextMenuItems(
+            showProjectDialog = { showProjectDialog = true }
+        ),
+        hintText = "Current Project: ${selectedProject.path}"
     )
     BossActionButton(
         leftIcon = FeatherIcons.GitBranch, 
@@ -123,6 +144,13 @@ fun BossTopLeftBar() {
         contextMenuItems = gitContextMenuItems,
         hintText = "Current Git Branch: main"
     )
+    
+    // TODO: Add project selection dialog
+    if (showProjectDialog) {
+        // For now, just reset the flag
+        // In a real implementation, show a file picker dialog
+        showProjectDialog = false
+    }
 }
 
 val lanagerContextMenuItems get() = listOf(

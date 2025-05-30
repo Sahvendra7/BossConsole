@@ -28,6 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import ai.rever.boss.components.events.FileEventBus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
@@ -52,6 +56,39 @@ fun ComponentContext.BossApp() {
         draggablePanelComponent.update()
 
         onDispose {  }
+    }
+    
+    // Listen for file open events
+    LaunchedEffect(tabsComponent) {
+        FileEventBus.fileOpenEvents
+            .onEach { event ->
+                // Check if file is already open
+                val existingTab = tabsComponent.tabsState.value.tabs.find { tab ->
+                    tab is EditorTabInfo && tab.filePath == event.filePath
+                }
+                
+                if (existingTab == null) {
+                    // Create new editor tab
+                    val editorTab = EditorTabInfo(
+                        id = "editor-${kotlin.random.Random.nextLong()}",
+                        typeId = TabTypeId("editor"),
+                        title = event.fileName,
+                        icon = Icons.Outlined.Code,
+                        filePath = event.filePath
+                    )
+                    val index = tabsComponent.addTab(editorTab)
+                    if (index >= 0) {
+                        tabsComponent.selectTab(index)
+                    }
+                } else {
+                    // Select existing tab
+                    val index = tabsComponent.tabsState.value.tabs.indexOf(existingTab)
+                    if (index >= 0) {
+                        tabsComponent.selectTab(index)
+                    }
+                }
+            }
+            .launchIn(this)
     }
 
     // Create example tab (could be triggered by user action)
