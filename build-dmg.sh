@@ -17,11 +17,18 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Step 1: Use clean JDK
-echo -e "${BLUE}Step 1: Setting up clean JDK${NC}"
-export JAVA_HOME="$(pwd)/zulu-jdk-17"
+# Step 1: Use system JDK
+echo -e "${BLUE}Step 1: Setting up JDK${NC}"
+# Use the system's OpenJDK 17 from Homebrew
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+if [ ! -d "$JAVA_HOME" ]; then
+    echo -e "${NC}Error: OpenJDK 17 not found at $JAVA_HOME"
+    echo "Please install OpenJDK 17 with: brew install openjdk@17"
+    exit 1
+fi
 export PATH="$JAVA_HOME/bin:$PATH"
 echo "Using JDK: $JAVA_HOME"
+java -version
 
 # Step 2: Clean build
 echo -e "\n${BLUE}Step 2: Cleaning previous builds${NC}"
@@ -32,10 +39,23 @@ rm -rf composeApp/build/compose/binaries
 echo -e "\n${BLUE}Step 3: Building application${NC}"
 ./gradlew :composeApp:createDistributable
 
+if [ $? -ne 0 ]; then
+    echo -e "${NC}Error: Gradle build failed"
+    exit 1
+fi
+
 # Step 4: Fix PTY4J native libraries
 echo -e "\n${BLUE}Step 4: Fixing PTY4J native libraries${NC}"
 
 APP_PATH=$(find composeApp/build/compose/binaries/main/app -name "*.app" | head -1)
+if [ -z "$APP_PATH" ]; then
+    echo -e "${NC}Error: Could not find built .app file"
+    echo "Expected location: composeApp/build/compose/binaries/main/app/*.app"
+    exit 1
+fi
+
+echo "Found app at: $APP_PATH"
+
 if [ -n "$APP_PATH" ]; then
     # Find and extract PTY4J natives
     PTY4J_JAR=$(find "$APP_PATH/Contents/app" -name "pty4j-*.jar" | head -1)

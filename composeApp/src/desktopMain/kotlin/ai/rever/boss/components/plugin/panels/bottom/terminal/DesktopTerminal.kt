@@ -32,6 +32,15 @@ class DesktopTerminal : Terminal {
                 val shell = System.getenv("SHELL") ?: "/bin/bash"
                 val env = System.getenv().toMutableMap()
                 
+                // Set up proper PATH including Homebrew locations
+                val homebrewPath = "/opt/homebrew/bin:/opt/homebrew/sbin"
+                val defaultPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+                env["PATH"] = "$homebrewPath:$defaultPath:${env["PATH"] ?: ""}"
+                
+                // Set HOME if not already set
+                if (!env.containsKey("HOME")) {
+                    env["HOME"] = System.getProperty("user.home")
+                }
 
                 // Use full terminal support for oh-my-zsh and powerline
                 env["TERM"] = "xterm-256color"
@@ -39,11 +48,11 @@ class DesktopTerminal : Terminal {
                 env.remove("COLUMNS")
                 env.remove("LINES")
                 
-                // Build the PTY process
+                // Build the PTY process with login shell to load full environment
                 val cmd = when {
-                    shell.contains("zsh") -> arrayOf(shell, "-i")
-                    shell.contains("bash") -> arrayOf(shell, "-i")
-                    else -> arrayOf(shell)
+                    shell.contains("zsh") -> arrayOf(shell, "-l", "-i")
+                    shell.contains("bash") -> arrayOf(shell, "-l", "-i")
+                    else -> arrayOf(shell, "-l")
                 }
                 
                 

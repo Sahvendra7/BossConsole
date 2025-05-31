@@ -125,15 +125,22 @@ fun ComponentContext.BossApp() {
 
     // Add default tabs
     DisposableEffect(tabsComponent) {
-        // Create a welcome tab instead of browser tabs to avoid startup issues
-        val welcomeTab = EditorTabInfo(
-            id = "editor-welcome",
-            title = "Welcome to BOSS",
-            typeId = TabTypeId("editor"),
-            icon = Icons.Outlined.Code,
-            filePath = ""
+        // Create default web tabs
+        val defaultUrls = listOf(
+            "https://www.risalabs.ai",
+            "https://secure15.oncoemr.com/",
+            "https://pa-dashboard-dev.web.app/"
         )
-        tabsComponent.addTab(welcomeTab)
+        
+        defaultUrls.forEach { url ->
+            val tab = FluckTabInfo(
+                id = "browser-${kotlin.random.Random.nextLong()}",
+                typeId = TabTypeId("fluck"),
+                _title = "Loading...",
+                url = url
+            )
+            tabsComponent.addTab(tab)
+        }
         
         // Select the first tab
         if (tabsComponent.tabsState.value.tabs.isNotEmpty()) {

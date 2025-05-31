@@ -558,26 +558,26 @@ class TerminalEmulator(
     private fun ansiColorToCompose(code: Int, bright: Boolean = false): Color {
         return if (bright) {
             when (code) {
-                0 -> Color(0xFF767676) // Bright black (gray)
-                1 -> Color(0xFFE74856) // Bright red
-                2 -> Color(0xFF16C60C) // Bright green
-                3 -> Color(0xFFF9F1A5) // Bright yellow
-                4 -> Color(0xFF3B78FF) // Bright blue
-                5 -> Color(0xFFB4009E) // Bright magenta
-                6 -> Color(0xFF61D6D6) // Bright cyan
-                7 -> Color(0xFFF2F2F2) // Bright white
+                0 -> Color(0xFF808080) // Bright black (gray)
+                1 -> Color(0xFFFF5555) // Bright red
+                2 -> Color(0xFF55FF55) // Bright green
+                3 -> Color(0xFFFFFF55) // Bright yellow
+                4 -> Color(0xFF5555FF) // Bright blue - Much brighter like IntelliJ
+                5 -> Color(0xFFFF55FF) // Bright magenta
+                6 -> Color(0xFF55FFFF) // Bright cyan
+                7 -> Color(0xFFFFFFFF) // Bright white
                 else -> Color.Unspecified
             }
         } else {
             when (code) {
                 0 -> Color(0xFF000000) // Black
-                1 -> Color(0xFFC50F1F) // Red
-                2 -> Color(0xFF13A10E) // Green
-                3 -> Color(0xFFC19C00) // Yellow
-                4 -> Color(0xFF0037DA) // Blue
-                5 -> Color(0xFF881798) // Magenta
-                6 -> Color(0xFF3A96DD) // Cyan
-                7 -> Color(0xFFCCCCCC) // White
+                1 -> Color(0xFFAA0000) // Red
+                2 -> Color(0xFF00AA00) // Green
+                3 -> Color(0xFFAA5500) // Yellow/Brown
+                4 -> Color(0xFF5555FF) // Blue - Using bright blue for better visibility
+                5 -> Color(0xFFAA00AA) // Magenta
+                6 -> Color(0xFF00AAAA) // Cyan
+                7 -> Color(0xFFAAAAAA) // Light gray
                 else -> Color.Unspecified
             }
         }
@@ -807,7 +807,7 @@ class TerminalEmulator(
                     hasContent = true
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFCCCCCC) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFE0E0E0) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
@@ -833,7 +833,7 @@ class TerminalEmulator(
                     hasContent = true
                     val style = SpanStyle(
                         color = if (cell.foregroundColor == Color.Unspecified) 
-                            defaultForegroundColor ?: Color(0xFFCCCCCC) else cell.foregroundColor,
+                            defaultForegroundColor ?: Color(0xFFE0E0E0) else cell.foregroundColor,
                         background = if (cell.backgroundColor != Color.Unspecified) 
                             cell.backgroundColor else defaultBackgroundColor ?: Color.Unspecified,
                         fontWeight = if (cell.bold) FontWeight.Bold else null,
