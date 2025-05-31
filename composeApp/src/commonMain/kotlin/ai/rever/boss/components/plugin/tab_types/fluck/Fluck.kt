@@ -32,7 +32,8 @@ data class FluckTabInfo(
     private var _icon: ImageVector = Icons.Outlined.Language,
     private var _tabIcon: TabIcon? = null,
     val url: String = "", // Add URL to store the initial URL
-    val navigationHistory: MutableList<Pair<String, String>> = mutableListOf() // List of (title, url) pairs
+    val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
+    var historyIndex: Int = -1 // Current position in navigation history
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
@@ -54,10 +55,40 @@ data class FluckTabInfo(
         return copy(_title = newTitle, _icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
     }
     
-    fun addToHistory(title: String, url: String) {
+    fun navigateToPage(title: String, url: String) {
+        // If we're not at the end of history, truncate forward history
+        if (historyIndex < navigationHistory.size - 1) {
+            // Remove all entries after current index
+            while (navigationHistory.size > historyIndex + 1) {
+                navigationHistory.removeAt(navigationHistory.size - 1)
+            }
+        }
+        
         // Don't add duplicate consecutive entries
-        if (navigationHistory.isEmpty() || navigationHistory.last().second != url) {
+        if (navigationHistory.isEmpty() || navigationHistory.lastOrNull()?.second != url) {
             navigationHistory.add(Pair(title, url))
+            historyIndex = navigationHistory.size - 1
+        }
+    }
+    
+    fun navigateBack() {
+        if (historyIndex > 0) {
+            historyIndex--
+        }
+    }
+    
+    fun navigateForward() {
+        if (historyIndex < navigationHistory.size - 1) {
+            historyIndex++
+        }
+    }
+    
+    fun getCurrentHistoryForDisplay(): List<Pair<String, String>> {
+        // Return history up to current index
+        return if (historyIndex >= 0 && navigationHistory.isNotEmpty()) {
+            navigationHistory.take(historyIndex + 1)
+        } else {
+            emptyList()
         }
     }
 }
@@ -133,7 +164,17 @@ class FluckTabComponent(
                         onIconChange = onIconUpdate,
                         onTabIconUpdate = onTabIconUpdate,
                         onOpenInNewTab = onOpenInNewTab,
-                        onNavigationUpdate = onNavigationUpdate
+                        onNavigationUpdate = onNavigationUpdate,
+                        onNavigationStateChange = { isBack ->
+                            // Handle back/forward navigation
+                            if (config is FluckTabInfo) {
+                                if (isBack) {
+                                    config.navigateBack()
+                                } else {
+                                    config.navigateForward()
+                                }
+                            }
+                        }
                     )
                 }
                 else -> {
@@ -301,8 +342,8 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                 if (tabIndex >= 0) {
                     val currentTab = tabs[tabIndex]
                     if (currentTab is FluckTabInfo) {
-                        // Add to history
-                        currentTab.addToHistory(title, url)
+                        // Navigate to page
+                        currentTab.navigateToPage(title, url)
                     }
                 }
             }

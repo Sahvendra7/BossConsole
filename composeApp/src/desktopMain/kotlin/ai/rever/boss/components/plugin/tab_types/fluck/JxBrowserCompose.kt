@@ -135,7 +135,8 @@ fun JxBrowserCompose(
     onIconChange: (ImageVector) -> Unit = {},
     onTabIconChange: (String) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {},
-    onNavigationUpdate: ((String, String) -> Unit)? = null
+    onNavigationUpdate: ((String, String) -> Unit)? = null,
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -431,7 +432,12 @@ fun JxBrowserCompose(
                 add(ContextMenuItem(
                     text = "Back",
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    onClick = { if (!browser.isClosed) browser.navigation().goBack() }
+                    onClick = { 
+                        if (!browser.isClosed) {
+                            browser.navigation().goBack()
+                            onNavigationStateChange?.invoke(true)
+                        }
+                    }
                 ))
             }
             
@@ -439,7 +445,12 @@ fun JxBrowserCompose(
                 add(ContextMenuItem(
                     text = "Forward",
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
-                    onClick = { if (!browser.isClosed) browser.navigation().goForward() }
+                    onClick = { 
+                        if (!browser.isClosed) {
+                            browser.navigation().goForward()
+                            onNavigationStateChange?.invoke(false)
+                        }
+                    }
                 ))
             }
             
@@ -559,7 +570,12 @@ fun JxBrowserCompose(
                 ) {
                     // Back button
                     IconButton(
-                        onClick = { if (!browser.isClosed) browser.navigation().goBack() },
+                        onClick = { 
+                            if (!browser.isClosed) {
+                                browser.navigation().goBack()
+                                onNavigationStateChange?.invoke(true)
+                            }
+                        },
                         enabled = canGoBack,
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -572,7 +588,12 @@ fun JxBrowserCompose(
                     
                     // Forward button
                     IconButton(
-                        onClick = { if (!browser.isClosed) browser.navigation().goForward() },
+                        onClick = { 
+                            if (!browser.isClosed) {
+                                browser.navigation().goForward()
+                                onNavigationStateChange?.invoke(false)
+                            }
+                        },
                         enabled = canGoForward,
                         modifier = Modifier.size(32.dp)
                     ) {

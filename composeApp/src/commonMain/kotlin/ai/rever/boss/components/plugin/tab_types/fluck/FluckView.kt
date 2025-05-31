@@ -16,6 +16,7 @@ expect fun FluckView(
     onIconChange: (ImageVector) -> Unit = {},
     onTabIconUpdate: (TabIcon) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {},
-    onNavigationUpdate: ((String, String) -> Unit)? = null
+    onNavigationUpdate: ((String, String) -> Unit)? = null,
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null
 )
 

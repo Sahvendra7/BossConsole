@@ -26,7 +26,8 @@ actual fun FluckView(
     onIconChange: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
-    onNavigationUpdate: ((String, String) -> Unit)?
+    onNavigationUpdate: ((String, String) -> Unit)?,
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)?
 ) {
     // For WASM/JS, we could potentially use an iframe or similar
     // For now, we'll show a placeholder

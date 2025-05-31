@@ -108,9 +108,10 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                         }
                     }
                     is FluckTabInfo -> {
-                        // Show navigation history as breadcrumbs
-                        if (activeTab.navigationHistory.isNotEmpty()) {
-                            val historyToShow = activeTab.navigationHistory.takeLast(5)
+                        // Show navigation history as breadcrumbs (corresponding to back button stack)
+                        val currentHistory = activeTab.getCurrentHistoryForDisplay()
+                        if (currentHistory.isNotEmpty()) {
+                            val historyToShow = currentHistory.takeLast(5)
                             historyToShow.forEachIndexed { index, (title, url) ->
                                 // Extract domain name or use title
                                 val displayName = getDisplayNameFromUrl(url, title)
