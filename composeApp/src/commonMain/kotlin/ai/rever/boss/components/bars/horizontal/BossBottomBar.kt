@@ -27,24 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 
-private fun getDisplayNameFromUrl(url: String, title: String): String {
-    return try {
-        val host = url.substringAfter("://").substringBefore("/").substringBefore(":").removePrefix("www.")
-        when {
-            host.contains("google") -> "Google"
-            host.contains("risalabs") || host.contains("risa") -> "Risa"
-            host.contains("gmail") -> "Gmail"
-            host.contains("github") -> "GitHub"
-            host.contains("youtube") -> "YouTube"
-            host.contains("oncoemr") -> "OncoEMR"
-            host.contains("pa-dashboard") -> "PA Dashboard"
-            else -> title.take(15)
-        }
-    } catch (e: Exception) {
-        title.take(15)
-    }
-}
-
 
 @Composable
 fun BossBottomBar(tabsComponent: BossTabsComponent? = null) {
@@ -108,49 +90,24 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                         }
                     }
                     is FluckTabInfo -> {
-                        // Show navigation history as breadcrumbs (corresponding to back button stack)
-                        val currentHistory = activeTab.getCurrentHistoryForDisplay()
-                        if (currentHistory.isNotEmpty()) {
-                            val historyToShow = currentHistory.takeLast(5)
-                            historyToShow.forEachIndexed { index, (title, url) ->
-                                // Extract domain name or use title
-                                val displayName = getDisplayNameFromUrl(url, title)
-                                
-                                BossActionButton(
-                                    text = displayName,
-                                    color = BossDarkTextSecondary,
-                                    onClick = {}
-                                )
-                                if (index < historyToShow.lastIndex) {
-                                    RightArrow()
-                                }
-                            }
-                        } else {
-                            // Fallback to showing URL if no history yet
-                            Text(
-                                text = activeTab.url,
-                                color = BossDarkTextSecondary,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                        }
+                        // Show current URL
+                        Text(
+                            text = activeTab.url,
+                            color = BossDarkTextSecondary,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
                     is TerminalTabInfo -> {
-                        // Show terminal working directory as breadcrumbs
-                        // For now, show default terminal path
-                        val pathParts = listOf("HOME", "Terminal")
-                        pathParts.forEachIndexed { index, part ->
-                            BossActionButton(
-                                text = part,
-                                color = BossDarkTextSecondary,
-                                onClick = {}
-                            )
-                            if (index < pathParts.lastIndex) {
-                                RightArrow()
-                            }
-                        }
+                        // Show terminal text
+                        Text(
+                            text = "Terminal",
+                            color = BossDarkTextSecondary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
                     else -> {
                         // Default content when no tab is active

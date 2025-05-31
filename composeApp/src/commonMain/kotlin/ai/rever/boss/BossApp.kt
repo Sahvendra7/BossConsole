@@ -38,9 +38,12 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.plugin.tab_types.TerminalTab
+import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
+import kotlin.random.Random
 
 
 @Composable
@@ -225,7 +228,7 @@ fun ComponentContext.BossApp() {
                             TabType.FILE -> {
                                 val fileName = path.substringAfterLast('/')
                                 val tab = EditorTabInfo(
-                                    id = "editor-${kotlin.random.Random.nextLong()}",
+                                    id = "editor-${Random.nextLong()}",
                                     typeId = TabTypeId("editor"),
                                     title = fileName,
                                     filePath = path
@@ -233,9 +236,9 @@ fun ComponentContext.BossApp() {
                                 tabsComponent.addTab(tab)
                             }
                             TabType.TERMINAL -> {
-                                val tab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
-                                    id = "terminal-${kotlin.random.Random.nextLong()}",
-                                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                                val tab = TerminalTabInfo(
+                                    id = "terminal-${Random.nextLong()}",
+                                    typeId = TerminalTab.typeId,
                                     title = "Terminal"
                                 )
                                 tabsComponent.addTab(tab)
