@@ -92,7 +92,7 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                     is FluckTabInfo -> {
                         // Show current URL
                         Text(
-                            text = activeTab.url,
+                            text = activeTab.currentUrl,
                             color = BossDarkTextSecondary,
                             fontSize = 12.sp,
                             maxLines = 1,

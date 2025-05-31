@@ -31,13 +31,15 @@ data class FluckTabInfo(
     private var _title: String,
     private var _icon: ImageVector = Icons.Outlined.Language,
     private var _tabIcon: TabIcon? = null,
-    val url: String = "", // Add URL to store the initial URL
+    val url: String = "", // Initial URL
+    private var _currentUrl: String = url, // Current URL being viewed
     val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
     var historyIndex: Int = -1 // Current position in navigation history
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
     override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
+    val currentUrl: String get() = _currentUrl
     
     fun updateTitle(newTitle: String): FluckTabInfo {
         return copy(_title = newTitle)
@@ -56,6 +58,9 @@ data class FluckTabInfo(
     }
     
     fun navigateToPage(title: String, url: String) {
+        // Update current URL
+        _currentUrl = url
+        
         // If we're not at the end of history, truncate forward history
         if (historyIndex < navigationHistory.size - 1) {
             // Remove all entries after current index
@@ -74,12 +79,14 @@ data class FluckTabInfo(
     fun navigateBack() {
         if (historyIndex > 0) {
             historyIndex--
+            _currentUrl = navigationHistory[historyIndex].second
         }
     }
     
     fun navigateForward() {
         if (historyIndex < navigationHistory.size - 1) {
             historyIndex++
+            _currentUrl = navigationHistory[historyIndex].second
         }
     }
     
