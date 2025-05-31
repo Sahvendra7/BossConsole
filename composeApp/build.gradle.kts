@@ -175,14 +175,16 @@ compose.desktop {
     application {
         mainClass = "ai.rever.boss.MainKt"
         
+        // Specify JDK for native distributions (requires JDK 17+)
+        javaHome = System.getenv("JAVA_HOME") ?: System.getProperty("java.home")
+        
         // Add JVM arguments to help with native library loading
+        // Use system temp directory instead of build-time paths
         jvmArgs(
-            "-Dpty4j.preferred.native.folder=${layout.buildDirectory.dir("pty4j-native").get().asFile.absolutePath}",
             "-Djna.nosys=true",
-            "-Dpty4j.tmpdir=${layout.buildDirectory.dir("tmp").get().asFile.absolutePath}",
-            "-Djava.io.tmpdir=${layout.buildDirectory.dir("tmp").get().asFile.absolutePath}",
+            // These will be set at runtime, not build time
+            "-Dpty4j.tmpdir=\${java.io.tmpdir}/boss-pty4j",
             // JCEF arguments
-            "-Djcef.path=${layout.buildDirectory.dir("jcef-natives").get().asFile.absolutePath}",
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
@@ -197,6 +199,16 @@ compose.desktop {
             copyright = "© 2024 Risa Labs Inc. All rights reserved."
             vendor = "Risa Labs Inc."
             
+            // Bundle a complete, self-contained JVM
+            includeAllModules = true
+            
+            // Note: When includeAllModules is true, the modules() call is redundant
+            // as all modules will be included. If you want to optimize size later,
+            // set includeAllModules = false and specify only required modules:
+            // modules("java.base", "java.desktop", "java.logging", "java.net.http", 
+            //         "java.sql", "java.prefs", "java.scripting", "jdk.unsupported",
+            //         "java.naming", "java.xml", "java.management", "jdk.crypto.ec")
+            
             windows {
                 menuGroup = "Boss"
                 upgradeUuid = "8a5a7659-2e0f-41bd-bbbb-3140b1e7dd7d"
@@ -208,6 +220,20 @@ compose.desktop {
                 packageName = "BOSS"
                 dmgPackageVersion = "1.0.0"
                 dmgPackageBuildVersion = "1"
+                
+                
+                // Note: bundleJRE is not a valid property in current Compose Desktop
+                // The JVM is automatically bundled when creating native distributions
+                // Use includeAllModules = true above to ensure all JVM modules are included
+                
+                // Code signing configuration
+                signing {
+                    sign.set(true)
+                    identity.set("Developer ID Application: Reverberation Tech Private Limited (TSFZV2FBXD)")
+                }
+                
+                // Entitlements
+                entitlementsFile.set(project.file("src/desktopMain/resources/BOSS.entitlements"))
                 
                 // DMG customization
                 infoPlist {

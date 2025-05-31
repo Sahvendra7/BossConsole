@@ -4,6 +4,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -72,7 +73,7 @@ object ProjectState {
     private val _selectedProject = MutableStateFlow(
         Project(
             name = "BOSS-Kotlin",
-            path = "/Users/kshivang/Development/BOSS-Kotlin",
+            path = SystemUtils.getDefaultProjectPath(),
             lastOpened = 0L
         )
     )
@@ -82,7 +83,7 @@ object ProjectState {
         listOf(
             Project(
                 name = "BOSS-Kotlin", 
-                path = "/Users/kshivang/Development/BOSS-Kotlin",
+                path = SystemUtils.getDefaultProjectPath(),
                 lastOpened = 0L
             )
         )

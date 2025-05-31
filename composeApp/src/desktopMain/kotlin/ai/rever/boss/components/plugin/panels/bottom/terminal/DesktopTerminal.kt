@@ -112,6 +112,18 @@ class DesktopTerminal : Terminal {
             } catch (e: Exception) {
                 e.printStackTrace()
                 _isRunning.value = false
+                // Emit error information to help diagnose
+                _output.emit("\n[Terminal Error]\n")
+                _output.emit("Failed to start terminal: ${e.message}\n")
+                _output.emit("Error type: ${e.javaClass.simpleName}\n")
+                _output.emit("\nPossible causes:\n")
+                _output.emit("- PTY4J native libraries not found or incompatible\n")
+                _output.emit("- Security restrictions preventing terminal access\n")
+                _output.emit("- Architecture mismatch (Intel vs Apple Silicon)\n")
+                _output.emit("\nSystem info:\n")
+                _output.emit("- OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}\n")
+                _output.emit("- Arch: ${System.getProperty("os.arch")}\n")
+                _output.emit("- Java: ${System.getProperty("java.version")}\n")
                 // Don't throw, just log the error - the UI will handle the error state
             }
         }

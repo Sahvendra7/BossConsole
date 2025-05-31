@@ -1,5 +1,6 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -36,7 +37,7 @@ fun NewTabDialog(
 ) {
     var selectedType by remember { mutableStateOf(TabType.URL) }
     var urlText by remember { mutableStateOf("") }
-    var fileText by remember { mutableStateOf("/Users/kshivang/Development/BOSS-Kotlin/README.md") }
+    var fileText by remember { mutableStateOf(SystemUtils.getDefaultProjectPath() + "/README.md") }
     var inputText by remember { 
         mutableStateOf(
             when (selectedType) {
@@ -161,7 +162,7 @@ fun NewTabDialog(
                             Text(
                                 when (selectedType) {
                                     TabType.URL -> "Enter URL (e.g., https://example.com)"
-                                    TabType.FILE -> "Enter file path (e.g., /Users/kshivang/Development/BOSS-Kotlin/README.md)"
+                                    TabType.FILE -> "Enter file path"
                                     else -> "" // This should never happen since we check selectedType != TERMINAL above
                                 },
                                 color = Color(0xFF999999)
@@ -171,7 +172,7 @@ fun NewTabDialog(
                             Text(
                                 when (selectedType) {
                                     TabType.URL -> "https://"
-                                    TabType.FILE -> "/Users/kshivang/Development/BOSS-Kotlin/README.md"
+                                    TabType.FILE -> "README.md"
                                     else -> "" // This should never happen since we check selectedType != TERMINAL above
                                 },
                                 color = Color(0xFF666666)

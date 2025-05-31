@@ -28,16 +28,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
-import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
@@ -169,7 +166,8 @@ fun BossTabsComponent.BossMainTabBar() {
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
-                            title = "Terminal"
+                            title = "Terminal",
+                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon
                         )
                         val tabIndex = addTab(terminalTab)
                         if (tabIndex >= 0) {
@@ -214,41 +212,7 @@ private fun EmptyContent() {
         modifier = Modifier.fillMaxSize().background(BossDarkBackground),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Lightbulb,
-                contentDescription = "Welcome",
-                tint = Color.Gray,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Welcome to BOSS",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Business Operating System Service",
-                color = Color.Gray,
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                "Press ⌘N to create a new tab",
-                color = Color.Gray,
-                fontSize = 12.sp
-            )
-            Text(
-                "or click the + button above",
-                color = Color.Gray,
-                fontSize = 12.sp
-            )
-        }
+        Text("No tabs open")
     }
 }
 

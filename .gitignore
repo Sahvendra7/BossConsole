@@ -16,3 +16,13 @@ captures
 !*.xcodeproj/project.xcworkspace/
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
+
+# Distribution files
+*.dmg
+*.zip
+distribution-final/
+distribution/
+
+# Temporary JDK downloads
+zulu-jdk-*/
+jdk-*/

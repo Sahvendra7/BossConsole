@@ -2,11 +2,20 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object Fluck: TabTypeInfo {
@@ -69,10 +78,26 @@ class FluckTabComponent(
     // Store the URL to load
     private val initialUrl = if (config is FluckTabInfo) config.url else "https://www.risalabs.ai"
     
-    // Create browser instance that persists for the lifetime of this component
-    // Create immediately to avoid timing issues
-    val browser: Any = createBrowser()
-    val browserViewState: Any = createBrowserViewState(browser)
+    // Create browser instance with error handling
+    private var browserError: Throwable? = null
+    val browser: Any? = try {
+        createBrowser()
+    } catch (e: Throwable) {
+        browserError = e
+        println("Failed to create browser: ${e.message}")
+        null
+    }
+    
+    val browserViewState: Any? = browser?.let {
+        try {
+            createBrowserViewState(it)
+        } catch (e: Throwable) {
+            browserError = e
+            println("Failed to create browser view state: ${e.message}")
+            null
+        }
+    }
+    
     private var isDisposed = false
 
     override val tabTypeInfo = Fluck
@@ -80,25 +105,115 @@ class FluckTabComponent(
     @Composable
     override fun Content() {
         if (!isDisposed) {
-            FluckView(
-                fileId = config.id,
-                content = initialUrl,
-                browser = browser,
-                browserViewState = browserViewState,
-                onContentChange = { }, // Not used for browser
-                onTitleChange = onTitleUpdate,
-                onIconChange = onIconUpdate,
-                onTabIconUpdate = onTabIconUpdate,
-                onOpenInNewTab = onOpenInNewTab
-            )
+            when {
+                browserError != null -> {
+                    // Show error message instead of browser
+                    BrowserErrorView(
+                        error = browserError!!,
+                        url = initialUrl
+                    )
+                }
+                browser != null && browserViewState != null -> {
+                    FluckView(
+                        fileId = config.id,
+                        content = initialUrl,
+                        browser = browser,
+                        browserViewState = browserViewState,
+                        onContentChange = { }, // Not used for browser
+                        onTitleChange = onTitleUpdate,
+                        onIconChange = onIconUpdate,
+                        onTabIconUpdate = onTabIconUpdate,
+                        onOpenInNewTab = onOpenInNewTab
+                    )
+                }
+                else -> {
+                    // Loading state
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
         }
     }
     
     fun dispose() {
         if (!isDisposed) {
             isDisposed = true
-            disposeBrowserViewState(browserViewState)
-            disposeBrowser(browser)
+            browserViewState?.let { disposeBrowserViewState(it) }
+            browser?.let { disposeBrowser(it) }
+        }
+    }
+}
+
+@Composable
+fun BrowserErrorView(error: Throwable, url: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = 4.dp,
+            backgroundColor = Color(0xFF2B2D30)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Warning,
+                    contentDescription = "Error",
+                    tint = Color(0xFFFF6B6B),
+                    modifier = Modifier.size(48.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "Browser Not Available",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Unable to initialize the web browser component.",
+                    fontSize = 14.sp,
+                    color = Color(0xFFCCCCCC)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "URL: $url",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Error: ${error.message ?: error.toString()}",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    text = "Try using the code editor or terminal tabs instead.",
+                    fontSize = 14.sp,
+                    color = Color(0xFFCCCCCC)
+                )
+            }
         }
     }
 }
