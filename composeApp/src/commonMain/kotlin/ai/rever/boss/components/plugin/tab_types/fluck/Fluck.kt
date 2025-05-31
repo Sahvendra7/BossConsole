@@ -31,7 +31,8 @@ data class FluckTabInfo(
     private var _title: String,
     private var _icon: ImageVector = Icons.Outlined.Language,
     private var _tabIcon: TabIcon? = null,
-    val url: String = "" // Add URL to store the initial URL
+    val url: String = "", // Add URL to store the initial URL
+    val navigationHistory: MutableList<Pair<String, String>> = mutableListOf() // List of (title, url) pairs
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
@@ -51,6 +52,13 @@ data class FluckTabInfo(
     
     fun updateTitleAndIcon(newTitle: String, newIcon: ImageVector): FluckTabInfo {
         return copy(_title = newTitle, _icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
+    }
+    
+    fun addToHistory(title: String, url: String) {
+        // Don't add duplicate consecutive entries
+        if (navigationHistory.isEmpty() || navigationHistory.last().second != url) {
+            navigationHistory.add(Pair(title, url))
+        }
     }
 }
 
@@ -72,7 +80,8 @@ class FluckTabComponent(
     private val onTitleUpdate: (String) -> Unit,
     private val onIconUpdate: (ImageVector) -> Unit,
     private val onTabIconUpdate: (TabIcon) -> Unit,
-    private val onOpenInNewTab: (String) -> Unit
+    private val onOpenInNewTab: (String) -> Unit,
+    private val onNavigationUpdate: ((String, String) -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     // Store the URL to load
@@ -123,7 +132,8 @@ class FluckTabComponent(
                         onTitleChange = onTitleUpdate,
                         onIconChange = onIconUpdate,
                         onTabIconUpdate = onTabIconUpdate,
-                        onOpenInNewTab = onOpenInNewTab
+                        onOpenInNewTab = onOpenInNewTab,
+                        onNavigationUpdate = onNavigationUpdate
                     )
                 }
                 else -> {
@@ -280,6 +290,21 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                     url = url
                 )
                 parent.addTab(newTab)
+            }
+        },
+        onNavigationUpdate = { title, url ->
+            // Update navigation history
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+                
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is FluckTabInfo) {
+                        // Add to history
+                        currentTab.addToHistory(title, url)
+                    }
+                }
             }
         }
     )

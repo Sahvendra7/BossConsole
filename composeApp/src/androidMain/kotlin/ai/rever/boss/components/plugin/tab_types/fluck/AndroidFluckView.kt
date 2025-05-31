@@ -31,7 +31,8 @@ actual fun FluckView(
     onTitleChange: (String) -> Unit,
     onIconChange: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
-    onOpenInNewTab: (String) -> Unit
+    onOpenInNewTab: (String) -> Unit,
+    onNavigationUpdate: ((String, String) -> Unit)?
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),

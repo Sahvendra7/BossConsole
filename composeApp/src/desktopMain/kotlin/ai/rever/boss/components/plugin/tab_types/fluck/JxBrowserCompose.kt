@@ -134,7 +134,8 @@ fun JxBrowserCompose(
     onTitleChange: (String) -> Unit = {},
     onIconChange: (ImageVector) -> Unit = {},
     onTabIconChange: (String) -> Unit = {},
-    onOpenInNewTab: (String) -> Unit = {}
+    onOpenInNewTab: (String) -> Unit = {},
+    onNavigationUpdate: ((String, String) -> Unit)? = null
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -247,17 +248,22 @@ fun JxBrowserCompose(
                 
                 // println("Page loaded - URL: $url, Title: $title") // Debug log
                 
-                if (title.isNotEmpty()) {
-                    onTitleChange(truncateTitle(title, url))
+                val displayTitle = if (title.isNotEmpty()) {
+                    truncateTitle(title, url)
                 } else {
                     // Fallback to domain name if no title
                     try {
                         val host = java.net.URL(url).host.removePrefix("www.")
-                        onTitleChange(host)
+                        host
                     } catch (e: Exception) {
-                        onTitleChange("New Tab")
+                        "New Tab"
                     }
                 }
+                
+                onTitleChange(displayTitle)
+                
+                // Notify navigation update with title and URL
+                onNavigationUpdate?.invoke(displayTitle, url)
                 
                 // Try to extract favicon
                 browser.mainFrame().ifPresent { frame ->

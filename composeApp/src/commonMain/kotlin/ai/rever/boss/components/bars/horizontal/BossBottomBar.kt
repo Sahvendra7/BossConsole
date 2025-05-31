@@ -9,6 +9,7 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.Divider
@@ -25,6 +26,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
+
+private fun getDisplayNameFromUrl(url: String, title: String): String {
+    return try {
+        val host = url.substringAfter("://").substringBefore("/").substringBefore(":").removePrefix("www.")
+        when {
+            host.contains("google") -> "Google"
+            host.contains("risalabs") || host.contains("risa") -> "Risa"
+            host.contains("gmail") -> "Gmail"
+            host.contains("github") -> "GitHub"
+            host.contains("youtube") -> "YouTube"
+            host.contains("oncoemr") -> "OncoEMR"
+            host.contains("pa-dashboard") -> "PA Dashboard"
+            else -> title.take(15)
+        }
+    } catch (e: Exception) {
+        title.take(15)
+    }
+}
 
 
 @Composable
@@ -89,24 +108,48 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                         }
                     }
                     is FluckTabInfo -> {
-                        // Show current URL or history - for now just show the URL
-                        Text(
-                            text = activeTab.url,
-                            color = BossDarkTextSecondary,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
+                        // Show navigation history as breadcrumbs
+                        if (activeTab.navigationHistory.isNotEmpty()) {
+                            val historyToShow = activeTab.navigationHistory.takeLast(5)
+                            historyToShow.forEachIndexed { index, (title, url) ->
+                                // Extract domain name or use title
+                                val displayName = getDisplayNameFromUrl(url, title)
+                                
+                                BossActionButton(
+                                    text = displayName,
+                                    color = BossDarkTextSecondary,
+                                    onClick = {}
+                                )
+                                if (index < historyToShow.lastIndex) {
+                                    RightArrow()
+                                }
+                            }
+                        } else {
+                            // Fallback to showing URL if no history yet
+                            Text(
+                                text = activeTab.url,
+                                color = BossDarkTextSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                        }
                     }
                     is TerminalTabInfo -> {
-                        // Show terminal working directory - would need to get from terminal component
-                        Text(
-                            text = "Terminal",
-                            color = BossDarkTextSecondary,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
+                        // Show terminal working directory as breadcrumbs
+                        // For now, show default terminal path
+                        val pathParts = listOf("HOME", "Terminal")
+                        pathParts.forEachIndexed { index, part ->
+                            BossActionButton(
+                                text = part,
+                                color = BossDarkTextSecondary,
+                                onClick = {}
+                            )
+                            if (index < pathParts.lastIndex) {
+                                RightArrow()
+                            }
+                        }
                     }
                     else -> {
                         // Default content when no tab is active
