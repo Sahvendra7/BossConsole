@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
+import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 
 
 @Composable
@@ -162,6 +163,42 @@ fun ComponentContext.BossApp() {
                                 val activeIndex = tabsComponent.tabsState.value.activeIndex
                                 if (activeIndex >= 0 && activeIndex < tabs.size) {
                                     tabsComponent.removeTab(activeIndex)
+                                }
+                                true
+                            }
+                            event.isMetaPressed && event.key == Key.O -> {
+                                // Open CodeBase panel (left.top)
+                                // Find the CodeBase item in the sidebar
+                                val codebaseItems = getItemsForSlot(left.top)
+                                val codebaseItem = codebaseItems.firstOrNull { 
+                                    it.pluginContentId == CodeBaseInfo.id 
+                                }
+                                if (codebaseItem != null) {
+                                    // Toggle the panel visibility
+                                    val currentVisibility = isVisible(left.top)
+                                    setPanelVisible(left.top, !currentVisibility)
+                                    // If showing the panel, ensure CodeBase is selected
+                                    if (!currentVisibility) {
+                                        getPanelContentId(left.top)?.let { currentId ->
+                                            if (currentId != CodeBaseInfo.id) {
+                                                // Switch to CodeBase
+                                                codebaseItem.onClick?.invoke()
+                                            }
+                                        }
+                                    }
+                                }
+                                true
+                            }
+                            event.isMetaPressed && event.key == Key.R -> {
+                                // Reload current browser tab if it's a Fluck tab
+                                val activeComponent = splitViewState.getActiveTabsComponent()
+                                val activeTab = activeComponent?.tabsState?.value?.activeTab
+                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                                    // Trigger reload event for the browser
+                                    val activeTabComponent = activeComponent.getActiveComponent()
+                                    if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                                        activeTabComponent.reload()
+                                    }
                                 }
                                 true
                             }

@@ -112,7 +112,18 @@ expect fun disposeBrowser(browser: Any)
 // Platform-specific browser view state disposal
 expect fun disposeBrowserViewState(browserViewState: Any)
 
-class FluckTabComponent(
+// Platform-specific FluckTabComponent creation
+expect fun createFluckTabComponent(
+    config: TabInfo,
+    componentContext: ComponentContext,
+    onTitleUpdate: (String) -> Unit,
+    onIconUpdate: (ImageVector) -> Unit,
+    onTabIconUpdate: (TabIcon) -> Unit,
+    onOpenInNewTab: (String) -> Unit,
+    onNavigationUpdate: ((String, String) -> Unit)? = null
+): FluckTabComponent
+
+open class FluckTabComponent(
     override val config: TabInfo,
     private val componentContext: ComponentContext,
     private val onTitleUpdate: (String) -> Unit,
@@ -123,7 +134,7 @@ class FluckTabComponent(
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     // Store the URL to load
-    private val initialUrl = if (config is FluckTabInfo) config.url else "https://www.risalabs.ai"
+    private val initialUrl = (config as? FluckTabInfo)?.url ?: "https://www.risalabs.ai"
     
     // Create browser instance with error handling
     private var browserError: Throwable? = null
@@ -146,6 +157,12 @@ class FluckTabComponent(
     }
     
     private var isDisposed = false
+    
+    // Method to be overridden by platform-specific classes
+    open fun reload() {
+        // Default implementation does nothing
+        // Platform-specific implementations will override this
+    }
 
     override val tabTypeInfo = Fluck
 
@@ -176,9 +193,9 @@ class FluckTabComponent(
                             // Handle back/forward navigation
                             if (config is FluckTabInfo) {
                                 if (isBack) {
-                                    config.navigateBack()
+                                    (config as? FluckTabInfo)?.navigateBack()
                                 } else {
-                                    config.navigateForward()
+                                    (config as? FluckTabInfo)?.navigateForward()
                                 }
                             }
                         }
@@ -280,7 +297,7 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
     // Find the parent component
     val parentComponent = ctx as? ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
     
-    FluckTabComponent(
+    createFluckTabComponent(
         config = tabInfo, 
         componentContext = ctx,
         onTitleUpdate = { newTitle ->
