@@ -124,10 +124,7 @@ fun BossTabsComponent.BossMainTabBar(
                         onClick = { selectTab(index) },
                         onClose = { 
                             removeTab(index)
-                            // Always check for empty splits after removing a tab
-                            if (splitViewState != null) {
-                                splitViewState.checkAndCloseEmptyPanels()
-                            }
+                            // Tab removal is handled, cleanup will happen via LaunchedEffect
                         }
                     )
                 }

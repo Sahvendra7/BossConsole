@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
+import kotlinx.coroutines.delay
+import com.arkivanov.decompose.extensions.compose.subscribeAsState
 
 // Sealed class representing the split tree structure
 sealed class SplitNode {
@@ -133,9 +135,6 @@ class SplitViewState(
             newPanelNode
         )
         
-        // Set up cleanup monitoring for the new panel
-        setupPanelCleanup(newPanelId)
-        
         return newPanelId
     }
     
@@ -194,46 +193,70 @@ class SplitViewState(
     
     private fun removePanel(node: SplitNode, targetPanelId: String): SplitNode {
         return when (node) {
-            is SplitNode.Panel -> node // Can't remove a panel from itself
+            is SplitNode.Panel -> {
+                // If this is the panel to remove, return a marker that it should be removed
+                if (node.id == targetPanelId) {
+                    // Return a special marker - we'll handle this in the parent
+                    node // For now, return the node and let parent handle it
+                } else {
+                    node
+                }
+            }
             is SplitNode.VerticalSplit -> {
-                when {
-                    isPanelInNode(node.left, targetPanelId) -> {
-                        val newLeft = removePanel(node.left, targetPanelId)
-                        // If left becomes empty, return right
-                        if (shouldPromoteNode(newLeft)) node.right else SplitNode.VerticalSplit(newLeft, node.right)
+                // Check if the target panel is in left subtree
+                if (node.left is SplitNode.Panel && node.left.id == targetPanelId) {
+                    // Left panel should be removed, return right
+                    node.right
+                } else if (node.right is SplitNode.Panel && node.right.id == targetPanelId) {
+                    // Right panel should be removed, return left
+                    node.left
+                } else {
+                    // Recursively check deeper in the tree
+                    val newLeft = if (isPanelInNode(node.left, targetPanelId)) {
+                        removePanel(node.left, targetPanelId)
+                    } else {
+                        node.left
                     }
-                    isPanelInNode(node.right, targetPanelId) -> {
-                        val newRight = removePanel(node.right, targetPanelId)
-                        // If right becomes empty, return left
-                        if (shouldPromoteNode(newRight)) node.left else SplitNode.VerticalSplit(node.left, newRight)
+                    val newRight = if (isPanelInNode(node.right, targetPanelId)) {
+                        removePanel(node.right, targetPanelId)
+                    } else {
+                        node.right
                     }
-                    else -> node
+                    
+                    // If either side is now empty, promote the other side
+                    when {
+                        newLeft === node.left && newRight === node.right -> node // No change
+                        else -> SplitNode.VerticalSplit(newLeft, newRight)
+                    }
                 }
             }
             is SplitNode.HorizontalSplit -> {
-                when {
-                    isPanelInNode(node.top, targetPanelId) -> {
-                        val newTop = removePanel(node.top, targetPanelId)
-                        // If top becomes empty, return bottom
-                        if (shouldPromoteNode(newTop)) node.bottom else SplitNode.HorizontalSplit(newTop, node.bottom)
+                // Check if the target panel is in top subtree
+                if (node.top is SplitNode.Panel && node.top.id == targetPanelId) {
+                    // Top panel should be removed, return bottom
+                    node.bottom
+                } else if (node.bottom is SplitNode.Panel && node.bottom.id == targetPanelId) {
+                    // Bottom panel should be removed, return top
+                    node.top
+                } else {
+                    // Recursively check deeper in the tree
+                    val newTop = if (isPanelInNode(node.top, targetPanelId)) {
+                        removePanel(node.top, targetPanelId)
+                    } else {
+                        node.top
                     }
-                    isPanelInNode(node.bottom, targetPanelId) -> {
-                        val newBottom = removePanel(node.bottom, targetPanelId)
-                        // If bottom becomes empty, return top
-                        if (shouldPromoteNode(newBottom)) node.top else SplitNode.HorizontalSplit(node.top, newBottom)
+                    val newBottom = if (isPanelInNode(node.bottom, targetPanelId)) {
+                        removePanel(node.bottom, targetPanelId)
+                    } else {
+                        node.bottom
                     }
-                    else -> node
+                    
+                    // If either side is now empty, promote the other side
+                    when {
+                        newTop === node.top && newBottom === node.bottom -> node // No change
+                        else -> SplitNode.HorizontalSplit(newTop, newBottom)
+                    }
                 }
-            }
-        }
-    }
-    
-    private fun shouldPromoteNode(node: SplitNode): Boolean {
-        return when (node) {
-            is SplitNode.Panel -> false // Single panels are never promoted
-            is SplitNode.VerticalSplit, is SplitNode.HorizontalSplit -> {
-                // Check if this split has been collapsed
-                getAllPanelsInNode(node).isEmpty()
             }
         }
     }
@@ -285,13 +308,26 @@ class SplitViewState(
         }
     }
     
-    private fun setupPanelCleanup(panelId: String) {
-        // This will be called from the composable to monitor tab changes
-    }
-    
     fun checkAndCloseEmptyPanels() {
-        getAllPanels().forEach { panel ->
-            if (panel.tabsComponent.tabsState.value.tabs.isEmpty() && panel.id != "main") {
+        // First, count how many panels we have in total
+        val allPanels = getAllPanels()
+        
+        // If we only have one panel, don't close it regardless of tabs
+        if (allPanels.size <= 1) return
+        
+        // Find all empty panels
+        val emptyPanels = allPanels.filter { panel ->
+            panel.tabsComponent.tabsState.value.tabs.isEmpty()
+        }
+        
+        // If all panels are empty, keep the main one
+        if (emptyPanels.size == allPanels.size) {
+            emptyPanels.filter { it.id != "main" }.forEach { panel ->
+                closePanel(panel.id)
+            }
+        } else {
+            // Close all empty panels
+            emptyPanels.forEach { panel ->
                 closePanel(panel.id)
             }
         }
@@ -311,15 +347,6 @@ fun SplitViewPanel(
     splitViewState: SplitViewState,
     modifier: Modifier = Modifier
 ) {
-    // Monitor for empty panels
-    LaunchedEffect(splitViewState) {
-        snapshotFlow { 
-            splitViewState.getAllPanels().map { it.tabsComponent.tabsState.value.tabs.size }
-        }.collect {
-            splitViewState.checkAndCloseEmptyPanels()
-        }
-    }
-    
     Box(modifier = modifier.fillMaxSize()) {
         RenderSplitNode(
             node = splitViewState.rootNode,
@@ -338,6 +365,16 @@ private fun RenderSplitNode(
             // Set this panel as active when clicked
             LaunchedEffect(node.id) {
                 splitViewState.setActivePanel(node.id)
+            }
+            
+            // Monitor this specific panel's tab count
+            val tabsState = node.tabsComponent.tabsState.subscribeAsState()
+            LaunchedEffect(node.id, tabsState.value.tabs.size) {
+                if (tabsState.value.tabs.isEmpty()) {
+                    // Small delay to ensure state is fully updated
+                    delay(50)
+                    splitViewState.checkAndCloseEmptyPanels()
+                }
             }
             
             node.tabsComponent.BossMainPanel(
