@@ -37,11 +37,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.rotate
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
+import kotlinx.coroutines.delay
 
 // Simple implementation of TabInfo
 data class SimpleTabInfo(
@@ -249,11 +261,197 @@ fun BossTabsComponent.BossMainPanelContent(modifier: Modifier) {
 
 @Composable
 private fun EmptyContent() {
+    var selectedTip by remember { mutableStateOf(0) }
+    val tips = listOf(
+        Triple(Icons.Outlined.Code, "Open a file", "Cmd+O to browse files"),
+        Triple(Icons.Outlined.Add, "New tab", "Right-click tab bar or Cmd+N"),
+        Triple(Icons.Outlined.ViewColumn, "Split view", "Right-click tab → Split Right"),
+        Triple(Icons.Outlined.Terminal, "Terminal", "Cmd+T for terminal tab"),
+        Triple(Icons.Outlined.Web, "Web browser", "Create tab with URL")
+    )
+    
+    // Animation values
+    val infiniteTransition = rememberInfiniteTransition()
+    val scale = infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    
+    val rotation = infiniteTransition.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    
     Box(
-        modifier = Modifier.fillMaxSize().background(BossDarkBackground),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BossDarkBackground),
         contentAlignment = Alignment.Center
     ) {
-        Text("No tabs open")
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // Animated BOSS logo/icon
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .scale(scale.value)
+                    .rotate(rotation.value),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Dashboard,
+                    contentDescription = "BOSS",
+                    tint = Color(0xFF4A9EFF),
+                    modifier = Modifier.size(80.dp)
+                )
+            }
+            
+            // Welcome text
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Welcome to BOSS",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Text(
+                    text = "Your powerful development environment",
+                    color = BossDarkTextSecondary,
+                    fontSize = 16.sp
+                )
+            }
+            
+            // Quick tips carousel
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Quick Tips",
+                    color = Color(0xFF4A9EFF),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                // Tip cards
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    tips.forEachIndexed { index, (icon, title, description) ->
+                        Card(
+                            icon = icon,
+                            title = title,
+                            description = description,
+                            isSelected = index == selectedTip,
+                            onClick = { selectedTip = index },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+            
+            // Fun message
+            val messages = listOf(
+                "Ready to build something amazing? 🚀",
+                "Code is poetry in motion 💫",
+                "Let's turn ideas into reality ✨",
+                "Your next breakthrough awaits 🌟",
+                "Time to create magic 🎨"
+            )
+            
+            var messageIndex by remember { mutableStateOf((0..messages.lastIndex).random()) }
+            
+            LaunchedEffect(Unit) {
+                while (true) {
+                    delay(5000)
+                    messageIndex = (0..messages.lastIndex).random()
+                }
+            }
+            
+            Text(
+                text = messages[messageIndex],
+                color = BossDarkTextSecondary.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun Card(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val animatedAlpha by animateFloatAsState(
+        targetValue = if (isSelected) 1f else 0.6f,
+        animationSpec = tween(300)
+    )
+    
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f)
+    )
+    
+    Column(
+        modifier = modifier
+            .scale(animatedScale)
+            .alpha(animatedAlpha)
+            .background(
+                color = if (isSelected) Color(0xFF2A2D30) else Color(0xFF1E1F22),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            )
+            .clickable { onClick() }
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = if (isSelected) Color(0xFF4A9EFF) else BossDarkTextSecondary,
+            modifier = Modifier.size(32.dp)
+        )
+        
+        Text(
+            text = title,
+            color = if (isSelected) Color.White else BossDarkTextSecondary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
+        )
+        
+        AnimatedVisibility(
+            visible = isSelected,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Text(
+                text = description,
+                color = BossDarkTextSecondary,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
     }
 }
 
