@@ -167,25 +167,19 @@ fun ComponentContext.BossApp() {
                                 true
                             }
                             event.isMetaPressed && event.key == Key.O -> {
-                                // Open CodeBase panel (left.top)
+                                // Open CodeBase panel (left.top.top)
                                 // Find the CodeBase item in the sidebar
-                                val codebaseItems = getItemsForSlot(left.top)
+                                val codebaseItems = getItemsForSlot(left.top.top)
                                 val codebaseItem = codebaseItems.firstOrNull { 
                                     it.pluginContentId == CodeBaseInfo.id 
                                 }
                                 if (codebaseItem != null) {
-                                    // Toggle the panel visibility
-                                    val currentVisibility = isVisible(left.top)
-                                    setPanelVisible(left.top, !currentVisibility)
-                                    // If showing the panel, ensure CodeBase is selected
-                                    if (!currentVisibility) {
-                                        getPanelContentId(left.top)?.let { currentId ->
-                                            if (currentId != CodeBaseInfo.id) {
-                                                // Switch to CodeBase
-                                                codebaseItem.onClick?.invoke()
-                                            }
-                                        }
+                                    // Make left.top visible first
+                                    if (!isVisible(left.top)) {
+                                        setPanelVisible(left.top, true)
                                     }
+                                    // Then invoke the onClick to select CodeBase
+                                    codebaseItem.onClick?.invoke()
                                 }
                                 true
                             }
