@@ -108,29 +108,57 @@ fun ComponentContext.BossApp() {
             .launchIn(this)
     }
 
-    // Add default tabs
-    DisposableEffect(tabsComponent) {
-        // Create default web tabs
-        val defaultUrls = listOf(
-            "https://www.risalabs.ai",
-            "https://secure15.oncoemr.com/",
-            "https://pa-dashboard-dev.web.app/"
+    // Add default tabs and create split layout
+    DisposableEffect(splitViewState, tabsComponent) {
+        // Create default tabs
+        val risaTab = FluckTabInfo(
+            id = "browser-${Random.nextLong()}",
+            typeId = TabTypeId("fluck"),
+            _title = "RISA Labs",
+            url = "https://www.risalabs.ai"
+        )
+        val oncoTab = FluckTabInfo(
+            id = "browser-${Random.nextLong()}",
+            typeId = TabTypeId("fluck"),
+            _title = "OncoEMR",
+            url = "https://secure15.oncoemr.com/"
+        )
+        val dashboardTab = FluckTabInfo(
+            id = "browser-${Random.nextLong()}",
+            typeId = TabTypeId("fluck"),
+            _title = "PA Dashboard",
+            url = "https://pa-dashboard-dev.web.app/"
+        )
+        val terminalTab = TerminalTabInfo(
+            id = "terminal-${Random.nextLong()}",
+            typeId = TerminalTab.typeId,
+            title = "Terminal"
         )
         
-        defaultUrls.forEach { url ->
-            val tab = FluckTabInfo(
-                id = "browser-${Random.nextLong()}",
-                typeId = TabTypeId("fluck"),
-                _title = "Loading...",
-                url = url
-            )
-            tabsComponent.addTab(tab)
-        }
+        // Add first tab to main panel (which is the initial tabsComponent)
+        tabsComponent.addTab(risaTab)
+        tabsComponent.selectTab(0)
         
-        // Select the first tab
-        if (tabsComponent.tabsState.value.tabs.isNotEmpty()) {
-            tabsComponent.selectTab(0)
-        }
+        // Create vertical split (left/right) with OncoEMR
+        val rightPanelId = splitViewState.splitPanel(
+            panelId = "main",
+            orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+            tabToMove = oncoTab
+        )
+        
+        // Split the left panel horizontally (top/bottom) with PA Dashboard
+        splitViewState.splitPanel(
+            panelId = "main",
+            orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+            tabToMove = dashboardTab
+        )
+        
+        // Split the right panel horizontally (top/bottom) with Terminal
+        splitViewState.splitPanel(
+            panelId = rightPanelId,
+            orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+            tabToMove = terminalTab
+        )
         
         onDispose { /* cleanup */ }
     }
