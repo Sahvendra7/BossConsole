@@ -30,6 +30,8 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.ViewColumn
+import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
@@ -72,7 +74,10 @@ fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-fun BossTabsComponent.BossMainTabBar() {
+fun BossTabsComponent.BossMainTabBar(
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
+    currentPanelId: String? = null
+) {
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
 
@@ -81,11 +86,30 @@ fun BossTabsComponent.BossMainTabBar() {
         backgroundColor = BossDarkBackground,
         modifier = Modifier
             .contextMenu(
-                items = listOf(
-                    ContextMenuItem("New Tab", Icons.Default.Add) {
+                items = buildList {
+                    add(ContextMenuItem("New Tab", Icons.Default.Add) {
                         showNewTabDialog = true
+                    })
+                    if (splitViewState != null && currentPanelId != null && tabsState.value.tabs.isNotEmpty()) {
+                        add(ContextMenuItem(isDivider = true))
+                        add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
+                            val activeTab = tabsState.value.activeTab
+                            splitViewState.splitPanel(
+                                panelId = currentPanelId,
+                                orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                                tabToMove = activeTab
+                            )
+                        })
+                        add(ContextMenuItem("Split Down", Icons.Outlined.Splitscreen) {
+                            val activeTab = tabsState.value.activeTab
+                            splitViewState.splitPanel(
+                                panelId = currentPanelId,
+                                orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+                                tabToMove = activeTab
+                            )
+                        })
                     }
-                )
+                }
             )
     ) {
         HorizontalBarRow {
@@ -98,7 +122,13 @@ fun BossTabsComponent.BossMainTabBar() {
                         tabIcon = config.tabIcon,
                         isSelected = isSelected,
                         onClick = { selectTab(index) },
-                        onClose = { removeTab(index) }
+                        onClose = { 
+                            removeTab(index)
+                            // Always check for empty splits after removing a tab
+                            if (splitViewState != null) {
+                                splitViewState.checkAndCloseEmptyPanels()
+                            }
+                        }
                     )
                 }
                 
@@ -181,9 +211,23 @@ fun BossTabsComponent.BossMainTabBar() {
 }
 
 @Composable
-fun BossTabsComponent.BossMainPanel(modifier: Modifier = Modifier) {
+fun BossTabsComponent.BossMainPanel(
+    modifier: Modifier = Modifier,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
+    currentPanelId: String? = null
+) {
+    // Set this panel as active when it gains focus
+    LaunchedEffect(currentPanelId) {
+        if (currentPanelId != null) {
+            splitViewState?.setActivePanel(currentPanelId)
+        }
+    }
+    
     Column(modifier = modifier.fillMaxSize()) {
-        BossMainTabBar()
+        BossMainTabBar(
+            splitViewState = splitViewState,
+            currentPanelId = currentPanelId
+        )
         Divider(color = BossDarkBorder)
         BossMainPanelContent(modifier = Modifier.weight(1f).fillMaxWidth())
     }
@@ -260,6 +304,9 @@ class BossTabsComponent(
         }
         tabsNavigation.removeTab(index)
     }
+    
+    // Get tab count
+    fun getTabCount(): Int = tabsState.value.tabs.size
 
     // Select a tab
     fun selectTab(index: Int) {

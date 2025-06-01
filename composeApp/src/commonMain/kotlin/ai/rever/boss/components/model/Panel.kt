@@ -22,6 +22,14 @@ open class Panel() {
         val right = RIGHT()
         val bottom = BOTTOM()
 
+        val Panel.child: Panel? get() = when(this) {
+            is TOP -> child
+            is LEFT -> child
+            is RIGHT -> child
+            is BOTTOM -> child
+            else -> null
+        }
+
         val Panel.root: Panel get() = when (this) {
             is TOP -> Panel.top
             is LEFT -> Panel.left

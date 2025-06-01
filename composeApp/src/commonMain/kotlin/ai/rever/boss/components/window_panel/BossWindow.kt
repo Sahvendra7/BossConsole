@@ -5,10 +5,9 @@ import ai.rever.boss.components.model.Panel
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.registery.PanelComponentStore
+import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
-import ai.rever.boss.components.window_panel.components.main_window_panels.BossMainPanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.components.side_panel.SidePanel
 import androidx.compose.foundation.layout.BoxScope
@@ -19,8 +18,14 @@ import androidx.compose.ui.Modifier
 fun BossDraggableComponent.BossWindow(
     modifier: Modifier = Modifier,
     tabsComponent: BossTabsComponent,
-    panelComponentStore: PanelComponentStore
+    panelComponentStore: PanelComponentStore,
+    splitViewState: SplitViewState? = null
 ) {
+    // State for split panels - use provided or create new
+    val actualSplitViewState = splitViewState ?: rememberSplitViewState(
+        tabRegistry = tabsComponent.tabRegistry,
+        initialTabsComponent = tabsComponent
+    )
 
     @Composable
     fun WithPanel(panel: Panel,
@@ -35,7 +40,7 @@ fun BossDraggableComponent.BossWindow(
             isPanelVisible = isPanelVisible,
             isMainVisible = isMainVisible,
             isRelative = isRelative,
-            panelContent = panelContent,
+            sideContent = panelContent,
             mainContent = mainContent
         )
     }
@@ -43,11 +48,17 @@ fun BossDraggableComponent.BossWindow(
     @Composable
     fun WithNestedPanel(panel: Panel,
                         secondaryPanel: Panel = bottom,
-                        isFirstPanelVisible: Boolean = isVisible(panel.bottom),
-                        isLastPanelVisible: Boolean = isVisible(panel.top),
+                        isFirstPanelVisible: Boolean = isVisible(if (panel is Panel.LEFT) panel.bottom else panel.left.bottom),
+                        isLastPanelVisible: Boolean = isVisible(if (panel is Panel.LEFT) panel.top else panel.left.top),
                         isNestedRelative: Boolean = true,
-                        firstPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.bottom, panelComponentStore) },
-                        lastPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.top, panelComponentStore) },
+                        firstPanel: @Composable BoxScope.() -> Unit = { 
+                            val p = if (panel is Panel.LEFT) panel.bottom else panel.left.bottom
+                            SidePanel(p, panelComponentStore) 
+                        },
+                        lastPanel: @Composable BoxScope.() -> Unit = { 
+                            val p = if (panel is Panel.LEFT) panel.top else panel.left.top
+                            SidePanel(p, panelComponentStore) 
+                        },
                         mainContent: @Composable BoxScope.() -> Unit) {
         WithPanel(panel,
             panelContent = {
@@ -64,9 +75,10 @@ fun BossDraggableComponent.BossWindow(
     WithPanel(bottom) {
         WithNestedPanel(left) {
             WithNestedPanel(right) {
-                with (tabsComponent) {
-                    BossMainPanel()
-                }
+                // Use the new split view panel
+                SplitViewPanel(
+                    splitViewState = actualSplitViewState
+                )
             }
         }
     }

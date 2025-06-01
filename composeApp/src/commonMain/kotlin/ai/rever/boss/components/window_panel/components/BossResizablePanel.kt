@@ -38,11 +38,11 @@ fun BossResizablePanel(modifier: Modifier,
                        isMainVisible: Boolean = true,
                        isRelative: Boolean = false,
                        defaultWeight: Float = 1f,
-                       panelContent: (@Composable BoxScope.() -> Unit)? = null,
+                       sideContent: (@Composable BoxScope.() -> Unit)? = null,
                        mainContent: (@Composable BoxScope.() -> Unit)? = null) {
 
     val defaultPanelSize = run { if (panel.isHorizontal) 250.dp else 200.dp }
-    val minPanelSize = run { if (panel.isHorizontal) 150.dp else 100.dp }
+    val minPanelSize = 0.dp // No minimum size restriction
     val resizeAreaSize = 16.dp
     val dividerHeight = 1.dp
 
@@ -145,7 +145,7 @@ fun BossResizablePanel(modifier: Modifier,
 
         @Composable
         fun Body(modifier: Modifier) {
-            panelContent?.let {
+            sideContent?.let {
                 if (panel.isFirst && isPanelVisible) {
                     Box(modifier = Modifier.fillSize()) {
                         it()
@@ -160,7 +160,7 @@ fun BossResizablePanel(modifier: Modifier,
                     }
                 }
             }
-            panelContent?.let {
+            sideContent?.let {
                 if (panel.isLast && isPanelVisible) {
                     PanelDivider()
                     Box(modifier = Modifier.fillSize()) {

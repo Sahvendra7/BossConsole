@@ -21,12 +21,11 @@ import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.components.window_panel.rememberSplitViewState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -57,6 +56,12 @@ fun ComponentContext.BossApp() {
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
     val tabsComponent = remember { BossTabsComponent(this, tabRegistry) }
     
+    // Create split view state that manages all tab panels
+    val splitViewState = rememberSplitViewState(
+        tabRegistry = tabRegistry,
+        initialTabsComponent = tabsComponent
+    )
+    
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
 
@@ -67,35 +72,11 @@ fun ComponentContext.BossApp() {
         onDispose {  }
     }
     
-    // Listen for file open events
-    LaunchedEffect(tabsComponent) {
+    // Listen for file open events - now handled by split state
+    LaunchedEffect(splitViewState) {
         FileEventBus.fileOpenEvents
             .onEach { event ->
-                // Check if file is already open
-                val existingTab = tabsComponent.tabsState.value.tabs.find { tab ->
-                    tab is EditorTabInfo && tab.filePath == event.filePath
-                }
-                
-                if (existingTab == null) {
-                    // Create new editor tab
-                    val editorTab = EditorTabInfo(
-                        id = "editor-${kotlin.random.Random.nextLong()}",
-                        typeId = TabTypeId("editor"),
-                        title = event.fileName,
-                        icon = Icons.Outlined.Code,
-                        filePath = event.filePath
-                    )
-                    val index = tabsComponent.addTab(editorTab)
-                    if (index >= 0) {
-                        tabsComponent.selectTab(index)
-                    }
-                } else {
-                    // Select existing tab
-                    val index = tabsComponent.tabsState.value.tabs.indexOf(existingTab)
-                    if (index >= 0) {
-                        tabsComponent.selectTab(index)
-                    }
-                }
+                splitViewState.openFileInActivePanel(event.filePath, event.fileName)
             }
             .launchIn(this)
     }
@@ -137,7 +118,7 @@ fun ComponentContext.BossApp() {
         
         defaultUrls.forEach { url ->
             val tab = FluckTabInfo(
-                id = "browser-${kotlin.random.Random.nextLong()}",
+                id = "browser-${Random.nextLong()}",
                 typeId = TabTypeId("fluck"),
                 _title = "Loading...",
                 url = url
@@ -167,9 +148,9 @@ fun ComponentContext.BossApp() {
                             }
                             event.isMetaPressed && event.key == Key.T -> {
                                 // Open terminal tab
-                                val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
-                                    id = "terminal-${kotlin.random.Random.nextLong()}",
-                                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                                val terminalTab = TerminalTabInfo(
+                                    id = "terminal-${Random.nextLong()}",
+                                    typeId = TerminalTab.typeId,
                                     title = "Terminal"
                                 )
                                 tabsComponent.addTab(terminalTab)
@@ -200,7 +181,8 @@ fun ComponentContext.BossApp() {
                         BossWindow(
                             modifier = Modifier.weight(1f),
                             tabsComponent = tabsComponent,
-                            panelComponentStore = panelComponentStore
+                            panelComponentStore = panelComponentStore,
+                            splitViewState = splitViewState
                         )
                         BossRightSideBar()
                     }
@@ -218,7 +200,7 @@ fun ComponentContext.BossApp() {
                         when (type) {
                             TabType.URL -> {
                                 val tab = FluckTabInfo(
-                                    id = "browser-${kotlin.random.Random.nextLong()}",
+                                    id = "browser-${Random.nextLong()}",
                                     typeId = TabTypeId("fluck"),
                                     _title = "Loading...",
                                     url = path

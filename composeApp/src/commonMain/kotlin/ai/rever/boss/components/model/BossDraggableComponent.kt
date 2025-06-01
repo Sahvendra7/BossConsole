@@ -76,11 +76,6 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
             panelsData[it.key] = panelsData[it.key]
                 ?.copy(sidebarItem = it.value.firstOrNull())
                 ?: PanelData(visibility = false)
-
-            // make left.top.top clicked by default
-//            when (it.key) {
-//                left.top.top -> it.value.firstOrNull()?.onClick()
-//            }
         }
     }
 
@@ -238,8 +233,6 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
             panelsData[panel] = it.copy(visibility = isVisible)
         }
     }
-
-//    fun getPanelTitle(panel: Panel) = panelsData[panel]?.sidebarItem?.label ?: ""
 
     fun isSelected(item: SidebarItem): Boolean {
         return panelsData.values.any { (it.sidebarItem?.id == item.id) && it.visibility }
