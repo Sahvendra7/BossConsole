@@ -27,10 +27,17 @@ import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.components.configuration.ConfigurationButton
+import ai.rever.boss.components.configuration.ConfigurationManager
+import ai.rever.boss.components.configuration.LayoutConfiguration
 
 
 @Composable
-fun BossDraggableComponent.BossTopBar() {
+fun BossDraggableComponent.BossTopBar(
+    configurationManager: ConfigurationManager? = null,
+    onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
+    getCurrentConfiguration: (() -> LayoutConfiguration)? = null
+) {
 
     val items = listOf(
         ContextMenuItem(
@@ -49,7 +56,7 @@ fun BossDraggableComponent.BossTopBar() {
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar()
+            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration)
             Spacer(modifier = Modifier.weight(1f))
             BossTopRunBar()
             Spacer(modifier = Modifier.weight(0.1f))
@@ -137,7 +144,11 @@ val gitContextMenuItems get() = listOf(
 )
 
 @Composable
-fun BossDraggableComponent.BossTopLeftBar() {
+fun BossDraggableComponent.BossTopLeftBar(
+    configurationManager: ConfigurationManager? = null,
+    onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
+    getCurrentConfiguration: (() -> LayoutConfiguration)? = null
+) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
     
@@ -154,6 +165,15 @@ fun BossDraggableComponent.BossTopLeftBar() {
         contextMenuItems = gitContextMenuItems,
         hintText = "Current Git Branch: main"
     )
+    
+    // Configuration button
+    if (configurationManager != null && onApplyConfiguration != null) {
+        ConfigurationButton(
+            onOpenConfiguration = onApplyConfiguration,
+            configurationManager = configurationManager,
+            getCurrentConfiguration = getCurrentConfiguration
+        )
+    }
     
     // Directory picker for native file selection
     val directoryPicker = rememberDirectoryPicker { path ->

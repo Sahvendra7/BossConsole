@@ -1,6 +1,7 @@
 package ai.rever.boss
 
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
+import ai.rever.boss.components.configuration.ConfigurationFileManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +13,9 @@ import com.arkivanov.decompose.defaultComponentContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize ConfigurationFileManager with application context
+        ConfigurationFileManager.init(this)
 
         setContent {
             with((defaultComponentContext())) {

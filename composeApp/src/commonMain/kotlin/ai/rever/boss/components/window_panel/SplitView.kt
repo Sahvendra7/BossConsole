@@ -332,6 +332,20 @@ class SplitViewState(
             }
         }
     }
+    
+    fun clearAllPanels() {
+        // Reset to single main panel
+        val mainComponent = BossTabsComponent(createBossAppContext, tabRegistry)
+        _rootNode.value = SplitNode.Panel(
+            id = "main",
+            tabsComponent = mainComponent
+        )
+        _activePanelId.value = "main"
+    }
+    
+    fun getPanelTabsComponent(panelId: String): BossTabsComponent? {
+        return findPanel(panelId)?.tabsComponent
+    }
 }
 
 @Composable

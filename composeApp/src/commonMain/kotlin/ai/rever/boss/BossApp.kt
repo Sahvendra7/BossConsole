@@ -44,6 +44,13 @@ import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.components.configuration.ConfigurationManager
+import ai.rever.boss.components.configuration.LayoutConfiguration
+import ai.rever.boss.components.configuration.applyConfiguration
+import ai.rever.boss.components.configuration.extractCurrentConfiguration
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 
 
 @Composable
@@ -63,6 +70,10 @@ fun ComponentContext.BossApp() {
         initialTabsComponent = tabsComponent
     )
     
+    // Configuration manager
+    val configurationManager = remember { ConfigurationManager() }
+    val coroutineScope = rememberCoroutineScope()
+    
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
 
@@ -78,6 +89,47 @@ fun ComponentContext.BossApp() {
         FileEventBus.fileOpenEvents
             .onEach { event ->
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
+            }
+            .launchIn(this)
+    }
+    
+    // Monitor for layout changes to mark configuration as dirty
+    LaunchedEffect(splitViewState, configurationManager) {
+        var lastConfigurationSnapshot: LayoutConfiguration? = null
+        
+        // Monitor the entire layout structure for changes
+        snapshotFlow { 
+            // Extract current layout configuration
+            extractCurrentConfiguration(splitViewState)
+        }
+        .onEach { currentLayout ->
+            // Check if we have a loaded configuration
+            val loadedConfig = configurationManager.currentConfiguration.value
+            
+            if (loadedConfig != null) {
+                // Compare with the last known configuration state
+                if (lastConfigurationSnapshot == null) {
+                    // First snapshot after loading
+                    lastConfigurationSnapshot = currentLayout
+                } else if (currentLayout != lastConfigurationSnapshot) {
+                    // Layout has changed (splits, tabs added/removed, etc.)
+                    // Configuration is automatically saved when needed
+                    lastConfigurationSnapshot = currentLayout
+                }
+            } else {
+                // No configuration loaded, reset snapshot
+                lastConfigurationSnapshot = null
+            }
+        }
+        .launchIn(this)
+        
+        // Reset snapshot when configuration changes
+        configurationManager.currentConfiguration
+            .onEach { config ->
+                if (config != null) {
+                    // Configuration loaded, reset tracking
+                    lastConfigurationSnapshot = null
+                }
             }
             .launchIn(this)
     }
@@ -215,7 +267,7 @@ fun ComponentContext.BossApp() {
                                 // Reload current browser tab if it's a Fluck tab
                                 val activeComponent = splitViewState.getActiveTabsComponent()
                                 val activeTab = activeComponent?.tabsState?.value?.activeTab
-                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                                if (activeTab is FluckTabInfo) {
                                     // Trigger reload event for the browser
                                     val activeTabComponent = activeComponent.getActiveComponent()
                                     if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
@@ -233,7 +285,20 @@ fun ComponentContext.BossApp() {
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
                     BossTitleBar()
-                    BossTopBar()
+                    BossTopBar(
+                        configurationManager = configurationManager,
+                        onApplyConfiguration = { config ->
+                            coroutineScope.launch {
+                                // First load the configuration to reset dirty state
+                                configurationManager.loadConfiguration(config)
+                                // Then apply it to the UI
+                                applyConfiguration(config, splitViewState)
+                            }
+                        },
+                        getCurrentConfiguration = {
+                            extractCurrentConfiguration(splitViewState)
+                        }
+                    )
                     Row(modifier = Modifier.weight(1f)) {
                         // Pass the shared model down to both sidebars
                         BossLeftSideBar()

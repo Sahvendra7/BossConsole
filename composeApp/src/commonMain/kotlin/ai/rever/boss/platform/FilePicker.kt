@@ -18,3 +18,21 @@ class NoOpDirectoryPicker : DirectoryPicker {
         // No-op for platforms without file picker support
     }
 }
+
+// Platform-specific file picker for selecting files
+@Composable
+expect fun rememberFilePicker(
+    onFileSelected: (path: String?, content: String?) -> Unit,
+    fileExtensions: List<String> = listOf("json")
+): FilePicker
+
+interface FilePicker {
+    fun pickFile()
+}
+
+// For platforms that don't support native file pickers
+class NoOpFilePicker : FilePicker {
+    override fun pickFile() {
+        // No-op for platforms without file picker support
+    }
+}
