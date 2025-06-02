@@ -82,8 +82,76 @@ if [ -n "$APP_PATH" ]; then
     fi
 fi
 
-# Step 5: Sign the app
-echo -e "\n${BLUE}Step 5: Signing application${NC}"
+# Step 5: Bundle Homebrew dependencies
+echo -e "\n${BLUE}Step 5: Bundling Homebrew dependencies${NC}"
+
+if [ -n "$APP_PATH" ]; then
+    # Create libs directory in the JVM runtime
+    RUNTIME_LIB_DIR="$APP_PATH/Contents/runtime/Contents/Home/lib"
+    
+    # List of Homebrew libraries that might be needed
+    BREW_LIBS=(
+        "harfbuzz|libharfbuzz.0.dylib"
+        "freetype|libfreetype.6.dylib"
+        "glib|libglib-2.0.0.dylib"
+        "graphite2|libgraphite2.3.dylib"
+        "pcre2|libpcre2-8.0.dylib"
+        "gettext|libintl.8.dylib"
+        "brotli|libbrotlidec.1.dylib"
+        "brotli|libbrotlicommon.1.dylib"
+        "libpng|libpng16.16.dylib"
+        "bzip2|libbz2.1.0.dylib"
+    )
+    
+    # Copy each library if it exists
+    for lib_spec in "${BREW_LIBS[@]}"; do
+        pkg_name="${lib_spec%|*}"
+        lib_name="${lib_spec#*|}"
+        
+        # Try both common Homebrew locations
+        for brew_prefix in "/opt/homebrew" "/usr/local"; do
+            lib_path="$brew_prefix/opt/$pkg_name/lib/$lib_name"
+            if [ -f "$lib_path" ]; then
+                echo "  Copying $lib_name..."
+                cp "$lib_path" "$RUNTIME_LIB_DIR/" 2>/dev/null || true
+                
+                # Fix the library ID and dependencies
+                chmod +w "$RUNTIME_LIB_DIR/$lib_name" 2>/dev/null || true
+                
+                # Update the library's own ID
+                install_name_tool -id "@loader_path/$lib_name" "$RUNTIME_LIB_DIR/$lib_name" 2>/dev/null || true
+                
+                # Update dependencies to use @loader_path
+                otool -L "$RUNTIME_LIB_DIR/$lib_name" | grep -E "(opt/homebrew|usr/local)" | awk '{print $1}' | while read dep; do
+                    dep_name=$(basename "$dep")
+                    install_name_tool -change "$dep" "@loader_path/$dep_name" "$RUNTIME_LIB_DIR/$lib_name" 2>/dev/null || true
+                done
+                
+                break
+            fi
+        done
+    done
+    
+    # Fix libfontmanager.dylib to use bundled libraries
+    if [ -f "$RUNTIME_LIB_DIR/libfontmanager.dylib" ]; then
+        echo "  Fixing libfontmanager.dylib dependencies..."
+        
+        # Update harfbuzz dependency
+        install_name_tool -change "/opt/homebrew/opt/harfbuzz/lib/libharfbuzz.0.dylib" \
+            "@loader_path/libharfbuzz.0.dylib" \
+            "$RUNTIME_LIB_DIR/libfontmanager.dylib" 2>/dev/null || true
+            
+        # Update freetype dependency if it exists
+        install_name_tool -change "/opt/homebrew/opt/freetype/lib/libfreetype.6.dylib" \
+            "@loader_path/libfreetype.6.dylib" \
+            "$RUNTIME_LIB_DIR/libfontmanager.dylib" 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}✓ Dependencies bundled${NC}"
+fi
+
+# Step 6: Sign the app
+echo -e "\n${BLUE}Step 6: Signing application${NC}"
 
 # Sign all components
 find "$APP_PATH" -type f \( -name "*.dylib" -o -name "*.jnilib" -o -perm +111 \) | while read -r file; do
@@ -99,8 +167,8 @@ codesign --force --deep --options runtime \
 
 echo -e "${GREEN}✓ Application signed${NC}"
 
-# Step 6: Create custom DMG
-echo -e "\n${BLUE}Step 6: Creating custom DMG${NC}"
+# Step 7: Create custom DMG
+echo -e "\n${BLUE}Step 7: Creating custom DMG${NC}"
 
 DMG_DIR="/tmp/boss-dmg-$$"
 mkdir -p "$DMG_DIR"
@@ -110,7 +178,7 @@ cp -R "$APP_PATH" "$DMG_DIR/"
 ln -s /Applications "$DMG_DIR/Applications"
 
 # Create DMG
-DMG_NAME="BOSS-1.0.0.dmg"
+DMG_NAME="BOSS-1.0.3.dmg"
 rm -f "$DMG_NAME"
 
 hdiutil create -volname "BOSS" \
@@ -120,8 +188,8 @@ hdiutil create -volname "BOSS" \
 
 rm -rf "$DMG_DIR"
 
-# Step 7: Configure DMG window
-echo -e "\n${BLUE}Step 7: Configuring DMG window${NC}"
+# Step 8: Configure DMG window
+echo -e "\n${BLUE}Step 8: Configuring DMG window${NC}"
 
 # Create a temporary mount point
 MOUNT_POINT="/tmp/boss-mount-$$"
@@ -156,12 +224,12 @@ EOF
 hdiutil detach "$MOUNT_POINT"
 rmdir "$MOUNT_POINT"
 
-# Step 8: Sign DMG
-echo -e "\n${BLUE}Step 8: Signing DMG${NC}"
+# Step 9: Sign DMG
+echo -e "\n${BLUE}Step 9: Signing DMG${NC}"
 codesign --force --sign "$DEVELOPER_ID" "$DMG_NAME"
 
-# Step 9: Notarize
-echo -e "\n${BLUE}Step 9: Notarizing${NC}"
+# Step 10: Notarize
+echo -e "\n${BLUE}Step 10: Notarizing${NC}"
 xcrun notarytool submit "$DMG_NAME" \
     --apple-id "$APPLE_ID" \
     --password "$APP_PASSWORD" \
@@ -173,19 +241,20 @@ if [ $? -eq 0 ]; then
     xcrun stapler staple "$DMG_NAME"
 fi
 
-# Step 10: Final distribution
-echo -e "\n${BLUE}Step 10: Creating final distribution${NC}"
+# Step 11: Final distribution
+echo -e "\n${BLUE}Step 11: Creating final distribution${NC}"
 
 DIST_DIR="distribution-final"
 mkdir -p "$DIST_DIR"
-cp "$DMG_NAME" "$DIST_DIR/BOSS-1.0.0-Universal.dmg"
+cp "$DMG_NAME" "$DIST_DIR/BOSS-1.0.3-Universal.dmg"
 
 echo -e "\n${GREEN}========================================"
 echo -e "✨ Final Distribution Complete!"
 echo -e "========================================${NC}"
-echo -e "Location: ${BLUE}$DIST_DIR/BOSS-1.0.0-Universal.dmg${NC}"
+echo -e "Location: ${BLUE}$DIST_DIR/BOSS-1.0.3-Universal.dmg${NC}"
 echo -e "\nThis DMG includes:"
 echo -e "- Fixed PTY4J native libraries for Terminal"
+echo -e "- Bundled Homebrew dependencies (harfbuzz, freetype, etc.)"
 echo -e "- Proper DMG window layout"
 echo -e "- Full notarization"
 echo -e "\n${GREEN}Ready for distribution!${NC}"
