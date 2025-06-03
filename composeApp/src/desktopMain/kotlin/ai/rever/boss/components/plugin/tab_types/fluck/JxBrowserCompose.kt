@@ -71,6 +71,34 @@ private fun getDomainIcon(url: String): ImageVector {
     }
 }
 
+// Helper function to process URL input - either as URL or search query
+private fun processUrlInput(input: String): String {
+    val trimmed = input.trim()
+    
+    // If it's already a full URL, return as-is
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed
+    }
+    
+    // Check if it looks like a URL (contains dots and no spaces)
+    val looksLikeUrl = trimmed.contains(".") && !trimmed.contains(" ")
+    
+    // Check for common URL patterns
+    val urlPattern = Regex("""^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$""")
+    val isLikelyUrl = looksLikeUrl || urlPattern.matches(trimmed)
+    
+    // Check for localhost patterns
+    val isLocalhost = trimmed.startsWith("localhost") || 
+                     trimmed.matches(Regex("""^127\.0\.0\.1(:\d+)?(/.*)?$""")) ||
+                     trimmed.matches(Regex("""^localhost(:\d+)?(/.*)?$"""))
+    
+    return when {
+        isLocalhost -> "http://$trimmed"
+        isLikelyUrl -> "https://$trimmed"
+        else -> "https://www.google.com/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
+    }
+}
+
 // Helper function to intelligently truncate long titles
 private fun truncateTitle(title: String, url: String): String {
     // Special case for RISA Labs - always show full name
@@ -613,10 +641,8 @@ fun JxBrowserCompose(
                             .height(28.dp)
                             .onPreviewKeyEvent { keyEvent ->
                                 if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
-                                    var url = urlInput.text
-                                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                                        url = "https://$url"
-                                    }
+                                    val input = urlInput.text.trim()
+                                    val url = processUrlInput(input)
                                     if (!browser.isClosed) browser.navigation().loadUrl(url)
                                     true
                                 } else {
@@ -654,10 +680,8 @@ fun JxBrowserCompose(
                                 }
                                 IconButton(
                                     onClick = {
-                                        var url = urlInput.text
-                                        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                                            url = "https://$url"
-                                        }
+                                        val input = urlInput.text.trim()
+                                        val url = processUrlInput(input)
                                         if (!browser.isClosed) browser.navigation().loadUrl(url)
                                     },
                                     modifier = Modifier.size(20.dp)
