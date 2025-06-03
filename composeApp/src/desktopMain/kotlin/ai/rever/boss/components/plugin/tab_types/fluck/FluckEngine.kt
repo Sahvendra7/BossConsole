@@ -23,14 +23,17 @@ object FluckEngine {
                 // Get user's home directory dynamically
                 val userHome = System.getProperty("user.home")
                 val chromiumDir = Paths.get(userHome, ".boss", "jxbrowser-chromium")
+                val userDataDir = Paths.get(userHome, ".boss", "browser-profile")
                 
-                // Create chromium directory if it doesn't exist
+                // Create directories if they don't exist
                 chromiumDir.toFile().mkdirs()
+                userDataDir.toFile().mkdirs()
                 
                 val newEngine = Engine.newInstance(
                     EngineOptions.newBuilder(JxBrowserConfig.renderingMode)
                         .licenseKey(JxBrowserConfig.licenseKey)
                         .chromiumDir(chromiumDir)
+                        .userDataDir(userDataDir)
                         .build()
                 )
                 _engine = newEngine
