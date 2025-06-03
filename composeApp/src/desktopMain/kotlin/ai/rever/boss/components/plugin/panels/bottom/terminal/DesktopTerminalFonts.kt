@@ -21,8 +21,6 @@ actual fun rememberTerminalFontFamily(): FontFamily {
         Font(Res.font.meslolgs_nf_bold_italic, FontWeight.Bold, FontStyle.Italic)
     )
     
-    println("✅ MesloLGS NF font loaded from resources")
-    
     // Always use bundled fonts as primary to ensure consistent glyph support
     // The bundled MesloLGS NF has full powerline and nerd font symbol support
     return FontFamily(mesloLGSFonts)
