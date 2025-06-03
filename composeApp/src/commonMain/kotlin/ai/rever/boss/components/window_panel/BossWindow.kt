@@ -48,17 +48,11 @@ fun BossDraggableComponent.BossWindow(
     @Composable
     fun WithNestedPanel(panel: Panel,
                         secondaryPanel: Panel = bottom,
-                        isFirstPanelVisible: Boolean = isVisible(if (panel is Panel.LEFT) panel.bottom else panel.left.bottom),
-                        isLastPanelVisible: Boolean = isVisible(if (panel is Panel.LEFT) panel.top else panel.left.top),
+                        isFirstPanelVisible: Boolean = isVisible(panel.bottom),
+                        isLastPanelVisible: Boolean = isVisible(panel.top),
                         isNestedRelative: Boolean = true,
-                        firstPanel: @Composable BoxScope.() -> Unit = { 
-                            val p = if (panel is Panel.LEFT) panel.bottom else panel.left.bottom
-                            SidePanel(p, panelComponentStore) 
-                        },
-                        lastPanel: @Composable BoxScope.() -> Unit = { 
-                            val p = if (panel is Panel.LEFT) panel.top else panel.left.top
-                            SidePanel(p, panelComponentStore) 
-                        },
+                        firstPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.bottom, panelComponentStore) },
+                        lastPanel: @Composable BoxScope.() -> Unit = { SidePanel(panel.top, panelComponentStore) },
                         mainContent: @Composable BoxScope.() -> Unit) {
         WithPanel(panel,
             panelContent = {

@@ -44,6 +44,10 @@ class DesktopTerminal : Terminal {
 
                 // Use full terminal support for oh-my-zsh and powerline
                 env["TERM"] = "xterm-256color"
+                // Ensure UTF-8 encoding
+                env["LANG"] = env["LANG"] ?: "en_US.UTF-8"
+                env["LC_ALL"] = env["LC_ALL"] ?: "en_US.UTF-8"
+                env["LC_CTYPE"] = "en_US.UTF-8"
                 // Ensure COLUMNS and LINES are not set - let PTY handle it
                 env.remove("COLUMNS")
                 env.remove("LINES")
@@ -89,6 +93,10 @@ class DesktopTerminal : Terminal {
                                     if (count > 0) {
                                         totalBytesRead += count
                                         val output = String(buffer, 0, count)
+                                        // Debug: Check for Nerd Font characters
+                                        if (output.contains('\uE0A0') || output.contains('\uF113') || output.contains('\uE0B0')) {
+                                            println("Nerd Font characters detected in terminal output!")
+                                        }
                                         _output.emit(output)
                                     } else if (count == -1) {
                                         // End of stream reached

@@ -1,7 +1,5 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
@@ -37,9 +35,7 @@ class FileIndexCache(
         }
         
         // Load node from file system
-        val node = withContext(Dispatchers.IO) {
-            scanDirectory(path)
-        }
+        val node = scanDirectory(path)
         
         node?.let {
             addToCache(path, it, maxDepthInitial)
@@ -57,9 +53,7 @@ class FileIndexCache(
         }
         
         // Reload with deeper scan
-        val expandedNode = withContext(Dispatchers.IO) {
-            scanDirectoryWithDepth(path, maxDepth = maxDepthExpanded, startDepth = 0)
-        }
+        val expandedNode = scanDirectoryWithDepth(path, maxDepth = maxDepthExpanded, startDepth = 0)
         
         expandedNode?.let {
             // Replace the cached node with the expanded one
