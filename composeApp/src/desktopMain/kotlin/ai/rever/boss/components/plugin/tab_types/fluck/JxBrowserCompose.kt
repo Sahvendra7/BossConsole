@@ -5,9 +5,17 @@ import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -173,6 +182,10 @@ fun JxBrowserCompose(
     var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hasVideoAtClick by remember { mutableStateOf(false) }
     var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
+    var autocompleteSuggestion by remember { mutableStateOf<String?>(null) }
+    var showDropdown by remember { mutableStateOf(false) }
+    var dropdownSuggestions by remember { mutableStateOf<List<UrlHistoryEntry>>(emptyList()) }
+    var selectedDropdownIndex by remember { mutableStateOf(-1) }
     val coroutineScope = rememberCoroutineScope()
     
     // Set up browser navigation listeners
@@ -293,6 +306,12 @@ fun JxBrowserCompose(
                 
                 // Notify navigation update with title and URL
                 onNavigationUpdate?.invoke(displayTitle, url)
+                
+                // Add to history
+                UrlHistoryManager.addUrl(url, displayTitle)
+                coroutineScope.launch {
+                    UrlHistoryManager.saveHistory()
+                }
                 
                 // Try to extract favicon
                 browser.mainFrame().ifPresent { frame ->
@@ -582,7 +601,8 @@ fun JxBrowserCompose(
         }
     }
     
-    Column(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
         // Navigation Bar
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -632,21 +652,112 @@ fun JxBrowserCompose(
                         )
                     }
                     
-                    // URL Input
+                    // URL Input with inline autocomplete
                     BasicTextField(
                         value = urlInput,
-                        onValueChange = { urlInput = it },
+                        onValueChange = { newValue ->
+                            urlInput = newValue
+                            selectedDropdownIndex = -1
+                            
+                            // Get autocomplete suggestion and dropdown items
+                            if (newValue.text.isNotEmpty() && newValue.selection.collapsed) {
+                                val suggestions = UrlHistoryManager.getSuggestions(newValue.text, limit = 10)
+                                
+                                // Set inline autocomplete (first suggestion)
+                                if (suggestions.isNotEmpty()) {
+                                    val suggestion = suggestions.first()
+                                    val suggestionUrl = suggestion.url
+                                        .removePrefix("https://")
+                                        .removePrefix("http://")
+                                        .removePrefix("www.")
+                                    
+                                    // Only suggest if the URL starts with the input
+                                    if (suggestionUrl.lowercase().startsWith(newValue.text.lowercase()) && 
+                                        suggestionUrl.length > newValue.text.length) {
+                                        autocompleteSuggestion = suggestionUrl
+                                    } else {
+                                        autocompleteSuggestion = null
+                                    }
+                                } else {
+                                    autocompleteSuggestion = null
+                                }
+                                
+                                // Set dropdown suggestions
+                                dropdownSuggestions = suggestions
+                                showDropdown = suggestions.isNotEmpty()
+                            } else {
+                                autocompleteSuggestion = null
+                                dropdownSuggestions = emptyList()
+                                showDropdown = false
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(28.dp)
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused) {
+                                    // Hide dropdown when focus is lost with a small delay to allow clicks
+                                    coroutineScope.launch {
+                                        kotlinx.coroutines.delay(200) // Give time for click events
+                                        showDropdown = false
+                                    }
+                                }
+                            }
                             .onPreviewKeyEvent { keyEvent ->
-                                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
-                                    val input = urlInput.text.trim()
-                                    val url = processUrlInput(input)
-                                    if (!browser.isClosed) browser.navigation().loadUrl(url)
-                                    true
-                                } else {
-                                    false
+                                when {
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Tab -> {
+                                        // Accept autocomplete suggestion
+                                        if (autocompleteSuggestion != null) {
+                                            urlInput = TextFieldValue(
+                                                autocompleteSuggestion!!,
+                                                TextRange(autocompleteSuggestion!!.length)
+                                            )
+                                            autocompleteSuggestion = null
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter -> {
+                                        val urlToLoad = when {
+                                            selectedDropdownIndex >= 0 && selectedDropdownIndex < dropdownSuggestions.size -> {
+                                                // Use selected dropdown item
+                                                dropdownSuggestions[selectedDropdownIndex].url
+                                            }
+                                            autocompleteSuggestion != null && 
+                                            urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length) -> {
+                                                // Use the full autocomplete suggestion
+                                                processUrlInput(autocompleteSuggestion!!)
+                                            }
+                                            else -> {
+                                                val input = urlInput.text.trim()
+                                                processUrlInput(input)
+                                            }
+                                        }
+                                        if (!browser.isClosed) browser.navigation().loadUrl(urlToLoad)
+                                        autocompleteSuggestion = null
+                                        showDropdown = false
+                                        true
+                                    }
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionDown -> {
+                                        if (showDropdown && dropdownSuggestions.isNotEmpty()) {
+                                            selectedDropdownIndex = (selectedDropdownIndex + 1).coerceAtMost(dropdownSuggestions.size - 1)
+                                        }
+                                        true
+                                    }
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionUp -> {
+                                        if (showDropdown && dropdownSuggestions.isNotEmpty()) {
+                                            selectedDropdownIndex = (selectedDropdownIndex - 1).coerceAtLeast(-1)
+                                        }
+                                        true
+                                    }
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Escape -> {
+                                        autocompleteSuggestion = null
+                                        showDropdown = false
+                                        selectedDropdownIndex = -1
+                                        true
+                                    }
+                                    else -> false
                                 }
                             },
                         singleLine = true,
@@ -671,18 +782,39 @@ fun JxBrowserCompose(
                                 Box(modifier = Modifier.weight(1f)) {
                                     if (urlInput.text.isEmpty()) {
                                         Text(
-                                            "Enter URL",
+                                            "Enter URL or search",
                                             style = MaterialTheme.typography.body2,
                                             color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                         )
+                                    } else {
+                                        // Show inline autocomplete
+                                        Box {
+                                            // Show the autocomplete suggestion
+                                            if (autocompleteSuggestion != null && 
+                                                autocompleteSuggestion!!.lowercase().startsWith(urlInput.text.lowercase())) {
+                                                Text(
+                                                    text = autocompleteSuggestion!!,
+                                                    style = MaterialTheme.typography.body2,
+                                                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                                                )
+                                            }
+                                            // Show the actual input on top
+                                            innerTextField()
+                                        }
                                     }
-                                    innerTextField()
                                 }
                                 IconButton(
                                     onClick = {
-                                        val input = urlInput.text.trim()
-                                        val url = processUrlInput(input)
-                                        if (!browser.isClosed) browser.navigation().loadUrl(url)
+                                        val urlToLoad = if (autocompleteSuggestion != null && 
+                                            urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
+                                            processUrlInput(autocompleteSuggestion!!)
+                                        } else {
+                                            val input = urlInput.text.trim()
+                                            processUrlInput(input)
+                                        }
+                                        if (!browser.isClosed) browser.navigation().loadUrl(urlToLoad)
+                                        autocompleteSuggestion = null
+                                        showDropdown = false
                                     },
                                     modifier = Modifier.size(20.dp)
                                 ) {
@@ -754,5 +886,74 @@ fun JxBrowserCompose(
                 }
                 .contextMenu(items = contextMenuItems)
         )
+        }
+        
+        // Floating dropdown overlay
+        if (showDropdown) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.5f) // Half the width of the screen
+                    .wrapContentHeight()
+                    .align(Alignment.TopCenter)
+                    .offset(y = 38.dp), // Position below the navigation bar
+                elevation = 8.dp,
+                backgroundColor = MaterialTheme.colors.surface
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                ) {
+                    items(dropdownSuggestions.withIndex().toList()) { (index, entry) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (index == selectedDropdownIndex) 
+                                        MaterialTheme.colors.primary.copy(alpha = 0.1f)
+                                    else 
+                                        MaterialTheme.colors.surface
+                                )
+                                .clickable {
+                                    if (!browser.isClosed) {
+                                        browser.navigation().loadUrl(entry.url)
+                                        urlInput = TextFieldValue(entry.url)
+                                        showDropdown = false
+                                        autocompleteSuggestion = null
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Icon to indicate type
+                            Icon(
+                                if (entry.title.contains("Google Search", ignoreCase = true)) 
+                                    Icons.Filled.Search 
+                                else 
+                                    Icons.Filled.History,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title.ifEmpty { entry.domain },
+                                    style = MaterialTheme.typography.body2,
+                                    maxLines = 1,
+                                    color = MaterialTheme.colors.onSurface
+                                )
+                                Text(
+                                    text = entry.url,
+                                    style = MaterialTheme.typography.caption,
+                                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
