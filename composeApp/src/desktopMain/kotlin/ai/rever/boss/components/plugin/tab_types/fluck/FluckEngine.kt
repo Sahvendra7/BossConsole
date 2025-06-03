@@ -3,6 +3,9 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import ai.rever.boss.config.JxBrowserConfig
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
+import com.teamdev.jxbrowser.permission.PermissionType
+import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
+import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback.Action
 import java.nio.file.Paths
 
 // Singleton engine for all browser tabs
@@ -36,6 +39,10 @@ object FluckEngine {
                         .userDataDir(userDataDir)
                         .build()
                 )
+                
+                // Set up permission handlers for the engine
+                setupPermissionHandlers(newEngine)
+                
                 _engine = newEngine
                 newEngine
             } catch (e: Exception) {
@@ -59,5 +66,32 @@ object FluckEngine {
         } catch (e: Exception) {
             false
         }
+    }
+    
+    private fun setupPermissionHandlers(engine: Engine) {
+        // Set up permission handler for all browsers created from this engine
+        val profile = engine.profiles().defaultProfile()
+        val permissions = profile.permissions()
+        
+        permissions.set(RequestPermissionCallback::class.java, object : RequestPermissionCallback {
+            override fun on(params: RequestPermissionCallback.Params, action: RequestPermissionCallback.Action) {
+                val permissionType = params.permissionType()
+                
+                // Auto-grant camera and microphone permissions for video conferencing
+                when (permissionType) {
+                    PermissionType.VIDEO_CAPTURE,
+                    PermissionType.AUDIO_CAPTURE -> {
+                        action.grant()
+                    }
+                    PermissionType.NOTIFICATIONS -> {
+                        action.grant()
+                    }
+                    else -> {
+                        // For other permissions, auto-grant as well
+                        action.grant()
+                    }
+                }
+            }
+        })
     }
 } 

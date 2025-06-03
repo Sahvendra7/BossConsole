@@ -73,7 +73,7 @@ object FaviconLoader {
             
             null
         } catch (e: Exception) {
-            println("Failed to load favicon from $faviconUrl: ${e.message}")
+            // Silently fail for favicon loading errors
             null
         }
     }
