@@ -37,6 +37,7 @@ object FluckEngine {
                         .licenseKey(JxBrowserConfig.licenseKey)
                         .chromiumDir(chromiumDir)
                         .userDataDir(userDataDir)
+                        .userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) BOSS/1.0 Chrome/91.0.4472.124 Safari/537.36")
                         .build()
                 )
                 
