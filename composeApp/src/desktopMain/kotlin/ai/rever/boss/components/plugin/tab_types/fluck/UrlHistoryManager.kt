@@ -112,4 +112,8 @@ object UrlHistoryManager {
             .sortedByDescending { it.visitCount * 1000 + (it.lastVisited / 1000000) }
             .take(limit)
     }
+    
+    fun deleteUrl(url: String) {
+        history.remove(url)
+    }
 }

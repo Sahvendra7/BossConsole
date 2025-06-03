@@ -950,6 +950,35 @@ fun JxBrowserCompose(
                                     maxLines = 1
                                 )
                             }
+                            // Delete button
+                            IconButton(
+                                onClick = {
+                                    UrlHistoryManager.deleteUrl(entry.url)
+                                    // Update dropdown to reflect deletion
+                                    dropdownSuggestions = dropdownSuggestions.filterNot { it.url == entry.url }
+                                    if (dropdownSuggestions.isEmpty()) {
+                                        showDropdown = false
+                                    }
+                                    // Adjust selected index if needed
+                                    if (selectedDropdownIndex >= dropdownSuggestions.size) {
+                                        selectedDropdownIndex = dropdownSuggestions.size - 1
+                                    }
+                                    // Save history after deletion
+                                    coroutineScope.launch {
+                                        UrlHistoryManager.saveHistory()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .padding(0.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Delete from history",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
                         }
                     }
                 }
