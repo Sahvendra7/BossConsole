@@ -5,7 +5,6 @@ import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
-import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback.Action
 import java.nio.file.Paths
 
 // Singleton engine for all browser tabs
@@ -59,15 +58,7 @@ object FluckEngine {
             }
         }
     
-    fun isAvailable(): Boolean {
-        return try {
-            engine
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-    
+
     private fun setupPermissionHandlers(engine: Engine) {
         // Set up permission handler for all browsers created from this engine
         val profile = engine.profiles().defaultProfile()
@@ -76,10 +67,12 @@ object FluckEngine {
         permissions.set(RequestPermissionCallback::class.java, object : RequestPermissionCallback {
             override fun on(params: RequestPermissionCallback.Params, action: RequestPermissionCallback.Action) {
                 val permissionType = params.permissionType()
-                
+
                 // Auto-grant camera and microphone permissions for video conferencing
                 when (permissionType) {
-                    PermissionType.VIDEO_CAPTURE,
+                    PermissionType.VIDEO_CAPTURE -> {
+                        action.grant()
+                    }
                     PermissionType.AUDIO_CAPTURE -> {
                         action.grant()
                     }

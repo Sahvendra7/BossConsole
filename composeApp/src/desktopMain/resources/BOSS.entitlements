@@ -36,6 +36,14 @@
     <key>com.apple.security.app-sandbox</key>
     <false/>
     
+    <!-- Camera access for video conferencing -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    
+    <!-- Microphone access for video conferencing -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    
     <!-- Additional entitlements for Chromium -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>

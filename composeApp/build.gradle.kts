@@ -248,6 +248,10 @@ compose.desktop {
                         <true/>
                         <key>NSSupportsAutomaticGraphicsSwitching</key>
                         <true/>
+                        <key>NSCameraUsageDescription</key>
+                        <string>BOSS needs access to your camera for video conferencing and screen sharing.</string>
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>BOSS needs access to your microphone for video conferencing and voice communication.</string>
                     """.trimIndent()
                 }
             }
