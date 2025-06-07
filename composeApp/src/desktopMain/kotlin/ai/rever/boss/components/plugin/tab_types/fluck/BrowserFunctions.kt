@@ -6,6 +6,14 @@ import kotlinx.coroutines.MainScope
 import java.awt.Frame
 import java.awt.Window
 
+// User agent settings
+object BrowserSettings {
+    var userAgent: String? = null
+    var customUserAgent: String? = null
+    var currentProfile: String = "browser-profile"
+    val availableProfiles = mutableListOf("browser-profile")
+}
+
 actual fun createBrowser(): Any {
     return FluckEngine.engine.newBrowser()
 }
@@ -14,6 +22,20 @@ actual fun disposeBrowser(browser: Any) {
     val jxBrowser = browser as? Browser
     if (jxBrowser != null && !jxBrowser.isClosed) {
         jxBrowser.close()
+    }
+}
+
+// Try to update user agent on existing browsers (not all changes are possible without restart)
+fun updateExistingBrowserSettings() {
+    try {
+        // Note: JxBrowser doesn't support changing user agent on existing browsers
+        // The user agent is set at engine level and requires restart
+        // However, we can update some other settings dynamically
+        
+        // For now, we'll just log that settings have been updated
+        println("Browser settings updated. Some changes may require browser restart.")
+    } catch (e: Exception) {
+        println("Error updating browser settings: ${e.message}")
     }
 }
 

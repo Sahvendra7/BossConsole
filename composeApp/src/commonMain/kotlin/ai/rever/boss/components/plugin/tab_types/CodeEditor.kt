@@ -54,10 +54,18 @@ fun CodeEditorUI(
     language: String = "kotlin",
     modifier: Modifier = Modifier
 ) {
+    // Get settings from platform-specific implementation
+    val fontSize = getCodeEditorFontSize()
+    val fontFamily = getCodeEditorFontFamily()
+    val backgroundColor = getCodeEditorBackgroundColor()
+    val textColor = getCodeEditorTextColor()
+    val lineNumberColor = getCodeEditorLineNumberColor()
+    val lineNumberBgColor = getCodeEditorLineNumberBgColor()
+    
     val textStyle = LocalTextStyle.current.copy(
-        fontFamily = FontFamily.Monospace,
-        fontSize = 14.sp,
-        lineHeight = 20.sp
+        fontFamily = fontFamily,
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * 1.4f).sp
     )
     
     // Use TextFieldValue to maintain cursor position
@@ -75,7 +83,7 @@ fun CodeEditorUI(
     
     Surface(
         modifier = modifier,
-        color = Color(0xFF_1E1E1E)
+        color = backgroundColor
     ) {
         Row(
             modifier = Modifier.fillMaxSize()
@@ -84,15 +92,15 @@ fun CodeEditorUI(
             val lines = textFieldValue.text.lines()
             Column(
                 modifier = Modifier
-                    .background(Color(0xFF_2D2D30))
+                    .background(lineNumberBgColor)
                     .padding(horizontal = 8.dp)
                     .verticalScroll(verticalScrollState)
             ) {
                 lines.forEachIndexed { index, _ ->
                     Text(
                         text = "${index + 1}",
-                        style = textStyle.copy(color = Color(0xFF_858585)),
-                        modifier = Modifier.height(20.dp)
+                        style = textStyle.copy(color = lineNumberColor),
+                        modifier = Modifier.height((fontSize * 1.4f).dp)
                     )
                 }
             }
@@ -111,10 +119,15 @@ fun CodeEditorUI(
                         textFieldValue = newValue
                         onContentChange(newValue.text)
                     },
-                    textStyle = textStyle.copy(color = Color.White),
+                    textStyle = textStyle.copy(color = textColor),
                     cursorBrush = SolidColor(Color.White),
                     modifier = Modifier.fillMaxSize(),
-                    visualTransformation = SyntaxHighlightTransformation(language)
+                    visualTransformation = SyntaxHighlightTransformation(
+                        language,
+                        getCodeEditorKeywordColor(),
+                        getCodeEditorStringColor(),
+                        getCodeEditorCommentColor()
+                    )
                 )
             }
         }
@@ -122,7 +135,12 @@ fun CodeEditorUI(
 }
 
 // Custom VisualTransformation for syntax highlighting
-class SyntaxHighlightTransformation(private val language: String) : VisualTransformation {
+class SyntaxHighlightTransformation(
+    private val language: String,
+    private val keywordColor: Color,
+    private val stringColor: Color,
+    private val commentColor: Color
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val highlighted = when (language) {
             "kotlin" -> highlightKotlinSyntax(text.text)
@@ -141,7 +159,7 @@ class SyntaxHighlightTransformation(private val language: String) : VisualTransf
                 val pattern = "\\b$keyword\\b".toRegex()
                 pattern.findAll(text).forEach { match ->
                     addStyle(
-                        SpanStyle(color = Color(0xFF_CF68E1), fontWeight = FontWeight.Bold),
+                        SpanStyle(color = keywordColor, fontWeight = FontWeight.Bold),
                         match.range.first,
                         match.range.last + 1
                     )
@@ -163,7 +181,7 @@ class SyntaxHighlightTransformation(private val language: String) : VisualTransf
             // Highlight single-line comments
             "//.*$".toRegex(RegexOption.MULTILINE).findAll(text).forEach { match ->
                 addStyle(
-                    SpanStyle(color = Color(0xFF_6A9955)),
+                    SpanStyle(color = commentColor),
                     match.range.first,
                     match.range.last + 1
                 )
@@ -226,7 +244,7 @@ class SyntaxHighlightTransformation(private val language: String) : VisualTransf
             // Highlight comments
             "#.*$".toRegex(RegexOption.MULTILINE).findAll(text).forEach { match ->
                 addStyle(
-                    SpanStyle(color = Color(0xFF_6A9955)),
+                    SpanStyle(color = commentColor),
                     match.range.first,
                     match.range.last + 1
                 )
@@ -261,6 +279,17 @@ object CodeEditor: TabTypeInfo {
 
 // Platform-specific file reading
 expect fun readFileContent(filePath: String): String?
+
+// Platform-specific settings
+expect fun getCodeEditorFontSize(): Int
+expect fun getCodeEditorFontFamily(): FontFamily
+expect fun getCodeEditorBackgroundColor(): Color
+expect fun getCodeEditorTextColor(): Color
+expect fun getCodeEditorLineNumberColor(): Color
+expect fun getCodeEditorLineNumberBgColor(): Color
+expect fun getCodeEditorKeywordColor(): Color
+expect fun getCodeEditorStringColor(): Color
+expect fun getCodeEditorCommentColor(): Color
 
 // EditorTabInfo to store file path
 data class EditorTabInfo(

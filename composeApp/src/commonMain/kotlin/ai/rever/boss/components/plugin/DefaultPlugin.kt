@@ -43,7 +43,7 @@ class DefaultPlugin(
 
         registerDocker()
         registerDatabase()
-        registerChrome()
+        registerFluck()
         registerAgent()
         registerLLMRpa()
 
@@ -51,7 +51,7 @@ class DefaultPlugin(
         registerEhrExplorer()
 
         registerCodeEditor()
-        registerFluck()
+        registerFluckPanel()
         registerTerminalTab()
     }
 }

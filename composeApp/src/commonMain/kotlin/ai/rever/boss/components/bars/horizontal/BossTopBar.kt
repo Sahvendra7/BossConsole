@@ -24,6 +24,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
 import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
+import ai.rever.boss.components.windows.SettingsWindow
 import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -270,6 +271,8 @@ fun BossTopRunBar() {
 
 @Composable
 fun BossTopRightBar() {
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    
     BossActionButton(
         imageVector = Icons.Outlined.PersonAdd,
         text = "Sign Out",
@@ -286,5 +289,14 @@ fun BossTopRightBar() {
         imageVector = Icons.Outlined.Settings,
         text = "Settings",
         hintText = "Configure application settings"
-    ) {}
+    ) {
+        showSettingsDialog = true
+    }
+    
+    // Settings Window
+    if (showSettingsDialog) {
+        SettingsWindow(
+            onClose = { showSettingsDialog = false }
+        )
+    }
 }

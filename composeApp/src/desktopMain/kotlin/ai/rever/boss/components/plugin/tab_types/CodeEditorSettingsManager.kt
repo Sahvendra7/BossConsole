@@ -1,0 +1,154 @@
+package ai.rever.boss.components.plugin.tab_types
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import java.io.File
+
+// Global settings object
+object CodeEditorSettings {
+    var fontFamily: String = "JetBrains Mono"
+    var fontSize: Int = 14
+    var theme: String = "Dark"
+    
+    // Theme colors
+    fun getBackgroundColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_FFFFFF)
+        "Dracula" -> Color(0xFF_282A36)
+        "Monokai" -> Color(0xFF_272822)
+        "Solarized Dark" -> Color(0xFF_002B36)
+        "Solarized Light" -> Color(0xFF_FDF6E3)
+        else -> Color(0xFF_1E1E1E) // Dark theme
+    }
+    
+    fun getTextColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_000000)
+        "Dracula" -> Color(0xFF_F8F8F2)
+        "Monokai" -> Color(0xFF_F8F8F2)
+        "Solarized Dark" -> Color(0xFF_839496)
+        "Solarized Light" -> Color(0xFF_657B83)
+        else -> Color(0xFF_D4D4D4) // Dark theme
+    }
+    
+    fun getLineNumberColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_6E7681)
+        "Dracula" -> Color(0xFF_6272A4)
+        "Monokai" -> Color(0xFF_75715E)
+        "Solarized Dark" -> Color(0xFF_586E75)
+        "Solarized Light" -> Color(0xFF_93A1A1)
+        else -> Color(0xFF_858585) // Dark theme
+    }
+    
+    fun getLineNumberBgColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_F6F8FA)
+        "Dracula" -> Color(0xFF_21222C)
+        "Monokai" -> Color(0xFF_1E1F1C)
+        "Solarized Dark" -> Color(0xFF_073642)
+        "Solarized Light" -> Color(0xFF_EEE8D5)
+        else -> Color(0xFF_2D2D30) // Dark theme
+    }
+    
+    fun getSelectionColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_0969DA).copy(alpha = 0.3f)
+        "Dracula" -> Color(0xFF_44475A)
+        "Monokai" -> Color(0xFF_49483E)
+        "Solarized Dark" -> Color(0xFF_073642)
+        "Solarized Light" -> Color(0xFF_EEE8D5)
+        else -> Color(0xFF_264F78) // Dark theme
+    }
+    
+    fun getKeywordColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_CF222E)
+        "Dracula" -> Color(0xFF_FF79C6)
+        "Monokai" -> Color(0xFF_F92672)
+        "Solarized Dark" -> Color(0xFF_268BD2)
+        "Solarized Light" -> Color(0xFF_268BD2)
+        else -> Color(0xFF_569CD6) // Dark theme
+    }
+    
+    fun getStringColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_0A3069)
+        "Dracula" -> Color(0xFF_F1FA8C)
+        "Monokai" -> Color(0xFF_E6DB74)
+        "Solarized Dark" -> Color(0xFF_2AA198)
+        "Solarized Light" -> Color(0xFF_2AA198)
+        else -> Color(0xFF_CE9178) // Dark theme
+    }
+    
+    fun getCommentColor(): Color = when (theme) {
+        "Light" -> Color(0xFF_6E7781)
+        "Dracula" -> Color(0xFF_6272A4)
+        "Monokai" -> Color(0xFF_75715E)
+        "Solarized Dark" -> Color(0xFF_586E75)
+        "Solarized Light" -> Color(0xFF_93A1A1)
+        else -> Color(0xFF_6A9955) // Dark theme
+    }
+    
+    fun getFontFamily(): FontFamily = when (fontFamily) {
+        "Fira Code" -> FontFamily.Monospace // Would need custom font loading
+        "Source Code Pro" -> FontFamily.Monospace
+        "Consolas" -> FontFamily.Monospace
+        "Monaco" -> FontFamily.Monospace
+        "Menlo" -> FontFamily.Monospace
+        else -> FontFamily.Monospace // Default to JetBrains Mono
+    }
+}
+
+@Serializable
+data class CodeEditorSettingsData(
+    val fontFamily: String = "JetBrains Mono",
+    val fontSize: Int = 14,
+    val theme: String = "Dark"
+)
+
+object CodeEditorSettingsManager {
+    private val settingsFile = File(System.getProperty("user.home"), ".boss/code-editor-settings.json")
+    private val json = Json { 
+        prettyPrint = true
+        ignoreUnknownKeys = true
+    }
+    
+    init {
+        // Ensure directory exists
+        settingsFile.parentFile?.mkdirs()
+        
+        // Load settings on initialization
+        loadSettingsSync()
+    }
+    
+    private fun loadSettingsSync() {
+        try {
+            if (settingsFile.exists()) {
+                val content = settingsFile.readText()
+                val settings = json.decodeFromString<CodeEditorSettingsData>(content)
+                
+                // Apply loaded settings
+                CodeEditorSettings.fontFamily = settings.fontFamily
+                CodeEditorSettings.fontSize = settings.fontSize
+                CodeEditorSettings.theme = settings.theme
+            }
+        } catch (e: Exception) {
+            println("Failed to load code editor settings: ${e.message}")
+        }
+    }
+    
+    suspend fun saveSettings() = withContext(Dispatchers.IO) {
+        try {
+            val settings = CodeEditorSettingsData(
+                fontFamily = CodeEditorSettings.fontFamily,
+                fontSize = CodeEditorSettings.fontSize,
+                theme = CodeEditorSettings.theme
+            )
+            
+            val content = json.encodeToString(settings)
+            settingsFile.writeText(content)
+        } catch (e: Exception) {
+            println("Failed to save code editor settings: ${e.message}")
+        }
+    }
+}

@@ -51,6 +51,8 @@ import ai.rever.boss.components.configuration.extractCurrentConfiguration
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 
 @Composable
@@ -81,7 +83,38 @@ fun ComponentContext.BossApp() {
         DefaultPlugin(panelRegistry, tabRegistry)
         draggablePanelComponent.update()
 
-        onDispose {  }
+        onDispose { 
+            // Save current configuration as "Last Session" when app closes
+            coroutineScope.launch {
+                val currentLayout = extractCurrentConfiguration(splitViewState)
+                val lastSessionConfig = currentLayout.copy(
+                    name = "Last Session",
+                    description = "Automatically saved session"
+                )
+                configurationManager.updateCurrentConfiguration(lastSessionConfig)
+                configurationManager.saveCurrentConfiguration("Last Session")
+            }
+        }
+    }
+    
+    // Load last used configuration on startup
+    LaunchedEffect(configurationManager, splitViewState) {
+        // Wait for configurations to be loaded
+        configurationManager.configurations
+            .onEach { configs ->
+                // Only load on first emission when configs are available
+                if (configs.isNotEmpty() && configurationManager.currentConfiguration.value == null) {
+                    // Check if there's a saved "last-session" configuration
+                    val lastSessionConfig = configs.find { it.name == "Last Session" }
+                    
+                    if (lastSessionConfig != null) {
+                        // Apply the last session configuration
+                        configurationManager.loadConfiguration(lastSessionConfig)
+                        applyConfiguration(lastSessionConfig, splitViewState)
+                    }
+                }
+            }
+            .launchIn(this)
     }
     
     // Listen for file open events - now handled by split state
@@ -93,9 +126,10 @@ fun ComponentContext.BossApp() {
             .launchIn(this)
     }
     
-    // Monitor for layout changes to mark configuration as dirty
+    // Monitor for layout changes to mark configuration as dirty and auto-save
     LaunchedEffect(splitViewState, configurationManager) {
         var lastConfigurationSnapshot: LayoutConfiguration? = null
+        var saveJob: Job? = null
         
         // Monitor the entire layout structure for changes
         snapshotFlow { 
@@ -113,12 +147,41 @@ fun ComponentContext.BossApp() {
                     lastConfigurationSnapshot = currentLayout
                 } else if (currentLayout != lastConfigurationSnapshot) {
                     // Layout has changed (splits, tabs added/removed, etc.)
-                    // Configuration is automatically saved when needed
                     lastConfigurationSnapshot = currentLayout
+                    
+                    // Cancel previous save job if any
+                    saveJob?.cancel()
+                    
+                    // Auto-save as "Last Session" after a short delay
+                    saveJob = launch {
+                        delay(2000) // Wait 2 seconds before saving
+                        val lastSessionConfig = currentLayout.copy(
+                            name = "Last Session",
+                            description = "Automatically saved session"
+                        )
+                        configurationManager.updateCurrentConfiguration(lastSessionConfig)
+                        configurationManager.saveCurrentConfiguration("Last Session")
+                    }
                 }
             } else {
-                // No configuration loaded, reset snapshot
-                lastConfigurationSnapshot = null
+                // No configuration loaded, but still save as "Last Session"
+                if (currentLayout != lastConfigurationSnapshot) {
+                    lastConfigurationSnapshot = currentLayout
+                    
+                    // Cancel previous save job if any
+                    saveJob?.cancel()
+                    
+                    // Auto-save as "Last Session" after a short delay
+                    saveJob = launch {
+                        delay(2000) // Wait 2 seconds before saving
+                        val lastSessionConfig = currentLayout.copy(
+                            name = "Last Session",
+                            description = "Automatically saved session"
+                        )
+                        configurationManager.updateCurrentConfiguration(lastSessionConfig)
+                        configurationManager.saveCurrentConfiguration("Last Session")
+                    }
+                }
             }
         }
         .launchIn(this)
@@ -126,8 +189,8 @@ fun ComponentContext.BossApp() {
         // Reset snapshot when configuration changes
         configurationManager.currentConfiguration
             .onEach { config ->
-                if (config != null) {
-                    // Configuration loaded, reset tracking
+                if (config != null && config.name != "Last Session") {
+                    // Configuration loaded (but not Last Session), reset tracking
                     lastConfigurationSnapshot = null
                 }
             }
@@ -158,61 +221,6 @@ fun ComponentContext.BossApp() {
                 }
             }
             .launchIn(this)
-    }
-
-    // Add default tabs and create split layout
-    DisposableEffect(splitViewState, tabsComponent) {
-        // Create default tabs
-        val risaTab = FluckTabInfo(
-            id = "browser-${Random.nextLong()}",
-            typeId = TabTypeId("fluck"),
-            _title = "RISA Labs",
-            url = "https://www.risalabs.ai"
-        )
-        val oncoTab = FluckTabInfo(
-            id = "browser-${Random.nextLong()}",
-            typeId = TabTypeId("fluck"),
-            _title = "OncoEMR",
-            url = "https://secure15.oncoemr.com/"
-        )
-        val dashboardTab = FluckTabInfo(
-            id = "browser-${Random.nextLong()}",
-            typeId = TabTypeId("fluck"),
-            _title = "PA Dashboard",
-            url = "https://pa-dashboard-dev.web.app/"
-        )
-        val terminalTab = TerminalTabInfo(
-            id = "terminal-${Random.nextLong()}",
-            typeId = TerminalTab.typeId,
-            title = "Terminal"
-        )
-        
-        // Add first tab to main panel (which is the initial tabsComponent)
-        tabsComponent.addTab(risaTab)
-        tabsComponent.selectTab(0)
-        
-        // Create vertical split (left/right) with OncoEMR
-        val rightPanelId = splitViewState.splitPanel(
-            panelId = "main",
-            orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
-            tabToMove = oncoTab
-        )
-        
-        // Split the left panel horizontally (top/bottom) with PA Dashboard
-        splitViewState.splitPanel(
-            panelId = "main",
-            orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
-            tabToMove = dashboardTab
-        )
-        
-        // Split the right panel horizontally (top/bottom) with Terminal
-        splitViewState.splitPanel(
-            panelId = rightPanelId,
-            orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
-            tabToMove = terminalTab
-        )
-        
-        onDispose { /* cleanup */ }
     }
 
     with(draggablePanelComponent) {
