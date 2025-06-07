@@ -112,6 +112,12 @@ expect fun disposeBrowser(browser: Any)
 // Platform-specific browser view state disposal
 expect fun disposeBrowserViewState(browserViewState: Any)
 
+// Platform-specific browser state retrieval
+expect fun getBrowserState(url: String): Pair<Any, Any>?
+
+// Platform-specific browser state release
+expect fun releaseBrowserState(url: String)
+
 // Platform-specific FluckTabComponent creation
 expect fun createFluckTabComponent(
     config: TabInfo,
@@ -136,25 +142,11 @@ open class FluckTabComponent(
     // Store the URL to load
     private val initialUrl = (config as? FluckTabInfo)?.url ?: "https://www.risalabs.ai"
     
-    // Create browser instance with error handling
+    // Get or create browser from state manager (platform-specific)
     private var browserError: Throwable? = null
-    val browser: Any? = try {
-        createBrowser()
-    } catch (e: Throwable) {
-        browserError = e
-        println("Failed to create browser: ${e.message}")
-        null
-    }
-    
-    val browserViewState: Any? = browser?.let {
-        try {
-            createBrowserViewState(it)
-        } catch (e: Throwable) {
-            browserError = e
-            println("Failed to create browser view state: ${e.message}")
-            null
-        }
-    }
+    val browserState = getBrowserState(initialUrl)
+    val browser: Any? = browserState?.first
+    val browserViewState: Any? = browserState?.second
     
     private var isDisposed = false
     
@@ -217,8 +209,8 @@ open class FluckTabComponent(
     fun dispose() {
         if (!isDisposed) {
             isDisposed = true
-            browserViewState?.let { disposeBrowserViewState(it) }
-            browser?.let { disposeBrowser(it) }
+            // Release browser back to state manager instead of disposing
+            releaseBrowserState(initialUrl)
         }
     }
 }

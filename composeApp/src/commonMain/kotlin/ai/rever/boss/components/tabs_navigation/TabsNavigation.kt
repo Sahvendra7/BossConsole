@@ -25,6 +25,11 @@ class TabsNavigation<C : Any>(
 
     fun removeTab(index: Int) {
         _tabs.update { currentState ->
+            // Check if index is valid
+            if (index !in currentState.tabs.indices) {
+                return@update currentState
+            }
+            
             val newTabs = currentState.tabs.toMutableList().apply { removeAt(index) }
             val newActiveIndex = when {
                 newTabs.isEmpty() -> -1

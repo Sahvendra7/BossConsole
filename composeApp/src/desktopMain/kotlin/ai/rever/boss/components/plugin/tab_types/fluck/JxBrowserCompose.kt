@@ -41,10 +41,12 @@ import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
+import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 
@@ -217,6 +219,50 @@ fun JxBrowserCompose(
                 urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
                 canGoBack = browser.navigation().canGoBack()
                 canGoForward = browser.navigation().canGoForward()
+            }
+        }
+        
+        // Listen for NavigationFinished to update title even if LoadFinished doesn't fire
+        browser.navigation().on(NavigationFinished::class.java) { event ->
+            if (event.isInMainFrame) {
+                coroutineScope.launch(Dispatchers.Main) {
+                    // Update URL bar
+                    val newUrl = event.url()
+                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                    
+                    // Update title immediately when navigation finishes
+                    if (!browser.isClosed) {
+                        val title = browser.title()
+                        val displayTitle = if (title.isNotEmpty()) {
+                            truncateTitle(title, newUrl)
+                        } else {
+                            // Fallback to domain name if no title
+                            try {
+                                val host = java.net.URL(newUrl).host.removePrefix("www.")
+                                host
+                            } catch (e: Exception) {
+                                "Loading..."
+                            }
+                        }
+                        onTitleChange(displayTitle)
+                        
+                        // Also update navigation state
+                        onNavigationUpdate?.invoke(displayTitle, newUrl)
+                        
+                        // Schedule a delayed title check for SPAs that update title dynamically
+                        launch {
+                            delay(1000) // Wait 1 second
+                            if (!browser.isClosed) {
+                                val delayedTitle = browser.title()
+                                if (delayedTitle.isNotEmpty() && delayedTitle != title) {
+                                    val delayedDisplayTitle = truncateTitle(delayedTitle, newUrl)
+                                    onTitleChange(delayedDisplayTitle)
+                                    onNavigationUpdate?.invoke(delayedDisplayTitle, newUrl)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         

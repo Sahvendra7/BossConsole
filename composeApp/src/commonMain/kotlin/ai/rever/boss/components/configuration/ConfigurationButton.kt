@@ -3,10 +3,15 @@ package ai.rever.boss.components.configuration
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.material.RadioButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Settings
 import ai.rever.boss.platform.rememberFilePicker
@@ -31,6 +36,8 @@ fun ConfigurationButton(
     var showSaveDialog by remember { mutableStateOf(false) }
     var showOpenDialog by remember { mutableStateOf(false) }
     
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    
     // Build context menu items
     val contextMenuItems = buildList {
         // Predefined configurations
@@ -46,6 +53,23 @@ fun ConfigurationButton(
         }
         
         add(ContextMenuItem(isDivider = true))
+        
+        // Delete configuration section
+        val deletableConfigs = configurations.filter { config ->
+            !PredefinedConfigurations.allConfigurations.any { it.name == config.name }
+        }
+        
+        if (deletableConfigs.isNotEmpty()) {
+            add(ContextMenuItem(
+                text = "Delete Configuration",
+                icon = Icons.Outlined.Delete,
+                onClick = {
+                    showDeleteDialog = true
+                }
+            ))
+            
+            add(ContextMenuItem(isDivider = true))
+        }
         
         // Open from file
         add(ContextMenuItem(
@@ -142,6 +166,20 @@ fun ConfigurationButton(
             }
         )
     }
+    
+    // Delete dialog
+    if (showDeleteDialog) {
+        DeleteConfigurationDialog(
+            configurations = configurations.filter { config ->
+                !PredefinedConfigurations.allConfigurations.any { it.name == config.name }
+            },
+            onDismiss = { showDeleteDialog = false },
+            onDelete = { configName ->
+                configurationManager.deleteConfiguration(configName)
+                showDeleteDialog = false
+            }
+        )
+    }
 }
 
 /**
@@ -203,4 +241,70 @@ private fun OpenConfigurationDialog(
     LaunchedEffect(Unit) {
         filePicker.pickFile()
     }
+}
+
+/**
+ * Delete configuration dialog
+ */
+@Composable
+private fun DeleteConfigurationDialog(
+    configurations: List<LayoutConfiguration>,
+    onDismiss: () -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var selectedConfig by remember { mutableStateOf<String?>(null) }
+    
+    androidx.compose.material.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material.Text("Delete Configuration") },
+        text = {
+            Column {
+                androidx.compose.material.Text(
+                    "Select a configuration to delete:",
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                configurations.forEach { config ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedConfig = config.name }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedConfig == config.name,
+                            onClick = { selectedConfig = config.name }
+                        )
+                        androidx.compose.material.Text(
+                            text = config.name,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+                
+                if (configurations.isEmpty()) {
+                    androidx.compose.material.Text(
+                        "No custom configurations to delete.",
+                        color = androidx.compose.ui.graphics.Color.Gray
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material.TextButton(
+                onClick = { 
+                    selectedConfig?.let { onDelete(it) }
+                },
+                enabled = selectedConfig != null
+            ) {
+                androidx.compose.material.Text("Delete", color = androidx.compose.ui.graphics.Color.Red)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material.TextButton(onClick = onDismiss) {
+                androidx.compose.material.Text("Cancel")
+            }
+        }
+    )
 }

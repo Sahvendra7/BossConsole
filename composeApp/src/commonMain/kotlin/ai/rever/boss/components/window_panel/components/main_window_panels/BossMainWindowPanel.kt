@@ -518,5 +518,14 @@ class BossTabsComponent(
         val activeTab = tabsState.value.activeTab ?: return null
         return tabComponents[activeTab.id]
     }
+    
+    // Clear all tabs safely
+    fun clearAllTabs() {
+        // Remove tabs in reverse order to avoid index issues
+        val tabCount = tabsState.value.tabs.size
+        for (i in tabCount - 1 downTo 0) {
+            removeTab(i)
+        }
+    }
 }
 

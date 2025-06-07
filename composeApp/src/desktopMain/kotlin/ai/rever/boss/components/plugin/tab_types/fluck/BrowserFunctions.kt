@@ -48,4 +48,18 @@ actual fun createBrowserViewState(browser: Any): Any {
 
 actual fun disposeBrowserViewState(browserViewState: Any) {
     // BrowserViewState doesn't have explicit disposal on JVM
+}
+
+actual fun getBrowserState(url: String): Pair<Any, Any>? {
+    return try {
+        val state = BrowserStateManager.getOrCreateBrowser(url)
+        Pair(state.browser, state.browserViewState)
+    } catch (e: Exception) {
+        println("Error getting browser state: ${e.message}")
+        null
+    }
+}
+
+actual fun releaseBrowserState(url: String) {
+    BrowserStateManager.releaseBrowser(url)
 } 
