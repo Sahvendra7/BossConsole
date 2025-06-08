@@ -25,10 +25,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 
 enum class TabType {
     URL, FILE, TERMINAL
 }
+
+// Simple URL parameter encoding
+private fun encodeUrlParameter(input: String): String {
+    return input
+        .replace(" ", "+")
+        .replace("&", "%26")
+        .replace("#", "%23")
+        .replace("?", "%3F")
+        .replace("=", "%3D")
+        .replace("/", "%2F")
+}
+
+// Platform-specific URL history provider
+expect object UrlHistoryProvider {
+    fun getSuggestions(query: String, limit: Int = 10): List<UrlSuggestion>
+    fun deleteUrl(url: String)
+}
+
+data class UrlSuggestion(
+    val url: String,
+    val title: String,
+    val isSearchSuggestion: Boolean = false
+)
 
 @Composable
 fun NewTabDialog(
@@ -49,8 +79,26 @@ fun NewTabDialog(
     }
     val focusRequester = remember { FocusRequester() }
     
+    // URL autocomplete state
+    var urlSuggestions by remember { mutableStateOf<List<UrlSuggestion>>(emptyList()) }
+    var showUrlDropdown by remember { mutableStateOf(false) }
+    var selectedSuggestionIndex by remember { mutableStateOf(-1) }
+    
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
+    }
+    
+    // Update suggestions when URL text changes
+    LaunchedEffect(urlText, selectedType) {
+        if (selectedType == TabType.URL && urlText.isNotEmpty()) {
+            delay(100) // Small debounce
+            urlSuggestions = UrlHistoryProvider.getSuggestions(urlText)
+            showUrlDropdown = urlSuggestions.isNotEmpty()
+            selectedSuggestionIndex = -1
+        } else {
+            urlSuggestions = emptyList()
+            showUrlDropdown = false
+        }
     }
     
     Dialog(
@@ -147,55 +195,174 @@ fun NewTabDialog(
                 
                 // Input field (hide for Terminal type)
                 if (selectedType != TabType.TERMINAL) {
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { newValue ->
-                            inputText = newValue
-                            // Update the appropriate state based on current type
-                            when (selectedType) {
-                                TabType.URL -> urlText = newValue
-                                TabType.FILE -> fileText = newValue
-                                else -> {}
-                            }
-                        },
-                        label = { 
-                            Text(
+                    Column {
+                        OutlinedTextField(
+                            value = inputText,
+                            onValueChange = { newValue ->
+                                inputText = newValue
+                                // Update the appropriate state based on current type
                                 when (selectedType) {
-                                    TabType.URL -> "Enter URL (e.g., https://example.com)"
-                                    TabType.FILE -> "Enter file path"
-                                    else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                    TabType.URL -> urlText = newValue
+                                    TabType.FILE -> fileText = newValue
+                                    else -> {}
+                                }
+                            },
+                            label = { 
+                                Text(
+                                    when (selectedType) {
+                                        TabType.URL -> "Enter URL (e.g., https://example.com)"
+                                        TabType.FILE -> "Enter file path"
+                                        else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                    },
+                                    color = Color(0xFF999999)
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    when (selectedType) {
+                                        TabType.URL -> "https://"
+                                        TabType.FILE -> "README.md"
+                                        else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                    },
+                                    color = Color(0xFF666666)
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .onKeyEvent { event ->
+                                    if (selectedType == TabType.URL && event.type == KeyEventType.KeyDown) {
+                                        when (event.key) {
+                                            Key.DirectionDown -> {
+                                                if (showUrlDropdown && urlSuggestions.isNotEmpty()) {
+                                                    selectedSuggestionIndex = (selectedSuggestionIndex + 1).coerceAtMost(urlSuggestions.size - 1)
+                                                    true
+                                                } else false
+                                            }
+                                            Key.DirectionUp -> {
+                                                if (showUrlDropdown && urlSuggestions.isNotEmpty()) {
+                                                    selectedSuggestionIndex = (selectedSuggestionIndex - 1).coerceAtLeast(-1)
+                                                    true
+                                                } else false
+                                            }
+                                            Key.Enter -> {
+                                                if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < urlSuggestions.size) {
+                                                    val suggestion = urlSuggestions[selectedSuggestionIndex]
+                                                    inputText = suggestion.url
+                                                    urlText = suggestion.url
+                                                    showUrlDropdown = false
+                                                    handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                                    true
+                                                } else false
+                                            }
+                                            Key.Escape -> {
+                                                if (showUrlDropdown) {
+                                                    showUrlDropdown = false
+                                                    true
+                                                } else false
+                                            }
+                                            else -> false
+                                        }
+                                    } else false
                                 },
-                                color = Color(0xFF999999)
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = Color.White,
+                                cursorColor = Color.White,
+                                focusedBorderColor = Color(0xFF4A9EFF),
+                                unfocusedBorderColor = Color(0xFF555555),
+                                backgroundColor = Color(0xFF1E1F22)
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < urlSuggestions.size) {
+                                        val suggestion = urlSuggestions[selectedSuggestionIndex]
+                                        handleCreateTab(selectedType, suggestion.url, onCreateTab, onDismiss)
+                                    } else {
+                                        handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                    }
+                                }
                             )
-                        },
-                        placeholder = {
-                            Text(
-                                when (selectedType) {
-                                    TabType.URL -> "https://"
-                                    TabType.FILE -> "README.md"
-                                    else -> "" // This should never happen since we check selectedType != TERMINAL above
-                                },
-                                color = Color(0xFF666666)
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester),
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
-                            cursorColor = Color.White,
-                            focusedBorderColor = Color(0xFF4A9EFF),
-                            unfocusedBorderColor = Color(0xFF555555),
-                            backgroundColor = Color(0xFF1E1F22)
-                        ),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
-                            }
                         )
-                    )
+                        
+                        // URL suggestions dropdown
+                        if (selectedType == TabType.URL && showUrlDropdown) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp),
+                                backgroundColor = Color(0xFF2B2D30),
+                                elevation = 4.dp,
+                                shape = RoundedCornerShape(0.dp, 0.dp, 4.dp, 4.dp)
+                            ) {
+                                LazyColumn {
+                                    itemsIndexed(urlSuggestions) { index, suggestion ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    if (index == selectedSuggestionIndex) 
+                                                        Color(0xFF4A9EFF).copy(alpha = 0.2f)
+                                                    else 
+                                                        Color.Transparent
+                                                )
+                                                .clickable {
+                                                    inputText = suggestion.url
+                                                    urlText = suggestion.url
+                                                    showUrlDropdown = false
+                                                    handleCreateTab(TabType.URL, suggestion.url, onCreateTab, onDismiss)
+                                                }
+                                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = if (suggestion.isSearchSuggestion) Icons.Default.Search else Icons.Default.History,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = Color(0xFF999999)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = suggestion.title.ifEmpty { suggestion.url },
+                                                    fontSize = 14.sp,
+                                                    color = Color.White,
+                                                    maxLines = 1
+                                                )
+                                                if (suggestion.title.isNotEmpty()) {
+                                                    Text(
+                                                        text = suggestion.url,
+                                                        fontSize = 12.sp,
+                                                        color = Color(0xFF999999),
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    UrlHistoryProvider.deleteUrl(suggestion.url)
+                                                    // Update suggestions
+                                                    urlSuggestions = urlSuggestions.filterNot { it.url == suggestion.url }
+                                                    if (urlSuggestions.isEmpty()) {
+                                                        showUrlDropdown = false
+                                                    }
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Delete",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = Color(0xFF999999)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -292,11 +459,7 @@ private fun handleCreateTab(
     
     val processedInput = when (type) {
         TabType.URL -> {
-            when {
-                input.startsWith("http://") || input.startsWith("https://") -> input
-                input.contains("://") -> input
-                else -> "https://$input"
-            }
+            processUrlInput(input)
         }
         TabType.FILE -> {
             input.trim()
@@ -308,4 +471,32 @@ private fun handleCreateTab(
     
     onCreateTab(type, processedInput)
     onDismiss()
+}
+
+// Helper function to process URL input - either as URL or search query
+private fun processUrlInput(input: String): String {
+    val trimmed = input.trim()
+    
+    // If it's already a full URL, return as-is
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed
+    }
+    
+    // Check if it looks like a URL (contains dots and no spaces)
+    val looksLikeUrl = trimmed.contains(".") && !trimmed.contains(" ")
+    
+    // Check for common URL patterns
+    val urlPattern = Regex("""^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$""")
+    val isLikelyUrl = looksLikeUrl || urlPattern.matches(trimmed)
+    
+    // Check for localhost patterns
+    val isLocalhost = trimmed.startsWith("localhost") || 
+                     trimmed.matches(Regex("""^127\.0\.0\.1(:\d+)?(/.*)?$""")) ||
+                     trimmed.matches(Regex("""^localhost(:\d+)?(/.*)?$"""))
+    
+    return when {
+        isLocalhost -> "http://$trimmed"
+        isLikelyUrl -> "https://$trimmed"
+        else -> "https://www.google.com/search?q=${encodeUrlParameter(trimmed)}"
+    }
 }
