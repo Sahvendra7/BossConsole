@@ -52,8 +52,17 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 
 actual fun getBrowserState(url: String): Pair<Any, Any>? {
     return try {
-        val state = BrowserStateManager.getOrCreateBrowser(url)
-        Pair(state.browser, state.browserViewState)
+        // Simply create a new browser - don't use the state manager
+        // This ensures each tab has its own independent browser
+        val browser = createBrowser() as Browser
+        val browserViewState = createBrowserViewState(browser)
+        
+        // Load the URL
+        if (url != "about:blank" && url.isNotEmpty()) {
+            browser.navigation().loadUrl(url)
+        }
+        
+        Pair(browser, browserViewState)
     } catch (e: Exception) {
         println("Error getting browser state: ${e.message}")
         null
@@ -61,5 +70,5 @@ actual fun getBrowserState(url: String): Pair<Any, Any>? {
 }
 
 actual fun releaseBrowserState(url: String) {
-    BrowserStateManager.releaseBrowser(url)
+    // Nothing to do - browser will be disposed when the component is disposed
 } 

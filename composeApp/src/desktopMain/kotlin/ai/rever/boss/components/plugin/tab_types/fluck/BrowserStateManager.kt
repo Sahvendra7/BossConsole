@@ -23,29 +23,18 @@ object BrowserStateManager {
         val browserViewState: Any,
         var lastUrl: String,
         var lastTitle: String = "",
-        var refCount: Int = 0
+        var refCount: Int = 0,
+        val instanceId: String = java.util.UUID.randomUUID().toString() // Unique ID for this browser instance
     )
     
     /**
      * Get or create a browser for a given URL
+     * Returns the browser state and its unique instance ID
      */
-    fun getOrCreateBrowser(url: String): BrowserState {
+    fun getOrCreateBrowser(url: String): Pair<BrowserState, String> {
         synchronized(browserPool) {
-            // Try to find an existing browser for this URL
-            val existingState = browserPool[url]
-            if (existingState != null && !existingState.browser.isClosed) {
-                existingState.refCount++
-                return existingState
-            } else if (existingState?.browser?.isClosed == true) {
-                // Browser was closed, remove it from pool
-                browserPool.remove(url)
-            }
-            
-            // Also check if we have a browser that navigated to this URL
-            browserPool.values.find { it.lastUrl == url && !it.browser.isClosed }?.let { state ->
-                state.refCount++
-                return state
-            }
+            // Always create a new browser instance to avoid BrowserViewState conflicts
+            // JxBrowser doesn't support multiple view states per browser
             
             // Create new browser
             val browser = createBrowser() as Browser
@@ -70,39 +59,37 @@ object BrowserStateManager {
                 println("Error setting up navigation listener: ${e.message}")
             }
             
-            browserPool[url] = state
-            return state
+            // Load the URL
+            if (url != "about:blank" && url.isNotEmpty()) {
+                browser.navigation().loadUrl(url)
+            }
+            
+            // Use the instance ID as the key
+            browserPool[state.instanceId] = state
+            return Pair(state, state.instanceId)
         }
     }
     
     /**
-     * Release a browser reference
+     * Release a browser reference by instance ID
      */
-    fun releaseBrowser(url: String) {
+    fun releaseBrowser(instanceId: String) {
         synchronized(browserPool) {
-            val state = browserPool[url] ?: return
+            val state = browserPool[instanceId] ?: return
+            
             state.refCount--
             
             if (state.refCount <= 0) {
-                // Don't immediately dispose - keep it around for a bit in case it's needed again
-                // This helps with configuration switching
-                GlobalScope.launch {
-                    delay(30000) // Wait 30 seconds
-                    synchronized(browserPool) {
-                        // Check again if it's still not in use and browser is not closed
-                        if (state.refCount <= 0) {
-                            try {
-                                if (!state.browser.isClosed) {
-                                    disposeBrowserViewState(state.browserViewState)
-                                    disposeBrowser(state.browser)
-                                }
-                            } catch (e: Exception) {
-                                println("Error disposing browser: ${e.message}")
-                            }
-                            browserPool.remove(url)
-                        }
+                // Immediately dispose browser resources
+                try {
+                    if (!state.browser.isClosed) {
+                        disposeBrowserViewState(state.browserViewState)
+                        disposeBrowser(state.browser)
                     }
+                } catch (e: Exception) {
+                    println("Error disposing browser: ${e.message}")
                 }
+                browserPool.remove(instanceId)
             }
         }
     }

@@ -209,8 +209,13 @@ open class FluckTabComponent(
     fun dispose() {
         if (!isDisposed) {
             isDisposed = true
-            // Release browser back to state manager instead of disposing
-            releaseBrowserState(initialUrl)
+            // Dispose the browser and view state
+            try {
+                browserViewState?.let { disposeBrowserViewState(it) }
+                browser?.let { disposeBrowser(it) }
+            } catch (e: Exception) {
+                println("Error disposing browser: ${e.message}")
+            }
         }
     }
 }

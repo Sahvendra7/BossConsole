@@ -115,7 +115,10 @@ class SplitViewState(
                 is ai.rever.boss.components.plugin.tab_types.EditorTabInfo -> 
                     tab.copy(id = "editor-${Random.nextLong()}")
                 is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> 
-                    tab.copy(id = "fluck-${Random.nextLong()}")
+                    tab.copy(
+                        id = "fluck-${Random.nextLong()}",
+                        navigationHistory = tab.navigationHistory.toMutableList() // Deep copy the history
+                    )
                 is ai.rever.boss.components.plugin.tab_types.TerminalTabInfo -> 
                     tab.copy(id = "terminal-${Random.nextLong()}")
                 else -> tab
@@ -180,6 +183,11 @@ class SplitViewState(
     fun closePanel(panelId: String) {
         // Don't close the main panel if it's the only one
         if (panelId == "main" && getAllPanels().size == 1) return
+        
+        // First, dispose all tabs in the panel being closed
+        findPanel(panelId)?.let { panel ->
+            panel.tabsComponent.clearAllTabs()
+        }
         
         _rootNode.value = removePanel(_rootNode.value, panelId)
         
