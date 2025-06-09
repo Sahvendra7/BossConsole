@@ -1,8 +1,8 @@
 package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.ActiveTab
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.BossActiveTabsState
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.clickable
@@ -30,14 +30,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun BossActiveTabsDialog(
+fun TopOfMindDialog(
     splitViewState: SplitViewState,
     configurationManager: ConfigurationManager,
     onDismiss: () -> Unit,
     onTabSelect: (ActiveTab) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val activeTabs by BossActiveTabsState.activeTabs.collectAsState()
+    val activeTabs by TopOfMindState.activeTabs.collectAsState()
     var selectedIndex by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -46,16 +46,16 @@ fun BossActiveTabsDialog(
     LaunchedEffect(Unit) {
         // Immediate update when dialog opens
         val tabs = splitViewState.collectAllActiveTabs()
-        BossActiveTabsState.updateActiveTabs(tabs)
+        TopOfMindState.updateActiveTabs(tabs)
         
         // Periodic refresh to ensure dialog has latest data
         while (true) {
             delay(1000) // Check every second while dialog is open
             val currentTabs = splitViewState.collectAllActiveTabs()
-            val existingTabs = BossActiveTabsState.activeTabs.value
+            val existingTabs = TopOfMindState.activeTabs.value
             
             if (currentTabs != existingTabs) {
-                BossActiveTabsState.updateActiveTabs(currentTabs)
+                TopOfMindState.updateActiveTabs(currentTabs)
             }
         }
     }
@@ -149,7 +149,7 @@ fun BossActiveTabsDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "Boss Active Tabs",
+                        "Top of mind",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold

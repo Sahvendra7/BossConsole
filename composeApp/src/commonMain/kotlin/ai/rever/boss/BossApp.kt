@@ -59,10 +59,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalSplitViewState
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalConfigurationManager
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.TabTreeState
-import ai.rever.boss.components.dialogs.BossActiveTabsDialog
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalConfigurationManager
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
+import ai.rever.boss.components.dialogs.TopOfMindDialog
 import androidx.compose.runtime.CompositionLocalProvider
 
 
@@ -89,7 +89,7 @@ fun ComponentContext.BossApp() {
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
-    var showBossActiveTabsDialog by remember { mutableStateOf(false) }
+    var showTopOfMindDialog by remember { mutableStateOf(false) }
     
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -336,7 +336,7 @@ fun ComponentContext.BossApp() {
                             }
                             event.isCtrlPressed && event.key == Key.Spacebar -> {
                                 // Open Boss Active Tabs quick switcher
-                                showBossActiveTabsDialog = true
+                                showTopOfMindDialog = true
                                 true
                             }
                             event.isMetaPressed && event.isShiftPressed && event.key == Key.S -> {
@@ -410,8 +410,8 @@ fun ComponentContext.BossApp() {
                         getCurrentConfiguration = {
                             extractCurrentConfiguration(splitViewState)
                         },
-                        onShowBossActiveTabs = {
-                            showBossActiveTabsDialog = true
+                        onShowTopOfMind = {
+                            showTopOfMindDialog = true
                         }
                     )
                     Row(modifier = Modifier.weight(1f)) {
@@ -474,14 +474,14 @@ fun ComponentContext.BossApp() {
                 )
             }
             
-            // Boss Active Tabs quick switcher dialog
-            if (showBossActiveTabsDialog) {
-                BossActiveTabsDialog(
+            // Top of mind quick switcher dialog
+            if (showTopOfMindDialog) {
+                TopOfMindDialog(
                     splitViewState = splitViewState,
                     configurationManager = configurationManager,
-                    onDismiss = { showBossActiveTabsDialog = false },
+                    onDismiss = { showTopOfMindDialog = false },
                     onTabSelect = { activeTab ->
-                        showBossActiveTabsDialog = false
+                        showTopOfMindDialog = false
                         coroutineScope.launch {
                             // Preserve current state before switching
                             val currentConfig = configurationManager.currentConfiguration.value

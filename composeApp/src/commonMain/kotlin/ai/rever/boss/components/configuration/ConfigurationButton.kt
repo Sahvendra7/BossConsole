@@ -29,7 +29,7 @@ fun ConfigurationButton(
     onOpenConfiguration: (LayoutConfiguration) -> Unit,
     configurationManager: ConfigurationManager = remember { ConfigurationManager() },
     getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
-    onShowBossActiveTabs: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null
 ) {
     val currentConfiguration by configurationManager.currentConfiguration.collectAsState()
     val configurations by configurationManager.configurations.collectAsState()
@@ -102,12 +102,12 @@ fun ConfigurationButton(
         
         add(ContextMenuItem(isDivider = true))
         
-        // Fluck Active Tabs option
-        if (onShowBossActiveTabs != null) {
+        // Top of mind option
+        if (onShowTopOfMind != null) {
             add(ContextMenuItem(
-                text = "Show Active Tabs",
+                text = "Show Top of mind",
                 icon = Icons.Outlined.Tab,
-                onClick = onShowBossActiveTabs
+                onClick = onShowTopOfMind
             ))
             
             add(ContextMenuItem(isDivider = true))

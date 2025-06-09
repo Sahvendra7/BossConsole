@@ -1,7 +1,7 @@
 package ai.rever.boss.components.window_panel
 
 import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.ActiveTab
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.window_panel.components.BossResizablePanel

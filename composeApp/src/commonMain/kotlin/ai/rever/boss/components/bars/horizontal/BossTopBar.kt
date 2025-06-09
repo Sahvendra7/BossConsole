@@ -38,7 +38,7 @@ fun BossDraggableComponent.BossTopBar(
     configurationManager: ConfigurationManager? = null,
     onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
     getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
-    onShowBossActiveTabs: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -58,7 +58,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration, onShowBossActiveTabs)
+            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration, onShowTopOfMind)
             Spacer(modifier = Modifier.weight(1f))
             BossTopRunBar()
             Spacer(modifier = Modifier.weight(0.1f))
@@ -150,7 +150,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     configurationManager: ConfigurationManager? = null,
     onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
     getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
-    onShowBossActiveTabs: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
@@ -175,7 +175,7 @@ fun BossDraggableComponent.BossTopLeftBar(
             onOpenConfiguration = onApplyConfiguration,
             configurationManager = configurationManager,
             getCurrentConfiguration = getCurrentConfiguration,
-            onShowBossActiveTabs = onShowBossActiveTabs
+            onShowTopOfMind = onShowTopOfMind
         )
     }
     

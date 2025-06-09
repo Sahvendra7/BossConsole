@@ -1,4 +1,4 @@
-package ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs
+package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.configuration.ConfigurationManager

@@ -1,4 +1,4 @@
-package ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs
+package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.applyConfiguration
@@ -315,7 +315,7 @@ object BreadcrumbUtils {
 }
 
 // Global state for tracking all active tabs
-object BossActiveTabsState {
+object TopOfMindState {
     private val _activeTabs = MutableStateFlow<List<ActiveTab>>(emptyList())
     val activeTabs: StateFlow<List<ActiveTab>> = _activeTabs
     
@@ -332,14 +332,14 @@ object BossActiveTabsState {
     }
 }
 
-object BossActiveTabsInfo : PanelInfo {
-    override val id = PanelId("boss-active-tabs", 5)
-    override val displayName = "Active Tabs"
+object TopOfMindInfo : PanelInfo {
+    override val id = PanelId("top-of-mind", 5)
+    override val displayName = "Top of mind"
     override val icon = Icons.Outlined.Language
     override val defaultSlotPosition = left.top.bottom
 }
 
-class BossActiveTabsComponent(
+class TopOfMindComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
@@ -348,16 +348,16 @@ class BossActiveTabsComponent(
     override fun Content() {
         val splitViewState = LocalSplitViewState.current
         val configurationManager = LocalConfigurationManager.current
-        BossActiveTabsContent(splitViewState, configurationManager)
+        TopOfMindContent(splitViewState, configurationManager)
     }
 }
 
 @Composable
-fun BossActiveTabsContent(
+fun TopOfMindContent(
     splitViewState: SplitViewState?,
     configurationManager: ConfigurationManager?
 ) {
-    val activeTabs by BossActiveTabsState.activeTabs.collectAsState()
+    val activeTabs by TopOfMindState.activeTabs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showCurrentWorkspace by remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
@@ -366,7 +366,7 @@ fun BossActiveTabsContent(
     LaunchedEffect(splitViewState, configurationManager) {
         if (splitViewState != null) {
             val tabs = splitViewState.collectAllActiveTabs(configurationManager)
-            BossActiveTabsState.updateActiveTabs(tabs)
+            TopOfMindState.updateActiveTabs(tabs)
             
             // Initialize tree expansion state
             val treeNodes = TabTreeBuilder.buildTree(tabs)
@@ -384,7 +384,7 @@ fun BossActiveTabsContent(
         LaunchedEffect(panelsKey) {
             // Update tabs when panel structure changes
             val tabs = splitViewState.collectAllActiveTabs(configurationManager)
-            BossActiveTabsState.updateActiveTabs(tabs)
+            TopOfMindState.updateActiveTabs(tabs)
         }
         
         // Listen to tab state changes in each panel
@@ -394,7 +394,7 @@ fun BossActiveTabsContent(
             LaunchedEffect(panel.id, panelTabsState.tabs.size, panelTabsState.tabs.map { tab -> tab.id + tab.title }) {
                 // Update when tabs are added/removed or their content changes in this panel
                 val updatedTabs = splitViewState.collectAllActiveTabs(configurationManager)
-                BossActiveTabsState.updateActiveTabs(updatedTabs)
+                TopOfMindState.updateActiveTabs(updatedTabs)
             }
         }
     }
@@ -835,6 +835,6 @@ private fun TabCardItem(
 }
 
 
-fun DefaultPlugin.registerBossActiveTabs() = panelRegistry.registerPanel(BossActiveTabsInfo) {
-    ctx, panelInfo -> BossActiveTabsComponent(ctx, panelInfo)
+fun DefaultPlugin.registerTopOfMind() = panelRegistry.registerPanel(TopOfMindInfo) {
+    ctx, panelInfo -> TopOfMindComponent(ctx, panelInfo)
 }
