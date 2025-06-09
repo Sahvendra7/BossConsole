@@ -282,7 +282,20 @@ fun ComponentContext.BossApp() {
                     if (event.type == KeyEventType.KeyDown) {
                         when {
                             event.isMetaPressed && event.key == Key.N -> {
-                                showNewTabDialog = true
+                                // Open new browser tab in active panel
+                                val activeComponent = splitViewState.getActiveTabsComponent()
+                                if (activeComponent != null) {
+                                    val browserTab = FluckTabInfo(
+                                        id = "browser-${Random.nextLong()}",
+                                        typeId = TabTypeId("fluck"),
+                                        _title = "New Tab",
+                                        url = "about:blank"
+                                    )
+                                    activeComponent.addTab(browserTab)
+                                } else {
+                                    // Fallback to dialog if no active component
+                                    showNewTabDialog = true
+                                }
                                 true
                             }
                             event.isMetaPressed && event.key == Key.T -> {
