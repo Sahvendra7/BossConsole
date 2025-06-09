@@ -18,8 +18,6 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabTypeId
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,7 +44,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.rotate
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
@@ -86,34 +83,7 @@ fun BossTabsComponent.BossMainTabBar(
 
     HorizontalBar(
         height = 42.dp, 
-        backgroundColor = BossDarkBackground,
-        modifier = Modifier
-            .contextMenu(
-                items = buildList {
-                    add(ContextMenuItem("New Tab", Icons.Default.Add) {
-                        showNewTabDialog = true
-                    })
-                    if (splitViewState != null && currentPanelId != null && tabsState.value.tabs.isNotEmpty()) {
-                        add(ContextMenuItem(isDivider = true))
-                        add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
-                            val activeTab = tabsState.value.activeTab
-                            splitViewState.splitPanel(
-                                panelId = currentPanelId,
-                                orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
-                                tabToMove = activeTab
-                            )
-                        })
-                        add(ContextMenuItem("Split Down", Icons.Outlined.Splitscreen) {
-                            val activeTab = tabsState.value.activeTab
-                            splitViewState.splitPanel(
-                                panelId = currentPanelId,
-                                orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
-                                tabToMove = activeTab
-                            )
-                        })
-                    }
-                }
-            )
+        backgroundColor = BossDarkBackground
     ) {
         HorizontalBarRow {
             BossLeftTabBar {
@@ -132,6 +102,25 @@ fun BossTabsComponent.BossMainTabBar(
                             // Tab removal is handled, cleanup will happen via LaunchedEffect
                         },
                         contextMenuItems = buildList {
+                            // Split operations (if split state is available)
+                            if (splitViewState != null && currentPanelId != null) {
+                                add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
+                                    splitViewState.splitPanel(
+                                        panelId = currentPanelId,
+                                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                                        tabToMove = config
+                                    )
+                                })
+                                add(ContextMenuItem("Split Down", Icons.Outlined.Splitscreen) {
+                                    splitViewState.splitPanel(
+                                        panelId = currentPanelId,
+                                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+                                        tabToMove = config
+                                    )
+                                })
+                                add(ContextMenuItem(isDivider = true))
+                            }
+                            
                             // Close current tab
                             add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
                                 removeTab(index)
@@ -182,7 +171,17 @@ fun BossTabsComponent.BossMainTabBar(
                     )
                 }
             }
-            Spacer(modifier = Modifier.weight(0.1f))
+            Spacer(
+                modifier = Modifier
+                    .weight(0.1f)
+                    .contextMenu(
+                        items = buildList {
+                            add(ContextMenuItem("New Tab", Icons.Default.Add) {
+                                showNewTabDialog = true
+                            })
+                        }
+                    )
+            )
         }
     }
     
