@@ -50,6 +50,18 @@ sealed class SplitConfig {
 }
 
 /**
+ * Breadcrumb display configuration
+ */
+@Serializable
+data class BreadcrumbConfig(
+    val enabled: Boolean = true,
+    val showConfigurationPath: Boolean = true,
+    val showTabPath: Boolean = true,
+    val maxLength: Int = 50,
+    val separator: String = " › "
+)
+
+/**
  * Represents a complete layout configuration
  */
 @Serializable
@@ -58,6 +70,7 @@ data class LayoutConfiguration(
     val name: String,
     val description: String,
     val layout: SplitConfig,
+    val breadcrumbConfig: BreadcrumbConfig = BreadcrumbConfig(),
     val timestamp: Long = 0L
 ) {
     companion object {

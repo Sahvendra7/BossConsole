@@ -25,6 +25,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
+import androidx.compose.material.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -54,6 +61,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalSplitViewState
 import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalConfigurationManager
+import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.TabTreeState
 import ai.rever.boss.components.dialogs.BossActiveTabsDialog
 import androidx.compose.runtime.CompositionLocalProvider
 
@@ -82,6 +90,9 @@ fun ComponentContext.BossApp() {
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
     var showBossActiveTabsDialog by remember { mutableStateOf(false) }
+    
+    // State for save feedback
+    var saveMessage by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(panelRegistry, tabRegistry) {
         DefaultPlugin(panelRegistry, tabRegistry)
@@ -160,19 +171,39 @@ fun ComponentContext.BossApp() {
                     // Layout has changed (splits, tabs added/removed, etc.)
                     lastConfigurationSnapshot = currentLayout
                     
+                    // Mark the current configuration as modified (if it's not "Last Session")
+                    if (loadedConfig.name != "Last Session") {
+                        TabTreeState.markConfigurationAsModified(loadedConfig.id)
+                    }
+                    
                     // Cancel previous save job if any
                     saveJob?.cancel()
                     
-                    // Auto-save as "Last Session" after a short delay
+                    // Auto-save to current configuration or "Last Session" after a short delay
                     saveJob = launch {
                         delay(2000) // Wait 2 seconds before saving
-                        val lastSessionConfig = currentLayout.copy(
-                            id = "last-session",
-                            name = "Last Session",
-                            description = "Automatically saved session"
-                        )
-                        configurationManager.updateCurrentConfiguration(lastSessionConfig)
-                        configurationManager.saveCurrentConfiguration("Last Session")
+                        
+                        if (loadedConfig.name == "Last Session") {
+                            // If we're already in "Last Session", update it
+                            val lastSessionConfig = currentLayout.copy(
+                                id = "last-session",
+                                name = "Last Session",
+                                description = "Automatically saved session"
+                            )
+                            configurationManager.updateCurrentConfiguration(lastSessionConfig)
+                            configurationManager.saveCurrentConfiguration("Last Session")
+                        } else {
+                            // Update the current loaded configuration with changes
+                            val updatedConfig = loadedConfig.copy(
+                                layout = currentLayout.layout,
+                                timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                            )
+                            configurationManager.updateCurrentConfiguration(updatedConfig)
+                            configurationManager.saveCurrentConfiguration()
+                            
+                            // Clear the modified state since we just auto-saved
+                            TabTreeState.markConfigurationAsSaved(loadedConfig.id)
+                        }
                     }
                 }
             } else {
@@ -205,6 +236,8 @@ fun ComponentContext.BossApp() {
                 if (config != null && config.name != "Last Session") {
                     // Configuration loaded (but not Last Session), reset tracking
                     lastConfigurationSnapshot = null
+                    // Clear modified status when loading a configuration
+                    TabTreeState.markConfigurationAsSaved(config.id)
                 }
             }
             .launchIn(this)
@@ -304,6 +337,49 @@ fun ComponentContext.BossApp() {
                             event.isCtrlPressed && event.key == Key.Spacebar -> {
                                 // Open Boss Active Tabs quick switcher
                                 showBossActiveTabsDialog = true
+                                true
+                            }
+                            event.isMetaPressed && event.isShiftPressed && event.key == Key.S -> {
+                                // Save current configuration (Cmd+Shift+S)
+                                coroutineScope.launch {
+                                    val currentConfig = configurationManager.currentConfiguration.value
+                                    if (currentConfig != null) {
+                                        // Extract current layout state
+                                        val currentLayout = extractCurrentConfiguration(splitViewState)
+                                        
+                                        // Update the configuration with current layout
+                                        val updatedConfig = currentConfig.copy(
+                                            layout = currentLayout.layout,
+                                            timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                                        )
+                                        
+                                        // Save the updated configuration
+                                        configurationManager.updateCurrentConfiguration(updatedConfig)
+                                        configurationManager.saveCurrentConfiguration()
+                                        
+                                        // Mark as saved (remove from modified list)
+                                        TabTreeState.markConfigurationAsSaved(currentConfig.id)
+                                        
+                                        // Show feedback
+                                        saveMessage = "Configuration '${currentConfig.name}' saved successfully"
+                                        delay(3000)
+                                        saveMessage = null
+                                    } else {
+                                        // No configuration loaded, create new one
+                                        val currentLayout = extractCurrentConfiguration(splitViewState)
+                                        val newConfig = currentLayout.copy(
+                                            name = "Configuration ${kotlinx.datetime.Clock.System.now().toEpochMilliseconds() / 1000}",
+                                            description = "Saved configuration"
+                                        )
+                                        configurationManager.updateCurrentConfiguration(newConfig)
+                                        configurationManager.saveCurrentConfiguration()
+                                        
+                                        // Show feedback
+                                        saveMessage = "New configuration '${newConfig.name}' saved successfully"
+                                        delay(3000)
+                                        saveMessage = null
+                                    }
+                                }
                                 true
                             }
                             else -> false
@@ -425,6 +501,28 @@ fun ComponentContext.BossApp() {
                         }
                     }
                 )
+            }
+            
+            // Save feedback snackbar
+            saveMessage?.let { message ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Surface(
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colors.primary,
+                        shape = RoundedCornerShape(8.dp),
+                        elevation = 8.dp
+                    ) {
+                        Text(
+                            text = message,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            color = MaterialTheme.colors.onPrimary,
+                            style = MaterialTheme.typography.body2
+                        )
+                    }
+                }
             }
             }
         }

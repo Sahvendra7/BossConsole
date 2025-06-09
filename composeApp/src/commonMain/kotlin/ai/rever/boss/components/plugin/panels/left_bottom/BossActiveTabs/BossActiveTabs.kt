@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.applyConfiguration
+import ai.rever.boss.components.configuration.BreadcrumbConfig
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -27,6 +28,13 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Workspaces
+import androidx.compose.material.icons.outlined.ViewModule
+import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +58,261 @@ data class ActiveTab(
     val configurationName: String,
     val panelId: String
 )
+
+// Hierarchical tree structure for organizing tabs
+sealed class TabTreeNode {
+    abstract val id: String
+    abstract val name: String
+    abstract val level: Int
+    
+    data class ConfigurationNode(
+        override val id: String,
+        override val name: String,
+        override val level: Int = 0,
+        val configurationId: String,
+        var isExpanded: Boolean = true,
+        val children: MutableList<TabTreeNode> = mutableListOf()
+    ) : TabTreeNode()
+    
+    data class SplitNode(
+        override val id: String,
+        override val name: String,
+        override val level: Int,
+        val splitType: String, // "vertical", "horizontal", "panel"
+        val panelId: String? = null,
+        var isExpanded: Boolean = true,
+        val children: MutableList<TabTreeNode> = mutableListOf()
+    ) : TabTreeNode()
+    
+    data class TabNode(
+        override val id: String,
+        override val name: String,
+        override val level: Int,
+        val activeTab: ActiveTab
+    ) : TabTreeNode()
+}
+
+// State management for tree expansion
+object TabTreeState {
+    private val _expandedNodes = MutableStateFlow<Set<String>>(emptySet())
+    val expandedNodes: StateFlow<Set<String>> = _expandedNodes
+    
+    // Track which configurations have been modified
+    private val _modifiedConfigurations = MutableStateFlow<Set<String>>(emptySet())
+    val modifiedConfigurations: StateFlow<Set<String>> = _modifiedConfigurations
+    
+    fun toggleExpansion(nodeId: String) {
+        val current = _expandedNodes.value.toMutableSet()
+        if (current.contains(nodeId)) {
+            current.remove(nodeId)
+        } else {
+            current.add(nodeId)
+        }
+        _expandedNodes.value = current
+    }
+    
+    fun isExpanded(nodeId: String): Boolean {
+        return _expandedNodes.value.contains(nodeId)
+    }
+    
+    fun initializeDefaultExpansion(nodes: List<TabTreeNode>) {
+        // Expand all configuration nodes by default
+        val configNodes = nodes.filterIsInstance<TabTreeNode.ConfigurationNode>()
+        _expandedNodes.value = configNodes.map { it.id }.toSet()
+    }
+    
+    fun markConfigurationAsModified(configId: String) {
+        val current = _modifiedConfigurations.value.toMutableSet()
+        current.add(configId)
+        _modifiedConfigurations.value = current
+    }
+    
+    fun markConfigurationAsSaved(configId: String) {
+        val current = _modifiedConfigurations.value.toMutableSet()
+        current.remove(configId)
+        _modifiedConfigurations.value = current
+    }
+    
+    fun isConfigurationModified(configId: String): Boolean {
+        return _modifiedConfigurations.value.contains(configId)
+    }
+}
+
+// Utility to build tree structure from active tabs
+object TabTreeBuilder {
+    fun buildTree(activeTabs: List<ActiveTab>): List<TabTreeNode> {
+        val configGroups = activeTabs.groupBy { it.configurationId }
+        val rootNodes = mutableListOf<TabTreeNode>()
+        
+        configGroups.forEach { (configId, tabs) ->
+            // Use the configuration name from the first tab (they should all be the same)
+            val configName = tabs.firstOrNull()?.configurationName ?: "Unknown"
+            
+            val configNode = TabTreeNode.ConfigurationNode(
+                id = "config-$configId",
+                name = configName,
+                configurationId = configId,
+                level = 0
+            )
+            
+            // Group tabs by panel for this configuration
+            val panelGroups = tabs.groupBy { it.panelId }
+            
+            panelGroups.forEach { (panelId, panelTabs) ->
+                val splitNode = TabTreeNode.SplitNode(
+                    id = "panel-$configId-$panelId", // Make panel IDs unique per config
+                    name = "Panel $panelId",
+                    level = 1,
+                    splitType = "panel",
+                    panelId = panelId
+                )
+                
+                // Add individual tabs to this panel
+                panelTabs.forEach { activeTab ->
+                    val tabNode = TabTreeNode.TabNode(
+                        id = "tab-${activeTab.configurationId}-${activeTab.tabInfo.id}", // Make tab IDs unique per config
+                        name = activeTab.tabInfo.title,
+                        level = 2,
+                        activeTab = activeTab
+                    )
+                    splitNode.children.add(tabNode)
+                }
+                
+                configNode.children.add(splitNode)
+            }
+            
+            rootNodes.add(configNode)
+        }
+        
+        return rootNodes
+    }
+    
+    // Filter tree nodes based on search query
+    fun filterTreeNodes(nodes: List<TabTreeNode>, searchQuery: String): List<TabTreeNode> {
+        return nodes.mapNotNull { node ->
+            when (node) {
+                is TabTreeNode.ConfigurationNode -> {
+                    val matchingChildren = filterTreeNodes(node.children, searchQuery)
+                    val configMatches = node.name.contains(searchQuery, ignoreCase = true)
+                    
+                    if (configMatches || matchingChildren.isNotEmpty()) {
+                        node.copy(children = matchingChildren.toMutableList())
+                    } else null
+                }
+                
+                is TabTreeNode.SplitNode -> {
+                    val matchingChildren = filterTreeNodes(node.children, searchQuery)
+                    val splitMatches = node.name.contains(searchQuery, ignoreCase = true)
+                    
+                    if (splitMatches || matchingChildren.isNotEmpty()) {
+                        node.copy(children = matchingChildren.toMutableList())
+                    } else null
+                }
+                
+                is TabTreeNode.TabNode -> {
+                    val tabMatches = node.activeTab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
+                        (node.activeTab.tabInfo is FluckTabInfo && 
+                         node.activeTab.tabInfo.url.contains(searchQuery, ignoreCase = true))
+                    
+                    if (tabMatches) node else null
+                }
+            }
+        }
+    }
+}
+
+// Data class for breadcrumb navigation
+data class BreadcrumbItem(
+    val text: String,
+    val type: BreadcrumbType,
+    val clickable: Boolean = true,
+    val onClick: (() -> Unit)? = null
+)
+
+enum class BreadcrumbType {
+    CONFIGURATION,
+    PANEL,
+    TAB,
+    SEPARATOR
+}
+
+// Breadcrumb utility functions
+object BreadcrumbUtils {
+    fun createBreadcrumb(
+        activeTab: ActiveTab,
+        config: BreadcrumbConfig,
+        onConfigurationClick: () -> Unit,
+        onTabClick: () -> Unit
+    ): List<BreadcrumbItem> {
+        val items = mutableListOf<BreadcrumbItem>()
+        
+        if (config.showConfigurationPath) {
+            // Add configuration name
+            items.add(
+                BreadcrumbItem(
+                    text = truncateText(activeTab.configurationName, config.maxLength / 3),
+                    type = BreadcrumbType.CONFIGURATION,
+                    onClick = onConfigurationClick
+                )
+            )
+            
+            // Add separator
+            items.add(
+                BreadcrumbItem(
+                    text = config.separator,
+                    type = BreadcrumbType.SEPARATOR,
+                    clickable = false
+                )
+            )
+        }
+        
+        if (config.showTabPath) {
+            // Add tab info
+            val tabText = when (val tabInfo = activeTab.tabInfo) {
+                is FluckTabInfo -> {
+                    if (tabInfo.url.isNotEmpty()) {
+                        "${tabInfo.title} (${getDomainFromUrl(tabInfo.url)})"
+                    } else {
+                        tabInfo.title
+                    }
+                }
+                else -> "${activeTab.tabInfo.title} (${activeTab.tabInfo.typeId.typeId})"
+            }
+            
+            items.add(
+                BreadcrumbItem(
+                    text = truncateText(tabText, config.maxLength * 2 / 3),
+                    type = BreadcrumbType.TAB,
+                    onClick = onTabClick
+                )
+            )
+        }
+        
+        return items
+    }
+    
+    private fun truncateText(text: String, maxLength: Int): String {
+        return if (text.length <= maxLength) {
+            text
+        } else {
+            "${text.take(maxLength - 3)}..."
+        }
+    }
+    
+    private fun getDomainFromUrl(url: String): String {
+        return try {
+            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else {
+                url
+            }
+            val domain = cleanUrl.substringAfter("://").substringBefore("/")
+            domain.removePrefix("www.")
+        } catch (e: Exception) {
+            url
+        }
+    }
+}
 
 // Global state for tracking all active tabs
 object BossActiveTabsState {
@@ -96,13 +359,18 @@ fun BossActiveTabsContent(
 ) {
     val activeTabs by BossActiveTabsState.activeTabs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var showCurrentWorkspace by remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
     
     // Update active tabs whenever the split view state changes or tabs are added/removed
-    LaunchedEffect(splitViewState) {
+    LaunchedEffect(splitViewState, configurationManager) {
         if (splitViewState != null) {
-            val tabs = splitViewState.collectAllActiveTabs()
+            val tabs = splitViewState.collectAllActiveTabs(configurationManager)
             BossActiveTabsState.updateActiveTabs(tabs)
+            
+            // Initialize tree expansion state
+            val treeNodes = TabTreeBuilder.buildTree(tabs)
+            TabTreeState.initializeDefaultExpansion(treeNodes)
         }
     }
     
@@ -115,7 +383,7 @@ fun BossActiveTabsContent(
         
         LaunchedEffect(panelsKey) {
             // Update tabs when panel structure changes
-            val tabs = splitViewState.collectAllActiveTabs()
+            val tabs = splitViewState.collectAllActiveTabs(configurationManager)
             BossActiveTabsState.updateActiveTabs(tabs)
         }
         
@@ -125,7 +393,7 @@ fun BossActiveTabsContent(
             
             LaunchedEffect(panel.id, panelTabsState.tabs.size, panelTabsState.tabs.map { tab -> tab.id + tab.title }) {
                 // Update when tabs are added/removed or their content changes in this panel
-                val updatedTabs = splitViewState.collectAllActiveTabs()
+                val updatedTabs = splitViewState.collectAllActiveTabs(configurationManager)
                 BossActiveTabsState.updateActiveTabs(updatedTabs)
             }
         }
@@ -186,19 +454,46 @@ fun BossActiveTabsContent(
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Active tabs list
-        val filteredTabs = if (searchQuery.isBlank()) {
-            activeTabs
-        } else {
-            activeTabs.filter { tab ->
-                tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
-                // Only check URL for Fluck tabs that have URL property
-                (tab.tabInfo is FluckTabInfo && tab.tabInfo.url.contains(searchQuery, ignoreCase = true)) ||
-                tab.configurationName.contains(searchQuery, ignoreCase = true)
-            }
+        // Header with toggle for current workspace
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Workspaces",
+                fontSize = 10.sp,
+                color = Color.Gray,
+                modifier = Modifier.weight(1f)
+            )
+            
+            Text(
+                text = if (showCurrentWorkspace) "Hide Current" else "Show Current",
+                fontSize = 9.sp,
+                color = MaterialTheme.colors.primary.copy(alpha = 0.8f),
+                modifier = Modifier.clickable { showCurrentWorkspace = !showCurrentWorkspace }
+            )
         }
         
-        if (filteredTabs.isEmpty()) {
+        // Build tree structure from active tabs
+        val filteredTabs = if (showCurrentWorkspace) {
+            activeTabs
+        } else {
+            // Filter out current workspace tabs
+            val currentConfigId = configurationManager?.currentConfiguration?.value?.id
+            activeTabs.filter { it.configurationId != currentConfigId }
+        }
+        val treeNodes = TabTreeBuilder.buildTree(filteredTabs)
+        
+        // Apply search filter to tree
+        val filteredTreeNodes = if (searchQuery.isBlank()) {
+            treeNodes
+        } else {
+            TabTreeBuilder.filterTreeNodes(treeNodes, searchQuery)
+        }
+        
+        if (filteredTreeNodes.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -214,12 +509,14 @@ fun BossActiveTabsContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(filteredTabs) { activeTab ->
-                    ActiveTabItem(
-                        activeTab = activeTab,
-                        onTabClick = {
+                items(filteredTreeNodes) { treeNode ->
+                    TreeNodeItem(
+                        node = treeNode,
+                        configurationManager = configurationManager,
+                        splitViewState = splitViewState,
+                        onTabClick = { activeTab ->
                             if (splitViewState != null && configurationManager != null) {
                                 coroutineScope.launch {
                                     // Get current configuration
@@ -260,59 +557,283 @@ fun BossActiveTabsContent(
 }
 
 @Composable
-private fun ActiveTabItem(
-    activeTab: ActiveTab,
+private fun TreeNodeItem(
+    node: TabTreeNode,
+    configurationManager: ConfigurationManager?,
+    splitViewState: SplitViewState?,
+    onTabClick: (ActiveTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val expandedNodes by TabTreeState.expandedNodes.collectAsState()
+    val isExpanded = expandedNodes.contains(node.id)
+    val coroutineScope = rememberCoroutineScope()
+    
+    Column(modifier = modifier) {
+        when (node) {
+            is TabTreeNode.ConfigurationNode -> {
+                ConfigurationFolderItem(
+                    node = node,
+                    isExpanded = isExpanded,
+                    onToggleExpand = { TabTreeState.toggleExpansion(node.id) },
+                    configurationManager = configurationManager,
+                    onConfigClick = {
+                        // Switch to this configuration
+                        if (splitViewState != null && configurationManager != null) {
+                            coroutineScope.launch {
+                                val currentConfig = configurationManager.currentConfiguration.value
+                                val targetConfig = configurationManager.configurations.value.find { 
+                                    it.id == node.configurationId 
+                                }
+                                
+                                if (targetConfig != null && currentConfig?.id != node.configurationId) {
+                                    // Preserve current state before switching
+                                    if (currentConfig != null && currentConfig.id.isNotEmpty()) {
+                                        splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                                    }
+                                    
+                                    // Load and apply the target configuration
+                                    configurationManager.loadConfiguration(targetConfig)
+                                    applyConfiguration(targetConfig, splitViewState)
+                                }
+                            }
+                        }
+                    }
+                )
+                
+                if (isExpanded) {
+                    node.children.forEach { childNode ->
+                        TreeNodeItem(
+                            node = childNode,
+                            configurationManager = configurationManager,
+                            splitViewState = splitViewState,
+                            onTabClick = onTabClick,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+            
+            is TabTreeNode.SplitNode -> {
+                SplitFolderItem(
+                    node = node,
+                    isExpanded = isExpanded,
+                    onToggleExpand = { TabTreeState.toggleExpansion(node.id) }
+                )
+                
+                if (isExpanded) {
+                    node.children.forEach { childNode ->
+                        TreeNodeItem(
+                            node = childNode,
+                            configurationManager = configurationManager,
+                            splitViewState = splitViewState,
+                            onTabClick = onTabClick,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+            
+            is TabTreeNode.TabNode -> {
+                TabCardItem(
+                    node = node,
+                    onTabClick = { onTabClick(node.activeTab) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfigurationFolderItem(
+    node: TabTreeNode.ConfigurationNode,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onConfigClick: () -> Unit,
+    configurationManager: ConfigurationManager?
+) {
+    val modifiedConfigurations by TabTreeState.modifiedConfigurations.collectAsState()
+    val isModified = modifiedConfigurations.contains(node.configurationId)
+    
+    // Check if this is the currently active configuration
+    val currentConfig = configurationManager?.currentConfiguration?.value
+    val isActive = currentConfig?.id == node.configurationId
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 4.dp)
+            .then(
+                if (isActive) {
+                    Modifier.background(
+                        MaterialTheme.colors.primary.copy(alpha = 0.1f),
+                        RoundedCornerShape(4.dp)
+                    ).padding(2.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Expand/collapse button area
+        Icon(
+            if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.KeyboardArrowRight,
+            contentDescription = if (isExpanded) "Collapse" else "Expand",
+            modifier = Modifier
+                .size(16.dp)
+                .clickable { onToggleExpand() },
+            tint = Color.Gray.copy(alpha = 0.7f)
+        )
+        
+        Spacer(modifier = Modifier.width(4.dp))
+        
+        // Configuration content area (clickable)
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onConfigClick() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Workspaces,
+                contentDescription = "Configuration",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
+            )
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            Text(
+                text = "${node.name}${if (isModified) " •" else ""}${if (isActive) " (Active)" else ""}",
+                fontSize = 12.sp,
+                color = if (isActive) {
+                    MaterialTheme.colors.primary
+                } else {
+                    MaterialTheme.colors.onSurface
+                },
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            // Show a modified indicator
+            if (isModified) {
+                Text(
+                    text = "●",
+                    fontSize = 8.sp,
+                    color = MaterialTheme.colors.primary,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SplitFolderItem(
+    node: TabTreeNode.SplitNode,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggleExpand() }
+            .padding(vertical = 3.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.KeyboardArrowRight,
+            contentDescription = if (isExpanded) "Collapse" else "Expand",
+            modifier = Modifier.size(14.dp),
+            tint = Color.Gray.copy(alpha = 0.6f)
+        )
+        
+        Spacer(modifier = Modifier.width(4.dp))
+        
+        Icon(
+            Icons.Outlined.ViewModule,
+            contentDescription = "Split Panel",
+            modifier = Modifier.size(14.dp),
+            tint = Color(0xFF569CD6) // VS Code folder color
+        )
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        Text(
+            text = node.name,
+            fontSize = 11.sp,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.9f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun TabCardItem(
+    node: TabTreeNode.TabNode,
     onTabClick: () -> Unit
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(4.dp))
             .clickable { onTabClick() },
         color = Color(0xFF3C3F43),
         elevation = 1.dp
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Tab title
-            Text(
-                text = activeTab.tabInfo.title,
-                fontSize = 12.sp,
-                color = MaterialTheme.colors.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            
-            // Tab type and URL (for browser tabs) or type info
-            val secondaryText = when (val tabInfo = activeTab.tabInfo) {
-                is FluckTabInfo -> tabInfo.url
-                else -> tabInfo.typeId.typeId // Show tab type for non-browser tabs
+            // Tab icon based on type
+            val tabIcon = when (node.activeTab.tabInfo) {
+                is FluckTabInfo -> Icons.Outlined.Language
+                else -> Icons.Outlined.Tab // Default icon for other tab types
             }
             
-            if (secondaryText.isNotEmpty()) {
+            Icon(
+                tabIcon,
+                contentDescription = "Tab",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+            )
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                // Tab title
                 Text(
-                    text = secondaryText,
-                    fontSize = 10.sp,
-                    color = Color.Gray,
+                    text = node.activeTab.tabInfo.title,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colors.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                
+                // Tab subtitle (URL for browser, type for others)
+                val subtitle = when (val tabInfo = node.activeTab.tabInfo) {
+                    is FluckTabInfo -> tabInfo.url
+                    else -> tabInfo.typeId.typeId
+                }
+                
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        text = subtitle,
+                        fontSize = 9.sp,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-            
-            // Configuration name
-            Text(
-                text = "in ${activeTab.configurationName}",
-                fontSize = 10.sp,
-                color = Color.Gray.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
+
 
 fun DefaultPlugin.registerBossActiveTabs() = panelRegistry.registerPanel(BossActiveTabsInfo) {
     ctx, panelInfo -> BossActiveTabsComponent(ctx, panelInfo)

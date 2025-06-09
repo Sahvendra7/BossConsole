@@ -443,55 +443,94 @@ class SplitViewState(
     
     fun collectAllActiveFluckTabs(): List<ActiveTab> {
         val result = mutableListOf<ActiveTab>()
+        val seenTabIds = mutableSetOf<String>()
         
         // Collect from current state
         _currentConfigurationId?.let { configId ->
+            // Get the actual configuration name from preserved states or use a default
+            val configName = preservedConfigurationStates[configId]?.configurationName 
+                ?: when (configId) {
+                    "last-session" -> "Last Session"
+                    else -> "Current Workspace"
+                }
+                
             getAllPanels().forEach { panel ->
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo && !seenTabIds.contains(tab.id)) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
                                 configurationId = configId,
-                                configurationName = "Current", // We'll need to track config names
+                                configurationName = configName,
                                 panelId = panel.id
                             )
                         )
+                        seenTabIds.add(tab.id)
                     }
                 }
             }
         }
         
-        // Collect from preserved states
+        // Collect from preserved states (only if not already in current state)
         preservedConfigurationStates.forEach { (configId, state) ->
-            collectFluckTabsFromNode(state.rootNode, configId, state.configurationName, result)
+            if (configId != _currentConfigurationId) {
+                collectFluckTabsFromNode(state.rootNode, configId, state.configurationName, result, seenTabIds)
+            }
         }
         
         return result
     }
     
-    fun collectAllActiveTabs(): List<ActiveTab> {
+    fun collectAllActiveTabs(configurationManager: ai.rever.boss.components.configuration.ConfigurationManager? = null): List<ActiveTab> {
         val result = mutableListOf<ActiveTab>()
+        val seenTabIds = mutableSetOf<String>()
+        val seenConfigIds = mutableSetOf<String>()
         
-        // Collect from current state
+        // Helper function to get proper configuration name
+        fun getConfigurationName(configId: String): String {
+            return configurationManager?.configurations?.value?.find { it.id == configId }?.name
+                ?: preservedConfigurationStates[configId]?.configurationName
+                ?: when (configId) {
+                    "last-session" -> "Last Session"
+                    else -> "Workspace $configId"
+                }
+        }
+        
+        // Collect from current state (only if it has tabs)
         _currentConfigurationId?.let { configId ->
+            val currentTabs = mutableListOf<ActiveTab>()
+            
             getAllPanels().forEach { panel ->
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    result.add(
-                        ActiveTab(
-                            tabInfo = tab,
-                            configurationId = configId,
-                            configurationName = "Current",
-                            panelId = panel.id
+                    if (!seenTabIds.contains(tab.id)) {
+                        currentTabs.add(
+                            ActiveTab(
+                                tabInfo = tab,
+                                configurationId = configId,
+                                configurationName = getConfigurationName(configId),
+                                panelId = panel.id
+                            )
                         )
-                    )
+                        seenTabIds.add(tab.id)
+                    }
                 }
+            }
+            
+            // Only add current config if it has tabs
+            if (currentTabs.isNotEmpty()) {
+                result.addAll(currentTabs)
+                seenConfigIds.add(configId)
             }
         }
         
-        // Collect from preserved states
+        // Collect from preserved states (only if not already added)
         preservedConfigurationStates.forEach { (configId, state) ->
-            collectAllTabsFromNode(state.rootNode, configId, state.configurationName, result)
+            if (!seenConfigIds.contains(configId)) {
+                collectAllTabsFromNode(state.rootNode, configId, getConfigurationName(configId), result, seenTabIds)
+                if (result.any { it.configurationId == configId }) {
+                    seenConfigIds.add(configId)
+                }
+            }
         }
         
         return result
@@ -501,12 +540,13 @@ class SplitViewState(
         node: SplitNode, 
         configId: String, 
         configName: String,
-        result: MutableList<ActiveTab>
+        result: MutableList<ActiveTab>,
+        seenTabIds: MutableSet<String>
     ) {
         when (node) {
             is SplitNode.Panel -> {
                 node.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo && !seenTabIds.contains(tab.id)) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
@@ -515,16 +555,17 @@ class SplitViewState(
                                 panelId = node.id
                             )
                         )
+                        seenTabIds.add(tab.id)
                     }
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectFluckTabsFromNode(node.left, configId, configName, result)
-                collectFluckTabsFromNode(node.right, configId, configName, result)
+                collectFluckTabsFromNode(node.left, configId, configName, result, seenTabIds)
+                collectFluckTabsFromNode(node.right, configId, configName, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectFluckTabsFromNode(node.top, configId, configName, result)
-                collectFluckTabsFromNode(node.bottom, configId, configName, result)
+                collectFluckTabsFromNode(node.top, configId, configName, result, seenTabIds)
+                collectFluckTabsFromNode(node.bottom, configId, configName, result, seenTabIds)
             }
         }
     }
@@ -533,28 +574,32 @@ class SplitViewState(
         node: SplitNode, 
         configId: String, 
         configName: String,
-        result: MutableList<ActiveTab>
+        result: MutableList<ActiveTab>,
+        seenTabIds: MutableSet<String>
     ) {
         when (node) {
             is SplitNode.Panel -> {
                 node.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    result.add(
-                        ActiveTab(
-                            tabInfo = tab,
-                            configurationId = configId,
-                            configurationName = configName,
-                            panelId = node.id
+                    if (!seenTabIds.contains(tab.id)) {
+                        result.add(
+                            ActiveTab(
+                                tabInfo = tab,
+                                configurationId = configId,
+                                configurationName = configName,
+                                panelId = node.id
+                            )
                         )
-                    )
+                        seenTabIds.add(tab.id)
+                    }
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectAllTabsFromNode(node.left, configId, configName, result)
-                collectAllTabsFromNode(node.right, configId, configName, result)
+                collectAllTabsFromNode(node.left, configId, configName, result, seenTabIds)
+                collectAllTabsFromNode(node.right, configId, configName, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectAllTabsFromNode(node.top, configId, configName, result)
-                collectAllTabsFromNode(node.bottom, configId, configName, result)
+                collectAllTabsFromNode(node.top, configId, configName, result, seenTabIds)
+                collectAllTabsFromNode(node.bottom, configId, configName, result, seenTabIds)
             }
         }
     }
