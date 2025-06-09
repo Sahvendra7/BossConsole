@@ -58,6 +58,11 @@ class SplitViewState(
     private var _activePanelId = mutableStateOf("main")
     val activePanelId: String get() = _activePanelId.value
     
+    // Track last interacted tab for Cmd+R, Cmd+N operations
+    private var _lastInteractedTabPanelId = mutableStateOf("main")
+    private var _lastInteractedTabId: String? = null
+    val lastInteractedTabPanelId: String get() = _lastInteractedTabPanelId.value
+    
     // Track preserved configuration states
     private val preservedConfigurationStates = mutableMapOf<String, PreservedConfigState>()
     private var _currentConfigurationId: String? = null
@@ -72,6 +77,17 @@ class SplitViewState(
     
     fun setActivePanel(panelId: String) {
         _activePanelId.value = panelId
+    }
+    
+    fun trackTabInteraction(panelId: String, tabId: String) {
+        _lastInteractedTabPanelId.value = panelId
+        _lastInteractedTabId = tabId
+        // Also set as active panel
+        _activePanelId.value = panelId
+    }
+    
+    fun getLastInteractedTabComponent(): BossTabsComponent? {
+        return findPanel(_lastInteractedTabPanelId.value)?.tabsComponent
     }
     
     fun getActiveTabsComponent(): BossTabsComponent? {
@@ -633,10 +649,8 @@ private fun RenderSplitNode(
 ) {
     when (node) {
         is SplitNode.Panel -> {
-            // Set this panel as active when clicked
-            LaunchedEffect(node.id) {
-                splitViewState.setActivePanel(node.id)
-            }
+            // Note: Panel activation is now handled by user interactions (tab clicks, etc.)
+            // rather than automatic activation on render
             
             // Monitor this specific panel's tab count
             val tabsState = node.tabsComponent.tabsState.subscribeAsState()

@@ -282,20 +282,7 @@ fun ComponentContext.BossApp() {
                     if (event.type == KeyEventType.KeyDown) {
                         when {
                             event.isMetaPressed && event.key == Key.N -> {
-                                // Open new browser tab in active panel
-                                val activeComponent = splitViewState.getActiveTabsComponent()
-                                if (activeComponent != null) {
-                                    val browserTab = FluckTabInfo(
-                                        id = "browser-${Random.nextLong()}",
-                                        typeId = TabTypeId("fluck"),
-                                        _title = "New Tab",
-                                        url = "about:blank"
-                                    )
-                                    activeComponent.addTab(browserTab)
-                                } else {
-                                    // Fallback to dialog if no active component
-                                    showNewTabDialog = true
-                                }
+                                showNewTabDialog = true
                                 true
                             }
                             event.isMetaPressed && event.key == Key.T -> {
@@ -336,11 +323,11 @@ fun ComponentContext.BossApp() {
                             }
                             event.isMetaPressed && event.key == Key.R -> {
                                 // Reload current browser tab if it's a Fluck tab
-                                val activeComponent = splitViewState.getActiveTabsComponent()
-                                val activeTab = activeComponent?.tabsState?.value?.activeTab
+                                val lastInteractedComponent = splitViewState.getLastInteractedTabComponent()
+                                val activeTab = lastInteractedComponent?.tabsState?.value?.activeTab
                                 if (activeTab is FluckTabInfo) {
                                     // Trigger reload event for the browser
-                                    val activeTabComponent = activeComponent.getActiveComponent()
+                                    val activeTabComponent = lastInteractedComponent.getActiveComponent()
                                     if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
                                         activeTabComponent.reload()
                                     }
@@ -449,6 +436,11 @@ fun ComponentContext.BossApp() {
                 NewTabDialog(
                     onDismiss = { showNewTabDialog = false },
                     onCreateTab = { type, path ->
+                        // Get the last interacted tab's panel component, fallback to active panel, then original
+                        val targetComponent = splitViewState.getLastInteractedTabComponent() 
+                            ?: splitViewState.getActiveTabsComponent() 
+                            ?: tabsComponent
+                        
                         when (type) {
                             TabType.URL -> {
                                 val tab = FluckTabInfo(
@@ -457,7 +449,7 @@ fun ComponentContext.BossApp() {
                                     _title = "Loading...",
                                     url = path
                                 )
-                                tabsComponent.addTab(tab)
+                                targetComponent.addTab(tab)
                             }
                             TabType.FILE -> {
                                 val fileName = path.substringAfterLast('/')
@@ -467,7 +459,7 @@ fun ComponentContext.BossApp() {
                                     title = fileName,
                                     filePath = path
                                 )
-                                tabsComponent.addTab(tab)
+                                targetComponent.addTab(tab)
                             }
                             TabType.TERMINAL -> {
                                 val tab = TerminalTabInfo(
@@ -475,7 +467,7 @@ fun ComponentContext.BossApp() {
                                     typeId = TerminalTab.typeId,
                                     title = "Terminal"
                                 )
-                                tabsComponent.addTab(tab)
+                                targetComponent.addTab(tab)
                             }
                         }
                     }

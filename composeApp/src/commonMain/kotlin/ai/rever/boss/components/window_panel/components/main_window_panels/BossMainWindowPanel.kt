@@ -96,12 +96,24 @@ fun BossTabsComponent.BossMainTabBar(
                         icon = config.icon,
                         tabIcon = config.tabIcon,
                         isSelected = isSelected,
-                        onClick = { selectTab(index) },
+                        onClick = { 
+                            selectTab(index)
+                            // Track this tab interaction for Cmd+R/Cmd+N
+                            if (splitViewState != null && currentPanelId != null) {
+                                splitViewState.trackTabInteraction(currentPanelId, config.id)
+                            }
+                        },
                         onClose = { 
                             removeTab(index)
                             // Tab removal is handled, cleanup will happen via LaunchedEffect
                         },
                         contextMenuItems = buildList {
+                            // Track interaction when context menu is opened
+                            if (splitViewState != null && currentPanelId != null) {
+                                // Track this tab interaction when right-clicking
+                                splitViewState.trackTabInteraction(currentPanelId, config.id)
+                            }
+                            
                             // Split operations (if split state is available)
                             if (splitViewState != null && currentPanelId != null) {
                                 add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
@@ -160,7 +172,13 @@ fun BossTabsComponent.BossMainTabBar(
                             color = Color(0xFF3C3F41),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                         )
-                        .clickable { showNewTabDialog = true },
+                        .clickable { 
+                            showNewTabDialog = true
+                            // Track panel interaction when plus button is clicked
+                            if (splitViewState != null && currentPanelId != null) {
+                                splitViewState.setActivePanel(currentPanelId)
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -178,6 +196,10 @@ fun BossTabsComponent.BossMainTabBar(
                         items = buildList {
                             add(ContextMenuItem("New Tab", Icons.Default.Add) {
                                 showNewTabDialog = true
+                                // Track panel interaction when context menu is used
+                                if (splitViewState != null && currentPanelId != null) {
+                                    splitViewState.setActivePanel(currentPanelId)
+                                }
                             })
                         }
                     )

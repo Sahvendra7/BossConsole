@@ -5,7 +5,11 @@ import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.overlays.ContextMenuItem
-import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.overlays.ContextMenu
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -126,6 +130,21 @@ fun BossTabButton(
         }
     }
 
+    // State for context menu
+    var showContextMenu by remember { mutableStateOf(false) }
+    
+    // Show context menu with proper positioning
+    if (showContextMenu && contextMenuItems.isNotEmpty()) {
+        ContextMenu(
+            items = contextMenuItems,
+            offset = IntOffset(
+                buttonPosition.x.toInt(),
+                buttonPosition.y.toInt() + buttonSize.y
+            ),
+            onDismissRequest = { showContextMenu = false }
+        )
+    }
+    
     Box(
         modifier = modifier
             .fillMaxHeight()
@@ -139,9 +158,17 @@ fun BossTabButton(
                     coordinates.size.height
                 )
             }
-            .contextMenu(
-                items = contextMenuItems
-            )
+            .pointerInput(contextMenuItems) {
+                awaitEachGesture {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (contextMenuItems.isNotEmpty() && 
+                        event.type == androidx.compose.ui.input.pointer.PointerEventType.Press &&
+                        !event.buttons.isPrimaryPressed) {
+                        showContextMenu = true
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
     ) {
         TextButton(
             modifier = Modifier.fillMaxHeight(),
