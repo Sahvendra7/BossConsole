@@ -52,9 +52,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.LocalSplitViewState
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.LocalConfigurationManager
-import ai.rever.boss.components.dialogs.FluckActiveTabsDialog
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.LocalSplitViewState
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.LocalConfigurationManager
+import ai.rever.boss.components.dialogs.BossActiveTabsDialog
 import androidx.compose.runtime.CompositionLocalProvider
 
 
@@ -81,7 +81,7 @@ fun ComponentContext.BossApp() {
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
-    var showFluckActiveTabsDialog by remember { mutableStateOf(false) }
+    var showBossActiveTabsDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(panelRegistry, tabRegistry) {
         DefaultPlugin(panelRegistry, tabRegistry)
@@ -302,8 +302,8 @@ fun ComponentContext.BossApp() {
                                 true
                             }
                             event.isCtrlPressed && event.key == Key.Spacebar -> {
-                                // Open Fluck Active Tabs quick switcher
-                                showFluckActiveTabsDialog = true
+                                // Open Boss Active Tabs quick switcher
+                                showBossActiveTabsDialog = true
                                 true
                             }
                             else -> false
@@ -334,8 +334,8 @@ fun ComponentContext.BossApp() {
                         getCurrentConfiguration = {
                             extractCurrentConfiguration(splitViewState)
                         },
-                        onShowFluckActiveTabs = {
-                            showFluckActiveTabsDialog = true
+                        onShowBossActiveTabs = {
+                            showBossActiveTabsDialog = true
                         }
                     )
                     Row(modifier = Modifier.weight(1f)) {
@@ -393,14 +393,14 @@ fun ComponentContext.BossApp() {
                 )
             }
             
-            // Fluck Active Tabs quick switcher dialog
-            if (showFluckActiveTabsDialog) {
-                FluckActiveTabsDialog(
+            // Boss Active Tabs quick switcher dialog
+            if (showBossActiveTabsDialog) {
+                BossActiveTabsDialog(
                     splitViewState = splitViewState,
                     configurationManager = configurationManager,
-                    onDismiss = { showFluckActiveTabsDialog = false },
+                    onDismiss = { showBossActiveTabsDialog = false },
                     onTabSelect = { activeTab ->
-                        showFluckActiveTabsDialog = false
+                        showBossActiveTabsDialog = false
                         coroutineScope.launch {
                             // Preserve current state before switching
                             val currentConfig = configurationManager.currentConfiguration.value

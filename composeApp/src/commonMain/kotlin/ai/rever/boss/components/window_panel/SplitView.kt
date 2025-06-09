@@ -1,7 +1,7 @@
 package ai.rever.boss.components.window_panel
 
 import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.ActiveFluckTab
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.ActiveTab
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
@@ -441,8 +441,8 @@ class SplitViewState(
         }
     }
     
-    fun collectAllActiveFluckTabs(): List<ActiveFluckTab> {
-        val result = mutableListOf<ActiveFluckTab>()
+    fun collectAllActiveFluckTabs(): List<ActiveTab> {
+        val result = mutableListOf<ActiveTab>()
         
         // Collect from current state
         _currentConfigurationId?.let { configId ->
@@ -450,7 +450,7 @@ class SplitViewState(
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
                     if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
                         result.add(
-                            ActiveFluckTab(
+                            ActiveTab(
                                 tabInfo = tab,
                                 configurationId = configId,
                                 configurationName = "Current", // We'll need to track config names
@@ -470,18 +470,45 @@ class SplitViewState(
         return result
     }
     
+    fun collectAllActiveTabs(): List<ActiveTab> {
+        val result = mutableListOf<ActiveTab>()
+        
+        // Collect from current state
+        _currentConfigurationId?.let { configId ->
+            getAllPanels().forEach { panel ->
+                panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
+                    result.add(
+                        ActiveTab(
+                            tabInfo = tab,
+                            configurationId = configId,
+                            configurationName = "Current",
+                            panelId = panel.id
+                        )
+                    )
+                }
+            }
+        }
+        
+        // Collect from preserved states
+        preservedConfigurationStates.forEach { (configId, state) ->
+            collectAllTabsFromNode(state.rootNode, configId, state.configurationName, result)
+        }
+        
+        return result
+    }
+    
     private fun collectFluckTabsFromNode(
         node: SplitNode, 
         configId: String, 
         configName: String,
-        result: MutableList<ActiveFluckTab>
+        result: MutableList<ActiveTab>
     ) {
         when (node) {
             is SplitNode.Panel -> {
                 node.tabsComponent.tabsState.value.tabs.forEach { tab ->
                     if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
                         result.add(
-                            ActiveFluckTab(
+                            ActiveTab(
                                 tabInfo = tab,
                                 configurationId = configId,
                                 configurationName = configName,
@@ -498,6 +525,36 @@ class SplitViewState(
             is SplitNode.HorizontalSplit -> {
                 collectFluckTabsFromNode(node.top, configId, configName, result)
                 collectFluckTabsFromNode(node.bottom, configId, configName, result)
+            }
+        }
+    }
+    
+    private fun collectAllTabsFromNode(
+        node: SplitNode, 
+        configId: String, 
+        configName: String,
+        result: MutableList<ActiveTab>
+    ) {
+        when (node) {
+            is SplitNode.Panel -> {
+                node.tabsComponent.tabsState.value.tabs.forEach { tab ->
+                    result.add(
+                        ActiveTab(
+                            tabInfo = tab,
+                            configurationId = configId,
+                            configurationName = configName,
+                            panelId = node.id
+                        )
+                    )
+                }
+            }
+            is SplitNode.VerticalSplit -> {
+                collectAllTabsFromNode(node.left, configId, configName, result)
+                collectAllTabsFromNode(node.right, configId, configName, result)
+            }
+            is SplitNode.HorizontalSplit -> {
+                collectAllTabsFromNode(node.top, configId, configName, result)
+                collectAllTabsFromNode(node.bottom, configId, configName, result)
             }
         }
     }

@@ -1,8 +1,9 @@
 package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.ActiveFluckTab
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.FluckActiveTabsState
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.ActiveTab
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.BossActiveTabsState
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,22 +29,22 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 
 @Composable
-fun FluckActiveTabsDialog(
+fun BossActiveTabsDialog(
     splitViewState: SplitViewState,
     configurationManager: ConfigurationManager,
     onDismiss: () -> Unit,
-    onTabSelect: (ActiveFluckTab) -> Unit
+    onTabSelect: (ActiveTab) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val activeTabs by FluckActiveTabsState.activeTabs.collectAsState()
+    val activeTabs by BossActiveTabsState.activeTabs.collectAsState()
     var selectedIndex by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     
     // Update active tabs when dialog opens
     LaunchedEffect(Unit) {
-        val tabs = splitViewState.collectAllActiveFluckTabs()
-        FluckActiveTabsState.updateActiveTabs(tabs)
+        val tabs = splitViewState.collectAllActiveTabs()
+        BossActiveTabsState.updateActiveTabs(tabs)
     }
     
     // Filter tabs based on search query
@@ -52,7 +53,8 @@ fun FluckActiveTabsDialog(
     } else {
         activeTabs.filter { tab ->
             tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
-            tab.tabInfo.url.contains(searchQuery, ignoreCase = true) ||
+            // Only check URL for Fluck tabs that have URL property
+            (tab.tabInfo is FluckTabInfo && tab.tabInfo.url.contains(searchQuery, ignoreCase = true)) ||
             tab.configurationName.contains(searchQuery, ignoreCase = true)
         }
     }
@@ -134,7 +136,7 @@ fun FluckActiveTabsDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "Fluck Active Tabs",
+                        "Boss Active Tabs",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -159,7 +161,7 @@ fun FluckActiveTabsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { 
                         Text(
-                            "Search tabs by title, URL, or configuration...", 
+                            "Search tabs by title, type, or configuration...", 
                             color = Color.Gray,
                             fontSize = 14.sp
                         ) 
@@ -192,7 +194,7 @@ fun FluckActiveTabsDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank()) "No active browser tabs found" else "No tabs matching \"$searchQuery\"",
+                            text = if (searchQuery.isBlank()) "No active tabs found" else "No tabs matching \"$searchQuery\"",
                             color = Color.Gray,
                             fontSize = 14.sp
                         )
@@ -232,7 +234,7 @@ fun FluckActiveTabsDialog(
 
 @Composable
 private fun ActiveTabDialogItem(
-    activeTab: ActiveFluckTab,
+    activeTab: ActiveTab,
     isSelected: Boolean,
     onTabClick: () -> Unit
 ) {
@@ -272,14 +274,21 @@ private fun ActiveTabDialogItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 
-                // URL
-                Text(
-                    text = activeTab.tabInfo.url,
-                    fontSize = 12.sp,
-                    color = if (isSelected) Color.Gray.copy(alpha = 0.9f) else Color.Gray,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                // URL or tab type info
+                val secondaryText = when (val tabInfo = activeTab.tabInfo) {
+                    is FluckTabInfo -> tabInfo.url
+                    else -> tabInfo.typeId.typeId // Show tab type for non-browser tabs
+                }
+                
+                if (secondaryText.isNotEmpty()) {
+                    Text(
+                        text = secondaryText,
+                        fontSize = 12.sp,
+                        color = if (isSelected) Color.Gray.copy(alpha = 0.9f) else Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.width(8.dp))

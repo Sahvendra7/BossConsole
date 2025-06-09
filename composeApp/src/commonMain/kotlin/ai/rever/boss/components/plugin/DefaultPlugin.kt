@@ -15,7 +15,7 @@ import ai.rever.boss.components.plugin.panels.left_top.registerValue
 import ai.rever.boss.components.plugin.panels.right_bottom.registerEhrExplorer
 import ai.rever.boss.components.plugin.panels.right_bottom.registerRpa
 import ai.rever.boss.components.plugin.panels.right_top.*
-import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.registerFluckActiveTabs
+import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.registerBossActiveTabs
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
@@ -47,7 +47,7 @@ class DefaultPlugin(
         registerFluck()
         registerAgent()
         registerLLMRpa()
-        registerFluckActiveTabs()
+        registerBossActiveTabs()
 
         registerRpa()
         registerEhrExplorer()

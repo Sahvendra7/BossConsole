@@ -1,4 +1,4 @@
-package ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs
+package ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.applyConfiguration
@@ -9,6 +9,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
+import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,24 +41,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-// Data class for active browser tabs
-data class ActiveFluckTab(
-    val tabInfo: FluckTabInfo,
+// Data class for active tabs (all types)
+data class ActiveTab(
+    val tabInfo: TabInfo,
     val configurationId: String,
     val configurationName: String,
     val panelId: String
 )
 
-// Global state for tracking active browser tabs
-object FluckActiveTabsState {
-    private val _activeTabs = MutableStateFlow<List<ActiveFluckTab>>(emptyList())
-    val activeTabs: StateFlow<List<ActiveFluckTab>> = _activeTabs
+// Global state for tracking all active tabs
+object BossActiveTabsState {
+    private val _activeTabs = MutableStateFlow<List<ActiveTab>>(emptyList())
+    val activeTabs: StateFlow<List<ActiveTab>> = _activeTabs
     
-    fun updateActiveTabs(tabs: List<ActiveFluckTab>) {
+    fun updateActiveTabs(tabs: List<ActiveTab>) {
         _activeTabs.value = tabs
     }
     
-    fun addActiveTab(tab: ActiveFluckTab) {
+    fun addActiveTab(tab: ActiveTab) {
         _activeTabs.value = _activeTabs.value + tab
     }
     
@@ -66,14 +67,14 @@ object FluckActiveTabsState {
     }
 }
 
-object FluckActiveTabsInfo : PanelInfo {
-    override val id = PanelId("fluck-active-tabs", 1)
-    override val displayName = "Fluck Active Tabs"
+object BossActiveTabsInfo : PanelInfo {
+    override val id = PanelId("boss-active-tabs", 1)
+    override val displayName = "Boss Active Tabs"
     override val icon = Icons.Outlined.Language
     override val defaultSlotPosition = left.top.top
 }
 
-class FluckActiveTabsComponent(
+class BossActiveTabsComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
@@ -82,24 +83,24 @@ class FluckActiveTabsComponent(
     override fun Content() {
         val splitViewState = LocalSplitViewState.current
         val configurationManager = LocalConfigurationManager.current
-        FluckActiveTabsContent(splitViewState, configurationManager)
+        BossActiveTabsContent(splitViewState, configurationManager)
     }
 }
 
 @Composable
-fun FluckActiveTabsContent(
+fun BossActiveTabsContent(
     splitViewState: SplitViewState?,
     configurationManager: ConfigurationManager?
 ) {
-    val activeTabs by FluckActiveTabsState.activeTabs.collectAsState()
+    val activeTabs by BossActiveTabsState.activeTabs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     
     // Update active tabs whenever the split view state changes
     LaunchedEffect(splitViewState) {
         if (splitViewState != null) {
-            val tabs = splitViewState.collectAllActiveFluckTabs()
-            FluckActiveTabsState.updateActiveTabs(tabs)
+            val tabs = splitViewState.collectAllActiveTabs()
+            BossActiveTabsState.updateActiveTabs(tabs)
         }
     }
     
@@ -164,7 +165,8 @@ fun FluckActiveTabsContent(
         } else {
             activeTabs.filter { tab ->
                 tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
-                tab.tabInfo.url.contains(searchQuery, ignoreCase = true) ||
+                // Only check URL for Fluck tabs that have URL property
+                (tab.tabInfo is FluckTabInfo && tab.tabInfo.url.contains(searchQuery, ignoreCase = true)) ||
                 tab.configurationName.contains(searchQuery, ignoreCase = true)
             }
         }
@@ -177,7 +179,7 @@ fun FluckActiveTabsContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank()) "No active browser tabs" else "No tabs matching \"$searchQuery\"",
+                    text = if (searchQuery.isBlank()) "No active tabs" else "No tabs matching \"$searchQuery\"",
                     color = Color.Gray,
                     fontSize = 12.sp
                 )
@@ -232,7 +234,7 @@ fun FluckActiveTabsContent(
 
 @Composable
 private fun ActiveTabItem(
-    activeTab: ActiveFluckTab,
+    activeTab: ActiveTab,
     onTabClick: () -> Unit
 ) {
     Surface(
@@ -257,14 +259,21 @@ private fun ActiveTabItem(
                 overflow = TextOverflow.Ellipsis
             )
             
-            // URL
-            Text(
-                text = activeTab.tabInfo.url,
-                fontSize = 10.sp,
-                color = Color.Gray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            // Tab type and URL (for browser tabs) or type info
+            val secondaryText = when (val tabInfo = activeTab.tabInfo) {
+                is FluckTabInfo -> tabInfo.url
+                else -> tabInfo.typeId.typeId // Show tab type for non-browser tabs
+            }
+            
+            if (secondaryText.isNotEmpty()) {
+                Text(
+                    text = secondaryText,
+                    fontSize = 10.sp,
+                    color = Color.Gray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             
             // Configuration name
             Text(
@@ -278,6 +287,6 @@ private fun ActiveTabItem(
     }
 }
 
-fun DefaultPlugin.registerFluckActiveTabs() = panelRegistry.registerPanel(FluckActiveTabsInfo) {
-    ctx, panelInfo -> FluckActiveTabsComponent(ctx, panelInfo)
+fun DefaultPlugin.registerBossActiveTabs() = panelRegistry.registerPanel(BossActiveTabsInfo) {
+    ctx, panelInfo -> BossActiveTabsComponent(ctx, panelInfo)
 }

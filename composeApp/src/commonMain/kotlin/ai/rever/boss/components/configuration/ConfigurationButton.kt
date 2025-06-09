@@ -29,7 +29,7 @@ fun ConfigurationButton(
     onOpenConfiguration: (LayoutConfiguration) -> Unit,
     configurationManager: ConfigurationManager = remember { ConfigurationManager() },
     getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
-    onShowFluckActiveTabs: (() -> Unit)? = null
+    onShowBossActiveTabs: (() -> Unit)? = null
 ) {
     val currentConfiguration by configurationManager.currentConfiguration.collectAsState()
     val configurations by configurationManager.configurations.collectAsState()
@@ -103,11 +103,11 @@ fun ConfigurationButton(
         add(ContextMenuItem(isDivider = true))
         
         // Fluck Active Tabs option
-        if (onShowFluckActiveTabs != null) {
+        if (onShowBossActiveTabs != null) {
             add(ContextMenuItem(
                 text = "Show Active Tabs",
                 icon = Icons.Outlined.Tab,
-                onClick = onShowFluckActiveTabs
+                onClick = onShowBossActiveTabs
             ))
             
             add(ContextMenuItem(isDivider = true))
