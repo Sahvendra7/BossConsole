@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object LighthouseInfo : PanelInfo {
-    override val id = PanelId("lighthouse", 0)
+    override val id = PanelId("lighthouse", 3)
     override val displayName = "Lighthouse"
     override val icon = Icons.Outlined.Tungsten
     override val defaultSlotPosition = left.top.top

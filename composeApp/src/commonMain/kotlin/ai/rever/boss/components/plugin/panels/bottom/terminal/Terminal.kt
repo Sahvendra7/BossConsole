@@ -23,7 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 object TerminalInfo : PanelInfo {
-    override val id = PanelId("terminal", 11)
+    override val id = PanelId("terminal", 13)
     override val displayName = "Terminal"
     override val icon = Icons.Outlined.Terminal
     override val defaultSlotPosition = left.bottom

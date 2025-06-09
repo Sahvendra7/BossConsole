@@ -37,7 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 object CodeBaseInfo : PanelInfo {
-    override val id = PanelId("codebase", -1)
+    override val id = PanelId("codebase", 2)
     override val displayName = "Codebase"
     override val icon = Icons.Outlined.Code
     override val defaultSlotPosition = left.top.top

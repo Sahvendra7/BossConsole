@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object MasteryInfo : PanelInfo {
-    override val id = PanelId("mastery", 4)
+    override val id = PanelId("mastery", 7)
     override val displayName = "Mastery"
     override val icon = Icons.Outlined.Mediation
     override val defaultSlotPosition = left.top.bottom

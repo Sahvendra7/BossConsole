@@ -16,6 +16,7 @@ fun extractCurrentConfiguration(
 ): LayoutConfiguration {
     val layout = extractSplitConfig(splitViewState.rootNode)
     return LayoutConfiguration(
+        id = LayoutConfiguration.generateId(),
         name = name,
         description = description,
         layout = layout,

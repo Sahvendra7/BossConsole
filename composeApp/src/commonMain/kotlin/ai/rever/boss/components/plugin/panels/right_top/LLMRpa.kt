@@ -23,7 +23,7 @@ import compose.icons.fontawesomeicons.Brands
 import compose.icons.fontawesomeicons.brands.Hotjar
 
 object LLMRpaInfo : PanelInfo {
-    override val id = PanelId("llm_rpa", 16)
+    override val id = PanelId("llm_rpa", 18)
     override val displayName = "LLM RPA"
     override val icon = FontAwesomeIcons.Brands.Hotjar
     override val defaultSlotPosition = right.top.top

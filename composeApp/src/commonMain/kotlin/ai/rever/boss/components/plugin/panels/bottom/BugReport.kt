@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object BugReportInfo : PanelInfo {
-    override val id = PanelId("bugReport", 8)
+    override val id = PanelId("bugReport", 10)
     override val displayName = "Bug Report"
     override val icon = Icons.Outlined.BugReport
     override val defaultSlotPosition = left.bottom

@@ -1,6 +1,7 @@
 package ai.rever.boss.components.window_panel
 
 import ai.rever.boss.components.model.Panel
+import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.ActiveFluckTab
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
@@ -12,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import kotlin.random.Random
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
@@ -59,6 +57,18 @@ class SplitViewState(
     // Track active panel for file operations
     private var _activePanelId = mutableStateOf("main")
     val activePanelId: String get() = _activePanelId.value
+    
+    // Track preserved configuration states
+    private val preservedConfigurationStates = mutableMapOf<String, PreservedConfigState>()
+    private var _currentConfigurationId: String? = null
+    val currentConfigurationId: String? get() = _currentConfigurationId
+    
+    // Data class to hold preserved state
+    data class PreservedConfigState(
+        val rootNode: SplitNode,
+        val activePanelId: String,
+        val configurationName: String = ""
+    )
     
     fun setActivePanel(panelId: String) {
         _activePanelId.value = panelId
@@ -178,6 +188,38 @@ class SplitViewState(
                 )
             }
         }
+    }
+    
+    // Focus a specific tab by ID across all panels
+    fun focusTab(tabId: String, panelId: String? = null) {
+        // If panelId is provided, try that panel first
+        if (panelId != null) {
+            val panel = findPanel(panelId)
+            if (panel != null) {
+                val tabIndex = findTabIndexInPanel(panel, tabId)
+                if (tabIndex >= 0) {
+                    setActivePanel(panelId)
+                    panel.tabsComponent.selectTab(tabIndex)
+                    return
+                }
+            }
+        }
+        
+        // Search all panels for the tab
+        val allPanels = getAllPanels()
+        for (panel in allPanels) {
+            val tabIndex = findTabIndexInPanel(panel, tabId)
+            if (tabIndex >= 0) {
+                setActivePanel(panel.id)
+                panel.tabsComponent.selectTab(tabIndex)
+                return
+            }
+        }
+    }
+    
+    private fun findTabIndexInPanel(panel: SplitNode.Panel, tabId: String): Int {
+        val tabs = panel.tabsComponent.tabsState.value.tabs
+        return tabs.indexOfFirst { it.id == tabId }
     }
     
     fun closePanel(panelId: String) {
@@ -351,8 +393,113 @@ class SplitViewState(
         _activePanelId.value = "main"
     }
     
+    fun preserveCurrentState(configurationId: String, configurationName: String = "") {
+        // Save current state before switching
+        _currentConfigurationId?.let { currentId ->
+            preservedConfigurationStates[currentId] = PreservedConfigState(
+                rootNode = _rootNode.value,
+                activePanelId = _activePanelId.value,
+                configurationName = configurationName
+            )
+        }
+        _currentConfigurationId = configurationId
+    }
+    
+    fun restorePreservedState(configurationId: String): Boolean {
+        // Check if we have a preserved state for this configuration
+        val preservedState = preservedConfigurationStates[configurationId]
+        return if (preservedState != null) {
+            // Restore the preserved state
+            _rootNode.value = preservedState.rootNode
+            _activePanelId.value = preservedState.activePanelId
+            _currentConfigurationId = configurationId
+            true
+        } else {
+            _currentConfigurationId = configurationId
+            false
+        }
+    }
+    
     fun getPanelTabsComponent(panelId: String): BossTabsComponent? {
         return findPanel(panelId)?.tabsComponent
+    }
+    
+    fun selectTabInPanel(tabId: String, panelId: String) {
+        val panel = findPanel(panelId)
+        if (panel != null) {
+            // Set the panel as active
+            setActivePanel(panelId)
+            
+            // Find the tab index and select it
+            val tabsComponent = panel.tabsComponent
+            val tabs = tabsComponent.tabsState.value.tabs
+            val tabIndex = tabs.indexOfFirst { it.id == tabId }
+            
+            if (tabIndex >= 0) {
+                tabsComponent.selectTab(tabIndex)
+            }
+        }
+    }
+    
+    fun collectAllActiveFluckTabs(): List<ActiveFluckTab> {
+        val result = mutableListOf<ActiveFluckTab>()
+        
+        // Collect from current state
+        _currentConfigurationId?.let { configId ->
+            getAllPanels().forEach { panel ->
+                panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
+                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                        result.add(
+                            ActiveFluckTab(
+                                tabInfo = tab,
+                                configurationId = configId,
+                                configurationName = "Current", // We'll need to track config names
+                                panelId = panel.id
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Collect from preserved states
+        preservedConfigurationStates.forEach { (configId, state) ->
+            collectFluckTabsFromNode(state.rootNode, configId, state.configurationName, result)
+        }
+        
+        return result
+    }
+    
+    private fun collectFluckTabsFromNode(
+        node: SplitNode, 
+        configId: String, 
+        configName: String,
+        result: MutableList<ActiveFluckTab>
+    ) {
+        when (node) {
+            is SplitNode.Panel -> {
+                node.tabsComponent.tabsState.value.tabs.forEach { tab ->
+                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
+                        result.add(
+                            ActiveFluckTab(
+                                tabInfo = tab,
+                                configurationId = configId,
+                                configurationName = configName,
+                                panelId = node.id
+                            )
+                        )
+                    }
+                }
+            }
+            is SplitNode.VerticalSplit -> {
+                collectFluckTabsFromNode(node.left, configId, configName, result)
+                collectFluckTabsFromNode(node.right, configId, configName, result)
+            }
+            is SplitNode.HorizontalSplit -> {
+                collectFluckTabsFromNode(node.top, configId, configName, result)
+                collectFluckTabsFromNode(node.bottom, configId, configName, result)
+            }
+        }
     }
 }
 

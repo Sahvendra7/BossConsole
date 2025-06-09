@@ -2,22 +2,22 @@ package ai.rever.boss.components.windows
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun SettingsWindow(onDismiss: () -> Unit) {
+actual fun SettingsWindow(onClose: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = "Settings are not yet implemented for Android",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.body1,
+            color = MaterialTheme.colors.onSurface
         )
     }
 }

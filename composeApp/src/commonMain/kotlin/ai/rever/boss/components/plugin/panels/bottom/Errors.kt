@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object ErrorInfo : PanelInfo {
-    override val id = PanelId("errors", 9)
+    override val id = PanelId("errors", 11)
     override val displayName = "Errors"
     override val icon = Icons.Outlined.Info
     override val defaultSlotPosition = left.bottom

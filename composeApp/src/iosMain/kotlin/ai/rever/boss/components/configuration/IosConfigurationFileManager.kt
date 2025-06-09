@@ -3,10 +3,12 @@ package ai.rever.boss.components.configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.Foundation.*
+import kotlinx.cinterop.ExperimentalForeignApi
 
 /**
  * iOS implementation of ConfigurationFileManager
  */
+@OptIn(ExperimentalForeignApi::class)
 actual class ConfigurationFileManager {
     private val configDirectory: String by lazy {
         val documentsDir = NSSearchPathForDirectoriesInDomains(
@@ -24,9 +26,8 @@ actual class ConfigurationFileManager {
     actual suspend fun ensureConfigurationDirectory(): Boolean = withContext(Dispatchers.Main) {
         try {
             val fileManager = NSFileManager.defaultManager
-            var isDirectory: ObjCBooleanVar? = null
             
-            if (!fileManager.fileExistsAtPath(configDirectory, isDirectory)) {
+            if (!fileManager.fileExistsAtPath(configDirectory)) {
                 fileManager.createDirectoryAtPath(
                     configDirectory,
                     withIntermediateDirectories = true,
@@ -35,7 +36,7 @@ actual class ConfigurationFileManager {
                 )
             }
             
-            fileManager.fileExistsAtPath(configDirectory, isDirectory) && (isDirectory?.value ?: false)
+            fileManager.fileExistsAtPath(configDirectory)
         } catch (e: Exception) {
             false
         }
@@ -53,10 +54,10 @@ actual class ConfigurationFileManager {
             
             // Serialize configuration
             val json = ConfigurationSerializer.serialize(config)
-            val data = json.encodeToByteArray().toNSData()
+            val nsString = NSString.create(string = json)
             
             // Write to file
-            data.writeToFile(filePath, atomically = true)
+            nsString.writeToFile(filePath, atomically = true, encoding = NSUTF8StringEncoding, error = null)
             
             filePath
         } catch (e: Exception) {
@@ -74,9 +75,8 @@ actual class ConfigurationFileManager {
                 return@withContext null
             }
             
-            val data = NSData.dataWithContentsOfFile(filePath) ?: return@withContext null
-            val json = data.toByteArray().decodeToString()
-            ConfigurationSerializer.deserialize(json)
+            val nsString = NSString.stringWithContentsOfFile(filePath, encoding = NSUTF8StringEncoding, error = null) ?: return@withContext null
+            ConfigurationSerializer.deserialize(nsString.toString())
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -128,15 +128,3 @@ actual class ConfigurationFileManager {
     }
 }
 
-// Extension functions for NSData conversion
-private fun ByteArray.toNSData(): NSData = NSMutableData().apply {
-    if (this@toNSData.isNotEmpty()) {
-        appendBytes(this@toNSData.refTo(0), this@toNSData.size.toULong())
-    }
-} as NSData
-
-private fun NSData.toByteArray(): ByteArray = ByteArray(length.toInt()).apply {
-    usePinned {
-        memcpy(it.addressOf(0), bytes, length)
-    }
-}

@@ -24,7 +24,7 @@ import compose.icons.fontawesomeicons.Brands
 import compose.icons.fontawesomeicons.brands.React
 
 object RpaInfo : PanelInfo {
-    override val id = PanelId("rpa", 18)
+    override val id = PanelId("rpa", 20)
     override val displayName = "RPA"
     override val icon = FontAwesomeIcons.Brands.React
     override val defaultSlotPosition = right.top.bottom

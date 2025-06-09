@@ -22,7 +22,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
 
 object GitInfo : PanelInfo {
-    override val id = PanelId("git", 10)
+    override val id = PanelId("git", 12)
     override val displayName = "Git"
     override val icon = FeatherIcons.GitBranch
     override val defaultSlotPosition = left.bottom

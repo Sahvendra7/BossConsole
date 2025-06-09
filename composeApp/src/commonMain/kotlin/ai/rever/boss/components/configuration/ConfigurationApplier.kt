@@ -18,7 +18,16 @@ suspend fun applyConfiguration(
     configuration: LayoutConfiguration,
     splitViewState: SplitViewState
 ) {
-    // Clear current layout
+    // Generate ID if missing
+    val configId = configuration.id.ifEmpty { LayoutConfiguration.generateId() }
+    
+    // Try to restore preserved state first
+    if (splitViewState.restorePreservedState(configId)) {
+        // State restored successfully
+        return
+    }
+    
+    // No preserved state, apply configuration from scratch
     splitViewState.clearAllPanels()
     
     // Apply the configuration recursively

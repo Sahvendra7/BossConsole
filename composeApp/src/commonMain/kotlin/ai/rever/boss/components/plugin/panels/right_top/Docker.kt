@@ -23,7 +23,7 @@ import compose.icons.fontawesomeicons.Brands
 import compose.icons.fontawesomeicons.brands.Docker
 
 object DockerInfo : PanelInfo {
-    override val id = PanelId("docker", 15)
+    override val id = PanelId("docker", 17)
     override val displayName = "Docker"
     override val icon = FontAwesomeIcons.Brands.Docker
     override val defaultSlotPosition = right.top.top

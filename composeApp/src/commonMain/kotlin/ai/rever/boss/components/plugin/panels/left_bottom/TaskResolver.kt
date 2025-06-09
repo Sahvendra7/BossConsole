@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object TaskResolverInfo : PanelInfo {
-    override val id = PanelId("taskResolver", 5)
+    override val id = PanelId("taskResolver", 8)
     override val displayName = "Task Resolver"
     override val icon = Icons.Outlined.Grain
     override val defaultSlotPosition = left.top.bottom

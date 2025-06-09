@@ -22,7 +22,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.Database
 
 object DatabaseInfo : PanelInfo {
-    override val id = PanelId("database", 12)
+    override val id = PanelId("database", 14)
     override val displayName = "Database"
     override val icon = FeatherIcons.Database
     override val defaultSlotPosition = right.top.top

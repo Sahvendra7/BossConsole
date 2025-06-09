@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object SystemOfRecordInfo: PanelInfo {
-    override val id = PanelId("system_of_record", 1)
+    override val id = PanelId("system_of_record", 4)
     override val displayName = "System of Record"
     override val icon = Icons.Outlined.Widgets
     override val defaultSlotPosition = left.top.top

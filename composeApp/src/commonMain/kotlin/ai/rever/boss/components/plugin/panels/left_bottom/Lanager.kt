@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object LanagerInfo : PanelInfo {
-    override val id = PanelId("lanager", 3)
+    override val id = PanelId("lanager", 6)
     override val displayName = "Lanager"
     override val icon = Icons.Outlined.Diversity2
     override val defaultSlotPosition = left.top.bottom

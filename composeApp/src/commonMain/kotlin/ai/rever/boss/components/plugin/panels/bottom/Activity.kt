@@ -22,7 +22,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.Activity
 
 object ActivityInfo : PanelInfo {
-    override val id = PanelId("activity", 7)
+    override val id = PanelId("activity", 9)
     override val displayName = "Activity"
     override val icon = FeatherIcons.Activity
     override val defaultSlotPosition = left.bottom

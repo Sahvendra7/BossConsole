@@ -37,9 +37,15 @@ class ConfigurationManager {
                 val savedConfigs = fileManager.listConfigurations()
                 savedConfigs.forEach { fileInfo ->
                     fileManager.loadConfiguration(fileInfo.fileName)?.let { config ->
+                        // Ensure config has an ID
+                        val configWithId = if (config.id.isEmpty()) {
+                            config.copy(id = LayoutConfiguration.generateId())
+                        } else {
+                            config
+                        }
                         // Only add if not already in predefined list
-                        if (allConfigs.none { it.name == config.name }) {
-                            allConfigs.add(config)
+                        if (allConfigs.none { it.name == configWithId.name }) {
+                            allConfigs.add(configWithId)
                         }
                     }
                 }
@@ -65,6 +71,7 @@ class ConfigurationManager {
     fun saveCurrentConfiguration(name: String? = null): LayoutConfiguration? {
         val current = _currentConfiguration.value ?: return null
         val savedConfig = current.copy(
+            id = if (current.id.isEmpty()) LayoutConfiguration.generateId() else current.id,
             name = name ?: current.name,
             timestamp = Clock.System.now().toEpochMilliseconds()
         )

@@ -37,7 +37,8 @@ import ai.rever.boss.components.configuration.LayoutConfiguration
 fun BossDraggableComponent.BossTopBar(
     configurationManager: ConfigurationManager? = null,
     onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
-    getCurrentConfiguration: (() -> LayoutConfiguration)? = null
+    getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
+    onShowFluckActiveTabs: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -57,7 +58,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration)
+            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration, onShowFluckActiveTabs)
             Spacer(modifier = Modifier.weight(1f))
             BossTopRunBar()
             Spacer(modifier = Modifier.weight(0.1f))
@@ -148,7 +149,8 @@ val gitContextMenuItems get() = listOf(
 fun BossDraggableComponent.BossTopLeftBar(
     configurationManager: ConfigurationManager? = null,
     onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
-    getCurrentConfiguration: (() -> LayoutConfiguration)? = null
+    getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
+    onShowFluckActiveTabs: (() -> Unit)? = null
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
@@ -172,7 +174,8 @@ fun BossDraggableComponent.BossTopLeftBar(
         ConfigurationButton(
             onOpenConfiguration = onApplyConfiguration,
             configurationManager = configurationManager,
-            getCurrentConfiguration = getCurrentConfiguration
+            getCurrentConfiguration = getCurrentConfiguration,
+            onShowFluckActiveTabs = onShowFluckActiveTabs
         )
     }
     

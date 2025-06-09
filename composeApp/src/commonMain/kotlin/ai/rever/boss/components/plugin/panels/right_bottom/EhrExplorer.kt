@@ -25,7 +25,7 @@ import compose.icons.fontawesomeicons.Brands
 import compose.icons.fontawesomeicons.brands.Gripfire
 
 object EhrExplorerInfo : PanelInfo {
-    override val id = PanelId("ehr_explorer", 17)
+    override val id = PanelId("ehr_explorer", 19)
     override val displayName = "EHR Explorer"
     override val icon = FontAwesomeIcons.Brands.Gripfire
     override val defaultSlotPosition = right.top.bottom

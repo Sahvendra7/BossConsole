@@ -1,0 +1,301 @@
+package ai.rever.boss.components.dialogs
+
+import ai.rever.boss.components.configuration.ConfigurationManager
+import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.ActiveFluckTab
+import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.FluckActiveTabsState
+import ai.rever.boss.components.window_panel.SplitViewState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
+
+@Composable
+fun FluckActiveTabsDialog(
+    splitViewState: SplitViewState,
+    configurationManager: ConfigurationManager,
+    onDismiss: () -> Unit,
+    onTabSelect: (ActiveFluckTab) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val activeTabs by FluckActiveTabsState.activeTabs.collectAsState()
+    var selectedIndex by remember { mutableStateOf(0) }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Update active tabs when dialog opens
+    LaunchedEffect(Unit) {
+        val tabs = splitViewState.collectAllActiveFluckTabs()
+        FluckActiveTabsState.updateActiveTabs(tabs)
+    }
+    
+    // Filter tabs based on search query
+    val filteredTabs = if (searchQuery.isBlank()) {
+        activeTabs
+    } else {
+        activeTabs.filter { tab ->
+            tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
+            tab.tabInfo.url.contains(searchQuery, ignoreCase = true) ||
+            tab.configurationName.contains(searchQuery, ignoreCase = true)
+        }
+    }
+    
+    // Handle keyboard navigation
+    LaunchedEffect(selectedIndex, filteredTabs.size) {
+        if (filteredTabs.isNotEmpty()) {
+            val clampedIndex = selectedIndex.coerceIn(0, filteredTabs.size - 1)
+            if (clampedIndex != selectedIndex) {
+                selectedIndex = clampedIndex
+            }
+            coroutineScope.launch {
+                listState.animateScrollToItem(selectedIndex)
+            }
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(600.dp)
+                .height(500.dp)
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        when (event.key) {
+                            Key.Escape -> {
+                                onDismiss()
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                if (filteredTabs.isNotEmpty()) {
+                                    selectedIndex = (selectedIndex - 1).coerceAtLeast(0)
+                                }
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                if (filteredTabs.isNotEmpty()) {
+                                    selectedIndex = (selectedIndex + 1).coerceAtMost(filteredTabs.size - 1)
+                                }
+                                true
+                            }
+                            Key.Enter -> {
+                                if (filteredTabs.isNotEmpty() && selectedIndex < filteredTabs.size) {
+                                    onTabSelect(filteredTabs[selectedIndex])
+                                }
+                                true
+                            }
+                            else -> false
+                        }
+                    } else {
+                        false
+                    }
+                },
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF2B2D30),
+            elevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Title
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Language,
+                        contentDescription = "Browser tabs",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Fluck Active Tabs",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "${filteredTabs.size} tab${if (filteredTabs.size != 1) "s" else ""}",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Search bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { 
+                        searchQuery = it
+                        selectedIndex = 0 // Reset selection when searching
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { 
+                        Text(
+                            "Search tabs by title, URL, or configuration...", 
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        ) 
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Search,
+                            contentDescription = "Search",
+                            tint = Color.Gray
+                        )
+                    },
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        backgroundColor = Color(0xFF3C3F43),
+                        focusedBorderColor = Color(0xFF4A4D52),
+                        unfocusedBorderColor = Color(0xFF4A4D52),
+                        textColor = Color.White,
+                        cursorColor = Color.White
+                    ),
+                    singleLine = true
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Tabs list
+                if (filteredTabs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (searchQuery.isBlank()) "No active browser tabs found" else "No tabs matching \"$searchQuery\"",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(filteredTabs.size) { index ->
+                            val activeTab = filteredTabs[index]
+                            val isSelected = index == selectedIndex
+                            
+                            ActiveTabDialogItem(
+                                activeTab = activeTab,
+                                isSelected = isSelected,
+                                onTabClick = { onTabSelect(activeTab) }
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Instructions
+                Text(
+                    "↑↓ to navigate • Enter to select • Esc to close",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveTabDialogItem(
+    activeTab: ActiveFluckTab,
+    isSelected: Boolean,
+    onTabClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onTabClick() },
+        color = if (isSelected) Color(0xFF4A90E2).copy(alpha = 0.3f) else Color(0xFF3C3F43),
+        elevation = if (isSelected) 2.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Language,
+                contentDescription = "Browser tab",
+                tint = if (isSelected) Color.White else Color.Gray,
+                modifier = Modifier.size(16.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // Tab title
+                Text(
+                    text = activeTab.tabInfo.title,
+                    fontSize = 14.sp,
+                    color = if (isSelected) Color.White else Color(0xFFE6E6E6),
+                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                // URL
+                Text(
+                    text = activeTab.tabInfo.url,
+                    fontSize = 12.sp,
+                    color = if (isSelected) Color.Gray.copy(alpha = 0.9f) else Color.Gray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Configuration badge
+            Surface(
+                color = Color(0xFF4A4D52),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = activeTab.configurationName,
+                    fontSize = 10.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}

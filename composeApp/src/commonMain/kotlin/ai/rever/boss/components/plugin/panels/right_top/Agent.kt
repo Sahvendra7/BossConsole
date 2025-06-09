@@ -22,7 +22,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.MessageSquare
 
 object AgentInfo : PanelInfo {
-    override val id = PanelId("agent", 14)
+    override val id = PanelId("agent", 16)
     override val displayName = "Agent"
     override val icon = FeatherIcons.MessageSquare
     override val defaultSlotPosition = right.top.top

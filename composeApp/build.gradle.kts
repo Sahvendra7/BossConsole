@@ -218,7 +218,7 @@ compose.desktop {
                 bundleID = "ai.rever.boss"
                 iconFile.set(project.file("src/desktopMain/resources/boss_icon.icns"))
                 packageName = "BOSS"
-                dmgPackageVersion = "1.0.4"
+                dmgPackageVersion = "1.0.5"
                 dmgPackageBuildVersion = "1"
                 
                 
@@ -241,7 +241,7 @@ compose.desktop {
                         <key>LSMinimumSystemVersion</key>
                         <string>10.15</string>
                         <key>CFBundleShortVersionString</key>
-                        <string>1.0.4</string>
+                        <string>1.0.5</string>
                         <key>CFBundleVersion</key>
                         <string>1</string>
                         <key>NSHighResolutionCapable</key>

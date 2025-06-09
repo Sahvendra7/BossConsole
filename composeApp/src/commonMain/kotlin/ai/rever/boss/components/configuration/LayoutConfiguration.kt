@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
+import kotlinx.datetime.Clock
 
 /**
  * Represents a tab configuration
@@ -53,11 +54,16 @@ sealed class SplitConfig {
  */
 @Serializable
 data class LayoutConfiguration(
+    val id: String = "",  // Unique identifier for the configuration
     val name: String,
     val description: String,
     val layout: SplitConfig,
     val timestamp: Long = 0L
-)
+) {
+    companion object {
+        fun generateId(): String = "config-${Clock.System.now().toEpochMilliseconds()}"
+    }
+}
 
 /**
  * Predefined configurations

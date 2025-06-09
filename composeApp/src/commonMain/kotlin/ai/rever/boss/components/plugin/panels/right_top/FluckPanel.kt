@@ -25,7 +25,7 @@ import compose.icons.fontawesomeicons.Brands
 import compose.icons.fontawesomeicons.brands.Chrome
 
 object FluckPanelInfo : PanelInfo {
-    override val id = PanelId("fluck", 13)
+    override val id = PanelId("fluck", 15)
     override val displayName = "Fluck"
     override val icon = FontAwesomeIcons.Brands.Chrome
     override val defaultSlotPosition = right.top.top

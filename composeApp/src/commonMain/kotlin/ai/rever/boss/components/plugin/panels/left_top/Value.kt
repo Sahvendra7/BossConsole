@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 
 object ValueInfo : PanelInfo {
-    override val id = PanelId("value", 2)
+    override val id = PanelId("value", 5)
     override val displayName = "North Star"
     override val icon = Icons.Outlined.AutoGraph
     override val defaultSlotPosition = left.top.top

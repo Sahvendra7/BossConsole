@@ -7,7 +7,6 @@ import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
@@ -53,6 +52,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.LocalSplitViewState
+import ai.rever.boss.components.plugin.panels.left_top.FluckActiveTabs.LocalConfigurationManager
+import ai.rever.boss.components.dialogs.FluckActiveTabsDialog
+import androidx.compose.runtime.CompositionLocalProvider
 
 
 @Composable
@@ -78,6 +81,7 @@ fun ComponentContext.BossApp() {
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
+    var showFluckActiveTabsDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(panelRegistry, tabRegistry) {
         DefaultPlugin(panelRegistry, tabRegistry)
@@ -88,6 +92,7 @@ fun ComponentContext.BossApp() {
             coroutineScope.launch {
                 val currentLayout = extractCurrentConfiguration(splitViewState)
                 val lastSessionConfig = currentLayout.copy(
+                    id = "last-session",
                     name = "Last Session",
                     description = "Automatically saved session"
                 )
@@ -108,9 +113,15 @@ fun ComponentContext.BossApp() {
                     val lastSessionConfig = configs.find { it.name == "Last Session" }
                     
                     if (lastSessionConfig != null) {
+                        // Ensure it has the correct ID
+                        val configWithId = if (lastSessionConfig.id != "last-session") {
+                            lastSessionConfig.copy(id = "last-session")
+                        } else {
+                            lastSessionConfig
+                        }
                         // Apply the last session configuration
-                        configurationManager.loadConfiguration(lastSessionConfig)
-                        applyConfiguration(lastSessionConfig, splitViewState)
+                        configurationManager.loadConfiguration(configWithId)
+                        applyConfiguration(configWithId, splitViewState)
                     }
                 }
             }
@@ -156,6 +167,7 @@ fun ComponentContext.BossApp() {
                     saveJob = launch {
                         delay(2000) // Wait 2 seconds before saving
                         val lastSessionConfig = currentLayout.copy(
+                            id = "last-session",
                             name = "Last Session",
                             description = "Automatically saved session"
                         )
@@ -175,6 +187,7 @@ fun ComponentContext.BossApp() {
                     saveJob = launch {
                         delay(2000) // Wait 2 seconds before saving
                         val lastSessionConfig = currentLayout.copy(
+                            id = "last-session",
                             name = "Last Session",
                             description = "Automatically saved session"
                         )
@@ -225,7 +238,11 @@ fun ComponentContext.BossApp() {
 
     with(draggablePanelComponent) {
         BossTheme {
-            Box(modifier = Modifier
+            CompositionLocalProvider(
+                LocalSplitViewState provides splitViewState,
+                LocalConfigurationManager provides configurationManager
+            ) {
+                Box(modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
                     // Use onPreviewKeyEvent to catch events before they reach children
@@ -284,6 +301,11 @@ fun ComponentContext.BossApp() {
                                 }
                                 true
                             }
+                            event.isCtrlPressed && event.key == Key.Spacebar -> {
+                                // Open Fluck Active Tabs quick switcher
+                                showFluckActiveTabsDialog = true
+                                true
+                            }
                             else -> false
                         }
                     } else {
@@ -297,14 +319,23 @@ fun ComponentContext.BossApp() {
                         configurationManager = configurationManager,
                         onApplyConfiguration = { config ->
                             coroutineScope.launch {
+                                // Preserve current state before switching
+                                val currentConfig = configurationManager.currentConfiguration.value
+                                if (currentConfig != null && currentConfig.id.isNotEmpty()) {
+                                    splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                                }
+                                
                                 // First load the configuration to reset dirty state
                                 configurationManager.loadConfiguration(config)
-                                // Then apply it to the UI
+                                // Then apply it to the UI (which will try to restore preserved state)
                                 applyConfiguration(config, splitViewState)
                             }
                         },
                         getCurrentConfiguration = {
                             extractCurrentConfiguration(splitViewState)
+                        },
+                        onShowFluckActiveTabs = {
+                            showFluckActiveTabsDialog = true
                         }
                     )
                     Row(modifier = Modifier.weight(1f)) {
@@ -360,6 +391,41 @@ fun ComponentContext.BossApp() {
                         }
                     }
                 )
+            }
+            
+            // Fluck Active Tabs quick switcher dialog
+            if (showFluckActiveTabsDialog) {
+                FluckActiveTabsDialog(
+                    splitViewState = splitViewState,
+                    configurationManager = configurationManager,
+                    onDismiss = { showFluckActiveTabsDialog = false },
+                    onTabSelect = { activeTab ->
+                        showFluckActiveTabsDialog = false
+                        coroutineScope.launch {
+                            // Preserve current state before switching
+                            val currentConfig = configurationManager.currentConfiguration.value
+                            if (currentConfig != null && currentConfig.id.isNotEmpty()) {
+                                splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                            }
+                            
+                            // Find the configuration containing this tab
+                            val targetConfig = configurationManager.configurations.value.find { 
+                                it.id == activeTab.configurationId 
+                            }
+                            
+                            if (targetConfig != null) {
+                                // Load and apply the target configuration
+                                configurationManager.loadConfiguration(targetConfig)
+                                applyConfiguration(targetConfig, splitViewState)
+                                
+                                // Focus the specific tab after a short delay to ensure configuration is applied
+                                delay(100)
+                                splitViewState.selectTabInPanel(activeTab.tabInfo.id, activeTab.panelId)
+                            }
+                        }
+                    }
+                )
+            }
             }
         }
     }
