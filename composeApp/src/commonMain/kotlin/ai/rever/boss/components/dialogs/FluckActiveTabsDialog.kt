@@ -1,8 +1,8 @@
 package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.ActiveTab
-import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.BossActiveTabsState
+import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.ActiveTab
+import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.BossActiveTabsState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.clickable

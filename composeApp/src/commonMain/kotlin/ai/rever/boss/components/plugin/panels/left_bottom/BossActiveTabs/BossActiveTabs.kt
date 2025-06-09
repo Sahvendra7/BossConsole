@@ -1,8 +1,9 @@
-package ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs
+package ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs
 
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.applyConfiguration
 import ai.rever.boss.components.model.Panel.Companion.left
+import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -69,10 +70,10 @@ object BossActiveTabsState {
 }
 
 object BossActiveTabsInfo : PanelInfo {
-    override val id = PanelId("boss-active-tabs", 1)
-    override val displayName = "Boss Active Tabs"
+    override val id = PanelId("boss-active-tabs", 5)
+    override val displayName = "Active Tabs"
     override val icon = Icons.Outlined.Language
-    override val defaultSlotPosition = left.top.top
+    override val defaultSlotPosition = left.top.bottom
 }
 
 class BossActiveTabsComponent(

@@ -52,8 +52,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.LocalSplitViewState
-import ai.rever.boss.components.plugin.panels.left_top.BossActiveTabs.LocalConfigurationManager
+import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalSplitViewState
+import ai.rever.boss.components.plugin.panels.left_bottom.BossActiveTabs.LocalConfigurationManager
 import ai.rever.boss.components.dialogs.BossActiveTabsDialog
 import androidx.compose.runtime.CompositionLocalProvider
 

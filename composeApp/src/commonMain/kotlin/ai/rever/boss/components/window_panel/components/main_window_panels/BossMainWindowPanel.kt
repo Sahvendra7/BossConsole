@@ -55,15 +55,6 @@ import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kotlinx.coroutines.delay
 
-// Simple implementation of TabInfo
-data class SimpleTabInfo(
-    override val id: String,
-    override val title: String,
-    override val typeId: TabTypeId,
-    override val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    override val tabIcon: TabIcon? = null
-) : TabInfo
-
 @Composable
 fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
     Column(modifier = Modifier.weight(2f).padding(horizontal = 8.dp)) {
