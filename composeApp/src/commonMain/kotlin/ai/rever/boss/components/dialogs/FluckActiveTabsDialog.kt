@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -41,10 +42,22 @@ fun BossActiveTabsDialog(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     
-    // Update active tabs when dialog opens
+    // Update active tabs when dialog opens and refresh periodically
     LaunchedEffect(Unit) {
+        // Immediate update when dialog opens
         val tabs = splitViewState.collectAllActiveTabs()
         BossActiveTabsState.updateActiveTabs(tabs)
+        
+        // Periodic refresh to ensure dialog has latest data
+        while (true) {
+            delay(1000) // Check every second while dialog is open
+            val currentTabs = splitViewState.collectAllActiveTabs()
+            val existingTabs = BossActiveTabsState.activeTabs.value
+            
+            if (currentTabs != existingTabs) {
+                BossActiveTabsState.updateActiveTabs(currentTabs)
+            }
+        }
     }
     
     // Filter tabs based on search query

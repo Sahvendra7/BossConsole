@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
+import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,11 +97,36 @@ fun BossActiveTabsContent(
     var searchQuery by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     
-    // Update active tabs whenever the split view state changes
+    // Update active tabs whenever the split view state changes or tabs are added/removed
     LaunchedEffect(splitViewState) {
         if (splitViewState != null) {
             val tabs = splitViewState.collectAllActiveTabs()
             BossActiveTabsState.updateActiveTabs(tabs)
+        }
+    }
+    
+    // Subscribe to real-time tab state changes from all panels
+    if (splitViewState != null) {
+        val allPanels = splitViewState.getAllPanels()
+        
+        // Create a key that changes when panels change
+        val panelsKey = allPanels.map { it.id }.sorted().joinToString(",")
+        
+        LaunchedEffect(panelsKey) {
+            // Update tabs when panel structure changes
+            val tabs = splitViewState.collectAllActiveTabs()
+            BossActiveTabsState.updateActiveTabs(tabs)
+        }
+        
+        // Listen to tab state changes in each panel
+        allPanels.forEach { panel ->
+            val panelTabsState by panel.tabsComponent.tabsState.subscribeAsState()
+            
+            LaunchedEffect(panel.id, panelTabsState.tabs.size, panelTabsState.tabs.map { tab -> tab.id + tab.title }) {
+                // Update when tabs are added/removed or their content changes in this panel
+                val updatedTabs = splitViewState.collectAllActiveTabs()
+                BossActiveTabsState.updateActiveTabs(updatedTabs)
+            }
         }
     }
     
