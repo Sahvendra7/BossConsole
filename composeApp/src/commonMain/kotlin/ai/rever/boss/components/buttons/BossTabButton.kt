@@ -4,6 +4,8 @@ import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.components.overlays.ContextMenuItem
+import ai.rever.boss.components.overlays.contextMenu
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -55,7 +57,8 @@ fun BossTabButton(
     isFocused: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onClose: () -> Unit = {}
+    onClose: () -> Unit = {},
+    contextMenuItems: List<ContextMenuItem> = emptyList()
 ) {
     // Determine which icon to use
     val painter = when {
@@ -136,6 +139,9 @@ fun BossTabButton(
                     coordinates.size.height
                 )
             }
+            .contextMenu(
+                items = contextMenuItems
+            )
     ) {
         TextButton(
             modifier = Modifier.fillMaxHeight(),

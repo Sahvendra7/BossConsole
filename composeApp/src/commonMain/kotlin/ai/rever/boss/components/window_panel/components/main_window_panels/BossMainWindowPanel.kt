@@ -128,6 +128,8 @@ fun BossTabsComponent.BossMainTabBar(
             BossLeftTabBar {
                 tabsState.value.tabs.forEachIndexed { index, config ->
                     val isSelected = index == tabsState.value.activeIndex
+                    val totalTabs = tabsState.value.tabs.size
+                    
                     BossTabButton(
                         fileName = config.title,
                         icon = config.icon,
@@ -137,6 +139,33 @@ fun BossTabsComponent.BossMainTabBar(
                         onClose = { 
                             removeTab(index)
                             // Tab removal is handled, cleanup will happen via LaunchedEffect
+                        },
+                        contextMenuItems = buildList {
+                            // Close current tab
+                            add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
+                                removeTab(index)
+                            })
+                            
+                            // Close other tabs (only show if there are other tabs)
+                            if (totalTabs > 1) {
+                                add(ContextMenuItem("Close Other Tabs", Icons.Outlined.Clear) {
+                                    closeOtherTabs(index)
+                                })
+                            }
+                            
+                            // Close tabs to the right (only show if there are tabs to the right)
+                            if (index < totalTabs - 1) {
+                                add(ContextMenuItem("Close Tabs to the Right", Icons.Outlined.ChevronRight) {
+                                    closeTabsToRight(index)
+                                })
+                            }
+                            
+                            // Close tabs to the left (only show if there are tabs to the left)
+                            if (index > 0) {
+                                add(ContextMenuItem("Close Tabs to the Left", Icons.Outlined.ChevronLeft) {
+                                    closeTabsToLeft(index)
+                                })
+                            }
                         }
                     )
                 }
@@ -524,6 +553,40 @@ class BossTabsComponent(
         // Remove tabs in reverse order to avoid index issues
         val tabCount = tabsState.value.tabs.size
         for (i in tabCount - 1 downTo 0) {
+            removeTab(i)
+        }
+    }
+    
+    // Close other tabs (keep only the specified tab)
+    fun closeOtherTabs(keepIndex: Int) {
+        val tabs = tabsState.value.tabs
+        if (keepIndex < 0 || keepIndex >= tabs.size) return
+        
+        // Remove tabs in reverse order to avoid index issues
+        for (i in tabs.size - 1 downTo 0) {
+            if (i != keepIndex) {
+                removeTab(i)
+            }
+        }
+    }
+    
+    // Close tabs to the right of the specified index
+    fun closeTabsToRight(fromIndex: Int) {
+        val tabs = tabsState.value.tabs
+        if (fromIndex < 0 || fromIndex >= tabs.size - 1) return
+        
+        // Remove tabs from right to left to avoid index issues
+        for (i in tabs.size - 1 downTo fromIndex + 1) {
+            removeTab(i)
+        }
+    }
+    
+    // Close tabs to the left of the specified index
+    fun closeTabsToLeft(fromIndex: Int) {
+        if (fromIndex <= 0) return
+        
+        // Remove tabs from right to left to avoid index issues
+        for (i in fromIndex - 1 downTo 0) {
             removeTab(i)
         }
     }
