@@ -286,21 +286,35 @@ fun ComponentContext.BossApp() {
                                 true
                             }
                             event.isMetaPressed && event.key == Key.T -> {
-                                // Open terminal tab
-                                val terminalTab = TerminalTabInfo(
-                                    id = "terminal-${Random.nextLong()}",
-                                    typeId = TerminalTab.typeId,
-                                    title = "Terminal"
-                                )
-                                tabsComponent.addTab(terminalTab)
+                                // Open terminal tab in the active panel
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                if (activeTabsComponent != null) {
+                                    val terminalTab = TerminalTabInfo(
+                                        id = "terminal-${Random.nextLong()}",
+                                        typeId = TerminalTab.typeId,
+                                        title = "Terminal"
+                                    )
+                                    activeTabsComponent.addTab(terminalTab)
+                                } else {
+                                    // Fallback to main tabs component
+                                    val terminalTab = TerminalTabInfo(
+                                        id = "terminal-${Random.nextLong()}",
+                                        typeId = TerminalTab.typeId,
+                                        title = "Terminal"
+                                    )
+                                    tabsComponent.addTab(terminalTab)
+                                }
                                 true
                             }
                             event.isMetaPressed && event.key == Key.W -> {
-                                // Close current tab
-                                val tabs = tabsComponent.tabsState.value.tabs
-                                val activeIndex = tabsComponent.tabsState.value.activeIndex
-                                if (activeIndex >= 0 && activeIndex < tabs.size) {
-                                    tabsComponent.removeTab(activeIndex)
+                                // Close current tab in the active panel
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                if (activeTabsComponent != null) {
+                                    val tabs = activeTabsComponent.tabsState.value.tabs
+                                    val activeIndex = activeTabsComponent.tabsState.value.activeIndex
+                                    if (activeIndex >= 0 && activeIndex < tabs.size) {
+                                        activeTabsComponent.removeTab(activeIndex)
+                                    }
                                 }
                                 true
                             }
@@ -322,14 +336,16 @@ fun ComponentContext.BossApp() {
                                 true
                             }
                             event.isMetaPressed && event.key == Key.R -> {
-                                // Reload current browser tab if it's a Fluck tab
-                                val lastInteractedComponent = splitViewState.getLastInteractedTabComponent()
-                                val activeTab = lastInteractedComponent?.tabsState?.value?.activeTab
-                                if (activeTab is FluckTabInfo) {
-                                    // Trigger reload event for the browser
-                                    val activeTabComponent = lastInteractedComponent.getActiveComponent()
-                                    if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
-                                        activeTabComponent.reload()
+                                // Reload current browser tab if it's a Fluck tab in the active panel
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                if (activeTabsComponent != null) {
+                                    val activeTab = activeTabsComponent.tabsState.value.activeTab
+                                    if (activeTab is FluckTabInfo) {
+                                        // Trigger reload event for the browser
+                                        val activeTabComponent = activeTabsComponent.getActiveComponent()
+                                        if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                                            activeTabComponent.reload()
+                                        }
                                     }
                                 }
                                 true
@@ -379,6 +395,25 @@ fun ComponentContext.BossApp() {
                                         delay(3000)
                                         saveMessage = null
                                     }
+                                }
+                                true
+                            }
+                            // Navigate between panels with Cmd+Arrow keys
+                            event.isMetaPressed && event.key == Key.DirectionLeft -> {
+                                // Switch to left/previous panel
+                                val panels = splitViewState.getAllPanels()
+                                val currentIndex = panels.indexOfFirst { it.id == splitViewState.activePanelId }
+                                if (currentIndex > 0) {
+                                    splitViewState.setActivePanel(panels[currentIndex - 1].id)
+                                }
+                                true
+                            }
+                            event.isMetaPressed && event.key == Key.DirectionRight -> {
+                                // Switch to right/next panel
+                                val panels = splitViewState.getAllPanels()
+                                val currentIndex = panels.indexOfFirst { it.id == splitViewState.activePanelId }
+                                if (currentIndex >= 0 && currentIndex < panels.size - 1) {
+                                    splitViewState.setActivePanel(panels[currentIndex + 1].id)
                                 }
                                 true
                             }
@@ -436,9 +471,9 @@ fun ComponentContext.BossApp() {
                 NewTabDialog(
                     onDismiss = { showNewTabDialog = false },
                     onCreateTab = { type, path ->
-                        // Get the last interacted tab's panel component, fallback to active panel, then original
-                        val targetComponent = splitViewState.getLastInteractedTabComponent() 
-                            ?: splitViewState.getActiveTabsComponent() 
+                        // Get the active panel component first, fallback to last interacted, then original
+                        val targetComponent = splitViewState.getActiveTabsComponent() 
+                            ?: splitViewState.getLastInteractedTabComponent() 
                             ?: tabsComponent
                         
                         when (type) {

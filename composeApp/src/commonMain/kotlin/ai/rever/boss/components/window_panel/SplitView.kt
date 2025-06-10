@@ -57,6 +57,7 @@ class SplitViewState(
     // Track active panel for file operations
     private var _activePanelId = mutableStateOf("main")
     val activePanelId: String get() = _activePanelId.value
+    val activePanelIdState: State<String> get() = _activePanelId
     
     // Track last interacted tab for Cmd+R, Cmd+N operations
     private var _lastInteractedTabPanelId = mutableStateOf("main")

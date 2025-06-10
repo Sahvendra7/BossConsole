@@ -50,37 +50,6 @@ import kotlinx.coroutines.delay
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 
-// Map popular domains to Material icons as a temporary solution
-private fun getDomainIcon(url: String): ImageVector {
-    return try {
-        val host = java.net.URL(url).host.lowercase().removePrefix("www.")
-        when {
-            host.contains("google") -> Icons.Filled.Search
-            host.contains("youtube") -> Icons.Filled.PlayArrow
-            host.contains("github") -> Icons.Outlined.Code
-            host.contains("twitter") || host.contains("x.com") -> Icons.Filled.Tag
-            host.contains("facebook") -> Icons.Filled.People
-            host.contains("linkedin") -> Icons.Outlined.Work
-            host.contains("reddit") -> Icons.Outlined.Forum
-            host.contains("stackoverflow") -> Icons.Filled.Help
-            host.contains("amazon") -> Icons.Filled.ShoppingCart
-            host.contains("wikipedia") -> Icons.Outlined.MenuBook
-            host.contains("risalabs") || host.contains("risa") -> Icons.Filled.Biotech
-            host.contains("mail") || host.contains("gmail") -> Icons.Filled.Email
-            host.contains("maps") -> Icons.Filled.Map
-            host.contains("drive") -> Icons.Filled.CloudUpload
-            host.contains("calendar") -> Icons.Filled.CalendarToday
-            host.contains("slack") -> Icons.Filled.Chat
-            host.contains("discord") -> Icons.Filled.Forum
-            host.contains("spotify") -> Icons.Filled.MusicNote
-            host.contains("netflix") -> Icons.Filled.Movie
-            host.contains("news") -> Icons.Filled.Newspaper
-            else -> Icons.Filled.Language
-        }
-    } catch (e: Exception) {
-        Icons.Filled.Language
-    }
-}
 
 // Helper function to process URL input - either as URL or search query
 private fun processUrlInput(input: String): String {
@@ -490,7 +459,7 @@ fun JxBrowserCompose(
     LaunchedEffect(browser) {
         coroutineScope.launch {
             while (!browser.isClosed) {
-                kotlinx.coroutines.delay(100) // Check every 100ms
+                delay(100) // Check every 100ms
                 if (browser.isClosed) break
                 try {
                     browser.mainFrame().ifPresent { frame ->

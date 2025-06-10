@@ -19,12 +19,16 @@ import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -45,6 +49,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
@@ -266,20 +274,50 @@ fun BossTabsComponent.BossMainPanel(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
     currentPanelId: String? = null
 ) {
-    // Set this panel as active when it gains focus
-    LaunchedEffect(currentPanelId) {
-        if (currentPanelId != null) {
-            splitViewState?.setActivePanel(currentPanelId)
-        }
-    }
+    val focusRequester = remember { FocusRequester() }
+    val isFocused = remember { mutableStateOf(false) }
     
-    Column(modifier = modifier.fillMaxSize()) {
+    // Track the active panel state to force recomposition
+    val activePanelId by splitViewState?.activePanelIdState ?: remember { mutableStateOf("") }
+    val isActivePanel = activePanelId == currentPanelId
+    
+    
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            .onFocusChanged { focusState ->
+                isFocused.value = focusState.isFocused || focusState.hasFocus
+                if ((focusState.isFocused || focusState.hasFocus) && currentPanelId != null) {
+                    splitViewState?.setActivePanel(currentPanelId)
+                }
+            }
+            .focusable()
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                // Set focus when clicked
+                focusRequester.requestFocus()
+                if (currentPanelId != null) {
+                    splitViewState?.setActivePanel(currentPanelId)
+                }
+            }
+            .then(
+                if (isActivePanel) {
+                    Modifier.border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.5f))
+                } else {
+                    Modifier
+                }
+            )
+    ) {
         BossMainTabBar(
             splitViewState = splitViewState,
             currentPanelId = currentPanelId
         )
         Divider(color = BossDarkBorder)
-        BossMainPanelContent(modifier = Modifier.weight(1f).fillMaxWidth())
+        BossMainPanelContent(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            splitViewState = splitViewState,
+            currentPanelId = currentPanelId
+        )
     }
 }
 
@@ -287,11 +325,28 @@ fun BossTabsComponent.BossMainPanel(
  * Main UI composable that displays the root component
  */
 @Composable
-fun BossTabsComponent.BossMainPanelContent(modifier: Modifier) {
+fun BossTabsComponent.BossMainPanelContent(
+    modifier: Modifier,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
+    currentPanelId: String? = null
+) {
     // Subscribe to tab state changes to trigger recomposition
     val tabsState = tabsState.subscribeAsState()
     
-    Box(modifier = modifier) {
+    Box(
+        modifier = modifier
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                // Set panel as active when content area is clicked
+                if (currentPanelId != null) {
+                    splitViewState?.setActivePanel(currentPanelId)
+                    // Also track tab interaction if there's an active tab
+                    val activeTab = tabsState.value.activeTab
+                    if (activeTab != null) {
+                        splitViewState?.trackTabInteraction(currentPanelId, activeTab.id)
+                    }
+                }
+            }
+    ) {
         // Force recomposition when tab changes by reading the state
         val activeIndex = tabsState.value.activeIndex
         val activeComponent = getActiveComponent()
