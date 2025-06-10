@@ -360,10 +360,10 @@ private fun EmptyContent() {
     var selectedTip by remember { mutableStateOf(0) }
     val tips = listOf(
         Triple(Icons.Outlined.Code, "Open a file", "Cmd+O to browse files"),
-        Triple(Icons.Outlined.Add, "New tab", "Right-click tab bar or Cmd+N"),
-        Triple(Icons.Outlined.ViewColumn, "Split view", "Right-click tab → Split Right"),
-        Triple(Icons.Outlined.Terminal, "Terminal", "Cmd+T for terminal tab"),
-        Triple(Icons.Outlined.Web, "Web browser", "Create tab with URL")
+        Triple(Icons.Outlined.Add, "New tab", "Cmd+N opens in active panel"),
+        Triple(Icons.Outlined.ViewColumn, "Split panels", "Right-click tab → Split Right/Down"),
+        Triple(Icons.Outlined.SwapHoriz, "Switch panels", "Cmd+← → to navigate panels"),
+        Triple(Icons.Outlined.Terminal, "Quick terminal", "Cmd+T opens terminal in active panel")
     )
     
     // Animation values
@@ -425,7 +425,7 @@ private fun EmptyContent() {
                 )
                 
                 Text(
-                    text = "Your powerful development environment",
+                    text = "Multi-panel development environment",
                     color = BossDarkTextSecondary,
                     fontSize = 16.sp
                 )
