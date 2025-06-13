@@ -194,7 +194,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "BOSS"
-            packageVersion = "1.0.4"
+            packageVersion = "1.0.7"
             description = "Business Operating System Service - Intelligent service automation platform"
             copyright = "© 2024 Risa Labs Inc. All rights reserved."
             vendor = "Risa Labs Inc."
@@ -218,7 +218,7 @@ compose.desktop {
                 bundleID = "ai.rever.boss"
                 iconFile.set(project.file("src/desktopMain/resources/boss_icon.icns"))
                 packageName = "BOSS"
-                dmgPackageVersion = "1.0.5"
+                dmgPackageVersion = "1.0.7"
                 dmgPackageBuildVersion = "1"
                 
                 
@@ -241,7 +241,7 @@ compose.desktop {
                         <key>LSMinimumSystemVersion</key>
                         <string>10.15</string>
                         <key>CFBundleShortVersionString</key>
-                        <string>1.0.5</string>
+                        <string>1.0.7</string>
                         <key>CFBundleVersion</key>
                         <string>1</string>
                         <key>NSHighResolutionCapable</key>

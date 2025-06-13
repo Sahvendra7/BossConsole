@@ -178,7 +178,7 @@ cp -R "$APP_PATH" "$DMG_DIR/"
 ln -s /Applications "$DMG_DIR/Applications"
 
 # Create DMG
-DMG_NAME="BOSS-1.0.6.dmg"
+DMG_NAME="BOSS-1.0.7.dmg"
 rm -f "$DMG_NAME"
 
 hdiutil create -volname "BOSS" \
@@ -246,12 +246,12 @@ echo -e "\n${BLUE}Step 11: Creating final distribution${NC}"
 
 DIST_DIR="distribution-final"
 mkdir -p "$DIST_DIR"
-cp "$DMG_NAME" "$DIST_DIR/BOSS-1.0.6-Universal.dmg"
+cp "$DMG_NAME" "$DIST_DIR/BOSS-1.0.7-Universal.dmg"
 
 echo -e "\n${GREEN}========================================"
 echo -e "✨ Final Distribution Complete!"
 echo -e "========================================${NC}"
-echo -e "Location: ${BLUE}$DIST_DIR/BOSS-1.0.6-Universal.dmg${NC}"
+echo -e "Location: ${BLUE}$DIST_DIR/BOSS-1.0.7-Universal.dmg${NC}"
 echo -e "\nThis DMG includes:"
 echo -e "- Fixed PTY4J native libraries for Terminal"
 echo -e "- Bundled Homebrew dependencies (harfbuzz, freetype, etc.)"
