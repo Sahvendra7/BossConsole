@@ -615,6 +615,11 @@ class BossTabsComponent(
         return tabComponents[activeTab.id]
     }
     
+    // Get tab component by ID
+    fun getComponentById(tabId: String): TabComponentWithUI? {
+        return tabComponents[tabId]
+    }
+    
     // Clear all tabs safely
     fun clearAllTabs() {
         // Remove tabs in reverse order to avoid index issues

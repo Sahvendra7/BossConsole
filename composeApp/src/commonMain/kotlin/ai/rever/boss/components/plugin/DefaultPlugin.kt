@@ -47,6 +47,7 @@ class DefaultPlugin(
         registerFluck()
         registerAgent()
         registerLLMRpa()
+        registerRpaRecorder()
         registerTopOfMind()
 
         registerRpa()

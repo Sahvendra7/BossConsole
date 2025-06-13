@@ -1,0 +1,315 @@
+package ai.rever.boss.components.plugin.panels.right_top
+
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+/**
+ * Integration utilities for connecting RPA Recorder to browser instances
+ */
+interface BrowserIntegration {
+    /**
+     * Execute JavaScript in the browser
+     */
+    suspend fun executeJavaScript(script: String): Any?
+    
+    /**
+     * Check if browser is available
+     */
+    fun isBrowserAvailable(): Boolean
+    
+    /**
+     * Get current URL
+     */
+    suspend fun getCurrentUrl(): String?
+    
+    /**
+     * Validate a selector in the browser
+     */
+    suspend fun validateSelector(selector: String, type: String = "xpath"): SelectorValidationResult? {
+        val script = """
+            ${RpaEventCapture.selectorValidationScript}
+            validateSelector("${selector.replace("\"", "\\\"")}", "$type");
+        """.trimIndent()
+        
+        return try {
+            val result = executeJavaScript(script) as? Map<*, *>
+            if (result != null) {
+                SelectorValidationResult(
+                    isValid = result["isValid"] as? Boolean ?: false,
+                    count = (result["count"] as? Number)?.toInt() ?: 0,
+                    isUnique = result["isUnique"] as? Boolean ?: false,
+                    error = result["error"] as? String
+                )
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * Result of selector validation
+ */
+data class SelectorValidationResult(
+    val isValid: Boolean,
+    val count: Int,
+    val isUnique: Boolean,
+    val error: String? = null
+)
+
+/**
+ * Interface for accessing the active browser tab
+ */
+expect class BrowserAccessor() {
+    /**
+     * Get browser integration for the active tab
+     */
+    fun getActiveBrowserIntegration(): BrowserIntegration?
+    
+    companion object {
+        var selectedTabId: String?
+    }
+}
+
+/**
+ * Platform-specific browser connection setup
+ */
+@Composable
+expect fun SetupBrowserConnection()
+
+/**
+ * Platform-specific function to create FluckTabInfo from ActiveTab
+ */
+expect fun createFluckTabInfo(activeTab: Any): FluckTabInfo?
+
+/**
+ * Platform-specific function to store split view state
+ */
+expect fun storeSplitViewState(splitViewState: Any)
+
+/**
+ * Composable state for browser connection to a specific tab
+ */
+@Composable
+fun rememberBrowserConnectionForTab(
+    tab: FluckTabInfo?,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState?
+): State<BrowserIntegration?> {
+    val browserState = remember { mutableStateOf<BrowserIntegration?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    DisposableEffect(tab) {
+        val job = if (tab != null) {
+            coroutineScope.launch {
+                // Poll for browser connection
+                while (true) {
+                    try {
+                        val accessor = BrowserAccessor()
+                        // Set the selected tab for the accessor to use
+                        BrowserAccessor.selectedTabId = tab.id
+                        val integration = accessor.getActiveBrowserIntegration()
+                        browserState.value = integration
+                    } catch (e: Exception) {
+                        browserState.value = null
+                    }
+                    delay(500)
+                }
+            }
+        } else {
+            browserState.value = null
+            null
+        }
+        
+        onDispose {
+            job?.cancel()
+            BrowserAccessor.selectedTabId = null
+        }
+    }
+    
+    return browserState
+}
+
+/**
+ * Composable state for browser connection
+ */
+@Composable
+fun rememberBrowserConnection(): State<BrowserIntegration?> {
+    val browserState = remember { mutableStateOf<BrowserIntegration?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Setup platform-specific browser connection
+    SetupBrowserConnection()
+    
+    DisposableEffect(Unit) {
+        val job = coroutineScope.launch {
+            // Poll for active browser every 500ms
+            while (true) {
+                try {
+                    val accessor = BrowserAccessor()
+                    browserState.value = accessor.getActiveBrowserIntegration()
+                } catch (e: Exception) {
+                    // Browser accessor not available on this platform
+                    browserState.value = null
+                }
+                delay(500)
+            }
+        }
+        
+        onDispose {
+            job.cancel()
+        }
+    }
+    
+    return browserState
+}
+
+/**
+ * Enhanced RPA Recorder Component with browser integration
+ */
+@Composable
+fun RpaRecorderContent(
+    component: RpaRecorderComponent
+) {
+    // Import LocalSplitViewState
+    val splitViewState = LocalSplitViewState.current
+    
+    // Collect available Fluck tabs directly here
+    val availableTabs = remember { mutableStateOf<List<FluckTabInfo>>(emptyList()) }
+    
+    LaunchedEffect(splitViewState) {
+        if (splitViewState != null) {
+            // Store split view state for browser accessor
+            storeSplitViewState(splitViewState)
+            while (true) {
+                // Get all active Fluck tabs
+                val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
+                
+                val tabs = activeFluckTabs.mapNotNull { activeTab ->
+                    // Create FluckTabInfo from ActiveTab
+                    createFluckTabInfo(activeTab)
+                }
+                
+                availableTabs.value = tabs
+                component.updateAvailableTabs(tabs)
+                
+                delay(1000) // Update every second
+            }
+        }
+    }
+    
+    // Get browser connection for selected tab
+    val selectedTab by component.selectedTab.collectAsState()
+    val browserConnection by rememberBrowserConnectionForTab(selectedTab, splitViewState)
+    val isConnected = browserConnection?.isBrowserAvailable() == true
+    
+    // Update recording state based on browser connection
+    val recordingState by component.isRecording.collectAsState()
+    LaunchedEffect(browserConnection, recordingState, selectedTab) {
+        val browser = browserConnection
+        if (recordingState && browser != null && selectedTab != null) {
+            component.connectToBrowser(browser)
+        } else if (!recordingState || selectedTab == null) {
+            component.disconnectFromBrowser()
+        }
+    }
+    
+    // Display connection status
+    component.updateConnectionStatus(isConnected && selectedTab != null)
+    
+    // Render the main content
+    component.ContentInternal()
+}
+
+/**
+ * Extension functions for RpaRecorderComponent
+ */
+private val _isConnected = MutableStateFlow(false)
+val RpaRecorderComponent.isConnected: StateFlow<Boolean> get() = _isConnected
+
+fun RpaRecorderComponent.updateConnectionStatus(connected: Boolean) {
+    _isConnected.value = connected
+}
+
+suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
+    try {
+        // Inject the event capture script
+        browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
+        
+        // Set up callback handler
+        browser.executeJavaScript("""
+            window.__rpaRecordAction = function(actionJson) {
+                // Store actions in window for retrieval
+                window.__rpaRecordedActions = window.__rpaRecordedActions || [];
+                window.__rpaRecordedActions.push(actionJson);
+            };
+        """.trimIndent())
+        
+        // Start polling for recorded actions
+        startActionPolling(browser)
+        
+    } catch (e: Exception) {
+        // Silent fail
+    }
+}
+
+fun RpaRecorderComponent.disconnectFromBrowser() {
+    // Stop polling
+    stopActionPolling()
+}
+
+private var pollingJob: kotlinx.coroutines.Job? = null
+
+private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration) {
+    pollingJob = kotlinx.coroutines.GlobalScope.launch {
+        var pollCount = 0
+        while (isRecording.value) {
+            try {
+                // Retrieve recorded actions from browser
+                val actions = browser.executeJavaScript("""
+                    (function() {
+                        const actions = window.__rpaRecordedActions || [];
+                        window.__rpaRecordedActions = [];
+                        return JSON.stringify(actions);
+                    })();
+                """.trimIndent()) as? String
+                
+                if (!actions.isNullOrEmpty() && actions != "[]") {
+                    // Parse and process actions
+                    val actionsList = kotlinx.serialization.json.Json.decodeFromString<List<String>>(actions)
+                    actionsList.forEach { actionJson ->
+                        try {
+                            val action = kotlinx.serialization.json.Json.decodeFromString<RecordedAction>(actionJson)
+                            onActionRecorded(action)
+                        } catch (e: Exception) {
+                            // Silent fail
+                        }
+                    }
+                }
+                
+                // Update current URL periodically
+                if (pollCount % 10 == 0) {
+                    val currentUrl = browser.getCurrentUrl()
+                    if (!currentUrl.isNullOrEmpty()) {
+                        _currentUrl.value = currentUrl
+                    }
+                }
+                pollCount++
+                
+            } catch (e: Exception) {
+                // Silent fail
+            }
+            
+            delay(100) // Poll every 100ms
+        }
+    }
+}
+
+private fun RpaRecorderComponent.stopActionPolling() {
+    pollingJob?.cancel()
+    pollingJob = null
+}
