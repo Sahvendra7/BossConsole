@@ -126,6 +126,12 @@ kotlin {
             
             // JavaCV for video recording
             implementation("org.bytedeco:javacv-platform:1.5.11")
+            
+            // Ktor client for HTTP requests
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.cio)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
         }
     }
 }
