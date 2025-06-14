@@ -123,6 +123,9 @@ kotlin {
             // JxBrowser with Compose support
             implementation(jxbrowser.currentPlatform)
             implementation(jxbrowser.compose)
+            
+            // JavaCV for video recording
+            implementation("org.bytedeco:javacv-platform:1.5.11")
         }
     }
 }

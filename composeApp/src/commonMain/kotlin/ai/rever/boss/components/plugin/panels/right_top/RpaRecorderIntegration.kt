@@ -237,8 +237,15 @@ fun RpaRecorderComponent.updateConnectionStatus(connected: Boolean) {
 
 suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
     try {
+        println("RPA Recorder Integration: Connecting to browser")
+        
+        // Store browser connection reference
+        browserConnection = browser
+        
         // Inject the event capture script
-        browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
+        println("RPA Recorder Integration: Injecting event capture script")
+        val scriptResult = browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
+        println("RPA Recorder Integration: Event capture script injected, result: $scriptResult")
         
         // Set up callback handler
         browser.executeJavaScript("""
@@ -246,18 +253,27 @@ suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
                 // Store actions in window for retrieval
                 window.__rpaRecordedActions = window.__rpaRecordedActions || [];
                 window.__rpaRecordedActions.push(actionJson);
+                console.log('RPA Action Recorded:', actionJson);
             };
+            console.log('RPA Recorder: Callback handler installed');
         """.trimIndent())
         
+        println("RPA Recorder Integration: Starting action polling")
         // Start polling for recorded actions
         startActionPolling(browser)
         
+        // Add initial navigation action now that we have browser connection
+        addInitialNavigation()
+        
     } catch (e: Exception) {
-        // Silent fail
+        println("RPA Recorder Integration: Error connecting to browser: ${e.message}")
+        e.printStackTrace()
     }
 }
 
 fun RpaRecorderComponent.disconnectFromBrowser() {
+    // Clear browser connection reference
+    browserConnection = null
     // Stop polling
     stopActionPolling()
 }
@@ -279,14 +295,16 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                 """.trimIndent()) as? String
                 
                 if (!actions.isNullOrEmpty() && actions != "[]") {
+                    println("RPA Recorder Polling: Found actions: $actions")
                     // Parse and process actions
                     val actionsList = kotlinx.serialization.json.Json.decodeFromString<List<String>>(actions)
                     actionsList.forEach { actionJson ->
                         try {
                             val action = kotlinx.serialization.json.Json.decodeFromString<RecordedAction>(actionJson)
                             onActionRecorded(action)
+                            println("RPA Recorder Polling: Recorded action - Type: ${action.type}, Value: ${action.value}")
                         } catch (e: Exception) {
-                            // Silent fail
+                            println("RPA Recorder Polling: Error parsing action: ${e.message}")
                         }
                     }
                 }

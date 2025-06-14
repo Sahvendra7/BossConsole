@@ -126,7 +126,7 @@ open class RpaRecorderComponent(
     internal val _currentUrl = MutableStateFlow("")
     val currentUrl: StateFlow<String> = _currentUrl
     
-    private val _selectedTab = MutableStateFlow<FluckTabInfo?>(null)
+    protected val _selectedTab = MutableStateFlow<FluckTabInfo?>(null)
     val selectedTab: StateFlow<FluckTabInfo?> = _selectedTab
     
     private val _availableFluckTabs = MutableStateFlow<List<FluckTabInfo>>(emptyList())
@@ -143,6 +143,13 @@ open class RpaRecorderComponent(
     // Notification/feedback messages
     private val _feedbackMessage = MutableStateFlow<FeedbackMessage?>(null)
     val feedbackMessage: StateFlow<FeedbackMessage?> = _feedbackMessage
+    
+    // Video recording status
+    protected val _isVideoRecording = MutableStateFlow(false)
+    val isVideoRecording: StateFlow<Boolean> = _isVideoRecording
+    
+    // Browser connection reference
+    internal var browserConnection: BrowserIntegration? = null
     
     private val json = Json {
         prettyPrint = true
@@ -166,6 +173,7 @@ open class RpaRecorderComponent(
         val viewMode by viewMode.collectAsState()
         val selectedActionIndices by selectedActionIndices.collectAsState()
         val feedbackMessage by feedbackMessage.collectAsState()
+        val isVideoRecordingActive by isVideoRecording.collectAsState()
         
         Column(
             modifier = Modifier
@@ -179,6 +187,7 @@ open class RpaRecorderComponent(
                 selectedTab = selectedTab,
                 onTabSelected = { selectTab(it) },
                 isRecording = recording,
+                isVideoRecording = isVideoRecordingActive,
                 onToggleRecording = { toggleRecording() },
                 onClear = { clearRecording() },
                 onExport = { exportConfiguration() },
@@ -366,6 +375,7 @@ open class RpaRecorderComponent(
         selectedTab: FluckTabInfo?,
         onTabSelected: (FluckTabInfo) -> Unit,
         isRecording: Boolean,
+        isVideoRecording: Boolean,
         onToggleRecording: () -> Unit,
         onClear: () -> Unit,
         onExport: () -> Unit,
@@ -410,12 +420,27 @@ open class RpaRecorderComponent(
                     }
                     
                     if (isRecording) {
-                        // Recording indicator
-                        Surface(
-                            modifier = Modifier.size(8.dp),
-                            shape = CircleShape,
-                            color = Color(0xFFD32F2F)
-                        ) {}
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Recording indicator
+                            Surface(
+                                modifier = Modifier.size(8.dp),
+                                shape = CircleShape,
+                                color = Color(0xFFD32F2F)
+                            ) {}
+                            
+                            // Video recording indicator
+                            if (isVideoRecording) {
+                                Icon(
+                                    Icons.Default.Videocam,
+                                    contentDescription = "Video Recording",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFFD32F2F)
+                                )
+                            }
+                        }
                     }
                 }
                 
@@ -1014,8 +1039,15 @@ open class RpaRecorderComponent(
     private fun startRecording() {
         val selectedTab = _selectedTab.value
         if (selectedTab == null) {
+            println("RPA Recorder: No tab selected for recording")
             return
         }
+        
+        println("RPA Recorder: Starting recording for tab: ${selectedTab.title}")
+        println("RPA Recorder: Browser connection available: ${browserConnection != null}")
+        
+        // Don't capture URL here - it will be done after browser connection is established
+        
         _isRecording.value = true
         injectEventListeners()
     }
@@ -1120,7 +1152,7 @@ open class RpaRecorderComponent(
     /**
      * Show feedback message
      */
-    private fun showFeedback(message: String, type: FeedbackType) {
+    protected fun showFeedback(message: String, type: FeedbackType) {
         _feedbackMessage.value = FeedbackMessage(message, type)
         // Auto-hide after 3 seconds
         kotlinx.coroutines.GlobalScope.launch {
@@ -1251,6 +1283,39 @@ open class RpaRecorderComponent(
      */
     protected open fun removeEventListeners() {
         // This will be implemented in platform-specific code
+    }
+    
+    
+    /**
+     * Add initial navigation after browser connection is established
+     */
+    fun addInitialNavigation() {
+        kotlinx.coroutines.GlobalScope.launch {
+            try {
+                val currentUrl = browserConnection?.getCurrentUrl()
+                println("RPA Recorder: Capturing initial URL: $currentUrl")
+                
+                if (!currentUrl.isNullOrEmpty() && currentUrl != "about:blank") {
+                    val navigationAction = RecordedAction(
+                        type = "navigate",
+                        selector = SelectorInfo(
+                            type = "none",
+                            value = null
+                        ),
+                        value = currentUrl,
+                        timestamp = Clock.System.now().toEpochMilliseconds(),
+                        elementText = null
+                    )
+                    _recordedActions.value = listOf(navigationAction) + _recordedActions.value
+                    println("RPA Recorder: Added initial navigation action")
+                } else {
+                    println("RPA Recorder: No valid URL to capture")
+                }
+            } catch (e: Exception) {
+                println("RPA Recorder: Error capturing initial URL: ${e.message}")
+                e.printStackTrace()
+            }
+        }
     }
     
     /**

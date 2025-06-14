@@ -48,6 +48,7 @@ class DefaultPlugin(
         registerAgent()
         registerLLMRpa()
         registerRpaRecorder()
+        registerRpaEngine()
         registerTopOfMind()
 
         registerRpa()

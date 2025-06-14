@@ -43,7 +43,7 @@ actual class BrowserAccessor {
  * Desktop browser integration using JxBrowser
  */
 class DesktopBrowserIntegration(
-    private val browser: Browser
+    internal val browser: Browser
 ) : BrowserIntegration {
     
     override suspend fun executeJavaScript(script: String): Any? = withContext(Dispatchers.Main) {
@@ -193,12 +193,62 @@ actual class RpaRecorderFactory {
 }
 
 /**
- * Desktop RPA Recorder Component with file saving
+ * Desktop RPA Recorder Component with file saving and video recording
  */
 class DesktopRpaRecorderComponent(
     ctx: com.arkivanov.decompose.ComponentContext,
     panelInfo: ai.rever.boss.components.registery.PanelInfo
 ) : RpaRecorderComponent(ctx, panelInfo) {
+    
+    // Video recording temporarily disabled
+    // private val videoRecorder = BrowserVideoRecorder()
+    private var currentRecordingPath: String? = null
+    private var recordingSessionId: String? = null
+    
+    override fun injectEventListeners() {
+        super.injectEventListeners()
+        
+        // Start video recording when RPA recording starts
+        val selectedTab = _selectedTab.value
+        if (selectedTab != null) {
+            // Generate session ID based on timestamp
+            recordingSessionId = kotlinx.datetime.Clock.System.now().toEpochMilliseconds().toString()
+            
+            // Video recording temporarily disabled
+            // Get browser from selected tab
+            /*
+            val browserIntegration = BrowserAccessor().getActiveBrowserIntegration()
+            if (browserIntegration is DesktopBrowserIntegration) {
+                val browser = browserIntegration.browser
+                currentRecordingPath = videoRecorder.startRecording(browser, recordingSessionId!!)
+                
+                if (currentRecordingPath != null) {
+                    _isVideoRecording.value = true
+                    println("Started video recording: $currentRecordingPath")
+                    showFeedback("Video recording started", FeedbackType.INFO)
+                }
+            }
+            */
+        }
+    }
+    
+    override fun removeEventListeners() {
+        super.removeEventListeners()
+        
+        // Video recording temporarily disabled
+        /*
+        // Stop video recording when RPA recording stops
+        if (videoRecorder.isRecording()) {
+            videoRecorder.stopRecording()
+            _isVideoRecording.value = false
+            
+            if (currentRecordingPath != null) {
+                println("Stopped video recording: $currentRecordingPath")
+                showFeedback("Video recording saved", FeedbackType.SUCCESS)
+            }
+        }
+        */
+    }
     
     override fun saveAndOpenConfiguration(filename: String, content: String) {
         try {
@@ -216,13 +266,59 @@ class DesktopRpaRecorderComponent(
             val file = java.io.File(rpaConfigDir, filename)
             file.writeText(content)
             
-            // Open the rpa_config directory in file manager
-            val desktop = java.awt.Desktop.getDesktop()
-            if (desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
-                desktop.open(rpaConfigDir)
+            // If we have a recording, create a session folder with both files
+            if (currentRecordingPath != null && recordingSessionId != null) {
+                val sessionDir = java.io.File(rpaConfigDir, "session_$recordingSessionId")
+                if (!sessionDir.exists()) {
+                    sessionDir.mkdirs()
+                }
+                
+                // Move config file to session directory
+                val sessionConfigFile = java.io.File(sessionDir, filename)
+                file.renameTo(sessionConfigFile)
+                
+                // The video is already in the recordings subdirectory
+                // Create a reference file pointing to the video
+                val videoRefFile = java.io.File(sessionDir, "video_reference.txt")
+                videoRefFile.writeText("Video recording location: $currentRecordingPath")
+                
+                // Video recording temporarily disabled
+                /*
+                // Take a screenshot for preview
+                val browserIntegration = BrowserAccessor().getActiveBrowserIntegration()
+                if (browserIntegration is DesktopBrowserIntegration) {
+                    val screenshotPath = videoRecorder.takeScreenshot(
+                        browserIntegration.browser, 
+                        "session_${recordingSessionId}_final"
+                    )
+                    if (screenshotPath != null) {
+                        val screenshotRefFile = java.io.File(sessionDir, "final_screenshot_reference.txt")
+                        screenshotRefFile.writeText("Final screenshot: $screenshotPath")
+                    }
+                }
+                */
+                
+                // Open the session directory
+                val desktop = java.awt.Desktop.getDesktop()
+                if (desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
+                    desktop.open(sessionDir)
+                }
+                
+                println("RPA Configuration and video recording saved to session: ${sessionDir.absolutePath}")
+            } else {
+                // No recording, just open the rpa_config directory
+                val desktop = java.awt.Desktop.getDesktop()
+                if (desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
+                    desktop.open(rpaConfigDir)
+                }
+                
+                println("RPA Configuration saved to: ${file.absolutePath}")
             }
             
-            println("RPA Configuration saved to: ${file.absolutePath}")
+            // Clear recording references
+            currentRecordingPath = null
+            recordingSessionId = null
+            
         } catch (e: Exception) {
             println("Error saving RPA configuration: ${e.message}")
             e.printStackTrace()
