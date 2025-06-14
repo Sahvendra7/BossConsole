@@ -283,8 +283,34 @@ private var pollingJob: kotlinx.coroutines.Job? = null
 private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration) {
     pollingJob = kotlinx.coroutines.GlobalScope.launch {
         var pollCount = 0
+        var lastUrl = ""
+        
         while (isRecording.value) {
             try {
+                // Check if URL has changed (navigation occurred)
+                val currentUrl = browser.getCurrentUrl() ?: ""
+                if (currentUrl != lastUrl && currentUrl.isNotEmpty()) {
+                    lastUrl = currentUrl
+                    _currentUrl.value = currentUrl
+                    
+                    // Re-inject event capture script after navigation
+                    if (pollCount > 0) { // Skip first iteration
+                        println("RPA Recorder: Page navigated to $currentUrl, re-injecting event capture")
+                        delay(500) // Wait for page to stabilize
+                        
+                        // Re-inject scripts
+                        browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
+                        browser.executeJavaScript("""
+                            window.__rpaRecordAction = function(actionJson) {
+                                window.__rpaRecordedActions = window.__rpaRecordedActions || [];
+                                window.__rpaRecordedActions.push(actionJson);
+                                console.log('RPA Action Recorded:', actionJson);
+                            };
+                            console.log('RPA Recorder: Re-injected after navigation');
+                        """.trimIndent())
+                    }
+                }
+                
                 // Retrieve recorded actions from browser
                 val actions = browser.executeJavaScript("""
                     (function() {
@@ -309,17 +335,13 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                     }
                 }
                 
-                // Update current URL periodically
-                if (pollCount % 10 == 0) {
-                    val currentUrl = browser.getCurrentUrl()
-                    if (!currentUrl.isNullOrEmpty()) {
-                        _currentUrl.value = currentUrl
-                    }
-                }
                 pollCount++
                 
             } catch (e: Exception) {
-                // Silent fail
+                // Log error for debugging
+                if (pollCount % 50 == 0) { // Log every 5 seconds
+                    println("RPA Recorder Polling: Error - ${e.message}")
+                }
             }
             
             delay(100) // Poll every 100ms

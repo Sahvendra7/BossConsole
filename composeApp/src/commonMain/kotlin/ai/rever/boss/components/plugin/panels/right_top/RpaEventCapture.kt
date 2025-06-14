@@ -284,6 +284,43 @@ object RpaEventCapture {
                 }
             }, true);
             
+            // Keyboard event handler for Enter/Submit
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.keyCode === 13) {
+                    const el = e.target;
+                    if (!el) return;
+                    
+                    // Check if this is an input field that might submit a form
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                        const selector = getRobustSelector(el);
+                        
+                        // Record the Enter key press
+                        sendAction({
+                            type: 'keypress',
+                            selector: selector,
+                            value: 'Enter',
+                            elementText: getElementText(el),
+                            timestamp: Date.now(),
+                            url: window.location.href
+                        });
+                        
+                        // If this is in a form, also record it as a form submit
+                        const form = el.closest('form');
+                        if (form) {
+                            setTimeout(() => {
+                                sendAction({
+                                    type: 'submit',
+                                    selector: getRobustSelector(form),
+                                    elementText: 'Form submission',
+                                    timestamp: Date.now(),
+                                    url: window.location.href
+                                });
+                            }, 50);
+                        }
+                    }
+                }
+            }, true);
+            
             // Navigation detection
             let lastUrl = window.location.href;
             const checkNavigation = () => {

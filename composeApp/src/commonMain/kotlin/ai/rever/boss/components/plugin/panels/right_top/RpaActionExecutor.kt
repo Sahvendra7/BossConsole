@@ -313,8 +313,61 @@ suspend fun RpaActionExecutor.executeAction(
                 wait((2000 / speedMultiplier).toLong())
             }
             
+            "keypress" -> {
+                // Handle keyboard events, especially Enter key
+                if (action.value == "Enter") {
+                    // Press Enter on the selected element
+                    val script = """
+                        (function() {
+                            var element = ${(this as BaseActionExecutor).buildSelectorScript(action.selector)};
+                            if (element) {
+                                var event = new KeyboardEvent('keydown', {
+                                    key: 'Enter',
+                                    keyCode: 13,
+                                    bubbles: true,
+                                    cancelable: true
+                                });
+                                element.dispatchEvent(event);
+                                
+                                // Also trigger keyup
+                                var keyupEvent = new KeyboardEvent('keyup', {
+                                    key: 'Enter',
+                                    keyCode: 13,
+                                    bubbles: true,
+                                    cancelable: true
+                                });
+                                element.dispatchEvent(keyupEvent);
+                                
+                                // If it's a form input, submit the form
+                                var form = element.closest('form');
+                                if (form && element.tagName === 'INPUT') {
+                                    setTimeout(() => form.submit(), 50);
+                                }
+                            }
+                        })()
+                    """.trimIndent()
+                    executeJavaScript(script)
+                    wait((1000 / speedMultiplier).toLong())
+                }
+            }
+            
+            "submit" -> {
+                // Handle form submission
+                val script = """
+                    (function() {
+                        var element = ${(this as BaseActionExecutor).buildSelectorScript(action.selector)};
+                        if (element && element.tagName === 'FORM') {
+                            element.submit();
+                        }
+                    })()
+                """.trimIndent()
+                executeJavaScript(script)
+                wait((2000 / speedMultiplier).toLong())
+            }
+            
             else -> {
-                throw UnsupportedOperationException("Unknown action type: ${action.type}")
+                // Skip unknown action types instead of throwing error
+                println("RPA Executor: Skipping unknown action type: ${action.type}")
             }
         }
         
