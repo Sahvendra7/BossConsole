@@ -14,6 +14,38 @@ fun main() {
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
     
+    // Debug: Check environment variables
+    println("=== Checking LLM API Keys in Environment ===")
+    println("Current working directory: ${System.getProperty("user.dir")}")
+    println("Java version: ${System.getProperty("java.version")}")
+    println("OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
+    
+    val apiKeys = mapOf(
+        "ANTHROPIC_API_KEY" to System.getenv("ANTHROPIC_API_KEY"),
+        "OPENAI_API_KEY" to System.getenv("OPENAI_API_KEY"),
+        "TOGETHER_API_KEY" to System.getenv("TOGETHER_API_KEY"),
+        "CUSTOM_LLM_API_KEY" to System.getenv("CUSTOM_LLM_API_KEY")
+    )
+    
+    apiKeys.forEach { (key, value) ->
+        if (value != null) {
+            println("$key = ${value.take(10)}...${if (value.length > 10) " (${value.length} chars)" else ""}")
+        } else {
+            println("$key = (not set)")
+        }
+    }
+    
+    // Check all environment variables starting with certain patterns
+    println("\n=== All ENV vars containing 'ANTHROPIC' or 'CLAUDE' ===")
+    System.getenv().filterKeys { 
+        it.contains("ANTHROPIC", ignoreCase = true) || 
+        it.contains("CLAUDE", ignoreCase = true) 
+    }.forEach { (key, value) ->
+        println("$key = ${value.take(20)}...${if (value.length > 20) " (truncated)" else ""}")
+    }
+    
+    println("===========================================")
+    
     application {
         val windowState = rememberWindowState(
             size = DpSize(1280.dp, 800.dp) // Set larger initial window size

@@ -75,13 +75,13 @@ data class LLMRpaResponse(
  */
 data class LLMExecutionState(
     val instruction: String,
-    val status: ExecutionStatus,
+    val status: LLMExecutionStatus,
     val generatedActions: List<RpaActionConfig> = emptyList(),
     val error: String? = null,
     val timestamp: Long = Clock.System.now().toEpochMilliseconds()
 )
 
-enum class ExecutionStatus {
+enum class LLMExecutionStatus {
     PENDING,
     GENERATING,
     EXECUTING,
@@ -113,10 +113,6 @@ open class LLMRpaComponent(
     private val _currentInstruction = MutableStateFlow("")
     val currentInstruction: StateFlow<String> = _currentInstruction
     
-    // API endpoint configuration
-    private val _apiEndpoint = MutableStateFlow("http://localhost:8000/api/v1/rpa/create-rpa-config")
-    val apiEndpoint: StateFlow<String> = _apiEndpoint
-    
     // Browser connection reference
     internal var browserConnection: BrowserIntegration? = null
     internal var rpaExecutor: RpaActionExecutor? = null
@@ -140,7 +136,6 @@ open class LLMRpaComponent(
         val instruction by currentInstruction.collectAsState()
         val isExecuting by isExecuting.collectAsState()
         val history by executionHistory.collectAsState()
-        val apiEndpoint by apiEndpoint.collectAsState()
         val coroutineScope = rememberCoroutineScope()
         
         LazyColumn(
@@ -180,11 +175,9 @@ open class LLMRpaComponent(
                 )
             }
             
-            // API Configuration
+            // LLM Configuration Status
             item {
-                ApiConfigurationSection(
-                    apiEndpoint = apiEndpoint,
-                    onEndpointChange = { _apiEndpoint.value = it },
+                LLMConfigurationSection(
                     enabled = !isExecuting
                 )
             }
@@ -473,62 +466,71 @@ open class LLMRpaComponent(
     }
     
     @Composable
-    private fun ApiConfigurationSection(
-        apiEndpoint: String,
-        onEndpointChange: (String) -> Unit,
+    private fun LLMConfigurationSection(
         enabled: Boolean
     ) {
-        var isExpanded by remember { mutableStateOf(false) }
+        val hasApiKey = LLMSettings.hasValidApiKey()
+        val provider = LLMSettings.selectedProvider
+        val modelId = LLMSettings.selectedModelId
+        val modelInfo = LLMModelFetcher.findModelById(modelId)
         
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { isExpanded = !isExpanded },
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
-            elevation = 1.dp
+            elevation = 1.dp,
+            backgroundColor = if (hasApiKey) 
+                Color(0xFF4CAF50).copy(alpha = 0.05f) 
+            else 
+                Color(0xFFFF5252).copy(alpha = 0.05f)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "API Configuration",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        if (hasApiKey) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = "LLM Status",
+                        modifier = Modifier.size(20.dp),
+                        tint = if (hasApiKey) 
+                            Color(0xFF4CAF50) 
+                        else 
+                            Color(0xFFFF5252)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "API Configuration",
+                            if (hasApiKey) 
+                                "LLM Provider: ${provider.displayName}"
+                            else 
+                                "No API Key Configured",
                             style = MaterialTheme.typography.subtitle2,
                             fontWeight = FontWeight.Medium
                         )
+                        if (hasApiKey) {
+                            Text(
+                                "Model: ${modelInfo?.name ?: modelId}",
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                            )
+                        } else {
+                            Text(
+                                "Configure in Settings > LLM Providers",
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
                     }
-                    Icon(
-                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = "Toggle",
-                        tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                    )
-                }
-                
-                if (isExpanded) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = apiEndpoint,
-                        onValueChange = onEndpointChange,
-                        label = { Text("API Endpoint") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = enabled,
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.body2.copy(
-                            fontFamily = FontFamily.Monospace
-                        )
-                    )
+                    if (!hasApiKey) {
+                        TextButton(
+                            onClick = { /* Open settings */ },
+                            enabled = enabled
+                        ) {
+                            Text("Configure", style = MaterialTheme.typography.button)
+                        }
+                    }
                 }
             }
         }
@@ -541,8 +543,8 @@ open class LLMRpaComponent(
             shape = RoundedCornerShape(8.dp),
             elevation = 1.dp,
             backgroundColor = when (execution.status) {
-                ExecutionStatus.COMPLETED -> Color(0xFF4CAF50).copy(alpha = 0.1f)
-                ExecutionStatus.ERROR -> Color(0xFFFF5252).copy(alpha = 0.1f)
+                LLMExecutionStatus.COMPLETED -> Color(0xFF4CAF50).copy(alpha = 0.1f)
+                LLMExecutionStatus.ERROR -> Color(0xFFFF5252).copy(alpha = 0.1f)
                 else -> MaterialTheme.colors.surface
             }
         ) {
@@ -566,19 +568,19 @@ open class LLMRpaComponent(
                         ) {
                             Icon(
                                 when (execution.status) {
-                                    ExecutionStatus.COMPLETED -> Icons.Default.CheckCircle
-                                    ExecutionStatus.ERROR -> Icons.Default.Error
-                                    ExecutionStatus.EXECUTING -> Icons.Default.PlayArrow
-                                    ExecutionStatus.GENERATING -> Icons.Default.AutoAwesome
+                                    LLMExecutionStatus.COMPLETED -> Icons.Default.CheckCircle
+                                    LLMExecutionStatus.ERROR -> Icons.Default.Error
+                                    LLMExecutionStatus.EXECUTING -> Icons.Default.PlayArrow
+                                    LLMExecutionStatus.GENERATING -> Icons.Default.AutoAwesome
                                     else -> Icons.Default.Schedule
                                 },
                                 contentDescription = execution.status.name,
                                 modifier = Modifier.size(16.dp),
                                 tint = when (execution.status) {
-                                    ExecutionStatus.COMPLETED -> Color(0xFF4CAF50)
-                                    ExecutionStatus.ERROR -> Color(0xFFFF5252)
-                                    ExecutionStatus.EXECUTING -> MaterialTheme.colors.primary
-                                    ExecutionStatus.GENERATING -> Color(0xFFFF9800)
+                                    LLMExecutionStatus.COMPLETED -> Color(0xFF4CAF50)
+                                    LLMExecutionStatus.ERROR -> Color(0xFFFF5252)
+                                    LLMExecutionStatus.EXECUTING -> MaterialTheme.colors.primary
+                                    LLMExecutionStatus.GENERATING -> Color(0xFFFF9800)
                                     else -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                 }
                             )
@@ -587,8 +589,8 @@ open class LLMRpaComponent(
                                 execution.status.name.lowercase().replaceFirstChar { it.uppercase() },
                                 style = MaterialTheme.typography.caption,
                                 color = when (execution.status) {
-                                    ExecutionStatus.COMPLETED -> Color(0xFF4CAF50)
-                                    ExecutionStatus.ERROR -> Color(0xFFFF5252)
+                                    LLMExecutionStatus.COMPLETED -> Color(0xFF4CAF50)
+                                    LLMExecutionStatus.ERROR -> Color(0xFFFF5252)
                                     else -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                 }
                             )
@@ -659,7 +661,7 @@ open class LLMRpaComponent(
         _isExecuting.value = true
         val executionState = LLMExecutionState(
             instruction = instruction,
-            status = ExecutionStatus.GENERATING
+            status = LLMExecutionStatus.GENERATING
         )
         _executionHistory.value = _executionHistory.value + executionState
         val historyIndex = _executionHistory.value.size - 1
@@ -674,14 +676,14 @@ open class LLMRpaComponent(
                 sourceUrl = currentUrl
             )
             
-            updateExecutionStatus(historyIndex, ExecutionStatus.GENERATING)
+            updateExecutionStatus(historyIndex, LLMExecutionStatus.GENERATING)
             
             val response = callLLMApi(request)
             
             if (response.status == "success" && response.configuration.isNotEmpty()) {
                 updateExecutionStatus(
                     historyIndex, 
-                    ExecutionStatus.EXECUTING,
+                    LLMExecutionStatus.EXECUTING,
                     generatedActions = response.configuration
                 )
                 
@@ -690,7 +692,7 @@ open class LLMRpaComponent(
                 
                 updateExecutionStatus(
                     historyIndex,
-                    ExecutionStatus.COMPLETED,
+                    LLMExecutionStatus.COMPLETED,
                     generatedActions = response.configuration
                 )
                 
@@ -699,7 +701,7 @@ open class LLMRpaComponent(
             } else {
                 updateExecutionStatus(
                     historyIndex,
-                    ExecutionStatus.ERROR,
+                    LLMExecutionStatus.ERROR,
                     error = response.message ?: "Failed to generate configuration"
                 )
             }
@@ -707,7 +709,7 @@ open class LLMRpaComponent(
         } catch (e: Exception) {
             updateExecutionStatus(
                 historyIndex,
-                ExecutionStatus.ERROR,
+                LLMExecutionStatus.ERROR,
                 error = e.message ?: "Unknown error occurred"
             )
         } finally {
@@ -951,7 +953,7 @@ open class LLMRpaComponent(
      */
     private fun updateExecutionStatus(
         index: Int,
-        status: ExecutionStatus,
+        status: LLMExecutionStatus,
         generatedActions: List<RpaActionConfig> = emptyList(),
         error: String? = null
     ) {
