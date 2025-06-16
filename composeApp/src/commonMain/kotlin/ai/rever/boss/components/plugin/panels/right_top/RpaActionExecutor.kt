@@ -286,12 +286,38 @@ suspend fun RpaActionExecutor.executeAction(
                 click(action.selector)
             }
             
-            "input" -> {
+            "input", "type" -> {
                 waitForElement(action.selector)
                 scrollIntoView(action.selector)
                 
                 if (humanLikeMode && action.value != null) {
-                    simulateTyping(action.selector, action.value)
+                    // Handle special keys like {ENTER}
+                    if (action.value == "{ENTER}") {
+                        // Press Enter on the element
+                        val script = """
+                            (function() {
+                                var element = ${(this as BaseActionExecutor).buildSelectorScript(action.selector)};
+                                if (element) {
+                                    var event = new KeyboardEvent('keypress', {
+                                        key: 'Enter',
+                                        keyCode: 13,
+                                        bubbles: true,
+                                        cancelable: true
+                                    });
+                                    element.dispatchEvent(event);
+                                    
+                                    // Also submit form if applicable
+                                    var form = element.closest('form');
+                                    if (form) {
+                                        setTimeout(() => form.submit(), 50);
+                                    }
+                                }
+                            })()
+                        """.trimIndent()
+                        executeJavaScript(script)
+                    } else {
+                        simulateTyping(action.selector, action.value)
+                    }
                 } else if (action.value != null) {
                     input(action.selector, action.value)
                 }

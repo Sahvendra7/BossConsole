@@ -68,6 +68,13 @@ fun LLMRpaContent(
  * Create RPA executor for browser integration
  */
 private fun createRpaExecutor(browser: BrowserIntegration): RpaActionExecutor {
+    // Try to use platform-specific executor first
+    val platformExecutor = createPlatformLLMRpaExecutor(browser)
+    if (platformExecutor != null) {
+        return platformExecutor
+    }
+    
+    // Fallback to generic executor
     return object : BaseActionExecutor() {
         override suspend fun navigate(url: String) {
             browser.executeJavaScript("window.location.href = '$url'")

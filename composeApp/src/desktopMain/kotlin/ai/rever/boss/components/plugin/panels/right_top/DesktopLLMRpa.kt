@@ -266,14 +266,16 @@ class DesktopLLMRpaComponent(
                 "message": "Explanation of what the actions do"
             }
             
-            Available action types: navigate, click, type, wait, scroll, screenshot, extract, select, hover, rightClick
+            Available action types: navigate, click, input, wait, scroll, screenshot, extract, select, hover, rightClick, keypress, submit
             
             Important selector guidelines:
             - For Google search, use selector: {"type": "css", "value": "textarea[name='q']"} or {"type": "xpath", "value": "//textarea[@name='q']"}
             - Prefer CSS selectors over XPath when possible
             - Use name attributes when available
             - For input/textarea elements, prefer name or id attributes
-            - type action requires clicking the element first, then typing
+            - Use "input" action type for typing text into fields
+            - Use "keypress" action type with value "Enter" to submit forms
+            - Click on an element first before typing into it
             
             Provide only the JSON response without any additional text or formatting.
         """.trimIndent()
@@ -319,6 +321,9 @@ actual class LLMRpaFactory {
  * Platform-specific function to create LLM RPA executor
  */
 actual fun createPlatformLLMRpaExecutor(browser: Any): RpaActionExecutor? {
-    // Desktop uses the common implementation via BrowserIntegration
+    // Use JxBrowser-specific executor if we have access to the actual browser
+    if (browser is BrowserIntegration && browser is DesktopBrowserIntegration) {
+        return JxBrowserActionExecutor(browser.browser)
+    }
     return null
 }

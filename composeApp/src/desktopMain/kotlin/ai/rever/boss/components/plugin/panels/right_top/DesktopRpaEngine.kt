@@ -188,8 +188,9 @@ class DesktopRpaEngineComponent(
 
 /**
  * JxBrowser implementation of RPA Action Executor
+ * Made internal so it can be used by both RPA Engine and LLM RPA
  */
-class JxBrowserActionExecutor(
+internal class JxBrowserActionExecutor(
     private val browser: Browser
 ) : BaseActionExecutor() {
     

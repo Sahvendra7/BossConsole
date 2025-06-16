@@ -182,6 +182,16 @@ open class LLMRpaComponent(
                 )
             }
             
+            // Current Execution Status (if executing)
+            if (isExecuting && history.isNotEmpty()) {
+                val currentExecution = history.lastOrNull { it.status == LLMExecutionStatus.GENERATING || it.status == LLMExecutionStatus.EXECUTING }
+                if (currentExecution != null) {
+                    item {
+                        CurrentExecutionCard(currentExecution)
+                    }
+                }
+            }
+            
             // Execution History
             if (history.isNotEmpty()) {
                 item {
@@ -195,6 +205,68 @@ open class LLMRpaComponent(
                 
                 items(history.reversed()) { execution ->
                     ExecutionHistoryItem(execution)
+                }
+            }
+        }
+    }
+    
+    @Composable
+    private fun CurrentExecutionCard(execution: LLMExecutionState) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            backgroundColor = MaterialTheme.colors.primary.copy(alpha = 0.1f),
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colors.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        when (execution.status) {
+                            LLMExecutionStatus.GENERATING -> "Generating actions..."
+                            LLMExecutionStatus.EXECUTING -> "Executing actions..."
+                            else -> "Processing..."
+                        },
+                        style = MaterialTheme.typography.subtitle1,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                if (execution.generatedActions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Actions to execute:",
+                        style = MaterialTheme.typography.caption,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                    )
+                    
+                    execution.generatedActions.forEachIndexed { index, action ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.padding(start = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "• ",
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.primary
+                            )
+                            Text(
+                                "${action.type}: ${action.name}",
+                                style = MaterialTheme.typography.caption
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -622,10 +694,50 @@ open class LLMRpaComponent(
                 if (execution.generatedActions.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Generated ${execution.generatedActions.size} actions",
+                        "Generated ${execution.generatedActions.size} actions:",
                         style = MaterialTheme.typography.caption,
-                        color = MaterialTheme.colors.primary
+                        color = MaterialTheme.colors.primary,
+                        fontWeight = FontWeight.Medium
                     )
+                    
+                    // Show generated actions
+                    execution.generatedActions.forEachIndexed { index, action ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                "${index + 1}.",
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.width(20.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${action.type.uppercase()}: ${action.name}",
+                                    style = MaterialTheme.typography.caption,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "Selector: ${action.selector.type} = ${action.selector.value ?: "none"}",
+                                    style = MaterialTheme.typography.caption,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                                )
+                                if (!action.value.isNullOrEmpty()) {
+                                    Text(
+                                        "Value: ${action.value}",
+                                        style = MaterialTheme.typography.caption,
+                                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
