@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.right_top
 
 import kotlinx.coroutines.delay
 import kotlin.random.Random
+import kotlinx.datetime.Clock
 
 /**
  * Interface for executing RPA actions on a browser
@@ -37,15 +38,23 @@ abstract class BaseActionExecutor : RpaActionExecutor {
      * Find element using different selector strategies
      */
     fun buildSelectorScript(selector: SelectorInfo): String {
+        // Escape the selector value to handle quotes properly
+        val escapedValue = selector.value?.replace("\\", "\\\\")?.replace("'", "\\'") ?: ""
+        
         return when (selector.type) {
-            "id" -> "document.getElementById('${selector.value}')"
-            "css" -> "document.querySelector('${selector.value}')"
+            "id" -> "document.getElementById('${escapedValue}')"
+            "css" -> "document.querySelector('${escapedValue}')"
             "xpath" -> {
                 """
                 (function() {
-                    var result = document.evaluate('${selector.value}', document, null, 
-                        XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                    return result.singleNodeValue;
+                    try {
+                        var result = document.evaluate('${escapedValue}', document, null, 
+                            XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                        return result.singleNodeValue;
+                    } catch (e) {
+                        console.error('LLM RPA: XPath evaluation error:', e, 'Selector:', '${escapedValue}');
+                        return null;
+                    }
                 })()
                 """.trimIndent()
             }
@@ -54,7 +63,7 @@ abstract class BaseActionExecutor : RpaActionExecutor {
                 (function() {
                     var elements = document.querySelectorAll('*');
                     for (var i = 0; i < elements.length; i++) {
-                        if (elements[i].textContent.trim() === '${selector.value}') {
+                        if (elements[i].textContent.trim() === '${escapedValue}') {
                             return elements[i];
                         }
                     }
@@ -70,9 +79,9 @@ abstract class BaseActionExecutor : RpaActionExecutor {
      * Wait for element with timeout
      */
     override suspend fun waitForElement(selector: SelectorInfo, timeout: Long): Boolean {
-        val startTime = System.currentTimeMillis()
+        val startTime = Clock.System.now()
         
-        while (System.currentTimeMillis() - startTime < timeout) {
+        while (Clock.System.now().toEpochMilliseconds() - startTime.toEpochMilliseconds() < timeout) {
             val exists = isElementPresent(selector)
             if (exists) return true
             delay(100)
@@ -85,7 +94,13 @@ abstract class BaseActionExecutor : RpaActionExecutor {
      * Check if element is present in DOM
      */
     protected suspend fun isElementPresent(selector: SelectorInfo): Boolean {
-        val script = "${buildSelectorScript(selector)} != null"
+        val script = """
+            (function() {
+                var element = ${buildSelectorScript(selector)};
+                console.log('LLM RPA: Checking element presence - type:', '${selector.type}', 'value:', '${selector.value}', 'found:', element != null);
+                return element != null;
+            })()
+        """.trimIndent()
         return executeJavaScript(script) as? Boolean ?: false
     }
     
@@ -237,7 +252,7 @@ suspend fun RpaActionExecutor.executeAction(
     humanLikeMode: Boolean = true,
     speedMultiplier: Float = 1.0f
 ): ActionExecutionResult {
-    val startTime = System.currentTimeMillis()
+    val startTime = Clock.System.now().toEpochMilliseconds()
     
     return try {
         // Pre-action human behavior

@@ -45,11 +45,16 @@ fun LLMRpaContent(
     
     // Update browser connection and executor
     LaunchedEffect(browserConnection, selectedTab) {
-        if (browserConnection != null && selectedTab != null) {
-            component.browserConnection = browserConnection
+        val browser = browserConnection
+        val tab = selectedTab
+        if (browser != null && tab != null) {
+            println("LLM RPA Integration: Browser connection established for tab: ${tab.id}")
+            component.browserConnection = browser
             // Create RPA executor for this browser
-            component.rpaExecutor = createRpaExecutor(browserConnection!!)
+            component.rpaExecutor = createRpaExecutor(browser)
+            println("LLM RPA Integration: RPA executor created")
         } else {
+            println("LLM RPA Integration: No browser connection - browserConnection: $browser, selectedTab: $tab")
             component.browserConnection = null
             component.rpaExecutor = null
         }
@@ -70,40 +75,71 @@ private fun createRpaExecutor(browser: BrowserIntegration): RpaActionExecutor {
         }
         
         override suspend fun click(selector: SelectorInfo) {
+            // First wait for element to be present
+            val waited = waitForElement(selector, 5000)
+            if (!waited) {
+                throw Exception("Element not found after waiting: ${selector.type}=${selector.value}")
+            }
+            
             val script = """
                 (function() {
+                    console.log('LLM RPA: Attempting to click element with selector:', '${selector.type}', '${selector.value}');
                     var element = ${buildSelectorScript(selector)};
                     if (element) {
+                        console.log('LLM RPA: Element found:', element);
+                        // Ensure element is visible and clickable
+                        element.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        // Click immediately without setTimeout
                         element.click();
+                        console.log('LLM RPA: Clicked element');
                         return true;
                     }
+                    console.log('LLM RPA: Element not found');
                     return false;
                 })()
             """.trimIndent()
             
             val result = browser.executeJavaScript(script)
+            delay(300) // Wait for click action
             if (result != true) {
-                throw Exception("Element not found: ${selector.value}")
+                throw Exception("Element not found: ${selector.type}=${selector.value}")
             }
         }
         
         override suspend fun input(selector: SelectorInfo, value: String) {
+            // First wait for element to be present
+            val waited = waitForElement(selector, 5000)
+            if (!waited) {
+                throw Exception("Input element not found after waiting: ${selector.type}=${selector.value}")
+            }
+            
             val script = """
                 (function() {
+                    console.log('LLM RPA: Attempting to input text with selector:', '${selector.type}', '${selector.value}');
                     var element = ${buildSelectorScript(selector)};
                     if (element) {
+                        console.log('LLM RPA: Input element found:', element);
+                        // Focus the element first
+                        element.focus();
+                        // Clear existing value
+                        element.value = '';
+                        // Set new value
                         element.value = '${value.replace("'", "\\'")}';
+                        // Trigger various events that websites might listen to
                         element.dispatchEvent(new Event('input', { bubbles: true }));
                         element.dispatchEvent(new Event('change', { bubbles: true }));
+                        element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                        console.log('LLM RPA: Input value set to:', element.value);
                         return true;
                     }
+                    console.log('LLM RPA: Input element not found');
                     return false;
                 })()
             """.trimIndent()
             
             val result = browser.executeJavaScript(script)
             if (result != true) {
-                throw Exception("Element not found: ${selector.value}")
+                throw Exception("Input element not found: ${selector.type}=${selector.value}")
             }
         }
         

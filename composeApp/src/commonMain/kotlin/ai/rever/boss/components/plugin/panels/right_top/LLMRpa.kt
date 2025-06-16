@@ -687,6 +687,16 @@ open class LLMRpaComponent(
                     generatedActions = response.configuration
                 )
                 
+                // Log the generated actions for debugging
+                println("LLM RPA: Generated ${response.configuration.size} actions:")
+                response.configuration.forEachIndexed { index, action ->
+                    println("  Action $index: ${action.type} - ${action.name}")
+                    println("    Selector: ${action.selector.type} = ${action.selector.value}")
+                    if (action.value != null) {
+                        println("    Value: ${action.value}")
+                    }
+                }
+                
                 // Execute the generated actions
                 executeGeneratedActions(response.configuration)
                 
@@ -923,10 +933,17 @@ open class LLMRpaComponent(
      * Execute generated RPA actions
      */
     private suspend fun executeGeneratedActions(actions: List<RpaActionConfig>) {
-        if (rpaExecutor == null) return
+        if (rpaExecutor == null) {
+            println("LLM RPA: Error - RPA executor is null")
+            throw Exception("RPA executor not initialized")
+        }
+        
+        println("LLM RPA: Starting execution of ${actions.size} actions")
         
         for ((index, action) in actions.withIndex()) {
             try {
+                println("LLM RPA: Executing action ${index + 1}/${actions.size}: ${action.type} - ${action.name}")
+                
                 val result = rpaExecutor!!.executeAction(
                     action = action,
                     humanLikeMode = true,
@@ -934,8 +951,11 @@ open class LLMRpaComponent(
                 )
                 
                 if (!result.success) {
+                    println("LLM RPA: Action failed - ${result.error}")
                     throw Exception(result.error ?: "Action failed")
                 }
+                
+                println("LLM RPA: Action ${index + 1} completed successfully")
                 
                 // Small delay between actions
                 if (index < actions.size - 1) {
@@ -943,9 +963,13 @@ open class LLMRpaComponent(
                 }
                 
             } catch (e: Exception) {
+                println("LLM RPA: Exception during action ${index + 1}: ${e.message}")
+                e.printStackTrace()
                 throw Exception("Failed at action ${index + 1}: ${e.message}")
             }
         }
+        
+        println("LLM RPA: All actions completed successfully")
     }
     
     /**
