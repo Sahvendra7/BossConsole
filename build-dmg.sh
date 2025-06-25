@@ -3,10 +3,10 @@
 # Build BOSS final distribution with all fixes
 
 # Configuration
-DEVELOPER_ID="Developer ID Application: Reverberation Tech Private Limited (TSFZV2FBXD)"
-TEAM_ID="TSFZV2FBXD"
-APPLE_ID="shivang.iitk@gmail.com"
-APP_PASSWORD="njan-ouda-ogjt-pbup"
+DEVELOPER_ID="Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+TEAM_ID="7X4CJM22GN"
+APPLE_ID="shivang.risa@gmail.com"
+APP_PASSWORD="home-jbtj-lwwd-ukju"
 
 echo "========================================"
 echo "Building BOSS Final Distribution"

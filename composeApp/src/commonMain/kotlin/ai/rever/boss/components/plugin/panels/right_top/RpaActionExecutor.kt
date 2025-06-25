@@ -199,44 +199,124 @@ abstract class BaseActionExecutor : RpaActionExecutor {
      * Simulate human-like typing
      */
     override suspend fun simulateTyping(selector: SelectorInfo, text: String, minDelay: Int, maxDelay: Int) {
-        // First clear the field
-        val clearScript = """
+        // Get element bounds for mouse movement
+        val boundsScript = """
+            (function() {
+                var element = ${buildSelectorScript(selector)};
+                if (!element) return null;
+                var rect = element.getBoundingClientRect();
+                return {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
+                };
+            })()
+        """.trimIndent()
+        
+        val bounds = executeJavaScript(boundsScript) as? Map<*, *>
+        if (bounds != null) {
+            val x = (bounds["x"] as? Number)?.toInt() ?: 0
+            val y = (bounds["y"] as? Number)?.toInt() ?: 0
+            
+            // Simulate mouse movement to the field
+            simulateMouseMovement(x, y)
+            delay(Random.nextLong(100, 300))
+        }
+        
+        // First click on the field to focus it
+        val focusScript = """
             (function() {
                 var element = ${buildSelectorScript(selector)};
                 if (element) {
-                    element.value = '';
-                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    // Dispatch mouse events
+                    var rect = element.getBoundingClientRect();
+                    var x = rect.left + rect.width / 2;
+                    var y = rect.top + rect.height / 2;
+                    
+                    element.dispatchEvent(new MouseEvent('mouseenter', {
+                        clientX: x,
+                        clientY: y,
+                        bubbles: true
+                    }));
+                    
+                    element.dispatchEvent(new MouseEvent('mouseover', {
+                        clientX: x,
+                        clientY: y,
+                        bubbles: true
+                    }));
+                    
+                    element.dispatchEvent(new MouseEvent('mousedown', {
+                        clientX: x,
+                        clientY: y,
+                        bubbles: true
+                    }));
+                    
+                    element.focus();
+                    element.click();
+                    
+                    element.dispatchEvent(new MouseEvent('mouseup', {
+                        clientX: x,
+                        clientY: y,
+                        bubbles: true
+                    }));
+                    
+                    // Clear field with more natural approach
+                    setTimeout(() => {
+                        element.select();
+                        document.execCommand('delete');
+                    }, 50);
                 }
             })()
         """.trimIndent()
-        executeJavaScript(clearScript)
+        executeJavaScript(focusScript)
         
-        // Type character by character
-        text.forEach { char ->
+        // Small delay after focus
+        delay(Random.nextLong(300, 600))
+        
+        // Type character by character with simple approach
+        text.forEachIndexed { index, char ->
             val typeScript = """
                 (function() {
                     var element = ${buildSelectorScript(selector)};
-                    if (element) {
-                        element.value += '$char';
+                    if (element && element === document.activeElement) {
+                        // Simple character insertion
+                        var start = element.selectionStart || element.value.length;
+                        var end = element.selectionEnd || element.value.length;
+                        element.value = element.value.substring(0, start) + '$char' + element.value.substring(end);
+                        element.selectionStart = element.selectionEnd = start + 1;
+                        
+                        // Just trigger input event
                         element.dispatchEvent(new Event('input', { bubbles: true }));
-                        element.dispatchEvent(new KeyboardEvent('keypress', { 
-                            key: '$char',
-                            bubbles: true 
-                        }));
                     }
                 })()
             """.trimIndent()
             
             executeJavaScript(typeScript)
-            delay(Random.nextLong(minDelay.toLong(), maxDelay.toLong()))
+            
+            // More variable typing speed
+            val baseDelay = Random.nextLong(minDelay.toLong(), maxDelay.toLong())
+            val extraDelay = when {
+                // Occasional longer pauses (thinking)
+                Random.nextFloat() < 0.1 -> Random.nextLong(200, 500)
+                // Faster for repeated characters
+                index > 0 && text[index] == text[index - 1] -> -20L
+                // Slightly slower for capital letters
+                char.isUpperCase() -> 50L
+                else -> 0L
+            }
+            
+            delay((baseDelay + extraDelay).coerceAtLeast(30))
         }
         
-        // Trigger change event at the end
+        // Small delay before triggering change
+        delay(Random.nextLong(100, 300))
+        
+        // Trigger blur and change events
         val changeScript = """
             (function() {
                 var element = ${buildSelectorScript(selector)};
                 if (element) {
                     element.dispatchEvent(new Event('change', { bubbles: true }));
+                    element.dispatchEvent(new Event('blur', { bubbles: true }));
                 }
             })()
         """.trimIndent()

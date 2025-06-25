@@ -124,8 +124,8 @@ kotlin {
             implementation(jxbrowser.currentPlatform)
             implementation(jxbrowser.compose)
             
-            // JavaCV for video recording
-            implementation("org.bytedeco:javacv-platform:1.5.11")
+            // JavaCV for video recording - removed due to notarization issues
+            // implementation("org.bytedeco:javacv-platform:1.5.11")
             
             // Ktor client for HTTP requests
             implementation(libs.ktor.client.core)
@@ -238,7 +238,7 @@ compose.desktop {
                 // Code signing configuration
                 signing {
                     sign.set(true)
-                    identity.set("Developer ID Application: Reverberation Tech Private Limited (TSFZV2FBXD)")
+                    identity.set("Developer ID Application: Fnu Shivang (7X4CJM22GN)")
                 }
                 
                 // Entitlements

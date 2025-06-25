@@ -86,6 +86,9 @@ object FluckEngine {
             .licenseKey(JxBrowserConfig.licenseKey)
             .chromiumDir(chromiumDir)
             .userDataDir(profileDirPath)
+            // Minimal Chrome flags - removed anti-detection flags as they may be causing detection
+            .addSwitch("--disable-dev-shm-usage")
+            .addSwitch("--no-sandbox") // May be needed for some environments
         
         // Add user agent if configured
         BrowserSettings.userAgent?.let { ua ->
