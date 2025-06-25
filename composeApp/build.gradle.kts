@@ -184,6 +184,11 @@ compose.desktop {
     application {
         mainClass = "ai.rever.boss.MainKt"
         
+        // Enable building uber/fat JAR
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
+        
         // Specify JDK for native distributions (requires JDK 17+)
         javaHome = System.getenv("JAVA_HOME") ?: System.getProperty("java.home")
         
@@ -335,5 +340,78 @@ afterEvaluate {
     tasks.findByName("run")?.apply {
         dependsOn("extractPty4jNative")
         dependsOn("extractJcefNatives")
+    }
+}
+
+// Task to create an executable JAR
+tasks.register<Jar>("createExecutableJar") {
+    dependsOn("desktopJar")
+    group = "build"
+    description = "Creates an executable JAR with all dependencies"
+    
+    archiveClassifier.set("all")
+    archiveBaseName.set("BOSS")
+    archiveVersion.set("8.8.0")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    
+    // Get the desktop jar output
+    val desktopJar = tasks.named<Jar>("desktopJar").get()
+    
+    // Include the main jar contents
+    from(zipTree(desktopJar.archiveFile.get().asFile))
+    
+    // Include all runtime dependencies
+    from(configurations.named("desktopRuntimeClasspath").get().map { 
+        if (it.isDirectory) it else zipTree(it) 
+    }) {
+        exclude("META-INF/*.SF")
+        exclude("META-INF/*.DSA")
+        exclude("META-INF/*.RSA")
+        exclude("META-INF/MANIFEST.MF")
+        exclude("module-info.class")
+    }
+    
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    manifest {
+        attributes(
+            "Main-Class" to "ai.rever.boss.MainKt",
+            "Implementation-Title" to "BOSS",
+            "Implementation-Version" to "8.8.0",
+            "Implementation-Vendor" to "Risa Labs Inc.",
+            "Multi-Release" to "true"
+        )
+    }
+}
+
+// Task to package JAR with native libraries
+tasks.register<Zip>("packageJarWithNatives") {
+    dependsOn("createExecutableJar", "extractJcefNatives", "extractPty4jNative")
+    group = "build"
+    description = "Creates a distributable package with JAR and native libraries"
+    
+    archiveBaseName.set("BOSS-package")
+    archiveVersion.set("8.8.0")
+    archiveExtension.set("zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    
+    // Include the executable JAR
+    from(layout.buildDirectory.dir("libs")) {
+        include("BOSS-8.8.0-all.jar")
+        into("")
+    }
+    
+    // Include native libraries
+    from(layout.buildDirectory.dir("jcef-natives")) {
+        into("jcef-natives")
+    }
+    from(layout.buildDirectory.dir("pty4j-native")) {
+        into("pty4j-native")
+    }
+    
+    // Include launch scripts
+    from(projectDir) {
+        include("launch.sh", "launch.bat")
+        into("")
     }
 }
