@@ -20,8 +20,15 @@ captures
 # Distribution files
 *.dmg
 *.zip
+*.msi
+*.jar
 distribution-final/
 distribution/
+BOSS-Standalone-Windows/
+BOSS-Standalone-*/
+
+# Claude workspace
+.claude/
 
 # Temporary JDK downloads
 zulu-jdk-*/
