@@ -227,8 +227,8 @@ compose.desktop {
                 menuGroup = "BOSS"
                 upgradeUuid = "8a5a7659-2e0f-41bd-bbbb-3140b1e7dd7d"
                 
-                // Simple icon configuration to avoid MSI errors
-                iconFile.set(project.file("src/desktopMain/resources/boss_icon.icns"))
+                // Use Windows ICO format for proper MSI icon display
+                iconFile.set(project.file("src/desktopMain/resources/boss_icon.ico"))
             }
             
             macOS {
