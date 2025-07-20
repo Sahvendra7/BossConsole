@@ -64,6 +64,7 @@ import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalConfigu
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import androidx.compose.runtime.CompositionLocalProvider
+import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 
 
 @Composable
@@ -110,6 +111,16 @@ fun ComponentContext.BossApp() {
                 configurationManager.updateCurrentConfiguration(lastSessionConfig)
                 configurationManager.saveCurrentConfiguration("Last Session")
             }
+        }
+    }
+    
+    // Load LLM settings on startup
+    LaunchedEffect(Unit) {
+        try {
+            LLMSettingsManager.loadSettings()
+        } catch (e: Exception) {
+            // Ignore errors during settings load to prevent app crash
+            println("Warning: Failed to load LLM settings: ${e.message}")
         }
     }
     

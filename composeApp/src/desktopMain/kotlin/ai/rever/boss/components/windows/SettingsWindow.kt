@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -934,6 +935,7 @@ private fun LLMProvidersSettings() {
     var enableCaching by remember { mutableStateOf(LLMSettings.enableCaching) }
     var showApiKey by remember { mutableStateOf(false) }
     var showOAuthDialog by remember { mutableStateOf<LLMProvider?>(null) }
+    var settingsFeedbackMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
     // Dynamic models
@@ -1404,7 +1406,16 @@ private fun LLMProvidersSettings() {
                     
                     // Save settings
                     coroutineScope.launch {
-                        LLMSettingsManager.saveSettings()
+                        try {
+                            LLMSettingsManager.saveSettings()
+                            settingsFeedbackMessage = "LLM settings applied successfully!"
+                            delay(3000) // Show message for 3 seconds
+                            settingsFeedbackMessage = null
+                        } catch (e: Exception) {
+                            settingsFeedbackMessage = "Error saving settings: ${e.message}"
+                            delay(5000) // Show error message longer
+                            settingsFeedbackMessage = null
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -1467,6 +1478,28 @@ private fun LLMProvidersSettings() {
             backgroundColor = BossDarkSurface,
             contentColor = Color.White
         )
+    }
+    
+    // Settings feedback message
+    settingsFeedbackMessage?.let { message ->
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Surface(
+                modifier = Modifier.padding(top = 16.dp),
+                color = if (message.contains("Error")) Color.Red else BossDarkAccent,
+                shape = RoundedCornerShape(6.dp),
+                elevation = 4.dp
+            ) {
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.body2
+                )
+            }
+        }
     }
 }
 
