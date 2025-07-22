@@ -80,4 +80,182 @@ Then run with:
 # JxBrowser configuration
 jxbrowser.license.key=YOUR_LICENSE_KEY_HERE
 jxbrowser.default.url=https://www.example.com
-``` 
+```
+
+# Version Management
+
+BOSS uses a centralized version management system to maintain consistency across all build artifacts and configurations.
+
+## Version Configuration
+
+All version information is stored in the [`version.properties`](./version.properties) file at the project root:
+
+```properties
+# Application Version (Semantic Versioning)
+app.version.major=8
+app.version.minor=8  
+app.version.patch=0
+app.version=8.8.0
+app.bundle.version=8.8.0
+```
+
+## Version Management Commands
+
+Use these Gradle tasks to manage versions:
+
+```bash
+# Display current version information
+./gradlew showVersion
+
+# Increment patch version (8.8.0 → 8.8.1)
+./gradlew incrementVersion
+
+# Increment minor version and reset patch (8.8.0 → 8.9.0)
+./gradlew incrementMinor
+
+# Increment major version and reset minor/patch (8.8.0 → 9.0.0)
+./gradlew incrementMajor
+```
+
+## Automated Version Propagation
+
+The centralized version automatically updates:
+- JAR file names (`BOSS-8.8.0-all.jar`)
+- DMG file names (`BOSS-8.8.0.dmg`)  
+- MSI installer names (`BOSS-8.8.0.msi`)
+- Application manifests and metadata
+- Build script configurations
+
+## Best Practices
+
+1. **Always use the Gradle tasks** to increment versions - never edit `version.properties` manually
+2. **Increment patch** for bug fixes and small improvements
+3. **Increment minor** for new features and enhancements  
+4. **Increment major** for breaking changes or major releases
+5. **Run `./gradlew showVersion`** to verify changes before building distributions
+
+# GitHub Actions Workflows
+
+BOSS includes automated CI/CD workflows for building, testing, and releasing across all platforms.
+
+## 🚀 Available Workflows
+
+### 1. **Release Build** (`.github/workflows/release.yml`)
+Automatically builds and publishes releases for all platforms.
+
+**Triggers:**
+- Push to tags matching `v*.*.*` (e.g., `v8.8.1`)
+- Manual workflow dispatch with version increment options
+
+**Outputs:**
+- 🍎 **macOS DMG** (Universal: Apple Silicon + Intel)
+- 🪟 **Windows MSI** (x64)
+- 🐧 **Linux JAR** (Cross-platform)
+- 📦 **GitHub Release** with all artifacts
+
+**Manual Release:**
+```bash
+# Via GitHub Actions UI:
+# 1. Go to Actions → Release Build → Run workflow
+# 2. Choose: patch/minor/major increment
+# 3. Enable "Create GitHub release"
+```
+
+### 2. **Build & Test** (`.github/workflows/build.yml`)
+Continuous integration for all commits and PRs.
+
+**Triggers:**
+- Push to `main` or `develop` branches
+- Pull requests to `main`
+- Manual workflow dispatch
+
+**Features:**
+- ✅ Cross-platform builds (Ubuntu, macOS, Windows)
+- 🧪 Automated testing
+- 🔍 Code quality checks
+- 📦 Version system validation
+- 🔄 Auto-update integration testing
+
+### 3. **Version Bump** (`.github/workflows/version-bump.yml`)
+Automated version management with our centralized system.
+
+**Manual Trigger Options:**
+- **Version Type**: `patch`, `minor`, `major`
+- **Commit Message**: Custom message (optional)
+- **Create PR**: Option to create PR instead of direct push
+
+**Process:**
+1. Increments version using centralized system
+2. Generates and validates version constants
+3. Tests build with new version
+4. Either pushes directly or creates PR
+5. Automatically triggers release build
+
+## 🛠️ CI/CD Setup Requirements
+
+### Repository Secrets (Optional)
+For enhanced functionality, add these secrets in GitHub repository settings:
+
+```bash
+# macOS Code Signing (Optional)
+MACOS_CERTIFICATE_BASE64=<base64-encoded-certificate>
+CERTIFICATE_PASSWORD=<certificate-password>
+KEYCHAIN_PASSWORD=<keychain-password>
+
+# Windows Code Signing (Optional)  
+WINDOWS_CERTIFICATE_BASE64=<base64-encoded-certificate>
+WINDOWS_CERTIFICATE_PASSWORD=<certificate-password>
+```
+
+### Workflow Permissions
+Ensure GitHub Actions has these permissions:
+- ✅ **Contents**: Read and write (for version commits)
+- ✅ **Pull Requests**: Write (for PR creation)
+- ✅ **Actions**: Write (for workflow triggers)
+
+## 🎯 Automated Release Process
+
+### Option 1: Tag-Based Release
+```bash
+# Create and push version tag
+./gradlew incrementMinor  # Updates version to 8.9.0
+git add version.properties
+git commit -m "🔖 Release v8.9.0"
+git tag v8.9.0
+git push origin main --tags
+
+# → Automatically triggers Release Build workflow
+# → Creates GitHub release with all platform builds
+```
+
+### Option 2: GitHub Actions UI
+1. **Go to**: Actions → Version Bump → Run workflow
+2. **Choose**: Version increment type (`patch`/`minor`/`major`)  
+3. **Option**: Create PR for review, or push directly
+4. **Result**: Version updated → Release build triggered → GitHub release created
+
+### Option 3: Automated Release on PR Merge
+```yaml
+# In your PR description, include:
+# [version:minor] - Triggers minor version bump on merge
+# [version:major] - Triggers major version bump on merge  
+# Default: patch increment
+```
+
+## 📊 Build Status Badges
+
+Add these badges to show build status:
+
+```markdown
+![Build Status](https://github.com/your-username/BOSS-Kotlin/actions/workflows/build.yml/badge.svg)
+![Release](https://github.com/your-username/BOSS-Kotlin/actions/workflows/release.yml/badge.svg)
+```
+
+## 🔍 Monitoring Builds
+
+- **Build Logs**: Available in Actions tab for each workflow run
+- **Artifacts**: Download builds from successful workflow runs  
+- **Release Notes**: Auto-generated with download links and system requirements
+- **Version Tracking**: All builds tagged with centralized version system
+
+The CI/CD system integrates seamlessly with our centralized version management, ensuring consistent versioning across all platforms and deployment methods. 

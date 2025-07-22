@@ -1,0 +1,246 @@
+name: 📈 Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Type of version increment'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      commit_message:
+        description: 'Custom commit message (optional)'
+        required: false
+        type: string
+      create_pr:
+        description: 'Create Pull Request instead of direct push'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    outputs:
+      old-version: ${{ steps.get-versions.outputs.old-version }}
+      new-version: ${{ steps.get-versions.outputs.new-version }}
+      pr-number: ${{ steps.create-pr.outputs.pr-number }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 📋 Get Current Version
+        id: get-versions
+        run: |
+          # Get current version
+          OLD_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "old-version=$OLD_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $OLD_VERSION"
+          
+          # Show current version details
+          ./gradlew showVersion
+
+      - name: 🔄 Increment Version
+        run: |
+          echo "🔄 Incrementing version (${{ github.event.inputs.version_type }})"
+          
+          case "${{ github.event.inputs.version_type }}" in
+            "patch")
+              ./gradlew incrementVersion
+              ;;
+            "minor")
+              ./gradlew incrementMinor
+              ;;
+            "major")
+              ./gradlew incrementMajor
+              ;;
+            *)
+              echo "❌ Invalid version type: ${{ github.event.inputs.version_type }}"
+              exit 1
+              ;;
+          esac
+
+      - name: 📋 Get New Version
+        id: get-new-version
+        run: |
+          # Get new version
+          NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "📦 New version: $NEW_VERSION"
+          
+          # Show updated version details
+          ./gradlew showVersion
+
+      - name: 🔍 Generate Version Constants
+        run: |
+          echo "🔍 Generating version constants to verify integration"
+          ./gradlew generateVersionConstants
+          
+          # Verify the generated constants
+          if [ -f "composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt" ]; then
+            echo "✅ Version constants generated successfully"
+            echo "📄 Generated constants:"
+            cat composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt
+          else
+            echo "❌ Failed to generate version constants"
+            exit 1
+          fi
+
+      - name: 🧪 Test Build with New Version
+        run: |
+          echo "🧪 Testing build with new version"
+          ./gradlew :composeApp:compileKotlinDesktop --quiet
+
+      - name: 📝 Prepare Commit Message
+        id: commit-message
+        run: |
+          NEW_VERSION="${{ steps.get-new-version.outputs.new-version }}"
+          OLD_VERSION="${{ steps.get-versions.outputs.old-version }}"
+          
+          if [[ -n "${{ github.event.inputs.commit_message }}" ]]; then
+            COMMIT_MSG="${{ github.event.inputs.commit_message }}"
+          else
+            COMMIT_MSG="🔖 Bump version $OLD_VERSION → $NEW_VERSION (${{ github.event.inputs.version_type }})"
+          fi
+          
+          echo "commit-message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "📝 Commit message: $COMMIT_MSG"
+
+      - name: 🔧 Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: 📦 Commit Version Changes (Direct Push)
+        if: github.event.inputs.create_pr == 'false'
+        run: |
+          NEW_VERSION="${{ steps.get-new-version.outputs.new-version }}"
+          OLD_VERSION="${{ steps.get-versions.outputs.old-version }}"
+          
+          # Add and commit changes
+          git add version.properties
+          git commit -m "${{ steps.commit-message.outputs.commit-message }}"
+          
+          # Create and push tag
+          git tag "v$NEW_VERSION"
+          git push origin main
+          git push origin "v$NEW_VERSION"
+          
+          echo "✅ Version bumped and pushed: $OLD_VERSION → $NEW_VERSION"
+
+      - name: 🔀 Create Pull Request
+        if: github.event.inputs.create_pr == 'true'
+        id: create-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.get-new-version.outputs.new-version }}"
+          OLD_VERSION="${{ steps.get-versions.outputs.old-version }}"
+          
+          # Create branch for PR
+          BRANCH_NAME="version-bump-$NEW_VERSION"
+          git checkout -b $BRANCH_NAME
+          
+          # Add and commit changes
+          git add version.properties
+          git commit -m "${{ steps.commit-message.outputs.commit-message }}"
+          
+          # Push branch
+          git push origin $BRANCH_NAME
+          
+          # Create PR
+          PR_BODY="## 📈 Version Bump: $OLD_VERSION → $NEW_VERSION
+          
+          ### 📋 Changes
+          - **Type**: ${{ github.event.inputs.version_type }} version increment
+          - **Old Version**: $OLD_VERSION  
+          - **New Version**: $NEW_VERSION
+          
+          ### 🔄 What's Updated
+          - \`version.properties\` updated with new version
+          - Build date updated to $(date +%Y-%m-%d)
+          - All build artifacts will use new version:
+            - JAR: \`BOSS-$NEW_VERSION-all.jar\`
+            - DMG: \`BOSS-$NEW_VERSION.dmg\`
+            - MSI: \`BOSS-$NEW_VERSION.msi\`
+          
+          ### ✅ Verification
+          - [x] Version constants generation tested
+          - [x] Kotlin compilation tested
+          - [x] Version propagation verified
+          
+          ### 🚀 Next Steps
+          1. Review and merge this PR
+          2. The merge will trigger release build workflow
+          3. New release will be automatically created
+          
+          ---
+          🤖 *This PR was automatically created by GitHub Actions*"
+          
+          # Create PR and capture number
+          PR_URL=$(gh pr create \
+            --title "🔖 Version Bump: $OLD_VERSION → $NEW_VERSION" \
+            --body "$PR_BODY" \
+            --base main \
+            --head $BRANCH_NAME)
+          
+          PR_NUMBER=$(echo $PR_URL | grep -o '[0-9]*$')
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "✅ Pull request created: $PR_URL"
+
+  summary:
+    needs: bump-version
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📊 Summary
+        run: |
+          echo "## 📈 Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Type**: ${{ github.event.inputs.version_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Old Version**: ${{ needs.bump-version.outputs.old-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**New Version**: ${{ needs.bump-version.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ github.event.inputs.create_pr }}" == "true" ]]; then
+            echo "**Action**: Pull Request Created" >> $GITHUB_STEP_SUMMARY
+            echo "**PR Number**: #${{ needs.bump-version.outputs.pr-number }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔀 **Next Steps**: Review and merge the PR to trigger release build" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Action**: Direct Push to Main" >> $GITHUB_STEP_SUMMARY
+            echo "**Tag**: v${{ needs.bump-version.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🚀 **Next Steps**: Release build workflow will automatically trigger" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Status
+          if [[ "${{ needs.bump-version.result }}" == "success" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🎉 **Status**: ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Status**: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi

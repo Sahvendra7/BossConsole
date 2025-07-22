@@ -65,6 +65,9 @@ import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import androidx.compose.runtime.CompositionLocalProvider
 import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
+import ai.rever.boss.updater.UpdateManager
+import ai.rever.boss.updater.UpdateBanner
+import androidx.compose.runtime.collectAsState
 
 
 @Composable
@@ -111,6 +114,9 @@ fun ComponentContext.BossApp() {
                 configurationManager.updateCurrentConfiguration(lastSessionConfig)
                 configurationManager.saveCurrentConfiguration("Last Session")
             }
+            
+            // Cleanup update manager
+            UpdateManager.instance.cleanup()
         }
     }
     
@@ -121,6 +127,19 @@ fun ComponentContext.BossApp() {
         } catch (e: Exception) {
             // Ignore errors during settings load to prevent app crash
             println("Warning: Failed to load LLM settings: ${e.message}")
+        }
+    }
+    
+    // Initialize update manager and start periodic checks
+    LaunchedEffect(Unit) {
+        try {
+            UpdateManager.instance.startPeriodicChecks()
+            // Check for updates on startup if enough time has passed
+            if (UpdateManager.instance.shouldCheckForUpdates()) {
+                UpdateManager.instance.checkForUpdates()
+            }
+        } catch (e: Exception) {
+            println("Warning: Failed to initialize update manager: ${e.message}")
         }
     }
     
@@ -437,6 +456,35 @@ fun ComponentContext.BossApp() {
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
                     BossTitleBar()
+                    
+                    // Update banner
+                    val updateState by UpdateManager.instance.updateState.collectAsState()
+                    UpdateBanner(
+                        updateState = updateState,
+                        onCheckForUpdates = {
+                            coroutineScope.launch {
+                                UpdateManager.instance.checkForUpdates()
+                            }
+                        },
+                        onDownloadUpdate = { updateInfo ->
+                            coroutineScope.launch {
+                                UpdateManager.instance.downloadUpdate(updateInfo)
+                            }
+                        },
+                        onInstallUpdate = { downloadPath ->
+                            coroutineScope.launch {
+                                val success = UpdateManager.instance.installUpdate(downloadPath)
+                                if (success) {
+                                    // Optionally restart the application here
+                                    // ApplicationRestarter.restart()
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            UpdateManager.instance.resetState()
+                        }
+                    )
+                    
                     BossTopBar(
                         configurationManager = configurationManager,
                         onApplyConfiguration = { config ->

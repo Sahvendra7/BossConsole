@@ -8,3 +8,6 @@ plugins {
     alias(libs.plugins.kotlinJvm) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
 }
+
+// Apply version management script
+apply(from = "gradle/version.gradle")

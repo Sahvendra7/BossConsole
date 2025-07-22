@@ -1,0 +1,122 @@
+// Version Management for BOSS Application
+// This script provides a centralized way to manage versions across all build files
+
+ext {
+    // Load version properties
+    def versionPropsFile = file('version.properties')
+    def versionProps = new Properties()
+    
+    if (versionPropsFile.exists()) {
+        versionProps.load(new FileInputStream(versionPropsFile))
+    } else {
+        throw new GradleException("version.properties file not found! Please create it with version information.")
+    }
+    
+    // Extract version components
+    versionMajor = versionProps['app.version.major'].toInteger()
+    versionMinor = versionProps['app.version.minor'].toInteger()
+    versionPatch = versionProps['app.version.patch'].toInteger()
+    
+    // Construct version strings
+    appVersion = "${versionMajor}.${versionMinor}.${versionPatch}"
+    bundleVersion = versionProps['app.bundle.version']
+    buildNumber = versionProps['app.build.number']
+    
+    // Build artifact names
+    jarName = "BOSS-${appVersion}-all.jar"
+    dmgName = "BOSS-${appVersion}.dmg"
+    dmgUniversalName = "BOSS-${appVersion}-Universal.dmg"
+    msiName = "BOSS-${appVersion}.msi"
+    packageZipName = "BOSS-package-${appVersion}.zip"
+    
+    // Version info for logging
+    println "📦 BOSS Version: ${appVersion}"
+    println "🔢 Build Number: ${buildNumber}"
+    println "📅 Build Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+}
+
+// Helper tasks for version management
+task showVersion {
+    doLast {
+        println """
+╔════════════════════════════════════════╗
+║           BOSS Version Info            ║
+╠════════════════════════════════════════╣
+║ Application Version: ${appVersion}           ║
+║ Bundle Version:      ${bundleVersion}           ║
+║ Build Number:        ${buildNumber}             ║
+║ JAR Name:           ${jarName}    ║
+║ DMG Name:           ${dmgName}         ║
+║ MSI Name:           ${msiName}         ║
+╚════════════════════════════════════════╝
+        """
+    }
+}
+
+task incrementVersion {
+    doLast {
+        // Read current version
+        def versionPropsFile = file('version.properties')
+        def versionProps = new Properties()
+        versionProps.load(new FileInputStream(versionPropsFile))
+        
+        def currentPatch = versionProps['app.version.patch'].toInteger()
+        def newPatch = currentPatch + 1
+        
+        // Update patch version
+        versionProps['app.version.patch'] = newPatch.toString()
+        versionProps['app.version'] = "${versionProps['app.version.major']}.${versionProps['app.version.minor']}.${newPatch}".toString()
+        versionProps['app.bundle.version'] = versionProps['app.version'].toString()
+        versionProps['app.build.date'] = new Date().format('yyyy-MM-dd')
+        
+        // Save updated properties
+        versionProps.store(new FileOutputStream(versionPropsFile), "Auto-incremented patch version")
+        
+        println "✅ Version incremented to ${versionProps['app.version']}"
+    }
+}
+
+task incrementMinor {
+    doLast {
+        def versionPropsFile = file('version.properties')
+        def versionProps = new Properties()
+        versionProps.load(new FileInputStream(versionPropsFile))
+        
+        def currentMinor = versionProps['app.version.minor'].toInteger()
+        def newMinor = currentMinor + 1
+        
+        // Update minor version and reset patch
+        versionProps['app.version.minor'] = newMinor.toString()
+        versionProps['app.version.patch'] = "0"
+        versionProps['app.version'] = "${versionProps['app.version.major']}.${newMinor}.0".toString()
+        versionProps['app.bundle.version'] = versionProps['app.version'].toString()
+        versionProps['app.build.date'] = new Date().format('yyyy-MM-dd')
+        
+        versionProps.store(new FileOutputStream(versionPropsFile), "Auto-incremented minor version")
+        
+        println "✅ Version incremented to ${versionProps['app.version']}"
+    }
+}
+
+task incrementMajor {
+    doLast {
+        def versionPropsFile = file('version.properties')
+        def versionProps = new Properties()
+        versionProps.load(new FileInputStream(versionPropsFile))
+        
+        def currentMajor = versionProps['app.version.major'].toInteger()
+        def newMajor = currentMajor + 1
+        
+        // Update major version and reset minor/patch
+        versionProps['app.version.major'] = newMajor.toString()
+        versionProps['app.version.minor'] = "0"
+        versionProps['app.version.patch'] = "0"
+        versionProps['app.version'] = "${newMajor}.0.0".toString()
+        versionProps['app.bundle.version'] = versionProps['app.version'].toString()
+        versionProps['app.build.date'] = new Date().format('yyyy-MM-dd')
+        
+        versionProps.store(new FileOutputStream(versionPropsFile), "Auto-incremented major version")
+        
+        println "✅ Version incremented to ${versionProps['app.version']}"
+    }
+}

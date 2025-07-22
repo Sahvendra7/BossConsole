@@ -8,6 +8,15 @@ TEAM_ID="7X4CJM22GN"
 APPLE_ID="shivang.risa@gmail.com"
 APP_PASSWORD="home-jbtj-lwwd-ukju"
 
+# Load version from properties file
+VERSION_FILE="version.properties"
+if [ -f "$VERSION_FILE" ]; then
+    APP_VERSION=$(grep "^app.version=" "$VERSION_FILE" | cut -d'=' -f2)
+else
+    APP_VERSION="8.8.0"  # fallback
+fi
+echo "Building BOSS version: $APP_VERSION"
+
 echo "========================================"
 echo "Building BOSS Final Distribution"
 echo "========================================"
@@ -178,7 +187,7 @@ cp -R "$APP_PATH" "$DMG_DIR/"
 ln -s /Applications "$DMG_DIR/Applications"
 
 # Create DMG
-DMG_NAME="BOSS-8.8.0.dmg"
+DMG_NAME="BOSS-$APP_VERSION.dmg"
 rm -f "$DMG_NAME"
 
 hdiutil create -volname "BOSS" \
@@ -246,12 +255,12 @@ echo -e "\n${BLUE}Step 11: Creating final distribution${NC}"
 
 DIST_DIR="distribution-final"
 mkdir -p "$DIST_DIR"
-cp "$DMG_NAME" "$DIST_DIR/BOSS-8.8.0-Universal.dmg"
+cp "$DMG_NAME" "$DIST_DIR/BOSS-$APP_VERSION-Universal.dmg"
 
 echo -e "\n${GREEN}========================================"
 echo -e "✨ Final Distribution Complete!"
 echo -e "========================================${NC}"
-echo -e "Location: ${BLUE}$DIST_DIR/BOSS-8.8.0-Universal.dmg${NC}"
+echo -e "Location: ${BLUE}$DIST_DIR/BOSS-$APP_VERSION-Universal.dmg${NC}"
 echo -e "\nThis DMG includes:"
 echo -e "- Fixed PTY4J native libraries for Terminal"
 echo -e "- Bundled Homebrew dependencies (harfbuzz, freetype, etc.)"

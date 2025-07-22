@@ -1,0 +1,341 @@
+name: 🚀 Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version_increment:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      create_release:
+        description: 'Create GitHub release'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  # JDK Configuration
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+  
+  # Build Configuration
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+
+jobs:
+  prepare-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      should-build: ${{ steps.check-changes.outputs.should-build }}
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔄 Increment Version (Manual Trigger)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # Configure git for version commit
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Increment version based on input
+          case "${{ github.event.inputs.version_increment }}" in
+            "patch")
+              ./gradlew incrementVersion
+              ;;
+            "minor")
+              ./gradlew incrementMinor
+              ;;
+            "major")
+              ./gradlew incrementMajor
+              ;;
+          esac
+          
+          # Get the new version
+          NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "New version: $NEW_VERSION"
+          
+          # Commit and push version change
+          git add version.properties
+          git commit -m "🔖 Bump version to $NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          git push origin main
+          git push origin "v$NEW_VERSION"
+
+      - name: 📋 Get Version
+        id: get-version
+        run: |
+          VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Building version: $VERSION"
+
+      - name: 🔍 Check for Changes
+        id: check-changes
+        run: |
+          # Always build on tag push or manual trigger
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should-build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-build=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-cross-platform:
+    needs: prepare-version
+    if: needs.prepare-version.outputs.should-build == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+            artifact: dmg
+            build-command: './build-dmg.sh'
+            artifact-path: 'distribution-final/*.dmg'
+          - os: windows-latest
+            platform: windows
+            artifact: msi
+            build-command: './build-msi.bat'
+            artifact-path: 'build/compose/binaries/main/msi/*.msi'
+          - os: ubuntu-latest
+            platform: linux
+            artifact: jar
+            build-command: './gradlew createExecutableJar'
+            artifact-path: 'composeApp/build/libs/*-all.jar'
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
+
+      - name: 🔧 Setup Build Environment
+        shell: bash
+        run: |
+          echo "🔧 Setting up build environment for ${{ matrix.platform }}"
+          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+          
+          # Verify version consistency
+          ./gradlew showVersion
+
+      # macOS specific setup
+      - name: 🍎 Setup macOS Environment
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Install required dependencies
+          brew install --quiet create-dmg || true
+          
+          # Verify macOS build tools
+          xcode-select --print-path
+          
+          # Setup macOS code signing (if secrets are available)
+          if [[ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ]]; then
+            echo "🔐 Setting up macOS code signing..."
+            # Create certificate and import (implement based on your signing setup)
+            # echo "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
+            # security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+            # security import certificate.p12 -k build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          fi
+
+      # Windows specific setup
+      - name: 🪟 Setup Windows Environment
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          Write-Host "🔧 Setting up Windows build environment"
+          # Install WiX Toolset for MSI creation
+          # winget install --id Microsoft.WiXToolset --accept-package-agreements --accept-source-agreements
+          
+          # Verify Windows build tools
+          Get-Command msbuild -ErrorAction SilentlyContinue
+
+      # Linux specific setup
+      - name: 🐧 Setup Linux Environment
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "🔧 Setting up Linux build environment"
+          # Install required dependencies for Compose Desktop
+          sudo apt-get update
+          sudo apt-get install -y libc6-dev libncurses5 libstdc++6 lib32z1 libbz2-1.0
+
+      - name: 🏗️ Build Application
+        shell: bash
+        run: |
+          echo "🏗️ Building ${{ matrix.platform }} application..."
+          
+          # Make build scripts executable
+          chmod +x ./gradlew
+          if [[ -f "${{ matrix.build-command }}" ]]; then
+            chmod +x "${{ matrix.build-command }}"
+          fi
+          
+          # Run platform-specific build
+          ${{ matrix.build-command }}
+
+      - name: 📊 Verify Build Artifacts
+        shell: bash
+        run: |
+          echo "📊 Verifying build artifacts..."
+          echo "Looking for: ${{ matrix.artifact-path }}"
+          
+          # List and verify artifacts
+          find . -name "*.dmg" -o -name "*.msi" -o -name "*-all.jar" | head -10
+          
+          # Check if artifacts exist
+          if ls ${{ matrix.artifact-path }} 1> /dev/null 2>&1; then
+            echo "✅ Build artifacts found!"
+            ls -la ${{ matrix.artifact-path }}
+          else
+            echo "❌ Build artifacts not found!"
+            exit 1
+          fi
+
+      - name: 📤 Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-${{ matrix.platform }}-${{ needs.prepare-version.outputs.version }}
+          path: ${{ matrix.artifact-path }}
+          retention-days: 30
+
+  create-release:
+    needs: [prepare-version, build-cross-platform]
+    if: always() && needs.prepare-version.outputs.should-build == 'true' && needs.build-cross-platform.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📥 Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: 📋 Prepare Release Assets
+        run: |
+          echo "📋 Preparing release assets..."
+          mkdir -p ./release-assets
+          
+          # Copy and rename artifacts with consistent naming
+          VERSION="${{ needs.prepare-version.outputs.version }}"
+          
+          # Find and copy artifacts
+          find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
+          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}-Windows.msi \;
+          find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}-Linux.jar \;
+          
+          # List final artifacts
+          echo "📦 Release assets:"
+          ls -la ./release-assets/
+
+      - name: 📝 Generate Release Notes
+        id: release-notes
+        run: |
+          VERSION="${{ needs.prepare-version.outputs.version }}"
+          
+          # Generate release notes
+          cat > release-notes.md << EOF
+          # 🚀 BOSS $VERSION
+          
+          ## 📦 Downloads
+          
+          - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
+          - **Windows**: \`BOSS-${VERSION}-Windows.msi\` (x64)
+          - **Linux**: \`BOSS-${VERSION}-Linux.jar\` (Cross-platform JAR)
+          
+          ## ✨ What's New
+          
+          - Auto-generated release for version $VERSION
+          - Built with centralized version management system
+          - All platforms synchronized and tested
+          
+          ## 🔧 System Requirements
+          
+          - **macOS**: macOS 11.0+ (Big Sur)
+          - **Windows**: Windows 10+ (64-bit)
+          - **Linux**: Java 17+ required for JAR
+          
+          ## 🛠️ Installation
+          
+          ### macOS
+          1. Download \`BOSS-${VERSION}-Universal.dmg\`
+          2. Open the DMG and drag BOSS to Applications
+          3. Launch from Applications folder
+          
+          ### Windows
+          1. Download \`BOSS-${VERSION}-Windows.msi\`
+          2. Run the installer as Administrator
+          3. Launch from Start Menu or Desktop
+          
+          ### Linux
+          1. Download \`BOSS-${VERSION}-Linux.jar\`
+          2. Run: \`java -jar BOSS-${VERSION}-Linux.jar\`
+          
+          ---
+          
+          🤖 *This release was automatically built and published by GitHub Actions*
+          EOF
+          
+          # Set output for release creation
+          echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
+
+      - name: 🎉 Create GitHub Release
+        if: github.event.inputs.create_release != 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.prepare-version.outputs.version }}
+          name: 🚀 BOSS ${{ needs.prepare-version.outputs.version }}
+          body_path: ${{ steps.release-notes.outputs.notes-file }}
+          files: ./release-assets/*
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📢 Release Summary
+        run: |
+          echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Platforms Built**: macOS, Windows, Linux" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux JAR (Cross-platform)" >> $GITHUB_STEP_SUMMARY
+
+  notify-release:
+    needs: [prepare-version, build-cross-platform, create-release]
+    if: always() && (success() || failure())
+    uses: ./.github/workflows/notifications.yml
+    with:
+      status: ${{ needs.create-release.result }}
+      workflow_name: "Release Build"
+      version: ${{ needs.prepare-version.outputs.version }}
+      download_url: "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}"
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}

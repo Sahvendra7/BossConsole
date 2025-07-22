@@ -1,0 +1,285 @@
+name: 📈 Performance Monitor
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true'
+
+jobs:
+  build-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-build-action-cache-debug-enabled: true
+
+      - name: 🧹 Clean Build
+        run: |
+          echo "🧹 Performing clean build..."
+          time ./gradlew clean
+
+      - name: ⏱️ Measure Build Performance
+        run: |
+          echo "⏱️ Measuring build performance..."
+          
+          # Warm up build (populate caches)
+          echo "🔥 Warming up build caches..."
+          ./gradlew help --quiet
+          
+          # Measure clean build time
+          echo "📏 Measuring clean build time..."
+          START_TIME=$(date +%s)
+          ./gradlew build --profile
+          END_TIME=$(date +%s)
+          
+          CLEAN_BUILD_TIME=$((END_TIME - START_TIME))
+          echo "Clean build time: ${CLEAN_BUILD_TIME}s"
+          
+          # Measure incremental build time
+          echo "📏 Measuring incremental build time..."
+          touch composeApp/src/commonMain/kotlin/ai/rever/boss/utils/SystemUtils.kt
+          
+          START_TIME=$(date +%s)
+          ./gradlew build --profile
+          END_TIME=$(date +%s)
+          
+          INCREMENTAL_BUILD_TIME=$((END_TIME - START_TIME))
+          echo "Incremental build time: ${INCREMENTAL_BUILD_TIME}s"
+          
+          # Save metrics
+          mkdir -p build-metrics
+          cat > build-metrics/performance.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "clean_build_time": $CLEAN_BUILD_TIME,
+            "incremental_build_time": $INCREMENTAL_BUILD_TIME,
+            "gradle_version": "$(./gradlew --version | grep Gradle | cut -d' ' -f2)",
+            "java_version": "${{ env.JAVA_VERSION }}",
+            "runner_os": "${{ runner.os }}"
+          }
+          EOF
+          
+          echo "📊 Build Performance Summary:"
+          echo "- Clean Build: ${CLEAN_BUILD_TIME}s"
+          echo "- Incremental Build: ${INCREMENTAL_BUILD_TIME}s"
+          
+          # Performance thresholds (adjust as needed)
+          if [ $CLEAN_BUILD_TIME -gt 300 ]; then
+            echo "⚠️ Clean build time is high (>5 minutes)"
+          fi
+          
+          if [ $INCREMENTAL_BUILD_TIME -gt 60 ]; then
+            echo "⚠️ Incremental build time is high (>1 minute)"
+          fi
+
+      - name: 📊 Gradle Build Scan
+        run: |
+          echo "📊 Generating Gradle build scan..."
+          ./gradlew build --scan --no-daemon
+
+      - name: 📁 Upload Build Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-performance-reports
+          path: |
+            build/reports/profile/
+            build-metrics/
+          retention-days: 30
+
+  memory-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 🧠 Memory Usage Analysis
+        run: |
+          echo "🧠 Analyzing memory usage during build..."
+          
+          # Set JVM memory flags for monitoring
+          export GRADLE_OPTS="$GRADLE_OPTS -XX:+PrintGCDetails -XX:+PrintGCTimeStamps"
+          
+          # Monitor memory during build
+          echo "📊 Starting memory monitoring..."
+          
+          # Start memory monitoring in background
+          (
+            while true; do
+              ps aux | grep -E "(gradle|java)" | grep -v grep >> memory-usage.log
+              echo "---" >> memory-usage.log
+              sleep 5
+            done
+          ) &
+          MONITOR_PID=$!
+          
+          # Run build
+          ./gradlew build
+          
+          # Stop monitoring
+          kill $MONITOR_PID 2>/dev/null || true
+          
+          # Analyze memory usage
+          if [ -f memory-usage.log ]; then
+            echo "📊 Memory usage analysis:"
+            MAX_MEMORY=$(awk '/gradle|java/ {if($6>max) max=$6} END {print max}' memory-usage.log)
+            echo "Max memory usage: ${MAX_MEMORY}KB"
+            
+            # Convert to MB for readability
+            MAX_MEMORY_MB=$((MAX_MEMORY / 1024))
+            echo "Max memory usage: ${MAX_MEMORY_MB}MB"
+            
+            if [ $MAX_MEMORY_MB -gt 4096 ]; then
+              echo "⚠️ High memory usage detected (>4GB)"
+            else
+              echo "✅ Memory usage within normal range"
+            fi
+          fi
+
+      - name: 📁 Upload Memory Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-analysis-reports
+          path: memory-usage.log
+          retention-days: 14
+
+  dependency-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 📦 Analyze Dependencies
+        run: |
+          echo "📦 Analyzing project dependencies..."
+          
+          # Generate dependency insights
+          ./gradlew dependencyInsight --configuration compileClasspath --dependency kotlin
+          ./gradlew dependencyInsight --configuration compileClasspath --dependency compose
+          
+          # Check for duplicate dependencies
+          echo "🔍 Checking for duplicate dependencies..."
+          ./gradlew dependencies --configuration compileClasspath > deps-full.txt
+          
+          # Extract unique dependencies
+          grep -E "^\+---|\\---" deps-full.txt | \
+            sed 's/^[+\\-]*//' | \
+            sed 's/ (.*)//' | \
+            sort | uniq -c | sort -nr > deps-analysis.txt
+          
+          echo "📊 Top dependencies by occurrence:"
+          head -20 deps-analysis.txt
+          
+          # Check for outdated dependencies (basic check)
+          echo "🔍 Checking for potentially outdated dependencies..."
+          OUTDATED_PATTERNS="1.0.0\|0.1.0\|alpha\|beta\|snapshot"
+          grep -i "$OUTDATED_PATTERNS" deps-full.txt || echo "No obviously outdated dependencies found"
+
+      - name: 📊 Generate Dependency Report
+        run: |
+          echo "📊 Generating comprehensive dependency report..."
+          
+          # Create detailed dependency report
+          cat > dependency-report.md << 'EOF'
+          # 📦 Dependency Analysis Report
+          
+          ## Build Information
+          - **Date**: $(date)
+          - **Commit**: ${{ github.sha }}
+          - **Gradle Version**: $(./gradlew --version | grep Gradle | cut -d' ' -f2)
+          
+          ## Summary
+          - **Total Dependencies**: $(wc -l < deps-analysis.txt)
+          - **Unique Dependencies**: $(grep -c "1 " deps-analysis.txt)
+          - **Duplicated Dependencies**: $(grep -c -v "1 " deps-analysis.txt)
+          
+          ## Recommendations
+          - Consider consolidating duplicate dependencies
+          - Review alpha/beta dependencies for production readiness
+          - Update outdated dependencies for security and performance
+          EOF
+          
+          ./gradlew dependencies --configuration compileClasspath >> dependency-report.md
+
+      - name: 📁 Upload Dependency Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-analysis-reports
+          path: |
+            deps-analysis.txt
+            dependency-report.md
+          retention-days: 30
+
+  performance-summary:
+    needs: [build-performance, memory-analysis, dependency-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📊 Performance Summary
+        run: |
+          echo "## 📈 Performance Monitoring Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Analysis Date**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Performance**: ${{ needs.build-performance.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Memory Analysis**: ${{ needs.memory-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependency Analysis**: ${{ needs.dependency-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          if [[ "${{ needs.build-performance.result }}" == "success" && "${{ needs.memory-analysis.result }}" == "success" && "${{ needs.dependency-analysis.result }}" == "success" ]]; then
+            echo "🎉 **Overall Status**: ✅ HEALTHY" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Overall Status**: NEEDS ATTENTION" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Optimization Opportunities" >> $GITHUB_STEP_SUMMARY
+          echo "- Enable Gradle build cache for faster builds" >> $GITHUB_STEP_SUMMARY
+          echo "- Consider parallel build execution" >> $GITHUB_STEP_SUMMARY
+          echo "- Review and optimize memory usage" >> $GITHUB_STEP_SUMMARY
+          echo "- Consolidate duplicate dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- Update outdated dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Reports Available" >> $GITHUB_STEP_SUMMARY
+          echo "- Build performance metrics and profiles" >> $GITHUB_STEP_SUMMARY
+          echo "- Memory usage analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- Comprehensive dependency analysis" >> $GITHUB_STEP_SUMMARY

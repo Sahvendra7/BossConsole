@@ -15,6 +15,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -47,9 +48,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.CircularProgressIndicator
+import ai.rever.boss.updater.UpdateSettingsSection
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES
 }
 
 @Composable
@@ -119,6 +121,7 @@ private fun SettingsContent() {
                         SettingsSection.CODE_EDITOR -> CodeEditorSettings()
                         SettingsSection.TERMINAL -> TerminalSettings()
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
+                        SettingsSection.UPDATES -> UpdatesSettings()
                     }
                 }
             }
@@ -198,6 +201,16 @@ private fun SettingsSidebar(
             subtitle = "API keys, models, settings",
             isSelected = selectedSection == SettingsSection.LLM_PROVIDERS,
             onClick = { onSectionChange(SettingsSection.LLM_PROVIDERS) }
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        SidebarItem(
+            icon = Icons.Outlined.SystemUpdate,
+            title = "Updates",
+            subtitle = "Auto-update, version info",
+            isSelected = selectedSection == SettingsSection.UPDATES,
+            onClick = { onSectionChange(SettingsSection.UPDATES) }
         )
     }
 }
@@ -1663,4 +1676,9 @@ private fun DropdownSelector(
             }
         }
     }
+}
+
+@Composable
+private fun UpdatesSettings() {
+    UpdateSettingsSection()
 }

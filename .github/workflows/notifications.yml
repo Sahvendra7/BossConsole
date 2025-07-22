@@ -1,0 +1,320 @@
+name: 📢 Notifications
+
+on:
+  workflow_call:
+    inputs:
+      status:
+        description: 'Build/Release status'
+        required: true
+        type: string
+      workflow_name:
+        description: 'Name of the workflow'
+        required: true
+        type: string
+      version:
+        description: 'Version number'
+        required: false
+        type: string
+        default: ''
+      download_url:
+        description: 'Download URL for releases'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: false
+      DISCORD_WEBHOOK_URL:
+        required: false
+      TEAMS_WEBHOOK_URL:
+        required: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📋 Prepare Notification Data
+        id: prepare
+        run: |
+          # Determine emoji and color based on status
+          case "${{ inputs.status }}" in
+            "success")
+              EMOJI="✅"
+              COLOR="good"
+              STATUS_TEXT="SUCCESS"
+              ;;
+            "failure")
+              EMOJI="❌"
+              COLOR="danger"
+              STATUS_TEXT="FAILED"
+              ;;
+            "cancelled")
+              EMOJI="⚠️"
+              COLOR="warning"
+              STATUS_TEXT="CANCELLED"
+              ;;
+            *)
+              EMOJI="ℹ️"
+              COLOR="#36a64f"
+              STATUS_TEXT="${{ inputs.status }}"
+              ;;
+          esac
+          
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
+          echo "status_text=$STATUS_TEXT" >> $GITHUB_OUTPUT
+          
+          # Prepare message content
+          MESSAGE="$EMOJI **BOSS CI/CD**: ${{ inputs.workflow_name }} - $STATUS_TEXT"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            MESSAGE="$MESSAGE (v${{ inputs.version }})"
+          fi
+          
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+          
+          # Repository info
+          REPO_URL="https://github.com/${{ github.repository }}"
+          RUN_URL="$REPO_URL/actions/runs/${{ github.run_id }}"
+          
+          echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
+          echo "run_url=$RUN_URL" >> $GITHUB_OUTPUT
+
+      - name: 💬 Slack Notification
+        if: secrets.SLACK_WEBHOOK_URL != ''
+        run: |
+          # Prepare Slack payload
+          PAYLOAD=$(cat << EOF
+          {
+            "username": "BOSS Build Bot",
+            "icon_emoji": ":robot_face:",
+            "attachments": [
+              {
+                "color": "${{ steps.prepare.outputs.color }}",
+                "title": "${{ inputs.workflow_name }}",
+                "title_link": "${{ steps.prepare.outputs.run_url }}",
+                "text": "${{ steps.prepare.outputs.message }}",
+                "fields": [
+                  {
+                    "title": "Repository",
+                    "value": "<${{ steps.prepare.outputs.repo_url }}|${{ github.repository }}>",
+                    "short": true
+                  },
+                  {
+                    "title": "Commit",
+                    "value": "<${{ steps.prepare.outputs.repo_url }}/commit/${{ github.sha }}|${GITHUB_SHA:0:8}>",
+                    "short": true
+                  }
+                  $(if [[ -n "${{ inputs.version }}" ]]; then
+                    echo ','
+                    echo '{
+                      "title": "Version",
+                      "value": "v${{ inputs.version }}",
+                      "short": true
+                    }'
+                  fi)
+                  $(if [[ -n "${{ inputs.download_url }}" ]]; then
+                    echo ','
+                    echo '{
+                      "title": "Download",
+                      "value": "<${{ inputs.download_url }}|Release Page>",
+                      "short": true
+                    }'
+                  fi)
+                ],
+                "footer": "GitHub Actions",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+          
+          # Send to Slack
+          curl -X POST -H 'Content-type: application/json' \
+            --data "$PAYLOAD" \
+            "${{ secrets.SLACK_WEBHOOK_URL }}"
+
+      - name: 🎮 Discord Notification
+        if: secrets.DISCORD_WEBHOOK_URL != ''
+        run: |
+          # Determine Discord color (decimal)
+          case "${{ inputs.status }}" in
+            "success")
+              DISCORD_COLOR=65280
+              ;;
+            "failure")
+              DISCORD_COLOR=16711680
+              ;;
+            "cancelled")
+              DISCORD_COLOR=16776960
+              ;;
+            *)
+              DISCORD_COLOR=3553599
+              ;;
+          esac
+          
+          # Prepare Discord embed
+          PAYLOAD=$(cat << EOF
+          {
+            "username": "BOSS Build Bot",
+            "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+            "embeds": [
+              {
+                "title": "${{ steps.prepare.outputs.emoji }} ${{ inputs.workflow_name }}",
+                "description": "${{ steps.prepare.outputs.status_text }}",
+                "url": "${{ steps.prepare.outputs.run_url }}",
+                "color": $DISCORD_COLOR,
+                "fields": [
+                  {
+                    "name": "Repository",
+                    "value": "[${{ github.repository }}](${{ steps.prepare.outputs.repo_url }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "Commit", 
+                    "value": "[${GITHUB_SHA:0:8}](${{ steps.prepare.outputs.repo_url }}/commit/${{ github.sha }})",
+                    "inline": true
+                  }
+                  $(if [[ -n "${{ inputs.version }}" ]]; then
+                    echo ','
+                    echo '{
+                      "name": "Version",
+                      "value": "v${{ inputs.version }}",
+                      "inline": true
+                    }'
+                  fi)
+                  $(if [[ -n "${{ inputs.download_url }}" ]]; then
+                    echo ','
+                    echo '{
+                      "name": "Download",
+                      "value": "[Release Page](${{ inputs.download_url }})",
+                      "inline": false
+                    }'
+                  fi)
+                ],
+                "footer": {
+                  "text": "GitHub Actions"
+                },
+                "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+              }
+            ]
+          }
+          EOF
+          )
+          
+          # Send to Discord
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "$PAYLOAD" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+      - name: 🏢 Microsoft Teams Notification
+        if: secrets.TEAMS_WEBHOOK_URL != ''
+        run: |
+          # Prepare Teams payload
+          PAYLOAD=$(cat << EOF
+          {
+            "@type": "MessageCard",
+            "@context": "https://schema.org/extensions",
+            "summary": "${{ steps.prepare.outputs.message }}",
+            "themeColor": "${{ steps.prepare.outputs.color == 'good' && '00FF00' || steps.prepare.outputs.color == 'danger' && 'FF0000' || 'FFFF00' }}",
+            "sections": [
+              {
+                "activityTitle": "${{ steps.prepare.outputs.emoji }} BOSS CI/CD",
+                "activitySubtitle": "${{ inputs.workflow_name }} - ${{ steps.prepare.outputs.status_text }}",
+                "facts": [
+                  {
+                    "name": "Repository",
+                    "value": "${{ github.repository }}"
+                  },
+                  {
+                    "name": "Commit",
+                    "value": "${GITHUB_SHA:0:8}"
+                  }
+                  $(if [[ -n "${{ inputs.version }}" ]]; then
+                    echo ','
+                    echo '{
+                      "name": "Version",
+                      "value": "v${{ inputs.version }}"
+                    }'
+                  fi)
+                ],
+                "markdown": true
+              }
+            ],
+            "potentialAction": [
+              {
+                "@type": "OpenUri",
+                "name": "View Run",
+                "targets": [
+                  {
+                    "os": "default",
+                    "uri": "${{ steps.prepare.outputs.run_url }}"
+                  }
+                ]
+              }
+              $(if [[ -n "${{ inputs.download_url }}" ]]; then
+                echo ','
+                echo '{
+                  "@type": "OpenUri",
+                  "name": "Download",
+                  "targets": [
+                    {
+                      "os": "default",
+                      "uri": "${{ inputs.download_url }}"
+                    }
+                  ]
+                }'
+              fi)
+            ]
+          }
+          EOF
+          )
+          
+          # Send to Teams
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "$PAYLOAD" \
+            "${{ secrets.TEAMS_WEBHOOK_URL }}"
+
+      - name: 📧 Email Notification (GitHub)
+        if: inputs.status == 'failure' || inputs.status == 'success'
+        run: |
+          echo "📧 GitHub will automatically send email notifications to:"
+          echo "- Repository watchers (if enabled in their settings)"
+          echo "- Commit authors"
+          echo "- PR creators (for PR-triggered workflows)"
+          echo ""
+          echo "ℹ️ Users can customize email preferences in GitHub Settings → Notifications"
+
+      - name: 🔔 Summary
+        run: |
+          echo "## 📢 Notification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ steps.prepare.outputs.status_text }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow**: ${{ inputs.workflow_name }}" >> $GITHUB_STEP_SUMMARY
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "**Version**: v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📤 Notifications Sent" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]]; then
+            echo "- ✅ Slack notification sent" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚪ Slack webhook not configured" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ -n "${{ secrets.DISCORD_WEBHOOK_URL }}" ]]; then
+            echo "- ✅ Discord notification sent" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚪ Discord webhook not configured" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ -n "${{ secrets.TEAMS_WEBHOOK_URL }}" ]]; then
+            echo "- ✅ Microsoft Teams notification sent" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚪ Teams webhook not configured" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "- ℹ️ GitHub email notifications (automatic)" >> $GITHUB_STEP_SUMMARY
