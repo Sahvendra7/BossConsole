@@ -177,7 +177,8 @@ jobs:
             Start-Process msiexec.exe -Wait -ArgumentList "/i keylockertools.msi /quiet"
             
             # Setup certificate
-            echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > certificate.p12
+            $cert = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}")
+            [System.IO.File]::WriteAllBytes("certificate.p12", $cert)
             
             # Set environment variables for signing
             echo "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}" >> $env:GITHUB_ENV
