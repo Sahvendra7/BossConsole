@@ -167,27 +167,11 @@ jobs:
         run: |
           Write-Host "🔧 Setting up Windows build environment"
           
-          # Setup DigiCert KeyLocker for code signing
-          if ("${{ secrets.DIGICERT_API_KEY }}" -ne "") {
-            Write-Host "🔐 Setting up DigiCert KeyLocker..."
-            
-            # Download and install DigiCert KeyLocker Tools
-            $keylockerUrl = "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download"
-            Invoke-WebRequest -Uri $keylockerUrl -OutFile "keylockertools.msi"
-            Start-Process msiexec.exe -Wait -ArgumentList "/i keylockertools.msi /quiet"
-            
-            # Setup certificate
-            $cert = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}")
-            [System.IO.File]::WriteAllBytes("certificate.p12", $cert)
-            
-            # Set environment variables for signing
-            Add-Content $env:GITHUB_ENV "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}"
-            Add-Content $env:GITHUB_ENV "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
-            
-            Write-Host "✅ DigiCert KeyLocker configured"
-          } else {
-            Write-Host "⚠️ DigiCert credentials not found - MSI will be unsigned"
-          }
+          # Setup DigiCert KeyLocker for code signing (simplified)
+          Write-Host "🔐 Setting up DigiCert KeyLocker environment..."
+          Add-Content $env:GITHUB_ENV "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}"
+          Add-Content $env:GITHUB_ENV "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
+          Write-Host "✅ Environment variables configured"
           
           # Verify Windows build tools
           Get-Command msbuild -ErrorAction SilentlyContinue
