@@ -181,8 +181,8 @@ jobs:
             [System.IO.File]::WriteAllBytes("certificate.p12", $cert)
             
             # Set environment variables for signing
-            echo "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}" >> $env:GITHUB_ENV
-            echo "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}" >> $env:GITHUB_ENV
+            Add-Content $env:GITHUB_ENV "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}"
+            Add-Content $env:GITHUB_ENV "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
             
             Write-Host "✅ DigiCert KeyLocker configured"
           } else {
