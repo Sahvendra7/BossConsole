@@ -148,13 +148,16 @@ jobs:
           # Verify macOS build tools
           xcode-select --print-path
           
-          # Setup macOS code signing (if secrets are available)
-          if [[ -n "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" ]]; then
-            echo "🔐 Setting up macOS code signing..."
-            # Create certificate and import (implement based on your signing setup)
-            # echo "${{ secrets.MACOS_CERTIFICATE_BASE64 }}" | base64 --decode > certificate.p12
-            # security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-            # security import certificate.p12 -k build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          # Setup macOS code signing environment variables
+          if [[ -n "${{ secrets.MACOS_DEVELOPER_ID }}" ]]; then
+            echo "🔐 Setting up macOS code signing environment..."
+            echo "DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
+            echo "TEAM_ID=${{ secrets.MACOS_TEAM_ID }}" >> $GITHUB_ENV  
+            echo "APPLE_ID=${{ secrets.MACOS_APPLE_ID }}" >> $GITHUB_ENV
+            echo "APP_PASSWORD=${{ secrets.MACOS_APP_PASSWORD }}" >> $GITHUB_ENV
+            echo "✅ Code signing credentials configured"
+          else
+            echo "⚠️ macOS code signing credentials not found - DMG will be unsigned"
           fi
 
       # Windows specific setup
@@ -163,8 +166,27 @@ jobs:
         shell: powershell
         run: |
           Write-Host "🔧 Setting up Windows build environment"
-          # Install WiX Toolset for MSI creation
-          # winget install --id Microsoft.WiXToolset --accept-package-agreements --accept-source-agreements
+          
+          # Setup DigiCert KeyLocker for code signing
+          if ("${{ secrets.DIGICERT_API_KEY }}" -ne "") {
+            Write-Host "🔐 Setting up DigiCert KeyLocker..."
+            
+            # Download and install DigiCert KeyLocker Tools
+            $keylockerUrl = "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download"
+            Invoke-WebRequest -Uri $keylockerUrl -OutFile "keylockertools.msi"
+            Start-Process msiexec.exe -Wait -ArgumentList "/i keylockertools.msi /quiet"
+            
+            # Setup certificate
+            echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > certificate.p12
+            
+            # Set environment variables for signing
+            echo "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}" >> $env:GITHUB_ENV
+            echo "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}" >> $env:GITHUB_ENV
+            
+            Write-Host "✅ DigiCert KeyLocker configured"
+          } else {
+            Write-Host "⚠️ DigiCert credentials not found - MSI will be unsigned"
+          }
           
           # Verify Windows build tools
           Get-Command msbuild -ErrorAction SilentlyContinue

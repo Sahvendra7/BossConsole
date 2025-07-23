@@ -2,11 +2,11 @@
 
 # Build BOSS final distribution with all fixes
 
-# Configuration
-DEVELOPER_ID="Developer ID Application: Fnu Shivang (7X4CJM22GN)"
-TEAM_ID="7X4CJM22GN"
-APPLE_ID="shivang.risa@gmail.com"
-APP_PASSWORD="home-jbtj-lwwd-ukju"
+# Configuration - use environment variables if available, fallback to defaults
+DEVELOPER_ID="${DEVELOPER_ID:-Developer ID Application: Fnu Shivang (7X4CJM22GN)}"
+TEAM_ID="${TEAM_ID:-7X4CJM22GN}"
+APPLE_ID="${APPLE_ID:-shivang.risa@gmail.com}"
+APP_PASSWORD="${APP_PASSWORD:-home-jbtj-lwwd-ukju}"
 
 # Load version from properties file
 VERSION_FILE="version.properties"
