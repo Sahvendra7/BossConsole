@@ -45,7 +45,7 @@ if defined DIGICERT_API_KEY (
     echo Signing with DigiCert KeyLocker...
     
     REM Sign using DigiCert KeyLocker
-    smctl sign --keypair-alias="BOSS" --input="%MSI_FILE%" --verbose
+    smctl sign --keypair-alias="boss_console_windows" --input="%MSI_FILE%" --verbose
     
     if %ERRORLEVEL% eq 0 (
         echo MSI signed successfully
