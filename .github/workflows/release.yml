@@ -344,5 +344,3 @@ jobs:
       download_url: "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}"
     secrets:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
