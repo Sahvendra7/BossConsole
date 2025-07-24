@@ -218,13 +218,8 @@ jobs:
             echo "❌ **Overall Status**: FAILED" >> $GITHUB_STEP_SUMMARY
           fi
 
-  notify-build:
-    needs: [version-check, build-test, code-quality, compatibility-test]
-    if: always() && (success() || failure()) && github.event_name != 'pull_request'
-    uses: ./.github/workflows/notifications.yml
-    with:
-      status: ${{ (needs.build-test.result == 'success' && needs.code-quality.result == 'success' && needs.compatibility-test.result == 'success') && 'success' || 'failure' }}
-      workflow_name: "Build & Test"
-      version: ${{ needs.version-check.outputs.version }}
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+# Temporarily disabled for debugging
+  # notify-build:
+  #   needs: [version-check, build-test, code-quality, compatibility-test]
+  #   if: always() && (success() || failure()) && github.event_name != 'pull_request'
+  #   uses: ./.github/workflows/notifications.yml
