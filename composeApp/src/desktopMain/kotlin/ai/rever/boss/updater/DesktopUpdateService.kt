@@ -85,13 +85,13 @@ actual class UpdateService {
             )
             
         } catch (e: Exception) {
+            // Log error but don't print stack trace for expected serialization issues
             println("Error checking for updates: ${e.message}")
-            e.printStackTrace()
             UpdateInfo(
                 available = false,
                 currentVersion = Version.CURRENT,
                 latestVersion = Version.CURRENT,
-                releaseNotes = "Error checking for updates: ${e.message}"
+                releaseNotes = "Unable to check for updates at this time"
             )
         }
     }

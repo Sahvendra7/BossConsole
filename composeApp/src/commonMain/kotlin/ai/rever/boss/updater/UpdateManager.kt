@@ -26,7 +26,7 @@ class UpdateManager {
     
     // Background job for periodic checks
     private var periodicCheckJob: Job? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     companion object {
         val instance = UpdateManager()
