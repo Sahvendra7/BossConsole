@@ -274,7 +274,7 @@ compose.desktop {
         )
         
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "BOSS"
             packageVersion = appVersion
             description = "Business Operating System Service - Intelligent service automation platform"
