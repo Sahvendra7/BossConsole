@@ -6,7 +6,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidApplication)
+    // alias(libs.plugins.androidApplication) // Disabled for desktop-focused development
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
@@ -70,12 +70,18 @@ jxbrowser {
 }
 
 kotlin {
+    // Android target disabled for desktop-focused development
+    /*
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
     }
+    */
     
+    // iOS targets disabled for desktop-focused development
+    // Uncomment below if iOS support is needed in the future
+    /*
     listOf(
         iosX64(),
         iosArm64(),
@@ -91,9 +97,12 @@ kotlin {
             export(libs.essenty.state.keeper)
         }
     }
+    */
     
     jvm("desktop")
     
+    // WASM targets disabled for desktop-focused development
+    /*
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         moduleName = "composeApp"
@@ -113,6 +122,7 @@ kotlin {
         }
         binaries.executable()
     }
+    */
     
     sourceSets {
         val desktopMain by getting
@@ -122,10 +132,13 @@ kotlin {
             kotlin.srcDir(generateVersionConstants.map { it.outputs.files.singleFile.parent })
         }
 
+        // androidMain.dependencies disabled for desktop-focused development
+        /*
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
         }
+        */
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -188,6 +201,8 @@ kotlin {
     }
 }
 
+// Android configuration disabled for desktop-focused development
+/*
 android {
     namespace = "ai.rever.boss"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -231,6 +246,7 @@ android {
         debugImplementation(libs.compose.ui.tooling)
     }
 }
+*/
 
 compose.desktop {
     application {
