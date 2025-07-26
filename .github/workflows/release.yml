@@ -71,24 +71,10 @@ jobs:
             echo "should-build=false" >> $GITHUB_OUTPUT
           fi
 
-  build-cross-platform:
+  build-macos:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            platform: macos
-            artifact: dmg
-            build-command: './gradlew packageDmg'
-            artifact-path: 'composeApp/build/compose/binaries/main/dmg/*.dmg'
-          - os: windows-latest
-            platform: windows
-            artifact: msi
-            build-command: './gradlew packageMsi'
-            artifact-path: 'composeApp/build/compose/binaries/main/msi/*.msi'
-
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
 
     steps:
       - name: 📥 Checkout Repository
@@ -116,80 +102,194 @@ jobs:
 
       # macOS specific setup
       - name: 🍎 Setup macOS Environment
-        if: matrix.os == 'macos-latest'
         run: |
-          # Install required dependencies
+          # Install required dependencies for DMG creation
           brew install --quiet create-dmg || true
           
           # Verify macOS build tools
           xcode-select --print-path
           
-          # Setup macOS code signing environment variables
-          if [[ -n "${{ secrets.MACOS_DEVELOPER_ID }}" ]]; then
-            echo "🔐 Setting up macOS code signing environment..."
+          # Setup macOS code signing environment with P12 certificate
+          if [[ -n "${{ secrets.MACOS_P12_CERTIFICATE }}" ]]; then
+            echo "🔐 Setting up macOS code signing with P12 certificate..."
+            
+            # Decode and install P12 certificate
+            echo "${{ secrets.MACOS_P12_CERTIFICATE }}" | base64 --decode > certificate.p12
+            
+            # Create temporary keychain
+            security create-keychain -p temp_password temp_keychain
+            security default-keychain -s temp_keychain
+            security unlock-keychain -p temp_password temp_keychain
+            
+            # Set keychain settings
+            security set-keychain-settings -lut 3600 temp_keychain
+            
+            # Import certificate
+            security import certificate.p12 -k temp_keychain -P "${{ secrets.MACOS_P12_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/security
+            
+            # Allow codesign to access the key
+            security set-key-partition-list -S apple-tool:,apple: -s -k temp_password temp_keychain
+            
+            # Ensure keychain is available for subsequent steps
+            security list-keychains -s temp_keychain
+            
+            # Set up environment variables
             echo "DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
-            echo "TEAM_ID=${{ secrets.MACOS_TEAM_ID }}" >> $GITHUB_ENV  
+            echo "MACOS_DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
+            echo "TEAM_ID=${{ secrets.MACOS_TEAM_ID }}" >> $GITHUB_ENV
             echo "APPLE_ID=${{ secrets.MACOS_APPLE_ID }}" >> $GITHUB_ENV
             echo "APP_PASSWORD=${{ secrets.MACOS_APP_PASSWORD }}" >> $GITHUB_ENV
-            echo "✅ Code signing credentials configured"
+            echo "DISABLE_MACOS_SIGNING=false" >> $GITHUB_ENV
+            
+            # Clean up certificate file
+            rm certificate.p12
+            
+            # Verify certificate installation
+            echo "🔍 Verifying certificate installation..."
+            security find-identity -v -p codesigning temp_keychain
+            
+            echo "✅ macOS code signing configured with P12 certificate"
           else
-            echo "⚠️ macOS code signing credentials not found - DMG will be unsigned"
+            echo "⚠️ MACOS_P12_CERTIFICATE not found"
+            echo "   Add your P12 certificate to GitHub secrets for production builds"
+            echo "   Creating unsigned DMG for testing..."
+            echo "DISABLE_MACOS_SIGNING=true" >> $GITHUB_ENV
           fi
 
-      # Windows specific setup
-      - name: 🪟 Setup Windows Environment
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          Write-Host "🔧 Setting up Windows build environment"
-          
-          # Setup DigiCert KeyLocker for code signing (simplified)
-          Write-Host "🔐 Setting up DigiCert KeyLocker environment..."
-          Add-Content $env:GITHUB_ENV "DIGICERT_API_KEY=${{ secrets.DIGICERT_API_KEY }}"
-          Add-Content $env:GITHUB_ENV "DIGICERT_CLIENT_AUTH_KEY=${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
-          Write-Host "✅ Environment variables configured"
-          
-          # Verify Windows build tools
-          Get-Command msbuild -ErrorAction SilentlyContinue
 
-      - name: 🏗️ Build Application
-        shell: bash
+      - name: 🏗️ Build macOS DMG
+        env:
+          DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
         run: |
-          echo "🏗️ Building ${{ matrix.platform }} application..."
+          echo "🏗️ Building macOS DMG..."
+          
+          # Debug environment variables
+          echo "DISABLE_MACOS_SIGNING: $DISABLE_MACOS_SIGNING"
           
           # Make gradlew executable
           chmod +x ./gradlew
           
-          # Run platform-specific build
-          ${{ matrix.build-command }}
+          # Build DMG
+          ./gradlew packageDmg
+          
+          echo "✅ macOS DMG build completed successfully"
 
-      - name: 📊 Verify Build Artifacts
-        shell: bash
+      # macOS notarization (only for signed DMGs)
+      - name: 🍎 Notarize macOS DMG
+        if: env.DISABLE_MACOS_SIGNING != 'true'
         run: |
-          echo "📊 Verifying build artifacts..."
-          echo "Looking for: ${{ matrix.artifact-path }}"
+          echo "🍎 Starting macOS notarization process..."
           
-          # List and verify artifacts
-          find . -name "*.dmg" -o -name "*.msi" | head -10
+          # Find the DMG file
+          DMG_PATH=$(find composeApp/build/compose/binaries/main/dmg -name "*.dmg" | head -1)
           
-          # Check if artifacts exist
-          if ls ${{ matrix.artifact-path }} 1> /dev/null 2>&1; then
-            echo "✅ Build artifacts found!"
-            ls -la ${{ matrix.artifact-path }}
+          if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
+            echo "📦 Found DMG: $DMG_PATH"
+            
+            # Submit for notarization
+            echo "🔐 Submitting DMG for notarization..."
+            xcrun notarytool submit "$DMG_PATH" \
+              --apple-id "$APPLE_ID" \
+              --password "$APP_PASSWORD" \
+              --team-id "${{ secrets.MACOS_TEAM_ID }}" \
+              --wait
+            
+            # Staple the notarization
+            echo "📎 Stapling notarization to DMG..."
+            xcrun stapler staple "$DMG_PATH"
+            
+            echo "✅ macOS notarization completed"
           else
-            echo "❌ Build artifacts not found!"
+            echo "❌ DMG file not found for notarization"
             exit 1
           fi
 
-      - name: 📤 Upload Build Artifacts
+      # Skip notarization info for unsigned builds
+      - name: 🍎 Skip Notarization (Unsigned Build)
+        if: env.DISABLE_MACOS_SIGNING == 'true'
+        run: |
+          echo "ℹ️ Skipping notarization for unsigned DMG"
+          echo "   This DMG is for development/testing only"
+          echo "   For distribution, add proper code signing certificates"
+
+      - name: 📊 Verify Build Artifacts
+        run: |
+          echo "📊 Verifying macOS DMG..."
+          
+          # Check if DMG exists
+          if ls composeApp/build/compose/binaries/main/dmg/*.dmg 1> /dev/null 2>&1; then
+            echo "✅ DMG found!"
+            ls -la composeApp/build/compose/binaries/main/dmg/
+          else
+            echo "❌ DMG not found!"
+            exit 1
+          fi
+
+      - name: 📤 Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: boss-${{ matrix.platform }}-${{ needs.prepare-version.outputs.version }}
-          path: ${{ matrix.artifact-path }}
+          name: boss-macos-${{ needs.prepare-version.outputs.version }}
+          path: composeApp/build/compose/binaries/main/dmg/*.dmg
+          retention-days: 30
+
+  build-windows:
+    needs: prepare-version
+    if: needs.prepare-version.outputs.should-build == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 🔧 Setup Build Environment
+        run: |
+          echo "🔧 Setting up build environment for Windows"
+          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+          
+          # Verify version consistency
+          ./gradlew showVersion
+
+      - name: 🏗️ Build Windows MSI
+        run: |
+          echo "🏗️ Building Windows MSI..."
+          
+          # Make gradlew executable and build
+          ./gradlew packageMsi
+          
+          echo "✅ Windows MSI build completed successfully"
+
+      - name: 📊 Verify Build Artifacts
+        run: |
+          echo "📊 Verifying Windows MSI..."
+          
+          # Check if MSI exists
+          if (Test-Path "composeApp/build/compose/binaries/main/msi/*.msi") {
+            echo "✅ MSI found!"
+            Get-ChildItem composeApp/build/compose/binaries/main/msi/
+          } else {
+            echo "❌ MSI not found!"
+            exit 1
+          }
+        shell: powershell
+
+      - name: 📤 Upload Windows MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-windows-${{ needs.prepare-version.outputs.version }}
+          path: composeApp/build/compose/binaries/main/msi/*.msi
           retention-days: 30
 
   create-release:
-    needs: [prepare-version, build-cross-platform]
+    needs: [prepare-version, build-macos, build-windows]
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: ubuntu-latest
 
