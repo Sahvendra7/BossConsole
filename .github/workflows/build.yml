@@ -129,7 +129,7 @@ jobs:
       - name: 🔒 Dependency Check
         run: |
           echo "🔒 Checking dependencies"
-          ./gradlew :composeApp:dependencies --configuration compileClasspath
+          ./gradlew :composeApp:dependencies
 
       - name: 📊 Generate Build Report
         run: |
