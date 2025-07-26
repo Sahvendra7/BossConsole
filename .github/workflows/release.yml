@@ -99,18 +99,13 @@ jobs:
           - os: macos-latest
             platform: macos
             artifact: dmg
-            build-command: './build-dmg.sh'
-            artifact-path: 'distribution-final/*.dmg'
+            build-command: './gradlew packageDmg'
+            artifact-path: 'composeApp/build/compose/binaries/main/dmg/*.dmg'
           - os: windows-latest
             platform: windows
             artifact: msi
-            build-command: './build-msi.bat'
-            artifact-path: 'build/compose/binaries/main/msi/*.msi'
-          - os: ubuntu-latest
-            platform: linux
-            artifact: jar
-            build-command: './gradlew createExecutableJar'
-            artifact-path: 'composeApp/build/libs/*-all.jar'
+            build-command: './gradlew packageMsi'
+            artifact-path: 'composeApp/build/compose/binaries/main/msi/*.msi'
 
     runs-on: ${{ matrix.os }}
 
@@ -176,25 +171,14 @@ jobs:
           # Verify Windows build tools
           Get-Command msbuild -ErrorAction SilentlyContinue
 
-      # Linux specific setup
-      - name: 🐧 Setup Linux Environment
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo "🔧 Setting up Linux build environment"
-          # Install required dependencies for Compose Desktop
-          sudo apt-get update
-          sudo apt-get install -y libc6-dev libncurses5 libstdc++6 lib32z1 libbz2-1.0
 
       - name: 🏗️ Build Application
         shell: bash
         run: |
           echo "🏗️ Building ${{ matrix.platform }} application..."
           
-          # Make build scripts executable
+          # Make gradlew executable
           chmod +x ./gradlew
-          if [[ -f "${{ matrix.build-command }}" ]]; then
-            chmod +x "${{ matrix.build-command }}"
-          fi
           
           # Run platform-specific build
           ${{ matrix.build-command }}
@@ -206,7 +190,7 @@ jobs:
           echo "Looking for: ${{ matrix.artifact-path }}"
           
           # List and verify artifacts
-          find . -name "*.dmg" -o -name "*.msi" -o -name "*-all.jar" | head -10
+          find . -name "*.dmg" -o -name "*.msi" | head -10
           
           # Check if artifacts exist
           if ls ${{ matrix.artifact-path }} 1> /dev/null 2>&1; then
@@ -248,8 +232,7 @@ jobs:
           
           # Find and copy artifacts
           find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
-          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}-Windows.msi \;
-          find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}-Linux.jar \;
+          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \;
           
           # List final artifacts
           echo "📦 Release assets:"
@@ -267,8 +250,7 @@ jobs:
           ## 📦 Downloads
           
           - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
-          - **Windows**: \`BOSS-${VERSION}-Windows.msi\` (x64)
-          - **Linux**: \`BOSS-${VERSION}-Linux.jar\` (Cross-platform JAR)
+          - **Windows**: \`BOSS-${VERSION}.msi\` (x64)
           
           ## ✨ What's New
           
@@ -280,7 +262,6 @@ jobs:
           
           - **macOS**: macOS 11.0+ (Big Sur)
           - **Windows**: Windows 10+ (64-bit)
-          - **Linux**: Java 17+ required for JAR
           
           ## 🛠️ Installation
           
@@ -290,13 +271,9 @@ jobs:
           3. Launch from Applications folder
           
           ### Windows
-          1. Download \`BOSS-${VERSION}-Windows.msi\`
+          1. Download \`BOSS-${VERSION}.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
-          
-          ### Linux
-          1. Download \`BOSS-${VERSION}-Linux.jar\`
-          2. Run: \`java -jar BOSS-${VERSION}-Linux.jar\`
           
           ---
           
@@ -325,13 +302,12 @@ jobs:
           echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Platforms Built**: macOS, Windows, Linux" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Platforms Built**: macOS, Windows" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux JAR (Cross-platform)" >> $GITHUB_STEP_SUMMARY
 
   notify-release:
     needs: [prepare-version, build-cross-platform, create-release]
