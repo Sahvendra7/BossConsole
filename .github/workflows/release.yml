@@ -22,11 +22,6 @@ on:
         type: boolean
 
 env:
-  # JDK Configuration
-  JAVA_VERSION: '17'
-  JAVA_DISTRIBUTION: 'temurin'
-  
-  # Build Configuration
   GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
 
 jobs:
@@ -102,8 +97,8 @@ jobs:
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
         with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -195,7 +190,7 @@ jobs:
 
   create-release:
     needs: [prepare-version, build-cross-platform]
-    if: always() && needs.prepare-version.outputs.should-build == 'true' && needs.build-cross-platform.result == 'success'
+    if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -294,14 +289,14 @@ jobs:
           echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
 
-  notify-release:
-    needs: [prepare-version, build-cross-platform, create-release]
-    if: always() && (success() || failure())
-    uses: ./.github/workflows/notifications.yml
-    with:
-      status: ${{ needs.create-release.result }}
-      workflow_name: "Release Build"
-      version: ${{ needs.prepare-version.outputs.version }}
-      download_url: "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}"
-    secrets:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  # notify-release:
+  #   needs: [prepare-version, build-cross-platform, create-release]
+  #   if: always() && (success() || failure())
+  #   uses: ./.github/workflows/notifications.yml
+  #   with:
+  #     status: ${{ needs.create-release.result }}
+  #     workflow_name: "Release Build"
+  #     version: ${{ needs.prepare-version.outputs.version }}
+  #     download_url: "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}"
+  #   secrets:
+  #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
