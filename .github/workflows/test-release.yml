@@ -1,0 +1,58 @@
+name: 🧪 Test Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_increment:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 📋 Get Version
+        run: |
+          VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "Current version: $VERSION"
+
+      - name: 🔄 Test Version Increment
+        run: |
+          case "${{ github.event.inputs.version_increment }}" in
+            "patch")
+              ./gradlew incrementVersion
+              ;;
+            "minor")
+              ./gradlew incrementMinor
+              ;;
+            "major")
+              ./gradlew incrementMajor
+              ;;
+          esac
+          
+          NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+          echo "New version: $NEW_VERSION"
+
+      - name: 🏗️ Test Build
+        run: |
+          ./gradlew createExecutableJar
+          ls -la composeApp/build/libs/
