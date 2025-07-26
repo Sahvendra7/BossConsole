@@ -45,11 +45,7 @@ jobs:
       - name: 🔄 Increment Version (Manual Trigger)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          # Configure git for version commit
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # Increment version based on input
+          # Increment version based on input (in-memory only for testing)
           case "${{ github.event.inputs.version_increment }}" in
             "patch")
               ./gradlew incrementVersion
@@ -64,14 +60,7 @@ jobs:
           
           # Get the new version
           NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
-          echo "New version: $NEW_VERSION"
-          
-          # Commit and push version change
-          git add version.properties
-          git commit -m "🔖 Bump version to $NEW_VERSION"
-          git tag "v$NEW_VERSION"
-          git push origin main
-          git push origin "v$NEW_VERSION"
+          echo "New version: $NEW_VERSION (test build - not committing)"
 
       - name: 📋 Get Version
         id: get-version
