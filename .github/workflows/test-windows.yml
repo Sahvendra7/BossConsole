@@ -1,0 +1,66 @@
+name: 🪟 Test Windows Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 🏗️ Build Windows MSI
+        run: |
+          echo "🏗️ Building Windows MSI..."
+          
+          # Build MSI
+          ./gradlew packageMsi
+          
+          echo "✅ Windows MSI build completed"
+
+      - name: 🔍 Debug Build Output
+        run: |
+          echo "🔍 Debugging build output structure..."
+          
+          echo "=== Build directory structure ==="
+          Get-ChildItem "composeApp/build" -Recurse -Directory | Select-Object FullName
+          
+          echo "=== Looking for MSI files ==="
+          Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi" | Select-Object FullName
+          
+          echo "=== Checking compose/binaries ==="
+          if (Test-Path "composeApp/build/compose/binaries") {
+            Get-ChildItem "composeApp/build/compose/binaries" -Recurse
+          } else {
+            echo "compose/binaries directory not found"
+          }
+        shell: powershell
+
+      - name: 📊 Verify and Upload
+        run: |
+          echo "📊 Finding and uploading MSI..."
+          
+          # Find MSI files anywhere in the build directory
+          $msiFiles = Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi"
+          
+          if ($msiFiles.Count -gt 0) {
+            echo "✅ Found $($msiFiles.Count) MSI file(s):"
+            $msiFiles | ForEach-Object { 
+              echo "  - $($_.FullName) ($($_.Length) bytes)"
+            }
+          } else {
+            echo "❌ No MSI files found anywhere in build directory"
+            exit 1
+          }
+        shell: powershell

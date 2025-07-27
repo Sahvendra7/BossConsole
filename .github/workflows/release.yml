@@ -271,12 +271,21 @@ jobs:
         run: |
           echo "📊 Verifying Windows MSI..."
           
-          # Check if MSI exists
-          if (Test-Path "composeApp/build/compose/binaries/main/msi/*.msi") {
-            echo "✅ MSI found!"
-            Get-ChildItem composeApp/build/compose/binaries/main/msi/
+          # Check if MSI directory exists and find MSI files
+          if (Test-Path "composeApp/build/compose/binaries/main/msi") {
+            $msiFiles = Get-ChildItem "composeApp/build/compose/binaries/main/msi" -Filter "*.msi"
+            if ($msiFiles.Count -gt 0) {
+              echo "✅ MSI found!"
+              $msiFiles | ForEach-Object { echo $_.FullName }
+            } else {
+              echo "❌ No MSI files found in directory!"
+              Get-ChildItem "composeApp/build/compose/binaries/main/msi"
+              exit 1
+            }
           } else {
-            echo "❌ MSI not found!"
+            echo "❌ MSI directory not found!"
+            echo "Available directories:"
+            Get-ChildItem "composeApp/build/compose/binaries/main" -ErrorAction SilentlyContinue
             exit 1
           }
         shell: powershell
@@ -285,7 +294,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: boss-windows-${{ needs.prepare-version.outputs.version }}
-          path: composeApp/build/compose/binaries/main/msi/*.msi
+          path: composeApp/build/compose/binaries/main/msi/
           retention-days: 30
 
   create-release:

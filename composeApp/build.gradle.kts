@@ -297,6 +297,9 @@ compose.desktop {
                 
                 // Use Windows ICO format for proper MSI icon display
                 iconFile.set(project.file("src/desktopMain/resources/boss_icon.ico"))
+                
+                // Windows code signing is handled by external tools (signtool.exe)
+                // Configuration for MSI signing is done in the CI/CD pipeline
             }
             
             macOS {
@@ -313,8 +316,20 @@ compose.desktop {
                 
                 // Code signing configuration
                 signing {
-                    sign.set(true)
-                    identity.set("Developer ID Application: Fnu Shivang (7X4CJM22GN)")
+                    // Enable signing by default, disable only if explicitly skipped
+                    val skipSigning = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+                    sign.set(!skipSigning)
+                    
+                    // Use environment variable for certificate identity, fallback to default
+                    val developerId = System.getenv("MACOS_DEVELOPER_ID") 
+                        ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+                    identity.set(developerId)
+                    
+                    // Debug logging
+                    println("🔐 macOS Code Signing Configuration:")
+                    println("   DISABLE_MACOS_SIGNING: ${System.getenv("DISABLE_MACOS_SIGNING")}")
+                    println("   Identity: $developerId")
+                    println("   Signing enabled: ${!skipSigning}")
                 }
                 
                 // Entitlements
