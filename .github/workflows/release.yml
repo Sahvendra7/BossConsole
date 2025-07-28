@@ -333,11 +333,9 @@ jobs:
               $env:SM_CLIENT_CERT_PASSWORD = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
               $env:SM_CODE_SIGNING_CERT_SHA1_HASH = "${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}"
               
-              echo "Certificate_pkcs12.p12" | Out-File -FilePath "Certificate_pkcs12.p12" -Encoding ASCII
-              
               # Setup DigiCert client certificate
               echo "🔧 Setting up DigiCert client authentication..."
-              echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > Certificate_pkcs12.p12
+              echo "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}" | base64 -d > Certificate_pkcs12.p12
               
               # Sign the MSI file
               echo "✍️ Signing MSI file with DigiCert certificate..."
