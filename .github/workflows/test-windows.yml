@@ -31,36 +31,36 @@ jobs:
 
       - name: 🔍 Debug Build Output
         run: |
-          echo "🔍 Debugging build output structure..."
+          Write-Host "🔍 Debugging build output structure..."
           
-          echo "=== Build directory structure ==="
+          Write-Host "=== Build directory structure ==="
           Get-ChildItem "composeApp/build" -Recurse -Directory | Select-Object FullName
           
-          echo "=== Looking for MSI files ==="
+          Write-Host "=== Looking for MSI files ==="
           Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi" | Select-Object FullName
           
-          echo "=== Checking compose/binaries ==="
+          Write-Host "=== Checking compose/binaries ==="
           if (Test-Path "composeApp/build/compose/binaries") {
             Get-ChildItem "composeApp/build/compose/binaries" -Recurse
           } else {
-            echo "compose/binaries directory not found"
+            Write-Host "compose/binaries directory not found"
           }
         shell: powershell
 
       - name: 📊 Verify and Upload
         run: |
-          echo "📊 Finding and uploading MSI..."
+          Write-Host "📊 Finding and uploading MSI..."
           
           # Find MSI files anywhere in the build directory
           $msiFiles = Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi"
           
           if ($msiFiles.Count -gt 0) {
-            echo "✅ Found $($msiFiles.Count) MSI file(s):"
+            Write-Host "✅ Found $($msiFiles.Count) MSI file(s):"
             $msiFiles | ForEach-Object { 
-              echo "  - $($_.FullName) ($($_.Length) bytes)"
+              Write-Host "  - $($_.FullName) ($($_.Length) bytes)"
             }
           } else {
-            echo "❌ No MSI files found anywhere in build directory"
+            Write-Host "❌ No MSI files found anywhere in build directory"
             exit 1
           }
         shell: powershell

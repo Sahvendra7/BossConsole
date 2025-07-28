@@ -269,26 +269,21 @@ jobs:
 
       - name: 📊 Verify Build Artifacts
         run: |
-          Write-Host "📊 Verifying Windows MSI..."
-          
-          # Check if MSI directory exists and find MSI files
-          if (Test-Path "composeApp/build/compose/binaries/main/msi") {
-            $msiFiles = Get-ChildItem "composeApp/build/compose/binaries/main/msi" -Filter "*.msi"
-            if ($msiFiles.Count -gt 0) {
-              Write-Host "✅ MSI found!"
-              $msiFiles | ForEach-Object { Write-Host $_.FullName }
+          $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
+          $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
+          if ($msiFiles) {
+            Write-Host "✅ MSI found: $($msiFiles[0].FullName)"
+            Write-Host "   Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
+          } else {
+            Write-Host "❌ MSI not found at expected location"
+            Write-Host "Searching for MSI files recursively..."
+            $allMsi = Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue
+            if ($allMsi) {
+              Write-Host "Found MSI at: $($allMsi[0].FullName)"
             } else {
-              Write-Host "❌ No MSI files found in directory!"
-              Get-ChildItem "composeApp/build/compose/binaries/main/msi"
+              Write-Host "No MSI files found anywhere in build directory"
               exit 1
             }
-          } else {
-            Write-Host "❌ MSI directory not found!"
-            Write-Host "Available directories:"
-            if (Test-Path "composeApp/build/compose/binaries/main") {
-              Get-ChildItem "composeApp/build/compose/binaries/main"
-            }
-            exit 1
           }
         shell: powershell
 
