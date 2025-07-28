@@ -324,9 +324,43 @@ jobs:
               # Download and install DigiCert signing tools
               Write-Host "Installing DigiCert signing tools..."
               
-              # Install DigiCert KeyLocker Tools
-              Invoke-WebRequest -Uri "https://software.digicert.com/smstools/win/KeyLockerTools.exe" -OutFile "KeyLockerTools.exe"
-              Start-Process -FilePath "KeyLockerTools.exe" -ArgumentList "/S" -Wait
+              # Try alternative URLs for DigiCert KeyLocker Tools
+              $downloadSuccess = $false
+              $urls = @(
+                "https://software.digicert.com/smstools/win/KeyLockerTools.exe",
+                "https://one.digicert.com/signingmanager/api-ui/v1/releases/KeylockerTools-windows-x64.exe"
+              )
+              
+              foreach ($url in $urls) {
+                try {
+                  Write-Host "Trying to download from: $url"
+                  Invoke-WebRequest -Uri $url -OutFile "KeyLockerTools.exe" -TimeoutSec 60
+                  $downloadSuccess = $true
+                  Write-Host "Downloaded DigiCert tools successfully"
+                  break
+                } catch {
+                  Write-Host "Failed to download from $url : $($_.Exception.Message)"
+                }
+              }
+              
+              if (-not $downloadSuccess) {
+                Write-Host "Failed to download DigiCert tools from all URLs"
+                Write-Host "Attempting to use pre-installed signing tools or skip signing..."
+                
+                # Check if tools are already available
+                $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
+                if (Test-Path $smctlPath) {
+                  Write-Host "Found existing DigiCert tools at $smctlPath"
+                } else {
+                  Write-Host "DigiCert tools not available, MSI will be uploaded unsigned"
+                  return
+                }
+              } else {
+                # Install the downloaded tools
+                Write-Host "Installing DigiCert KeyLocker Tools..."
+                Start-Process -FilePath "KeyLockerTools.exe" -ArgumentList "/S" -Wait
+                Write-Host "DigiCert tools installed successfully"
+              }
               
               # Set environment variables
               $env:SM_HOST = "https://clientauth.one.digicert.com"
@@ -342,24 +376,52 @@ jobs:
               
               # Sign the MSI file
               Write-Host "Signing MSI file with DigiCert certificate..."
-              & "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe" sign --keypair-alias="${{ secrets.DIGICERT_CERTIFICATE_ID }}" --input="$msiFile"
+              $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
               
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "MSI file signed successfully with DigiCert"
-                
-                # Verify the signature
-                Write-Host "Verifying MSI signature..."
-                & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" verify /pa "$msiFile"
-                
-                if ($LASTEXITCODE -eq 0) {
-                  Write-Host "MSI signature verified successfully"
-                } else {
-                  Write-Host "MSI signature verification failed, but signing completed"
+              if (Test-Path $smctlPath) {
+                try {
+                  & $smctlPath sign --keypair-alias="${{ secrets.DIGICERT_CERTIFICATE_ID }}" --input="$msiFile"
+                  
+                  if ($LASTEXITCODE -eq 0) {
+                    Write-Host "MSI file signed successfully with DigiCert"
+                    
+                    # Verify the signature
+                    Write-Host "Verifying MSI signature..."
+                    $signtoolPaths = @(
+                      "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+                      "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
+                      "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\x64\signtool.exe"
+                    )
+                    
+                    $signtoolFound = $false
+                    foreach ($signtoolPath in $signtoolPaths) {
+                      if (Test-Path $signtoolPath) {
+                        Write-Host "Using signtool at: $signtoolPath"
+                        & $signtoolPath verify /pa "$msiFile"
+                        if ($LASTEXITCODE -eq 0) {
+                          Write-Host "MSI signature verified successfully"
+                        } else {
+                          Write-Host "MSI signature verification failed, but signing completed"
+                        }
+                        $signtoolFound = $true
+                        break
+                      }
+                    }
+                    
+                    if (-not $signtoolFound) {
+                      Write-Host "Signtool not found, but MSI was signed successfully"
+                    }
+                  } else {
+                    Write-Host "Failed to sign MSI file (exit code: $LASTEXITCODE)"
+                    Write-Host "MSI will be uploaded unsigned"
+                  }
+                } catch {
+                  Write-Host "Exception during signing: $($_.Exception.Message)"
+                  Write-Host "MSI will be uploaded unsigned"
                 }
               } else {
-                Write-Host "Failed to sign MSI file"
-                Write-Host "This may be due to configuration issues or network connectivity"
-                Write-Host "MSI will be uploaded unsigned for testing"
+                Write-Host "DigiCert smctl.exe not found at expected location"
+                Write-Host "MSI will be uploaded unsigned"
               }
               
               # Cleanup
