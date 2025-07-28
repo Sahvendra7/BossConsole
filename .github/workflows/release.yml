@@ -305,7 +305,7 @@ jobs:
 
       - name: 🔐 Sign Windows MSI with DigiCert
         run: |
-          echo "🔐 Setting up DigiCert code signing for Windows MSI..."
+          Write-Host "Setting up DigiCert code signing for Windows MSI..."
           
           # Find the MSI file
           $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
@@ -313,14 +313,16 @@ jobs:
           
           if ($msiFiles) {
             $msiFile = $msiFiles[0].FullName
-            echo "📦 Found MSI file: $msiFile"
+            Write-Host "Found MSI file: $msiFile"
             
             # Check if DigiCert secrets are available
-            if ("${{ secrets.DIGICERT_API_KEY }}" -and "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}") {
-              echo "🔑 DigiCert credentials found, proceeding with code signing..."
+            $apiKey = "${{ secrets.DIGICERT_API_KEY }}"
+            $clientKey = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
+            if ($apiKey -and $clientKey) {
+              Write-Host "DigiCert credentials found, proceeding with code signing..."
               
               # Download and install DigiCert signing tools
-              echo "📥 Installing DigiCert signing tools..."
+              Write-Host "Installing DigiCert signing tools..."
               
               # Install DigiCert KeyLocker Tools
               Invoke-WebRequest -Uri "https://software.digicert.com/smstools/win/KeyLockerTools.exe" -OutFile "KeyLockerTools.exe"
@@ -328,47 +330,48 @@ jobs:
               
               # Set environment variables
               $env:SM_HOST = "https://clientauth.one.digicert.com"
-              $env:SM_API_KEY = "${{ secrets.DIGICERT_API_KEY }}"
+              $env:SM_API_KEY = $apiKey
               $env:SM_CLIENT_CERT_FILE = "Certificate_pkcs12.p12"
-              $env:SM_CLIENT_CERT_PASSWORD = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
+              $env:SM_CLIENT_CERT_PASSWORD = $clientKey
               $env:SM_CODE_SIGNING_CERT_SHA1_HASH = "${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}"
               
               # Setup DigiCert client certificate
-              echo "🔧 Setting up DigiCert client authentication..."
-              echo "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}" | base64 -d > Certificate_pkcs12.p12
+              Write-Host "Setting up DigiCert client authentication..."
+              $certBase64 = "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}"
+              [System.Convert]::FromBase64String($certBase64) | Set-Content "Certificate_pkcs12.p12" -Encoding Byte
               
               # Sign the MSI file
-              echo "✍️ Signing MSI file with DigiCert certificate..."
+              Write-Host "Signing MSI file with DigiCert certificate..."
               & "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe" sign --keypair-alias="${{ secrets.DIGICERT_CERTIFICATE_ID }}" --input="$msiFile"
               
               if ($LASTEXITCODE -eq 0) {
-                echo "✅ MSI file signed successfully with DigiCert"
+                Write-Host "MSI file signed successfully with DigiCert"
                 
                 # Verify the signature
-                echo "🔍 Verifying MSI signature..."
+                Write-Host "Verifying MSI signature..."
                 & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" verify /pa "$msiFile"
                 
                 if ($LASTEXITCODE -eq 0) {
-                  echo "✅ MSI signature verified successfully"
+                  Write-Host "MSI signature verified successfully"
                 } else {
-                  echo "⚠️ MSI signature verification failed, but signing completed"
+                  Write-Host "MSI signature verification failed, but signing completed"
                 }
               } else {
-                echo "❌ Failed to sign MSI file"
-                echo "This may be due to configuration issues or network connectivity"
-                echo "MSI will be uploaded unsigned for testing"
+                Write-Host "Failed to sign MSI file"
+                Write-Host "This may be due to configuration issues or network connectivity"
+                Write-Host "MSI will be uploaded unsigned for testing"
               }
               
               # Cleanup
               Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
               
             } else {
-              echo "⚠️ DigiCert API credentials not found"
-              echo "   Add DIGICERT_API_KEY and DIGICERT_CLIENT_AUTH_KEY secrets for production builds"
-              echo "   MSI will be uploaded unsigned for testing"
+              Write-Host "DigiCert API credentials not found"
+              Write-Host "Add DIGICERT_API_KEY and DIGICERT_CLIENT_AUTH_KEY secrets for production builds"
+              Write-Host "MSI will be uploaded unsigned for testing"
             }
           } else {
-            echo "❌ MSI file not found for signing"
+            Write-Host "MSI file not found for signing"
             exit 1
           }
         shell: powershell
