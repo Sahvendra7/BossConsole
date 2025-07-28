@@ -35,7 +35,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
       - name: 🔄 Increment Version (Manual Trigger)
         if: github.event_name == 'workflow_dispatch'
@@ -419,7 +419,7 @@ jobs:
           prerelease: false
           make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
       - name: 📢 Release Summary
         run: |
