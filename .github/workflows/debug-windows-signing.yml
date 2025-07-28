@@ -1,0 +1,242 @@
+name: 🔍 Debug Windows DigiCert Signing
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_file:
+        description: 'Test file to create and sign (for testing)'
+        required: false
+        default: 'test-app.exe'
+        type: string
+
+jobs:
+  debug-signing:
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Create Test Executable
+        run: |
+          Write-Host "Creating test executable for signing..."
+          
+          # Create a simple test executable (dummy file for signing test)
+          $testContent = @"
+using System;
+namespace TestApp {
+    class Program {
+        static void Main() {
+            Console.WriteLine("DigiCert Signing Test");
+        }
+    }
+}
+"@
+          
+          $testContent | Out-File -FilePath "TestApp.cs" -Encoding UTF8
+          
+          # Compile to create an executable
+          Add-Type -TypeDefinition $testContent -OutputAssembly "${{ github.event.inputs.test_file }}"
+          
+          if (Test-Path "${{ github.event.inputs.test_file }}") {
+            Write-Host "Test executable created: ${{ github.event.inputs.test_file }}"
+            $fileInfo = Get-Item "${{ github.event.inputs.test_file }}"
+            Write-Host "File size: $($fileInfo.Length) bytes"
+          } else {
+            Write-Host "Failed to create test executable"
+            exit 1
+          }
+        shell: powershell
+
+      - name: 🔐 Test DigiCert Signing
+        run: |
+          Write-Host "=== DigiCert Signing Debug Test ==="
+          Write-Host "Test file: ${{ github.event.inputs.test_file }}"
+          
+          # Check if DigiCert secrets are available
+          $apiKey = "${{ secrets.DIGICERT_API_KEY }}"
+          $clientKey = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
+          $certId = "${{ secrets.DIGICERT_CERTIFICATE_ID }}"
+          $thumbprint = "${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}"
+          
+          Write-Host "Checking DigiCert configuration..."
+          Write-Host "API Key: $(if($apiKey) { 'Present (' + $apiKey.Substring(0,10) + '...)' } else { 'Missing' })"
+          Write-Host "Client Key: $(if($clientKey) { 'Present' } else { 'Missing' })"
+          Write-Host "Certificate ID: $(if($certId) { $certId } else { 'Missing' })"
+          Write-Host "Thumbprint: $(if($thumbprint) { $thumbprint } else { 'Missing' })"
+          
+          if ($apiKey -and $clientKey -and $certId) {
+            Write-Host "All required secrets found, proceeding with signing test..."
+            
+            # Download and install DigiCert signing tools
+            Write-Host "=== Installing DigiCert KeyLocker Tools ==="
+            $downloadSuccess = $false
+            $urls = @(
+              "https://software.digicert.com/smstools/win/KeyLockerTools.exe",
+              "https://one.digicert.com/signingmanager/api-ui/v1/releases/KeylockerTools-windows-x64.exe"
+            )
+            
+            foreach ($url in $urls) {
+              try {
+                Write-Host "Trying to download from: $url"
+                Invoke-WebRequest -Uri $url -OutFile "KeyLockerTools.exe" -TimeoutSec 60
+                $downloadSuccess = $true
+                Write-Host "Downloaded DigiCert tools successfully from: $url"
+                break
+              } catch {
+                Write-Host "Failed to download from $url : $($_.Exception.Message)"
+              }
+            }
+            
+            if ($downloadSuccess) {
+              Write-Host "Installing DigiCert KeyLocker Tools..."
+              Start-Process -FilePath "KeyLockerTools.exe" -ArgumentList "/S" -Wait
+              Write-Host "Installation completed"
+              
+              # Check if installation was successful
+              $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
+              if (Test-Path $smctlPath) {
+                Write-Host "✅ DigiCert tools installed successfully at: $smctlPath"
+              } else {
+                Write-Host "❌ DigiCert tools installation failed"
+                exit 1
+              }
+            } else {
+              Write-Host "❌ Failed to download DigiCert tools"
+              exit 1
+            }
+            
+            # Set up environment variables
+            Write-Host "=== Setting up DigiCert environment ==="
+            $env:SM_HOST = "https://clientauth.one.digicert.com"
+            $env:SM_API_KEY = $apiKey
+            $env:SM_CLIENT_CERT_FILE = "Certificate_pkcs12.p12"
+            $env:SM_CLIENT_CERT_PASSWORD = $clientKey
+            $env:SM_CODE_SIGNING_CERT_SHA1_HASH = $thumbprint
+            
+            Write-Host "Environment variables set:"
+            Write-Host "SM_HOST: $env:SM_HOST"
+            Write-Host "SM_API_KEY: $(if($env:SM_API_KEY) { $env:SM_API_KEY.Substring(0,10) + '...' } else { 'Not set' })"
+            Write-Host "SM_CLIENT_CERT_FILE: $env:SM_CLIENT_CERT_FILE"
+            Write-Host "SM_CODE_SIGNING_CERT_SHA1_HASH: $env:SM_CODE_SIGNING_CERT_SHA1_HASH"
+            
+            # Setup DigiCert client certificate
+            Write-Host "=== Setting up client certificate ==="
+            $certBase64 = "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}"
+            if ($certBase64) {
+              try {
+                [System.Convert]::FromBase64String($certBase64) | Set-Content "Certificate_pkcs12.p12" -Encoding Byte
+                Write-Host "✅ Client certificate created successfully"
+                $certInfo = Get-Item "Certificate_pkcs12.p12"
+                Write-Host "Certificate file size: $($certInfo.Length) bytes"
+              } catch {
+                Write-Host "❌ Failed to create client certificate: $($_.Exception.Message)"
+                exit 1
+              }
+            } else {
+              Write-Host "❌ Client certificate base64 data missing"
+              exit 1
+            }
+            
+            # Test DigiCert connection
+            Write-Host "=== Testing DigiCert Connection ==="
+            try {
+              Write-Host "Running: smctl.exe healthcheck"
+              & $smctlPath healthcheck
+              Write-Host "Health check exit code: $LASTEXITCODE"
+            } catch {
+              Write-Host "Health check failed: $($_.Exception.Message)"
+            }
+            
+            # List available certificates
+            Write-Host "=== Listing Available Certificates ==="
+            try {
+              Write-Host "Running: smctl.exe keypair ls"
+              & $smctlPath keypair ls
+              Write-Host "Keypair list exit code: $LASTEXITCODE"
+            } catch {
+              Write-Host "Keypair listing failed: $($_.Exception.Message)"
+            }
+            
+            # Sign the test file
+            Write-Host "=== Signing Test File ==="
+            $testFile = "${{ github.event.inputs.test_file }}"
+            if (Test-Path $testFile) {
+              try {
+                Write-Host "Signing file: $testFile"
+                Write-Host "Using certificate ID: $certId"
+                Write-Host "Running: smctl.exe sign --keypair-alias=$certId --input=$testFile"
+                
+                & $smctlPath sign --keypair-alias=$certId --input=$testFile
+                $signExitCode = $LASTEXITCODE
+                Write-Host "Signing exit code: $signExitCode"
+                
+                if ($signExitCode -eq 0) {
+                  Write-Host "✅ File signed successfully!"
+                  
+                  # Verify the signature
+                  Write-Host "=== Verifying Signature ==="
+                  $signtoolPaths = @(
+                    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+                    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
+                    "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\x64\signtool.exe"
+                  )
+                  
+                  $signtoolFound = $false
+                  foreach ($signtoolPath in $signtoolPaths) {
+                    if (Test-Path $signtoolPath) {
+                      Write-Host "Using signtool at: $signtoolPath"
+                      Write-Host "Running: signtool.exe verify /pa $testFile"
+                      & $signtoolPath verify /pa $testFile
+                      if ($LASTEXITCODE -eq 0) {
+                        Write-Host "✅ Signature verification successful!"
+                      } else {
+                        Write-Host "⚠️ Signature verification failed (exit code: $LASTEXITCODE)"
+                      }
+                      $signtoolFound = $true
+                      break
+                    }
+                  }
+                  
+                  if (-not $signtoolFound) {
+                    Write-Host "⚠️ Signtool not found for verification"
+                  }
+                  
+                } else {
+                  Write-Host "❌ Signing failed with exit code: $signExitCode"
+                }
+                
+              } catch {
+                Write-Host "❌ Signing exception: $($_.Exception.Message)"
+              }
+            } else {
+              Write-Host "❌ Test file not found: $testFile"
+            }
+            
+            # Cleanup
+            Write-Host "=== Cleanup ==="
+            Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
+            Remove-Item "KeyLockerTools.exe" -ErrorAction SilentlyContinue
+            Write-Host "Cleanup completed"
+            
+          } else {
+            Write-Host "❌ Required DigiCert secrets missing:"
+            if (-not $apiKey) { Write-Host "  - DIGICERT_API_KEY" }
+            if (-not $clientKey) { Write-Host "  - DIGICERT_CLIENT_AUTH_KEY" }
+            if (-not $certId) { Write-Host "  - DIGICERT_CERTIFICATE_ID" }
+            Write-Host "Please add these secrets to test DigiCert signing"
+          }
+        shell: powershell
+
+      - name: 📋 Summary
+        run: |
+          Write-Host "=== Debug Test Summary ==="
+          Write-Host "This debug workflow tests DigiCert signing integration"
+          Write-Host "Check the logs above for detailed information about:"
+          Write-Host "  1. DigiCert tools installation"
+          Write-Host "  2. Certificate configuration"
+          Write-Host "  3. Connection to DigiCert service"
+          Write-Host "  4. Available certificates"
+          Write-Host "  5. File signing process"
+          Write-Host "  6. Signature verification"
+        shell: powershell
