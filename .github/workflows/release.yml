@@ -399,39 +399,11 @@ jobs:
         if: always() && secrets.SLACK_WEBHOOK_URL != ''
         uses: 8398a7/action-slack@v3
         with:
-          status: custom
-          custom_payload: |
-            {
-              "text": "${{ job.status == 'success' && '🚀' || '❌' }} BOSS v${{ needs.prepare-version.outputs.version }} Release ${{ job.status == 'success' && 'Completed!' || 'Failed!' }}",
-              "attachments": [
-                {
-                  "color": "${{ job.status == 'success' && 'good' || 'danger' }}",
-                  "fields": [
-                    {
-                      "title": "Version",
-                      "value": "${{ needs.prepare-version.outputs.version }}",
-                      "short": true
-                    },
-                    {
-                      "title": "Repository", 
-                      "value": "${{ github.repository }}",
-                      "short": true
-                    },
-                    {
-                      "title": "Downloads",
-                      "value": "<https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}|Release Page>",
-                      "short": false
-                    },
-                    {
-                      "title": "Artifacts",
-                      "value": "🍎 macOS DMG (Universal) • 🪟 Windows MSI (x64)",
-                      "short": false
-                    }
-                  ],
-                  "footer": "BOSS Release System",
-                  "footer_icon": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
-                }
-              ]
-            }
+          status: ${{ job.status }}
+          text: |
+            ${{ job.status == 'success' && '🚀' || '❌' }} BOSS v${{ needs.prepare-version.outputs.version }} Release ${{ job.status == 'success' && 'Completed!' || 'Failed!' }}
+            
+            📦 Downloads: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}
+            🍎 macOS DMG (Universal) • 🪟 Windows MSI (x64)
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
