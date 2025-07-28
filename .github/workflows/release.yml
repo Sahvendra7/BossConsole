@@ -285,7 +285,9 @@ jobs:
           } else {
             echo "❌ MSI directory not found!"
             echo "Available directories:"
-            Get-ChildItem "composeApp/build/compose/binaries/main" -ErrorAction SilentlyContinue
+            if (Test-Path "composeApp/build/compose/binaries/main") {
+              Get-ChildItem "composeApp/build/compose/binaries/main"
+            }
             exit 1
           }
         shell: powershell
