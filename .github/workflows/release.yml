@@ -371,7 +371,7 @@ jobs:
 
       - name: 🎉 Create GitHub Release
         if: github.event.inputs.create_release != 'false'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare-version.outputs.version }}
           name: 🚀 BOSS ${{ needs.prepare-version.outputs.version }}
