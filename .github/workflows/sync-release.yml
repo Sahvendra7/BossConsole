@@ -3,6 +3,12 @@ name: Sync Release to Public Repository
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to sync (e.g., v8.9.0)'
+        required: true
+        type: string
 
 jobs:
   sync-release:
@@ -20,10 +26,18 @@ jobs:
       run: |
         set -e  # Exit on error
         
-        # Get release information
-        RELEASE_TAG="${{ github.event.release.tag_name }}"
-        RELEASE_NAME="${{ github.event.release.name }}"
-        RELEASE_PRERELEASE="${{ github.event.release.prerelease }}"
+        # Get release information (handle both release event and manual dispatch)
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          RELEASE_TAG="${{ github.event.inputs.release_tag }}"
+          # Get release info from GitHub API for manual dispatch
+          RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/${RELEASE_TAG})
+          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
+          RELEASE_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.prerelease')
+        else
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_NAME="${{ github.event.release.name }}"
+          RELEASE_PRERELEASE="${{ github.event.release.prerelease }}"
+        fi
         
         # Validate required variables
         if [ -z "${RELEASE_TAG}" ]; then
@@ -41,10 +55,14 @@ jobs:
         # Download all release assets using GitHub CLI
         gh release download "${RELEASE_TAG}" --dir release-assets --repo ${{ github.repository }}
         
-        # Save release body to file safely using heredoc
-        cat << 'EOF' > release-assets/release-body.txt
+        # Save release body to file safely
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "$RELEASE_INFO" | jq -r '.body' > release-assets/release-body.txt
+        else
+          cat << 'EOF' > release-assets/release-body.txt
         ${{ github.event.release.body }}
         EOF
+        fi
         
         # Validate download success
         if [ ! -d "release-assets" ] || [ -z "$(ls -A release-assets/ | grep -v release-body.txt)" ]; then
