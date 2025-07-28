@@ -73,11 +73,9 @@ jobs:
             # Commit version changes
             NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
             git add version.properties
-            git commit -m "🔖 Bump version to $NEW_VERSION
-
-            Auto-increment version for release build
-            
-            🤖 Automated by release workflow"
+            git commit -m "🔖 Bump version to $NEW_VERSION" \
+                       -m "Auto-increment version for release build" \
+                       -m "🤖 Automated by release workflow"
             
             # Push changes
             git push
