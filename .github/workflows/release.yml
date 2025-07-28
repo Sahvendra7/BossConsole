@@ -395,14 +395,43 @@ jobs:
           echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
 
-  # notify-release:
-  #   needs: [prepare-version, build-cross-platform, create-release]
-  #   if: always() && (success() || failure())
-  #   uses: ./.github/workflows/notifications.yml
-  #   with:
-  #     status: ${{ needs.create-release.result }}
-  #     workflow_name: "Release Build"
-  #     version: ${{ needs.prepare-version.outputs.version }}
-  #     download_url: "https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}"
-  #   secrets:
-  #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - name: 📢 Notify Slack
+        if: always() && secrets.SLACK_WEBHOOK_URL != ''
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "text": "${{ job.status == 'success' && '🚀' || '❌' }} BOSS v${{ needs.prepare-version.outputs.version }} Release ${{ job.status == 'success' && 'Completed!' || 'Failed!' }}",
+              "attachments": [
+                {
+                  "color": "${{ job.status == 'success' && 'good' || 'danger' }}",
+                  "fields": [
+                    {
+                      "title": "Version",
+                      "value": "${{ needs.prepare-version.outputs.version }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Repository", 
+                      "value": "${{ github.repository }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Downloads",
+                      "value": "<https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}|Release Page>",
+                      "short": false
+                    },
+                    {
+                      "title": "Artifacts",
+                      "value": "🍎 macOS DMG (Universal) • 🪟 Windows MSI (x64)",
+                      "short": false
+                    }
+                  ],
+                  "footer": "BOSS Release System",
+                  "footer_icon": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
