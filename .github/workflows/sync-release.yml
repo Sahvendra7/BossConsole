@@ -18,7 +18,7 @@ jobs:
     - name: Checkout private repo
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PUBLIC_REPO_TOKEN }}
         fetch-depth: 0
     
     - name: Download release assets
@@ -73,7 +73,7 @@ jobs:
         echo "Downloaded assets:"
         ls -la release-assets/
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
     - name: Create public release
       run: |
