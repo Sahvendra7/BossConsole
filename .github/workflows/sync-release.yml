@@ -123,7 +123,7 @@ jobs:
         
         echo "✅ Release ${RELEASE_TAG} created in public repository"
       env:
-        GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
     - name: Update public repository README
       run: |
@@ -186,7 +186,7 @@ jobs:
         # Cleanup
         rm -f ~/.git-credentials
       env:
-        GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
     - name: Notify completion
       run: |
