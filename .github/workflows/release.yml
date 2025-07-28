@@ -30,14 +30,17 @@ jobs:
     outputs:
       version: ${{ steps.get-version.outputs.version }}
       should-build: ${{ steps.check-changes.outputs.should-build }}
+      updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🔄 Increment Version (Manual Trigger)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          # Increment version based on input (in-memory only for testing)
+          # Increment version based on input
           case "${{ github.event.inputs.version_increment }}" in
             "patch")
               ./gradlew incrementVersion
@@ -52,7 +55,38 @@ jobs:
           
           # Get the new version
           NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
-          echo "New version: $NEW_VERSION (test build - not committing)"
+          echo "New version: $NEW_VERSION"
+
+      - name: 📝 Commit Version Changes
+        id: commit-version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if there are changes to commit
+          if git diff --quiet version.properties; then
+            echo "No version changes to commit"
+            echo "updated-sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          else
+            # Commit version changes
+            NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+            git add version.properties
+            git commit -m "🔖 Bump version to $NEW_VERSION
+
+            Auto-increment version for release build
+            
+            🤖 Automated by release workflow"
+            
+            # Push changes
+            git push
+            
+            # Get the new commit SHA
+            NEW_SHA=$(git rev-parse HEAD)
+            echo "updated-sha=$NEW_SHA" >> $GITHUB_OUTPUT
+            echo "✅ Version committed and pushed: $NEW_VERSION"
+          fi
 
       - name: 📋 Get Version
         id: get-version
@@ -79,6 +113,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -240,6 +276,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -302,6 +340,8 @@ jobs:
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
       - name: 📥 Download All Artifacts
         uses: actions/download-artifact@v4

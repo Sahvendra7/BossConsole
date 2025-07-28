@@ -70,8 +70,17 @@ actual class UpdateService {
             
             // Find the appropriate asset for the current platform
             val expectedAssetName = getExpectedAssetName(latestVersion)
+            println("Looking for asset: $expectedAssetName")
+            println("Available assets: ${latestRelease.assets.map { it.name }}")
+            
             val asset = latestRelease.assets.find { 
                 it.name.equals(expectedAssetName, ignoreCase = true) 
+            }
+            
+            if (asset == null) {
+                println("Warning: Expected asset '$expectedAssetName' not found in release")
+            } else {
+                println("Found asset: ${asset.name} with download URL: ${asset.browser_download_url}")
             }
             
             UpdateInfo(
@@ -79,7 +88,7 @@ actual class UpdateService {
                 currentVersion = Version.CURRENT,
                 latestVersion = latestVersion,
                 releaseNotes = latestRelease.body,
-                downloadUrl = asset?.download_url,
+                downloadUrl = asset?.browser_download_url,
                 assetSize = asset?.size ?: 0,
                 assetName = asset?.name ?: ""
             )
@@ -101,15 +110,23 @@ actual class UpdateService {
         onProgress: (progress: Float) -> Unit
     ): String? {
         return try {
-            val downloadUrl = updateInfo.downloadUrl ?: return null
-            
-            val response = httpClient.get(downloadUrl)
-            if (response.status.value !in 200..299) {
-                println("Download failed with status: ${response.status}")
+            val downloadUrl = updateInfo.downloadUrl
+            if (downloadUrl == null) {
+                println("Error: No download URL available for asset: ${updateInfo.assetName}")
                 return null
             }
             
-            val totalSize = updateInfo.assetSize
+            println("Starting download from: $downloadUrl")
+            println("Expected asset: ${updateInfo.assetName} (${updateInfo.assetSize} bytes)")
+            
+            val response = httpClient.get(downloadUrl)
+            if (response.status.value !in 200..299) {
+                println("Download failed with HTTP status: ${response.status.value} ${response.status.description}")
+                return null
+            }
+            
+            // Get total size from response headers if not available from GitHub API
+            val totalSize = response.headers["Content-Length"]?.toLongOrNull() ?: updateInfo.assetSize
             val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates")
             tempDir.mkdirs()
             
@@ -118,12 +135,16 @@ actual class UpdateService {
                 downloadFile.delete()
             }
             
+            println("Download info: totalSize=$totalSize, expectedSize=${updateInfo.assetSize}")
+            
             withContext(Dispatchers.IO) {
                 val channel = response.bodyAsChannel()
                 val outputStream = FileOutputStream(downloadFile)
                 
                 var downloadedBytes = 0L
                 val buffer = ByteArray(8192)
+                var lastProgressUpdate = 0L
+                var progressUpdateCount = 0
                 
                 while (!channel.isClosedForRead) {
                     val bytesRead = channel.readAvailable(buffer)
@@ -131,15 +152,55 @@ actual class UpdateService {
                         outputStream.write(buffer, 0, bytesRead)
                         downloadedBytes += bytesRead
                         
-                        if (totalSize > 0) {
-                            val progress = downloadedBytes.toFloat() / totalSize.toFloat()
-                            onProgress(progress)
+                        // Update progress for smooth UI feedback without being too frequent
+                        val shouldUpdateProgress = if (totalSize > 0) {
+                            // Update every 256KB or every 5% progress change, whichever comes first
+                            val bytesThreshold = downloadedBytes - lastProgressUpdate >= 262144 // 256KB
+                            val currentProgress = downloadedBytes.toFloat() / totalSize.toFloat()
+                            val lastProgress = lastProgressUpdate.toFloat() / totalSize.toFloat()
+                            val progressThreshold = (currentProgress - lastProgress) >= 0.05f // 5%
+                            bytesThreshold || progressThreshold
+                        } else {
+                            // Update every 128KB for indeterminate progress
+                            downloadedBytes - lastProgressUpdate >= 131072
                         }
+                        
+                        if (shouldUpdateProgress) {
+                            val progress = if (totalSize > 0) {
+                                val currentProgress = (downloadedBytes.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
+                                // Log only major progress milestones for performance
+                                if (currentProgress * 100 % 10 < 5) {
+                                    println("Progress: ${(currentProgress * 100).toInt()}% (${downloadedBytes / 1024}KB / ${totalSize / 1024}KB)")
+                                }
+                                currentProgress
+                            } else {
+                                // Indeterminate progress - cycle between 0.1 and 0.9
+                                val cyclicProgress = 0.1f + (downloadedBytes / 1048576f % 0.8f)
+                                // Log every MB for indeterminate progress
+                                if (downloadedBytes / 1048576 != lastProgressUpdate / 1048576) {
+                                    println("Progress: ${downloadedBytes / 1024}KB downloaded (indeterminate)")
+                                }
+                                cyclicProgress
+                            }
+                            
+                            // Ensure progress updates happen on main thread for UI updates
+                            withContext(Dispatchers.Main) {
+                                onProgress(progress)
+                            }
+                            lastProgressUpdate = downloadedBytes
+                        }
+                        
+                        progressUpdateCount++
                     }
                 }
                 
                 outputStream.close()
                 channel.cancel()
+                
+                // Ensure 100% progress is reported on completion on main thread
+                withContext(Dispatchers.Main) {
+                    onProgress(1f)
+                }
             }
             
             if (downloadFile.exists() && downloadFile.length() > 0) {
@@ -180,17 +241,170 @@ actual class UpdateService {
     private suspend fun installMacOSUpdate(downloadFile: File): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // For DMG files on macOS, we'll open it and let the user handle installation
-                // In the future, we could automate this with AppleScript
-                val process = ProcessBuilder("open", downloadFile.absolutePath).start()
-                process.waitFor()
+                println("Starting automated macOS update installation...")
                 
-                println("DMG opened for user installation: ${downloadFile.absolutePath}")
-                true
+                // Get current application bundle path
+                val currentAppPath = getCurrentApplicationPath()
+                if (currentAppPath == null) {
+                    println("⚠️ Could not determine current application path")
+                    println("   This is expected when running in development mode (IDE/Gradle)")
+                    println("   Falling back to manual DMG installation")
+                    return@withContext openDMGForManualInstallation(downloadFile)
+                }
+                
+                println("🎯 Target application path: $currentAppPath")
+                
+                // Mount the DMG
+                val mountResult = ProcessBuilder("hdiutil", "attach", downloadFile.absolutePath, "-nobrowse", "-quiet")
+                    .start()
+                mountResult.waitFor()
+                
+                if (mountResult.exitValue() != 0) {
+                    println("Failed to mount DMG, falling back to manual installation")
+                    return@withContext openDMGForManualInstallation(downloadFile)
+                }
+                
+                // Find the mounted volume
+                val volumesDir = File("/Volumes")
+                val mountedVolume = volumesDir.listFiles()?.find { 
+                    it.name.contains("BOSS", ignoreCase = true) && it.isDirectory 
+                }
+                
+                if (mountedVolume == null) {
+                    println("Could not find mounted BOSS volume, falling back to manual installation")
+                    return@withContext openDMGForManualInstallation(downloadFile)
+                }
+                
+                // Find the .app bundle in the mounted volume
+                val appBundle = mountedVolume.listFiles()?.find { 
+                    it.name.endsWith(".app") && it.name.contains("BOSS", ignoreCase = true)
+                }
+                
+                if (appBundle == null) {
+                    println("Could not find BOSS.app in mounted volume, falling back to manual installation")
+                    cleanupDMG(mountedVolume)
+                    return@withContext openDMGForManualInstallation(downloadFile)
+                }
+                
+                // Create backup of current app
+                val backupPath = File("${currentAppPath}.backup")
+                if (backupPath.exists()) {
+                    backupPath.deleteRecursively()
+                }
+                File(currentAppPath).renameTo(backupPath)
+                
+                // Copy new app bundle to Applications
+                val copyResult = ProcessBuilder("cp", "-R", appBundle.absolutePath, currentAppPath)
+                    .start()
+                copyResult.waitFor()
+                
+                // Cleanup
+                cleanupDMG(mountedVolume)
+                
+                if (copyResult.exitValue() == 0) {
+                    println("✅ macOS update installed successfully")
+                    println("   Backup created at: ${backupPath.absolutePath}")
+                    true
+                } else {
+                    println("Failed to copy new app bundle, restoring backup")
+                    // Restore backup if copy failed
+                    backupPath.renameTo(File(currentAppPath))
+                    false
+                }
+                
             } catch (e: Exception) {
-                println("Failed to open DMG: ${e.message}")
-                false
+                println("Error during automated installation: ${e.message}")
+                println("Falling back to manual installation")
+                openDMGForManualInstallation(downloadFile)
             }
+        }
+    }
+    
+    private fun getCurrentApplicationPath(): String? {
+        return try {
+            println("🔍 Attempting to detect current application path...")
+            
+            // Method 1: Check java.library.path for .app bundle
+            val libraryPath = System.getProperty("java.library.path")
+            println("   java.library.path: $libraryPath")
+            
+            val bundlePath = libraryPath
+                ?.split(":")
+                ?.find { it.contains(".app") }
+                ?.let { "${it.substringBefore(".app")}.app" }
+            
+            if (bundlePath?.contains(".app") == true && File(bundlePath).exists()) {
+                println("✅ Found app bundle via library path: $bundlePath")
+                return bundlePath
+            }
+            
+            // Method 2: Try to find app bundle from current JAR/class location
+            val jarPath = this::class.java.protectionDomain.codeSource.location.path
+            println("   Current code source: $jarPath")
+            
+            var currentFile = File(jarPath)
+            // Walk up the directory tree looking for .app bundle
+            for (i in 0..5) { // Max 5 levels up
+                println("   Checking parent $i: ${currentFile.absolutePath}")
+                if (currentFile.name.endsWith(".app")) {
+                    println("✅ Found app bundle via directory traversal: ${currentFile.absolutePath}")
+                    return currentFile.absolutePath
+                }
+                currentFile = currentFile.parentFile ?: break
+            }
+            
+            // Method 3: Check if running from Applications folder
+            val applicationsPath = "/Applications/BOSS.app"
+            if (File(applicationsPath).exists()) {
+                println("✅ Found BOSS in Applications folder: $applicationsPath")
+                return applicationsPath
+            }
+            
+            // Method 4: Development mode - try to find existing BOSS.app in common locations
+            val commonPaths = listOf(
+                "/Applications/BOSS.app",
+                System.getProperty("user.home") + "/Applications/BOSS.app",
+                System.getProperty("user.home") + "/Desktop/BOSS.app"
+            )
+            
+            for (path in commonPaths) {
+                if (File(path).exists()) {
+                    println("✅ Found existing BOSS.app for development update: $path")
+                    return path
+                }
+            }
+            
+            println("❌ Could not determine application path - running in development mode?")
+            println("   This is normal when running from IDE/Gradle")
+            null
+            
+        } catch (e: Exception) {
+            println("❌ Error getting application path: ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+    
+    private fun openDMGForManualInstallation(downloadFile: File): Boolean {
+        return try {
+            val process = ProcessBuilder("open", downloadFile.absolutePath).start()
+            process.waitFor()
+            println("DMG opened for manual installation: ${downloadFile.absolutePath}")
+            true
+        } catch (e: Exception) {
+            println("Failed to open DMG: ${e.message}")
+            false
+        }
+    }
+    
+    private fun cleanupDMG(mountedVolume: File) {
+        try {
+            ProcessBuilder("hdiutil", "detach", mountedVolume.absolutePath, "-quiet")
+                .start()
+                .waitFor()
+            println("DMG unmounted successfully")
+        } catch (e: Exception) {
+            println("Warning: Could not unmount DMG: ${e.message}")
         }
     }
     

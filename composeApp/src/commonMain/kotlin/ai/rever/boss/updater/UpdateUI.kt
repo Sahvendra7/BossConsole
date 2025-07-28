@@ -421,11 +421,103 @@ fun UpdateSettingsSection(
                         )
                     }
                     is UpdateState.UpdateAvailable -> {
-                        Text(
-                            "🔄 Update available: v${currentState.updateInfo.latestVersion}",
-                            color = Color(0xFFFF9800),
-                            fontSize = 14.sp
-                        )
+                        Column {
+                            Text(
+                                "🔄 Update available: v${currentState.updateInfo.latestVersion}",
+                                color = Color(0xFFFF9800),
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        updateManager.downloadUpdate(currentState.updateInfo)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4CAF50)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Download Update", color = Color.White)
+                            }
+                        }
+                    }
+                    is UpdateState.Downloading -> {
+                        Column {
+                            Text(
+                                "📥 Downloading update...",
+                                color = Color(0xFF2196F3),
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = currentState.progress,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF2196F3)
+                            )
+                            Text(
+                                "${(currentState.progress * 100).toInt()}%",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                        }
+                    }
+                    is UpdateState.ReadyToInstall -> {
+                        Column {
+                            Text(
+                                "✅ Update downloaded successfully",
+                                color = Color(0xFF4CAF50),
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        updateManager.installUpdate(currentState.downloadPath)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFFF5722)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Install Now", color = Color.White)
+                            }
+                        }
+                    }
+                    is UpdateState.Installing -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color(0xFFFF5722),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "🔧 Installing update...",
+                                color = Color(0xFFFF5722),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                    is UpdateState.RestartRequired -> {
+                        Column {
+                            Text(
+                                "🔄 Update installed! Restart required.",
+                                color = Color(0xFF4CAF50),
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        restartApplication()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF9C27B0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Restart Application", color = Color.White)
+                            }
+                        }
                     }
                     is UpdateState.Error -> {
                         Text(
@@ -445,3 +537,6 @@ fun UpdateSettingsSection(
 private fun formatTime(instant: kotlinx.datetime.Instant): String {
     return instant.toString().substringBefore('T').replace('-', '/')
 }
+
+// Platform-specific restart function
+expect fun restartApplication()

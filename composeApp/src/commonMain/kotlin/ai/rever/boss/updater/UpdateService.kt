@@ -21,7 +21,7 @@ data class GitHubRelease(
 @Serializable
 data class GitHubAsset(
     val name: String,
-    val download_url: String? = null,
+    val browser_download_url: String? = null,
     val size: Long = 0,
     val content_type: String = ""
 )
