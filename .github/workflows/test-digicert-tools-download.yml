@@ -35,26 +35,30 @@ jobs:
           if ($testType -eq "github-release" -or $testType -eq "both") {
             Write-Host ""
             Write-Host "=== Testing GitHub Release Download ==="
-            Write-Host "URL: https://github.com/risa-labs-inc/BOSS-Kotlin/releases/download/keylocker-tools/Keylockertools-windows-x64.msi"
+            Write-Host "Using GitHub CLI to download from private repository release"
             
             try {
-              $toolsUrl = "https://github.com/risa-labs-inc/BOSS-Kotlin/releases/download/keylocker-tools/Keylockertools-windows-x64.msi"
-              Write-Host "Downloading DigiCert KeyLocker Tools from GitHub release..."
+              Write-Host "Downloading DigiCert KeyLocker Tools from GitHub release using gh CLI..."
               
-              # Download with retry logic
+              # Download with retry logic using GitHub CLI
               $maxRetries = 3
               for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
                 try {
                   Write-Host "  Attempt $attempt/$maxRetries..."
-                  Invoke-WebRequest -Uri $toolsUrl -OutFile "Keylockertools-windows-x64.msi" -TimeoutSec 300
+                  Write-Host "  Running: gh release download keylocker-tools --pattern Keylockertools-windows-x64.msi"
+                  
+                  # Use GitHub CLI to download from private repository
+                  gh release download keylocker-tools --pattern "Keylockertools-windows-x64.msi" --clobber
                   
                   # Verify download
                   if (Test-Path "Keylockertools-windows-x64.msi") {
                     $fileSize = (Get-Item "Keylockertools-windows-x64.msi").Length
                     Write-Host "  ✅ Download successful! File size: $([math]::Round($fileSize/1MB,2)) MB"
                     $downloadSuccess = $true
-                    $downloadMethod = "GitHub Release"
+                    $downloadMethod = "GitHub CLI"
                     break
+                  } else {
+                    Write-Host "  ❌ File not found after gh download"
                   }
                 } catch {
                   Write-Host "  ❌ Attempt $attempt failed: $($_.Exception.Message)"
@@ -66,11 +70,11 @@ jobs:
               }
               
               if (-not $downloadSuccess) {
-                Write-Host "❌ GitHub Release download failed after $maxRetries attempts"
+                Write-Host "❌ GitHub CLI download failed after $maxRetries attempts"
               }
               
             } catch {
-              Write-Host "❌ GitHub Release download exception: $($_.Exception.Message)"
+              Write-Host "❌ GitHub CLI download exception: $($_.Exception.Message)"
             }
           }
           
