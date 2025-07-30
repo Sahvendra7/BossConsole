@@ -304,6 +304,8 @@ jobs:
           echo "✅ Windows MSI build completed successfully"
 
       - name: 🔐 Sign Windows MSI with DigiCert
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           Write-Host "Setting up DigiCert code signing for Windows MSI..."
           
@@ -321,20 +323,18 @@ jobs:
             if ($apiKey -and $clientKey) {
               Write-Host "DigiCert credentials found, proceeding with code signing..."
               
-              # Install DigiCert signing tools from GitHub release with retry logic
+              # Install DigiCert signing tools from GitHub release using GitHub CLI
               Write-Host "Installing DigiCert KeyLocker Tools..."
               
-              $toolsUrl = "https://github.com/risa-labs-inc/BOSS-Kotlin/releases/download/keylocker-tools/Keylockertools-windows-x64.msi"
               $downloadSuccess = $false
               $maxRetries = 3
               
               for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
                 try {
-                  Write-Host "Downloading DigiCert KeyLocker Tools (attempt $attempt/$maxRetries)..."
-                  Write-Host "URL: $toolsUrl"
+                  Write-Host "Downloading DigiCert KeyLocker Tools (attempt $attempt/$maxRetries) using GitHub CLI..."
                   
-                  # Use Invoke-WebRequest with longer timeout
-                  Invoke-WebRequest -Uri $toolsUrl -OutFile "Keylockertools-windows-x64.msi" -TimeoutSec 300
+                  # Use GitHub CLI to download from private repository
+                  gh release download keylocker-tools --pattern "Keylockertools-windows-x64.msi" --clobber
                   
                   # Verify download
                   if (Test-Path "Keylockertools-windows-x64.msi") {
@@ -342,6 +342,8 @@ jobs:
                     Write-Host "Download successful! File size: $([math]::Round($fileSize/1MB,2)) MB"
                     $downloadSuccess = $true
                     break
+                  } else {
+                    Write-Host "File not found after gh download"
                   }
                   
                 } catch {
@@ -361,7 +363,7 @@ jobs:
               
               try {
                 Write-Host "Installing DigiCert KeyLocker Tools..."
-                Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "Keylockertools-windows-x64.msi", "/quiet", "/norestart" -Wait -TimeoutSec 300
+                $installProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "Keylockertools-windows-x64.msi", "/quiet", "/norestart" -Wait -PassThru
                 
                 # Verify installation
                 $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
