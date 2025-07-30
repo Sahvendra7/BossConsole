@@ -304,160 +304,139 @@ jobs:
           echo "✅ Windows MSI build completed successfully"
 
       - name: 🔐 Sign Windows MSI with DigiCert
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          Write-Host "Setting up DigiCert code signing for Windows MSI..."
+          Write-Host "🔐 Signing Windows MSI with DigiCert certificate..." -ForegroundColor Green
           
           # Find the MSI file
-          $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
-          $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
-          
-          if ($msiFiles) {
-            $msiFile = $msiFiles[0].FullName
-            Write-Host "Found MSI file: $msiFile"
-            
-            # Check if DigiCert secrets are available
-            $apiKey = "${{ secrets.DIGICERT_API_KEY }}"
-            $clientKey = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
-            if ($apiKey -and $clientKey) {
-              Write-Host "DigiCert credentials found, proceeding with code signing..."
-              
-              # Install DigiCert signing tools from GitHub release using GitHub CLI
-              Write-Host "Installing DigiCert KeyLocker Tools..."
-              
-              $downloadSuccess = $false
-              $maxRetries = 3
-              
-              for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-                try {
-                  Write-Host "Downloading DigiCert KeyLocker Tools (attempt $attempt/$maxRetries) using GitHub CLI..."
-                  
-                  # Use GitHub CLI to download from private repository
-                  gh release download keylocker-tools --pattern "Keylockertools-windows-x64.msi" --clobber
-                  
-                  # Verify download
-                  if (Test-Path "Keylockertools-windows-x64.msi") {
-                    $fileSize = (Get-Item "Keylockertools-windows-x64.msi").Length
-                    Write-Host "Download successful! File size: $([math]::Round($fileSize/1MB,2)) MB"
-                    $downloadSuccess = $true
-                    break
-                  } else {
-                    Write-Host "File not found after gh download"
-                  }
-                  
-                } catch {
-                  Write-Host "Download attempt $attempt failed: $($_.Exception.Message)"
-                  if ($attempt -lt $maxRetries) {
-                    Write-Host "Retrying in 10 seconds..."
-                    Start-Sleep -Seconds 10
-                  }
-                }
-              }
-              
-              if (-not $downloadSuccess) {
-                Write-Host "Failed to download DigiCert tools after $maxRetries attempts"
-                Write-Host "MSI will be uploaded unsigned"
-                return
-              }
-              
-              try {
-                Write-Host "Installing DigiCert KeyLocker Tools..."
-                $installProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "Keylockertools-windows-x64.msi", "/quiet", "/norestart" -Wait -PassThru
-                
-                # Verify installation
-                $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
-                if (Test-Path $smctlPath) {
-                  Write-Host "DigiCert KeyLocker Tools installed successfully"
-                } else {
-                  Write-Host "DigiCert tools installation verification failed"
-                  Write-Host "MSI will be uploaded unsigned"
-                  return
-                }
-                
-                # Cleanup installer
-                Remove-Item "Keylockertools-windows-x64.msi" -ErrorAction SilentlyContinue
-                
-              } catch {
-                Write-Host "Failed to install DigiCert tools: $($_.Exception.Message)"
-                Write-Host "MSI will be uploaded unsigned"
-                return
-              }
-              
-              # Set environment variables
-              $env:SM_HOST = "https://clientauth.one.digicert.com"
-              $env:SM_API_KEY = $apiKey
-              $env:SM_CLIENT_CERT_FILE = "Certificate_pkcs12.p12"
-              $env:SM_CLIENT_CERT_PASSWORD = $clientKey
-              $env:SM_CODE_SIGNING_CERT_SHA1_HASH = "${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}"
-              
-              # Setup DigiCert client certificate
-              Write-Host "Setting up DigiCert client authentication..."
-              $certBase64 = "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}"
-              [System.Convert]::FromBase64String($certBase64) | Set-Content "Certificate_pkcs12.p12" -Encoding Byte
-              
-              # Sign the MSI file
-              Write-Host "Signing MSI file with DigiCert certificate..."
-              $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
-              
-              if (Test-Path $smctlPath) {
-                try {
-                  & $smctlPath sign --keypair-alias="${{ secrets.DIGICERT_CERTIFICATE_ID }}" --input="$msiFile"
-                  
-                  if ($LASTEXITCODE -eq 0) {
-                    Write-Host "MSI file signed successfully with DigiCert"
-                    
-                    # Verify the signature
-                    Write-Host "Verifying MSI signature..."
-                    $signtoolPaths = @(
-                      "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
-                      "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
-                      "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\x64\signtool.exe"
-                    )
-                    
-                    $signtoolFound = $false
-                    foreach ($signtoolPath in $signtoolPaths) {
-                      if (Test-Path $signtoolPath) {
-                        Write-Host "Using signtool at: $signtoolPath"
-                        & $signtoolPath verify /pa "$msiFile"
-                        if ($LASTEXITCODE -eq 0) {
-                          Write-Host "MSI signature verified successfully"
-                        } else {
-                          Write-Host "MSI signature verification failed, but signing completed"
-                        }
-                        $signtoolFound = $true
-                        break
-                      }
-                    }
-                    
-                    if (-not $signtoolFound) {
-                      Write-Host "Signtool not found, but MSI was signed successfully"
-                    }
-                  } else {
-                    Write-Host "Failed to sign MSI file (exit code: $LASTEXITCODE)"
-                    Write-Host "MSI will be uploaded unsigned"
-                  }
-                } catch {
-                  Write-Host "Exception during signing: $($_.Exception.Message)"
-                  Write-Host "MSI will be uploaded unsigned"
-                }
-              } else {
-                Write-Host "DigiCert smctl.exe not found at expected location"
-                Write-Host "MSI will be uploaded unsigned"
-              }
-              
-              # Cleanup
-              Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
-              
-            } else {
-              Write-Host "DigiCert API credentials not found"
-              Write-Host "Add DIGICERT_API_KEY and DIGICERT_CLIENT_AUTH_KEY secrets for production builds"
-              Write-Host "MSI will be uploaded unsigned for testing"
-            }
-          } else {
-            Write-Host "MSI file not found for signing"
+          $msiFiles = Get-ChildItem "composeApp/build/compose/binaries/main/msi/BOSS-*.msi" -ErrorAction SilentlyContinue
+          if (-not $msiFiles) {
+            Write-Host "❌ MSI file not found for signing" -ForegroundColor Red
             exit 1
           }
+          
+          $msiFile = $msiFiles[0].FullName
+          Write-Host "📦 Found MSI: $msiFile" -ForegroundColor Yellow
+          
+          # Check if DigiCert secrets are available
+          if (-not "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}") {
+            Write-Host "⚠️ DigiCert certificate not found in secrets" -ForegroundColor Yellow
+            Write-Host "   MSI will be uploaded unsigned for testing"
+            return
+          }
+          
+          # Setup DigiCert client certificate
+          Write-Host "🔑 Setting up DigiCert client certificate..." -ForegroundColor Yellow
+          $certBase64 = "${{ secrets.DIGICERT_CLIENT_CERT_BASE64 }}"
+          [System.Convert]::FromBase64String($certBase64) | Set-Content "Certificate_pkcs12.p12" -Encoding Byte
+          
+          if (-not (Test-Path "Certificate_pkcs12.p12")) {
+            Write-Host "❌ Failed to create certificate file" -ForegroundColor Red
+            exit 1
+          }
+          
+          $certSize = (Get-Item "Certificate_pkcs12.p12").Length
+          Write-Host "✅ Certificate ready: $certSize bytes" -ForegroundColor Green
+          
+          # Set DigiCert environment variables for certificate sync
+          $env:SM_HOST = "https://clientauth.one.digicert.com"
+          $env:SM_API_KEY = "${{ secrets.DIGICERT_API_KEY }}"
+          $env:SM_CLIENT_CERT_FILE = "Certificate_pkcs12.p12"
+          $env:SM_CLIENT_CERT_PASSWORD = "${{ secrets.DIGICERT_CLIENT_AUTH_KEY }}"
+          
+          # Download and install DigiCert KeyLocker Tools (for certificate sync only)
+          Write-Host "📥 Installing DigiCert KeyLocker Tools..." -ForegroundColor Yellow
+          try {
+            Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -OutFile "Keylockertools-windows-x64.msi"
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "Keylockertools-windows-x64.msi", "/quiet", "/norestart" -Wait
+            Remove-Item "Keylockertools-windows-x64.msi" -ErrorAction SilentlyContinue
+            
+            $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
+            if (Test-Path $smctlPath) {
+              Write-Host "✅ DigiCert tools installed" -ForegroundColor Green
+              
+              # Sync certificates to Windows certificate store
+              Write-Host "🔄 Syncing certificates to Windows store..." -ForegroundColor Yellow
+              & $smctlPath windows certsync 2>&1 | Out-Host
+              
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Certificate sync completed" -ForegroundColor Green
+              } else {
+                Write-Host "⚠️ Certificate sync failed, proceeding with direct signing..." -ForegroundColor Yellow
+              }
+            }
+          } catch {
+            Write-Host "⚠️ DigiCert tools installation failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "   Proceeding with direct SignTool approach..." -ForegroundColor Yellow
+          }
+          
+          # Find SignTool
+          $signtoolPaths = @(
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
+            "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\x64\signtool.exe"
+          )
+          
+          $signtoolPath = $null
+          foreach ($path in $signtoolPaths) {
+            if (Test-Path $path) {
+              $signtoolPath = $path
+              break
+            }
+          }
+          
+          if (-not $signtoolPath) {
+            Write-Host "❌ SignTool not found!" -ForegroundColor Red
+            exit 1
+          }
+          
+          Write-Host "🔧 Using SignTool: $signtoolPath" -ForegroundColor Cyan
+          
+          # Sign with automatic certificate selection (most reliable approach)
+          Write-Host "🔐 Signing MSI with automatic certificate selection..." -ForegroundColor Yellow
+          $signOutput = & $signtoolPath sign /a /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
+          
+          Write-Host "📋 SignTool output:" -ForegroundColor Cyan
+          Write-Host $signOutput
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ MSI signed successfully!" -ForegroundColor Green
+            
+            # Verify signature
+            Write-Host "🔍 Verifying signature..." -ForegroundColor Yellow
+            $verifyOutput = & $signtoolPath verify /pa /v "$msiFile" 2>&1
+            
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Signature verification successful!" -ForegroundColor Green
+            } else {
+              Write-Host "⚠️ Signature verification failed, but file was signed successfully" -ForegroundColor Yellow
+              Write-Host $verifyOutput
+            }
+            
+            Write-Host "🎉 MSI signing completed: $msiFile" -ForegroundColor Green
+          } else {
+            Write-Host "❌ MSI signing failed!" -ForegroundColor Red
+            Write-Host "Error output: $signOutput" -ForegroundColor Red
+            
+            # Fallback: Try with specific certificate thumbprint if available
+            if ("${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}") {
+              Write-Host "🔄 Attempting fallback signing with certificate thumbprint..." -ForegroundColor Yellow
+              $thumbprint = "${{ secrets.DIGICERT_CERTIFICATE_THUMBPRINT }}"
+              $fallbackOutput = & $signtoolPath sign /sha1 $thumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
+              
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Fallback signing successful!" -ForegroundColor Green
+              } else {
+                Write-Host "❌ Fallback signing also failed" -ForegroundColor Red
+                Write-Host $fallbackOutput
+                exit 1
+              }
+            } else {
+              exit 1
+            }
+          }
+          
+          # Cleanup
+          Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
         shell: powershell
 
       - name: 📊 Verify Build Artifacts
