@@ -321,45 +321,65 @@ jobs:
             if ($apiKey -and $clientKey) {
               Write-Host "DigiCert credentials found, proceeding with code signing..."
               
-              # Download and install DigiCert signing tools
-              Write-Host "Installing DigiCert signing tools..."
+              # Install DigiCert signing tools from GitHub release with retry logic
+              Write-Host "Installing DigiCert KeyLocker Tools..."
               
-              # Try alternative URLs for DigiCert KeyLocker Tools
+              $toolsUrl = "https://github.com/risa-labs-inc/BOSS-Kotlin/releases/download/keylocker-tools/Keylockertools-windows-x64.msi"
               $downloadSuccess = $false
-              $urls = @(
-                "https://software.digicert.com/smstools/win/KeyLockerTools.exe",
-                "https://one.digicert.com/signingmanager/api-ui/v1/releases/KeylockerTools-windows-x64.exe"
-              )
+              $maxRetries = 3
               
-              foreach ($url in $urls) {
+              for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
                 try {
-                  Write-Host "Trying to download from: $url"
-                  Invoke-WebRequest -Uri $url -OutFile "KeyLockerTools.exe" -TimeoutSec 60
-                  $downloadSuccess = $true
-                  Write-Host "Downloaded DigiCert tools successfully"
-                  break
+                  Write-Host "Downloading DigiCert KeyLocker Tools (attempt $attempt/$maxRetries)..."
+                  Write-Host "URL: $toolsUrl"
+                  
+                  # Use Invoke-WebRequest with longer timeout
+                  Invoke-WebRequest -Uri $toolsUrl -OutFile "Keylockertools-windows-x64.msi" -TimeoutSec 300
+                  
+                  # Verify download
+                  if (Test-Path "Keylockertools-windows-x64.msi") {
+                    $fileSize = (Get-Item "Keylockertools-windows-x64.msi").Length
+                    Write-Host "Download successful! File size: $([math]::Round($fileSize/1MB,2)) MB"
+                    $downloadSuccess = $true
+                    break
+                  }
+                  
                 } catch {
-                  Write-Host "Failed to download from $url : $($_.Exception.Message)"
+                  Write-Host "Download attempt $attempt failed: $($_.Exception.Message)"
+                  if ($attempt -lt $maxRetries) {
+                    Write-Host "Retrying in 10 seconds..."
+                    Start-Sleep -Seconds 10
+                  }
                 }
               }
               
               if (-not $downloadSuccess) {
-                Write-Host "Failed to download DigiCert tools from all URLs"
-                Write-Host "Attempting to use pre-installed signing tools or skip signing..."
+                Write-Host "Failed to download DigiCert tools after $maxRetries attempts"
+                Write-Host "MSI will be uploaded unsigned"
+                return
+              }
+              
+              try {
+                Write-Host "Installing DigiCert KeyLocker Tools..."
+                Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "Keylockertools-windows-x64.msi", "/quiet", "/norestart" -Wait -TimeoutSec 300
                 
-                # Check if tools are already available
+                # Verify installation
                 $smctlPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smctl.exe"
                 if (Test-Path $smctlPath) {
-                  Write-Host "Found existing DigiCert tools at $smctlPath"
+                  Write-Host "DigiCert KeyLocker Tools installed successfully"
                 } else {
-                  Write-Host "DigiCert tools not available, MSI will be uploaded unsigned"
+                  Write-Host "DigiCert tools installation verification failed"
+                  Write-Host "MSI will be uploaded unsigned"
                   return
                 }
-              } else {
-                # Install the downloaded tools
-                Write-Host "Installing DigiCert KeyLocker Tools..."
-                Start-Process -FilePath "KeyLockerTools.exe" -ArgumentList "/S" -Wait
-                Write-Host "DigiCert tools installed successfully"
+                
+                # Cleanup installer
+                Remove-Item "Keylockertools-windows-x64.msi" -ErrorAction SilentlyContinue
+                
+              } catch {
+                Write-Host "Failed to install DigiCert tools: $($_.Exception.Message)"
+                Write-Host "MSI will be uploaded unsigned"
+                return
               }
               
               # Set environment variables
