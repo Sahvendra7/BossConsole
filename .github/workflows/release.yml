@@ -369,17 +369,8 @@ jobs:
             Write-Host "   Proceeding with direct SignTool approach..." -ForegroundColor Yellow
           }
           
-          # Import P12 certificate into Windows certificate store for SignTool
-          Write-Host "[IMPORT] Importing P12 certificate into Windows certificate store..." -ForegroundColor Yellow
-          try {
-            $certPassword = ConvertTo-SecureString "${{ secrets.DIGICERT_P12_PASSWORD }}" -AsPlainText -Force
-            $cert = Import-PfxCertificate -FilePath "Certificate_pkcs12.p12" -CertStoreLocation Cert:\CurrentUser\My -Password $certPassword
-            Write-Host "[OK] Certificate imported successfully: $($cert.Thumbprint)" -ForegroundColor Green
-            $importedThumbprint = $cert.Thumbprint
-          } catch {
-            Write-Host "[ERROR] Failed to import P12 certificate: $($_.Exception.Message)" -ForegroundColor Red
-            exit 1
-          }
+          # Use P12 file directly with SignTool (same as local approach)
+          Write-Host "[SETUP] Preparing P12 certificate for direct SignTool usage..." -ForegroundColor Yellow
           
           # Find SignTool
           $signtoolPaths = @(
@@ -403,9 +394,9 @@ jobs:
           
           Write-Host "[TOOL] Using SignTool: $signtoolPath" -ForegroundColor Cyan
           
-          # Sign with imported certificate thumbprint (most reliable approach)
-          Write-Host "[SIGN] Signing MSI with imported certificate thumbprint..." -ForegroundColor Yellow
-          $signOutput = & $signtoolPath sign /sha1 $importedThumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
+          # Sign directly with P12 file (same as local approach that worked)
+          Write-Host "[SIGN] Signing MSI directly with P12 certificate file..." -ForegroundColor Yellow
+          $signOutput = & $signtoolPath sign /f "Certificate_pkcs12.p12" /p "${{ secrets.DIGICERT_P12_PASSWORD }}" /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
           
           Write-Host "[OUTPUT] SignTool output:" -ForegroundColor Cyan
           Write-Host $signOutput
@@ -450,11 +441,7 @@ jobs:
           # Cleanup
           Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
           
-          # Remove certificate from store for security
-          if ($importedThumbprint) {
-            Write-Host "[CLEANUP] Removing certificate from store..." -ForegroundColor Yellow
-            Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq $importedThumbprint } | Remove-Item -ErrorAction SilentlyContinue
-          }
+          # Certificate cleanup not needed for direct P12 approach
         shell: powershell
 
       - name: 📊 Verify Build Artifacts
