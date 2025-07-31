@@ -403,9 +403,9 @@ jobs:
           
           Write-Host "[TOOL] Using SignTool: $signtoolPath" -ForegroundColor Cyan
           
-          # Sign with automatic certificate selection (most reliable approach)
-          Write-Host "[SIGN] Signing MSI with automatic certificate selection..." -ForegroundColor Yellow
-          $signOutput = & $signtoolPath sign /a /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
+          # Sign with imported certificate thumbprint (most reliable approach)
+          Write-Host "[SIGN] Signing MSI with imported certificate thumbprint..." -ForegroundColor Yellow
+          $signOutput = & $signtoolPath sign /sha1 $importedThumbprint /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
           
           Write-Host "[OUTPUT] SignTool output:" -ForegroundColor Cyan
           Write-Host $signOutput
