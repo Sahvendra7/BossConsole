@@ -372,7 +372,7 @@ jobs:
           # Import P12 certificate into Windows certificate store for SignTool
           Write-Host "[IMPORT] Importing P12 certificate into Windows certificate store..." -ForegroundColor Yellow
           try {
-            $certPassword = ConvertTo-SecureString "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}" -AsPlainText -Force
+            $certPassword = ConvertTo-SecureString "${{ secrets.DIGICERT_P12_PASSWORD }}" -AsPlainText -Force
             $cert = Import-PfxCertificate -FilePath "Certificate_pkcs12.p12" -CertStoreLocation Cert:\CurrentUser\My -Password $certPassword
             Write-Host "[OK] Certificate imported successfully: $($cert.Thumbprint)" -ForegroundColor Green
             $importedThumbprint = $cert.Thumbprint
