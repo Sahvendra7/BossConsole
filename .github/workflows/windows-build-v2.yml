@@ -48,7 +48,7 @@ jobs:
         shell: powershell
 
       - name: Sign Windows MSI with DigiCert KeyLocker
-        if: secrets.CODE_SIGNING_CERT_HOST
+        if: ${{ secrets.CODE_SIGNING_CERT_HOST != '' }}
         env:
           CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
