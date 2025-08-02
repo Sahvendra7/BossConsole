@@ -1,0 +1,81 @@
+name: 🪟 Windows Build & Sign
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 🏗️ Build Windows MSI
+        run: |
+          echo "🏗️ Building Windows MSI..."
+          ./gradlew packageMsi
+          echo "✅ Windows MSI build completed successfully"
+
+      - name: 🔍 Find MSI File
+        id: find-msi
+        run: |
+          $msiFiles = Get-ChildItem "composeApp/build/compose/binaries/main/msi/BOSS-*.msi" -ErrorAction SilentlyContinue
+          if ($msiFiles) {
+            $msiPath = $msiFiles[0].FullName
+            Write-Host "Found MSI: $msiPath"
+            echo "msi-path=$msiPath" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "MSI file not found!"
+            exit 1
+          }
+        shell: powershell
+
+      - name: 🔐 Sign Windows MSI with DigiCert KeyLocker
+        if: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+        env:
+          CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+          CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          CERTIFICATE_SHA1_HASH: ${{ secrets.CODE_SIGNING_CERT_SHA1_HASH }}
+          CLIENT_CERTIFICATE: ${{ secrets.CODE_SIGNING_CLIENT_CERT }}
+          CLIENT_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+          KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
+        uses: cognitedata/code-sign-action@v3
+        with:
+          path-to-binary: ${{ steps.find-msi.outputs.msi-path }}
+
+      - name: 📊 Verify Build Artifacts
+        run: |
+          $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
+          $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
+          if ($msiFiles) {
+            Write-Host "✅ MSI found: $($msiFiles[0].FullName)"
+            Write-Host "   Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
+          } else {
+            Write-Host "❌ MSI not found at expected location"
+            exit 1
+          }
+        shell: powershell
+
+      - name: 📤 Upload Windows MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-windows-msi
+          path: composeApp/build/compose/binaries/main/msi/
+          retention-days: 30
