@@ -103,7 +103,7 @@ jobs:
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         uses: digicert/ssm-code-signing@v1.1.0
         env:
-          SM_HOST: https://one.digicert.com
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
@@ -115,7 +115,7 @@ jobs:
           smctl credentials save ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }} ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
         shell: cmd
         env:
-          SM_HOST: https://one.digicert.com
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
@@ -123,10 +123,10 @@ jobs:
       - name: Run SMCTL Healthcheck
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
-          smctl healthcheck --verbose
+          smctl healthcheck
         shell: cmd
         env:
-          SM_HOST: https://one.digicert.com
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
@@ -139,7 +139,7 @@ jobs:
           smctl sign --keypair-alias "${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}" --input "${{ steps.find-msi.outputs.msi-path }}" --verbose
         shell: bash
         env:
-          SM_HOST: https://one.digicert.com
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
