@@ -15,25 +15,25 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - name: 📥 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ☕ Setup JDK
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🎯 Setup Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: 🏗️ Build Windows MSI
+      - name: Build Windows MSI
         run: |
-          echo "🏗️ Building Windows MSI..."
+          echo "Building Windows MSI..."
           ./gradlew packageMsi
-          echo "✅ Windows MSI build completed successfully"
+          echo "Windows MSI build completed successfully"
 
-      - name: 🔍 Find MSI File
+      - name: Find MSI File
         id: find-msi
         run: |
           $msiFiles = Get-ChildItem "composeApp/build/compose/binaries/main/msi/BOSS-*.msi" -ErrorAction SilentlyContinue
@@ -47,7 +47,7 @@ jobs:
           }
         shell: powershell
 
-      - name: 🔐 Sign Windows MSI with DigiCert KeyLocker
+      - name: Sign Windows MSI with DigiCert KeyLocker
         if: secrets.CODE_SIGNING_CERT_HOST
         env:
           CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
@@ -60,7 +60,7 @@ jobs:
         with:
           path-to-binary: ${{ steps.find-msi.outputs.msi-path }}
 
-      - name: 📊 Verify Build Artifacts
+      - name: Verify Build Artifacts
         run: |
           $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
           $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
@@ -73,7 +73,7 @@ jobs:
           }
         shell: powershell
 
-      - name: 📤 Upload Windows MSI
+      - name: Upload Windows MSI
         uses: actions/upload-artifact@v4
         with:
           name: boss-windows-msi
