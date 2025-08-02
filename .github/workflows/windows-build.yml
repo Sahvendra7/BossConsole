@@ -47,30 +47,65 @@ jobs:
           }
         shell: powershell
 
-      - name: Check if signing secret is available
-        id: check-secret
+      - name: Sign Windows MSI with DigiCert
+        if: ${{ secrets.CODE_SIGNING_CLIENT_CERT != '' }}
         run: |
-          if [ -n "$CERT_HOST" ]; then
-            echo "can_sign=true" >> $GITHUB_OUTPUT
-          else
-            echo "can_sign=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-        env:
-          CERT_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
-
-      - name: Sign Windows MSI with DigiCert KeyLocker
-        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
-        env:
-          CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
-          CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          CERTIFICATE_SHA1_HASH: ${{ secrets.CODE_SIGNING_CERT_SHA1_HASH }}
-          CLIENT_CERTIFICATE: ${{ secrets.CODE_SIGNING_CLIENT_CERT }}
-          CLIENT_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
-          KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
-        uses: cognitedata/code-sign-action@v3
-        with:
-          path-to-binary: ${{ steps.find-msi.outputs.msi-path }}
+          Write-Host "[SIGN] Signing Windows MSI with DigiCert certificate..." -ForegroundColor Green
+          
+          # Get MSI file path
+          $msiFile = "${{ steps.find-msi.outputs.msi-path }}"
+          Write-Host "[INFO] MSI to sign: $msiFile" -ForegroundColor Yellow
+          
+          # Setup DigiCert client certificate
+          Write-Host "[KEY] Setting up DigiCert client certificate..." -ForegroundColor Yellow
+          $certBase64 = "${{ secrets.CODE_SIGNING_CLIENT_CERT }}"
+          [System.Convert]::FromBase64String($certBase64) | Set-Content "Certificate_pkcs12.p12" -Encoding Byte
+          
+          # Find SignTool
+          $signtoolPaths = @(
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+            "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
+            "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\x64\signtool.exe"
+          )
+          
+          $signtoolPath = $null
+          foreach ($path in $signtoolPaths) {
+            if (Test-Path $path) {
+              $signtoolPath = $path
+              break
+            }
+          }
+          
+          if (-not $signtoolPath) {
+            Write-Host "[ERROR] SignTool not found!" -ForegroundColor Red
+            exit 1
+          }
+          
+          Write-Host "[TOOL] Using SignTool: $signtoolPath" -ForegroundColor Cyan
+          
+          # Sign with P12 file
+          Write-Host "[SIGN] Signing MSI with P12 certificate..." -ForegroundColor Yellow
+          $signOutput = & $signtoolPath sign /f "Certificate_pkcs12.p12" /p "${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /v "$msiFile" 2>&1
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "[SUCCESS] MSI signed successfully!" -ForegroundColor Green
+            
+            # Verify signature
+            $verifyOutput = & $signtoolPath verify /pa /v "$msiFile" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "[OK] Signature verification successful!" -ForegroundColor Green
+            } else {
+              Write-Host "[WARN] Signature verification failed, but file was signed" -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[ERROR] MSI signing failed!" -ForegroundColor Red
+            Write-Host $signOutput
+            exit 1
+          }
+          
+          # Cleanup
+          Remove-Item "Certificate_pkcs12.p12" -ErrorAction SilentlyContinue
+        shell: powershell
 
       - name: Verify Build Artifacts
         run: |
