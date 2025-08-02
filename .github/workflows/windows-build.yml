@@ -108,6 +108,29 @@ jobs:
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
+      - name: Reset SMCTL Credentials
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        run: |
+          smctl credentials delete
+          smctl credentials save ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }} ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+        shell: cmd
+        env:
+          SM_HOST: https://one.digicert.com
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+
+      - name: Run SMCTL Healthcheck
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        run: |
+          smctl healthcheck --verbose
+        shell: cmd
+        env:
+          SM_HOST: https://one.digicert.com
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+
       - name: Sign Windows MSI with DigiCert KeyLocker
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
@@ -120,6 +143,18 @@ jobs:
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
           SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+
+      - name: Check SMKSP Log (for diagnostics)
+        if: always()  # Runs even if signing fails
+        run: |
+          $logPath = "$env:USERPROFILE\.signingmanager\logs\smksp.log"
+          if (Test-Path $logPath) {
+            Write-Host "SMKSP Log Contents:"
+            Get-Content $logPath -Tail 50  # Last 50 lines for recent errors
+          } else {
+            Write-Host "SMKSP log not found."
+          }
+        shell: powershell
 
       - name: Verify Build Artifacts
         run: |
