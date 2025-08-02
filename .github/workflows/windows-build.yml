@@ -55,6 +55,7 @@ jobs:
           else
             echo "can_sign=false" >> $GITHUB_OUTPUT
           fi
+        shell: bash
         env:
           CERT_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
 
