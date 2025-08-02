@@ -1,4 +1,4 @@
-name: Windows Build & Sign
+name: Windows Build and Sign
 
 on:
   push:
@@ -47,8 +47,19 @@ jobs:
           }
         shell: powershell
 
+      - name: Check if signing secret is available
+        id: check-secret
+        run: |
+          if [ -n "$CERT_HOST" ]; then
+            echo "can_sign=true" >> $GITHUB_OUTPUT
+          else
+            echo "can_sign=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          CERT_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+
       - name: Sign Windows MSI with DigiCert KeyLocker
-        if: ${{ secrets.CODE_SIGNING_CERT_HOST != '' }}
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         env:
           CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
@@ -66,7 +77,7 @@ jobs:
           $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
           if ($msiFiles) {
             Write-Host "MSI found: $($msiFiles[0].FullName)"
-            Write-Host "   Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
+            Write-Host "Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
           } else {
             Write-Host "MSI not found at expected location"
             exit 1
