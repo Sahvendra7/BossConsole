@@ -92,13 +92,12 @@ jobs:
           CLIENT_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
           KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
 
-      - name: Decode Client Certificate
+      - name: Setup Client Certificate  
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
-          $certContent = "${{ secrets.CODE_SIGNING_CLIENT_CERT }}"
-          $certBytes = [System.Convert]::FromBase64String($certContent)
-          [System.IO.File]::WriteAllBytes("D:\Certificate_pkcs12.p12", $certBytes)
-        shell: powershell
+          echo "${{ secrets.CODE_SIGNING_CLIENT_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
+          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
+        shell: bash
 
       - name: Install DigiCert STM Client Tools
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
@@ -112,8 +111,10 @@ jobs:
       - name: Sign Windows MSI with DigiCert KeyLocker
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
-          smctl sign --keypair-alias ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }} --input ${{ steps.find-msi.outputs.msi-path }} --verbose
-        shell: cmd
+          echo "Signing MSI: ${{ steps.find-msi.outputs.msi-path }}"
+          echo "Using keypair: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}"
+          smctl sign --keypair-alias "${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}" --input "${{ steps.find-msi.outputs.msi-path }}" --verbose
+        shell: bash
         env:
           SM_HOST: https://one.digicert.com
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
