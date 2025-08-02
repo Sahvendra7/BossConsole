@@ -48,7 +48,7 @@ jobs:
         shell: powershell
 
       - name: Sign Windows MSI with DigiCert KeyLocker
-        if: secrets.CODE_SIGNING_CERT_HOST
+        if: ${{ secrets.CODE_SIGNING_CERT_HOST != '' }}
         env:
           CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
@@ -65,10 +65,10 @@ jobs:
           $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
           $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
           if ($msiFiles) {
-            Write-Host "✅ MSI found: $($msiFiles[0].FullName)"
+            Write-Host "MSI found: $($msiFiles[0].FullName)"
             Write-Host "   Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
           } else {
-            Write-Host "❌ MSI not found at expected location"
+            Write-Host "MSI not found at expected location"
             exit 1
           }
         shell: powershell
