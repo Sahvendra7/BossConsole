@@ -92,22 +92,37 @@ jobs:
           CLIENT_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
           KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
 
+      - name: Decode Client Certificate
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        run: |
+          $certContent = "${{ secrets.CODE_SIGNING_CLIENT_CERT }}"
+          $certBytes = [System.Convert]::FromBase64String($certContent)
+          [System.IO.File]::WriteAllBytes("D:\Certificate_pkcs12.p12", $certBytes)
+        shell: powershell
+
+      - name: Install DigiCert STM Client Tools
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        uses: digicert/ssm-code-signing@v1.1.0
+        env:
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
+
       - name: Sign Windows MSI with DigiCert KeyLocker
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        run: |
+          smctl sign --keypair-alias ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }} --input ${{ steps.find-msi.outputs.msi-path }} --verbose
+        shell: cmd
         env:
-          CERTIFICATE_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
-          CERTIFICATE_HOST_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          CERTIFICATE_SHA1_HASH: ${{ secrets.CODE_SIGNING_CERT_SHA1_HASH }}
-          CLIENT_CERTIFICATE: ${{ secrets.CODE_SIGNING_CLIENT_CERT }}
-          CLIENT_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
-          KEYPAIR_ALIAS: ${{ secrets.CODE_SIGNING_KEYPAIR_ALIAS }}
-        uses: cognitedata/code-sign-action@v3
-        with:
-          path-to-binary: ${{ steps.find-msi.outputs.msi-path }}
+          SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
+          SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Verify Build Artifacts
         run: |
-          $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
+          $msiPath = "$env:GITHUB_WORKSPACE\composeApp\build\compose\binaries\main\msi\BOSS-*.msi"
           $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
           if ($msiFiles) {
             Write-Host "MSI found: $($msiFiles[0].FullName)"
