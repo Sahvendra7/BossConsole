@@ -52,8 +52,41 @@ jobs:
         # Create assets directory
         mkdir -p release-assets
         
-        # Download all release assets using GitHub CLI
-        gh release download "${RELEASE_TAG}" --dir release-assets --repo ${{ github.repository }}
+        # Wait for assets to be uploaded (with retry mechanism)
+        echo "🔄 Waiting for release assets to be available..."
+        MAX_RETRIES=10
+        RETRY_COUNT=0
+        ASSETS_FOUND=false
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Checking for assets..."
+          
+          # Check if release has assets
+          ASSET_COUNT=$(gh api repos/${{ github.repository }}/releases/tags/${RELEASE_TAG} --jq '.assets | length')
+          
+          if [ "$ASSET_COUNT" -gt 0 ]; then
+            echo "✅ Found $ASSET_COUNT assets, proceeding with download..."
+            ASSETS_FOUND=true
+            break
+          else
+            echo "⏳ No assets found yet, waiting 30 seconds..."
+            sleep 30
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          fi
+        done
+        
+        if [ "$ASSETS_FOUND" = false ]; then
+          echo "⚠️  No assets found after $MAX_RETRIES attempts"
+          echo "This might be normal for releases without binary assets"
+        fi
+        
+        # Download all release assets using GitHub CLI (if any exist)
+        if [ "$ASSETS_FOUND" = true ]; then
+          echo "📥 Downloading release assets..."
+          gh release download "${RELEASE_TAG}" --dir release-assets --repo ${{ github.repository }}
+        else
+          echo "📝 No assets to download, proceeding with release creation only"
+        fi
         
         # Save release body to file safely
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -64,13 +97,8 @@ jobs:
         EOF
         fi
         
-        # Validate download success
-        if [ ! -d "release-assets" ] || [ -z "$(ls -A release-assets/ | grep -v release-body.txt)" ]; then
-          echo "Warning: No release assets downloaded (this may be normal for some releases)"
-        fi
-        
         # List downloaded assets
-        echo "Downloaded assets:"
+        echo "📦 Contents of release-assets directory:"
         ls -la release-assets/
       env:
         GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
