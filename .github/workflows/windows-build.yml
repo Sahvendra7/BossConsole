@@ -95,9 +95,22 @@ jobs:
       - name: Setup Client Certificate  
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
         run: |
-          echo "${{ secrets.CODE_SIGNING_CLIENT_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
-          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
+          echo "${{ secrets.CODE_SIGNING_CLIENT_CERT }}" | base64 --decode > "$TEMP/Certificate_pkcs12.p12"
+          echo "SM_CLIENT_CERT_FILE=$TEMP\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
         shell: bash
+
+      - name: Verify Client Cert File Exists
+        if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
+        run: |
+          $certPath = "$env:TEMP\Certificate_pkcs12.p12"  # Match your new path
+          if (Test-Path $certPath) {
+            Write-Host "Cert file exists at $certPath"
+            Write-Host "File size: $((Get-Item $certPath).Length) bytes"
+          } else {
+            Write-Host "Cert file MISSING at $certPath"
+            exit 1
+          }
+        shell: powershell
 
       - name: Install DigiCert STM Client Tools
         if: ${{ steps.check-secret.outputs.can_sign == 'true' }}
@@ -105,7 +118,7 @@ jobs:
         env:
           SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ env.TEMP }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Reset SMCTL Credentials
@@ -117,7 +130,7 @@ jobs:
         env:
           SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ env.TEMP }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Run SMCTL Healthcheck
@@ -128,7 +141,7 @@ jobs:
         env:
           SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ env.TEMP }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Sign Windows MSI with DigiCert KeyLocker
@@ -141,7 +154,7 @@ jobs:
         env:
           SM_HOST: ${{ secrets.CODE_SIGNING_CERT_HOST }}
           SM_API_KEY: ${{ secrets.CODE_SIGNING_CERT_HOST_API_KEY }}
-          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_FILE: ${{ env.TEMP }}\Certificate_pkcs12.p12
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CLIENT_CERT_PASSWORD }}
 
       - name: Check SMKSP Log (for diagnostics)
