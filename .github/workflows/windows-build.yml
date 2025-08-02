@@ -1,4 +1,4 @@
-name: 🪟 Windows Build & Sign
+name: Windows Build & Sign
 
 on:
   push:
