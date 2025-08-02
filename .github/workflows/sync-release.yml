@@ -1,4 +1,4 @@
-name: Sync Release to Public Repository
+name: 🔄 Sync Release to Public Repository
 
 on:
   release:
