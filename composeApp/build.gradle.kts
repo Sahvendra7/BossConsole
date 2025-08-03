@@ -312,8 +312,7 @@ compose.desktop {
                 packageName = "boss"
                 debMaintainer = "support@risalabs.ai"
                 menuGroup = "Development"
-                // Icon will be set later when PNG version is available
-                // iconFile.set(project.file("src/desktopMain/resources/boss_icon.png"))
+                iconFile.set(project.file("src/desktopMain/resources/boss_icon.png"))
             }
             
             macOS {
