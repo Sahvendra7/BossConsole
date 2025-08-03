@@ -274,7 +274,13 @@ compose.desktop {
         )
         
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
+            targetFormats(
+                TargetFormat.Dmg,           // macOS
+                TargetFormat.Msi,           // Windows  
+                TargetFormat.Deb,           // Linux - Ubuntu/Debian
+                TargetFormat.Rpm,           // Linux - RHEL/Fedora
+                TargetFormat.AppImage       // Linux - Universal
+            )
             packageName = "BOSS"
             packageVersion = appVersion
             description = "Business Operating System Service - Intelligent service automation platform"
@@ -300,6 +306,14 @@ compose.desktop {
                 
                 // Windows code signing is handled by external tools (signtool.exe)
                 // Configuration for MSI signing is done in the CI/CD pipeline
+            }
+            
+            linux {
+                packageName = "boss"
+                debMaintainer = "support@risalabs.ai"
+                menuGroup = "Development"
+                // Icon will be set later when PNG version is available
+                // iconFile.set(project.file("src/desktopMain/resources/boss_icon.png"))
             }
             
             macOS {
