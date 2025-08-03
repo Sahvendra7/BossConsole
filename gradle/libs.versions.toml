@@ -23,7 +23,7 @@ precompose = "1.6.2"
 pty4j = "0.12.13"
 purejavacomm = "0.0.11.1"
 jna = "5.13.0"
-slf4j = "2.0.16"
+slf4j = "2.0.17"
 uiAndroid = "1.8.2"
 
 [libraries]
