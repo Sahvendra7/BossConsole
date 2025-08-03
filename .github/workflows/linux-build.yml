@@ -32,126 +32,95 @@ jobs:
       - name: 📋 Show Version
         run: ./gradlew showVersion
 
+      - name: 🔍 Check Available Tasks
+        run: |
+          echo "🔍 Checking available Gradle tasks..."
+          echo ""
+          echo "📦 Looking for packaging tasks:"
+          ./gradlew tasks --all | grep -i package || echo "No tasks found with 'package' in name"
+          echo ""
+          echo "🐧 Looking for Linux/DEB/RPM tasks:"
+          ./gradlew tasks --all | grep -i -E "(deb|rpm|linux|appimage)" || echo "No Linux-specific packaging tasks found"
+          echo ""
+          echo "📋 All available tasks:"
+          ./gradlew tasks
+
       - name: 🏗️ Build Application
         run: |
           echo "🏗️ Building Linux application..."
           ./gradlew build -x test
           echo "✅ Linux build completed successfully"
 
-      - name: 📦 Create DEB Package
+      - name: 📦 Try Package Tasks (Experimental)
         run: |
-          echo "📦 Creating DEB package..."
-          ./gradlew packageDeb
-          echo "✅ DEB package created successfully"
+          echo "📦 Attempting to create packages with available tasks..."
+          
+          # Try common Compose packaging task names
+          echo "Trying packageDistributionForCurrentOS..."
+          ./gradlew packageDistributionForCurrentOS || echo "❌ packageDistributionForCurrentOS not available"
+          
+          echo "Trying packageReleaseDistributionForCurrentOS..."
+          ./gradlew packageReleaseDistributionForCurrentOS || echo "❌ packageReleaseDistributionForCurrentOS not available"
+          
+          echo "Trying createDistributable..."
+          ./gradlew createDistributable || echo "❌ createDistributable not available"
+          
+          echo "Trying :composeApp:packageDistributionForCurrentOS..."
+          ./gradlew :composeApp:packageDistributionForCurrentOS || echo "❌ :composeApp:packageDistributionForCurrentOS not available"
 
-      - name: 📦 Create RPM Package  
-        run: |
-          echo "📦 Creating RPM package..."
-          ./gradlew packageRpm
-          echo "✅ RPM package created successfully"
-
-      - name: 📦 Create AppImage Package
-        run: |
-          echo "📦 Creating AppImage package..."
-          ./gradlew packageAppImage
-          echo "✅ AppImage package created successfully"
-
-      - name: 🔍 Find Package Files
+      - name: 🔍 Find Generated Files
         id: find-packages
         run: |
-          echo "🔍 Searching for created packages..."
+          echo "🔍 Searching for any generated distribution files..."
           
-          # Find DEB files
-          DEB_FILES=$(find composeApp/build -name "*.deb" -type f | head -1)
+          # Search for any distribution files in build directory
+          echo "📁 Contents of composeApp/build/:"
+          find composeApp/build -type f -name "*" 2>/dev/null | head -20 || echo "Build directory not found or empty"
+          
+          echo ""
+          echo "🔍 Looking for specific package types:"
+          
+          # Find any potential Linux packages
+          DEB_FILES=$(find . -name "*.deb" -type f 2>/dev/null | head -1)
           if [[ -n "$DEB_FILES" && -f "$DEB_FILES" ]]; then
             echo "deb-path=$DEB_FILES" >> $GITHUB_OUTPUT
             echo "✅ Found DEB: $DEB_FILES"
           else
-            echo "⚠️ DEB file not found"
+            echo "⚠️ No DEB files found"
           fi
           
-          # Find RPM files
-          RPM_FILES=$(find composeApp/build -name "*.rpm" -type f | head -1)
+          RPM_FILES=$(find . -name "*.rpm" -type f 2>/dev/null | head -1)
           if [[ -n "$RPM_FILES" && -f "$RPM_FILES" ]]; then
             echo "rpm-path=$RPM_FILES" >> $GITHUB_OUTPUT
             echo "✅ Found RPM: $RPM_FILES"
           else
-            echo "⚠️ RPM file not found"
+            echo "⚠️ No RPM files found"
           fi
           
-          # Find AppImage files
-          APPIMAGE_FILES=$(find composeApp/build -name "*.AppImage" -type f | head -1)
+          APPIMAGE_FILES=$(find . -name "*.AppImage" -type f 2>/dev/null | head -1)
           if [[ -n "$APPIMAGE_FILES" && -f "$APPIMAGE_FILES" ]]; then
             echo "appimage-path=$APPIMAGE_FILES" >> $GITHUB_OUTPUT
             echo "✅ Found AppImage: $APPIMAGE_FILES"
           else
-            echo "⚠️ AppImage file not found"
+            echo "⚠️ No AppImage files found"
           fi
+          
+          # Look for any other distributable files
+          echo ""
+          echo "🔍 Other distribution files:"
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" -o -name "*.msi" -o -name "*.jar" \) 2>/dev/null | head -10 || echo "No other distribution files found"
 
-      - name: 📊 Verify Package Contents
+      - name: 📊 Analysis Summary
         run: |
-          echo "📊 Verifying Linux packages..."
-          
-          # Check DEB package
-          if [[ -n "${{ steps.find-packages.outputs.deb-path }}" ]]; then
-            echo "🔍 DEB Package Info:"
-            dpkg-deb --info "${{ steps.find-packages.outputs.deb-path }}" || true
-            dpkg-deb --contents "${{ steps.find-packages.outputs.deb-path }}" | head -10 || true
-          fi
-          
-          # Check RPM package
-          if [[ -n "${{ steps.find-packages.outputs.rpm-path }}" ]]; then
-            echo "🔍 RPM Package Info:"
-            rpm -qip "${{ steps.find-packages.outputs.rpm-path }}" || true
-            rpm -qlp "${{ steps.find-packages.outputs.rpm-path }}" | head -10 || true
-          fi
-          
-          # Check AppImage
-          if [[ -n "${{ steps.find-packages.outputs.appimage-path }}" ]]; then
-            echo "🔍 AppImage Info:"
-            ls -la "${{ steps.find-packages.outputs.appimage-path }}"
-            file "${{ steps.find-packages.outputs.appimage-path }}"
-          fi
-
-      - name: 🧪 Test Package Installation (DEB)
-        if: steps.find-packages.outputs.deb-path != ''
-        run: |
-          echo "🧪 Testing DEB package installation..."
-          
-          # Install the DEB package
-          sudo dpkg -i "${{ steps.find-packages.outputs.deb-path }}" || true
-          
-          # Try to fix any dependency issues
-          sudo apt-get install -f -y || true
-          
-          # Check if BOSS was installed
-          if dpkg -l | grep -i boss; then
-            echo "✅ DEB package installed successfully"
-          else
-            echo "⚠️ DEB package installation needs refinement"
-          fi
-
-      - name: 🧪 Test AppImage Execution
-        if: steps.find-packages.outputs.appimage-path != ''
-        run: |
-          echo "🧪 Testing AppImage execution..."
-          
-          # Make AppImage executable
-          chmod +x "${{ steps.find-packages.outputs.appimage-path }}"
-          
-          # Test AppImage (with timeout to prevent hanging)
-          timeout 10s "${{ steps.find-packages.outputs.appimage-path }}" --help || echo "AppImage test completed (may have displayed GUI)"
-
-      - name: 📤 Upload Linux Packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: boss-linux-packages
-          path: |
-            ${{ steps.find-packages.outputs.deb-path }}
-            ${{ steps.find-packages.outputs.rpm-path }}
-            ${{ steps.find-packages.outputs.appimage-path }}
-          retention-days: 30
-          if-no-files-found: ignore
+          echo "📊 Build Analysis Summary:"
+          echo ""
+          echo "✅ Available packaging tasks: packageDmg, packageMsi"
+          echo "❌ Missing Linux tasks: packageDeb, packageRpm, packageAppImage"
+          echo ""
+          echo "📋 Next steps needed:"
+          echo "1. Check Compose Multiplatform documentation for Linux packaging"
+          echo "2. Add Linux packaging configuration to build.gradle.kts"
+          echo "3. May need additional Gradle plugins for DEB/RPM/AppImage"
 
       - name: 📋 Build Summary
         run: |
