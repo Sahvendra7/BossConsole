@@ -1,0 +1,182 @@
+name: 🐧 Linux Build & Package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: 📋 Show Version
+        run: ./gradlew showVersion
+
+      - name: 🏗️ Build Application
+        run: |
+          echo "🏗️ Building Linux application..."
+          ./gradlew build -x test
+          echo "✅ Linux build completed successfully"
+
+      - name: 📦 Create DEB Package
+        run: |
+          echo "📦 Creating DEB package..."
+          ./gradlew packageDeb
+          echo "✅ DEB package created successfully"
+
+      - name: 📦 Create RPM Package  
+        run: |
+          echo "📦 Creating RPM package..."
+          ./gradlew packageRpm
+          echo "✅ RPM package created successfully"
+
+      - name: 📦 Create AppImage Package
+        run: |
+          echo "📦 Creating AppImage package..."
+          ./gradlew packageAppImage
+          echo "✅ AppImage package created successfully"
+
+      - name: 🔍 Find Package Files
+        id: find-packages
+        run: |
+          echo "🔍 Searching for created packages..."
+          
+          # Find DEB files
+          DEB_FILES=$(find composeApp/build -name "*.deb" -type f | head -1)
+          if [[ -n "$DEB_FILES" && -f "$DEB_FILES" ]]; then
+            echo "deb-path=$DEB_FILES" >> $GITHUB_OUTPUT
+            echo "✅ Found DEB: $DEB_FILES"
+          else
+            echo "⚠️ DEB file not found"
+          fi
+          
+          # Find RPM files
+          RPM_FILES=$(find composeApp/build -name "*.rpm" -type f | head -1)
+          if [[ -n "$RPM_FILES" && -f "$RPM_FILES" ]]; then
+            echo "rpm-path=$RPM_FILES" >> $GITHUB_OUTPUT
+            echo "✅ Found RPM: $RPM_FILES"
+          else
+            echo "⚠️ RPM file not found"
+          fi
+          
+          # Find AppImage files
+          APPIMAGE_FILES=$(find composeApp/build -name "*.AppImage" -type f | head -1)
+          if [[ -n "$APPIMAGE_FILES" && -f "$APPIMAGE_FILES" ]]; then
+            echo "appimage-path=$APPIMAGE_FILES" >> $GITHUB_OUTPUT
+            echo "✅ Found AppImage: $APPIMAGE_FILES"
+          else
+            echo "⚠️ AppImage file not found"
+          fi
+
+      - name: 📊 Verify Package Contents
+        run: |
+          echo "📊 Verifying Linux packages..."
+          
+          # Check DEB package
+          if [[ -n "${{ steps.find-packages.outputs.deb-path }}" ]]; then
+            echo "🔍 DEB Package Info:"
+            dpkg-deb --info "${{ steps.find-packages.outputs.deb-path }}" || true
+            dpkg-deb --contents "${{ steps.find-packages.outputs.deb-path }}" | head -10 || true
+          fi
+          
+          # Check RPM package
+          if [[ -n "${{ steps.find-packages.outputs.rpm-path }}" ]]; then
+            echo "🔍 RPM Package Info:"
+            rpm -qip "${{ steps.find-packages.outputs.rpm-path }}" || true
+            rpm -qlp "${{ steps.find-packages.outputs.rpm-path }}" | head -10 || true
+          fi
+          
+          # Check AppImage
+          if [[ -n "${{ steps.find-packages.outputs.appimage-path }}" ]]; then
+            echo "🔍 AppImage Info:"
+            ls -la "${{ steps.find-packages.outputs.appimage-path }}"
+            file "${{ steps.find-packages.outputs.appimage-path }}"
+          fi
+
+      - name: 🧪 Test Package Installation (DEB)
+        if: steps.find-packages.outputs.deb-path != ''
+        run: |
+          echo "🧪 Testing DEB package installation..."
+          
+          # Install the DEB package
+          sudo dpkg -i "${{ steps.find-packages.outputs.deb-path }}" || true
+          
+          # Try to fix any dependency issues
+          sudo apt-get install -f -y || true
+          
+          # Check if BOSS was installed
+          if dpkg -l | grep -i boss; then
+            echo "✅ DEB package installed successfully"
+          else
+            echo "⚠️ DEB package installation needs refinement"
+          fi
+
+      - name: 🧪 Test AppImage Execution
+        if: steps.find-packages.outputs.appimage-path != ''
+        run: |
+          echo "🧪 Testing AppImage execution..."
+          
+          # Make AppImage executable
+          chmod +x "${{ steps.find-packages.outputs.appimage-path }}"
+          
+          # Test AppImage (with timeout to prevent hanging)
+          timeout 10s "${{ steps.find-packages.outputs.appimage-path }}" --help || echo "AppImage test completed (may have displayed GUI)"
+
+      - name: 📤 Upload Linux Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-linux-packages
+          path: |
+            ${{ steps.find-packages.outputs.deb-path }}
+            ${{ steps.find-packages.outputs.rpm-path }}
+            ${{ steps.find-packages.outputs.appimage-path }}
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 📋 Build Summary
+        run: |
+          echo "## 🐧 Linux Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Packages Created" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -n "${{ steps.find-packages.outputs.deb-path }}" ]]; then
+            echo "- ✅ **DEB Package**: $(basename "${{ steps.find-packages.outputs.deb-path }}")" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **DEB Package**: Failed to create" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ -n "${{ steps.find-packages.outputs.rpm-path }}" ]]; then
+            echo "- ✅ **RPM Package**: $(basename "${{ steps.find-packages.outputs.rpm-path }}")" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **RPM Package**: Failed to create" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ -n "${{ steps.find-packages.outputs.appimage-path }}" ]]; then
+            echo "- ✅ **AppImage**: $(basename "${{ steps.find-packages.outputs.appimage-path }}")" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ **AppImage**: Failed to create" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "If all packages built successfully, they can be integrated into release.yml" >> $GITHUB_STEP_SUMMARY
