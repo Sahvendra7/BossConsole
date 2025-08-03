@@ -278,8 +278,9 @@ compose.desktop {
                 TargetFormat.Dmg,           // macOS
                 TargetFormat.Msi,           // Windows  
                 TargetFormat.Deb,           // Linux - Ubuntu/Debian
-                TargetFormat.Rpm,           // Linux - RHEL/Fedora
-                TargetFormat.AppImage       // Linux - Universal
+                TargetFormat.Rpm            // Linux - RHEL/Fedora
+                // Removed AppImage - not working reliably
+                // JAR distribution handled separately via createExecutableJar task
             )
             packageName = "BOSS"
             packageVersion = appVersion

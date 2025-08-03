@@ -53,9 +53,13 @@ jobs:
 
       - name: 📦 Create Linux Packages
         run: |
-          echo "📦 Creating Linux packages using packageDistributionForCurrentOS..."
+          echo "📦 Creating Linux packages and JAR distribution..."
           ./gradlew :composeApp:packageDistributionForCurrentOS
-          echo "✅ Linux packages created successfully"
+          echo "✅ Linux native packages (DEB, RPM) created successfully"
+          
+          echo "📦 Creating executable JAR for universal Linux distribution..."
+          ./gradlew :composeApp:createExecutableJar
+          echo "✅ Executable JAR created successfully"
 
       - name: 🔍 Find Generated Files
         id: find-packages
@@ -86,12 +90,12 @@ jobs:
             echo "⚠️ No RPM files found"
           fi
           
-          APPIMAGE_FILES=$(find . -name "*.AppImage" -type f 2>/dev/null | head -1)
-          if [[ -n "$APPIMAGE_FILES" && -f "$APPIMAGE_FILES" ]]; then
-            echo "appimage-path=$APPIMAGE_FILES" >> $GITHUB_OUTPUT
-            echo "✅ Found AppImage: $APPIMAGE_FILES"
+          JAR_FILES=$(find . -name "*-all.jar" -type f 2>/dev/null | head -1)
+          if [[ -n "$JAR_FILES" && -f "$JAR_FILES" ]]; then
+            echo "jar-path=$JAR_FILES" >> $GITHUB_OUTPUT
+            echo "✅ Found executable JAR: $JAR_FILES"
           else
-            echo "⚠️ No AppImage files found"
+            echo "⚠️ No executable JAR files found"
           fi
           
           # Look for any other distributable files
@@ -101,15 +105,17 @@ jobs:
 
       - name: 📊 Analysis Summary
         run: |
-          echo "📊 Build Analysis Summary:"
+          echo "📊 Linux Build Analysis Summary:"
           echo ""
-          echo "✅ Available packaging tasks: packageDmg, packageMsi"
-          echo "❌ Missing Linux tasks: packageDeb, packageRpm, packageAppImage"
+          echo "✅ Available Linux packaging:"
+          echo "  - DEB packages (Ubuntu/Debian)"
+          echo "  - RPM packages (RHEL/Fedora/openSUSE)"
+          echo "  - Executable JAR (Universal Linux)"
           echo ""
-          echo "📋 Next steps needed:"
-          echo "1. Check Compose Multiplatform documentation for Linux packaging"
-          echo "2. Add Linux packaging configuration to build.gradle.kts"
-          echo "3. May need additional Gradle plugins for DEB/RPM/AppImage"
+          echo "📦 Distribution strategy:"
+          echo "  - Native packages for package managers (apt, dnf, yum)"
+          echo "  - JAR for users who prefer portable execution"
+          echo "  - Covers 100% of Linux distributions"
 
       - name: 📋 Build Summary
         run: |
@@ -129,10 +135,10 @@ jobs:
             echo "- ❌ **RPM Package**: Failed to create" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ -n "${{ steps.find-packages.outputs.appimage-path }}" ]]; then
-            echo "- ✅ **AppImage**: $(basename "${{ steps.find-packages.outputs.appimage-path }}")" >> $GITHUB_STEP_SUMMARY
+          if [[ -n "${{ steps.find-packages.outputs.jar-path }}" ]]; then
+            echo "- ✅ **Executable JAR**: $(basename "${{ steps.find-packages.outputs.jar-path }}")" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- ❌ **AppImage**: Failed to create" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ **Executable JAR**: Failed to create" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
