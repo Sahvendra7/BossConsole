@@ -266,6 +266,86 @@ jobs:
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
           retention-days: 30
 
+  build-linux:
+    needs: prepare-version
+    if: needs.prepare-version.outputs.should-build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: 🔧 Setup Build Environment
+        run: |
+          echo "🔧 Setting up build environment for Linux"
+          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+          
+          # Verify version consistency
+          ./gradlew showVersion
+
+      - name: 🏗️ Build Linux Packages
+        run: |
+          echo "🏗️ Building Linux packages..."
+          
+          # Create DEB and RPM packages
+          ./gradlew :composeApp:packageDistributionForCurrentOS
+          echo "✅ Linux native packages (DEB, RPM) created successfully"
+          
+          # Create executable JAR for universal Linux distribution
+          ./gradlew :composeApp:createExecutableJar
+          echo "✅ Executable JAR created successfully"
+
+      - name: 📊 Verify Linux Build Artifacts
+        run: |
+          echo "📊 Verifying Linux packages..."
+          
+          # Check for DEB files
+          if ls composeApp/build/compose/binaries/main/deb/*.deb 1> /dev/null 2>&1; then
+            echo "✅ DEB package found!"
+            ls -la composeApp/build/compose/binaries/main/deb/
+          else
+            echo "⚠️ DEB package not found"
+          fi
+          
+          # Check for RPM files
+          if ls composeApp/build/compose/binaries/main/rpm/*.rpm 1> /dev/null 2>&1; then
+            echo "✅ RPM package found!"
+            ls -la composeApp/build/compose/binaries/main/rpm/
+          else
+            echo "⚠️ RPM package not found"
+          fi
+          
+          # Check for JAR files
+          if ls composeApp/build/libs/*-all.jar 1> /dev/null 2>&1; then
+            echo "✅ Executable JAR found!"
+            ls -la composeApp/build/libs/*-all.jar
+          else
+            echo "⚠️ Executable JAR not found"
+          fi
+
+      - name: 📤 Upload Linux Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-linux-${{ needs.prepare-version.outputs.version }}
+          path: |
+            composeApp/build/compose/binaries/main/deb/
+            composeApp/build/compose/binaries/main/rpm/
+            composeApp/build/libs/*-all.jar
+          retention-days: 30
+
   build-windows:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
@@ -446,7 +526,7 @@ jobs:
           retention-days: 30
 
   create-release:
-    needs: [prepare-version, build-macos, build-windows]
+    needs: [prepare-version, build-macos, build-linux, build-windows]
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: ubuntu-latest
 
@@ -472,6 +552,9 @@ jobs:
           # Find and copy artifacts
           find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
           find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \;
+          find ./artifacts -name "*.deb" -exec cp {} ./release-assets/BOSS-${VERSION}.deb \;
+          find ./artifacts -name "*.rpm" -exec cp {} ./release-assets/BOSS-${VERSION}.rpm \;
+          find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}.jar \;
           
           # List final artifacts
           echo "📦 Release assets:"
@@ -490,17 +573,22 @@ jobs:
           
           - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
           - **Windows**: \`BOSS-${VERSION}.msi\` (x64)
+          - **Linux DEB**: \`BOSS-${VERSION}.deb\` (Ubuntu/Debian)
+          - **Linux RPM**: \`BOSS-${VERSION}.rpm\` (RHEL/Fedora/openSUSE)
+          - **Linux JAR**: \`BOSS-${VERSION}.jar\` (Universal Linux)
           
           ## ✨ What's New
           
           - Auto-generated release for version $VERSION
           - Built with centralized version management system
           - All platforms synchronized and tested
+          - Full Linux support with native packages
           
           ## 🔧 System Requirements
           
           - **macOS**: macOS 11.0+ (Big Sur)
           - **Windows**: Windows 10+ (64-bit)
+          - **Linux**: Any modern distribution (64-bit)
           
           ## 🛠️ Installation
           
@@ -513,6 +601,31 @@ jobs:
           1. Download \`BOSS-${VERSION}.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
+          
+          ### Linux
+          
+          **Ubuntu/Debian:**
+          \`\`\`bash
+          # Download and install DEB package
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.deb
+          sudo dpkg -i BOSS-${VERSION}.deb
+          sudo apt-get install -f  # Fix any missing dependencies
+          \`\`\`
+          
+          **RHEL/Fedora/openSUSE:**
+          \`\`\`bash
+          # Download and install RPM package
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.rpm
+          sudo rpm -i BOSS-${VERSION}.rpm
+          # OR for Fedora: sudo dnf install BOSS-${VERSION}.rpm
+          \`\`\`
+          
+          **Universal (Any Linux):**
+          \`\`\`bash
+          # Download and run JAR (requires Java 17+)
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.jar
+          java -jar BOSS-${VERSION}.jar
+          \`\`\`
           
           ---
           
@@ -541,10 +654,13 @@ jobs:
           echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Platforms Built**: macOS, Windows" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Platforms Built**: macOS, Linux, Windows" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux DEB (Ubuntu/Debian)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux RPM (RHEL/Fedora)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux JAR (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
 
