@@ -51,22 +51,11 @@ jobs:
           ./gradlew build -x test
           echo "✅ Linux build completed successfully"
 
-      - name: 📦 Try Package Tasks (Experimental)
+      - name: 📦 Create Linux Packages
         run: |
-          echo "📦 Attempting to create packages with available tasks..."
-          
-          # Try common Compose packaging task names
-          echo "Trying packageDistributionForCurrentOS..."
-          ./gradlew packageDistributionForCurrentOS || echo "❌ packageDistributionForCurrentOS not available"
-          
-          echo "Trying packageReleaseDistributionForCurrentOS..."
-          ./gradlew packageReleaseDistributionForCurrentOS || echo "❌ packageReleaseDistributionForCurrentOS not available"
-          
-          echo "Trying createDistributable..."
-          ./gradlew createDistributable || echo "❌ createDistributable not available"
-          
-          echo "Trying :composeApp:packageDistributionForCurrentOS..."
-          ./gradlew :composeApp:packageDistributionForCurrentOS || echo "❌ :composeApp:packageDistributionForCurrentOS not available"
+          echo "📦 Creating Linux packages using packageDistributionForCurrentOS..."
+          ./gradlew :composeApp:packageDistributionForCurrentOS
+          echo "✅ Linux packages created successfully"
 
       - name: 🔍 Find Generated Files
         id: find-packages
