@@ -577,6 +577,31 @@ tasks.register("signPty4jBinaries") {
                         
                         println("✅ PTY4J natives signed with hardened runtime and jar updated")
                         
+                        // Re-sign the main app bundle since we modified its contents
+                        println("🔧 Re-signing main app bundle after PTY4J modifications...")
+                        try {
+                            exec {
+                                commandLine(
+                                    "codesign",
+                                    "--force",
+                                    "--options", "runtime",
+                                    "--sign", developerId,
+                                    "--timestamp",
+                                    "--deep",
+                                    appFile.absolutePath
+                                )
+                            }
+                            
+                            // Verify the main app signature
+                            exec {
+                                commandLine("codesign", "-vv", appFile.absolutePath)
+                            }
+                            
+                            println("✅ Main app bundle re-signed successfully")
+                        } catch (e: Exception) {
+                            println("⚠️ Warning: Failed to re-sign main app bundle: ${e.message}")
+                        }
+                        
                     } else {
                         println("⚠️ Warning: No pty4j-unix-spawn-helper binaries found in jar")
                     }
