@@ -268,11 +268,10 @@ compose.desktop {
             isEnabled.set(false)
         }
         
-        // Specify JDK for native distributions (requires JDK 17+)
-        javaHome = System.getenv("JAVA_HOME") ?: System.getProperty("java.home")
+        // Specify JDK for native distributions - use OpenJDK 21 for better Apple Silicon support
+        javaHome = System.getenv("JAVA_HOME") ?: "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
         
-        // Add JVM arguments to help with native library loading
-        // Use system temp directory instead of build-time paths
+        // JVM arguments optimized for Apple Silicon and hardened runtime
         jvmArgs(
             "-Djna.nosys=true",
             // These will be set at runtime, not build time
@@ -281,7 +280,9 @@ compose.desktop {
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-            "-Dapple.awt.application.appearance=system"
+            "-Dapple.awt.application.appearance=system",
+            // Apple Silicon JIT compatibility flags
+            "-XX:+IgnoreUnrecognizedVMOptions"
         )
         
         nativeDistributions {
