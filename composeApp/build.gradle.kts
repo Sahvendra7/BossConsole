@@ -453,6 +453,148 @@ tasks.register("extractPty4jNative") {
     }
 }
 
+// Sign PTY4J native binaries with hardened runtime for macOS notarization
+tasks.register("signPty4jBinaries") {
+    description = "Signs PTY4J native binaries with hardened runtime for Apple notarization"
+    group = "build"
+    
+    // Only run on macOS and when signing is enabled
+    onlyIf {
+        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+        isMacOS && !signingDisabled
+    }
+    
+    doLast {
+        println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
+        
+        // Get developer identity from environment or use default
+        val developerId = System.getenv("MACOS_DEVELOPER_ID") 
+            ?: System.getenv("DEVELOPER_ID")
+            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+        
+        // Find the built app in the standard Compose Desktop location
+        val appDir = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
+        
+        if (appFile?.exists() == true) {
+            println("Found app: ${appFile.name}")
+            
+            // Find PTY4J jar inside the app
+            val appContents = File(appFile, "Contents/app")
+            val pty4jJar = appContents.listFiles()?.find { 
+                it.name.startsWith("pty4j-") && it.name.endsWith(".jar")
+            }
+            
+            if (pty4jJar?.exists() == true) {
+                println("Processing PTY4J jar: ${pty4jJar.name}")
+                
+                // Create temporary directory for jar manipulation
+                val tempDir = File(System.getProperty("java.io.tmpdir"), "pty4j-sign-${System.currentTimeMillis()}")
+                tempDir.mkdirs()
+                
+                try {
+                    // Extract the entire jar
+                    exec {
+                        workingDir = tempDir
+                        commandLine("jar", "xf", pty4jJar.absolutePath)
+                    }
+                    
+                    // Find and sign the native spawn helper binaries
+                    val spawnHelpers = tempDir.walkTopDown().filter { 
+                        it.name == "pty4j-unix-spawn-helper" && it.isFile 
+                    }.toList()
+                    
+                    if (spawnHelpers.isNotEmpty()) {
+                        println("Found ${spawnHelpers.size} PTY4J spawn helper binary(ies) to sign:")
+                        
+                        for (helper in spawnHelpers) {
+                            println("  Signing: ${helper.relativeTo(tempDir)}")
+                            
+                            // Make executable
+                            helper.setExecutable(true)
+                            
+                            // Sign with hardened runtime - critical for notarization
+                            try {
+                                exec {
+                                    commandLine(
+                                        "codesign", 
+                                        "--force", 
+                                        "--options", "runtime",
+                                        "--sign", developerId,
+                                        "--timestamp", 
+                                        helper.absolutePath
+                                    )
+                                }
+                                
+                                // Verify signature
+                                exec {
+                                    commandLine("codesign", "-vv", helper.absolutePath)
+                                }
+                                
+                                println("    ✅ Successfully signed ${helper.name}")
+                            } catch (e: Exception) {
+                                println("    ⚠️ Warning: Failed to sign ${helper.name}: ${e.message}")
+                            }
+                        }
+                        
+                        // Also sign any other native binaries in the jar
+                        val otherNatives = tempDir.walkTopDown().filter { 
+                            it.isFile && (it.name.endsWith(".dylib") || it.name.startsWith("libpty"))
+                        }.toList()
+                        
+                        for (native in otherNatives) {
+                            println("  Signing native library: ${native.relativeTo(tempDir)}")
+                            native.setExecutable(true)
+                            
+                            try {
+                                exec {
+                                    commandLine(
+                                        "codesign",
+                                        "--force",
+                                        "--options", "runtime",
+                                        "--sign", developerId,
+                                        "--timestamp",
+                                        native.absolutePath
+                                    )
+                                }
+                                println("    ✅ Successfully signed ${native.name}")
+                            } catch (e: Exception) {
+                                println("    ⚠️ Warning: Failed to sign ${native.name}: ${e.message}")
+                            }
+                        }
+                        
+                        // Recreate the jar with signed binaries
+                        val signedJar = File(pty4jJar.parentFile, "${pty4jJar.nameWithoutExtension}-signed.jar")
+                        exec {
+                            workingDir = tempDir
+                            commandLine("jar", "cf", signedJar.absolutePath, ".")
+                        }
+                        
+                        // Replace original jar with signed version
+                        pty4jJar.delete()
+                        signedJar.renameTo(pty4jJar)
+                        
+                        println("✅ PTY4J natives signed with hardened runtime and jar updated")
+                        
+                    } else {
+                        println("⚠️ Warning: No pty4j-unix-spawn-helper binaries found in jar")
+                    }
+                    
+                } finally {
+                    // Clean up temp directory
+                    tempDir.deleteRecursively()
+                }
+                
+            } else {
+                println("⚠️ Warning: PTY4J jar not found in app bundle")
+            }
+        } else {
+            println("⚠️ Warning: Built app not found at expected location")
+        }
+    }
+}
+
 // Extract JCEF natives
 tasks.register("extractJcefNatives") {
     doLast {
@@ -465,11 +607,33 @@ tasks.register("extractJcefNatives") {
     }
 }
 
-// Make run tasks depend on the extraction tasks
+// Configure task dependencies for PTY4J signing and DMG packaging
 afterEvaluate {
+    // Make run tasks depend on the extraction tasks
     tasks.findByName("run")?.apply {
         dependsOn("extractPty4jNative")
         dependsOn("extractJcefNatives")
+    }
+    
+    // Make signPty4jBinaries run after createDistributable but before packageDmg
+    tasks.findByName("signPty4jBinaries")?.apply {
+        mustRunAfter("createDistributable")
+    }
+    
+    // Make packaging tasks depend on PTY4J signing (only on macOS with signing enabled)
+    tasks.findByName("packageDmg")?.apply {
+        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+        
+        if (isMacOS && !signingDisabled) {
+            dependsOn("signPty4jBinaries")
+            println("📝 packageDmg will depend on signPty4jBinaries for macOS with signing enabled")
+        }
+    }
+    
+    // Also make sure any other packaging tasks depend on signing if needed
+    tasks.findByName("createDistributable")?.apply {
+        finalizedBy("signPty4jBinaries")
     }
 }
 

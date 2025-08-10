@@ -195,7 +195,7 @@ jobs:
         env:
           DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
         run: |
-          echo "🏗️ Building macOS DMG..."
+          echo "🏗️ Building macOS DMG with integrated PTY4J signing..."
           
           # Debug environment variables
           echo "DISABLE_MACOS_SIGNING: $DISABLE_MACOS_SIGNING"
@@ -203,7 +203,8 @@ jobs:
           # Make gradlew executable
           chmod +x ./gradlew
           
-          # Build DMG
+          # The Gradle build now automatically handles PTY4J signing
+          # The signPty4jBinaries task will run automatically when needed
           ./gradlew packageDmg
           
           echo "✅ macOS DMG build completed successfully"
