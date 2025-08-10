@@ -45,7 +45,11 @@ actual class UpdateService {
             // Get the latest non-draft, non-prerelease version
             val latestRelease = releases
                 .filter { !it.draft && !it.prerelease }
-                .maxByOrNull { Version.parse(it.tag_name)?.toString() ?: "" }
+                .mapNotNull { release -> 
+                    Version.parse(release.tag_name)?.let { version -> release to version }
+                }
+                .maxByOrNull { it.second }
+                ?.first
             
             if (latestRelease == null) {
                 return UpdateInfo(
