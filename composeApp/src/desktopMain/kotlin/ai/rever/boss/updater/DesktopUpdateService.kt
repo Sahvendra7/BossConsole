@@ -290,12 +290,11 @@ actual class UpdateService {
                     return@withContext openDMGForManualInstallation(downloadFile)
                 }
                 
-                // Create backup of current app
-                val backupPath = File("${currentAppPath}.backup")
-                if (backupPath.exists()) {
-                    backupPath.deleteRecursively()
+                // Remove existing app bundle
+                val currentApp = File(currentAppPath)
+                if (currentApp.exists()) {
+                    currentApp.deleteRecursively()
                 }
-                File(currentAppPath).renameTo(backupPath)
                 
                 // Copy new app bundle to Applications
                 val copyResult = ProcessBuilder("cp", "-R", appBundle.absolutePath, currentAppPath)
@@ -307,12 +306,9 @@ actual class UpdateService {
                 
                 if (copyResult.exitValue() == 0) {
                     println("✅ macOS update installed successfully")
-                    println("   Backup created at: ${backupPath.absolutePath}")
                     true
                 } else {
-                    println("Failed to copy new app bundle, restoring backup")
-                    // Restore backup if copy failed
-                    backupPath.renameTo(File(currentAppPath))
+                    println("❌ Failed to copy new app bundle")
                     false
                 }
                 
@@ -434,17 +430,13 @@ actual class UpdateService {
                 // For JAR updates, we need to replace the current JAR
                 val currentJar = getCurrentJarPath()
                 if (currentJar != null) {
-                    // Create backup
-                    val backupFile = File(currentJar.parent, "${currentJar.nameWithoutExtension}.backup.jar")
-                    currentJar.copyTo(backupFile, overwrite = true)
-                    
                     // Replace current JAR
                     downloadFile.copyTo(currentJar, overwrite = true)
                     
-                    println("JAR updated successfully. Backup created at: ${backupFile.absolutePath}")
+                    println("✅ JAR updated successfully")
                     true
                 } else {
-                    println("Could not determine current JAR path")
+                    println("❌ Could not determine current JAR path")
                     false
                 }
             } catch (e: Exception) {

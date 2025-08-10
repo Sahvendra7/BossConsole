@@ -375,9 +375,9 @@ compose.desktop {
                         <key>LSMinimumSystemVersion</key>
                         <string>10.15</string>
                         <key>CFBundleShortVersionString</key>
-                        <string>1.0.7</string>
+                        <string>$appVersion</string>
                         <key>CFBundleVersion</key>
-                        <string>1</string>
+                        <string>$bundleVersion</string>
                         <key>NSHighResolutionCapable</key>
                         <true/>
                         <key>NSSupportsAutomaticGraphicsSwitching</key>
