@@ -54,9 +54,10 @@ jobs:
         
         # Wait for assets to be uploaded (with retry mechanism)
         echo "🔄 Waiting for release assets to be available..."
-        MAX_RETRIES=10
+        MAX_RETRIES=15
         RETRY_COUNT=0
         ASSETS_FOUND=false
+        EXPECTED_ASSETS=5  # DMG, DEB, JAR, MSI, RPM
         
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
           echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Checking for assets..."
@@ -64,10 +65,14 @@ jobs:
           # Check if release has assets
           ASSET_COUNT=$(gh api repos/${{ github.repository }}/releases/tags/${RELEASE_TAG} --jq '.assets | length')
           
-          if [ "$ASSET_COUNT" -gt 0 ]; then
-            echo "✅ Found $ASSET_COUNT assets, proceeding with download..."
+          if [ "$ASSET_COUNT" -ge "$EXPECTED_ASSETS" ]; then
+            echo "✅ Found $ASSET_COUNT/$EXPECTED_ASSETS assets, proceeding with download..."
             ASSETS_FOUND=true
             break
+          elif [ "$ASSET_COUNT" -gt 0 ]; then
+            echo "⏳ Found $ASSET_COUNT/$EXPECTED_ASSETS assets, waiting for more (45 seconds)..."
+            sleep 45
+            RETRY_COUNT=$((RETRY_COUNT + 1))
           else
             echo "⏳ No assets found yet, waiting 30 seconds..."
             sleep 30
@@ -133,23 +138,46 @@ jobs:
           done
         fi
         
-        # Create release in public repository
-        if [ -n "$ASSET_FILES" ]; then
-          gh release create "${RELEASE_TAG}" \
-            --repo risa-labs-inc/BOSS-Releases \
-            --title "${RELEASE_NAME}" \
-            --notes-file release-assets/release-body.txt \
-            ${PRERELEASE_FLAG} \
-            $ASSET_FILES
+        # Check if release already exists
+        if gh release view "${RELEASE_TAG}" --repo risa-labs-inc/BOSS-Releases >/dev/null 2>&1; then
+          echo "📋 Release ${RELEASE_TAG} already exists, uploading missing assets..."
+          
+          # Get existing assets
+          EXISTING_ASSETS=$(gh release view "${RELEASE_TAG}" --repo risa-labs-inc/BOSS-Releases --json assets --jq '.assets[].name')
+          
+          # Upload only missing assets
+          if [ -n "$ASSET_FILES" ]; then
+            for file in $ASSET_FILES; do
+              FILENAME=$(basename "$file")
+              if echo "$EXISTING_ASSETS" | grep -q "^${FILENAME}$"; then
+                echo "⏭️  Skipping $FILENAME (already exists)"
+              else
+                echo "📤 Uploading missing asset: $FILENAME"
+                gh release upload "${RELEASE_TAG}" "$file" --repo risa-labs-inc/BOSS-Releases
+              fi
+            done
+          fi
+          
+          echo "✅ Assets synchronized for existing release ${RELEASE_TAG}"
         else
-          gh release create "${RELEASE_TAG}" \
-            --repo risa-labs-inc/BOSS-Releases \
-            --title "${RELEASE_NAME}" \
-            --notes-file release-assets/release-body.txt \
-            ${PRERELEASE_FLAG}
+          # Create release in public repository
+          if [ -n "$ASSET_FILES" ]; then
+            gh release create "${RELEASE_TAG}" \
+              --repo risa-labs-inc/BOSS-Releases \
+              --title "${RELEASE_NAME}" \
+              --notes-file release-assets/release-body.txt \
+              ${PRERELEASE_FLAG} \
+              $ASSET_FILES
+          else
+            gh release create "${RELEASE_TAG}" \
+              --repo risa-labs-inc/BOSS-Releases \
+              --title "${RELEASE_NAME}" \
+              --notes-file release-assets/release-body.txt \
+              ${PRERELEASE_FLAG}
+          fi
+          
+          echo "✅ Release ${RELEASE_TAG} created in public repository"
         fi
-        
-        echo "✅ Release ${RELEASE_TAG} created in public repository"
       env:
         GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
