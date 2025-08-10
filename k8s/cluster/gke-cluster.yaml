@@ -1,0 +1,113 @@
+# GKE Cluster Configuration for BOSS
+apiVersion: container.cnrm.cloud.google.com/v1beta1
+kind: ContainerCluster
+metadata:
+  name: boss-cluster
+  labels:
+    app: boss
+    environment: production
+spec:
+  # Basic cluster settings
+  location: us-central1-a
+  initialNodeCount: 3
+  
+  # Cluster networking
+  network: default
+  subnetwork: default
+  
+  # Enable useful GKE features
+  addonsConfig:
+    horizontalPodAutoscaling:
+      disabled: false
+    httpLoadBalancing:
+      disabled: false
+    networkPolicyConfig:
+      disabled: false
+    cloudRunConfig:
+      disabled: true
+  
+  # Security and compliance
+  masterAuth:
+    username: ""
+    password: ""
+    clientCertificateConfig:
+      issueClientCertificate: false
+  
+  # Logging and monitoring
+  loggingService: logging.googleapis.com/kubernetes
+  monitoringService: monitoring.googleapis.com/kubernetes
+  
+  # Network security
+  networkPolicy:
+    enabled: true
+    provider: CALICO
+  
+  # IP allocation for pods and services
+  ipAllocationPolicy:
+    useIpAliases: true
+    clusterSecondaryRangeName: pods
+    servicesSecondaryRangeName: services
+  
+  # Maintenance window
+  maintenancePolicy:
+    dailyMaintenanceWindow:
+      startTime: "02:00"
+  
+  # Workload Identity for secure pod authentication
+  workloadIdentityConfig:
+    workloadPool: boss-455616.svc.id.goog
+
+---
+# Node Pool Configuration
+apiVersion: container.cnrm.cloud.google.com/v1beta1
+kind: ContainerNodePool
+metadata:
+  name: boss-node-pool
+  labels:
+    app: boss
+spec:
+  clusterRef:
+    name: boss-cluster
+  location: us-central1-a
+  initialNodeCount: 3
+  
+  # Auto-scaling configuration
+  autoscaling:
+    minNodeCount: 1
+    maxNodeCount: 10
+  
+  # Node configuration
+  nodeConfig:
+    machineType: e2-standard-4  # 4 vCPUs, 16 GB RAM
+    diskSizeGb: 100
+    diskType: pd-standard
+    
+    # Use Container-Optimized OS
+    imageType: COS_CONTAINERD
+    
+    # Security
+    serviceAccount: default
+    oauthScopes:
+      - https://www.googleapis.com/auth/cloud-platform
+    
+    # Workload Identity
+    workloadMetadataConfig:
+      mode: GKE_METADATA
+    
+    # Labels and taints
+    labels:
+      app: boss
+      node-pool: boss-node-pool
+    
+    # Preemptible nodes for cost optimization (optional)
+    preemptible: false
+  
+  # Node management
+  management:
+    autoRepair: true
+    autoUpgrade: true
+  
+  # Upgrade settings
+  upgradeSettings:
+    maxSurge: 1
+    maxUnavailable: 0

@@ -15,6 +15,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +32,8 @@ import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.configuration.ConfigurationButton
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.LayoutConfiguration
+import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
+import ai.rever.boss.services.supabase.AuthService
 
 
 @Composable
@@ -275,12 +278,26 @@ fun BossTopRunBar() {
 @Composable
 fun BossTopRightBar() {
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    val currentUser by AuthService.currentUser.collectAsState()
+    
+    // Show user email if logged in
+    currentUser?.let { user ->
+        Text(
+            text = user.email,
+            style = androidx.compose.material.MaterialTheme.typography.caption,
+            modifier = Modifier.padding(end = 8.dp),
+            color = androidx.compose.ui.graphics.Color.Gray
+        )
+    }
     
     BossActionButton(
-        imageVector = Icons.Outlined.PersonAdd,
+        imageVector = Icons.Outlined.Logout,
         text = "Sign Out",
         hintText = "Sign out of your account"
-    ) {}
+    ) {
+        showLogoutDialog = true
+    }
     
     BossActionButton(
         imageVector = Icons.Outlined.Search,
@@ -294,6 +311,13 @@ fun BossTopRightBar() {
         hintText = "Configure application settings"
     ) {
         showSettingsDialog = true
+    }
+    
+    // Logout confirmation dialog
+    if (showLogoutDialog) {
+        LogoutConfirmationDialog(
+            onDismiss = { showLogoutDialog = false }
+        )
     }
     
     // Settings Window

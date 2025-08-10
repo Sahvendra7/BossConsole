@@ -1,0 +1,72 @@
+# Simple HTTPS Ingress routing all traffic to Kong Gateway
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: supabase-kong-ssl-ingress
+  labels:
+    app: supabase
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: "supabase-static-ip"
+    ingress.gcp.kubernetes.io/managed-certificates: "supabase-ssl-cert"
+    ingress.gcp.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  # Route all API traffic to Kong Gateway
+  - host: api.risaboss.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: supabase-kong-lb
+            port:
+              number: 80
+  
+  # Route auth subdomain to Kong
+  - host: auth.risaboss.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: supabase-kong-lb
+            port:
+              number: 80
+  
+  # Route storage subdomain to Kong
+  - host: storage.risaboss.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: supabase-kong-lb
+            port:
+              number: 80
+  
+  # Route realtime subdomain to Kong
+  - host: realtime.risaboss.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: supabase-kong-lb
+            port:
+              number: 80
+  
+  # Route studio through Kong Gateway
+  - host: studio.risaboss.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: supabase-kong-lb
+            port:
+              number: 80

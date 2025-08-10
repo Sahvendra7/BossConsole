@@ -1,0 +1,308 @@
+# Persistent Storage for BOSS Application
+
+# StorageClass for high-performance SSD storage
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: boss-ssd
+  labels:
+    app: boss
+provisioner: kubernetes.io/gce-pd
+parameters:
+  type: pd-ssd
+  replication-type: regional-pd  # Regional persistent disk for high availability
+  fstype: ext4
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# StorageClass for standard storage (cost-effective)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: boss-standard
+  labels:
+    app: boss
+provisioner: kubernetes.io/gce-pd
+parameters:
+  type: pd-standard
+  replication-type: regional-pd
+  fstype: ext4
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# PersistentVolumeClaim for BOSS application data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boss-data-pvc
+  labels:
+    app: boss
+    component: storage
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: boss-ssd
+  resources:
+    requests:
+      storage: 50Gi  # Adjust size as needed
+  
+  # Volume selector (if using pre-created volumes)
+  # selector:
+  #   matchLabels:
+  #     app: boss
+  #     component: data
+
+---
+# PersistentVolumeClaim for BOSS logs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boss-logs-pvc
+  labels:
+    app: boss
+    component: logs
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: boss-standard  # Use standard storage for logs
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# PersistentVolumeClaim for shared data (ReadWriteMany)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boss-shared-pvc
+  labels:
+    app: boss
+    component: shared
+spec:
+  accessModes:
+  - ReadWriteMany  # For sharing between multiple pods
+  storageClassName: boss-standard
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# StatefulSet for BOSS (if persistent identity is needed)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: boss-stateful
+  labels:
+    app: boss
+    component: stateful
+spec:
+  serviceName: boss-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: boss
+      component: stateful
+  template:
+    metadata:
+      labels:
+        app: boss
+        component: stateful
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: boss-app
+        image: gcr.io/PROJECT_ID/boss:latest
+        
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: vnc
+          containerPort: 5900
+        
+        env:
+        - name: BOSS_DATA_DIR
+          value: "/app/data"
+        - name: BOSS_INSTANCE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: JAVA_OPTS
+          value: "-Xmx2g -Xms512m -XX:+UseG1GC"
+        
+        # Supabase configuration
+        - name: SUPABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: boss-config
+              key: supabase.url
+        - name: SUPABASE_ANON_KEY
+          valueFrom:
+            secretKeyRef:
+              name: boss-secrets
+              key: supabase.anon.key
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        
+        volumeMounts:
+        - name: boss-data
+          mountPath: /app/data
+        - name: boss-logs
+          mountPath: /app/logs
+        - name: shared-data
+          mountPath: /app/shared
+        
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - -f
+            - boss.jar
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        
+        readinessProbe:
+          exec:
+            command:
+            - pgrep
+            - -f
+            - boss.jar
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      
+      volumes:
+      - name: shared-data
+        persistentVolumeClaim:
+          claimName: boss-shared-pvc
+  
+  # Volume claim templates for StatefulSet
+  volumeClaimTemplates:
+  - metadata:
+      name: boss-data
+      labels:
+        app: boss
+        component: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: boss-ssd
+      resources:
+        requests:
+          storage: 50Gi
+  
+  - metadata:
+      name: boss-logs
+      labels:
+        app: boss
+        component: logs
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: boss-standard
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+# Backup Job for BOSS data
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: boss-backup
+  labels:
+    app: boss
+    component: backup
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: google/cloud-sdk:alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Create backup directory with timestamp
+              BACKUP_DIR="/backup/$(date +%Y%m%d_%H%M%S)"
+              mkdir -p "$BACKUP_DIR"
+              
+              # Copy BOSS data
+              cp -r /app/data/* "$BACKUP_DIR/"
+              
+              # Compress backup
+              tar -czf "/backup/boss_backup_$(date +%Y%m%d_%H%M%S).tar.gz" -C /backup $(basename "$BACKUP_DIR")
+              
+              # Optional: Upload to Google Cloud Storage
+              # gsutil cp "/backup/boss_backup_$(date +%Y%m%d_%H%M%S).tar.gz" gs://your-backup-bucket/
+              
+              # Clean up old backups (keep last 7 days)
+              find /backup -name "boss_backup_*.tar.gz" -type f -mtime +7 -delete
+              
+              echo "Backup completed successfully"
+            
+            volumeMounts:
+            - name: boss-data
+              mountPath: /app/data
+              readOnly: true
+            - name: backup-storage
+              mountPath: /backup
+            
+            env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /var/secrets/google/key.json
+            
+            # Optional: Mount service account for GCS access
+            # volumeMounts:
+            # - name: gcs-sa
+            #   mountPath: /var/secrets/google
+            #   readOnly: true
+          
+          volumes:
+          - name: boss-data
+            persistentVolumeClaim:
+              claimName: boss-data-pvc
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: boss-backup-pvc
+          # Optional: Service account for GCS
+          # - name: gcs-sa
+          #   secret:
+          #     secretName: gcs-backup-sa
+
+---
+# PVC for backup storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boss-backup-pvc
+  labels:
+    app: boss
+    component: backup
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: boss-standard
+  resources:
+    requests:
+      storage: 100Gi  # Adjust based on backup retention needs

@@ -2,6 +2,7 @@ package ai.rever.boss
 
 import BossDarkSurface
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
+import ai.rever.boss.utils.DeepLinkHandler
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -10,9 +11,15 @@ import androidx.compose.ui.window.rememberWindowState
 import java.awt.Color
 import java.io.File
 
-fun main() {
+fun main(args: Array<String>) {
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
+    
+    // Initialize deep link handler
+    DeepLinkHandler
+    
+    // Process command line arguments for deep links (Windows)
+    DeepLinkHandler.processCommandLineArgs(args)
     
     // Debug: Check environment variables
     println("=== Checking LLM API Keys in Environment ===")
@@ -62,7 +69,7 @@ fun main() {
             window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
 
             with(createBossAppContext) {
-                BossApp()
+                BossAppWithAuth()
             }
         }
     }

@@ -7,6 +7,7 @@ import BossDarkAccent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,9 +15,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeviceHub
+import androidx.compose.material.icons.outlined.Update
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.launch
@@ -27,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,15 +55,22 @@ import ai.rever.boss.components.plugin.panels.right_top.*
 import ai.rever.boss.utils.ApplicationRestarter
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.CircularProgressIndicator
 import ai.rever.boss.updater.UpdateSettingsSection
+import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.services.supabase.AuthState
+import ai.rever.boss.services.supabase.TwoFactorInfo
+import ai.rever.boss.components.dialogs.TwoFactorEnrollDialog
+import ai.rever.boss.components.dialogs.TwoFactorVerifyDialog
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, TWO_FACTOR_AUTH
 }
 
 @Composable
@@ -122,6 +141,7 @@ private fun SettingsContent() {
                         SettingsSection.TERMINAL -> TerminalSettings()
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                         SettingsSection.UPDATES -> UpdatesSettings()
+                        SettingsSection.TWO_FACTOR_AUTH -> TwoFactorAuthSettings()
                     }
                 }
             }
@@ -211,6 +231,16 @@ private fun SettingsSidebar(
             subtitle = "Auto-update, version info",
             isSelected = selectedSection == SettingsSection.UPDATES,
             onClick = { onSectionChange(SettingsSection.UPDATES) }
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        SidebarItem(
+            icon = Icons.Outlined.Security,
+            title = "Two-Factor Auth",
+            subtitle = "Manage 2FA settings",
+            isSelected = selectedSection == SettingsSection.TWO_FACTOR_AUTH,
+            onClick = { onSectionChange(SettingsSection.TWO_FACTOR_AUTH) }
         )
     }
 }
@@ -1681,4 +1711,657 @@ private fun DropdownSelector(
 @Composable
 private fun UpdatesSettings() {
     UpdateSettingsSection()
+}
+
+@Composable
+private fun TwoFactorAuthSettings() {
+    val authState by AuthService.authState.collectAsState()
+    val currentUser by AuthService.currentUser.collectAsState()
+    var twoFactorFactors by remember { mutableStateOf<List<TwoFactorInfo>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showEnrollDialog by remember { mutableStateOf(false) }
+    var showRemoveDialog by remember { mutableStateOf<TwoFactorInfo?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Load 2FA factors when component mounts
+    LaunchedEffect(Unit) {
+        if (authState is AuthState.Authenticated) {
+            isLoading = true
+            AuthService.get2FAFactors().fold(
+                onSuccess = { factors ->
+                    twoFactorFactors = factors
+                    isLoading = false
+                },
+                onFailure = { error ->
+                    errorMessage = error.message
+                    isLoading = false
+                }
+            )
+        }
+    }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        SectionHeader(
+            title = "Two-Factor Authentication",
+            description = "Manage your 2FA settings for enhanced security"
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Authentication status check
+        if (authState !is AuthState.Authenticated) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = Color(0xFFFF5252).copy(alpha = 0.1f),
+                shape = RoundedCornerShape(8.dp),
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Warning,
+                        contentDescription = "Warning",
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "You must be logged in to manage 2FA settings",
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                }
+            }
+            return@Column
+        }
+        
+        // Current 2FA Status
+        SettingSection(
+            title = "Current Status",
+            description = "Your two-factor authentication status"
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = BossDarkBackground,
+                shape = RoundedCornerShape(8.dp),
+                elevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Two-Factor Authentication",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (twoFactorFactors.isNotEmpty()) 
+                                    "Enabled (${twoFactorFactors.size} method${if (twoFactorFactors.size > 1) "s" else ""})"
+                                else 
+                                    "Not enabled",
+                                fontSize = 14.sp,
+                                color = if (twoFactorFactors.isNotEmpty()) Color(0xFF4CAF50) else Color.Gray
+                            )
+                        }
+                        
+                        if (twoFactorFactors.isEmpty()) {
+                            Button(
+                                onClick = { showEnrollDialog = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = BossDarkAccent,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Add,
+                                    contentDescription = "Enable",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Enable 2FA")
+                            }
+                        }
+                    }
+                    
+                    if (currentUser != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Account: ${currentUser!!.email}",
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Enrolled Methods
+        if (twoFactorFactors.isNotEmpty()) {
+            SettingSection(
+                title = "Enrolled Methods",
+                description = "Your active 2FA methods"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    twoFactorFactors.forEach { factor ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            backgroundColor = BossDarkBackground,
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 1.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Outlined.Smartphone,
+                                        contentDescription = "Authenticator",
+                                        tint = BossDarkAccent,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column {
+                                        Text(
+                                            text = factor.friendlyName,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = "Status: ${factor.status}",
+                                            fontSize = 13.sp,
+                                            color = if (factor.status == "verified") Color(0xFF4CAF50) else Color.Gray
+                                        )
+                                    }
+                                }
+                                
+                                TextButton(
+                                    onClick = { showRemoveDialog = factor },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = Color(0xFFFF5252)
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Delete,
+                                        contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Remove", fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Add another method button
+                    Button(
+                        onClick = { showEnrollDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = BossDarkAccent.copy(alpha = 0.1f),
+                            contentColor = BossDarkAccent
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        elevation = ButtonDefaults.elevation(0.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Add,
+                            contentDescription = "Add",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add Another Method")
+                    }
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Security Tips
+        SettingSection(
+            title = "Security Tips",
+            description = "Best practices for 2FA"
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = BossDarkAccent.copy(alpha = 0.05f),
+                shape = RoundedCornerShape(8.dp),
+                elevation = 0.dp,
+                border = BorderStroke(1.dp, BossDarkAccent.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SecurityTip(
+                        icon = Icons.Outlined.PhoneAndroid,
+                        text = "Use an authenticator app like Google Authenticator, Authy, or 1Password"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SecurityTip(
+                        icon = Icons.Outlined.ContentCopy,
+                        text = "Save your backup codes in a secure location"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SecurityTip(
+                        icon = Icons.Outlined.DeviceHub,
+                        text = "Enable 2FA on multiple devices for redundancy"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SecurityTip(
+                        icon = Icons.Outlined.Update,
+                        text = "Keep your authenticator app updated"
+                    )
+                }
+            }
+        }
+        
+        // Loading state
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = BossDarkAccent,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+        
+        // Error message
+        errorMessage?.let { error ->
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = Color(0xFFFF5252).copy(alpha = 0.1f),
+                shape = RoundedCornerShape(8.dp),
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Error,
+                        contentDescription = "Error",
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = error,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+    
+    // Enroll Dialog
+    if (showEnrollDialog) {
+        Simple2FAEnrollDialog(
+            onDismiss = { showEnrollDialog = false },
+            onEnrolled = {
+                showEnrollDialog = false
+                // Refresh the factors list
+                coroutineScope.launch {
+                    isLoading = true
+                    AuthService.get2FAFactors().fold(
+                        onSuccess = { factors ->
+                            twoFactorFactors = factors
+                            isLoading = false
+                        },
+                        onFailure = { error ->
+                            errorMessage = error.message
+                            isLoading = false
+                        }
+                    )
+                }
+            }
+        )
+    }
+    
+    // Remove confirmation dialog
+    showRemoveDialog?.let { factor ->
+        AlertDialog(
+            onDismissRequest = { showRemoveDialog = null },
+            title = {
+                Text(
+                    "Remove 2FA Method",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Are you sure you want to remove this 2FA method?",
+                        color = Color.Gray,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        backgroundColor = BossDarkBackground,
+                        shape = RoundedCornerShape(4.dp),
+                        elevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.Smartphone,
+                                contentDescription = "Method",
+                                tint = BossDarkAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = factor.friendlyName,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Warning: Make sure you have another way to access your account before removing this method.",
+                        color = Color(0xFFFF5252),
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            isLoading = true
+                            AuthService.unenroll2FA(factor.id).fold(
+                                onSuccess = {
+                                    // Refresh the list
+                                    AuthService.get2FAFactors().fold(
+                                        onSuccess = { factors ->
+                                            twoFactorFactors = factors
+                                            isLoading = false
+                                            showRemoveDialog = null
+                                        },
+                                        onFailure = { error ->
+                                            errorMessage = error.message
+                                            isLoading = false
+                                        }
+                                    )
+                                },
+                                onFailure = { error ->
+                                    errorMessage = error.message
+                                    isLoading = false
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Text("Remove", color = Color(0xFFFF5252))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showRemoveDialog = null }
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            backgroundColor = BossDarkSurface,
+            contentColor = Color.White
+        )
+    }
+}
+
+@Composable
+private fun SecurityTip(
+    icon: ImageVector,
+    text: String
+) {
+    Row(
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = BossDarkAccent,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.9f),
+            lineHeight = 18.sp
+        )
+    }
+}
+
+@Composable
+private fun Simple2FAEnrollDialog(
+    onDismiss: () -> Unit,
+    onEnrolled: () -> Unit
+) {
+    var enrollmentData by remember { mutableStateOf<ai.rever.boss.services.supabase.TwoFactorEnrollment?>(null) }
+    var verificationCode by remember { mutableStateOf("") }
+    var currentStep by remember { mutableStateOf(1) } // 1: Setup, 2: Verify
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Start enrollment process
+    LaunchedEffect(Unit) {
+        isLoading = true
+        AuthService.enroll2FA().fold(
+            onSuccess = { enrollment ->
+                enrollmentData = enrollment
+                isLoading = false
+            },
+            onFailure = { error ->
+                errorMessage = error.message
+                isLoading = false
+            }
+        )
+    }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.Security,
+                    contentDescription = "2FA",
+                    tint = BossDarkAccent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = if (currentStep == 1) "Set Up 2FA" else "Verify 2FA",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = BossDarkAccent,
+                        modifier = Modifier.size(32.dp)
+                    )
+                } else if (currentStep == 1 && enrollmentData != null) {
+                    // Step 1: Show QR Code and Secret
+                    Text(
+                        text = "Scan this QR code with your authenticator app",
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // QR Code
+                    val qrCodeImage = ai.rever.boss.utils.QRCodeProvider.generateQRCode(enrollmentData!!.uri)
+                    qrCodeImage?.let { image ->
+                        Image(
+                            bitmap = image,
+                            contentDescription = "QR Code",
+                            modifier = Modifier.size(200.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Manual entry option
+                    Card(
+                        backgroundColor = BossDarkBackground,
+                        shape = RoundedCornerShape(4.dp),
+                        elevation = 0.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Or enter this code manually:",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = enrollmentData!!.secret.chunked(4).joinToString(" "),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = Color.White
+                                )
+                                val clipboardManager = LocalClipboardManager.current
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(enrollmentData!!.secret))
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.ContentCopy,
+                                        contentDescription = "Copy",
+                                        tint = BossDarkAccent,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (currentStep == 2) {
+                    // Step 2: Verify
+                    Text(
+                        text = "Enter the 6-digit code from your authenticator app",
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = verificationCode,
+                        onValueChange = { if (it.length <= 6 && it.all { char -> char.isDigit() }) verificationCode = it },
+                        label = { Text("Verification Code") },
+                        placeholder = { Text("000000") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = Color.White,
+                            focusedBorderColor = BossDarkAccent,
+                            unfocusedBorderColor = BossDarkBorder,
+                            focusedLabelColor = BossDarkAccent,
+                            unfocusedLabelColor = Color.Gray
+                        )
+                    )
+                }
+                
+                // Error message
+                errorMessage?.let { error ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = error,
+                        fontSize = 12.sp,
+                        color = Color(0xFFFF5252)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (!isLoading) {
+                TextButton(
+                    onClick = {
+                        if (currentStep == 1) {
+                            currentStep = 2
+                        } else {
+                            enrollmentData?.let { enrollment ->
+                                coroutineScope.launch {
+                                    isLoading = true
+                                    AuthService.verify2FAEnrollment(enrollment.id, verificationCode).fold(
+                                        onSuccess = {
+                                            isLoading = false
+                                            onEnrolled()
+                                        },
+                                        onFailure = { error ->
+                                            errorMessage = error.message
+                                            isLoading = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    enabled = if (currentStep == 2) verificationCode.length == 6 else true
+                ) {
+                    Text(
+                        if (currentStep == 1) "Next" else "Verify",
+                        color = BossDarkAccent
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isLoading
+            ) {
+                Text("Cancel", color = Color.Gray)
+            }
+        },
+        backgroundColor = BossDarkSurface,
+        contentColor = Color.White
+    )
 }

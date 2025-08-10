@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "10"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"supabase","component":"auth"},"name":"supabase-auth","namespace":"default"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"supabase","component":"auth"}},"template":{"metadata":{"labels":{"app":"supabase","component":"auth"}},"spec":{"containers":[{"envFrom":[{"configMapRef":{"name":"supabase-auth-config"}},{"secretRef":{"name":"supabase-auth-secrets"}}],"image":"supabase/gotrue:v2.143.0","livenessProbe":{"httpGet":{"path":"/health","port":9999},"initialDelaySeconds":30,"periodSeconds":30,"timeoutSeconds":10},"name":"gotrue","ports":[{"containerPort":9999,"name":"http"}],"readinessProbe":{"httpGet":{"path":"/health","port":9999},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":5},"resources":{"limits":{"cpu":"1000m","memory":"1Gi"},"requests":{"cpu":"250m","memory":"256Mi"}}}],"initContainers":[{"command":["sh","-c","until pg_isready -h postgres -p 5432; do sleep 2; done;"],"image":"postgres:15","name":"wait-for-postgres"}]}}}}
+  creationTimestamp: "2025-08-09T03:47:35Z"
+  generation: 10
+  labels:
+    app: supabase
+    component: auth
+  name: supabase-auth
+  namespace: default
+  resourceVersion: "1754777938458383008"
+  uid: 26aae691-eab9-4dc8-ba23-9c7b4ea02c42
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: supabase
+      component: auth
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2025-08-09T15:18:29-07:00"
+      creationTimestamp: null
+      labels:
+        app: supabase
+        component: auth
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: supabase-auth-config
+        - secretRef:
+            name: supabase-auth-secrets
+        image: supabase/gotrue:v2.143.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9999
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: gotrue
+        ports:
+        - containerPort: 9999
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9999
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - until pg_isready -h postgres -p 5432; do sleep 2; done;
+        image: postgres:15
+        imagePullPolicy: IfNotPresent
+        name: wait-for-postgres
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 2
+  conditions:
+  - lastTransitionTime: "2025-08-09T03:54:18Z"
+    lastUpdateTime: "2025-08-09T03:54:18Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2025-08-09T03:47:35Z"
+    lastUpdateTime: "2025-08-09T22:18:58Z"
+    message: ReplicaSet "supabase-auth-544487db7b" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 10
+  readyReplicas: 2
+  replicas: 2
+  updatedReplicas: 2

@@ -1,0 +1,24 @@
+apiVersion: v1
+data:
+  PGRST_API_HOST: 0.0.0.0
+  PGRST_API_PORT: "3000"
+  PGRST_DB_ANON_ROLE: anon
+  PGRST_DB_SCHEMA: public
+  PGRST_DB_USE_LEGACY_GUCS: "false"
+  PGRST_MAX_ROWS: "1000"
+  PGRST_OPENAPI_MODE: follow-privileges
+  PGRST_OPENAPI_SECURITY_ACTIVE: "true"
+  PGRST_RAW_MEDIA_TYPES: image/png,image/jpeg,image/gif,image/webp
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"PGRST_API_HOST":"0.0.0.0","PGRST_API_PORT":"3000","PGRST_DB_ANON_ROLE":"anon","PGRST_DB_SCHEMA":"public","PGRST_DB_USE_LEGACY_GUCS":"false","PGRST_MAX_ROWS":"1000","PGRST_OPENAPI_MODE":"follow-privileges","PGRST_OPENAPI_SECURITY_ACTIVE":"true","PGRST_RAW_MEDIA_TYPES":"image/png,image/jpeg,image/gif,image/webp"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"app":"supabase","component":"rest"},"name":"supabase-rest-config","namespace":"default"}}
+  creationTimestamp: "2025-08-09T03:57:27Z"
+  labels:
+    app: supabase
+    component: rest
+  name: supabase-rest-config
+  namespace: default
+  resourceVersion: "1754711848010143016"
+  uid: c9d8d165-20e8-4df4-bd92-e4bbcea07477

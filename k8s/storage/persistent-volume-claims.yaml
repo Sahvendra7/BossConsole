@@ -1,0 +1,75 @@
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io
+      volume.kubernetes.io/selected-node: gke-boss-cluster-default-pool-87695cea-l43r
+      volume.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io
+    creationTimestamp: "2025-08-09T03:44:29Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    labels:
+      app: supabase
+      component: postgres
+    name: postgres-storage-postgres-0
+    namespace: default
+    resourceVersion: "1754711073517087013"
+    uid: 91906482-3d06-4f91-a0bb-8c06cb6024c0
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Gi
+    storageClassName: boss-ssd-simple
+    volumeMode: Filesystem
+    volumeName: pvc-91906482-3d06-4f91-a0bb-8c06cb6024c0
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 10Gi
+    phase: Bound
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"labels":{"app":"supabase","component":"storage"},"name":"supabase-storage-pvc","namespace":"default"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"20Gi"}},"storageClassName":"boss-ssd-simple"}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io
+      volume.kubernetes.io/selected-node: gke-boss-cluster-default-pool-87695cea-wq8q
+      volume.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io
+    creationTimestamp: "2025-08-09T04:02:04Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    labels:
+      app: supabase
+      component: storage
+    name: supabase-storage-pvc
+    namespace: default
+    resourceVersion: "1754712143599055024"
+    uid: 199351c5-89b4-406f-8db4-82326831d6cf
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Gi
+    storageClassName: boss-ssd-simple
+    volumeMode: Filesystem
+    volumeName: pvc-199351c5-89b4-406f-8db4-82326831d6cf
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 20Gi
+    phase: Bound
+kind: List
+metadata:
+  resourceVersion: ""

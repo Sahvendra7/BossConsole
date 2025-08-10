@@ -1,0 +1,99 @@
+# pg_meta - Database metadata API for Supabase Studio
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supabase-pg-meta
+  labels:
+    app: supabase
+    component: pg-meta
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supabase
+      component: pg-meta
+  template:
+    metadata:
+      labels:
+        app: supabase
+        component: pg-meta
+    spec:
+      containers:
+      - name: pg-meta
+        image: supabase/postgres-meta:v0.68.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PG_META_HOST
+          value: "0.0.0.0"
+        - name: PG_META_PORT
+          value: "8080"
+        - name: PG_META_DB_HOST
+          value: "postgres"
+        - name: PG_META_DB_PORT
+          value: "5432"
+        - name: PG_META_DB_NAME
+          value: "postgres"
+        - name: PG_META_DB_USER
+          value: "supabase_admin"
+        - name: PG_META_DB_PASSWORD
+          value: "SuperSecurePassword123"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: supabase-pg-meta
+  labels:
+    app: supabase
+    component: pg-meta
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: supabase
+    component: pg-meta
+
+---
+# External access for pg-meta
+apiVersion: v1
+kind: Service
+metadata:
+  name: supabase-pg-meta-lb
+  labels:
+    app: supabase
+    component: pg-meta
+  annotations:
+    cloud.google.com/load-balancer-type: "External"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  selector:
+    app: supabase
+    component: pg-meta

@@ -1,0 +1,803 @@
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    creationTimestamp: "2025-08-09T03:19:53Z"
+    labels:
+      component: apiserver
+      provider: kubernetes
+    name: kubernetes
+    namespace: default
+    resourceVersion: "1754709593498559006"
+    uid: e79fc3e7-f879-445c-ab74-21892a2c974c
+  spec:
+    clusterIP: 34.118.224.1
+    clusterIPs:
+    - 34.118.224.1
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 443
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"postgres"},"name":"postgres","namespace":"default"},"spec":{"ports":[{"name":"postgres","port":5432,"targetPort":5432}],"selector":{"app":"supabase","component":"postgres"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T03:40:03Z"
+    labels:
+      app: supabase
+      component: postgres
+    name: postgres
+    namespace: default
+    resourceVersion: "1754710803334815004"
+    uid: b6deddb5-5cbc-477b-8f57-c6690d4df962
+  spec:
+    clusterIP: 34.118.236.78
+    clusterIPs:
+    - 34.118.236.78
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: postgres
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+    selector:
+      app: supabase
+      component: postgres
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"postgres"},"name":"postgres-headless","namespace":"default"},"spec":{"clusterIP":"None","ports":[{"name":"postgres","port":5432,"targetPort":5432}],"selector":{"app":"supabase","component":"postgres"}}}
+    creationTimestamp: "2025-08-09T03:40:03Z"
+    labels:
+      app: supabase
+      component: postgres
+    name: postgres-headless
+    namespace: default
+    resourceVersion: "1754710803137039002"
+    uid: 93ec4757-c866-4bbd-99c8-d5cb9608f6f0
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: postgres
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+    selector:
+      app: supabase
+      component: postgres
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"auth"},"name":"supabase-auth","namespace":"default"},"spec":{"ports":[{"name":"http","port":9999,"targetPort":9999}],"selector":{"app":"supabase","component":"auth"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T03:47:49Z"
+    labels:
+      app: supabase
+      component: auth
+    name: supabase-auth
+    namespace: default
+    resourceVersion: "1754711269756943024"
+    uid: 31103b72-fe4e-465d-8d60-0aed75dc2d22
+  spec:
+    clusterIP: 34.118.232.11
+    clusterIPs:
+    - 34.118.232.11
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 9999
+      protocol: TCP
+      targetPort: 9999
+    selector:
+      app: supabase
+      component: auth
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"auth-external"},"name":"supabase-auth-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":9999}],"selector":{"app":"supabase","component":"auth"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T03:47:49Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: auth-external
+    name: supabase-auth-lb
+    namespace: default
+    resourceVersion: "1754711297325183019"
+    uid: 9546efc4-74af-4c26-a729-32bf5df279ee
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.236.39
+    clusterIPs:
+    - 34.118.236.39
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 30854
+      port: 80
+      protocol: TCP
+      targetPort: 9999
+    selector:
+      app: supabase
+      component: auth
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.9.246.150
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"functions"},"name":"supabase-functions","namespace":"default"},"spec":{"ports":[{"name":"http","port":9000,"targetPort":9000}],"selector":{"app":"supabase","component":"functions"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T09:41:02Z"
+    labels:
+      app: supabase
+      component: functions
+    name: supabase-functions
+    namespace: default
+    resourceVersion: "1754732462544463002"
+    uid: a33b4dee-ea49-42e3-a0d4-17fd372fcdb6
+  spec:
+    clusterIP: 34.118.238.165
+    clusterIPs:
+    - 34.118.238.165
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+    selector:
+      app: supabase
+      component: functions
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      cloud.google.com/load-balancer-type: External
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{"cloud.google.com/load-balancer-type":"External"},"labels":{"app":"supabase","component":"functions"},"name":"supabase-functions-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":9000}],"selector":{"app":"supabase","component":"functions"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T09:41:02Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: functions
+    name: supabase-functions-lb
+    namespace: default
+    resourceVersion: "1754732490150591012"
+    uid: ffc9e675-4bc2-49db-9fd3-91a45643c4bb
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.235.50
+    clusterIPs:
+    - 34.118.235.50
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 30389
+      port: 80
+      protocol: TCP
+      targetPort: 9000
+    selector:
+      app: supabase
+      component: functions
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.68.96.199
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"imgproxy"},"name":"supabase-imgproxy","namespace":"default"},"spec":{"ports":[{"name":"http","port":5001,"targetPort":8080}],"selector":{"app":"supabase","component":"imgproxy"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T04:12:24Z"
+    labels:
+      app: supabase
+      component: imgproxy
+    name: supabase-imgproxy
+    namespace: default
+    resourceVersion: "1754712744728591016"
+    uid: 6894ac9c-9707-4410-b769-87c32c0d62a2
+  spec:
+    clusterIP: 34.118.230.68
+    clusterIPs:
+    - 34.118.230.68
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 5001
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: supabase
+      component: imgproxy
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"kong"},"name":"supabase-kong","namespace":"default"},"spec":{"ports":[{"name":"proxy","port":8000,"targetPort":8000},{"name":"admin","port":8001,"targetPort":8001}],"selector":{"app":"supabase","component":"kong"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T09:37:03Z"
+    labels:
+      app: supabase
+      component: kong
+    name: supabase-kong
+    namespace: default
+    resourceVersion: "1754732223735631003"
+    uid: fb510c86-1ebc-4138-8f0c-b57579546399
+  spec:
+    clusterIP: 34.118.236.126
+    clusterIPs:
+    - 34.118.236.126
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: proxy
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+    - name: admin
+      port: 8001
+      protocol: TCP
+      targetPort: 8001
+    selector:
+      app: supabase
+      component: kong
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      cloud.google.com/load-balancer-type: External
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{"cloud.google.com/load-balancer-type":"External"},"labels":{"app":"supabase","component":"kong"},"name":"supabase-kong-lb","namespace":"default"},"spec":{"ports":[{"name":"proxy","port":80,"targetPort":8000}],"selector":{"app":"supabase","component":"kong"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T09:37:03Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: kong
+    name: supabase-kong-lb
+    namespace: default
+    resourceVersion: "1754732251422943008"
+    uid: 09bc54b1-3390-4ac6-bf85-3314bce6e284
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.233.27
+    clusterIPs:
+    - 34.118.233.27
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: proxy
+      nodePort: 31634
+      port: 80
+      protocol: TCP
+      targetPort: 8000
+    selector:
+      app: supabase
+      component: kong
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.9.47.213
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"pg-meta"},"name":"supabase-pg-meta","namespace":"default"},"spec":{"ports":[{"name":"http","port":8080,"targetPort":8080}],"selector":{"app":"supabase","component":"pg-meta"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T09:36:59Z"
+    labels:
+      app: supabase
+      component: pg-meta
+    name: supabase-pg-meta
+    namespace: default
+    resourceVersion: "1754732219602239013"
+    uid: c3fed762-af09-4fed-8790-b0db69bfb61c
+  spec:
+    clusterIP: 34.118.227.211
+    clusterIPs:
+    - 34.118.227.211
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: supabase
+      component: pg-meta
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      cloud.google.com/load-balancer-type: External
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{"cloud.google.com/load-balancer-type":"External"},"labels":{"app":"supabase","component":"pg-meta"},"name":"supabase-pg-meta-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":8080}],"selector":{"app":"supabase","component":"pg-meta"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T09:36:59Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: pg-meta
+    name: supabase-pg-meta-lb
+    namespace: default
+    resourceVersion: "1754732247305583009"
+    uid: 4eedb8c2-d748-4159-881e-89a946722146
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.237.239
+    clusterIPs:
+    - 34.118.237.239
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 30249
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: supabase
+      component: pg-meta
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.58.246.78
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"realtime"},"name":"supabase-realtime","namespace":"default"},"spec":{"ports":[{"name":"http","port":4000,"targetPort":4000}],"selector":{"app":"supabase","component":"realtime"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T04:01:26Z"
+    labels:
+      app: supabase
+      component: realtime
+    name: supabase-realtime
+    namespace: default
+    resourceVersion: "1754712086934047020"
+    uid: 1572f485-4a50-4996-b448-36040d029be5
+  spec:
+    clusterIP: 34.118.236.92
+    clusterIPs:
+    - 34.118.236.92
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 4000
+      protocol: TCP
+      targetPort: 4000
+    selector:
+      app: supabase
+      component: realtime
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"realtime-external"},"name":"supabase-realtime-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":4000}],"selector":{"app":"supabase","component":"realtime"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T04:01:27Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: realtime-external
+    name: supabase-realtime-lb
+    namespace: default
+    resourceVersion: "1754712115624479008"
+    uid: d6310dda-64b0-46ca-8dd4-b29dabdaff6c
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.226.112
+    clusterIPs:
+    - 34.118.226.112
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 30150
+      port: 80
+      protocol: TCP
+      targetPort: 4000
+    selector:
+      app: supabase
+      component: realtime
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.42.189.31
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"rest"},"name":"supabase-rest","namespace":"default"},"spec":{"ports":[{"name":"http","port":3000,"targetPort":3000}],"selector":{"app":"supabase","component":"rest"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T03:59:13Z"
+    labels:
+      app: supabase
+      component: rest
+    name: supabase-rest
+    namespace: default
+    resourceVersion: "1754711953565567011"
+    uid: ec47dfb1-ede7-482c-ae33-b0214bb198cf
+  spec:
+    clusterIP: 34.118.235.87
+    clusterIPs:
+    - 34.118.235.87
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      app: supabase
+      component: rest
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"rest-external"},"name":"supabase-rest-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":3000}],"selector":{"app":"supabase","component":"rest"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T03:59:13Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: rest-external
+    name: supabase-rest-lb
+    namespace: default
+    resourceVersion: "1754711981417007007"
+    uid: 4f6f6fc3-3cd5-457e-91e9-83f798f1399e
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.237.75
+    clusterIPs:
+    - 34.118.237.75
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 32708
+      port: 80
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      app: supabase
+      component: rest
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.66.84.207
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      cloud.google.com/load-balancer-type: External
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{"cloud.google.com/load-balancer-type":"External"},"labels":{"app":"supabase"},"name":"supabase-static-ip-service","namespace":"default"},"spec":{"loadBalancerIP":null,"ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":80},{"name":"https","port":443,"protocol":"TCP","targetPort":443}],"selector":{"app":"ingress-gce-controller"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T11:19:27Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+    name: supabase-static-ip-service
+    namespace: default
+    resourceVersion: "1754738396626975012"
+    uid: 367c2c8e-5045-431d-a1ce-568677dcee23
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.237.132
+    clusterIPs:
+    - 34.118.237.132
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 31131
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    - name: https
+      nodePort: 31943
+      port: 443
+      protocol: TCP
+      targetPort: 443
+    selector:
+      app: ingress-gce-controller
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.10.42.49
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"storage"},"name":"supabase-storage","namespace":"default"},"spec":{"ports":[{"name":"http","port":5000,"targetPort":5000}],"selector":{"app":"supabase","component":"storage"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T04:02:19Z"
+    labels:
+      app: supabase
+      component: storage
+    name: supabase-storage
+    namespace: default
+    resourceVersion: "1754712139140015012"
+    uid: 61111ee0-82f4-498d-ac29-e70de81b911d
+  spec:
+    clusterIP: 34.118.229.26
+    clusterIPs:
+    - 34.118.229.26
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 5000
+      protocol: TCP
+      targetPort: 5000
+    selector:
+      app: supabase
+      component: storage
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"storage-external"},"name":"supabase-storage-lb","namespace":"default"},"spec":{"ports":[{"name":"http","port":80,"targetPort":5000}],"selector":{"app":"supabase","component":"storage"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T04:02:19Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: storage-external
+    name: supabase-storage-lb
+    namespace: default
+    resourceVersion: "1754712166731663001"
+    uid: 342916c2-33e1-4c5c-9579-1115494e02c9
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.239.47
+    clusterIPs:
+    - 34.118.239.47
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      nodePort: 31970
+      port: 80
+      protocol: TCP
+      targetPort: 5000
+    selector:
+      app: supabase
+      component: storage
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 34.67.139.68
+        ipMode: VIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase-studio"},"name":"supabase-studio","namespace":"default"},"spec":{"ports":[{"name":"http","port":3000,"targetPort":3000}],"selector":{"app":"supabase-studio"},"type":"ClusterIP"}}
+    creationTimestamp: "2025-08-09T10:28:27Z"
+    labels:
+      app: supabase-studio
+    name: supabase-studio
+    namespace: default
+    resourceVersion: "1754735307448335016"
+    uid: 5c218a43-6460-45bd-b49f-536f106b14c5
+  spec:
+    clusterIP: 34.118.227.42
+    clusterIPs:
+    - 34.118.227.42
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      app: supabase-studio
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"supabase","component":"test"},"name":"supabase-test-lb","namespace":"default"},"spec":{"ports":[{"name":"postgres","port":5432,"protocol":"TCP","targetPort":5432}],"selector":{"app":"supabase","component":"postgres"},"type":"LoadBalancer"}}
+    creationTimestamp: "2025-08-09T03:42:27Z"
+    finalizers:
+    - gke.networking.io/l4-netlb-v1
+    - service.kubernetes.io/load-balancer-cleanup
+    labels:
+      app: supabase
+      component: test
+    name: supabase-test-lb
+    namespace: default
+    resourceVersion: "1754710983843039018"
+    uid: 4e0316b2-d741-450b-a4b8-617a9503fba1
+  spec:
+    allocateLoadBalancerNodePorts: true
+    clusterIP: 34.118.225.107
+    clusterIPs:
+    - 34.118.225.107
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: postgres
+      nodePort: 30898
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+    selector:
+      app: supabase
+      component: postgres
+    sessionAffinity: None
+    type: LoadBalancer
+  status:
+    loadBalancer:
+      ingress:
+      - ip: 35.225.71.65
+        ipMode: VIP
+kind: List
+metadata:
+  resourceVersion: ""

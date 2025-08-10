@@ -167,6 +167,13 @@ kotlin {
             // Compose Icons dependencies
             implementation(libs.compose.icons.feather)
             implementation(libs.compose.icons.fontawesome)
+            
+            // Supabase dependencies
+            implementation(libs.supabase.postgrest)
+            implementation(libs.supabase.auth)
+            implementation(libs.supabase.realtime)
+            implementation(libs.supabase.storage)
+            implementation(libs.supabase.functions)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -184,6 +191,10 @@ kotlin {
             // Logging
             implementation(libs.slf4j.api)
             implementation(libs.slf4j.simple)
+            
+            // QR Code generation
+            implementation(libs.zxing.core)
+            implementation(libs.zxing.javase)
             
             // JxBrowser with Compose support
             implementation(jxbrowser.currentPlatform)
@@ -307,6 +318,14 @@ compose.desktop {
                 
                 // Windows code signing is handled by external tools (signtool.exe)
                 // Configuration for MSI signing is done in the CI/CD pipeline
+                
+                // Configure Windows to accept command line arguments for deep links
+                // The protocol registration is handled at runtime by WindowsProtocolHandler
+                console = false  // Don't show console window
+                dirChooser = true  // Allow user to choose install directory
+                perUserInstall = true  // Install per-user to avoid admin requirements
+                shortcut = true  // Create desktop shortcut
+                menu = true  // Add to Start Menu
             }
             
             linux {
@@ -366,6 +385,17 @@ compose.desktop {
                         <string>BOSS needs access to your camera for video conferencing and screen sharing.</string>
                         <key>NSMicrophoneUsageDescription</key>
                         <string>BOSS needs access to your microphone for video conferencing and voice communication.</string>
+                        <key>CFBundleURLTypes</key>
+                        <array>
+                            <dict>
+                                <key>CFBundleURLName</key>
+                                <string>ai.rever.boss</string>
+                                <key>CFBundleURLSchemes</key>
+                                <array>
+                                    <string>boss</string>
+                                </array>
+                            </dict>
+                        </array>
                     """.trimIndent()
                 }
             }

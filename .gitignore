@@ -33,3 +33,13 @@ BOSS-Standalone-*/
 # Temporary JDK downloads
 zulu-jdk-*/
 jdk-*/
+
+# BOSS-Releases public repository
+BOSS-Releases/
+
+# Homebrew tap repository
+homebrew-risa-labs-inc/
+homebrew/
+
+# Homebrew cask fork
+homebrew-cask/

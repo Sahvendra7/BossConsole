@@ -1,0 +1,37 @@
+# Backend Configuration for Google Cloud Load Balancer
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: supabase-backend-config
+  labels:
+    app: supabase
+spec:
+  # Health check configuration
+  healthCheck:
+    checkIntervalSec: 30
+    timeoutSec: 10
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 9999
+  
+  # Connection draining for graceful shutdowns
+  connectionDraining:
+    drainingTimeoutSec: 60
+  
+  # Custom request headers for better routing
+  customRequestHeaders:
+    headers:
+    - "X-Forwarded-Proto: https"
+    - "X-Real-IP: {client_ip}"
+    - "X-Forwarded-Host: {host_header}"
+  
+  # Session affinity for WebSocket connections (Realtime)
+  sessionAffinity:
+    affinityType: "CLIENT_IP"
+    affinityCookieTtlSec: 3600
+  
+  # Timeout settings for long-running connections
+  timeoutSec: 30
+
