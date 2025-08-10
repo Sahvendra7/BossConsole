@@ -39,7 +39,6 @@ BOSS-Releases/
 
 # Homebrew tap repository
 homebrew-risa-labs-inc/
-homebrew/
 
-# Homebrew cask fork
+# Homebrew cask fork  
 homebrew-cask/

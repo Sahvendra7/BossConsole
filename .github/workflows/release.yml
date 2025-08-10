@@ -80,27 +80,64 @@ jobs:
             # Push changes
             git push
             
+            # Create and push tag for the new version
+            git tag "v$NEW_VERSION"
+            git push origin "v$NEW_VERSION"
+            
             # Get the new commit SHA
             NEW_SHA=$(git rev-parse HEAD)
             echo "updated-sha=$NEW_SHA" >> $GITHUB_OUTPUT
-            echo "✅ Version committed and pushed: $NEW_VERSION"
+            echo "✅ Version committed and tagged: $NEW_VERSION"
           fi
 
       - name: 📋 Get Version
         id: get-version
         run: |
-          VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Building version: $VERSION"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            # Extract version from tag (e.g., refs/tags/v8.11.2 -> 8.11.2)
+            TAG_VERSION="${{ github.ref }}"
+            TAG_VERSION="${TAG_VERSION#refs/tags/v}"
+            echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+            echo "📦 Building version from tag: $TAG_VERSION"
+            
+            # Verify tag version matches version.properties
+            PROPS_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+            if [[ "$TAG_VERSION" != "$PROPS_VERSION" ]]; then
+              echo "⚠️ Warning: Tag version ($TAG_VERSION) differs from version.properties ($PROPS_VERSION)"
+              echo "Updating version.properties to match tag version for build consistency"
+              
+              # Parse tag version
+              IFS='.' read -r TAG_MAJOR TAG_MINOR TAG_PATCH <<< "$TAG_VERSION"
+              
+              # Update version.properties to match tag
+              sed -i "s/^app.version.major=.*/app.version.major=$TAG_MAJOR/" version.properties
+              sed -i "s/^app.version.minor=.*/app.version.minor=$TAG_MINOR/" version.properties
+              sed -i "s/^app.version.patch=.*/app.version.patch=$TAG_PATCH/" version.properties
+              sed -i "s/^app.version=.*/app.version=$TAG_VERSION/" version.properties
+              sed -i "s/^app.bundle.version=.*/app.bundle.version=$TAG_VERSION/" version.properties
+              
+              echo "✅ Updated version.properties to match tag: $TAG_VERSION"
+            fi
+          else
+            # Use version from properties file
+            VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "📦 Building version from properties: $VERSION"
+          fi
 
       - name: 🔍 Check for Changes
         id: check-changes
         run: |
-          # Always build on tag push or manual trigger
+          # Build on both manual trigger and tag pushes
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "should-build=true" >> $GITHUB_OUTPUT
+            echo "trigger=manual" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "should-build=true" >> $GITHUB_OUTPUT
+            echo "trigger=tag" >> $GITHUB_OUTPUT
           else
             echo "should-build=false" >> $GITHUB_OUTPUT
+            echo "trigger=none" >> $GITHUB_OUTPUT
           fi
 
   build-macos:
@@ -655,6 +692,7 @@ jobs:
           echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Platforms Built**: macOS, Linux, Windows" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
