@@ -501,21 +501,21 @@ tasks.register("signPty4jBinaries") {
                         commandLine("jar", "xf", pty4jJar.absolutePath)
                     }
                     
-                    // Find and sign the native spawn helper binaries
-                    val spawnHelpers = tempDir.walkTopDown().filter { 
-                        it.name == "pty4j-unix-spawn-helper" && it.isFile 
+                    // Sign PTY4J native libraries with hardened runtime
+                    val nativeFiles = tempDir.walkTopDown().filter { 
+                        it.isFile && (it.name.endsWith(".dylib") || it.name.contains("spawn-helper"))
                     }.toList()
                     
-                    if (spawnHelpers.isNotEmpty()) {
-                        println("Found ${spawnHelpers.size} PTY4J spawn helper binary(ies) to sign:")
+                    if (nativeFiles.isNotEmpty()) {
+                        println("Found ${nativeFiles.size} PTY4J native binary(ies) to sign:")
                         
-                        for (helper in spawnHelpers) {
-                            println("  Signing: ${helper.relativeTo(tempDir)}")
+                        for (nativeFile in nativeFiles) {
+                            println("  Signing: ${nativeFile.relativeTo(tempDir)}")
                             
                             // Make executable
-                            helper.setExecutable(true)
+                            nativeFile.setExecutable(true)
                             
-                            // Sign with hardened runtime - critical for notarization
+                            // Sign with hardened runtime
                             try {
                                 exec {
                                     commandLine(
@@ -524,48 +524,22 @@ tasks.register("signPty4jBinaries") {
                                         "--options", "runtime",
                                         "--sign", developerId,
                                         "--timestamp", 
-                                        helper.absolutePath
+                                        nativeFile.absolutePath
                                     )
                                 }
                                 
                                 // Verify signature
                                 exec {
-                                    commandLine("codesign", "-vv", helper.absolutePath)
+                                    commandLine("codesign", "-vv", nativeFile.absolutePath)
                                 }
                                 
-                                println("    ✅ Successfully signed ${helper.name}")
+                                println("    ✅ Successfully signed ${nativeFile.name}")
                             } catch (e: Exception) {
-                                println("    ⚠️ Warning: Failed to sign ${helper.name}: ${e.message}")
+                                println("    ⚠️ Warning: Failed to sign ${nativeFile.name}: ${e.message}")
                             }
                         }
                         
-                        // Also sign any other native binaries in the jar
-                        val otherNatives = tempDir.walkTopDown().filter { 
-                            it.isFile && (it.name.endsWith(".dylib") || it.name.startsWith("libpty"))
-                        }.toList()
-                        
-                        for (native in otherNatives) {
-                            println("  Signing native library: ${native.relativeTo(tempDir)}")
-                            native.setExecutable(true)
-                            
-                            try {
-                                exec {
-                                    commandLine(
-                                        "codesign",
-                                        "--force",
-                                        "--options", "runtime",
-                                        "--sign", developerId,
-                                        "--timestamp",
-                                        native.absolutePath
-                                    )
-                                }
-                                println("    ✅ Successfully signed ${native.name}")
-                            } catch (e: Exception) {
-                                println("    ⚠️ Warning: Failed to sign ${native.name}: ${e.message}")
-                            }
-                        }
-                        
-                        // Recreate the jar with signed binaries
+                        // Recreate the jar with signed native libraries
                         val signedJar = File(pty4jJar.parentFile, "${pty4jJar.nameWithoutExtension}-signed.jar")
                         exec {
                             workingDir = tempDir
@@ -576,35 +550,10 @@ tasks.register("signPty4jBinaries") {
                         pty4jJar.delete()
                         signedJar.renameTo(pty4jJar)
                         
-                        println("✅ PTY4J natives signed with hardened runtime and jar updated")
-                        
-                        // Re-sign the main app bundle since we modified its contents
-                        println("🔧 Re-signing main app bundle after PTY4J modifications...")
-                        try {
-                            exec {
-                                commandLine(
-                                    "codesign",
-                                    "--force",
-                                    "--options", "runtime",
-                                    "--sign", developerId,
-                                    "--timestamp",
-                                    "--deep",
-                                    appFile.absolutePath
-                                )
-                            }
-                            
-                            // Verify the main app signature
-                            exec {
-                                commandLine("codesign", "-vv", appFile.absolutePath)
-                            }
-                            
-                            println("✅ Main app bundle re-signed successfully")
-                        } catch (e: Exception) {
-                            println("⚠️ Warning: Failed to re-sign main app bundle: ${e.message}")
-                        }
+                        println("✅ PTY4J jar updated with signed native libraries")
                         
                     } else {
-                        println("⚠️ Warning: No pty4j-unix-spawn-helper binaries found in jar")
+                        println("⚠️ Warning: No PTY4J native binaries found in jar")
                     }
                     
                 } finally {
