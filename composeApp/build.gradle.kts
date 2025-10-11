@@ -450,7 +450,7 @@ tasks.register("signPty4jBinaries") {
                 
                 try {
                     // Extract the entire jar
-                    exec {
+                    project.exec {
                         workingDir = tempDir
                         commandLine("jar", "xf", pty4jJar.absolutePath)
                     }
@@ -471,19 +471,19 @@ tasks.register("signPty4jBinaries") {
                             
                             // Sign with hardened runtime
                             try {
-                                exec {
+                                project.exec {
                                     commandLine(
-                                        "codesign", 
-                                        "--force", 
+                                        "codesign",
+                                        "--force",
                                         "--options", "runtime",
                                         "--sign", developerId,
-                                        "--timestamp", 
+                                        "--timestamp",
                                         nativeFile.absolutePath
                                     )
                                 }
-                                
+
                                 // Verify signature
-                                exec {
+                                project.exec {
                                     commandLine("codesign", "-vv", nativeFile.absolutePath)
                                 }
                                 
@@ -495,26 +495,53 @@ tasks.register("signPty4jBinaries") {
                         
                         // Recreate the jar with signed native libraries
                         val signedJar = File(pty4jJar.parentFile, "${pty4jJar.nameWithoutExtension}-signed.jar")
-                        exec {
+                        project.exec {
                             workingDir = tempDir
                             commandLine("jar", "cf", signedJar.absolutePath, ".")
                         }
-                        
+
                         // Replace original jar with signed version
                         pty4jJar.delete()
                         signedJar.renameTo(pty4jJar)
-                        
+
                         println("✅ PTY4J jar updated with signed native libraries")
-                        
+
                     } else {
                         println("⚠️ Warning: No PTY4J native binaries found in jar")
                     }
-                    
+
                 } finally {
                     // Clean up temp directory
                     tempDir.deleteRecursively()
                 }
-                
+
+                // CRITICAL: Re-sign the entire app bundle after modifying the JAR
+                println("🔒 Re-signing app bundle after PTY4J modifications...")
+                try {
+                    project.exec {
+                        commandLine(
+                            "codesign",
+                            "--force",
+                            "--deep",
+                            "--options", "runtime",
+                            "--sign", developerId,
+                            "--timestamp",
+                            "--entitlements", project.file("src/desktopMain/resources/BOSS.entitlements").absolutePath,
+                            appFile.absolutePath
+                        )
+                    }
+
+                    // Verify the re-signed app
+                    project.exec {
+                        commandLine("codesign", "-vvv", "--deep", "--strict", appFile.absolutePath)
+                    }
+
+                    println("✅ App bundle re-signed successfully")
+                } catch (e: Exception) {
+                    println("❌ Failed to re-sign app bundle: ${e.message}")
+                    throw e
+                }
+
             } else {
                 println("⚠️ Warning: PTY4J jar not found in app bundle")
             }
@@ -543,26 +570,35 @@ afterEvaluate {
         dependsOn("extractPty4jNative")
         dependsOn("extractJcefNatives")
     }
-    
-    // Make signPty4jBinaries run after createDistributable but before packageDmg
+
+    val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+    val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+
+    // Make signPty4jBinaries run AFTER createDistributable and BEFORE any signing/packaging
     tasks.findByName("signPty4jBinaries")?.apply {
         mustRunAfter("createDistributable")
+        // Must run before the Compose Desktop signing tasks
+        tasks.findByName("signApp")?.mustRunAfter(this)
+        tasks.findByName("signUberJarProvisionedRuntime")?.mustRunAfter(this)
     }
-    
-    // Make packaging tasks depend on PTY4J signing (only on macOS with signing enabled)
-    tasks.findByName("packageDmg")?.apply {
-        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        
+
+    // CRITICAL: Make createDistributable finalize with signPty4jBinaries
+    // This ensures PTY4J natives are signed before Compose Desktop signs the whole app
+    tasks.findByName("createDistributable")?.apply {
         if (isMacOS && !signingDisabled) {
-            dependsOn("signPty4jBinaries")
-            println("📝 packageDmg will depend on signPty4jBinaries for macOS with signing enabled")
+            finalizedBy("signPty4jBinaries")
+            println("📝 createDistributable will be finalized by signPty4jBinaries")
         }
     }
-    
-    // Also make sure any other packaging tasks depend on signing if needed
-    tasks.findByName("createDistributable")?.apply {
-        finalizedBy("signPty4jBinaries")
+
+    // Make sure signing happens before packaging
+    tasks.findByName("packageDmg")?.apply {
+        if (isMacOS && !signingDisabled) {
+            mustRunAfter("signPty4jBinaries")
+            tasks.findByName("signApp")?.let { mustRunAfter(it) }
+            tasks.findByName("signUberJarProvisionedRuntime")?.let { mustRunAfter(it) }
+            println("📝 packageDmg will run after PTY4J signing and app signing")
+        }
     }
 }
 
