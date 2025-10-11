@@ -37,7 +37,7 @@ jobs:
       updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
@@ -151,7 +151,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -315,7 +315,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -395,7 +395,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -574,7 +574,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
