@@ -42,3 +42,28 @@ homebrew/
 
 # Homebrew cask fork  
 homebrew-cask/
+
+# Supabase/Deno dependencies
+supabase/node_modules/
+supabase/deno.lock
+
+# Edge runtime fork
+supabase_v2/edge-runtime/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+**/.terraform/*
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

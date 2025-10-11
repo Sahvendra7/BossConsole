@@ -12,6 +12,7 @@ val BossDarkTextSecondary = Color(0xFFAAAAAA) // JetBrains secondary text - brig
 val BossDarkAccent = Color(0xFF3592C4)      // JetBrains blue accent
 val BossDarkSecondary = Color(0xFF43A047)   // Secondary color - green
 val BossDarkError = Color(0xFFE53935)       // Error color - red
+val BossDarkSuccess = Color(0xFF4CAF50)     // Success color - green
 
 /**
  * BOSS application theme

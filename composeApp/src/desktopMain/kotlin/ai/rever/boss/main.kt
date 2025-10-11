@@ -3,6 +3,8 @@ package ai.rever.boss
 import BossDarkSurface
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import ai.rever.boss.utils.DeepLinkHandler
+import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -20,6 +22,9 @@ fun main(args: Array<String>) {
     
     // Process command line arguments for deep links (Windows)
     DeepLinkHandler.processCommandLineArgs(args)
+    
+    // Initialize passkey service for desktop platforms
+    PasskeyPlatformInit.initialize()
     
     // Debug: Check environment variables
     println("=== Checking LLM API Keys in Environment ===")
@@ -67,6 +72,9 @@ fun main(args: Array<String>) {
             window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
             window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
             window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+
+            // Register window for focus management (deep links, etc.)
+            WindowFocusManager.registerWindow(window)
 
             with(createBossAppContext) {
                 BossAppWithAuth()

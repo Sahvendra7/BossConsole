@@ -775,7 +775,7 @@ class TerminalEmulator(
     
     private fun deleteCharacters(count: Int) {
         // Delete characters at cursor position, shift rest of line left
-        val endCol = minOf(cursorCol + count, columns)
+        minOf(cursorCol + count, columns)
         for (col in cursorCol until columns - count) {
             buffer[cursorRow][col] = if (col + count < columns) {
                 buffer[cursorRow][col + count]
@@ -887,7 +887,7 @@ class TerminalEmulator(
         val colsToCopy = minOf(columns, newColumns)
         
         // Copy primary buffer
-        val currentBuffer = if (usingAlternateBuffer) alternateBuffer else primaryBuffer
+        if (usingAlternateBuffer) alternateBuffer else primaryBuffer
         for (row in 0 until rowsToCopy) {
             for (col in 0 until colsToCopy) {
                 newPrimaryBuffer[row][col] = primaryBuffer[row][col]

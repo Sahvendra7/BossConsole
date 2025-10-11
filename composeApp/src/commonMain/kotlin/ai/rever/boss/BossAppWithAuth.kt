@@ -3,12 +3,12 @@ package ai.rever.boss
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import ai.rever.boss.components.auth.LoginScreen
-import ai.rever.boss.components.auth.Mandatory2FAEnrollmentScreen
 import ai.rever.boss.components.dialogs.SupabaseSettingsDialog
-import ai.rever.boss.components.dialogs.PasswordResetDialog
 import ai.rever.boss.services.supabase.AuthService
-import ai.rever.boss.services.supabase.AuthState
 import ai.rever.boss.utils.DeepLinkHandler
+import ai.rever.boss.services.auth.PasskeySessionEventHandler
+import ai.rever.boss.services.auth.CrossDeviceAuthService
+import ai.rever.boss.utils.WindowFocusManager
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
@@ -40,9 +40,6 @@ fun ComponentContext.BossAppWithAuth() {
     var showSupabaseSettings by remember { mutableStateOf(false) }
     val authState by AuthService.authState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
-    var needs2FAEnrollment by remember { mutableStateOf(false) }
-    var showPasswordResetDialog by remember { mutableStateOf(false) }
-    var passwordResetToken by remember { mutableStateOf<String?>(null) }
     
     // Initialize authentication service
     LaunchedEffect(Unit) {
@@ -55,46 +52,89 @@ fun ComponentContext.BossAppWithAuth() {
     LaunchedEffect(deepLink) {
         deepLink?.let { uri ->
             println("Received deep link in app: $uri")
-            
+
+            // Check if it's a passkey callback
+            if (uri.contains("passkey/registered") || uri.contains("passkey/authenticated")) {
+                println("BossAppWithAuth: Received passkey callback: $uri")
+
+                // Bring window to front
+                WindowFocusManager.bringToFront()
+
+                // Extract sessionId from URL
+                val sessionId = try {
+                    val regex = Regex("sessionId=([^&]+)")
+                    regex.find(uri)?.groupValues?.get(1)
+                } catch (e: Exception) {
+                    null
+                }
+
+                if (sessionId != null) {
+                    when {
+                        uri.contains("passkey/registered") -> {
+                            println("BossAppWithAuth: Passkey registration completed for session: $sessionId")
+                            PasskeySessionEventHandler.handleRegistrationCompleted(sessionId)
+                        }
+                        uri.contains("passkey/authenticated") -> {
+                            println("BossAppWithAuth: Passkey authentication completed for session: $sessionId")
+
+                            // Trigger the polling check to complete authentication
+                            coroutineScope.launch {
+                                // The CrossDeviceAuthService is already polling, but we can trigger
+                                // an immediate check when we receive the deep link
+                                val metadata = PasskeySessionEventHandler.getSessionMetadata(sessionId)
+                                if (metadata != null) {
+                                    println("BossAppWithAuth: Checking authentication status for session: $sessionId")
+
+                                    // Notify that authentication completed
+                                    PasskeySessionEventHandler.handleAuthenticationCompleted(sessionId)
+                                } else {
+                                    println("BossAppWithAuth: No metadata found for session: $sessionId")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    println("BossAppWithAuth: Failed to extract sessionId from deep link: $uri")
+                }
+
+                // Clear the deep link after processing
+                DeepLinkHandler.clearDeepLink()
+            }
             // Check if it's an auth verification link
-            if (uri.contains("auth/verify")) {
+            else if (uri.contains("auth/verify")) {
                 val token = DeepLinkHandler.extractVerificationToken(uri)
                 val type = DeepLinkHandler.extractVerificationType(uri)
-                
+
                 if (token != null) {
                     println("Extracted verification token: $token, type: $type")
-                    
+
                     coroutineScope.launch {
                         when (type) {
-                            "recovery" -> {
-                                // Handle password reset
-                                println("BossAppWithAuth: Processing password reset")
-                                
-                                AuthService.processPasswordReset(token).fold(
+                            "magiclink" -> {
+                                // Handle magic link authentication
+                                println("BossAppWithAuth: Starting magic link authentication process")
+
+                                AuthService.verifyEmail(token, type).fold(
                                     onSuccess = {
-                                        println("BossAppWithAuth: Password reset token processed successfully")
-                                        
-                                        // Show password reset dialog
-                                        passwordResetToken = token
-                                        showPasswordResetDialog = true
+                                        println("BossAppWithAuth: Magic link authentication successful")
                                     },
                                     onFailure = { error ->
-                                        println("BossAppWithAuth: Password reset failed: ${error.message}")
+                                        println("BossAppWithAuth: Magic link authentication failed: ${error.message}")
                                     }
                                 )
                             }
-                            
+
                             else -> {
-                                // Handle email verification (signup confirmation)
-                                println("BossAppWithAuth: Processing email verification")
-                                
-                                AuthService.verifyEmail(token).fold(
+                                // Handle any other verification types (signup, recovery, etc.)
+                                println("BossAppWithAuth: Processing authentication token with type: $type")
+
+                                AuthService.verifyEmail(token, type ?: "signup").fold(
                                     onSuccess = {
                                         println("BossAppWithAuth: Email verified successfully via deep link")
-                                        
+
                                         // If user is not authenticated, this means the verification was successful
                                         // The user should now be able to sign in
-                                        if (authState is AuthState.NotAuthenticated) {
+                                        if (authState is AuthService.AuthState.NotAuthenticated) {
                                             // Trigger a refresh to check if user can now sign in
                                             AuthService.initialize()
                                         }
@@ -103,14 +143,14 @@ fun ComponentContext.BossAppWithAuth() {
                                         println("BossAppWithAuth: Email verification failed: ${error.message}")
                                     }
                                 )
-                                
+
                                 // Also trigger event for LoginViewModel if it exists
                                 println("BossAppWithAuth: Also triggering event for LoginViewModel (if exists)")
                                 AuthService.triggerEmailVerificationEvent(token)
                             }
                         }
                     }
-                    
+
                     // Clear the deep link after processing
                     DeepLinkHandler.clearDeepLink()
                 }
@@ -124,13 +164,13 @@ fun ComponentContext.BossAppWithAuth() {
     }
     
     when (authState) {
-        is AuthState.Loading -> {
+        is AuthService.AuthState.Loading -> {
             // Show loading screen
             println("BossAppWithAuth: Showing loading screen")
             LoadingScreen()
         }
         
-        is AuthState.NotAuthenticated, is AuthState.Error, is AuthState.Requires2FA -> {
+        is AuthService.AuthState.NotAuthenticated, is AuthService.AuthState.Error, is AuthService.AuthState.Requires2FA -> {
             // Show login screen (it will handle 2FA verification internally)
             // Use key() to prevent recreation when switching between these states
             key("login_screen") {
@@ -142,28 +182,9 @@ fun ComponentContext.BossAppWithAuth() {
             }
         }
         
-        is AuthState.Authenticated -> {
-            // Check if 2FA enrollment is required
-            LaunchedEffect(authState) {
-                needs2FAEnrollment = AuthService.requires2FAEnrollment()
-            }
-            
-            if (needs2FAEnrollment) {
-                // Show mandatory 2FA enrollment screen
-                Mandatory2FAEnrollmentScreen(
-                    onEnrollmentComplete = {
-                        needs2FAEnrollment = false
-                    },
-                    onLogout = {
-                        coroutineScope.launch {
-                            AuthService.signOut()
-                        }
-                    }
-                )
-            } else {
-                // Show main BOSS app
-                BossApp()
-            }
+        is AuthService.AuthState.Authenticated -> {
+            // Show main BOSS app - all auth methods provide inherent 2FA
+            BossApp()
         }
     }
     
@@ -180,20 +201,6 @@ fun ComponentContext.BossAppWithAuth() {
     }
     
     // Password reset dialog
-    if (showPasswordResetDialog && passwordResetToken != null) {
-        PasswordResetDialog(
-            accessToken = passwordResetToken!!, 
-            onDismiss = {
-                showPasswordResetDialog = false
-                passwordResetToken = null
-            },
-            onPasswordResetComplete = {
-                showPasswordResetDialog = false
-                passwordResetToken = null
-                // TODO: Maybe show success message or navigate appropriately
-            }
-        )
-    }
 }
 
 @Composable

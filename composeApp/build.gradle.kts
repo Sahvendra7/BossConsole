@@ -212,52 +212,6 @@ kotlin {
     }
 }
 
-// Android configuration disabled for desktop-focused development
-/*
-android {
-    namespace = "ai.rever.boss"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    
-    sourceSets {
-        named("main") {
-            manifest.srcFile("src/androidMain/AndroidManifest.xml")
-            res.srcDirs("src/androidMain/res")
-            // Don't include commonMain/resources in android resources
-        }
-    }
-    
-    defaultConfig {
-        applicationId = "ai.rever.boss"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
-    }
-    buildFeatures {
-        compose = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.compose.compiler.get()
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-    buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-    dependencies {
-        debugImplementation(libs.compose.ui.tooling)
-    }
-}
-*/
 
 compose.desktop {
     application {
@@ -688,4 +642,45 @@ tasks.register<Zip>("packageJarWithNatives") {
 // Ensure version constants are generated before Kotlin compilation
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     dependsOn(generateVersionConstants)
+}
+
+// Wrapper tasks that auto-increment build number before packaging
+tasks.register("packageDmgWithIncrement") {
+    group = "distribution"
+    description = "Builds DMG package with auto-incremented build number"
+
+    doFirst {
+        // Execute auto-increment before packaging
+        rootProject.tasks.findByName("autoIncrementBuildNumber")?.actions?.forEach {
+            it.execute(rootProject.tasks.getByName("autoIncrementBuildNumber"))
+        }
+    }
+
+    finalizedBy("packageDmg")
+}
+
+tasks.register("packageMsiWithIncrement") {
+    group = "distribution"
+    description = "Builds MSI package with auto-incremented build number"
+
+    doFirst {
+        rootProject.tasks.findByName("autoIncrementBuildNumber")?.actions?.forEach {
+            it.execute(rootProject.tasks.getByName("autoIncrementBuildNumber"))
+        }
+    }
+
+    finalizedBy("packageMsi")
+}
+
+tasks.register("createExecutableJarWithIncrement") {
+    group = "build"
+    description = "Creates executable JAR with auto-incremented build number"
+
+    doFirst {
+        rootProject.tasks.findByName("autoIncrementBuildNumber")?.actions?.forEach {
+            it.execute(rootProject.tasks.getByName("autoIncrementBuildNumber"))
+        }
+    }
+
+    finalizedBy("createExecutableJar")
 }

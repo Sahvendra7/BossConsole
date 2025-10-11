@@ -66,10 +66,18 @@ Then run with:
 
 ## Security Best Practices
 
+### JxBrowser
 1. **Never commit license keys to version control**
 2. **Use environment variables or secure vaults in production**
 3. **Remove the hardcoded fallback key before deploying to production**
 4. **Consider using a secrets management service for enterprise deployments**
+
+### Supabase Configuration
+1. **Never commit Supabase keys to version control** - they provide access to your backend
+2. **Use environment variables in production** - `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+3. **For development**: Add keys to `local.properties` file (already in .gitignore)
+4. **Configuration priority**: Environment variables → System properties → local.properties → error
+5. **The anonymous key is safe to use in client applications** - it only provides public access
 
 ## Other Configuration Options
 
@@ -80,6 +88,12 @@ Then run with:
 # JxBrowser configuration
 jxbrowser.license.key=YOUR_LICENSE_KEY_HERE
 jxbrowser.default.url=https://www.example.com
+
+# Supabase configuration (for development)
+# IMPORTANT: Never commit these values to version control
+SUPABASE_URL=https://your-supabase-url.supabase.co
+SUPABASE_ANON_KEY=your-supabase-anon-key-here
+SUPABASE_FUNCTION_URL=https://your-supabase-url.supabase.co/functions/v1/passkey-functions
 ```
 
 # Version Management

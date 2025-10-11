@@ -130,7 +130,7 @@ class SplitViewState(
         orientation: SplitOrientation,
         tabToMove: TabInfo? = null
     ): String {
-        val panel = findPanel(panelId) ?: return panelId
+        findPanel(panelId) ?: return panelId
         
         // Create new panel with copied tab
         val newPanelId = "split-${Random.nextLong()}"

@@ -1,5 +1,6 @@
 package ai.rever.boss.services.supabase
 
+import ai.rever.boss.components.plugin.panels.right_top.getEnvironmentVariable
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -57,6 +58,9 @@ object SupabaseConfig {
                     // Configure redirect URL for email verification
                     scheme = "boss"
                     host = "auth"
+                    // Enable persistent session management and auto-refresh for proper session persistence
+                    alwaysAutoRefresh = true
+                    autoLoadFromStorage = true
                 }
                 install(Postgrest)
                 install(Realtime)
@@ -76,20 +80,13 @@ object SupabaseConfig {
     }
     
     /**
-     * Initialize from build-time configuration
+     * Initialize from secure configuration sources
+     * Priority: Environment variables → System properties → local.properties → fallback
      */
     fun initializeFromEnvironment() {
-        // Use self-hosted Supabase on GKE cluster
-        // Deployed infrastructure endpoints via Kong Gateway
-        val url = "https://api.risaboss.com"  // Domain-based unified Supabase API endpoint
-        // NOTE: Our self-hosted setup now has a unified API endpoint that routes:
-        // - /auth/v1/* -> GoTrue service 
-        // - /rest/v1/* -> PostgREST service  
-        // - /realtime/v1/* -> Realtime service 
-        // - /storage/v1/* -> Storage service
-        // - /functions/v1/* -> Edge Functions service
-        val anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsaG9zdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzU0Nzg1MDU0LCJleHAiOjE3ODYzMjEwNTR9.UR-amMvudG2h3iBBzBfRPjH6psOhyWYrrq3yhc_s-s4"
-        
+        val url = getSupabaseUrl()
+        val anonKey = getSupabaseAnonKey()
+
         initialize(url, anonKey)
     }
     
@@ -137,17 +134,19 @@ object SupabaseConfig {
         _client = null
         _isInitialized.value = false
     }
-    
-    /**
-     * Get environment variable (placeholder - implement based on your platform)
-     */
-    private fun getEnvironmentVariable(key: String): String? {
-        // This is a placeholder. In a real application, you would:
-        // 1. Read from actual environment variables
-        // 2. Read from a secure settings file
-        // 3. Use a secrets management service
-        
-        // For now, we'll check system properties and environment
-        return System.getProperty(key) ?: System.getenv(key)
-    }
 }
+
+/**
+ * Platform-specific Supabase URL configuration
+ */
+expect fun getSupabaseUrl(): String
+
+/**
+ * Platform-specific Supabase anonymous key configuration
+ */
+expect fun getSupabaseAnonKey(): String
+
+/**
+ * Platform-specific Supabase Functions URL configuration
+ */
+expect fun getSupabaseFunctionUrl(): String

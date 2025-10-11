@@ -348,7 +348,7 @@ fun BossTabsComponent.BossMainPanelContent(
             }
     ) {
         // Force recomposition when tab changes by reading the state
-        val activeIndex = tabsState.value.activeIndex
+        tabsState.value.activeIndex
         val activeComponent = getActiveComponent()
         
         activeComponent?.Content() ?: EmptyContent()

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.config.ConfigLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -8,16 +9,16 @@ import java.io.File
  * Desktop implementation of environment variable access
  * DMG apps don't inherit shell environment variables from .zshrc/.zprofile/.bashrc
  * This function implements multiple fallback mechanisms:
- * 1. System.getenv() - works in development when launched from terminal
+ * 1. ConfigLoader - checks env vars, system properties, and local.properties
  * 2. launchctl getenv - works for system-wide environment variables
  * 3. ~/.boss/env_vars file - manual fallback for DMG distributions
  */
 actual fun getEnvironmentVariable(name: String): String? {
-    // First try system environment variables (works in development)
-    val envValue = System.getenv(name)
-    if (!envValue.isNullOrBlank()) {
-        println("DEBUG: Found $name from System.getenv()")
-        return envValue
+    // First try ConfigLoader which checks multiple sources including local.properties
+    val configValue = ConfigLoader.getConfig(name)
+    if (!configValue.isNullOrBlank()) {
+        println("DEBUG: Found $name from ConfigLoader (env/system/local.properties)")
+        return configValue
     }
     
     // Try launchctl getenv for system-wide environment variables (macOS)
@@ -102,31 +103,40 @@ actual object LLMSettingsManager {
             if (!envFile.exists()) {
                 envFile.parentFile?.mkdirs()
                 val template = """
-                    # Environment variables for BOSS LLM API Keys
-                    # 
+                    # Environment variables for BOSS
+                    #
                     # IMPORTANT: DMG applications on macOS don't inherit shell environment variables
                     # from .zshrc, .zprofile, .bashrc, etc. This file provides a workaround.
                     #
-                    # METHOD 1: Use this file (recommended for DMG distributions)
-                    # Uncomment and set your API keys below:
-                    
+                    # ===== REQUIRED: Supabase Configuration =====
+                    # These are REQUIRED for BOSS to function properly
+                    # Uncomment and set your Supabase credentials:
+
+                    # SUPABASE_URL=https://api.risaboss.com
+                    # SUPABASE_ANON_KEY=your-supabase-anon-key-here
+
+                    # ===== OPTIONAL: LLM API Keys =====
+                    # Uncomment and set your LLM API keys below:
+
                     # ANTHROPIC_API_KEY=your-anthropic-api-key-here
-                    # OPENAI_API_KEY=your-openai-api-key-here  
+                    # OPENAI_API_KEY=your-openai-api-key-here
                     # TOGETHER_API_KEY=your-together-api-key-here
                     # CUSTOM_LLM_API_KEY=your-custom-llm-api-key-here
-                    
+
+                    # ===== Alternative Methods =====
                     # METHOD 2: Set system-wide environment variables (advanced)
-                    # Run in terminal: launchctl setenv ANTHROPIC_API_KEY "your-key-here"
+                    # Run in terminal: launchctl setenv SUPABASE_URL "https://api.risaboss.com"
                     # Then restart BOSS app
                     #
-                    # METHOD 3: Use the Settings UI in BOSS
+                    # METHOD 3: Use the Settings UI in BOSS (for LLM keys only)
                     # Settings → LLM Providers → Enter keys manually
-                    
+
                     # Priority order: System.getenv() → launchctl getenv → this file → Settings UI
                 """.trimIndent()
-                
+
                 envFile.writeText(template)
                 println("Created environment variables template at: ${envFile.absolutePath}")
+                println("⚠️  IMPORTANT: Edit ~/.boss/env_vars and add your SUPABASE_URL and SUPABASE_ANON_KEY")
             }
         } catch (e: Exception) {
             println("Warning: Could not create env_vars template: ${e.message}")

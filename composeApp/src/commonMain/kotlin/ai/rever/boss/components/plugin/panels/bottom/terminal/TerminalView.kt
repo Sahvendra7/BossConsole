@@ -50,7 +50,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
+    LocalFocusManager.current
     var hasFocus by remember { mutableStateOf(false) }
     
     // Use a text field value to capture input
@@ -67,7 +67,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
     
     // Character dimensions for size calculation
     // Match the cursor positioning width for consistency
-    val fontSize = 14.sp
+    14.sp
     val charWidthDp = 8.4.dp  // Slightly wider to prevent wrapping
     val charHeightDp = 17.dp   // Same as cursor height
     val charWidthPx = with(density) { charWidthDp.toPx() }

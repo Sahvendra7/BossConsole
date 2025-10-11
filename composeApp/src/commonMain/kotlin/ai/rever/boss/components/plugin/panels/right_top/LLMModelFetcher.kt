@@ -306,7 +306,7 @@ object LLMModelFetcher {
     }
     
     private suspend fun saveModelsToCache(models: Map<String, List<DynamicLLMModel>>) {
-        val cache = ModelCache(
+        ModelCache(
             models = models,
             lastUpdated = Clock.System.now().toEpochMilliseconds()
         )

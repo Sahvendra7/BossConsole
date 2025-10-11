@@ -172,7 +172,6 @@ open class RpaRecorderComponent(
         val availableTabs by availableFluckTabs.collectAsState()
         val viewMode by viewMode.collectAsState()
         val selectedActionIndices by selectedActionIndices.collectAsState()
-        val feedbackMessage by feedbackMessage.collectAsState()
         val isVideoRecordingActive by isVideoRecording.collectAsState()
         
         Column(

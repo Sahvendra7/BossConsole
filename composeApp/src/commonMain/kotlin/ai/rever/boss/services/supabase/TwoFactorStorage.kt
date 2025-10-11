@@ -5,6 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.services.supabase.models.TwoFactorInfo
 
 /**
  * Simple storage for 2FA enrollment status
@@ -98,9 +99,17 @@ object TwoFactorStorage {
     /**
      * Remove a factor for a user
      */
-    fun removeUserFactor(userId: String, factorId: String) {
-        val currentFactors = getUserFactors(userId).toMutableList()
-        currentFactors.removeAll { it.id == factorId }
-        saveUserFactors(userId, currentFactors)
+    fun removeUserFactor(userId: String, factorId: String): Boolean {
+        return try {
+            val currentFactors = getUserFactors(userId).toMutableList()
+            val removed = currentFactors.removeAll { it.id == factorId }
+            if (removed) {
+                saveUserFactors(userId, currentFactors)
+            }
+            removed
+        } catch (e: Exception) {
+            println("Error removing factor: ${e.message}")
+            false
+        }
     }
 }

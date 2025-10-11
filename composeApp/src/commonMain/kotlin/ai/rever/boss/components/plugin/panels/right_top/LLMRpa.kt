@@ -130,7 +130,7 @@ open class LLMRpaComponent(
     
     @Composable
     internal fun ContentInternal() {
-        val splitViewState = LocalSplitViewState.current
+        LocalSplitViewState.current
         val selectedTab by selectedTab.collectAsState()
         val availableTabs by availableFluckTabs.collectAsState()
         val instruction by currentInstruction.collectAsState()
