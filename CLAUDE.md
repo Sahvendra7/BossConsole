@@ -89,6 +89,24 @@ SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1/passkey
 ```
 
+### Supabase Deployment
+The project uses **Supabase CLI** for all function deployments and database migrations:
+
+```bash
+# Deploy Edge Functions
+supabase functions deploy <function-name> --project-ref boss-self-hosted --no-verify-jwt
+
+# Deploy all functions
+supabase functions deploy --project-ref boss-self-hosted --no-verify-jwt
+
+# Link to remote project (first time)
+supabase link --project-ref boss-self-hosted
+```
+
+**Available Edge Functions:**
+- `passkey` - WebAuthn/Passkey authentication endpoints
+- `redirect` - HTTP to boss:// deep link conversion for magic links
+
 ### Supabase Cloud Configuration
 The project uses **Supabase Cloud** (not self-hosted). Important dashboard configurations:
 
