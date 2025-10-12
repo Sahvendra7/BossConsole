@@ -83,11 +83,22 @@ Create `local.properties` file:
 # JxBrowser license
 jxbrowser.license.key=<your-license-key>
 
-# Supabase configuration  
+# Supabase configuration (using Supabase Cloud)
 SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1/passkey-functions
 ```
+
+### Supabase Cloud Configuration
+The project uses **Supabase Cloud** (not self-hosted). Important dashboard configurations:
+
+**Authentication → URL Configuration:**
+- **Site URL**: `boss://auth/verify` (enables direct deep link magic links)
+- **Redirect URLs**: Must include `boss://auth/verify`
+
+**Authentication → Email Templates:**
+- **Magic Link Template**: Use `supabase/templates/email/magic-link.html`
+- Ensures magic links use proper deep link format instead of HTTPS redirects
 
 ### Configuration Priority
 1. Environment variables (production/CI)
