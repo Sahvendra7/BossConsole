@@ -68,7 +68,7 @@ The app implements a sophisticated WebAuthn system with cross-device support:
 **Database Schema** (Supabase):
 - `user_passkeys` table with RLS policies
 - `passkey_challenges` table for temporary challenge storage
-- Edge Functions at `/functions/v1/passkey-functions`
+- Edge Functions at `/functions/v1/passkey`
 
 ### Platform-Specific Integration
 - **macOS**: Swift scripts for Touch ID, Keychain Services integration
@@ -86,7 +86,7 @@ jxbrowser.license.key=<your-license-key>
 # Supabase configuration (using Supabase Cloud)
 SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1/passkey-functions
+SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1/passkey
 ```
 
 ### Supabase Cloud Configuration
