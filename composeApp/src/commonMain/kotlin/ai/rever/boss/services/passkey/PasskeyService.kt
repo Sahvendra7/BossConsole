@@ -79,7 +79,6 @@ sealed class PasskeyState {
     object Idle : PasskeyState()
     object Loading : PasskeyState()
     object UserGestureRequired : PasskeyState()
-    object Processing : PasskeyState()
     data class Success(val credentialId: String) : PasskeyState()
     data class Error(val message: String, val code: PasskeyErrorCode) : PasskeyState()
 }
@@ -89,16 +88,9 @@ sealed class PasskeyState {
  */
 enum class PasskeyErrorCode {
     NOT_SUPPORTED,
-    NOT_AVAILABLE,
     USER_CANCELLED,
     INVALID_STATE,
-    CONSTRAINT_ERROR,
-    NOT_ALLOWED_ERROR,
-    SECURITY_ERROR,
-    NETWORK_ERROR,
-    DATA_ERROR,
     TIMEOUT_ERROR,
-    ENCODING_ERROR,
     UNKNOWN_ERROR
 }
 

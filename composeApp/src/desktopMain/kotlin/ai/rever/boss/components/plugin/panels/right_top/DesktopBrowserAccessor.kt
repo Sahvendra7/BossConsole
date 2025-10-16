@@ -1,10 +1,10 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
-import androidx.compose.runtime.Composable
 import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.time.Clock
 
 /**
  * Desktop implementation of browser accessor using JxBrowser
@@ -136,23 +136,6 @@ private fun findFluckTabComponentById(
 }
 
 /**
- * Composable helper to find and connect to Fluck browser
- */
-@Composable
-fun ConnectToFluckBrowser() {
-    // This function is kept for compatibility but the actual browser
-    // lookup is done directly in BrowserAccessor.getActiveBrowserIntegration()
-}
-
-/**
- * Desktop implementation of browser connection setup
- */
-@Composable
-actual fun SetupBrowserConnection() {
-    ConnectToFluckBrowser()
-}
-
-/**
  * Desktop implementation to store split view state
  */
 actual fun storeSplitViewState(splitViewState: Any) {
@@ -212,7 +195,7 @@ class DesktopRpaRecorderComponent(
         val selectedTab = _selectedTab.value
         if (selectedTab != null) {
             // Generate session ID based on timestamp
-            recordingSessionId = kotlinx.datetime.Clock.System.now().toEpochMilliseconds().toString()
+            recordingSessionId = Clock.System.now().toEpochMilliseconds().toString()
             
             // Video recording temporarily disabled
             // Get browser from selected tab
@@ -321,7 +304,6 @@ class DesktopRpaRecorderComponent(
             
         } catch (e: Exception) {
             println("Error saving RPA configuration: ${e.message}")
-            e.printStackTrace()
         }
     }
 }

@@ -6,7 +6,6 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
@@ -58,6 +57,4 @@ actual class ContextMenuHandler {
         }
     }
 
-    actual fun getInstructionText(): String =
-        "Right-click anywhere to see the context menu"
 }

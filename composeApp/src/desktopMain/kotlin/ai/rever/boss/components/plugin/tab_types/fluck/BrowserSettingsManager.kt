@@ -4,8 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import java.io.File
 
 @Serializable
@@ -68,35 +66,5 @@ object BrowserSettingsManager {
             println("Failed to save browser settings: ${e.message}")
         }
     }
-    
-    fun getProfilePath(profileName: String): String {
-        val userHome = System.getProperty("user.home")
-        return "$userHome/.boss/$profileName"
-    }
-    
-    fun deleteProfile(profileName: String): Boolean {
-        if (profileName == "browser-profile") {
-            // Don't delete the default profile
-            return false
-        }
-        
-        try {
-            val profileDir = File(getProfilePath(profileName))
-            if (profileDir.exists()) {
-                profileDir.deleteRecursively()
-            }
-            
-            BrowserSettings.availableProfiles.remove(profileName)
-            
-            // If we deleted the current profile, switch to default
-            if (BrowserSettings.currentProfile == profileName) {
-                BrowserSettings.currentProfile = "browser-profile"
-            }
-            
-            return true
-        } catch (e: Exception) {
-            println("Failed to delete profile $profileName: ${e.message}")
-            return false
-        }
-    }
+
 }

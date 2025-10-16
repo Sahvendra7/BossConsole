@@ -1,10 +1,9 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * Dynamic LLM Model representation
@@ -312,13 +311,4 @@ object LLMModelFetcher {
         )
         // Save to platform-specific storage
     }
-}
-
-/**
- * Platform-specific model fetcher
- */
-expect class PlatformModelFetcher {
-    suspend fun fetchModelsFromAPI(provider: LLMProvider): List<DynamicLLMModel>
-    suspend fun loadCache(): ModelCache?
-    suspend fun saveCache(cache: ModelCache)
 }

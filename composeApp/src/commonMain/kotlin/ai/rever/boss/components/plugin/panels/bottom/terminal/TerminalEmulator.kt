@@ -188,7 +188,9 @@ class TerminalEmulator(
         if (params.isNotEmpty()) {
             // Check for intermediate characters at the start
             val firstChar = params[0]
-            if (firstChar == '?' || firstChar == '>' || firstChar == '=' || firstChar == '<' || firstChar == '!') {
+            val isCsiIntermediateChar = firstChar == '?' || firstChar == '>' ||
+                firstChar == '=' || firstChar == '<' || firstChar == '!'
+            if (isCsiIntermediateChar) {
                 intermediates = firstChar.toString()
                 actualParams = params.substring(1)
             }
@@ -752,7 +754,7 @@ class TerminalEmulator(
     }
     
     private fun insertLines(count: Int) {
-        for (i in 0 until count) {
+        repeat(count) {
             // Shift lines down from cursor position
             for (row in rows - 1 downTo cursorRow + 1) {
                 buffer[row] = buffer[row - 1]
@@ -763,7 +765,7 @@ class TerminalEmulator(
     }
     
     private fun deleteLines(count: Int) {
-        for (i in 0 until count) {
+        repeat(count) {
             // Shift lines up from cursor position
             for (row in cursorRow until rows - 1) {
                 buffer[row] = buffer[row + 1]
@@ -1077,10 +1079,7 @@ class TerminalEmulator(
         defaultForegroundColor = null
         defaultBackgroundColor = null
     }
-    
-    fun getWindowTitle(): String = windowTitle
-    fun getIconTitle(): String = iconTitle
-    
+
     private fun processTwoCharSequence(char: Char) {
         when (char) {
             '7' -> saveCursor() // Save cursor

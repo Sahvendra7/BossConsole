@@ -19,34 +19,5 @@ fun LoginScreen(
     )
 }
 
-/* 
- * The LoginForm component has been extracted to LoginFormScreen.kt
- * for better separation of concerns and maintainability.
- */
-
-/* 
- * The SignupForm component has been extracted to SignupFormScreen.kt
- * for better separation of concerns and maintainability.
- */
-
-/* 
- * The EmailVerificationScreen component has been extracted to screens/EmailVerificationScreen.kt
- * for better separation of concerns and maintainability.
- */
-
-/* 
- * The TwoFactorScreen component has been extracted to screens/TwoFactorScreen.kt
- * for better separation of concerns and maintainability.
- */
-
-/* 
- * The ForgotPasswordScreen component has been extracted to screens/ForgotPasswordScreen.kt
- * for better separation of concerns and maintainability.
- */
-
-/* 
- * Helper functions for consistent styling have been extracted to forms/AuthFormComponents.kt
- * for better reusability and maintainability.
- */
 
 

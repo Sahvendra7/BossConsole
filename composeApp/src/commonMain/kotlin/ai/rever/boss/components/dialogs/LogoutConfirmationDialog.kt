@@ -3,7 +3,7 @@ package ai.rever.boss.components.dialogs
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +33,7 @@ fun LogoutConfirmationDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
-                    Icons.Default.Logout,
+                    Icons.AutoMirrored.Default.Logout,
                     contentDescription = "Logout",
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colors.primary

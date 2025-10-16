@@ -35,38 +35,10 @@ object PasskeyPlatformInit {
             
         } catch (e: Exception) {
             println("PasskeyPlatformInit: Failed to initialize passkey service: ${e.message}")
-            e.printStackTrace()
             
             // Continue without passkey support if initialization fails
             isInitialized = false
         }
     }
-    
-    /**
-     * Check if passkey service is initialized and available
-     */
-    fun isAvailable(): Boolean {
-        return isInitialized && desktopPasskeyService != null
-    }
-    
-    /**
-     * Get the current passkey service instance
-     */
-    fun getService(): DesktopPasskeyService? {
-        return if (isInitialized) desktopPasskeyService else null
-    }
-    
-    /**
-     * Clean up resources when the application is shutting down
-     */
-    fun cleanup() {
-        try {
-            desktopPasskeyService?.cleanup()
-            desktopPasskeyService = null
-            isInitialized = false
-            println("PasskeyPlatformInit: Cleanup completed")
-        } catch (e: Exception) {
-            println("PasskeyPlatformInit: Error during cleanup: ${e.message}")
-        }
-    }
+
 }

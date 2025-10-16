@@ -3,8 +3,6 @@ package ai.rever.boss.services.passkey.supabase
 import ai.rever.boss.services.passkey.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 /**
  * Exception thrown when no passkeys are found for a user
@@ -65,7 +63,6 @@ internal object PasskeyAuthenticationHandler {
         } catch (e: Exception) {
             println("❌ [ERROR] Failed to request authentication challenge: ${e.message}")
             println("❌ [ERROR] Exception type: ${e::class.simpleName}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -100,7 +97,6 @@ internal object PasskeyAuthenticationHandler {
             }
         } catch (e: Exception) {
             println("Failed to complete authentication: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -201,36 +197,7 @@ internal object PasskeyAuthenticationHandler {
             else -> Result.success(Unit)
         }
     }
-    
-    /**
-     * Generate authentication URL for cross-device flows
-     */
-    fun generateCrossDeviceAuthenticationUrl(
-        challenge: String,
-        email: String? = null,
-        sessionId: String? = null
-    ): String {
-        return CrossDeviceUrlGenerator.generateAuthenticationUrl(
-            challenge = challenge,
-            email = email,
-            sessionId = sessionId
-        )
-    }
-    
-    /**
-     * Check if authentication result indicates success
-     */
-    fun isAuthenticationSuccessful(result: PasskeyAuthenticationResult): Boolean {
-        return result.success && result.userId != null
-    }
-    
-    /**
-     * Check if authentication is pending (for cross-device flows)
-     */
-    fun isAuthenticationPending(result: PasskeyAuthenticationResult): Boolean {
-        return !result.success && result.error?.contains("pending", ignoreCase = true) == true
-    }
-    
+
     /**
      * Simple email validation
      */

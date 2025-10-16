@@ -43,55 +43,7 @@ class BiometricAuthProvider {
             false
         }
     }
-    
-    /**
-     * Perform biometric authentication with platform-specific prompt
-     */
-    suspend fun authenticateWithBiometric(prompt: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            when {
-                currentPlatform.contains("mac") -> {
-                    val result = MacOSBiometricAuth.authenticateWithBiometric(prompt)
-                    if (result.isSuccess && result.getOrNull() == true) {
-                        println("BiometricAuthProvider: macOS Touch ID authentication successful")
-                    } else {
-                        println("BiometricAuthProvider: macOS Touch ID authentication failed: ${result.exceptionOrNull()?.message}")
-                    }
-                    result
-                }
-                currentPlatform.contains("windows") -> {
-                    val result = WindowsBiometricAuth.authenticateWithBiometric(prompt)
-                    if (result.isSuccess && result.getOrNull() == true) {
-                        println("BiometricAuthProvider: Windows Hello authentication successful")
-                    } else {
-                        println("BiometricAuthProvider: Windows Hello authentication failed: ${result.exceptionOrNull()?.message}")
-                    }
-                    result
-                }
-                else -> {
-                    val error = Exception("Biometric authentication not supported on platform: $currentPlatform")
-                    println("BiometricAuthProvider: ${error.message}")
-                    Result.failure(error)
-                }
-            }
-        } catch (e: Exception) {
-            println("BiometricAuthProvider: Biometric authentication error: ${e.message}")
-            Result.failure(e)
-        }
-    }
-    
-    /**
-     * Get the platform-specific biometric authentication method name
-     */
-    fun getPlatformBiometricName(): String {
-        return when {
-            currentPlatform.contains("mac") -> "Touch ID"
-            currentPlatform.contains("windows") -> "Windows Hello"
-            currentPlatform.contains("linux") -> "Biometric"
-            else -> "Biometric Authentication"
-        }
-    }
-    
+
     /**
      * Check if the current platform is macOS
      */
@@ -101,12 +53,7 @@ class BiometricAuthProvider {
      * Check if the current platform is Windows
      */
     fun isWindows(): Boolean = currentPlatform.contains("windows")
-    
-    /**
-     * Check if the current platform is Linux
-     */
-    fun isLinux(): Boolean = currentPlatform.contains("linux")
-    
+
     /**
      * Get the current platform identifier
      */

@@ -30,8 +30,6 @@ object SessionManager {
     enum class AuthMethod {
         PASSKEY,
         MAGIC_LINK,
-        EMAIL_PASSWORD,
-        UNKNOWN
     }
 
     /**
@@ -75,7 +73,6 @@ object SessionManager {
                 println("SessionManager: ✅ Access token will auto-refresh using refresh token")
             } catch (e: Exception) {
                 println("SessionManager: ❌ Failed to import session: ${e.message}")
-                e.printStackTrace()
                 return Result.failure(Exception("Failed to establish Supabase session: ${e.message}"))
             }
 
@@ -112,7 +109,6 @@ object SessionManager {
             Result.success(Unit)
         } catch (e: Exception) {
             println("SessionManager: Session establishment failed: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -163,7 +159,6 @@ object SessionManager {
             }
         } catch (e: Exception) {
             println("SessionManager: Failed to load session: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -206,33 +201,8 @@ object SessionManager {
             Result.success(Unit)
         } catch (e: Exception) {
             println("SessionManager: Failed to clear session: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
 
-    /**
-     * Check if a valid session exists
-     *
-     * @return true if a valid session exists, false otherwise
-     */
-    suspend fun hasValidSession(): Boolean {
-        return try {
-            val currentSession = SupabaseConfig.client.auth.currentSessionOrNull()
-            val hasSession = currentSession != null
-
-            if (hasSession) {
-                // Also verify we have user data (for custom JWT sessions)
-                val hasUserData = currentSession.user != null || UserDataStorage.loadUserData() != null
-                println("SessionManager: Valid session exists: $hasUserData")
-                hasUserData
-            } else {
-                println("SessionManager: No session exists")
-                false
-            }
-        } catch (e: Exception) {
-            println("SessionManager: Error checking session validity: ${e.message}")
-            false
-        }
-    }
 }

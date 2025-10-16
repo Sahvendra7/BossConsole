@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.URLEncoder
-import java.security.interfaces.ECPrivateKey
 import java.util.*
 
 /**
@@ -24,12 +23,9 @@ class DesktopPasskeyService : PasskeyService {
     
     // Component dependencies
     private val biometricAuthProvider = BiometricAuthProvider()
-    private val webAuthnProtocolHandler = WebAuthnProtocolHandler()
-    private val keychainService = PlatformKeychainService(biometricAuthProvider)
-    private val credentialManager = PasskeyCredentialManager(biometricAuthProvider, keychainService)
+    private val credentialManager = PasskeyCredentialManager(biometricAuthProvider)
     private val browserManager = CrossDeviceBrowserManager()
-    private val cryptographyService = DesktopCryptographyService(webAuthnProtocolHandler)
-    private val dataMapper = DesktopPasskeyDataMapper(webAuthnProtocolHandler, biometricAuthProvider)
+    private val dataMapper = DesktopPasskeyDataMapper()
     
     init {
         // Show enhanced capabilities after a short delay
@@ -172,17 +168,4 @@ class DesktopPasskeyService : PasskeyService {
         return true
     }
 
-    /**
-     * Cleanup resources when service is no longer needed
-     */
-    fun cleanup() {
-        try {
-            browserManager.cleanup()
-            scope.cancel()
-            println("DesktopPasskeyService: Cleanup completed")
-        } catch (e: Exception) {
-            println("DesktopPasskeyService: Error during cleanup: ${e.message}")
-        }
-    }
-    
 }

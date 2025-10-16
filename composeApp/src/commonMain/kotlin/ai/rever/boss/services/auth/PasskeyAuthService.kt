@@ -2,13 +2,7 @@ package ai.rever.boss.services.auth
 
 import ai.rever.boss.services.passkey.PasskeyService
 import ai.rever.boss.services.passkey.SupabasePasskeyService
-import ai.rever.boss.services.passkey.supabase.PasskeyAuthenticationResult
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
-import ai.rever.boss.services.supabase.SupabaseConfig
-import ai.rever.boss.services.supabase.models.UserInfo
-import ai.rever.boss.services.supabase.AuthService
-import io.github.jan.supabase.auth.auth
-import ai.rever.boss.services.auth.AuthStateManager
 import java.util.Base64
 import java.util.UUID
 import kotlin.time.ExperimentalTime
@@ -47,14 +41,7 @@ internal object PasskeyAuthService {
     suspend fun isPasskeySupported(): Boolean {
         return passkeyService?.isPasskeySupported() ?: false
     }
-    
-    /**
-     * Check if user has passkeys enrolled
-     */
-    suspend fun hasPasskeys(): Boolean {
-        return passkeyService?.hasPasskeys() ?: false
-    }
-    
+
     /**
      * Register a new passkey for the current user
      * Integrates with Supabase backend for credential storage and verification

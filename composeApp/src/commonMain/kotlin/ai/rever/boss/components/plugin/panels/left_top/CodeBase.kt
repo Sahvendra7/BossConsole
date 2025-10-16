@@ -120,12 +120,10 @@ class CodeBaseComponent(
     private val fileTree: StateFlow<FileNode?> = _fileTree.asStateFlow()
     
     private val _expandedPaths = MutableStateFlow(setOf<String>())
-    private val expandedPaths: StateFlow<Set<String>> = _expandedPaths.asStateFlow()
-    
+
     private val fileCache = FileIndexCache(
         maxSize = 1000,
-        maxDepthInitial = 2,
-        maxDepthExpanded = 5
+        maxDepthInitial = 2
     )
     
     private val scope = kotlinx.coroutines.CoroutineScope(
@@ -438,14 +436,3 @@ fun DefaultPlugin.registerCodeBase() = panelRegistry.registerPanel(CodeBaseInfo)
 // Platform-specific file scanning
 expect fun scanDirectory(path: String): FileNode?
 
-// Helper function to check if file is supported by editor
-fun isFileSupported(fileName: String): Boolean {
-    val supportedExtensions = setOf(
-        "kt", "kts", "java", "js", "jsx", "ts", "tsx", 
-        "py", "json", "xml", "html", "htm", "css", "md", 
-        "toml", "gradle", "txt", "yml", "yaml", "properties",
-        "sh", "bat", "cmd"
-    )
-    val extension = fileName.substringAfterLast('.', "").lowercase()
-    return extension in supportedExtensions
-}

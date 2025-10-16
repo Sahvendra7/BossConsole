@@ -131,13 +131,6 @@ data class PasskeyManagementResponse(
 }
 
 @Serializable
-data class PasskeyStatusCheckRequest(
-    val challenge: String,
-    val operation: String = "check_status",
-    val sessionId: String? = null
-)
-
-@Serializable
 data class PasskeyAuthStatusResponse(
     val status: String, // "pending", "completed", "expired"
     val expiresAt: Long? = null, // Unix timestamp (seconds since epoch)

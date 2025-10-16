@@ -2,8 +2,6 @@ package ai.rever.boss.components.plugin.panels.right_top
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 
 /**
  * LLM Provider types
@@ -18,7 +16,7 @@ enum class LLMProvider(val displayName: String, val baseUrl: String) {
 /**
  * LLM Model configurations
  */
-enum class LLMModel(val provider: LLMProvider, val modelId: String, val displayName: String) {
+enum class LLMModel(val modelId: String, val displayName: String) {
     // Anthropic Models (January 2025)
     CLAUDE_3_5_SONNET_V2("claude-3-5-sonnet-v2", "Claude 3.5 Sonnet v2", LLMProvider.ANTHROPIC),
     CLAUDE_3_5_SONNET_LATEST("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet", LLMProvider.ANTHROPIC),
@@ -63,7 +61,7 @@ enum class LLMModel(val provider: LLMProvider, val modelId: String, val displayN
     GEMMA_2_27B("google/gemma-2-27b-it", "Gemma 2 27B", LLMProvider.TOGETHER),
     GEMMA_2_9B("google/gemma-2-9b-it", "Gemma 2 9B", LLMProvider.TOGETHER);
     
-    constructor(modelId: String, displayName: String, provider: LLMProvider) : this(provider, modelId, displayName)
+    constructor(modelId: String, displayName: String, provider: LLMProvider) : this(modelId, displayName)
 }
 
 /**
@@ -172,13 +170,7 @@ object LLMSettings {
         set(value) {
             settings = settings.copy(enableCaching = value)
         }
-    
-    var cacheExpirationMinutes: Int
-        get() = settings.cacheExpirationMinutes
-        set(value) {
-            settings = settings.copy(cacheExpirationMinutes = value.coerceIn(5, 1440))
-        }
-    
+
     fun loadFromJson(json: String) {
         try {
             settings = Json.decodeFromString(json)
@@ -202,14 +194,7 @@ object LLMSettings {
             LLMProvider.CUSTOM -> getEnvironmentVariable("CUSTOM_LLM_API_KEY")
         }
     }
-    
-    /**
-     * Get models for a specific provider
-     */
-    fun getModelsForProvider(provider: LLMProvider): List<LLMModel> {
-        return LLMModel.values().filter { it.provider == provider }
-    }
-    
+
     /**
      * Check if current provider has a valid API key
      */

@@ -1,6 +1,5 @@
 package ai.rever.boss.components.tabs_navigation
 
-import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.value.MutableValue
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.decompose.value.update
@@ -63,44 +62,3 @@ class TabsNavigation<C : Any>(
     }
 }
 
-sealed interface ChildWrapper<out R : Any> {
-    object None : ChildWrapper<Nothing>
-    data class Child<R : Any>(val value: R) : ChildWrapper<R>
-}
-
-fun <T: Any, R: Any> ComponentContext.childTabs(
-    tabsNavigation: TabsNavigation<T>,
-    childFactory: (T, ComponentContext) -> R
-) = TabsComponentContext(this, tabsNavigation, childFactory)
-
-class TabsComponentContext<C : Any, R : Any>(
-    componentContext: ComponentContext,
-    private val tabsNavigation: TabsNavigation<C>,
-    private val childFactory: (C, ComponentContext) -> R
-) : ComponentContext by componentContext {
-
-    val tabsState: Value<TabsNavigation.TabsState<C>> = tabsNavigation.state
-
-    val children: Value<List<R>> = MutableValue<List<R>>(emptyList()).also { mutableList ->
-        tabsState.subscribe { state ->
-            mutableList.update {
-                state.tabs.map { config -> childFactory(config, this) }
-            }
-        }
-    }
-
-    val activeChild: Value<ChildWrapper<R>> = MutableValue<ChildWrapper<R>>(ChildWrapper.None).also { mutableValue ->
-        tabsState.subscribe { state ->
-            mutableValue.update {
-                state.activeTab?.let { config -> 
-                    ChildWrapper.Child(childFactory(config, this)) 
-                } ?: ChildWrapper.None
-            }
-        }
-    }
-
-    fun addTab(config: C) = tabsNavigation.addTab(config)
-    fun removeTab(index: Int) = tabsNavigation.removeTab(index)
-    fun selectTab(index: Int) = tabsNavigation.selectTab(index)
-    fun updateTab(index: Int, config: C) = tabsNavigation.updateTab(index, config)
-}

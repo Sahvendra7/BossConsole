@@ -3,10 +3,8 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
@@ -106,13 +104,7 @@ object UrlHistoryManager {
             ))
             .take(limit)
     }
-    
-    fun getTopSites(limit: Int = 10): List<UrlHistoryEntry> {
-        return history.values
-            .sortedByDescending { it.visitCount * 1000 + (it.lastVisited / 1000000) }
-            .take(limit)
-    }
-    
+
     fun deleteUrl(url: String) {
         history.remove(url)
     }

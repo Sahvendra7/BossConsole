@@ -127,7 +127,6 @@ fun SecuritySettings() {
     var webAuthnCapabilities by remember { mutableStateOf<WebAuthnCapabilities?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showRemovePasskeyDialog by remember { mutableStateOf<PasskeyInfo?>(null) }
-    var isEnrollingPasskey by remember { mutableStateOf(false) }
     var showEnhancedEnrollDialog by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableStateOf(0) } // Add refresh trigger
     val coroutineScope = rememberCoroutineScope()

@@ -66,8 +66,5 @@ data class Version(
     }
     
     fun isNewerThan(other: Version): Boolean = this > other
-    
-    fun isOlderThan(other: Version): Boolean = this < other
-    
-    fun isSameAs(other: Version): Boolean = this == other
+
 }

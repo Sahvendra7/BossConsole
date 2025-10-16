@@ -1,6 +1,5 @@
 package ai.rever.boss.components.dialogs
 
-import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -32,7 +31,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun TopOfMindDialog(
     splitViewState: SplitViewState,
-    configurationManager: ConfigurationManager,
     onDismiss: () -> Unit,
     onTabSelect: (ActiveTab) -> Unit
 ) {

@@ -9,7 +9,6 @@ class LoginViewModel {
     // Component ViewModels
     private val coreLoginViewModel = CoreLoginViewModel()
     private val passkeyAuthViewModel = PasskeyAuthViewModel()
-    private val twoFactorViewModel = TwoFactorViewModel()
     private val authOptionsManager = AuthOptionsManager()
     
     // Exposed state flows that delegate to appropriate component ViewModels
@@ -22,14 +21,6 @@ class LoginViewModel {
     val crossDeviceChallenge: StateFlow<String?> = passkeyAuthViewModel.crossDeviceChallenge
     val crossDeviceSessionId: StateFlow<String?> = passkeyAuthViewModel.crossDeviceSessionId
 
-    fun verifyEmail(token: String, onSuccess: () -> Unit) {
-        coreLoginViewModel.verifyEmail(token, onSuccess)
-    }
-    
-    fun clearError() {
-        coreLoginViewModel.clearError()
-    }
-    
     fun sendMagicLink(email: String, onSuccess: () -> Unit) {
         coreLoginViewModel.sendMagicLink(email, onSuccess)
     }

@@ -43,7 +43,6 @@ class DesktopFilePicker(
                 onFileSelected(null, null)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             onFileSelected(null, null)
         }
     }

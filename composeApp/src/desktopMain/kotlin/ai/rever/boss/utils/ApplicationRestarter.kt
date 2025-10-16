@@ -74,7 +74,6 @@ object ApplicationRestarter {
                 
             } catch (e: Exception) {
                 println("Failed to restart application: ${e.message}")
-                e.printStackTrace()
                 isRestarting = false
                 
                 // Show error and exit anyway

@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * Manages layout configurations with file-based storage
@@ -51,7 +51,6 @@ class ConfigurationManager {
                 }
             } catch (e: Exception) {
                 // Log error but continue with predefined configs
-                e.printStackTrace()
             }
             
             _configurations.value = allConfigs
@@ -104,14 +103,7 @@ class ConfigurationManager {
     fun resetToDefault() {
         _currentConfiguration.value = null
     }
-    
-    /**
-     * Export configuration to JSON
-     */
-    fun exportConfiguration(config: LayoutConfiguration): String {
-        return ConfigurationSerializer.serialize(config)
-    }
-    
+
     /**
      * Import configuration from JSON
      */
@@ -174,5 +166,3 @@ class ConfigurationManager {
     }
 }
 
-// Global instance
-val configurationManager = ConfigurationManager()

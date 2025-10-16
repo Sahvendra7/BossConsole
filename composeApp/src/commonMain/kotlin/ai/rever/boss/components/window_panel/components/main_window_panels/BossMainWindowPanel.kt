@@ -52,13 +52,13 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalFocusManager
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kotlinx.coroutines.delay
+import kotlin.time.Clock
 
 @Composable
 fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
@@ -222,7 +222,7 @@ fun BossTabsComponent.BossMainTabBar(
             onCreateTab = { type, path ->
                 when (type) {
                     TabType.URL -> {
-                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
                             id = "fluck-$timestamp",
                             typeId = Fluck.typeId,
@@ -235,7 +235,7 @@ fun BossTabsComponent.BossMainTabBar(
                         }
                     }
                     TabType.FILE -> {
-                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
                         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                             id = "editor-$timestamp",
@@ -250,7 +250,7 @@ fun BossTabsComponent.BossMainTabBar(
                         }
                     }
                     TabType.TERMINAL -> {
-                        val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
@@ -595,9 +595,6 @@ class BossTabsComponent(
         }
         tabsNavigation.removeTab(index)
     }
-    
-    // Get tab count
-    fun getTabCount(): Int = tabsState.value.tabs.size
 
     // Select a tab
     fun selectTab(index: Int) {

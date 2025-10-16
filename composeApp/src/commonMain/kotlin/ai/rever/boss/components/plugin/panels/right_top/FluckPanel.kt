@@ -71,10 +71,7 @@ class FluckPanelComponent(
                         modifier = Modifier.fillMaxSize().background(Color(0xFF2B2D30)),
                         contentAlignment = Alignment.Center
                     ) {
-                        FluckPanelErrorView(
-                            error = browserError!!,
-                            url = "https://www.google.com"
-                        )
+                        FluckPanelErrorView(error = browserError!!)
                     }
                 }
                 browser != null && browserViewState != null -> {
@@ -106,18 +103,11 @@ class FluckPanelComponent(
             }
         }
     }
-    
-    fun dispose() {
-        if (!isDisposed) {
-            isDisposed = true
-            browserViewState?.let { disposeBrowserViewState(it) }
-            browser?.let { disposeBrowser(it) }
-        }
-    }
+
 }
 
 @Composable
-fun FluckPanelErrorView(error: Throwable, url: String) {
+fun FluckPanelErrorView(error: Throwable) {
     Column(
         modifier = Modifier.padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

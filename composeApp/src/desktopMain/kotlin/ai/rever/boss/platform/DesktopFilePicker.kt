@@ -28,7 +28,6 @@ class DesktopDirectoryPicker(
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
             } catch (e: Exception) {
                 // If setting system L&F fails, continue with default
-                e.printStackTrace()
             }
             
             // Use native file dialog for better macOS integration

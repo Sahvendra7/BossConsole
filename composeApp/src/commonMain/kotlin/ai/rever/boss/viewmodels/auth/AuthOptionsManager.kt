@@ -62,10 +62,7 @@ class AuthOptionsManager {
             )
         }
     }
-    
-    fun clearError() {
-        _errorMessage.value = null
-    }
+
 }
 
 /**

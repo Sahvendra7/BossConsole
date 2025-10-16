@@ -1,18 +1,14 @@
 package ai.rever.boss.services.supabase
 
-import ai.rever.boss.components.plugin.panels.right_top.getEnvironmentVariable
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.realtime.Realtime
-import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
 import io.github.jan.supabase.functions.Functions
-import io.github.jan.supabase.functions.functions
 import io.ktor.client.engine.cio.CIO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,10 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Supabase configuration and client management
  */
 object SupabaseConfig {
-    // Configuration keys - these should be stored securely
-    private const val SUPABASE_URL_KEY = "SUPABASE_URL"
-    private const val SUPABASE_ANON_KEY = "SUPABASE_ANON_KEY"
-    
+
     private var _client: SupabaseClient? = null
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -102,31 +95,13 @@ object SupabaseConfig {
      */
     val auth: Auth
         get() = client.auth
-    
-    /**
-     * Get the Postgrest module for database operations
-     */
-    val postgrest: Postgrest
-        get() = client.postgrest
-    
-    /**
-     * Get the Realtime module
-     */
-    val realtime: Realtime
-        get() = client.realtime
-    
+
     /**
      * Get the Storage module
      */
     val storage: Storage
         get() = client.storage
-    
-    /**
-     * Get the Functions module
-     */
-    val functions: Functions
-        get() = client.functions
-    
+
     /**
      * Clear the client instance (useful for testing or logout)
      */

@@ -5,7 +5,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.datetime.*
+import kotlin.time.Clock
+import kotlin.time.Duration
 
 /**
  * Central update manager that handles periodic update checks and state management
@@ -18,12 +19,11 @@ class UpdateManager {
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
     
-    private val _lastCheckTime = MutableStateFlow<Instant?>(null)
-    val lastCheckTime: StateFlow<Instant?> = _lastCheckTime.asStateFlow()
+    private val _lastCheckTime = MutableStateFlow<kotlin.time.Instant?>(null)
+    val lastCheckTime: StateFlow<kotlin.time.Instant?> = _lastCheckTime.asStateFlow()
     
     private val _updateInfo = MutableStateFlow<UpdateInfo?>(null)
-    val updateInfo: StateFlow<UpdateInfo?> = _updateInfo.asStateFlow()
-    
+
     // Background job for periodic checks
     private var periodicCheckJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

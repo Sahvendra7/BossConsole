@@ -62,13 +62,11 @@ class SplitViewState(
     // Track last interacted tab for Cmd+R, Cmd+N operations
     private var _lastInteractedTabPanelId = mutableStateOf("main")
     private var _lastInteractedTabId: String? = null
-    val lastInteractedTabPanelId: String get() = _lastInteractedTabPanelId.value
-    
+
     // Track preserved configuration states
     private val preservedConfigurationStates = mutableMapOf<String, PreservedConfigState>()
     private var _currentConfigurationId: String? = null
-    val currentConfigurationId: String? get() = _currentConfigurationId
-    
+
     // Data class to hold preserved state
     data class PreservedConfigState(
         val rootNode: SplitNode,
@@ -206,39 +204,7 @@ class SplitViewState(
             }
         }
     }
-    
-    // Focus a specific tab by ID across all panels
-    fun focusTab(tabId: String, panelId: String? = null) {
-        // If panelId is provided, try that panel first
-        if (panelId != null) {
-            val panel = findPanel(panelId)
-            if (panel != null) {
-                val tabIndex = findTabIndexInPanel(panel, tabId)
-                if (tabIndex >= 0) {
-                    setActivePanel(panelId)
-                    panel.tabsComponent.selectTab(tabIndex)
-                    return
-                }
-            }
-        }
-        
-        // Search all panels for the tab
-        val allPanels = getAllPanels()
-        for (panel in allPanels) {
-            val tabIndex = findTabIndexInPanel(panel, tabId)
-            if (tabIndex >= 0) {
-                setActivePanel(panel.id)
-                panel.tabsComponent.selectTab(tabIndex)
-                return
-            }
-        }
-    }
-    
-    private fun findTabIndexInPanel(panel: SplitNode.Panel, tabId: String): Int {
-        val tabs = panel.tabsComponent.tabsState.value.tabs
-        return tabs.indexOfFirst { it.id == tabId }
-    }
-    
+
     fun closePanel(panelId: String) {
         // Don't close the main panel if it's the only one
         if (panelId == "main" && getAllPanels().size == 1) return

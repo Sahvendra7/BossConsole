@@ -384,7 +384,6 @@ private fun processMagicLink(magicLinkUrl: String, onSuccess: () -> Unit) {
         
     } catch (e: Exception) {
         println("Error processing manual magic link: ${e.message}")
-        e.printStackTrace()
     }
 }
 

@@ -14,8 +14,8 @@ import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -292,7 +292,7 @@ fun BossTopRightBar() {
     }
     
     BossActionButton(
-        imageVector = Icons.Outlined.Logout,
+        imageVector = Icons.AutoMirrored.Outlined.Logout,
         text = "Sign Out",
         hintText = "Sign out of your account"
     ) {

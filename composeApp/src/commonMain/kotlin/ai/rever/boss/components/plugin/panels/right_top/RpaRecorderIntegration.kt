@@ -2,7 +2,6 @@ package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,41 +25,8 @@ interface BrowserIntegration {
      * Get current URL
      */
     suspend fun getCurrentUrl(): String?
-    
-    /**
-     * Validate a selector in the browser
-     */
-    suspend fun validateSelector(selector: String, type: String = "xpath"): SelectorValidationResult? {
-        val script = """
-            ${RpaEventCapture.selectorValidationScript}
-            validateSelector("${selector.replace("\"", "\\\"")}", "$type");
-        """.trimIndent()
-        
-        return try {
-            val result = executeJavaScript(script) as? Map<*, *>
-            if (result != null) {
-                SelectorValidationResult(
-                    isValid = result["isValid"] as? Boolean ?: false,
-                    count = (result["count"] as? Number)?.toInt() ?: 0,
-                    isUnique = result["isUnique"] as? Boolean ?: false,
-                    error = result["error"] as? String
-                )
-            } else null
-        } catch (e: Exception) {
-            null
-        }
-    }
-}
 
-/**
- * Result of selector validation
- */
-data class SelectorValidationResult(
-    val isValid: Boolean,
-    val count: Int,
-    val isUnique: Boolean,
-    val error: String? = null
-)
+}
 
 /**
  * Interface for accessing the active browser tab
@@ -77,12 +43,6 @@ expect class BrowserAccessor() {
 }
 
 /**
- * Platform-specific browser connection setup
- */
-@Composable
-expect fun SetupBrowserConnection()
-
-/**
  * Platform-specific function to create FluckTabInfo from ActiveTab
  */
 expect fun createFluckTabInfo(activeTab: Any): FluckTabInfo?
@@ -97,8 +57,7 @@ expect fun storeSplitViewState(splitViewState: Any)
  */
 @Composable
 fun rememberBrowserConnectionForTab(
-    tab: FluckTabInfo?,
-    splitViewState: ai.rever.boss.components.window_panel.SplitViewState?
+    tab: FluckTabInfo?
 ): State<BrowserIntegration?> {
     val browserState = remember { mutableStateOf<BrowserIntegration?>(null) }
     val coroutineScope = rememberCoroutineScope()
@@ -128,40 +87,6 @@ fun rememberBrowserConnectionForTab(
         onDispose {
             job?.cancel()
             BrowserAccessor.selectedTabId = null
-        }
-    }
-    
-    return browserState
-}
-
-/**
- * Composable state for browser connection
- */
-@Composable
-fun rememberBrowserConnection(): State<BrowserIntegration?> {
-    val browserState = remember { mutableStateOf<BrowserIntegration?>(null) }
-    val coroutineScope = rememberCoroutineScope()
-    
-    // Setup platform-specific browser connection
-    SetupBrowserConnection()
-    
-    DisposableEffect(Unit) {
-        val job = coroutineScope.launch {
-            // Poll for active browser every 500ms
-            while (true) {
-                try {
-                    val accessor = BrowserAccessor()
-                    browserState.value = accessor.getActiveBrowserIntegration()
-                } catch (e: Exception) {
-                    // Browser accessor not available on this platform
-                    browserState.value = null
-                }
-                delay(500)
-            }
-        }
-        
-        onDispose {
-            job.cancel()
         }
     }
     
@@ -204,7 +129,7 @@ fun RpaRecorderContent(
     
     // Get browser connection for selected tab
     val selectedTab by component.selectedTab.collectAsState()
-    val browserConnection by rememberBrowserConnectionForTab(selectedTab, splitViewState)
+    val browserConnection by rememberBrowserConnectionForTab(selectedTab)
     val isConnected = browserConnection?.isBrowserAvailable() == true
     
     // Update recording state based on browser connection
@@ -267,7 +192,6 @@ suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
         
     } catch (e: Exception) {
         println("RPA Recorder Integration: Error connecting to browser: ${e.message}")
-        e.printStackTrace()
     }
 }
 

@@ -63,7 +63,6 @@ actual class ConfigurationFileManager {
             
             filePath
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -80,7 +79,6 @@ actual class ConfigurationFileManager {
             val json = file.readText()
             ConfigurationSerializer.deserialize(json)
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -103,7 +101,6 @@ actual class ConfigurationFileManager {
                 )
             } ?: emptyList()
         } catch (e: Exception) {
-            e.printStackTrace()
             emptyList()
         }
     }
@@ -119,7 +116,6 @@ actual class ConfigurationFileManager {
                 false
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             false
         }
     }

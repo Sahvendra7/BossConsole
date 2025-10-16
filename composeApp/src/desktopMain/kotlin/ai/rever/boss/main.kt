@@ -170,6 +170,5 @@ private fun extractPty4jNatives(targetDir: File) {
         }
     } catch (e: Exception) {
         println("Error extracting PTY4J natives: ${e.message}")
-        e.printStackTrace()
     }
 }

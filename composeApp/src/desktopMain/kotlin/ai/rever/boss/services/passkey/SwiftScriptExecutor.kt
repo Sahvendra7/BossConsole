@@ -9,27 +9,6 @@ import java.io.File
 object SwiftScriptExecutor {
 
     /**
-     * Execute a Swift script and return the output
-     */
-    fun executeSwiftScript(swiftCode: String): String {
-        val tempFile = createTempFile("boss_swift", ".swift")
-        return try {
-            tempFile.writeText(swiftCode)
-            
-            val process = ProcessBuilder("swift", tempFile.absolutePath).start()
-            val output = process.inputStream.bufferedReader().readText().trim()
-            val exitCode = process.waitFor()
-            
-            println("SwiftScriptExecutor: Exit code: $exitCode")
-            
-            output
-        } finally {
-            // Clean up temp file
-            tempFile.delete()
-        }
-    }
-
-    /**
      * Execute a Swift file with arguments and return the output
      */
     fun executeSwiftFile(fileName: String, vararg args: String): String {

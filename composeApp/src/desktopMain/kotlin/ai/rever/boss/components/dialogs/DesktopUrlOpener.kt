@@ -28,6 +28,5 @@ actual fun openUrlInBrowser(url: String) {
         }
     } catch (e: Exception) {
         println("Failed to open URL in browser: ${e.message}")
-        e.printStackTrace()
     }
 }

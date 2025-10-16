@@ -15,6 +15,5 @@ actual fun openConfigurationDirectory(path: String) {
         // or create a custom file browser view
         println("Configuration directory: $path")
     } catch (e: Exception) {
-        e.printStackTrace()
     }
 }

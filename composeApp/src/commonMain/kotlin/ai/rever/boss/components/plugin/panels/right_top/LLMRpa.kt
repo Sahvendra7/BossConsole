@@ -35,9 +35,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 object LLMRpaInfo : PanelInfo {
     override val id = PanelId("llm_rpa", 18)
@@ -82,7 +81,6 @@ data class LLMExecutionState(
 )
 
 enum class LLMExecutionStatus {
-    PENDING,
     GENERATING,
     EXECUTING,
     COMPLETED,
@@ -93,11 +91,7 @@ open class LLMRpaComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
-    
-    // State management
-    private val _instructions = MutableStateFlow<List<String>>(emptyList())
-    val instructions: StateFlow<List<String>> = _instructions
-    
+
     private val _executionHistory = MutableStateFlow<List<LLMExecutionState>>(emptyList())
     val executionHistory: StateFlow<List<LLMExecutionState>> = _executionHistory
     
@@ -116,11 +110,6 @@ open class LLMRpaComponent(
     // Browser connection reference
     internal var browserConnection: BrowserIntegration? = null
     internal var rpaExecutor: RpaActionExecutor? = null
-    
-    private val json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-    }
 
     @Composable
     override fun Content() {
@@ -644,7 +633,6 @@ open class LLMRpaComponent(
                                     LLMExecutionStatus.ERROR -> Icons.Default.Error
                                     LLMExecutionStatus.EXECUTING -> Icons.Default.PlayArrow
                                     LLMExecutionStatus.GENERATING -> Icons.Default.AutoAwesome
-                                    else -> Icons.Default.Schedule
                                 },
                                 contentDescription = execution.status.name,
                                 modifier = Modifier.size(16.dp),
@@ -653,7 +641,6 @@ open class LLMRpaComponent(
                                     LLMExecutionStatus.ERROR -> Color(0xFFFF5252)
                                     LLMExecutionStatus.EXECUTING -> MaterialTheme.colors.primary
                                     LLMExecutionStatus.GENERATING -> Color(0xFFFF9800)
-                                    else -> MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                 }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -883,7 +870,6 @@ open class LLMRpaComponent(
                 
             } catch (e: Exception) {
                 println("LLM RPA: Exception during action ${index + 1}: ${e.message}")
-                e.printStackTrace()
                 throw Exception("Failed at action ${index + 1}: ${e.message}")
             }
         }

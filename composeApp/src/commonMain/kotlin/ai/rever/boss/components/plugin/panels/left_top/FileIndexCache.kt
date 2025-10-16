@@ -2,15 +2,14 @@ package ai.rever.boss.components.plugin.panels.left_top
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * LRU cache for file system nodes with dynamic loading
  */
 class FileIndexCache(
     private val maxSize: Int = 1000,
-    private val maxDepthInitial: Int = 2,
-    private val maxDepthExpanded: Int = 5
+    private val maxDepthInitial: Int = 2
 ) {
     private val cache = mutableMapOf<String, CachedNode>()
     private val accessOrder = mutableListOf<String>()
@@ -43,32 +42,7 @@ class FileIndexCache(
         
         return node
     }
-    
-    suspend fun expandNode(path: String): FileNode? = mutex.withLock {
-        val cached = cache[path] ?: return null
-        
-        // If already fully loaded, return
-        if (cached.isFullyLoaded || cached.loadDepth >= maxDepthExpanded) {
-            return cached.node
-        }
-        
-        // Reload with deeper scan
-        val expandedNode = scanDirectoryWithDepth(path, maxDepth = maxDepthExpanded, startDepth = 0)
-        
-        expandedNode?.let {
-            // Replace the cached node with the expanded one
-            cache[path] = CachedNode(
-                node = it,
-                lastAccessed = Clock.System.now().epochSeconds,
-                isFullyLoaded = true,
-                loadDepth = maxDepthExpanded
-            )
-            return it
-        }
-        
-        return cached.node
-    }
-    
+
     private fun addToCache(path: String, node: FileNode, depth: Int) {
         // Evict old entries if needed
         while (cache.size >= maxSize && accessOrder.isNotEmpty()) {
@@ -93,20 +67,7 @@ class FileIndexCache(
         cache.clear()
         accessOrder.clear()
     }
-    
-    suspend fun getCacheStats(): CacheStats = mutex.withLock {
-        CacheStats(
-            totalNodes = cache.size,
-            fullyLoadedNodes = cache.values.count { it.isFullyLoaded },
-            averageDepth = cache.values.map { it.loadDepth }.average().toFloat()
-        )
-    }
-    
-    data class CacheStats(
-        val totalNodes: Int,
-        val fullyLoadedNodes: Int,
-        val averageDepth: Float
-    )
+
 }
 
 

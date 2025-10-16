@@ -1,7 +1,5 @@
 package ai.rever.boss.services.supabase.models
 
-import kotlinx.serialization.Serializable
-
 /**
  * User existence information for progressive login flow
  */
@@ -26,19 +24,6 @@ enum class WebAuthnCredentialType(val displayName: String, val icon: String) {
     NFC_KEY("NFC Security Key", "nfc"),
     UNKNOWN("Security Credential", "security")
 }
-
-/**
- * Two-factor authentication factor information
- */
-@Serializable
-data class TwoFactorInfo(
-    val id: String,
-    val friendlyName: String,
-    val status: String,
-    val type: String = "webauthn", // Default to webauthn for new 2FA system
-    val lastVerifiedAt: Long = 0L, // Unix timestamp of last verification
-    val secret: String? = null // Not used for WebAuthn-based 2FA
-)
 
 /**
  * User information

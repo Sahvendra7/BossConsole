@@ -25,24 +25,6 @@ class CoreLoginViewModel {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    fun verifyEmail(token: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
-
-            AuthService.verifyEmail(token).fold(
-                onSuccess = {
-                    _errorMessage.value = "Email verified successfully!"
-                    onSuccess()
-                },
-                onFailure = { error ->
-                    _errorMessage.value = error.message ?: "Verification failed"
-                }
-            )
-
-            _isLoading.value = false
-        }
-    }
 
     fun sendMagicLink(email: String, onSuccess: () -> Unit) {
         if (email.isBlank()) {
@@ -70,7 +52,4 @@ class CoreLoginViewModel {
         }
     }
 
-    fun clearError() {
-        _errorMessage.value = null
-    }
 }

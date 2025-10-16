@@ -217,7 +217,6 @@ actual class UpdateService {
             
         } catch (e: Exception) {
             println("Error downloading update: ${e.message}")
-            e.printStackTrace()
             null
         }
     }
@@ -237,7 +236,6 @@ actual class UpdateService {
             }
         } catch (e: Exception) {
             println("Error installing update: ${e.message}")
-            e.printStackTrace()
             false
         }
     }
@@ -380,7 +378,6 @@ actual class UpdateService {
             
         } catch (e: Exception) {
             println("❌ Error getting application path: ${e.message}")
-            e.printStackTrace()
             null
         }
     }

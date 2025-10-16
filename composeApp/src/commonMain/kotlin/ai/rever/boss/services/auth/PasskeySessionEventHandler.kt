@@ -1,7 +1,6 @@
 package ai.rever.boss.services.auth
 
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * PasskeySessionEventHandler - Handles passkey session completion events from deep links
@@ -25,7 +24,6 @@ object PasskeySessionEventHandler {
      * Flow of passkey session events
      */
     private val _sessionEvents = MutableStateFlow<PasskeySessionEvent?>(null)
-    val sessionEvents: StateFlow<PasskeySessionEvent?> = _sessionEvents
 
     /**
      * Map of active sessions being tracked
@@ -41,20 +39,6 @@ object PasskeySessionEventHandler {
     )
 
     enum class SessionType {
-        REGISTRATION,
-        AUTHENTICATION
-    }
-
-    /**
-     * Register a new active session for tracking
-     */
-    fun registerActiveSession(sessionId: String, email: String, type: SessionType) {
-        activeSessions[sessionId] = SessionMetadata(
-            sessionId = sessionId,
-            email = email,
-            type = type
-        )
-        println("PasskeySessionEventHandler: Registered $type session: $sessionId for $email")
     }
 
     /**
@@ -88,27 +72,10 @@ object PasskeySessionEventHandler {
     }
 
     /**
-     * Clear a session after it's been handled
-     */
-    fun clearSession(sessionId: String) {
-        activeSessions.remove(sessionId)
-        _sessionEvents.value = null
-        println("PasskeySessionEventHandler: Cleared session: $sessionId")
-    }
-
-    /**
      * Get metadata for an active session
      */
     fun getSessionMetadata(sessionId: String): SessionMetadata? {
         return activeSessions[sessionId]
     }
 
-    /**
-     * Clear all sessions (cleanup)
-     */
-    fun clearAllSessions() {
-        activeSessions.clear()
-        _sessionEvents.value = null
-        println("PasskeySessionEventHandler: Cleared all sessions")
-    }
 }

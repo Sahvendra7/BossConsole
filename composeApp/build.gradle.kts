@@ -78,7 +78,7 @@ kotlin {
         }
     }
     */
-    
+
     // iOS targets disabled for desktop-focused development
     // Uncomment below if iOS support is needed in the future
     /*
@@ -90,7 +90,7 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
-            
+
             // Export Decompose and Essenty for iOS
             export(libs.decompose)
             export(libs.essenty.lifecycle)
@@ -98,8 +98,13 @@ kotlin {
         }
     }
     */
-    
+
     jvm("desktop")
+
+    // Enable experimental time API
+    sourceSets.all {
+        languageSettings.optIn("kotlin.time.ExperimentalTime")
+    }
     
     // WASM targets disabled for desktop-focused development
     /*

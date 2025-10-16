@@ -6,7 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Launch
+import androidx.compose.material.icons.automirrored.outlined.Launch
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -171,7 +171,7 @@ fun CrossDeviceAuthenticationDialog(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Outlined.Launch,
+                        imageVector = Icons.AutoMirrored.Outlined.Launch,
                         contentDescription = "Opening in browser",
                         modifier = Modifier.size(64.dp),
                         tint = BossDarkAccent

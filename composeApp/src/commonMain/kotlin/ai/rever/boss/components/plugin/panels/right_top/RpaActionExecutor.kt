@@ -2,7 +2,7 @@ package ai.rever.boss.components.plugin.panels.right_top
 
 import kotlinx.coroutines.delay
 import kotlin.random.Random
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * Interface for executing RPA actions on a browser

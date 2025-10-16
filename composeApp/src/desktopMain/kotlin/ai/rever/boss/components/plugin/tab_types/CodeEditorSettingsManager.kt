@@ -6,8 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import java.io.File
 
 // Global settings object
@@ -52,16 +50,7 @@ object CodeEditorSettings {
         "Solarized Light" -> Color(0xFF_EEE8D5)
         else -> Color(0xFF_2D2D30) // Dark theme
     }
-    
-    fun getSelectionColor(): Color = when (theme) {
-        "Light" -> Color(0xFF_0969DA).copy(alpha = 0.3f)
-        "Dracula" -> Color(0xFF_44475A)
-        "Monokai" -> Color(0xFF_49483E)
-        "Solarized Dark" -> Color(0xFF_073642)
-        "Solarized Light" -> Color(0xFF_EEE8D5)
-        else -> Color(0xFF_264F78) // Dark theme
-    }
-    
+
     fun getKeywordColor(): Color = when (theme) {
         "Light" -> Color(0xFF_CF222E)
         "Dracula" -> Color(0xFF_FF79C6)
@@ -70,16 +59,7 @@ object CodeEditorSettings {
         "Solarized Light" -> Color(0xFF_268BD2)
         else -> Color(0xFF_569CD6) // Dark theme
     }
-    
-    fun getStringColor(): Color = when (theme) {
-        "Light" -> Color(0xFF_0A3069)
-        "Dracula" -> Color(0xFF_F1FA8C)
-        "Monokai" -> Color(0xFF_E6DB74)
-        "Solarized Dark" -> Color(0xFF_2AA198)
-        "Solarized Light" -> Color(0xFF_2AA198)
-        else -> Color(0xFF_CE9178) // Dark theme
-    }
-    
+
     fun getCommentColor(): Color = when (theme) {
         "Light" -> Color(0xFF_6E7781)
         "Dracula" -> Color(0xFF_6272A4)

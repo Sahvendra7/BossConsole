@@ -111,7 +111,6 @@ internal object UserExistenceService {
             
         } catch (e: Exception) {
             println("Error checking user existence: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }

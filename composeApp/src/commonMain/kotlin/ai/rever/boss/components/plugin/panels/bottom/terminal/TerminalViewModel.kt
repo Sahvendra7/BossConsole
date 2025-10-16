@@ -86,7 +86,6 @@ class TerminalViewModel {
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
                 terminalEmulator.processInput("Error starting terminal: ${e.message}\n")
                 updateDisplay()
             }

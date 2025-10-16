@@ -3,35 +3,15 @@ package ai.rever.boss.services.passkey.desktop
 import ai.rever.boss.services.passkey.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.security.KeyPair
-import java.security.KeyFactory
-import java.security.interfaces.ECPrivateKey
-import java.security.interfaces.ECPublicKey
-import java.security.spec.PKCS8EncodedKeySpec
-import java.security.spec.X509EncodedKeySpec
-import java.util.*
 
 /**
  * Manages credential storage, retrieval, and lifecycle for desktop platforms
  * Handles both platform-specific credential stores and file-based key storage
  */
 class PasskeyCredentialManager(
-    private val biometricAuthProvider: BiometricAuthProvider,
-    private val keychainService: PlatformKeychainService
+    private val biometricAuthProvider: BiometricAuthProvider
 ) {
-    
-    /**
-     * Determine credential type from credential ID to route authentication correctly
-     */
-    fun getCredentialType(credentialId: String): CredentialType {
-        return when {
-            credentialId.startsWith("touchid-credential-") -> CredentialType.MAC_TOUCHID
-            credentialId.startsWith("windowshello-credential-") -> CredentialType.WINDOWS_HELLO
-            credentialId.startsWith("webauthn-") -> CredentialType.BROWSER_WEBAUTHN
-            else -> CredentialType.BROWSER_WEBAUTHN // Default to browser for unknown types
-        }
-    }
-    
+
     /**
      * Check if there are any stored passkeys for the current user
      */
@@ -84,75 +64,7 @@ class PasskeyCredentialManager(
             Result.failure(e)
         }
     }
-    
-    /**
-     * Retrieve a key pair from file storage based on credential ID
-     */
-    suspend fun retrieveKeyPair(credentialId: String): Result<KeyPair> = withContext(Dispatchers.IO) {
-        try {
-            // Determine the key storage directory based on platform
-            val keyStorageDir = when {
-                biometricAuthProvider.isMacOS() -> {
-                    val homeDir = System.getProperty("user.home")
-                    "$homeDir/.boss-passkeys"
-                }
-                biometricAuthProvider.isWindows() -> {
-                    val appDataDir = System.getenv("APPDATA") ?: System.getenv("USERPROFILE")
-                    "$appDataDir/.boss-passkeys"
-                }
-                else -> {
-                    val homeDir = System.getProperty("user.home")
-                    "$homeDir/.boss-passkeys"
-                }
-            }
-            
-            val keyFile = java.io.File(keyStorageDir, "$credentialId.key")
-            
-            if (!keyFile.exists()) {
-                // Check if credential is in platform-specific storage for better error message
-                val storedCredentials = when {
-                    biometricAuthProvider.isMacOS() -> MacOSBiometricAuth.listPasskeys().getOrNull() ?: emptyList()
-                    biometricAuthProvider.isWindows() -> WindowsBiometricAuth.listPasskeys().getOrNull() ?: emptyList()
-                    else -> emptyList()
-                }
-                
-                return@withContext if (storedCredentials.contains(credentialId)) {
-                    Result.failure(Exception("Credential found in storage but key file missing: $credentialId"))
-                } else {
-                    Result.failure(Exception("Credential not found: $credentialId"))
-                }
-            }
-            
-            val keyData = keyFile.readText()
-            val parts = keyData.split("|")
-            if (parts.size != 2) {
-                return@withContext Result.failure(Exception("Invalid key data format for credential: $credentialId"))
-            }
-            
-            // Decode the private and public keys
-            val privateKeyBytes = Base64.getUrlDecoder().decode(parts[0])
-            val publicKeyBytes = Base64.getUrlDecoder().decode(parts[1])
-            
-            // Recreate the KeyPair from the stored bytes
-            val keyFactory = KeyFactory.getInstance("EC")
-            
-            val privateKeySpec = PKCS8EncodedKeySpec(privateKeyBytes)
-            val privateKey = keyFactory.generatePrivate(privateKeySpec)
-            
-            val publicKeySpec = X509EncodedKeySpec(publicKeyBytes)
-            val publicKey = keyFactory.generatePublic(publicKeySpec)
-            
-            val keyPair = KeyPair(publicKey, privateKey)
-            println("PasskeyCredentialManager: Successfully retrieved key pair for credential: $credentialId")
-            Result.success(keyPair)
-            
-        } catch (e: Exception) {
-            println("PasskeyCredentialManager: Failed to retrieve key pair: ${e.message}")
-            e.printStackTrace()
-            Result.failure(e)
-        }
-    }
-    
+
     /**
      * Delete a passkey credential from both platform storage and key files
      */
@@ -211,13 +123,5 @@ class PasskeyCredentialManager(
             Result.failure(e)
         }
     }
-    
-    /**
-     * Credential types for routing authentication
-     */
-    enum class CredentialType {
-        MAC_TOUCHID,        // Use Mac TouchID biometric auth
-        WINDOWS_HELLO,      // Use Windows Hello biometric auth  
-        BROWSER_WEBAUTHN    // Use browser WebAuthn (cross-device, iCloud synced, etc.)
-    }
+
 }

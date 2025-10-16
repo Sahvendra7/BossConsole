@@ -2,7 +2,6 @@ package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
 import ai.rever.boss.components.configuration.ConfigurationManager
 import ai.rever.boss.components.configuration.applyConfiguration
-import ai.rever.boss.components.configuration.BreadcrumbConfig
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -28,10 +27,8 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Workspaces
 import androidx.compose.material.icons.outlined.ViewModule
 import androidx.compose.material.icons.outlined.Tab
@@ -110,11 +107,7 @@ object TabTreeState {
         }
         _expandedNodes.value = current
     }
-    
-    fun isExpanded(nodeId: String): Boolean {
-        return _expandedNodes.value.contains(nodeId)
-    }
-    
+
     fun initializeDefaultExpansion(nodes: List<TabTreeNode>) {
         // Expand all configuration nodes by default
         val configNodes = nodes.filterIsInstance<TabTreeNode.ConfigurationNode>()
@@ -132,10 +125,7 @@ object TabTreeState {
         current.remove(configId)
         _modifiedConfigurations.value = current
     }
-    
-    fun isConfigurationModified(configId: String): Boolean {
-        return _modifiedConfigurations.value.contains(configId)
-    }
+
 }
 
 // Utility to build tree structure from active tabs
@@ -221,99 +211,6 @@ object TabTreeBuilder {
     }
 }
 
-// Data class for breadcrumb navigation
-data class BreadcrumbItem(
-    val text: String,
-    val type: BreadcrumbType,
-    val clickable: Boolean = true,
-    val onClick: (() -> Unit)? = null
-)
-
-enum class BreadcrumbType {
-    CONFIGURATION,
-    PANEL,
-    TAB,
-    SEPARATOR
-}
-
-// Breadcrumb utility functions
-object BreadcrumbUtils {
-    fun createBreadcrumb(
-        activeTab: ActiveTab,
-        config: BreadcrumbConfig,
-        onConfigurationClick: () -> Unit,
-        onTabClick: () -> Unit
-    ): List<BreadcrumbItem> {
-        val items = mutableListOf<BreadcrumbItem>()
-        
-        if (config.showConfigurationPath) {
-            // Add configuration name
-            items.add(
-                BreadcrumbItem(
-                    text = truncateText(activeTab.configurationName, config.maxLength / 3),
-                    type = BreadcrumbType.CONFIGURATION,
-                    onClick = onConfigurationClick
-                )
-            )
-            
-            // Add separator
-            items.add(
-                BreadcrumbItem(
-                    text = config.separator,
-                    type = BreadcrumbType.SEPARATOR,
-                    clickable = false
-                )
-            )
-        }
-        
-        if (config.showTabPath) {
-            // Add tab info
-            val tabText = when (val tabInfo = activeTab.tabInfo) {
-                is FluckTabInfo -> {
-                    if (tabInfo.url.isNotEmpty()) {
-                        "${tabInfo.title} (${getDomainFromUrl(tabInfo.url)})"
-                    } else {
-                        tabInfo.title
-                    }
-                }
-                else -> "${activeTab.tabInfo.title} (${activeTab.tabInfo.typeId.typeId})"
-            }
-            
-            items.add(
-                BreadcrumbItem(
-                    text = truncateText(tabText, config.maxLength * 2 / 3),
-                    type = BreadcrumbType.TAB,
-                    onClick = onTabClick
-                )
-            )
-        }
-        
-        return items
-    }
-    
-    private fun truncateText(text: String, maxLength: Int): String {
-        return if (text.length <= maxLength) {
-            text
-        } else {
-            "${text.take(maxLength - 3)}..."
-        }
-    }
-    
-    private fun getDomainFromUrl(url: String): String {
-        return try {
-            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                "https://$url"
-            } else {
-                url
-            }
-            val domain = cleanUrl.substringAfter("://").substringBefore("/")
-            domain.removePrefix("www.")
-        } catch (e: Exception) {
-            url
-        }
-    }
-}
-
 // Global state for tracking all active tabs
 object TopOfMindState {
     private val _activeTabs = MutableStateFlow<List<ActiveTab>>(emptyList())
@@ -322,14 +219,7 @@ object TopOfMindState {
     fun updateActiveTabs(tabs: List<ActiveTab>) {
         _activeTabs.value = tabs
     }
-    
-    fun addActiveTab(tab: ActiveTab) {
-        _activeTabs.value = _activeTabs.value + tab
-    }
-    
-    fun removeActiveTab(tabId: String) {
-        _activeTabs.value = _activeTabs.value.filter { it.tabInfo.id != tabId }
-    }
+
 }
 
 object TopOfMindInfo : PanelInfo {
@@ -676,7 +566,7 @@ private fun ConfigurationFolderItem(
     ) {
         // Expand/collapse button area
         Icon(
-            if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.KeyboardArrowRight,
+            if (isExpanded) Icons.Outlined.ExpandMore else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = if (isExpanded) "Collapse" else "Expand",
             modifier = Modifier
                 .size(16.dp)
@@ -742,7 +632,7 @@ private fun SplitFolderItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (isExpanded) Icons.Outlined.ExpandMore else Icons.Outlined.KeyboardArrowRight,
+            if (isExpanded) Icons.Outlined.ExpandMore else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = if (isExpanded) "Collapse" else "Expand",
             modifier = Modifier.size(14.dp),
             tint = Color.Gray.copy(alpha = 0.6f)

@@ -8,7 +8,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -17,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
+import kotlin.time.Clock
 
 object Fluck: TabTypeInfo {
     override val typeId = TabTypeId("fluck")
@@ -52,11 +52,7 @@ data class FluckTabInfo(
     fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
         return copy(_tabIcon = newTabIcon)
     }
-    
-    fun updateTitleAndIcon(newTitle: String, newIcon: ImageVector): FluckTabInfo {
-        return copy(_title = newTitle, _icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
-    }
-    
+
     fun navigateToPage(title: String, url: String) {
         // Update current URL
         _currentUrl = url
@@ -89,15 +85,7 @@ data class FluckTabInfo(
             _currentUrl = navigationHistory[historyIndex].second
         }
     }
-    
-    fun getCurrentHistoryForDisplay(): List<Pair<String, String>> {
-        // Return history up to current index
-        return if (historyIndex >= 0 && navigationHistory.isNotEmpty()) {
-            navigationHistory.take(historyIndex + 1)
-        } else {
-            emptyList()
-        }
-    }
+
 }
 
 // Platform-specific browser creation
@@ -114,9 +102,6 @@ expect fun disposeBrowserViewState(browserViewState: Any)
 
 // Platform-specific browser state retrieval
 expect fun getBrowserState(url: String): Pair<Any, Any>?
-
-// Platform-specific browser state release
-expect fun releaseBrowserState(url: String)
 
 // Platform-specific FluckTabComponent creation
 expect fun createFluckTabComponent(
@@ -344,7 +329,7 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
         onOpenInNewTab = { url ->
             // Create a new tab with the specified URL
             parentComponent?.let { parent ->
-                val newTabId = "browser_${kotlinx.datetime.Clock.System.now().toEpochMilliseconds()}"
+                val newTabId = "browser_${Clock.System.now().toEpochMilliseconds()}"
                 val newTab = FluckTabInfo(
                     id = newTabId,
                     typeId = TabTypeId("fluck"),

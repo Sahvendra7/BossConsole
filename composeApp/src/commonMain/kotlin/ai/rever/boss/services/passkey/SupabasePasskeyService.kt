@@ -1,9 +1,6 @@
 package ai.rever.boss.services.passkey
 
 import ai.rever.boss.services.passkey.supabase.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import io.ktor.client.statement.bodyAsText
 
 /**
@@ -18,22 +15,7 @@ import io.ktor.client.statement.bodyAsText
  * - HTTP communication via SupabaseApiClient
  */
 object SupabasePasskeyService {
-    
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    
-    /**
-     * Request passkey registration challenge from Supabase
-     * @param userId User identifier
-     * @param displayName User display name
-     * @return Challenge and registration options
-     */
-    suspend fun requestRegistrationChallenge(
-        userId: String,
-        displayName: String
-    ): Result<PasskeyChallenge> {
-        return requestRegistrationChallenge(userId, displayName, null)
-    }
-    
+
     suspend fun requestRegistrationChallenge(
         userId: String,
         displayName: String,
@@ -156,7 +138,6 @@ object SupabasePasskeyService {
                 return Result.failure(e)
             }
             println("Failed to fetch user passkeys: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -197,7 +178,6 @@ object SupabasePasskeyService {
             }
         } catch (e: Exception) {
             println("Failed to delete passkey: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -217,50 +197,5 @@ object SupabasePasskeyService {
     }
     
     // Utility methods for backward compatibility and convenience
-    
-    /**
-     * Generate cross-device registration URL for QR code
-     */
-    fun generateRegistrationUrl(
-        challenge: String,
-        userId: String,
-        displayName: String,
-        sessionId: String? = null
-    ): String {
-        return CrossDeviceUrlGenerator.generateRegistrationUrl(
-            challenge = challenge,
-            userId = userId,
-            displayName = displayName,
-            sessionId = sessionId
-        )
-    }
-    
-    /**
-     * Generate cross-device authentication URL for QR code
-     */
-    fun generateAuthenticationUrl(
-        challenge: String,
-        email: String? = null,
-        sessionId: String? = null
-    ): String {
-        return CrossDeviceUrlGenerator.generateAuthenticationUrl(
-            challenge = challenge,
-            email = email,
-            sessionId = sessionId
-        )
-    }
-    
-    /**
-     * Check if authentication result indicates success
-     */
-    fun isAuthenticationSuccessful(result: PasskeyAuthenticationResult): Boolean {
-        return PasskeyAuthenticationHandler.isAuthenticationSuccessful(result)
-    }
-    
-    /**
-     * Check if authentication is pending (for cross-device flows)
-     */
-    fun isAuthenticationPending(result: PasskeyAuthenticationResult): Boolean {
-        return PasskeyAuthenticationHandler.isAuthenticationPending(result)
-    }
+
 }

@@ -1,7 +1,5 @@
 package ai.rever.boss.components.configuration
 
-import ai.rever.boss.utils.SystemUtils
-
 /**
  * Manages file-based configuration storage
  */
@@ -69,11 +67,5 @@ object ConfigurationFileManagerCommon {
         val sanitized = configName.replace(Regex("[^a-zA-Z0-9.-]"), "_")
         return "$sanitized.json"
     }
-    
-    /**
-     * Extract configuration name from filename
-     */
-    fun extractConfigName(fileName: String): String {
-        return fileName.removeSuffix(".json").replace("_", " ")
-    }
+
 }

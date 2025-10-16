@@ -67,7 +67,6 @@ object PowerShellExecutor {
 
         } catch (e: Exception) {
             println("PowerShellExecutor: Error executing PowerShell script: ${e.message}")
-            e.printStackTrace()
             throw e
         }
     }

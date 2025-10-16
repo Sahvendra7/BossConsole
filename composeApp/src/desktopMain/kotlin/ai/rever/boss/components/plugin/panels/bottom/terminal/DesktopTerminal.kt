@@ -109,7 +109,6 @@ class DesktopTerminal : Terminal {
                             }
                         } catch (e: Exception) {
                             if (process.isAlive) {
-                                e.printStackTrace()
                             }
                         } finally {
                             _isRunning.value = false
@@ -122,12 +121,10 @@ class DesktopTerminal : Terminal {
                             process.waitFor()
                             _isRunning.value = false
                         } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
                 _isRunning.value = false
                 // Emit error information to help diagnose
                 _output.emit("\n[Terminal Error]\n")
@@ -172,7 +169,6 @@ class DesktopTerminal : Terminal {
             reader?.close()
             ptyProcess?.destroyForcibly()
         } catch (e: Exception) {
-            e.printStackTrace()
         }
         
         ptyProcess = null

@@ -2,7 +2,6 @@ package ai.rever.boss.services.passkey.supabase
 
 import ai.rever.boss.services.supabase.getSupabaseAnonKey
 import ai.rever.boss.services.supabase.getSupabaseFunctionUrl
-import io.github.jan.supabase.functions.functions
 import io.ktor.client.statement.*
 import io.ktor.client.request.*
 import io.ktor.client.HttpClient
@@ -152,17 +151,4 @@ internal object SupabaseApiClient {
         }
     }
 
-    /**
-     * POST /manage/update - Update passkey display name
-     */
-    suspend inline fun <reified T> updatePasskey(requestData: T): HttpResponse {
-        val jsonBody = json.encodeToString(requestData)
-        println("SupabaseApiClient: POST $supabaseFunctionUrl/manage/update")
-
-        return httpClient.post("$supabaseFunctionUrl/manage/update") {
-            contentType(ContentType.Application.Json)
-            header("apikey", supabaseAnonKey)
-            setBody(jsonBody)
-        }
-    }
 }

@@ -61,7 +61,6 @@ actual class ConfigurationFileManager {
             
             filePath
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -78,7 +77,6 @@ actual class ConfigurationFileManager {
             val nsString = NSString.stringWithContentsOfFile(filePath, encoding = NSUTF8StringEncoding, error = null) ?: return@withContext null
             ConfigurationSerializer.deserialize(nsString.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -102,7 +100,6 @@ actual class ConfigurationFileManager {
                 )
             } ?: emptyList()
         } catch (e: Exception) {
-            e.printStackTrace()
             emptyList()
         }
     }
@@ -118,7 +115,6 @@ actual class ConfigurationFileManager {
                 false
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             false
         }
     }

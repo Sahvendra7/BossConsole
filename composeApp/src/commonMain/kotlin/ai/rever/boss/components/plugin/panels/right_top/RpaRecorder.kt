@@ -10,14 +10,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
 import androidx.compose.material.Checkbox
 import androidx.compose.material.CheckboxDefaults
@@ -32,7 +29,6 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,15 +38,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -142,8 +136,7 @@ open class RpaRecorderComponent(
     
     // Notification/feedback messages
     private val _feedbackMessage = MutableStateFlow<FeedbackMessage?>(null)
-    val feedbackMessage: StateFlow<FeedbackMessage?> = _feedbackMessage
-    
+
     // Video recording status
     protected val _isVideoRecording = MutableStateFlow(false)
     val isVideoRecording: StateFlow<Boolean> = _isVideoRecording
@@ -281,12 +274,12 @@ open class RpaRecorderComponent(
                                     Color.Transparent
                             ) {
                                 Text(
-                                    text = mode.name.lowercase().capitalize(),
+                                    text = mode.name.lowercase().replaceFirstChar { it.uppercase() },
                                     style = MaterialTheme.typography.caption,
                                     fontWeight = if (viewMode == mode) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (viewMode == mode) 
-                                        MaterialTheme.colors.primary 
-                                    else 
+                                    color = if (viewMode == mode)
+                                        MaterialTheme.colors.primary
+                                    else
                                         MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
                                 )
                             }
@@ -1312,7 +1305,6 @@ open class RpaRecorderComponent(
                 }
             } catch (e: Exception) {
                 println("RPA Recorder: Error capturing initial URL: ${e.message}")
-                e.printStackTrace()
             }
         }
     }
@@ -1352,7 +1344,6 @@ data class FeedbackMessage(
 
 enum class FeedbackType {
     SUCCESS,
-    ERROR,
     INFO
 }
 

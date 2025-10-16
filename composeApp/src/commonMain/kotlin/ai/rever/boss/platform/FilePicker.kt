@@ -12,13 +12,6 @@ interface DirectoryPicker {
     fun pickDirectory()
 }
 
-// For platforms that don't support native file pickers
-class NoOpDirectoryPicker : DirectoryPicker {
-    override fun pickDirectory() {
-        // No-op for platforms without file picker support
-    }
-}
-
 // Platform-specific file picker for selecting files
 @Composable
 expect fun rememberFilePicker(
@@ -30,9 +23,3 @@ interface FilePicker {
     fun pickFile()
 }
 
-// For platforms that don't support native file pickers
-class NoOpFilePicker : FilePicker {
-    override fun pickFile() {
-        // No-op for platforms without file picker support
-    }
-}

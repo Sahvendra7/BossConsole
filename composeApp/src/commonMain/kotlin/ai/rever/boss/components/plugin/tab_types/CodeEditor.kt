@@ -125,7 +125,6 @@ fun CodeEditorUI(
                     visualTransformation = SyntaxHighlightTransformation(
                         language,
                         getCodeEditorKeywordColor(),
-                        getCodeEditorStringColor(),
                         getCodeEditorCommentColor()
                     )
                 )
@@ -138,7 +137,6 @@ fun CodeEditorUI(
 class SyntaxHighlightTransformation(
     private val language: String,
     private val keywordColor: Color,
-    private val stringColor: Color,
     private val commentColor: Color
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -288,7 +286,6 @@ expect fun getCodeEditorTextColor(): Color
 expect fun getCodeEditorLineNumberColor(): Color
 expect fun getCodeEditorLineNumberBgColor(): Color
 expect fun getCodeEditorKeywordColor(): Color
-expect fun getCodeEditorStringColor(): Color
 expect fun getCodeEditorCommentColor(): Color
 
 // EditorTabInfo to store file path
@@ -368,27 +365,7 @@ class CodeEditorTabComponent(
             modifier = Modifier.fillMaxSize()
         )
     }
-    
-    fun loadFile(path: String, content: String) {
-        _content.value = content
-        // Update language based on file extension
-        val extension = path.substringAfterLast('.', "")
-        _language.value = when (extension) {
-            "kt", "kts" -> "kotlin"
-            "java" -> "java"
-            "js", "jsx" -> "javascript"
-            "ts", "tsx" -> "typescript"
-            "py" -> "python"
-            "json" -> "json"
-            "xml" -> "xml"
-            "html", "htm" -> "html"
-            "css" -> "css"
-            "md" -> "markdown"
-            "toml" -> "toml"
-            "gradle" -> "groovy"
-            else -> "text"
-        }
-    }
+
 }
 
 fun DefaultPlugin.registerCodeEditor() = tabRegistry.registerTabType(CodeEditor) {

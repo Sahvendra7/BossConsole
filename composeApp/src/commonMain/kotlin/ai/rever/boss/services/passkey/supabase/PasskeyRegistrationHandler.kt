@@ -44,7 +44,6 @@ internal object PasskeyRegistrationHandler {
             Result.success(parsedChallenge)
         } catch (e: Exception) {
             println("Failed to request registration challenge: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -88,7 +87,6 @@ internal object PasskeyRegistrationHandler {
             }
         } catch (e: Exception) {
             println("Failed to complete registration: ${e.message}")
-            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -187,21 +185,5 @@ internal object PasskeyRegistrationHandler {
             else -> Result.success(Unit)
         }
     }
-    
-    /**
-     * Generate registration URL for cross-device flows
-     */
-    fun generateCrossDeviceRegistrationUrl(
-        challenge: String,
-        userId: String,
-        displayName: String,
-        sessionId: String? = null
-    ): String {
-        return CrossDeviceUrlGenerator.generateRegistrationUrl(
-            challenge = challenge,
-            userId = userId,
-            displayName = displayName,
-            sessionId = sessionId
-        )
-    }
+
 }

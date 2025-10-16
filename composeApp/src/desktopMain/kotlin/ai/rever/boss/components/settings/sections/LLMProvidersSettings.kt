@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -150,7 +151,7 @@ fun LLMProvidersSettings() {
                                     onClick = { showOAuthDialog = selectedProvider }
                                 ) {
                                     Icon(
-                                        Icons.Outlined.Login,
+                                        Icons.AutoMirrored.Outlined.Login,
                                         contentDescription = "Sign In",
                                         modifier = Modifier.size(16.dp)
                                     )

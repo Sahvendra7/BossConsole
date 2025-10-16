@@ -22,8 +22,4 @@ expect class ContextMenuHandler() {
         setMenuPosition: (IntOffset) -> Unit
     ): Modifier
 
-    /**
-     * Get platform-specific context menu instruction text
-     */
-    fun getInstructionText(): String
 }

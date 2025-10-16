@@ -75,7 +75,6 @@ object FluckEngine {
             println("- OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
             println("- Arch: ${System.getProperty("os.arch")}")
             println("- Java: ${System.getProperty("java.version")}")
-            e.printStackTrace()
             initializationError = e
             throw e
         }

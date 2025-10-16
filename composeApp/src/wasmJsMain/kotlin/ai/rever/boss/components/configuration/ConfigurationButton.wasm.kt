@@ -11,6 +11,5 @@ actual fun openConfigurationDirectory(path: String) {
     try {
         window.alert("Configurations are stored in browser localStorage.\nPrefix: $path")
     } catch (e: Exception) {
-        e.printStackTrace()
     }
 }

@@ -12,12 +12,6 @@ object MacOSBiometricAuth {
     fun isBiometricAvailable(): Boolean = MacOSTouchIDAuth.isBiometricAvailable()
 
     /**
-     * Authenticate user with Touch ID / Face ID
-     */
-    suspend fun authenticateWithBiometric(reason: String = "Authenticate with Touch ID or Face ID"): Result<Boolean> =
-        MacOSTouchIDAuth.authenticateWithBiometric(reason)
-
-    /**
      * Delete a passkey from macOS Keychain
      */
     suspend fun deletePasskey(credentialId: String): Result<Boolean> =

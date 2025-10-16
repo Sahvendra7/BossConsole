@@ -131,62 +131,6 @@ fun EmailField(
 }
 
 /**
- * Shared password input field component
- */
-@Composable
-fun PasswordField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    keyboardActions: KeyboardActions = KeyboardActions.Default,
-    label: String = "Password"
-) {
-    var passwordVisible by remember { mutableStateOf(false) }
-    
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label, color = BossDarkTextSecondary) },
-        leadingIcon = {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = label,
-                tint = BossDarkTextSecondary
-            )
-        },
-        visualTransformation = if (passwordVisible) VisualTransformation.None 
-                               else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                Icon(
-                    if (passwordVisible) Icons.Default.VisibilityOff 
-                    else Icons.Default.Visibility,
-                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                    tint = BossDarkTextSecondary
-                )
-            }
-        },
-        modifier = modifier.fillMaxWidth(),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Password
-        ),
-        keyboardActions = keyboardActions,
-        enabled = enabled,
-        colors = TextFieldDefaults.outlinedTextFieldColors(
-            textColor = BossDarkTextPrimary,
-            backgroundColor = BossDarkBackground,
-            focusedBorderColor = BossDarkAccent,
-            unfocusedBorderColor = BossDarkBorder,
-            cursorColor = BossDarkAccent,
-            focusedLabelColor = BossDarkAccent,
-            unfocusedLabelColor = BossDarkTextSecondary
-        )
-    )
-}
-
-/**
  * Shared primary action button component
  */
 @Composable
@@ -257,27 +201,4 @@ fun LoadingIndicator(
         color = BossDarkAccent,
         strokeWidth = 2.dp
     )
-}
-
-/**
- * Shared navigation text button component
- */
-@Composable
-fun NavigationTextButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
-) {
-    TextButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier
-    ) {
-        Text(
-            text = text,
-            fontSize = 14.sp,
-            color = BossDarkAccent
-        )
-    }
 }

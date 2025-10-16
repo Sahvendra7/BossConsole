@@ -1,13 +1,10 @@
 package ai.rever.boss.services.passkey.desktop
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
-import ai.rever.boss.utils.WebAuthnQRGenerator
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.engine.Engine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.URLEncoder
-import java.util.*
 
 /**
  * Manages cross-device authentication flows and browser integration
@@ -44,76 +41,11 @@ class CrossDeviceBrowserManager {
                 else -> {
                     println("CrossDeviceBrowserManager: Failed to initialize WebAuthn using FluckEngine: ${e.message}")
                     println("CrossDeviceBrowserManager: Using system browser fallback")
-                    e.printStackTrace()
                 }
             }
         }
     }
-    
-    /**
-     * Check if enhanced WebAuthn capabilities are available via JxBrowser
-     */
-    fun hasEnhancedWebAuthnSupport(): Boolean {
-        return webAuthnEngine != null && webAuthnBrowser != null
-    }
-    
-    /**
-     * Generate WebAuthn registration URL for cross-device flows
-     * Uses RESTful endpoint: GET /register/mobile
-     */
-    fun generateRegistrationUrl(
-        userId: String,
-        displayName: String,
-        challenge: String,
-        rpId: String,
-        sessionId: String = UUID.randomUUID().toString()
-    ): String {
-        return "https://api.risaboss.com/functions/v1/passkey/register/mobile?" +
-            "challenge=${URLEncoder.encode(challenge, "UTF-8")}&" +
-            "email=${URLEncoder.encode(displayName, "UTF-8")}&" +
-            "sessionId=${URLEncoder.encode(sessionId, "UTF-8")}&" +
-            "rpId=${URLEncoder.encode(rpId, "UTF-8")}&" +
-            "rpName=${URLEncoder.encode("BOSS", "UTF-8")}"
-    }
-    
-    /**
-     * Generate WebAuthn authentication QR URL for cross-device flows
-     */
-    fun generateAuthenticationQR(
-        challenge: String,
-        allowCredentials: List<String>,
-        rpId: String,
-        userEmail: String,
-        sessionId: String
-    ): String {
-        return WebAuthnQRGenerator.generateAuthenticationQR(
-            challenge = challenge,
-            allowCredentials = allowCredentials,
-            rpId = rpId,
-            userEmail = userEmail,
-            sessionId = sessionId
-        )
-    }
-    
-    /**
-     * Generate mobile authentication URL for cross-device flows
-     * Uses RESTful endpoint: GET /auth/mobile
-     */
-    fun generateMobileAuthUrl(
-        challenge: String,
-        credentialId: String,
-        rpId: String,
-        userEmail: String,
-        sessionId: String
-    ): String {
-        return "https://api.risaboss.com/functions/v1/passkey/auth/mobile?" +
-            "challenge=${URLEncoder.encode(challenge, "UTF-8")}&" +
-            "email=${URLEncoder.encode(userEmail, "UTF-8")}&" +
-            "sessionId=${URLEncoder.encode(sessionId, "UTF-8")}&" +
-            "credentialId=${URLEncoder.encode(credentialId, "UTF-8")}&" +
-            "rpId=${URLEncoder.encode(rpId, "UTF-8")}"
-    }
-    
+
     /**
      * Open URL in system browser with fallback methods
      */
@@ -277,17 +209,5 @@ class CrossDeviceBrowserManager {
             println("❌ Error showing enhanced capabilities: ${e.message}")
         }
     }
-    
-    /**
-     * Cleanup resources when manager is no longer needed
-     */
-    fun cleanup() {
-        try {
-            webAuthnBrowser?.close()
-            // Don't close webAuthnEngine - it belongs to FluckEngine
-            println("CrossDeviceBrowserManager: Cleanup completed")
-        } catch (e: Exception) {
-            println("CrossDeviceBrowserManager: Error during cleanup: ${e.message}")
-        }
-    }
+
 }

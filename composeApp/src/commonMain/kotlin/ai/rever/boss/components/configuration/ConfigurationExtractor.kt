@@ -5,6 +5,7 @@ import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
+import kotlin.time.Clock
 
 /**
  * Extracts the current layout configuration from the split view state
@@ -20,7 +21,7 @@ fun extractCurrentConfiguration(
         name = name,
         description = description,
         layout = layout,
-        timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+        timestamp = Clock.System.now().toEpochMilliseconds()
     )
 }
 

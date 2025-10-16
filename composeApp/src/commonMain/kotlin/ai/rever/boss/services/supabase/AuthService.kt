@@ -22,11 +22,8 @@ class CrossDeviceAuthenticationRequired(
 object AuthService {
     // Expose StateFlows from AuthStateManager
     val authState: StateFlow<AuthState> = AuthStateManager.authState
-    val emailVerificationEvent: StateFlow<String?> = AuthStateManager.emailVerificationEvent
     val currentUser: StateFlow<UserInfo?> = AuthStateManager.currentUser
-    val currentAuthenticationQRUrl: StateFlow<String?> = AuthStateManager.currentAuthenticationQRUrl
-    val currentAuthenticationChallenge: StateFlow<String?> = AuthStateManager.currentAuthenticationChallenge
-    
+
     /**
      * Initialize the auth service and check for existing session
      */
@@ -55,13 +52,7 @@ object AuthService {
         return EmailAuthService.verifyEmail(token, type)
     }
     
-    /**
-     * Trigger email verification event for LoginViewModel to handle
-     */
-    fun triggerEmailVerificationEvent(token: String) {
-        AuthStateManager.triggerEmailVerificationEvent(token)
-    }
-    
+
     /**
      * Check if a user exists with the given email address
      */
@@ -128,7 +119,6 @@ object AuthService {
         object Loading : AuthState()
         object NotAuthenticated : AuthState()
         object Authenticated : AuthState()
-        object Requires2FA : AuthState()  // New state for users who need to verify 2FA
         data class Error(val message: String) : AuthState()
     }
     

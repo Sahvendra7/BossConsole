@@ -5,7 +5,6 @@ import com.arkivanov.decompose.ComponentContext
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -25,17 +24,21 @@ class DesktopRpaEngineComponent(
     ctx: ComponentContext,
     panelInfo: ai.rever.boss.components.registery.PanelInfo
 ) : RpaEngineComponent(ctx, panelInfo) {
-    
+
+    companion object {
+        private val json = Json {
+            ignoreUnknownKeys = true
+        }
+    }
+
     private var currentExecutor: JxBrowserActionExecutor? = null
-    
+
     override fun loadConfiguration(file: ConfigFileInfo) {
         try {
             val configFile = File(file.path)
             if (configFile.exists()) {
                 val content = configFile.readText()
-                val config = Json {
-                    ignoreUnknownKeys = true
-                }.decodeFromString<RpaConfiguration>(content)
+                val config = json.decodeFromString<RpaConfiguration>(content)
                 _selectedConfig.value = config
                 _executionStatus.value = ExecutionStatus.IDLE
             }
@@ -138,7 +141,6 @@ class DesktopRpaEngineComponent(
                 
             } catch (e: Exception) {
                 println("Execution error: ${e.message}")
-                e.printStackTrace()
                 _executionStatus.value = ExecutionStatus.ERROR
                 
                 // Add error result
@@ -150,152 +152,6 @@ class DesktopRpaEngineComponent(
                 )
                 _executionResults.value = _executionResults.value + errorResult
             }
-        }
-    }
-    
-    /**
-     * Inject anti-detection JavaScript to make the browser appear more human-like
-     */
-    private fun injectAntiDetectionScript(browser: Browser) {
-        try {
-            val mainFrame = browser.mainFrame().orElse(null)
-            if (mainFrame != null) {
-                mainFrame.executeJavaScript<Any>("""
-                    // Override navigator.webdriver
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                    
-                    // Override navigator properties to appear more human
-                    Object.defineProperty(navigator, 'maxTouchPoints', {
-                        get: () => 0
-                    });
-                    
-                    Object.defineProperty(navigator, 'vendor', {
-                        get: () => 'Google Inc.'
-                    });
-                    
-                    Object.defineProperty(navigator, 'appVersion', {
-                        get: () => '5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    });
-                    
-                    // Override screen properties
-                    Object.defineProperty(screen, 'availWidth', {
-                        get: () => 1920
-                    });
-                    Object.defineProperty(screen, 'availHeight', {
-                        get: () => 1080
-                    });
-                    Object.defineProperty(screen, 'width', {
-                        get: () => 1920
-                    });
-                    Object.defineProperty(screen, 'height', {
-                        get: () => 1080
-                    });
-                    
-                    // Add languages
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en']
-                    });
-                    
-                    // Override plugins to look more realistic
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => {
-                            const pluginData = [
-                                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                                { name: 'Native Client', filename: 'internal-nacl-plugin' }
-                            ];
-                            const plugins = {};
-                            pluginData.forEach((p, i) => {
-                                plugins[i] = p;
-                            });
-                            plugins.length = pluginData.length;
-                            return plugins;
-                        }
-                    });
-                    
-                    // Override permissions.query to always return 'granted' for notifications
-                    const originalQuery = window.navigator.permissions.query;
-                    window.navigator.permissions.query = function(parameters) {
-                        if (parameters.name === 'notifications') {
-                            return Promise.resolve({ state: 'granted' });
-                        }
-                        return originalQuery.apply(this, arguments);
-                    };
-                    
-                    // Remove automation-related properties
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-                    
-                    // Make chrome object look more complete
-                    if (window.chrome) {
-                        window.chrome.runtime = {
-                            connect: () => {},
-                            sendMessage: () => {},
-                            onMessage: { addListener: () => {} },
-                            id: 'aapbdbdomjkkjkaonfhkkikfgjllcleb' // Google Translate extension ID
-                        };
-                        window.chrome.loadTimes = () => ({
-                            requestTime: Date.now() / 1000,
-                            startLoadTime: Date.now() / 1000,
-                            commitLoadTime: Date.now() / 1000,
-                            finishDocumentLoadTime: Date.now() / 1000,
-                            finishLoadTime: Date.now() / 1000,
-                            firstPaintTime: Date.now() / 1000,
-                            firstPaintAfterLoadTime: 0,
-                            navigationType: 'Other',
-                            wasFetchedViaSpdy: false,
-                            wasNpnNegotiated: true,
-                            npnNegotiatedProtocol: 'h2',
-                            wasAlternateProtocolAvailable: false,
-                            connectionInfo: 'h2'
-                        });
-                    }
-                    
-                    // WebGL fingerprinting protection
-                    const getParameter = WebGLRenderingContext.prototype.getParameter;
-                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                        if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-                            return 'Intel Inc.';
-                        }
-                        if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-                            return 'Intel Iris OpenGL Engine';
-                        }
-                        return getParameter.apply(this, arguments);
-                    };
-                    
-                    // Canvas fingerprinting protection
-                    const toDataURL = HTMLCanvasElement.prototype.toDataURL;
-                    HTMLCanvasElement.prototype.toDataURL = function() {
-                        const context = this.getContext('2d');
-                        if (context) {
-                            // Add slight noise to make fingerprint unique
-                            const imageData = context.getImageData(0, 0, this.width, this.height);
-                            for (let i = 0; i < imageData.data.length; i += 4) {
-                                imageData.data[i] = imageData.data[i] + (Math.random() * 2 - 1);
-                                imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i]));
-                            }
-                            context.putImageData(imageData, 0, 0);
-                        }
-                        return toDataURL.apply(this, arguments);
-                    };
-                    
-                    // Override toString methods to hide modifications
-                    const originalToString = Function.prototype.toString;
-                    Function.prototype.toString = function() {
-                        if (this === window.navigator.permissions.query) {
-                            return 'function query() { [native code] }';
-                        }
-                        return originalToString.call(this);
-                    };
-                    
-                    console.log('LLM RPA: Anti-detection measures applied');
-                """)
-            }
-        } catch (e: Exception) {
-            println("Failed to inject anti-detection script: ${e.message}")
         }
     }
 
@@ -333,7 +189,6 @@ class DesktopRpaEngineComponent(
             browser
         } catch (e: Exception) {
             println("Error getting browser for RPA: ${e.message}")
-            e.printStackTrace()
             null
         }
     }
@@ -356,150 +211,7 @@ internal class JxBrowserActionExecutor(
         //     injectAntiDetectionScript()
         // }
     }
-    
-    private fun injectAntiDetectionScript() {
-        try {
-            val mainFrame = browser.mainFrame().orElse(null)
-            if (mainFrame != null) {
-                mainFrame.executeJavaScript<Any>("""
-                    // Override navigator.webdriver
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                    
-                    // Override navigator properties to appear more human
-                    Object.defineProperty(navigator, 'maxTouchPoints', {
-                        get: () => 0
-                    });
-                    
-                    Object.defineProperty(navigator, 'vendor', {
-                        get: () => 'Google Inc.'
-                    });
-                    
-                    Object.defineProperty(navigator, 'appVersion', {
-                        get: () => '5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    });
-                    
-                    // Override screen properties
-                    Object.defineProperty(screen, 'availWidth', {
-                        get: () => 1920
-                    });
-                    Object.defineProperty(screen, 'availHeight', {
-                        get: () => 1080
-                    });
-                    Object.defineProperty(screen, 'width', {
-                        get: () => 1920
-                    });
-                    Object.defineProperty(screen, 'height', {
-                        get: () => 1080
-                    });
-                    
-                    // Add languages
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en']
-                    });
-                    
-                    // Override plugins to look more realistic
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => {
-                            const pluginData = [
-                                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                                { name: 'Native Client', filename: 'internal-nacl-plugin' }
-                            ];
-                            const plugins = {};
-                            pluginData.forEach((p, i) => {
-                                plugins[i] = p;
-                            });
-                            plugins.length = pluginData.length;
-                            return plugins;
-                        }
-                    });
-                    
-                    // Override permissions.query to always return 'granted' for notifications
-                    const originalQuery = window.navigator.permissions.query;
-                    window.navigator.permissions.query = function(parameters) {
-                        if (parameters.name === 'notifications') {
-                            return Promise.resolve({ state: 'granted' });
-                        }
-                        return originalQuery.apply(this, arguments);
-                    };
-                    
-                    // Remove automation-related properties
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-                    
-                    // Make chrome object look more complete
-                    if (window.chrome) {
-                        window.chrome.runtime = {
-                            connect: () => {},
-                            sendMessage: () => {},
-                            onMessage: { addListener: () => {} },
-                            id: 'aapbdbdomjkkjkaonfhkkikfgjllcleb' // Google Translate extension ID
-                        };
-                        window.chrome.loadTimes = () => ({
-                            requestTime: Date.now() / 1000,
-                            startLoadTime: Date.now() / 1000,
-                            commitLoadTime: Date.now() / 1000,
-                            finishDocumentLoadTime: Date.now() / 1000,
-                            finishLoadTime: Date.now() / 1000,
-                            firstPaintTime: Date.now() / 1000,
-                            firstPaintAfterLoadTime: 0,
-                            navigationType: 'Other',
-                            wasFetchedViaSpdy: false,
-                            wasNpnNegotiated: true,
-                            npnNegotiatedProtocol: 'h2',
-                            wasAlternateProtocolAvailable: false,
-                            connectionInfo: 'h2'
-                        });
-                    }
-                    
-                    // WebGL fingerprinting protection
-                    const getParameter = WebGLRenderingContext.prototype.getParameter;
-                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                        if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-                            return 'Intel Inc.';
-                        }
-                        if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-                            return 'Intel Iris OpenGL Engine';
-                        }
-                        return getParameter.apply(this, arguments);
-                    };
-                    
-                    // Canvas fingerprinting protection
-                    const toDataURL = HTMLCanvasElement.prototype.toDataURL;
-                    HTMLCanvasElement.prototype.toDataURL = function() {
-                        const context = this.getContext('2d');
-                        if (context) {
-                            // Add slight noise to make fingerprint unique
-                            const imageData = context.getImageData(0, 0, this.width, this.height);
-                            for (let i = 0; i < imageData.data.length; i += 4) {
-                                imageData.data[i] = imageData.data[i] + (Math.random() * 2 - 1);
-                                imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i]));
-                            }
-                            context.putImageData(imageData, 0, 0);
-                        }
-                        return toDataURL.apply(this, arguments);
-                    };
-                    
-                    // Override toString methods to hide modifications
-                    const originalToString = Function.prototype.toString;
-                    Function.prototype.toString = function() {
-                        if (this === window.navigator.permissions.query) {
-                            return 'function query() { [native code] }';
-                        }
-                        return originalToString.call(this);
-                    };
-                    
-                    console.log('JxBrowserActionExecutor: Anti-detection measures applied');
-                """)
-            }
-        } catch (e: Exception) {
-            println("JxBrowserActionExecutor: Failed to inject anti-detection script: ${e.message}")
-        }
-    }
-    
+
     /**
      * Wait for page to finish loading
      */

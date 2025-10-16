@@ -101,9 +101,11 @@ fun LoginFormScreen(
             }
             
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Continue Button (when email not yet validated)
-            if (!showAuthOptions && !checkingUserExists && email.isNotBlank() && email.contains("@")) {
+            val isEmailValidAndReady = !showAuthOptions && !checkingUserExists &&
+                email.isNotBlank() && email.contains("@")
+            if (isEmailValidAndReady) {
                 PrimaryActionButton(
                     text = "Continue",
                     onClick = {

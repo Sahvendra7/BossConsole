@@ -161,12 +161,48 @@ The project uses **centralized version management**:
 ### Navigation
 Uses **Decompose** for component lifecycle and navigation management rather than traditional Android Navigation.
 
+## Code Quality
+
+### Static Analysis
+The project uses **detekt** (CLI version) for Kotlin static code analysis:
+
+```bash
+# Run detekt analysis
+detekt --input composeApp/src --report txt:detekt-report.txt --report html:detekt-report.html
+
+# Note: detekt is not integrated into Gradle - use CLI directly
+```
+
+**Common Acceptable Patterns:**
+- **WildcardImport**: Acceptable for Compose UI imports (`androidx.compose.material.*`)
+- **MagicNumber**: Acceptable for UI dimensions (`8.dp`, `16.sp`) and common values (0, 1, 2)
+- **SwallowedException**: Acceptable when returning fallback values (parsing, file ops)
+
+### Resource Management
+Uses **Compose Multiplatform Resource API** (not Android resources):
+
+- **Resources location**: `composeApp/src/commonMain/composeResources/`
+- **Generated package**: `boss_kotlin.composeapp.generated.resources`
+- **Import pattern**:
+  ```kotlin
+  import org.jetbrains.compose.resources.painterResource
+  import boss_kotlin.composeapp.generated.resources.Res
+  import boss_kotlin.composeapp.generated.resources.your_resource
+  ```
+- **Do NOT use**: `androidx.compose.ui.res.painterResource` (deprecated)
+
+### Code Style
+- All Kotlin files must end with a newline
+- Remove `printStackTrace()` calls - use `println()` for error logging
+- Prefer explicit imports over wildcards (except for Compose UI)
+
 ## Development Notes
 
 ### Current Focus Areas
 - **2FA/WebAuthn authentication system** (fix/2FA branch)
 - **Cross-device authentication flows**
 - **GitHub Actions CI/CD improvements**
+- **Code quality improvements** (manual_cleanup branch)
 
 ### Known Issues
 - Issue #33: Remove hardcoded credential fallbacks after testing
@@ -177,10 +213,11 @@ Uses **Decompose** for component lifecycle and navigation management rather than
 
 ### Key Files to Understand
 - `AuthService.kt` - Core authentication orchestration
-- `DesktopPasskeyService.kt` - Desktop WebAuthn implementation  
+- `DesktopPasskeyService.kt` - Desktop WebAuthn implementation
 - `SupabaseConfig.kt` - Backend configuration and client management
 - `version.properties` - Single source of truth for versioning
 - `build.gradle.kts` files - Kotlin Multiplatform configuration
+- `LoadingScreen.kt` - Centralized loading screen component (uses new resource API)
 
 ## Deep Link Support
 

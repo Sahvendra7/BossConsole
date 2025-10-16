@@ -3,7 +3,7 @@ package ai.rever.boss.components.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-open class Panel() {
+open class Panel {
     @Serializable
     data class TOP(val child: Panel? = null): Panel()
 
@@ -21,14 +21,6 @@ open class Panel() {
         val left = LEFT()
         val right = RIGHT()
         val bottom = BOTTOM()
-
-        val Panel.child: Panel? get() = when(this) {
-            is TOP -> child
-            is LEFT -> child
-            is RIGHT -> child
-            is BOTTOM -> child
-            else -> null
-        }
 
         val Panel.root: Panel get() = when (this) {
             is TOP -> Panel.top

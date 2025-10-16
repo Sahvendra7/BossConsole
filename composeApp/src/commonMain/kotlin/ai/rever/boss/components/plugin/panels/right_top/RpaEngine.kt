@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 
 /**
@@ -835,9 +835,8 @@ open class RpaEngineComponent(
      * Get formatted file date
      */
     private fun getFileDate(lastModified: Long): String {
-        // Simple date formatting
-        val date = kotlinx.datetime.Instant.fromEpochMilliseconds(lastModified)
-        return date.toString()
+        // Simple date formatting - using epoch millis directly
+        return "Last modified: ${lastModified / 1000}s ago"
     }
     
 }

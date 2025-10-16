@@ -12,12 +12,6 @@ object WindowsBiometricAuth {
     fun isBiometricAvailable(): Boolean = WindowsHelloAuth.isBiometricAvailable()
 
     /**
-     * Authenticate user with Windows Hello (PIN, Fingerprint, Face ID, etc.)
-     */
-    suspend fun authenticateWithBiometric(reason: String = "Authenticate with Windows Hello"): Result<Boolean> =
-        WindowsHelloAuth.authenticateWithBiometric(reason)
-
-    /**
      * Delete a passkey from Windows Credential Manager
      */
     suspend fun deletePasskey(credentialId: String): Result<Boolean> =

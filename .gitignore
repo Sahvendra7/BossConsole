@@ -67,3 +67,12 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# Detekt reports
+detekt-report.html
+detekt-report.txt
+detekt-report.xml
+detekt-report.sarif
+
+# Compilation logs
+compile.log

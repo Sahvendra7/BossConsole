@@ -42,7 +42,6 @@ fun UpdateBanner(
         }
         is UpdateState.ReadyToInstall -> {
             ReadyToInstallBanner(
-                downloadPath = updateState.downloadPath,
                 onInstall = { onInstallUpdate(updateState.downloadPath) }
             )
         }
@@ -171,7 +170,6 @@ private fun DownloadProgressBanner(progress: Float) {
 
 @Composable
 private fun ReadyToInstallBanner(
-    downloadPath: String,
     onInstall: () -> Unit
 ) {
     Card(
@@ -534,8 +532,11 @@ fun UpdateSettingsSection(
 }
 
 // Helper function to format time (you might want to use a proper date formatting library)
-private fun formatTime(instant: kotlinx.datetime.Instant): String {
-    return instant.toString().substringBefore('T').replace('-', '/')
+private fun formatTime(instant: kotlin.time.Instant): String {
+    val millis = instant.toEpochMilliseconds()
+    val seconds = millis / 1000
+    val days = seconds / (24 * 3600)
+    return if (days > 0) "$days days ago" else "Today"
 }
 
 // Platform-specific restart function

@@ -24,13 +24,4 @@ class TabRegistry {
         return tabFactories[config.typeId]?.invoke(config, componentContext)
     }
 
-    // Get tab content provider by type ID
-    fun getTabContent(typeId: TabTypeId): TabTypeInfo? {
-        return tabHandlers[typeId]
-    }
-
-    // Get all registered tab types
-    fun getAllTabTypes(): List<TabTypeInfo> {
-        return tabHandlers.values.toList()
-    }
 }

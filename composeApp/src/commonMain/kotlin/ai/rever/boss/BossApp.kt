@@ -68,6 +68,7 @@ import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.updater.UpdateBanner
 import androidx.compose.runtime.collectAsState
+import kotlin.time.Clock
 
 
 @Composable
@@ -226,7 +227,7 @@ fun ComponentContext.BossApp() {
                             // Update the current loaded configuration with changes
                             val updatedConfig = loadedConfig.copy(
                                 layout = currentLayout.layout,
-                                timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                                timestamp = Clock.System.now().toEpochMilliseconds()
                             )
                             configurationManager.updateCurrentConfiguration(updatedConfig)
                             configurationManager.saveCurrentConfiguration()
@@ -396,7 +397,7 @@ fun ComponentContext.BossApp() {
                                         // Update the configuration with current layout
                                         val updatedConfig = currentConfig.copy(
                                             layout = currentLayout.layout,
-                                            timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                                            timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
                                         )
                                         
                                         // Save the updated configuration
@@ -414,7 +415,7 @@ fun ComponentContext.BossApp() {
                                         // No configuration loaded, create new one
                                         val currentLayout = extractCurrentConfiguration(splitViewState)
                                         val newConfig = currentLayout.copy(
-                                            name = "Configuration ${kotlinx.datetime.Clock.System.now().toEpochMilliseconds() / 1000}",
+                                            name = "Configuration ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
                                             description = "Saved configuration"
                                         )
                                         configurationManager.updateCurrentConfiguration(newConfig)
@@ -572,7 +573,6 @@ fun ComponentContext.BossApp() {
             if (showTopOfMindDialog) {
                 TopOfMindDialog(
                     splitViewState = splitViewState,
-                    configurationManager = configurationManager,
                     onDismiss = { showTopOfMindDialog = false },
                     onTabSelect = { activeTab ->
                         showTopOfMindDialog = false

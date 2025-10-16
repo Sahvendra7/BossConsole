@@ -41,7 +41,6 @@ actual class ConfigurationFileManager {
             
             storageKey
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -52,7 +51,6 @@ actual class ConfigurationFileManager {
             val json = localStorage.getItem(storageKey) ?: return@withContext null
             ConfigurationSerializer.deserialize(json)
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -78,7 +76,6 @@ actual class ConfigurationFileManager {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             emptyList()
         }
     }
@@ -90,7 +87,6 @@ actual class ConfigurationFileManager {
             updateConfigurationList(fileName, false)
             true
         } catch (e: Exception) {
-            e.printStackTrace()
             false
         }
     }
@@ -115,7 +111,7 @@ actual class ConfigurationFileManager {
                 fileList.add(
                     ConfigFileMetadata(
                         fileName = fileName,
-                        lastModified = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                        lastModified = kotlin.time.Clock.System.now().toEpochMilliseconds()
                     )
                 )
             } else {
@@ -125,7 +121,6 @@ actual class ConfigurationFileManager {
             
             localStorage.setItem(configListKey, Json.encodeToString(fileList))
         } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 }

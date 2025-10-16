@@ -13,6 +13,5 @@ actual fun openConfigurationDirectory(path: String) {
             Desktop.getDesktop().open(directory)
         }
     } catch (e: Exception) {
-        e.printStackTrace()
     }
 }

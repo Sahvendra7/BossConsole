@@ -41,7 +41,7 @@ fun LLMRpaContent(
     
     // Get browser connection for selected tab
     val selectedTab by component.selectedTab.collectAsState()
-    val browserConnection by rememberBrowserConnectionForTab(selectedTab, splitViewState)
+    val browserConnection by rememberBrowserConnectionForTab(selectedTab)
     
     // Update browser connection and executor
     LaunchedEffect(browserConnection, selectedTab) {

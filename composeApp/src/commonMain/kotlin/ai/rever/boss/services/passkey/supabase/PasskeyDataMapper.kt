@@ -1,8 +1,6 @@
 package ai.rever.boss.services.passkey.supabase
 
 import ai.rever.boss.services.passkey.*
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.security.SecureRandom
@@ -221,15 +219,5 @@ internal object PasskeyDataMapper {
     fun parseManagementResponse(responseText: String): PasskeyManagementResponse {
         return json.decodeFromString<PasskeyManagementResponse>(responseText)
     }
-    
-    /**
-     * Creates authentication status check request
-     */
-    fun createStatusCheckRequest(challenge: String, sessionId: String?): PasskeyStatusCheckRequest {
-        return PasskeyStatusCheckRequest(
-            challenge = challenge,
-            operation = "check_status",
-            sessionId = sessionId
-        )
-    }
+
 }

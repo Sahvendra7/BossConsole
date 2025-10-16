@@ -2,9 +2,7 @@ package ai.rever.boss.components.configuration
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * Represents a tab configuration
