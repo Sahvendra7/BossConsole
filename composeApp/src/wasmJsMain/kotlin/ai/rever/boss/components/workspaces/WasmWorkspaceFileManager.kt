@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.Dispatchers
@@ -8,36 +8,36 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 
 /**
- * WebAssembly implementation of ConfigurationFileManager
+ * WebAssembly implementation of WorkspaceFileManager
  * Uses localStorage for persistence
  */
-actual class ConfigurationFileManager {
-    private val configPrefix = "boss_config_"
-    private val configListKey = "boss_config_list"
+actual class WorkspaceFileManager {
+    private val workspacePrefix = "boss_workspace_"
+    private val workspaceListKey = "boss_workspace_list"
     
-    actual fun getDefaultConfigurationDirectory(): String = "localStorage://boss/configurations"
+    actual fun getDefaultWorkspaceDirectory(): String = "localStorage://boss/workspaces"
     
-    actual suspend fun ensureConfigurationDirectory(): Boolean = withContext(Dispatchers.Main) {
+    actual suspend fun ensureWorkspaceDirectory(): Boolean = withContext(Dispatchers.Main) {
         // localStorage is always available in browser
         true
     }
     
-    actual suspend fun saveConfiguration(
-        config: LayoutConfiguration, 
+    actual suspend fun saveWorkspace(
+        workspace: LayoutWorkspace, 
         fileName: String?
     ): String? = withContext(Dispatchers.Main) {
         try {
-            val actualFileName = fileName ?: ConfigurationFileManagerCommon.generateFileName(config.name)
-            val storageKey = "$configPrefix$actualFileName"
+            val actualFileName = fileName ?: WorkspaceFileManagerCommon.generateFileName(workspace.name)
+            val storageKey = "$workspacePrefix$actualFileName"
             
-            // Serialize configuration
-            val json = ConfigurationSerializer.serialize(config)
+            // Serialize workspace
+            val json = WorkspaceSerializer.serialize(workspace)
             
             // Save to localStorage
             localStorage.setItem(storageKey, json)
             
-            // Update configuration list
-            updateConfigurationList(actualFileName, true)
+            // Update workspace list
+            updateWorkspaceList(actualFileName, true)
             
             storageKey
         } catch (e: Exception) {
@@ -45,27 +45,27 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun loadConfiguration(fileName: String): LayoutConfiguration? = withContext(Dispatchers.Main) {
+    actual suspend fun loadWorkspace(fileName: String): LayoutWorkspace? = withContext(Dispatchers.Main) {
         try {
-            val storageKey = "$configPrefix$fileName"
+            val storageKey = "$workspacePrefix$fileName"
             val json = localStorage.getItem(storageKey) ?: return@withContext null
-            ConfigurationSerializer.deserialize(json)
+            WorkspaceSerializer.deserialize(json)
         } catch (e: Exception) {
             null
         }
     }
     
-    actual suspend fun listConfigurations(): List<ConfigurationFileInfo> = withContext(Dispatchers.Main) {
+    actual suspend fun listWorkspaces(): List<WorkspaceFileInfo> = withContext(Dispatchers.Main) {
         try {
-            val listJson = localStorage.getItem(configListKey) ?: return@withContext emptyList()
-            val fileList = Json.decodeFromString<List<ConfigFileMetadata>>(listJson)
+            val listJson = localStorage.getItem(workspaceListKey) ?: return@withContext emptyList()
+            val fileList = Json.decodeFromString<List<WorkspaceFileMetadata>>(listJson)
             
             fileList.mapNotNull { metadata ->
-                val storageKey = "$configPrefix${metadata.fileName}"
+                val storageKey = "$workspacePrefix${metadata.fileName}"
                 val json = localStorage.getItem(storageKey)
                 
                 if (json != null) {
-                    ConfigurationFileInfo(
+                    WorkspaceFileInfo(
                         fileName = metadata.fileName,
                         filePath = storageKey,
                         lastModified = metadata.lastModified,
@@ -80,26 +80,26 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun deleteConfiguration(fileName: String): Boolean = withContext(Dispatchers.Main) {
+    actual suspend fun deleteWorkspace(fileName: String): Boolean = withContext(Dispatchers.Main) {
         try {
-            val storageKey = "$configPrefix$fileName"
+            val storageKey = "$workspacePrefix$fileName"
             localStorage.removeItem(storageKey)
-            updateConfigurationList(fileName, false)
+            updateWorkspaceList(fileName, false)
             true
         } catch (e: Exception) {
             false
         }
     }
     
-    actual fun getConfigurationFilePath(fileName: String): String {
-        return "$configPrefix$fileName"
+    actual fun getWorkspaceFilePath(fileName: String): String {
+        return "$workspacePrefix$fileName"
     }
     
-    private fun updateConfigurationList(fileName: String, add: Boolean) {
+    private fun updateWorkspaceList(fileName: String, add: Boolean) {
         try {
-            val listJson = localStorage.getItem(configListKey)
+            val listJson = localStorage.getItem(workspaceListKey)
             val fileList = if (listJson != null) {
-                Json.decodeFromString<MutableList<ConfigFileMetadata>>(listJson)
+                Json.decodeFromString<MutableList<WorkspaceFileMetadata>>(listJson)
             } else {
                 mutableListOf()
             }
@@ -109,7 +109,7 @@ actual class ConfigurationFileManager {
                 fileList.removeAll { it.fileName == fileName }
                 // Add new entry
                 fileList.add(
-                    ConfigFileMetadata(
+                    WorkspaceFileMetadata(
                         fileName = fileName,
                         lastModified = kotlin.time.Clock.System.now().toEpochMilliseconds()
                     )
@@ -119,17 +119,17 @@ actual class ConfigurationFileManager {
                 fileList.removeAll { it.fileName == fileName }
             }
             
-            localStorage.setItem(configListKey, Json.encodeToString(fileList))
+            localStorage.setItem(workspaceListKey, Json.encodeToString(fileList))
         } catch (e: Exception) {
         }
     }
 }
 
 /**
- * Metadata for configuration files stored in localStorage
+ * Metadata for workspace files stored in localStorage
  */
 @kotlinx.serialization.Serializable
-private data class ConfigFileMetadata(
+private data class WorkspaceFileMetadata(
     val fileName: String,
     val lastModified: Long
 )

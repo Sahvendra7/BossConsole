@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
@@ -12,29 +12,29 @@ import ai.rever.boss.components.window_panel.SplitOrientation
 import kotlin.random.Random
 
 /**
- * Applies a layout configuration to the split view
+ * Applies a layout workspace to the split view
  */
-suspend fun applyConfiguration(
-    configuration: LayoutConfiguration,
+suspend fun applyWorkspace(
+    workspace: LayoutWorkspace,
     splitViewState: SplitViewState
 ) {
     // Generate ID if missing
-    val configId = configuration.id.ifEmpty { LayoutConfiguration.generateId() }
+    val workspaceId = workspace.id.ifEmpty { LayoutWorkspace.generateId() }
     
     // Try to restore preserved state first
-    if (splitViewState.restorePreservedState(configId)) {
+    if (splitViewState.restorePreservedState(workspaceId)) {
         // State restored successfully
         return
     }
     
-    // No preserved state, apply configuration from scratch
+    // No preserved state, apply workspace from scratch
     splitViewState.clearAllPanels()
     
-    // Apply the configuration recursively
-    applyConfigNode(configuration.layout, splitViewState, "main")
+    // Apply the workspace recursively
+    applyWorkspaceNode(workspace.layout, splitViewState, "main")
 }
 
-private suspend fun applyConfigNode(
+private suspend fun applyWorkspaceNode(
     node: SplitConfig,
     splitViewState: SplitViewState,
     currentPanelId: String
@@ -44,7 +44,7 @@ private suspend fun applyConfigNode(
             // Add tabs to current panel
             val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
             node.panel.tabs.forEach { tabConfig ->
-                val tab = createTabFromConfig(tabConfig)
+                val tab = createTabFromWorkspaceConfig(tabConfig)
                 tabsComponent?.addTab(tab)
             }
         }
@@ -56,13 +56,13 @@ private suspend fun applyConfigNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     leftNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromConfig(tabConfig)
+                        val tab = createTabFromWorkspaceConfig(tabConfig)
                         tabsComponent?.addTab(tab)
                     }
                 }
                 else -> {
-                    // Recursively apply left config
-                    applyConfigNode(leftNode, splitViewState, currentPanelId)
+                    // Recursively apply left workspace config
+                    applyWorkspaceNode(leftNode, splitViewState, currentPanelId)
                 }
             }
             
@@ -72,7 +72,7 @@ private suspend fun applyConfigNode(
                 val rightPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = createTabFromConfig(firstRightTab)
+                    tabToMove = createTabFromWorkspaceConfig(firstRightTab)
                 )
                 
                 // Add remaining tabs or process splits for right side
@@ -81,13 +81,13 @@ private suspend fun applyConfigNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(rightPanelId)
                         rightNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromConfig(tabConfig)
+                            val tab = createTabFromWorkspaceConfig(tabConfig)
                             tabsComponent?.addTab(tab)
                         }
                     }
                     else -> {
-                        // Recursively apply right config
-                        applyConfigNode(rightNode, splitViewState, rightPanelId)
+                        // Recursively apply right workspace config
+                        applyWorkspaceNode(rightNode, splitViewState, rightPanelId)
                     }
                 }
             }
@@ -100,13 +100,13 @@ private suspend fun applyConfigNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     topNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromConfig(tabConfig)
+                        val tab = createTabFromWorkspaceConfig(tabConfig)
                         tabsComponent?.addTab(tab)
                     }
                 }
                 else -> {
-                    // Recursively apply top config
-                    applyConfigNode(topNode, splitViewState, currentPanelId)
+                    // Recursively apply top workspace config
+                    applyWorkspaceNode(topNode, splitViewState, currentPanelId)
                 }
             }
             
@@ -116,7 +116,7 @@ private suspend fun applyConfigNode(
                 val bottomPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.HORIZONTAL,
-                    tabToMove = createTabFromConfig(firstBottomTab)
+                    tabToMove = createTabFromWorkspaceConfig(firstBottomTab)
                 )
                 
                 // Add remaining tabs or process splits for bottom side
@@ -125,13 +125,13 @@ private suspend fun applyConfigNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(bottomPanelId)
                         bottomNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromConfig(tabConfig)
+                            val tab = createTabFromWorkspaceConfig(tabConfig)
                             tabsComponent?.addTab(tab)
                         }
                     }
                     else -> {
-                        // Recursively apply bottom config
-                        applyConfigNode(bottomNode, splitViewState, bottomPanelId)
+                        // Recursively apply bottom workspace config
+                        applyWorkspaceNode(bottomNode, splitViewState, bottomPanelId)
                     }
                 }
             }
@@ -139,15 +139,15 @@ private suspend fun applyConfigNode(
     }
 }
 
-private fun getFirstTab(config: SplitConfig): TabConfig? {
-    return when (config) {
-        is SplitConfig.SinglePanel -> config.panel.tabs.firstOrNull()
-        is SplitConfig.VerticalSplit -> getFirstTab(config.left)
-        is SplitConfig.HorizontalSplit -> getFirstTab(config.top)
+private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
+    return when (workspaceConfig) {
+        is SplitConfig.SinglePanel -> workspaceConfig.panel.tabs.firstOrNull()
+        is SplitConfig.VerticalSplit -> getFirstTab(workspaceConfig.left)
+        is SplitConfig.HorizontalSplit -> getFirstTab(workspaceConfig.top)
     }
 }
 
-private fun createTabFromConfig(tabConfig: TabConfig): TabInfo {
+private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
     return when (tabConfig.type) {
         "browser" -> FluckTabInfo(
             id = "browser-${Random.nextLong()}",

@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
@@ -8,16 +8,16 @@ import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import kotlin.time.Clock
 
 /**
- * Extracts the current layout configuration from the split view state
+ * Extracts the current layout workspace from the split view state
  */
-fun extractCurrentConfiguration(
+fun extractCurrentWorkspace(
     splitViewState: SplitViewState,
     name: String = "Current",
-    description: String = "Current layout configuration"
-): LayoutConfiguration {
+    description: String = "Current layout workspace"
+): LayoutWorkspace {
     val layout = extractSplitConfig(splitViewState.rootNode)
-    return LayoutConfiguration(
-        id = LayoutConfiguration.generateId(),
+    return LayoutWorkspace(
+        id = LayoutWorkspace.generateId(),
         name = name,
         description = description,
         layout = layout,

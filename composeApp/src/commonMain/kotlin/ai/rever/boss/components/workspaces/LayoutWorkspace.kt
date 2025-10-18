@@ -1,11 +1,11 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
 /**
- * Represents a tab configuration
+ * Represents a tab workspace
  */
 @Serializable
 data class TabConfig(
@@ -16,7 +16,7 @@ data class TabConfig(
 )
 
 /**
- * Represents a panel configuration
+ * Represents a panel workspace
  */
 @Serializable
 data class PanelConfig(
@@ -25,7 +25,7 @@ data class PanelConfig(
 )
 
 /**
- * Represents a split configuration
+ * Represents a split workspace
  */
 @Serializable
 sealed class SplitConfig {
@@ -48,23 +48,23 @@ sealed class SplitConfig {
 }
 
 /**
- * Breadcrumb display configuration
+ * Breadcrumb display workspace
  */
 @Serializable
 data class BreadcrumbConfig(
     val enabled: Boolean = true,
-    val showConfigurationPath: Boolean = true,
+    val showWorkspacePath: Boolean = true,
     val showTabPath: Boolean = true,
     val maxLength: Int = 50,
     val separator: String = " › "
 )
 
 /**
- * Represents a complete layout configuration
+ * Represents a complete layout workspace
  */
 @Serializable
-data class LayoutConfiguration(
-    val id: String = "",  // Unique identifier for the configuration
+data class LayoutWorkspace(
+    val id: String = "",  // Unique identifier for the workspace
     val name: String,
     val description: String,
     val layout: SplitConfig,
@@ -72,32 +72,32 @@ data class LayoutConfiguration(
     val timestamp: Long = 0L
 ) {
     companion object {
-        fun generateId(): String = "config-${Clock.System.now().toEpochMilliseconds()}"
+        fun generateId(): String = "workspace-${Clock.System.now().toEpochMilliseconds()}"
     }
 }
 
 /**
- * Predefined configurations
+ * Predefined workspaces
  */
-object PredefinedConfigurations {
-    // No predefined configurations - all configurations will be user-created
-    val allConfigurations = listOf<LayoutConfiguration>()
+object PredefinedWorkspaces {
+    // No predefined workspaces - all workspaces will be user-created
+    val allWorkspaces = listOf<LayoutWorkspace>()
 }
 
 /**
- * JSON serializer for configurations
+ * JSON serializer for workspaces
  */
-object ConfigurationSerializer {
+object WorkspaceSerializer {
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
     }
     
-    fun serialize(config: LayoutConfiguration): String {
+    fun serialize(config: LayoutWorkspace): String {
         return json.encodeToString(config)
     }
     
-    fun deserialize(jsonString: String): LayoutConfiguration {
+    fun deserialize(jsonString: String): LayoutWorkspace {
         return json.decodeFromString(jsonString)
     }
 }

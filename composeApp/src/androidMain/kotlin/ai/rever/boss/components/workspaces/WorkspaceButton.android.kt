@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import android.content.Intent
 import android.net.Uri
@@ -7,9 +7,9 @@ import androidx.core.content.FileProvider
 import java.io.File
 
 /**
- * Android implementation to open configuration directory
+ * Android implementation to open workspace directory
  */
-actual fun openConfigurationDirectory(path: String) {
+actual fun openWorkspaceDirectory(path: String) {
     // On Android, we can't directly open a directory in a file manager
     // Instead, we'll show a toast with the path
     // Note: This is a simplified implementation
@@ -17,7 +17,7 @@ actual fun openConfigurationDirectory(path: String) {
         // For now, just show a toast with the directory path
         // In a real implementation, you might want to use a file picker
         // or create a custom file browser activity
-        println("Configuration directory: $path")
+        println("Workspace directory: $path")
     } catch (e: Exception) {
     }
 }

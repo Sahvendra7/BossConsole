@@ -1,5 +1,6 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -31,6 +32,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun TopOfMindDialog(
     splitViewState: SplitViewState,
+    workspaceManager: WorkspaceManager,
     onDismiss: () -> Unit,
     onTabSelect: (ActiveTab) -> Unit
 ) {
@@ -66,7 +68,7 @@ fun TopOfMindDialog(
             tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
             // Only check URL for Fluck tabs that have URL property
             (tab.tabInfo is FluckTabInfo && tab.tabInfo.url.contains(searchQuery, ignoreCase = true)) ||
-            tab.configurationName.contains(searchQuery, ignoreCase = true)
+            tab.workspaceName.contains(searchQuery, ignoreCase = true)
         }
     }
     
@@ -172,7 +174,7 @@ fun TopOfMindDialog(
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { 
                         Text(
-                            "Search tabs by title, type, or configuration...", 
+                            "Search tabs by title, type, or workspace...", 
                             color = Color.Gray,
                             fontSize = 14.sp
                         ) 
@@ -304,13 +306,13 @@ private fun ActiveTabDialogItem(
             
             Spacer(modifier = Modifier.width(8.dp))
             
-            // Configuration badge
+            // Workspace badge
             Surface(
                 color = Color(0xFF4A4D52),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
-                    text = activeTab.configurationName,
+                    text = activeTab.workspaceName,
                     fontSize = 10.sp,
                     color = Color.Gray,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

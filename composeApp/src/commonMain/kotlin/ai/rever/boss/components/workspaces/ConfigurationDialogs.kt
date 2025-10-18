@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,23 +19,23 @@ import androidx.compose.ui.unit.dp
 import ai.rever.boss.platform.rememberFilePicker
 
 /**
- * Save configuration dialog
+ * Save workspace dialog
  */
 @Composable
-fun SaveConfigurationDialog(
+fun SaveWorkspaceDialog(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    
+
     androidx.compose.material.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { androidx.compose.material.Text("Save Configuration") },
+        title = { androidx.compose.material.Text("Save Workspace") },
         text = {
             androidx.compose.material.OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { androidx.compose.material.Text("Configuration Name") },
+                label = { androidx.compose.material.Text("Workspace Name") },
                 singleLine = true
             )
         },
@@ -56,10 +56,10 @@ fun SaveConfigurationDialog(
 }
 
 /**
- * Open configuration dialog with file picker
+ * Open workspace dialog with file picker
  */
 @Composable
-fun OpenConfigurationDialog(
+fun OpenWorkspaceDialog(
     onDismiss: () -> Unit,
     onOpen: (String) -> Unit
 ) {
@@ -72,7 +72,7 @@ fun OpenConfigurationDialog(
         },
         fileExtensions = listOf("json")
     )
-    
+
     // Immediately trigger file picker
     LaunchedEffect(Unit) {
         filePicker.pickFile()
@@ -80,48 +80,48 @@ fun OpenConfigurationDialog(
 }
 
 /**
- * Delete configuration dialog
+ * Delete workspace dialog
  */
 @Composable
-fun DeleteConfigurationDialog(
-    configurations: List<LayoutConfiguration>,
+fun DeleteWorkspaceDialog(
+    workspaces: List<LayoutWorkspace>,
     onDismiss: () -> Unit,
     onDelete: (String) -> Unit
 ) {
-    var selectedConfig by remember { mutableStateOf<String?>(null) }
-    
+    var selectedWorkspace by remember { mutableStateOf<String?>(null) }
+
     androidx.compose.material.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { androidx.compose.material.Text("Delete Configuration") },
+        title = { androidx.compose.material.Text("Delete Workspace") },
         text = {
             Column {
                 androidx.compose.material.Text(
-                    "Select a configuration to delete:",
+                    "Select a workspace to delete:",
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-                
-                configurations.forEach { config ->
+
+                workspaces.forEach { workspace ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedConfig = config.name }
+                            .clickable { selectedWorkspace = workspace.name }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = selectedConfig == config.name,
-                            onClick = { selectedConfig = config.name }
+                            selected = selectedWorkspace == workspace.name,
+                            onClick = { selectedWorkspace = workspace.name }
                         )
                         androidx.compose.material.Text(
-                            text = config.name,
+                            text = workspace.name,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                 }
-                
-                if (configurations.isEmpty()) {
+
+                if (workspaces.isEmpty()) {
                     androidx.compose.material.Text(
-                        "No custom configurations to delete.",
+                        "No custom workspaces to delete.",
                         color = androidx.compose.ui.graphics.Color.Gray
                     )
                 }
@@ -129,10 +129,10 @@ fun DeleteConfigurationDialog(
         },
         confirmButton = {
             androidx.compose.material.TextButton(
-                onClick = { 
-                    selectedConfig?.let { onDelete(it) }
+                onClick = {
+                    selectedWorkspace?.let { onDelete(it) }
                 },
-                enabled = selectedConfig != null
+                enabled = selectedWorkspace != null
             ) {
                 androidx.compose.material.Text("Delete", color = androidx.compose.ui.graphics.Color.Red)
             }

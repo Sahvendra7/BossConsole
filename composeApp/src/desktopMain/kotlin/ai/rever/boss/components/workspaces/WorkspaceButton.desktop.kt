@@ -1,12 +1,12 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import java.awt.Desktop
 import java.io.File
 
 /**
- * Desktop implementation to open configuration directory
+ * Desktop implementation to open workspace directory
  */
-actual fun openConfigurationDirectory(path: String) {
+actual fun openWorkspaceDirectory(path: String) {
     try {
         val directory = File(path)
         if (directory.exists() && directory.isDirectory) {

@@ -1,7 +1,8 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
-import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.configuration.applyConfiguration
+import ai.rever.boss.components.workspaces.WorkspaceManager
+import ai.rever.boss.components.workspaces.applyWorkspace
+import ai.rever.boss.components.workspaces.BreadcrumbConfig
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -51,8 +52,8 @@ import kotlinx.coroutines.launch
 // Data class for active tabs (all types)
 data class ActiveTab(
     val tabInfo: TabInfo,
-    val configurationId: String,
-    val configurationName: String,
+    val workspaceId: String,
+    val workspaceName: String,
     val panelId: String
 )
 
@@ -62,11 +63,11 @@ sealed class TabTreeNode {
     abstract val name: String
     abstract val level: Int
     
-    data class ConfigurationNode(
+    data class WorkspaceNode(
         override val id: String,
         override val name: String,
         override val level: Int = 0,
-        val configurationId: String,
+        val workspaceId: String,
         var isExpanded: Boolean = true,
         val children: MutableList<TabTreeNode> = mutableListOf()
     ) : TabTreeNode()
@@ -94,9 +95,9 @@ object TabTreeState {
     private val _expandedNodes = MutableStateFlow<Set<String>>(emptySet())
     val expandedNodes: StateFlow<Set<String>> = _expandedNodes
     
-    // Track which configurations have been modified
-    private val _modifiedConfigurations = MutableStateFlow<Set<String>>(emptySet())
-    val modifiedConfigurations: StateFlow<Set<String>> = _modifiedConfigurations
+    // Track which workspaces have been modified
+    private val _modifiedWorkspaces = MutableStateFlow<Set<String>>(emptySet())
+    val modifiedWorkspaces: StateFlow<Set<String>> = _modifiedWorkspaces
     
     fun toggleExpansion(nodeId: String) {
         val current = _expandedNodes.value.toMutableSet()
@@ -109,48 +110,51 @@ object TabTreeState {
     }
 
     fun initializeDefaultExpansion(nodes: List<TabTreeNode>) {
-        // Expand all configuration nodes by default
-        val configNodes = nodes.filterIsInstance<TabTreeNode.ConfigurationNode>()
-        _expandedNodes.value = configNodes.map { it.id }.toSet()
+        // Expand all workspace nodes by default
+        val workspaceNodes = nodes.filterIsInstance<TabTreeNode.WorkspaceNode>()
+        _expandedNodes.value = workspaceNodes.map { it.id }.toSet()
     }
     
-    fun markConfigurationAsModified(configId: String) {
-        val current = _modifiedConfigurations.value.toMutableSet()
-        current.add(configId)
-        _modifiedConfigurations.value = current
+    fun markWorkspaceAsModified(workspaceId: String) {
+        val current = _modifiedWorkspaces.value.toMutableSet()
+        current.add(workspaceId)
+        _modifiedWorkspaces.value = current
     }
     
-    fun markConfigurationAsSaved(configId: String) {
-        val current = _modifiedConfigurations.value.toMutableSet()
-        current.remove(configId)
-        _modifiedConfigurations.value = current
+    fun markWorkspaceAsSaved(workspaceId: String) {
+        val current = _modifiedWorkspaces.value.toMutableSet()
+        current.remove(workspaceId)
+        _modifiedWorkspaces.value = current
     }
 
+    fun isWorkspaceModified(workspaceId: String): Boolean {
+        return _modifiedWorkspaces.value.contains(workspaceId)
+    }
 }
 
 // Utility to build tree structure from active tabs
 object TabTreeBuilder {
     fun buildTree(activeTabs: List<ActiveTab>): List<TabTreeNode> {
-        val configGroups = activeTabs.groupBy { it.configurationId }
+        val workspaceGroups = activeTabs.groupBy { it.workspaceId }
         val rootNodes = mutableListOf<TabTreeNode>()
         
-        configGroups.forEach { (configId, tabs) ->
-            // Use the configuration name from the first tab (they should all be the same)
-            val configName = tabs.firstOrNull()?.configurationName ?: "Unknown"
+        workspaceGroups.forEach { (workspaceId, tabs) ->
+            // Use the workspace name from the first tab (they should all be the same)
+            val workspaceName = tabs.firstOrNull()?.workspaceName ?: "Unknown"
             
-            val configNode = TabTreeNode.ConfigurationNode(
-                id = "config-$configId",
-                name = configName,
-                configurationId = configId,
+            val workspaceNode = TabTreeNode.WorkspaceNode(
+                id = "workspace-$workspaceId",
+                name = workspaceName,
+                workspaceId = workspaceId,
                 level = 0
             )
             
-            // Group tabs by panel for this configuration
+            // Group tabs by panel for this workspace
             val panelGroups = tabs.groupBy { it.panelId }
             
             panelGroups.forEach { (panelId, panelTabs) ->
                 val splitNode = TabTreeNode.SplitNode(
-                    id = "panel-$configId-$panelId", // Make panel IDs unique per config
+                    id = "panel-$workspaceId-$panelId", // Make panel IDs unique per workspace
                     name = "Panel $panelId",
                     level = 1,
                     splitType = "panel",
@@ -160,7 +164,7 @@ object TabTreeBuilder {
                 // Add individual tabs to this panel
                 panelTabs.forEach { activeTab ->
                     val tabNode = TabTreeNode.TabNode(
-                        id = "tab-${activeTab.configurationId}-${activeTab.tabInfo.id}", // Make tab IDs unique per config
+                        id = "tab-${activeTab.workspaceId}-${activeTab.tabInfo.id}", // Make tab IDs unique per workspace
                         name = activeTab.tabInfo.title,
                         level = 2,
                         activeTab = activeTab
@@ -168,10 +172,10 @@ object TabTreeBuilder {
                     splitNode.children.add(tabNode)
                 }
                 
-                configNode.children.add(splitNode)
+                workspaceNode.children.add(splitNode)
             }
             
-            rootNodes.add(configNode)
+            rootNodes.add(workspaceNode)
         }
         
         return rootNodes
@@ -181,11 +185,11 @@ object TabTreeBuilder {
     fun filterTreeNodes(nodes: List<TabTreeNode>, searchQuery: String): List<TabTreeNode> {
         return nodes.mapNotNull { node ->
             when (node) {
-                is TabTreeNode.ConfigurationNode -> {
+                is TabTreeNode.WorkspaceNode -> {
                     val matchingChildren = filterTreeNodes(node.children, searchQuery)
-                    val configMatches = node.name.contains(searchQuery, ignoreCase = true)
+                    val workspaceMatches = node.name.contains(searchQuery, ignoreCase = true)
                     
-                    if (configMatches || matchingChildren.isNotEmpty()) {
+                    if (workspaceMatches || matchingChildren.isNotEmpty()) {
                         node.copy(children = matchingChildren.toMutableList())
                     } else null
                 }
@@ -207,6 +211,99 @@ object TabTreeBuilder {
                     if (tabMatches) node else null
                 }
             }
+        }
+    }
+}
+
+// Data class for breadcrumb navigation
+data class BreadcrumbItem(
+    val text: String,
+    val type: BreadcrumbType,
+    val clickable: Boolean = true,
+    val onClick: (() -> Unit)? = null
+)
+
+enum class BreadcrumbType {
+    WORKSPACE,
+    PANEL,
+    TAB,
+    SEPARATOR
+}
+
+// Breadcrumb utility functions
+object BreadcrumbUtils {
+    fun createBreadcrumb(
+        activeTab: ActiveTab,
+        config: BreadcrumbConfig,
+        onWorkspaceClick: () -> Unit,
+        onTabClick: () -> Unit
+    ): List<BreadcrumbItem> {
+        val items = mutableListOf<BreadcrumbItem>()
+
+        if (config.showWorkspacePath) {
+            // Add workspace name
+            items.add(
+                BreadcrumbItem(
+                    text = truncateText(activeTab.workspaceName, config.maxLength / 3),
+                    type = BreadcrumbType.WORKSPACE,
+                    onClick = onWorkspaceClick
+                )
+            )
+
+            // Add separator
+            items.add(
+                BreadcrumbItem(
+                    text = config.separator,
+                    type = BreadcrumbType.SEPARATOR,
+                    clickable = false
+                )
+            )
+        }
+
+        if (config.showTabPath) {
+            // Add tab info
+            val tabText = when (val tabInfo = activeTab.tabInfo) {
+                is FluckTabInfo -> {
+                    if (tabInfo.url.isNotEmpty()) {
+                        "${tabInfo.title} (${getDomainFromUrl(tabInfo.url)})"
+                    } else {
+                        tabInfo.title
+                    }
+                }
+                else -> "${activeTab.tabInfo.title} (${activeTab.tabInfo.typeId.typeId})"
+            }
+
+            items.add(
+                BreadcrumbItem(
+                    text = truncateText(tabText, config.maxLength * 2 / 3),
+                    type = BreadcrumbType.TAB,
+                    onClick = onTabClick
+                )
+            )
+        }
+
+        return items
+    }
+
+    private fun truncateText(text: String, maxLength: Int): String {
+        return if (text.length <= maxLength) {
+            text
+        } else {
+            "${text.take(maxLength - 3)}..."
+        }
+    }
+
+    private fun getDomainFromUrl(url: String): String {
+        return try {
+            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else {
+                url
+            }
+            val domain = cleanUrl.substringAfter("://").substringBefore("/")
+            domain.removePrefix("www.")
+        } catch (e: Exception) {
+            url
         }
     }
 }
@@ -237,15 +334,15 @@ class TopOfMindComponent(
     @Composable
     override fun Content() {
         val splitViewState = LocalSplitViewState.current
-        val configurationManager = LocalConfigurationManager.current
-        TopOfMindContent(splitViewState, configurationManager)
+        val workspaceManager = LocalWorkspaceManager.current
+        TopOfMindContent(splitViewState, workspaceManager)
     }
 }
 
 @Composable
 fun TopOfMindContent(
     splitViewState: SplitViewState?,
-    configurationManager: ConfigurationManager?
+    workspaceManager: WorkspaceManager?
 ) {
     val activeTabs by TopOfMindState.activeTabs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
@@ -253,9 +350,9 @@ fun TopOfMindContent(
     val coroutineScope = rememberCoroutineScope()
     
     // Update active tabs whenever the split view state changes or tabs are added/removed
-    LaunchedEffect(splitViewState, configurationManager) {
+    LaunchedEffect(splitViewState, workspaceManager) {
         if (splitViewState != null) {
-            val tabs = splitViewState.collectAllActiveTabs(configurationManager)
+            val tabs = splitViewState.collectAllActiveTabs(workspaceManager)
             TopOfMindState.updateActiveTabs(tabs)
             
             // Initialize tree expansion state
@@ -273,7 +370,7 @@ fun TopOfMindContent(
         
         LaunchedEffect(panelsKey) {
             // Update tabs when panel structure changes
-            val tabs = splitViewState.collectAllActiveTabs(configurationManager)
+            val tabs = splitViewState.collectAllActiveTabs(workspaceManager)
             TopOfMindState.updateActiveTabs(tabs)
         }
         
@@ -283,7 +380,7 @@ fun TopOfMindContent(
             
             LaunchedEffect(panel.id, panelTabsState.tabs.size, panelTabsState.tabs.map { tab -> tab.id + tab.title }) {
                 // Update when tabs are added/removed or their content changes in this panel
-                val updatedTabs = splitViewState.collectAllActiveTabs(configurationManager)
+                val updatedTabs = splitViewState.collectAllActiveTabs(workspaceManager)
                 TopOfMindState.updateActiveTabs(updatedTabs)
             }
         }
@@ -371,8 +468,8 @@ fun TopOfMindContent(
             activeTabs
         } else {
             // Filter out current workspace tabs
-            val currentConfigId = configurationManager?.currentConfiguration?.value?.id
-            activeTabs.filter { it.configurationId != currentConfigId }
+            val currentWorkspaceId = workspaceManager?.currentWorkspace?.value?.id
+            activeTabs.filter { it.workspaceId != currentWorkspaceId }
         }
         val treeNodes = TabTreeBuilder.buildTree(filteredTabs)
         
@@ -404,32 +501,32 @@ fun TopOfMindContent(
                 items(filteredTreeNodes) { treeNode ->
                     TreeNodeItem(
                         node = treeNode,
-                        configurationManager = configurationManager,
+                        workspaceManager = workspaceManager,
                         splitViewState = splitViewState,
                         onTabClick = { activeTab ->
-                            if (splitViewState != null && configurationManager != null) {
+                            if (splitViewState != null && workspaceManager != null) {
                                 coroutineScope.launch {
-                                    // Get current configuration
-                                    val currentConfig = configurationManager.currentConfiguration.value
+                                    // Get current workspace
+                                    val currentWorkspace = workspaceManager.currentWorkspace.value
                                     
-                                    if (currentConfig?.id == activeTab.configurationId) {
-                                        // Tab is in current config, just focus it
+                                    if (currentWorkspace?.id == activeTab.workspaceId) {
+                                        // Tab is in current workspace, just focus it
                                         splitViewState.selectTabInPanel(activeTab.tabInfo.id, activeTab.panelId)
                                     } else {
-                                        // Tab is in different config - switch configurations
-                                        val targetConfig = configurationManager.configurations.value.find { 
-                                            it.id == activeTab.configurationId 
+                                        // Tab is in different workspace - switch workspaces
+                                        val targetWorkspace = workspaceManager.workspaces.value.find { 
+                                            it.id == activeTab.workspaceId 
                                         }
                                         
-                                        if (targetConfig != null) {
+                                        if (targetWorkspace != null) {
                                             // Preserve current state before switching
-                                            if (currentConfig != null && currentConfig.id.isNotEmpty()) {
-                                                splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                                            if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
+                                                splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                                             }
                                             
-                                            // Load and apply the target configuration
-                                            configurationManager.loadConfiguration(targetConfig)
-                                            applyConfiguration(targetConfig, splitViewState)
+                                            // Load and apply the target workspace
+                                            workspaceManager.loadWorkspace(targetWorkspace)
+                                            applyWorkspace(targetWorkspace, splitViewState)
                                             
                                             // Focus the specific tab after a short delay
                                             delay(100)
@@ -449,7 +546,7 @@ fun TopOfMindContent(
 @Composable
 private fun TreeNodeItem(
     node: TabTreeNode,
-    configurationManager: ConfigurationManager?,
+    workspaceManager: WorkspaceManager?,
     splitViewState: SplitViewState?,
     onTabClick: (ActiveTab) -> Unit,
     modifier: Modifier = Modifier
@@ -460,30 +557,30 @@ private fun TreeNodeItem(
     
     Column(modifier = modifier) {
         when (node) {
-            is TabTreeNode.ConfigurationNode -> {
-                ConfigurationFolderItem(
+            is TabTreeNode.WorkspaceNode -> {
+                WorkspaceFolderItem(
                     node = node,
                     isExpanded = isExpanded,
                     onToggleExpand = { TabTreeState.toggleExpansion(node.id) },
-                    configurationManager = configurationManager,
-                    onConfigClick = {
-                        // Switch to this configuration
-                        if (splitViewState != null && configurationManager != null) {
+                    workspaceManager = workspaceManager,
+                    onWorkspaceClick = {
+                        // Switch to this workspace
+                        if (splitViewState != null && workspaceManager != null) {
                             coroutineScope.launch {
-                                val currentConfig = configurationManager.currentConfiguration.value
-                                val targetConfig = configurationManager.configurations.value.find { 
-                                    it.id == node.configurationId 
+                                val currentWorkspace = workspaceManager.currentWorkspace.value
+                                val targetWorkspace = workspaceManager.workspaces.value.find { 
+                                    it.id == node.workspaceId 
                                 }
                                 
-                                if (targetConfig != null && currentConfig?.id != node.configurationId) {
+                                if (targetWorkspace != null && currentWorkspace?.id != node.workspaceId) {
                                     // Preserve current state before switching
-                                    if (currentConfig != null && currentConfig.id.isNotEmpty()) {
-                                        splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                                    if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
+                                        splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                                     }
                                     
-                                    // Load and apply the target configuration
-                                    configurationManager.loadConfiguration(targetConfig)
-                                    applyConfiguration(targetConfig, splitViewState)
+                                    // Load and apply the target workspace
+                                    workspaceManager.loadWorkspace(targetWorkspace)
+                                    applyWorkspace(targetWorkspace, splitViewState)
                                 }
                             }
                         }
@@ -494,7 +591,7 @@ private fun TreeNodeItem(
                     node.children.forEach { childNode ->
                         TreeNodeItem(
                             node = childNode,
-                            configurationManager = configurationManager,
+                            workspaceManager = workspaceManager,
                             splitViewState = splitViewState,
                             onTabClick = onTabClick,
                             modifier = Modifier.padding(start = 16.dp)
@@ -514,7 +611,7 @@ private fun TreeNodeItem(
                     node.children.forEach { childNode ->
                         TreeNodeItem(
                             node = childNode,
-                            configurationManager = configurationManager,
+                            workspaceManager = workspaceManager,
                             splitViewState = splitViewState,
                             onTabClick = onTabClick,
                             modifier = Modifier.padding(start = 16.dp)
@@ -534,19 +631,19 @@ private fun TreeNodeItem(
 }
 
 @Composable
-private fun ConfigurationFolderItem(
-    node: TabTreeNode.ConfigurationNode,
+private fun WorkspaceFolderItem(
+    node: TabTreeNode.WorkspaceNode,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
-    onConfigClick: () -> Unit,
-    configurationManager: ConfigurationManager?
+    onWorkspaceClick: () -> Unit,
+    workspaceManager: WorkspaceManager?
 ) {
-    val modifiedConfigurations by TabTreeState.modifiedConfigurations.collectAsState()
-    val isModified = modifiedConfigurations.contains(node.configurationId)
+    val modifiedWorkspaces by TabTreeState.modifiedWorkspaces.collectAsState()
+    val isModified = modifiedWorkspaces.contains(node.workspaceId)
     
-    // Check if this is the currently active configuration
-    val currentConfig = configurationManager?.currentConfiguration?.value
-    val isActive = currentConfig?.id == node.configurationId
+    // Check if this is the currently active workspace
+    val currentWorkspace = workspaceManager?.currentWorkspace?.value
+    val isActive = currentWorkspace?.id == node.workspaceId
     
     Row(
         modifier = Modifier
@@ -576,16 +673,16 @@ private fun ConfigurationFolderItem(
         
         Spacer(modifier = Modifier.width(4.dp))
         
-        // Configuration content area (clickable)
+        // Workspace content area (clickable)
         Row(
             modifier = Modifier
                 .weight(1f)
-                .clickable { onConfigClick() },
+                .clickable { onWorkspaceClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Outlined.Workspaces,
-                contentDescription = "Configuration",
+                contentDescription = "Workspace",
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colors.primary.copy(alpha = 0.8f)
             )

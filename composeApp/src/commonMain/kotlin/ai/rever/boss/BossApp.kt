@@ -50,17 +50,17 @@ import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.configuration.LayoutConfiguration
-import ai.rever.boss.components.configuration.applyConfiguration
-import ai.rever.boss.components.configuration.extractCurrentConfiguration
+import ai.rever.boss.components.workspaces.WorkspaceManager
+import ai.rever.boss.components.workspaces.LayoutWorkspace
+import ai.rever.boss.components.workspaces.applyWorkspace
+import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
-import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalConfigurationManager
+import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import androidx.compose.runtime.CompositionLocalProvider
@@ -88,9 +88,17 @@ fun ComponentContext.BossApp() {
         initialTabsComponent = tabsComponent
     )
     
-    // Configuration manager
-    val configurationManager = remember { ConfigurationManager() }
+    // Workspace manager
+    val workspaceManager = remember { WorkspaceManager() }
     val coroutineScope = rememberCoroutineScope()
+    
+    // Set up workspace deletion callback to cleanup tabs
+    LaunchedEffect(workspaceManager, splitViewState) {
+        workspaceManager.setOnWorkspaceDeleted { deletedWorkspaceId ->
+            // Clean up preserved states for the deleted workspace
+            splitViewState.cleanupDeletedWorkspace(deletedWorkspaceId)
+        }
+    }
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
@@ -104,16 +112,16 @@ fun ComponentContext.BossApp() {
         draggablePanelComponent.update()
 
         onDispose { 
-            // Save current configuration as "Last Session" when app closes
+            // Save current workspace as "Last Session" when app closes
             coroutineScope.launch {
-                val currentLayout = extractCurrentConfiguration(splitViewState)
+                val currentLayout = extractCurrentWorkspace(splitViewState)
                 val lastSessionConfig = currentLayout.copy(
                     id = "last-session",
                     name = "Last Session",
                     description = "Automatically saved session"
                 )
-                configurationManager.updateCurrentConfiguration(lastSessionConfig)
-                configurationManager.saveCurrentConfiguration("Last Session")
+                workspaceManager.updateCurrentWorkspace(lastSessionConfig)
+                workspaceManager.saveCurrentWorkspace("Last Session")
             }
             
             // Cleanup update manager
@@ -144,14 +152,18 @@ fun ComponentContext.BossApp() {
         }
     }
     
-    // Load last used configuration on startup
-    LaunchedEffect(configurationManager, splitViewState) {
-        // Wait for configurations to be loaded
-        configurationManager.configurations
+    // Load last used workspace on startup
+    LaunchedEffect(workspaceManager, splitViewState) {
+        // Wait for workspaces to be loaded
+        workspaceManager.workspaces
             .onEach { configs ->
+                // Clean up orphaned workspace states
+                val existingWorkspaceIds = configs.map { it.id }.toSet()
+                splitViewState.cleanupDeletedWorkspaces(existingWorkspaceIds)
+                
                 // Only load on first emission when configs are available
-                if (configs.isNotEmpty() && configurationManager.currentConfiguration.value == null) {
-                    // Check if there's a saved "last-session" configuration
+                if (configs.isNotEmpty() && workspaceManager.currentWorkspace.value == null) {
+                    // Check if there's a saved "last-session" workspace
                     val lastSessionConfig = configs.find { it.name == "Last Session" }
                     
                     if (lastSessionConfig != null) {
@@ -161,9 +173,9 @@ fun ComponentContext.BossApp() {
                         } else {
                             lastSessionConfig
                         }
-                        // Apply the last session configuration
-                        configurationManager.loadConfiguration(configWithId)
-                        applyConfiguration(configWithId, splitViewState)
+                        // Apply the last session workspace
+                        workspaceManager.loadWorkspace(configWithId)
+                        applyWorkspace(configWithId, splitViewState)
                     }
                 }
             }
@@ -179,38 +191,38 @@ fun ComponentContext.BossApp() {
             .launchIn(this)
     }
     
-    // Monitor for layout changes to mark configuration as dirty and auto-save
-    LaunchedEffect(splitViewState, configurationManager) {
-        var lastConfigurationSnapshot: LayoutConfiguration? = null
+    // Monitor for layout changes to mark workspace as dirty and auto-save
+    LaunchedEffect(splitViewState, workspaceManager) {
+        var lastWorkspaceSnapshot: LayoutWorkspace? = null
         var saveJob: Job? = null
         
         // Monitor the entire layout structure for changes
         snapshotFlow { 
-            // Extract current layout configuration
-            extractCurrentConfiguration(splitViewState)
+            // Extract current layout workspace
+            extractCurrentWorkspace(splitViewState)
         }
         .onEach { currentLayout ->
-            // Check if we have a loaded configuration
-            val loadedConfig = configurationManager.currentConfiguration.value
+            // Check if we have a loaded workspace
+            val loadedConfig = workspaceManager.currentWorkspace.value
             
             if (loadedConfig != null) {
-                // Compare with the last known configuration state
-                if (lastConfigurationSnapshot == null) {
+                // Compare with the last known workspace state
+                if (lastWorkspaceSnapshot == null) {
                     // First snapshot after loading
-                    lastConfigurationSnapshot = currentLayout
-                } else if (currentLayout != lastConfigurationSnapshot) {
+                    lastWorkspaceSnapshot = currentLayout
+                } else if (currentLayout != lastWorkspaceSnapshot) {
                     // Layout has changed (splits, tabs added/removed, etc.)
-                    lastConfigurationSnapshot = currentLayout
+                    lastWorkspaceSnapshot = currentLayout
                     
-                    // Mark the current configuration as modified (if it's not "Last Session")
+                    // Mark the current workspace as modified (if it's not "Last Session")
                     if (loadedConfig.name != "Last Session") {
-                        TabTreeState.markConfigurationAsModified(loadedConfig.id)
+                        TabTreeState.markWorkspaceAsModified(loadedConfig.id)
                     }
                     
                     // Cancel previous save job if any
                     saveJob?.cancel()
                     
-                    // Auto-save to current configuration or "Last Session" after a short delay
+                    // Auto-save to current workspace or "Last Session" after a short delay
                     saveJob = launch {
                         delay(2000) // Wait 2 seconds before saving
                         
@@ -221,26 +233,26 @@ fun ComponentContext.BossApp() {
                                 name = "Last Session",
                                 description = "Automatically saved session"
                             )
-                            configurationManager.updateCurrentConfiguration(lastSessionConfig)
-                            configurationManager.saveCurrentConfiguration("Last Session")
+                            workspaceManager.updateCurrentWorkspace(lastSessionConfig)
+                            workspaceManager.saveCurrentWorkspace("Last Session")
                         } else {
-                            // Update the current loaded configuration with changes
+                            // Update the current loaded workspace with changes
                             val updatedConfig = loadedConfig.copy(
                                 layout = currentLayout.layout,
                                 timestamp = Clock.System.now().toEpochMilliseconds()
                             )
-                            configurationManager.updateCurrentConfiguration(updatedConfig)
-                            configurationManager.saveCurrentConfiguration()
+                            workspaceManager.updateCurrentWorkspace(updatedConfig)
+                            workspaceManager.saveCurrentWorkspace()
                             
                             // Clear the modified state since we just auto-saved
-                            TabTreeState.markConfigurationAsSaved(loadedConfig.id)
+                            TabTreeState.markWorkspaceAsSaved(loadedConfig.id)
                         }
                     }
                 }
             } else {
-                // No configuration loaded, but still save as "Last Session"
-                if (currentLayout != lastConfigurationSnapshot) {
-                    lastConfigurationSnapshot = currentLayout
+                // No workspace loaded, but still save as "Last Session"
+                if (currentLayout != lastWorkspaceSnapshot) {
+                    lastWorkspaceSnapshot = currentLayout
                     
                     // Cancel previous save job if any
                     saveJob?.cancel()
@@ -253,22 +265,22 @@ fun ComponentContext.BossApp() {
                             name = "Last Session",
                             description = "Automatically saved session"
                         )
-                        configurationManager.updateCurrentConfiguration(lastSessionConfig)
-                        configurationManager.saveCurrentConfiguration("Last Session")
+                        workspaceManager.updateCurrentWorkspace(lastSessionConfig)
+                        workspaceManager.saveCurrentWorkspace("Last Session")
                     }
                 }
             }
         }
         .launchIn(this)
         
-        // Reset snapshot when configuration changes
-        configurationManager.currentConfiguration
+        // Reset snapshot when workspace changes
+        workspaceManager.currentWorkspace
             .onEach { config ->
                 if (config != null && config.name != "Last Session") {
-                    // Configuration loaded (but not Last Session), reset tracking
-                    lastConfigurationSnapshot = null
-                    // Clear modified status when loading a configuration
-                    TabTreeState.markConfigurationAsSaved(config.id)
+                    // Workspace loaded (but not Last Session), reset tracking
+                    lastWorkspaceSnapshot = null
+                    // Clear modified status when loading a workspace
+                    TabTreeState.markWorkspaceAsSaved(config.id)
                 }
             }
             .launchIn(this)
@@ -304,7 +316,7 @@ fun ComponentContext.BossApp() {
         BossTheme {
             CompositionLocalProvider(
                 LocalSplitViewState provides splitViewState,
-                LocalConfigurationManager provides configurationManager
+                LocalWorkspaceManager provides workspaceManager
             ) {
                 Box(modifier = Modifier
                 .fillMaxSize()
@@ -387,42 +399,42 @@ fun ComponentContext.BossApp() {
                                 true
                             }
                             event.isMetaPressed && event.isShiftPressed && event.key == Key.S -> {
-                                // Save current configuration (Cmd+Shift+S)
+                                // Save current workspace (Cmd+Shift+S)
                                 coroutineScope.launch {
-                                    val currentConfig = configurationManager.currentConfiguration.value
+                                    val currentConfig = workspaceManager.currentWorkspace.value
                                     if (currentConfig != null) {
                                         // Extract current layout state
-                                        val currentLayout = extractCurrentConfiguration(splitViewState)
+                                        val currentLayout = extractCurrentWorkspace(splitViewState)
                                         
-                                        // Update the configuration with current layout
+                                        // Update the workspace with current layout
                                         val updatedConfig = currentConfig.copy(
                                             layout = currentLayout.layout,
                                             timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
                                         )
                                         
-                                        // Save the updated configuration
-                                        configurationManager.updateCurrentConfiguration(updatedConfig)
-                                        configurationManager.saveCurrentConfiguration()
+                                        // Save the updated workspace
+                                        workspaceManager.updateCurrentWorkspace(updatedConfig)
+                                        workspaceManager.saveCurrentWorkspace()
                                         
                                         // Mark as saved (remove from modified list)
-                                        TabTreeState.markConfigurationAsSaved(currentConfig.id)
+                                        TabTreeState.markWorkspaceAsSaved(currentConfig.id)
                                         
                                         // Show feedback
-                                        saveMessage = "Configuration '${currentConfig.name}' saved successfully"
+                                        saveMessage = "Workspace '${currentConfig.name}' saved successfully"
                                         delay(3000)
                                         saveMessage = null
                                     } else {
-                                        // No configuration loaded, create new one
-                                        val currentLayout = extractCurrentConfiguration(splitViewState)
+                                        // No workspace loaded, create new one
+                                        val currentLayout = extractCurrentWorkspace(splitViewState)
                                         val newConfig = currentLayout.copy(
-                                            name = "Configuration ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
-                                            description = "Saved configuration"
+                                            name = "Workspace ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
+                                            description = "Saved workspace"
                                         )
-                                        configurationManager.updateCurrentConfiguration(newConfig)
-                                        configurationManager.saveCurrentConfiguration()
+                                        workspaceManager.updateCurrentWorkspace(newConfig)
+                                        workspaceManager.saveCurrentWorkspace()
                                         
                                         // Show feedback
-                                        saveMessage = "New configuration '${newConfig.name}' saved successfully"
+                                        saveMessage = "New workspace '${newConfig.name}' saved successfully"
                                         delay(3000)
                                         saveMessage = null
                                     }
@@ -487,23 +499,23 @@ fun ComponentContext.BossApp() {
                     )
                     
                     BossTopBar(
-                        configurationManager = configurationManager,
-                        onApplyConfiguration = { config ->
+                        workspaceManager = workspaceManager,
+                        onApplyWorkspace = { workspace ->
                             coroutineScope.launch {
                                 // Preserve current state before switching
-                                val currentConfig = configurationManager.currentConfiguration.value
-                                if (currentConfig != null && currentConfig.id.isNotEmpty()) {
-                                    splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                                val currentWorkspace = workspaceManager.currentWorkspace.value
+                                if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
+                                    splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                                 }
                                 
-                                // First load the configuration to reset dirty state
-                                configurationManager.loadConfiguration(config)
+                                // First load the workspace to reset dirty state
+                                workspaceManager.loadWorkspace(workspace)
                                 // Then apply it to the UI (which will try to restore preserved state)
-                                applyConfiguration(config, splitViewState)
+                                applyWorkspace(workspace, splitViewState)
                             }
                         },
-                        getCurrentConfiguration = {
-                            extractCurrentConfiguration(splitViewState)
+                        getCurrentWorkspace = {
+                            extractCurrentWorkspace(splitViewState)
                         },
                         onShowTopOfMind = {
                             showTopOfMindDialog = true
@@ -573,27 +585,28 @@ fun ComponentContext.BossApp() {
             if (showTopOfMindDialog) {
                 TopOfMindDialog(
                     splitViewState = splitViewState,
+                    workspaceManager = workspaceManager,
                     onDismiss = { showTopOfMindDialog = false },
                     onTabSelect = { activeTab ->
                         showTopOfMindDialog = false
                         coroutineScope.launch {
                             // Preserve current state before switching
-                            val currentConfig = configurationManager.currentConfiguration.value
-                            if (currentConfig != null && currentConfig.id.isNotEmpty()) {
-                                splitViewState.preserveCurrentState(currentConfig.id, currentConfig.name)
+                            val currentWorkspace = workspaceManager.currentWorkspace.value
+                            if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
+                                splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                             }
                             
-                            // Find the configuration containing this tab
-                            val targetConfig = configurationManager.configurations.value.find { 
-                                it.id == activeTab.configurationId 
+                            // Find the workspace containing this tab
+                            val targetWorkspace = workspaceManager.workspaces.value.find { 
+                                it.id == activeTab.workspaceId 
                             }
                             
-                            if (targetConfig != null) {
-                                // Load and apply the target configuration
-                                configurationManager.loadConfiguration(targetConfig)
-                                applyConfiguration(targetConfig, splitViewState)
+                            if (targetWorkspace != null) {
+                                // Load and apply the target workspace
+                                workspaceManager.loadWorkspace(targetWorkspace)
+                                applyWorkspace(targetWorkspace, splitViewState)
                                 
-                                // Focus the specific tab after a short delay to ensure configuration is applied
+                                // Focus the specific tab after a short delay to ensure workspace is applied
                                 delay(100)
                                 splitViewState.selectTabInPanel(activeTab.tabInfo.id, activeTab.panelId)
                             }

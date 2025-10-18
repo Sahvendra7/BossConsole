@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import ai.rever.boss.utils.SystemUtils
 import kotlinx.coroutines.Dispatchers
@@ -9,20 +9,20 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 
 /**
- * Desktop implementation of ConfigurationFileManager
+ * Desktop implementation of WorkspaceFileManager
  */
-actual class ConfigurationFileManager {
-    private val configDirectory: String by lazy {
+actual class WorkspaceFileManager {
+    private val workspaceDirectory: String by lazy {
         val userHome = SystemUtils.getUserHome()
-        val documentsPath = Paths.get(userHome, "Documents", ConfigurationFileManagerCommon.getDefaultConfigDirectoryName())
+        val documentsPath = Paths.get(userHome, "Documents", WorkspaceFileManagerCommon.getDefaultWorkspaceDirectoryName())
         documentsPath.toString()
     }
     
-    actual fun getDefaultConfigurationDirectory(): String = configDirectory
+    actual fun getDefaultWorkspaceDirectory(): String = workspaceDirectory
     
-    actual suspend fun ensureConfigurationDirectory(): Boolean = withContext(Dispatchers.IO) {
+    actual suspend fun ensureWorkspaceDirectory(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val dir = File(configDirectory)
+            val dir = File(workspaceDirectory)
             if (!dir.exists()) {
                 dir.mkdirs()
             }
@@ -32,19 +32,19 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun saveConfiguration(
-        config: LayoutConfiguration, 
+    actual suspend fun saveWorkspace(
+        workspace: LayoutWorkspace, 
         fileName: String?
     ): String? = withContext(Dispatchers.IO) {
         try {
-            ensureConfigurationDirectory()
+            ensureWorkspaceDirectory()
             
-            val actualFileName = fileName ?: ConfigurationFileManagerCommon.generateFileName(config.name)
-            val filePath = getConfigurationFilePath(actualFileName)
+            val actualFileName = fileName ?: WorkspaceFileManagerCommon.generateFileName(workspace.name)
+            val filePath = getWorkspaceFilePath(actualFileName)
             val file = File(filePath)
             
-            // Serialize configuration
-            val json = ConfigurationSerializer.serialize(config)
+            // Serialize workspace
+            val json = WorkspaceSerializer.serialize(workspace)
             
             // Write to file
             file.writeText(json)
@@ -55,9 +55,9 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun loadConfiguration(fileName: String): LayoutConfiguration? = withContext(Dispatchers.IO) {
+    actual suspend fun loadWorkspace(fileName: String): LayoutWorkspace? = withContext(Dispatchers.IO) {
         try {
-            val filePath = getConfigurationFilePath(fileName)
+            val filePath = getWorkspaceFilePath(fileName)
             val file = File(filePath)
             
             if (!file.exists()) {
@@ -65,15 +65,15 @@ actual class ConfigurationFileManager {
             }
             
             val json = file.readText()
-            ConfigurationSerializer.deserialize(json)
+            WorkspaceSerializer.deserialize(json)
         } catch (e: Exception) {
             null
         }
     }
     
-    actual suspend fun listConfigurations(): List<ConfigurationFileInfo> = withContext(Dispatchers.IO) {
+    actual suspend fun listWorkspaces(): List<WorkspaceFileInfo> = withContext(Dispatchers.IO) {
         try {
-            val dir = File(configDirectory)
+            val dir = File(workspaceDirectory)
             if (!dir.exists() || !dir.isDirectory) {
                 return@withContext emptyList()
             }
@@ -81,7 +81,7 @@ actual class ConfigurationFileManager {
             dir.listFiles { file -> 
                 file.isFile && file.name.endsWith(".json") 
             }?.map { file ->
-                ConfigurationFileInfo(
+                WorkspaceFileInfo(
                     fileName = file.name,
                     filePath = file.absolutePath,
                     lastModified = file.lastModified(),
@@ -93,9 +93,9 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun deleteConfiguration(fileName: String): Boolean = withContext(Dispatchers.IO) {
+    actual suspend fun deleteWorkspace(fileName: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val filePath = getConfigurationFilePath(fileName)
+            val filePath = getWorkspaceFilePath(fileName)
             val file = File(filePath)
             
             if (file.exists()) {
@@ -108,7 +108,7 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual fun getConfigurationFilePath(fileName: String): String {
-        return Paths.get(configDirectory, fileName).toString()
+    actual fun getWorkspaceFilePath(fileName: String): String {
+        return Paths.get(workspaceDirectory, fileName).toString()
     }
 }

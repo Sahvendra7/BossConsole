@@ -1,4 +1,4 @@
-package ai.rever.boss.components.configuration
+package ai.rever.boss.components.workspaces
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -6,54 +6,54 @@ import platform.Foundation.*
 import kotlinx.cinterop.ExperimentalForeignApi
 
 /**
- * iOS implementation of ConfigurationFileManager
+ * iOS implementation of WorkspaceFileManager
  */
 @OptIn(ExperimentalForeignApi::class)
-actual class ConfigurationFileManager {
-    private val configDirectory: String by lazy {
+actual class WorkspaceFileManager {
+    private val workspaceDirectory: String by lazy {
         val documentsDir = NSSearchPathForDirectoriesInDomains(
             NSDocumentDirectory,
             NSUserDomainMask,
             true
         ).firstOrNull() as? String ?: ""
         
-        val configPath = "$documentsDir/${ConfigurationFileManagerCommon.getDefaultConfigDirectoryName()}"
-        configPath
+        val workspacePath = "$documentsDir/${WorkspaceFileManagerCommon.getDefaultWorkspaceDirectoryName()}"
+        workspacePath
     }
     
-    actual fun getDefaultConfigurationDirectory(): String = configDirectory
+    actual fun getDefaultWorkspaceDirectory(): String = workspaceDirectory
     
-    actual suspend fun ensureConfigurationDirectory(): Boolean = withContext(Dispatchers.Main) {
+    actual suspend fun ensureWorkspaceDirectory(): Boolean = withContext(Dispatchers.Main) {
         try {
             val fileManager = NSFileManager.defaultManager
             
-            if (!fileManager.fileExistsAtPath(configDirectory)) {
+            if (!fileManager.fileExistsAtPath(workspaceDirectory)) {
                 fileManager.createDirectoryAtPath(
-                    configDirectory,
+                    workspaceDirectory,
                     withIntermediateDirectories = true,
                     attributes = null,
                     error = null
                 )
             }
             
-            fileManager.fileExistsAtPath(configDirectory)
+            fileManager.fileExistsAtPath(workspaceDirectory)
         } catch (e: Exception) {
             false
         }
     }
     
-    actual suspend fun saveConfiguration(
-        config: LayoutConfiguration, 
+    actual suspend fun saveWorkspace(
+        workspace: LayoutWorkspace, 
         fileName: String?
     ): String? = withContext(Dispatchers.Main) {
         try {
-            ensureConfigurationDirectory()
+            ensureWorkspaceDirectory()
             
-            val actualFileName = fileName ?: ConfigurationFileManagerCommon.generateFileName(config.name)
-            val filePath = getConfigurationFilePath(actualFileName)
+            val actualFileName = fileName ?: WorkspaceFileManagerCommon.generateFileName(workspace.name)
+            val filePath = getWorkspaceFilePath(actualFileName)
             
-            // Serialize configuration
-            val json = ConfigurationSerializer.serialize(config)
+            // Serialize workspace
+            val json = WorkspaceSerializer.serialize(workspace)
             val nsString = NSString.create(string = json)
             
             // Write to file
@@ -65,9 +65,9 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun loadConfiguration(fileName: String): LayoutConfiguration? = withContext(Dispatchers.Main) {
+    actual suspend fun loadWorkspace(fileName: String): LayoutWorkspace? = withContext(Dispatchers.Main) {
         try {
-            val filePath = getConfigurationFilePath(fileName)
+            val filePath = getWorkspaceFilePath(fileName)
             val fileManager = NSFileManager.defaultManager
             
             if (!fileManager.fileExistsAtPath(filePath)) {
@@ -75,24 +75,24 @@ actual class ConfigurationFileManager {
             }
             
             val nsString = NSString.stringWithContentsOfFile(filePath, encoding = NSUTF8StringEncoding, error = null) ?: return@withContext null
-            ConfigurationSerializer.deserialize(nsString.toString())
+            WorkspaceSerializer.deserialize(nsString.toString())
         } catch (e: Exception) {
             null
         }
     }
     
-    actual suspend fun listConfigurations(): List<ConfigurationFileInfo> = withContext(Dispatchers.Main) {
+    actual suspend fun listWorkspaces(): List<WorkspaceFileInfo> = withContext(Dispatchers.Main) {
         try {
             val fileManager = NSFileManager.defaultManager
-            val contents = fileManager.contentsOfDirectoryAtPath(configDirectory, error = null) as? List<String>
+            val contents = fileManager.contentsOfDirectoryAtPath(workspaceDirectory, error = null) as? List<String>
             
             contents?.filter { fileName ->
                 fileName.endsWith(".json")
             }?.mapNotNull { fileName ->
-                val filePath = getConfigurationFilePath(fileName)
+                val filePath = getWorkspaceFilePath(fileName)
                 val attributes = fileManager.attributesOfItemAtPath(filePath, error = null) as? Map<Any?, Any?>
                 
-                ConfigurationFileInfo(
+                WorkspaceFileInfo(
                     fileName = fileName,
                     filePath = filePath,
                     lastModified = (attributes?.get(NSFileModificationDate) as? NSDate)?.timeIntervalSince1970?.toLong() ?: 0L,
@@ -104,9 +104,9 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual suspend fun deleteConfiguration(fileName: String): Boolean = withContext(Dispatchers.Main) {
+    actual suspend fun deleteWorkspace(fileName: String): Boolean = withContext(Dispatchers.Main) {
         try {
-            val filePath = getConfigurationFilePath(fileName)
+            val filePath = getWorkspaceFilePath(fileName)
             val fileManager = NSFileManager.defaultManager
             
             if (fileManager.fileExistsAtPath(filePath)) {
@@ -119,8 +119,8 @@ actual class ConfigurationFileManager {
         }
     }
     
-    actual fun getConfigurationFilePath(fileName: String): String {
-        return "$configDirectory/$fileName"
+    actual fun getWorkspaceFilePath(fileName: String): String {
+        return "$workspaceDirectory/$fileName"
     }
 }
 

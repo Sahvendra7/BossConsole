@@ -62,16 +62,18 @@ class SplitViewState(
     // Track last interacted tab for Cmd+R, Cmd+N operations
     private var _lastInteractedTabPanelId = mutableStateOf("main")
     private var _lastInteractedTabId: String? = null
+    val lastInteractedTabPanelId: String get() = _lastInteractedTabPanelId.value
 
-    // Track preserved configuration states
-    private val preservedConfigurationStates = mutableMapOf<String, PreservedConfigState>()
-    private var _currentConfigurationId: String? = null
+    // Track preserved workspace states
+    private val preservedWorkspaceStates = mutableMapOf<String, PreservedWorkspaceState>()
+    private var _currentWorkspaceId: String? = null
+    val currentWorkspaceId: String? get() = _currentWorkspaceId
 
     // Data class to hold preserved state
-    data class PreservedConfigState(
+    data class PreservedWorkspaceState(
         val rootNode: SplitNode,
         val activePanelId: String,
-        val configurationName: String = ""
+        val workspaceName: String = ""
     )
     
     fun setActivePanel(panelId: String) {
@@ -376,29 +378,29 @@ class SplitViewState(
         _activePanelId.value = "main"
     }
     
-    fun preserveCurrentState(configurationId: String, configurationName: String = "") {
+    fun preserveCurrentState(workspaceId: String, workspaceName: String = "") {
         // Save current state before switching
-        _currentConfigurationId?.let { currentId ->
-            preservedConfigurationStates[currentId] = PreservedConfigState(
+        _currentWorkspaceId?.let { currentId ->
+            preservedWorkspaceStates[currentId] = PreservedWorkspaceState(
                 rootNode = _rootNode.value,
                 activePanelId = _activePanelId.value,
-                configurationName = configurationName
+                workspaceName = workspaceName
             )
         }
-        _currentConfigurationId = configurationId
+        _currentWorkspaceId = workspaceId
     }
     
-    fun restorePreservedState(configurationId: String): Boolean {
-        // Check if we have a preserved state for this configuration
-        val preservedState = preservedConfigurationStates[configurationId]
+    fun restorePreservedState(workspaceId: String): Boolean {
+        // Check if we have a preserved state for this workspace
+        val preservedState = preservedWorkspaceStates[workspaceId]
         return if (preservedState != null) {
             // Restore the preserved state
             _rootNode.value = preservedState.rootNode
             _activePanelId.value = preservedState.activePanelId
-            _currentConfigurationId = configurationId
+            _currentWorkspaceId = workspaceId
             true
         } else {
-            _currentConfigurationId = configurationId
+            _currentWorkspaceId = workspaceId
             false
         }
     }
@@ -429,10 +431,10 @@ class SplitViewState(
         val seenTabIds = mutableSetOf<String>()
         
         // Collect from current state
-        _currentConfigurationId?.let { configId ->
-            // Get the actual configuration name from preserved states or use a default
-            val configName = preservedConfigurationStates[configId]?.configurationName 
-                ?: when (configId) {
+        _currentWorkspaceId?.let { workspaceId ->
+            // Get the actual workspace name from preserved states or use a default
+            val workspaceName = preservedWorkspaceStates[workspaceId]?.workspaceName 
+                ?: when (workspaceId) {
                     "last-session" -> "Last Session"
                     else -> "Current Workspace"
                 }
@@ -443,8 +445,8 @@ class SplitViewState(
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
-                                configurationId = configId,
-                                configurationName = configName,
+                                workspaceId = workspaceId,
+                                workspaceName = workspaceName,
                                 panelId = panel.id
                             )
                         )
@@ -455,32 +457,53 @@ class SplitViewState(
         }
         
         // Collect from preserved states (only if not already in current state)
-        preservedConfigurationStates.forEach { (configId, state) ->
-            if (configId != _currentConfigurationId) {
-                collectFluckTabsFromNode(state.rootNode, configId, state.configurationName, result, seenTabIds)
+        preservedWorkspaceStates.forEach { (workspaceId, state) ->
+            if (workspaceId != _currentWorkspaceId) {
+                collectFluckTabsFromNode(state.rootNode, workspaceId, state.workspaceName, result, seenTabIds)
             }
         }
         
         return result
     }
     
-    fun collectAllActiveTabs(configurationManager: ai.rever.boss.components.configuration.ConfigurationManager? = null): List<ActiveTab> {
+    /**
+     * Cleanup preserved state for a deleted workspace
+     */
+    fun cleanupDeletedWorkspace(workspaceId: String) {
+        preservedWorkspaceStates.remove(workspaceId)
+    }
+    
+    /**
+     * Cleanup preserved states for workspaces that no longer exist
+     */
+    fun cleanupDeletedWorkspaces(existingWorkspaceIds: Set<String>) {
+        val idsToRemove = preservedWorkspaceStates.keys.filter { workspaceId ->
+            // Keep special workspaces like "last-session" and only remove user workspaces
+            !existingWorkspaceIds.contains(workspaceId) && workspaceId != "last-session"
+        }
+        
+        idsToRemove.forEach { workspaceId ->
+            preservedWorkspaceStates.remove(workspaceId)
+        }
+    }
+    
+    fun collectAllActiveTabs(workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager? = null): List<ActiveTab> {
         val result = mutableListOf<ActiveTab>()
         val seenTabIds = mutableSetOf<String>()
         val seenConfigIds = mutableSetOf<String>()
         
-        // Helper function to get proper configuration name
-        fun getConfigurationName(configId: String): String {
-            return configurationManager?.configurations?.value?.find { it.id == configId }?.name
-                ?: preservedConfigurationStates[configId]?.configurationName
-                ?: when (configId) {
+        // Helper function to get proper workspace name
+        fun getWorkspaceName(workspaceId: String): String {
+            return workspaceManager?.workspaces?.value?.find { it.id == workspaceId }?.name
+                ?: preservedWorkspaceStates[workspaceId]?.workspaceName
+                ?: when (workspaceId) {
                     "last-session" -> "Last Session"
-                    else -> "Workspace $configId"
+                    else -> "Workspace $workspaceId"
                 }
         }
         
         // Collect from current state (only if it has tabs)
-        _currentConfigurationId?.let { configId ->
+        _currentWorkspaceId?.let { workspaceId ->
             val currentTabs = mutableListOf<ActiveTab>()
             
             getAllPanels().forEach { panel ->
@@ -489,8 +512,8 @@ class SplitViewState(
                         currentTabs.add(
                             ActiveTab(
                                 tabInfo = tab,
-                                configurationId = configId,
-                                configurationName = getConfigurationName(configId),
+                                workspaceId = workspaceId,
+                                workspaceName = getWorkspaceName(workspaceId),
                                 panelId = panel.id
                             )
                         )
@@ -499,19 +522,19 @@ class SplitViewState(
                 }
             }
             
-            // Only add current config if it has tabs
+            // Only add current workspace if it has tabs
             if (currentTabs.isNotEmpty()) {
                 result.addAll(currentTabs)
-                seenConfigIds.add(configId)
+                seenConfigIds.add(workspaceId)
             }
         }
         
         // Collect from preserved states (only if not already added)
-        preservedConfigurationStates.forEach { (configId, state) ->
-            if (!seenConfigIds.contains(configId)) {
-                collectAllTabsFromNode(state.rootNode, configId, getConfigurationName(configId), result, seenTabIds)
-                if (result.any { it.configurationId == configId }) {
-                    seenConfigIds.add(configId)
+        preservedWorkspaceStates.forEach { (workspaceId, state) ->
+            if (!seenConfigIds.contains(workspaceId)) {
+                collectAllTabsFromNode(state.rootNode, workspaceId, getWorkspaceName(workspaceId), result, seenTabIds)
+                if (result.any { it.workspaceId == workspaceId }) {
+                    seenConfigIds.add(workspaceId)
                 }
             }
         }
@@ -521,8 +544,8 @@ class SplitViewState(
     
     private fun collectFluckTabsFromNode(
         node: SplitNode, 
-        configId: String, 
-        configName: String,
+        workspaceId: String, 
+        workspaceName: String,
         result: MutableList<ActiveTab>,
         seenTabIds: MutableSet<String>
     ) {
@@ -533,8 +556,8 @@ class SplitViewState(
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
-                                configurationId = configId,
-                                configurationName = configName,
+                                workspaceId = workspaceId,
+                                workspaceName = workspaceName,
                                 panelId = node.id
                             )
                         )
@@ -543,20 +566,20 @@ class SplitViewState(
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectFluckTabsFromNode(node.left, configId, configName, result, seenTabIds)
-                collectFluckTabsFromNode(node.right, configId, configName, result, seenTabIds)
+                collectFluckTabsFromNode(node.left, workspaceId, workspaceName, result, seenTabIds)
+                collectFluckTabsFromNode(node.right, workspaceId, workspaceName, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectFluckTabsFromNode(node.top, configId, configName, result, seenTabIds)
-                collectFluckTabsFromNode(node.bottom, configId, configName, result, seenTabIds)
+                collectFluckTabsFromNode(node.top, workspaceId, workspaceName, result, seenTabIds)
+                collectFluckTabsFromNode(node.bottom, workspaceId, workspaceName, result, seenTabIds)
             }
         }
     }
     
     private fun collectAllTabsFromNode(
         node: SplitNode, 
-        configId: String, 
-        configName: String,
+        workspaceId: String, 
+        workspaceName: String,
         result: MutableList<ActiveTab>,
         seenTabIds: MutableSet<String>
     ) {
@@ -567,8 +590,8 @@ class SplitViewState(
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
-                                configurationId = configId,
-                                configurationName = configName,
+                                workspaceId = workspaceId,
+                                workspaceName = workspaceName,
                                 panelId = node.id
                             )
                         )
@@ -577,12 +600,12 @@ class SplitViewState(
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectAllTabsFromNode(node.left, configId, configName, result, seenTabIds)
-                collectAllTabsFromNode(node.right, configId, configName, result, seenTabIds)
+                collectAllTabsFromNode(node.left, workspaceId, workspaceName, result, seenTabIds)
+                collectAllTabsFromNode(node.right, workspaceId, workspaceName, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectAllTabsFromNode(node.top, configId, configName, result, seenTabIds)
-                collectAllTabsFromNode(node.bottom, configId, configName, result, seenTabIds)
+                collectAllTabsFromNode(node.top, workspaceId, workspaceName, result, seenTabIds)
+                collectAllTabsFromNode(node.bottom, workspaceId, workspaceName, result, seenTabIds)
             }
         }
     }

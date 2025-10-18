@@ -29,18 +29,18 @@ import ai.rever.boss.components.windows.SettingsWindow
 import ai.rever.boss.components.model.BossDraggableComponent
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
-import ai.rever.boss.components.configuration.ConfigurationButton
-import ai.rever.boss.components.configuration.ConfigurationManager
-import ai.rever.boss.components.configuration.LayoutConfiguration
+import ai.rever.boss.components.workspaces.WorkspaceButton
+import ai.rever.boss.components.workspaces.WorkspaceManager
+import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
 import ai.rever.boss.services.supabase.AuthService
 
 
 @Composable
 fun BossDraggableComponent.BossTopBar(
-    configurationManager: ConfigurationManager? = null,
-    onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
-    getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
+    workspaceManager: WorkspaceManager? = null,
+    onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
+    getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null
 ) {
 
@@ -61,7 +61,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(configurationManager, onApplyConfiguration, getCurrentConfiguration, onShowTopOfMind)
+            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind)
             Spacer(modifier = Modifier.weight(1f))
             BossTopRunBar()
             Spacer(modifier = Modifier.weight(0.1f))
@@ -150,9 +150,9 @@ val gitContextMenuItems get() = listOf(
 
 @Composable
 fun BossDraggableComponent.BossTopLeftBar(
-    configurationManager: ConfigurationManager? = null,
-    onApplyConfiguration: ((LayoutConfiguration) -> Unit)? = null,
-    getCurrentConfiguration: (() -> LayoutConfiguration)? = null,
+    workspaceManager: WorkspaceManager? = null,
+    onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
+    getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
@@ -172,12 +172,12 @@ fun BossDraggableComponent.BossTopLeftBar(
         hintText = "Current Git Branch: main"
     )
     
-    // Configuration button
-    if (configurationManager != null && onApplyConfiguration != null) {
-        ConfigurationButton(
-            onOpenConfiguration = onApplyConfiguration,
-            configurationManager = configurationManager,
-            getCurrentConfiguration = getCurrentConfiguration,
+    // Workspace button
+    if (workspaceManager != null && onApplyWorkspace != null) {
+        WorkspaceButton(
+            onOpenWorkspace = onApplyWorkspace,
+            workspaceManager = workspaceManager,
+            getCurrentWorkspace = getCurrentWorkspace,
             onShowTopOfMind = onShowTopOfMind
         )
     }
@@ -253,7 +253,7 @@ fun BossTopRunBar() {
     BossActionButton(
         imageVector = Icons.Outlined.PlayArrow,
         text = "Run",
-        hintText = "Run the current configuration"
+        hintText = "Run the current workspace"
     ) {}
     
     BossActionButton(
