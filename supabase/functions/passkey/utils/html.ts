@@ -285,7 +285,11 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
         }
 
         function bufferToBase64url(buffer) {
-            const binary = String.fromCharCode(...new Uint8Array(buffer));
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
             return btoa(binary).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=/g, '');
         }
 
@@ -299,9 +303,10 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
 
             try {
                 const userIdBuffer = new TextEncoder().encode(userId);
+                const challengeBuffer = base64urlToBuffer(challenge);
 
                 const publicKeyCredentialCreationOptions = {
-                    challenge: base64urlToBuffer(challenge),
+                    challenge: challengeBuffer,
                     rp: { id: rpId, name: rpName },
                     user: {
                         id: userIdBuffer,
@@ -313,7 +318,6 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
                         { alg: -257, type: "public-key" }
                     ],
                     authenticatorSelection: {
-                        authenticatorAttachment: "cross-platform",
                         userVerification: "preferred",
                         residentKey: "preferred"
                     },
@@ -321,7 +325,6 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
                     attestation: "none"
                 };
 
-                console.log('Creating credential...');
                 const credential = await navigator.credentials.create({
                     publicKey: publicKeyCredentialCreationOptions
                 });
@@ -345,7 +348,6 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
                     displayName: email
                 };
 
-                console.log('Sending registration data...');
                 const response = await fetch('/functions/v1/passkey/register/complete', {
                     method: 'POST',
                     headers: {
@@ -356,7 +358,6 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
                 });
 
                 const result = await response.json();
-                console.log('Registration result:', result);
 
                 if (result.success) {
                     status.className = 'status success';
@@ -700,6 +701,7 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
 
     <script>
         const challenge = '{{CHALLENGE}}';
+        const email = '{{EMAIL}}';
         const credentialId = '{{CREDENTIAL_ID}}';
         const sessionId = '{{SESSION_ID}}';
         const rpId = '{{RP_ID}}';
@@ -719,7 +721,11 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
         }
 
         function bufferToBase64url(buffer) {
-            const binary = String.fromCharCode(...new Uint8Array(buffer));
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
             return btoa(binary).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=/g, '');
         }
 
@@ -745,7 +751,6 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
                     timeout: 300000
                 };
 
-                console.log('Requesting authentication...');
                 const credential = await navigator.credentials.get({
                     publicKey: publicKeyCredentialRequestOptions
                 });
@@ -769,7 +774,6 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
                     challenge: challenge
                 };
 
-                console.log('Sending authentication data...');
                 const response = await fetch('/functions/v1/passkey/auth/complete', {
                     method: 'POST',
                     headers: {
@@ -780,7 +784,6 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
                 });
 
                 const result = await response.json();
-                console.log('Authentication result:', result);
 
                 if (result.success) {
                     status.className = 'status success';

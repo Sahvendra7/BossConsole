@@ -122,11 +122,14 @@ internal object PasskeyDataMapper {
         authenticatorSelection: AuthenticatorSelectionCriteria?
     ): PasskeyChallenge {
         val challengeResponse = json.decodeFromString<PasskeyChallengeResponse>(responseText)
-        
+
+        // Use rpId from response, or fall back to PasskeyConfigHelper if not provided
+        val rpId = challengeResponse.rpId ?: PasskeyConfigHelper.getRpId()
+
         return PasskeyChallenge(
             challenge = challengeResponse.challenge,
             timeout = challengeResponse.timeout,
-            rpId = challengeResponse.rpId,
+            rpId = rpId,
             rpName = challengeResponse.rpName,
             userId = userId,
             userDisplayName = displayName,
@@ -166,11 +169,15 @@ internal object PasskeyDataMapper {
      */
     fun parseAuthenticationChallenge(responseText: String): PasskeyAuthenticationChallenge {
         val challengeResponse = json.decodeFromString<PasskeyAuthenticationChallengeResponse>(responseText)
-        
+
+        // Use rpId from response, or fall back to PasskeyConfigHelper if not provided
+        // This ensures consistency with registration flow
+        val rpId = challengeResponse.rpId ?: PasskeyConfigHelper.getRpId()
+
         return PasskeyAuthenticationChallenge(
             challenge = challengeResponse.challenge,
             timeout = challengeResponse.timeout,
-            rpId = challengeResponse.rpId,
+            rpId = rpId,
             allowCredentials = challengeResponse.allowCredentials,
             userVerification = challengeResponse.userVerification
         )

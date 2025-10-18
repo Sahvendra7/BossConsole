@@ -27,10 +27,11 @@ object SupabaseClientConfig {
     }
 
     /**
-     * Supabase Functions URL loaded from secure sources.
+     * Supabase Functions base URL loaded from secure sources.
+     * This should point to /functions/v1 (not a specific function like /passkey)
      */
     val functionUrl: String by lazy {
         ConfigLoader.getConfig("SUPABASE_FUNCTION_URL")
-            ?: "https://api.risaboss.com/functions/v1/passkey" // Production default
+            ?: "https://api.risaboss.com/functions/v1" // Production default
     }
 }

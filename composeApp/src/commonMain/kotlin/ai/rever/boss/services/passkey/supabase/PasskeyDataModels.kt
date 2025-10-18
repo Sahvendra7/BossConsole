@@ -17,7 +17,7 @@ data class PasskeyRegistrationRequest(
 data class PasskeyChallengeResponse(
     val challenge: String,
     val timeout: Long = 60000L,
-    val rpId: String = "api.risaboss.com",
+    val rpId: String? = null, // Optional - client will provide when opening browser page
     val rpName: String = "BOSS",
     val attestation: String = "none",
     val authenticatorSelection: AuthenticatorSelectionCriteria? = null,
@@ -68,7 +68,7 @@ data class PasskeyAuthenticationRequest(
 data class PasskeyAuthenticationChallenge(
     val challenge: String,
     val timeout: Long = 60000L,
-    val rpId: String = "api.risaboss.com",
+    val rpId: String, // No default - must be provided based on environment
     val allowCredentials: List<PasskeyAllowedCredential>? = null,
     val userVerification: String = "preferred"
 )
@@ -84,7 +84,7 @@ data class PasskeyAllowedCredential(
 data class PasskeyAuthenticationChallengeResponse(
     val challenge: String,
     val timeout: Long = 60000L,
-    val rpId: String = "api.risaboss.com",
+    val rpId: String? = null, // Optional - client will fall back to config if not provided
     val allowCredentials: List<PasskeyAllowedCredential>? = null,
     val userVerification: String = "preferred"
 )

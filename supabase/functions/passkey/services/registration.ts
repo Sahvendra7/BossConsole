@@ -4,10 +4,12 @@ import { verifyAndConsumeChallenge, storePasskeyInDB } from "../utils/database.t
 import { extractPublicKeyFromAttestation } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler } from "../utils/error-handler.ts"
+import { getRpId, getRpName } from "../utils/config.ts"
 
 export const ALLOWED_ORIGINS = [
   'boss://authenticate',
   'http://localhost:3000',
+  'http://localhost:54321',  // Supabase local functions
   'https://risaboss.com',
   'https://api.risaboss.com'
 ]
@@ -24,6 +26,11 @@ export interface RegistrationCredential {
 
 /**
  * Generates a registration challenge for a new passkey
+ *
+ * NOTE: This endpoint returns the challenge but NOT the rpId.
+ * The rpId must be provided by the client when calling the mobile registration page.
+ * This is because the server's SUPABASE_URL points to internal kong gateway,
+ * not the external domain where the browser accesses the page.
  */
 export const generateRegistrationChallenge = withErrorHandler(
   async (supabase: SupabaseClient, userId: string, sessionId?: string) => {
@@ -43,28 +50,14 @@ export const generateRegistrationChallenge = withErrorHandler(
       }
     }
 
+    // NOTE: rpId is intentionally NOT included here.
+    // The client must provide the correct rpId when opening the mobile registration page,
+    // because only the client knows the actual domain where the browser will access the page.
+
     return {
       success: true,
       challenge,
-      rp: {
-        name: 'BOSS',
-        id: 'api.risaboss.com'
-      },
-      user: {
-        id: userId,
-        name: userId,
-        displayName: 'BOSS User'
-      },
-      pubKeyCredParams: [
-        { type: 'public-key', alg: -7 }  // ES256
-      ],
-      timeout: 60000,
-      attestation: 'none',
-      authenticatorSelection: {
-        authenticatorAttachment: 'platform',
-        userVerification: 'preferred',
-        requireResidentKey: false
-      },
+      // rpId will be provided by client when calling /register/mobile
       sessionId // Return sessionId for cross-device polling
     }
   },

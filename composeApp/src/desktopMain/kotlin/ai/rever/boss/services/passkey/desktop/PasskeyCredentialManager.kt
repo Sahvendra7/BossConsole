@@ -52,7 +52,7 @@ class PasskeyCredentialManager(
                     },
                     createdAt = System.currentTimeMillis(),
                     lastUsed = null,
-                    rpId = "api.risaboss.com",
+                    rpId = PasskeyConfigHelper.getRpId(),
                     transports = listOf("internal")
                 )
             }

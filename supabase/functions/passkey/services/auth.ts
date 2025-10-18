@@ -5,10 +5,12 @@ import { verifySignature } from "../utils/crypto.ts"
 import { ChallengeType } from "../types/challenge.ts"
 import { withErrorHandler, withStatusErrorHandler } from "../utils/error-handler.ts"
 import { generateSupabaseAccessToken } from "../utils/jwt.ts"
+import { getRpId } from "../utils/config.ts"
 
 export const ALLOWED_ORIGINS = [
   'boss://authenticate',
   'http://localhost:3000',
+  'http://localhost:54321',  // Supabase local functions
   'https://risaboss.com',
   'https://api.risaboss.com'
 ]
@@ -87,11 +89,13 @@ export const generateAuthChallenge = withErrorHandler(
       transports: pk.transports || ['internal']
     }))
 
+    const rpId = getRpId()
+
     return {
       success: true,
       challenge,
       timeout: 60000,
-      rpId: 'api.risaboss.com',
+      rpId,
       userVerification: 'preferred',
       allowCredentials: allowedCredentials,
       sessionId
@@ -244,6 +248,7 @@ export const completeAuthentication = withErrorHandler(
 
     try {
       const jwtSecret = Deno.env.get('JWT_SECRET')
+      console.log('🔍 JWT_SECRET length:', jwtSecret?.length || 0, '(should be >0)')
       if (!jwtSecret) {
         console.error('❌ JWT_SECRET not configured')
         return {
@@ -261,6 +266,8 @@ export const completeAuthentication = withErrorHandler(
       )
 
       console.log('✅ Generated custom JWT tokens successfully')
+      console.log('   Access token length:', tokens.accessToken.length)
+      console.log('   Refresh token length:', tokens.refreshToken.length)
 
       return {
         success: true,

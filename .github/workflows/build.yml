@@ -15,6 +15,7 @@ env:
   JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
   SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
 
 jobs:
   version-check:

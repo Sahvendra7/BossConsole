@@ -199,8 +199,8 @@ otp_expiry = 3600
 # content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.magic_link]
-subject = "Sign in to BOSS"
-content_path = "./supabase/templates/email/magic-link.html"
+subject = "Sign in to BOSS [LOCAL]"
+content_path = "./supabase/templates/email/magic-link-local.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

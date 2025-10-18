@@ -86,7 +86,7 @@ jxbrowser.license.key=<your-license-key>
 # Supabase configuration (using Supabase Cloud)
 SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1/passkey
+SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1
 ```
 
 ### Supabase Deployment
@@ -94,13 +94,13 @@ The project uses **Supabase CLI** for all function deployments and database migr
 
 ```bash
 # Deploy Edge Functions
-supabase functions deploy <function-name> --project-ref boss-self-hosted --no-verify-jwt
+supabase functions deploy <function-name> --project-ref pcnwqamqdnsadranufjv --no-verify-jwt
 
 # Deploy all functions
-supabase functions deploy --project-ref boss-self-hosted --no-verify-jwt
+supabase functions deploy --project-ref pcnwqamqdnsadranufjv --no-verify-jwt
 
 # Link to remote project (first time)
-supabase link --project-ref boss-self-hosted
+supabase link --project-ref pcnwqamqdnsadranufjv
 ```
 
 **Available Edge Functions:**

@@ -93,7 +93,7 @@ jxbrowser.default.url=https://www.example.com
 # IMPORTANT: Never commit these values to version control
 SUPABASE_URL=https://your-supabase-url.supabase.co
 SUPABASE_ANON_KEY=your-supabase-anon-key-here
-SUPABASE_FUNCTION_URL=https://your-supabase-url.supabase.co/functions/v1/passkey-functions
+SUPABASE_FUNCTION_URL=https://your-supabase-url.supabase.co/functions/v1
 ```
 
 # Version Management

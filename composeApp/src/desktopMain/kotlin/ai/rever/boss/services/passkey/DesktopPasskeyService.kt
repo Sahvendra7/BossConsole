@@ -2,6 +2,7 @@ package ai.rever.boss.services.passkey
 
 import ai.rever.boss.services.passkey.desktop.*
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
+import ai.rever.boss.services.supabase.getSupabaseFunctionUrl
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,7 +65,8 @@ class DesktopPasskeyService : PasskeyService {
             
             // Build server WebAuthn registration URL using RESTful endpoint
             val sessionId = UUID.randomUUID().toString()
-            val registrationUrl = "https://api.risaboss.com/functions/v1/passkey/register/mobile?" +
+            val baseUrl = getSupabaseFunctionUrl()
+            val registrationUrl = "$baseUrl/passkey/register/mobile?" +
                 "challenge=${URLEncoder.encode(challengeB64, "UTF-8")}&" +
                 "email=${URLEncoder.encode(displayName, "UTF-8")}&" +
                 "sessionId=${URLEncoder.encode(sessionId, "UTF-8")}&" +
@@ -126,20 +128,35 @@ class DesktopPasskeyService : PasskeyService {
             println("DesktopPasskeyService: CredentialId: $actualCredentialId, Platform: $currentPlatform, Transports: $transports")
             
             println("DesktopPasskeyService: Using browser WebAuthn for all passkey authentication")
-            
+
             // Always use browser WebAuthn for passkey authentication - this is the correct approach
             // The browser handles the choice between Touch ID, security keys, or cross-device flow
             val crossDeviceSessionId = sessionId ?: UUID.randomUUID().toString()
             val challengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(challenge)
-            val qrUrl = "https://api.risaboss.com/functions/v1/passkey/auth/mobile?" +
+            val baseUrl = getSupabaseFunctionUrl()
+            val authUrl = "$baseUrl/passkey/auth/mobile?" +
                 "challenge=${URLEncoder.encode(challengeB64, "UTF-8")}&" +
                 "email=${URLEncoder.encode(userEmail, "UTF-8")}&" +
                 "sessionId=${URLEncoder.encode(crossDeviceSessionId, "UTF-8")}&" +
                 "credentialId=${URLEncoder.encode(actualCredentialId, "UTF-8")}&" +
                 "rpId=${URLEncoder.encode(rpId, "UTF-8")}"
-            
+
+            // Auto-open browser for authentication (same as registration flow)
+            // Use browser manager to open URL with fallbacks
+            val browserResult = browserManager.openInSystemBrowser(authUrl)
+            if (browserResult.isFailure) {
+                // If browser opening fails, fall back to QR code flow
+                throw CrossDeviceAuthenticationRequired(
+                    qrCodeUrl = authUrl,
+                    challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(challenge),
+                    sessionId = crossDeviceSessionId,
+                    message = "Complete authentication in browser - Touch ID will be available there"
+                )
+            }
+
+            // Throw exception to trigger polling flow
             throw CrossDeviceAuthenticationRequired(
-                qrCodeUrl = qrUrl,
+                qrCodeUrl = authUrl,
                 challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(challenge),
                 sessionId = crossDeviceSessionId,
                 message = "Complete authentication in browser - Touch ID will be available there"

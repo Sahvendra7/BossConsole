@@ -76,15 +76,21 @@ mobile.openapi(registerMobileRoute, async (ctx) => {
       return ctx.html(getMobileErrorHTML(result.error || 'Failed to generate registration page'), statusCode)
     }
 
-    // Return mobile registration HTML page
-    return ctx.html(getMobileRegistrationHTML(
+    // Return mobile registration HTML page with no-cache headers
+    const html = await getMobileRegistrationHTML(
       result.challenge!,
       result.userId!,
       result.email!,
       result.sessionId!,
       result.rpId!,
       result.rpName!
-    ), 200)
+    )
+
+    ctx.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    ctx.header('Pragma', 'no-cache')
+    ctx.header('Expires', '0')
+
+    return ctx.html(html, 200)
 
   } catch (error) {
     console.error('❌ Mobile registration error:', error)
