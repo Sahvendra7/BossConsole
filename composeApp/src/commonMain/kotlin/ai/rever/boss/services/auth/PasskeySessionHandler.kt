@@ -3,8 +3,10 @@ package ai.rever.boss.services.auth
 import ai.rever.boss.services.passkey.supabase.PasskeyAuthenticationResult
 import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.services.supabase.models.UserInfo
+import ai.rever.boss.services.supabase.RoleService
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
+import io.github.jan.supabase.auth.user.UserSession
 import kotlin.time.ExperimentalTime
 
 /**
@@ -51,11 +53,30 @@ object PasskeySessionHandler {
             if (authData.accessToken != null && authData.refreshToken != null) {
                 println("PasskeySessionHandler: Server provided real Supabase session tokens")
 
+                // Parse role claims from access token if available
+                val roleClaims = authData.accessToken?.let { token ->
+                    try {
+                        // Create temporary session for parsing
+                        val tempSession = UserSession(
+                            accessToken = token,
+                            refreshToken = authData.refreshToken,
+                            expiresIn = authData.expiresAt?.minus(java.time.Instant.now().epochSecond) ?: 3600,
+                            tokenType = "bearer",
+                            user = null
+                        )
+                        RoleService.parseRoleClaimsFromSession(tempSession)
+                    } catch (e: Exception) {
+                        println("PasskeySessionHandler: Failed to parse role claims: ${e.message}")
+                        null
+                    }
+                }
+
                 // Create user info from authentication response
                 val userInfo = UserInfo(
                     id = authData.userId,
                     email = authData.email,
-                    createdAt = java.time.Instant.now().toString()
+                    createdAt = java.time.Instant.now().toString(),
+                    roleClaims = roleClaims
                 )
 
                 // Calculate expiration time

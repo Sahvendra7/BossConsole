@@ -1,4 +1,43 @@
 import { SignJWT } from "jose"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+/**
+ * Fetch user roles from the database for JWT claims
+ */
+async function getUserRoles(supabase: SupabaseClient, userId: string): Promise<{ userRole: string; userRoles: string[]; isAdmin: boolean }> {
+  try {
+    const { data: roles, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .order('assigned_at', { ascending: true })
+
+    if (error) {
+      console.error('❌ Failed to fetch user roles:', error)
+      return { userRole: 'user', userRoles: ['user'], isAdmin: false }
+    }
+
+    if (!roles || roles.length === 0) {
+      console.log('⚠️ No roles found for user, defaulting to "user"')
+      return { userRole: 'user', userRoles: ['user'], isAdmin: false }
+    }
+
+    const userRoles = roles.map(r => r.role)
+    const primaryRole = userRoles[0] // First role assigned (usually 'user')
+    const isAdmin = userRoles.includes('admin')
+
+    console.log('✅ Fetched user roles:', { primaryRole, userRoles, isAdmin })
+
+    return {
+      userRole: primaryRole,
+      userRoles: userRoles,
+      isAdmin: isAdmin
+    }
+  } catch (error) {
+    console.error('❌ Exception fetching user roles:', error)
+    return { userRole: 'user', userRoles: ['user'], isAdmin: false }
+  }
+}
 
 /**
  * Generates custom Supabase JWT tokens for passkey authentication
@@ -57,12 +96,14 @@ import { SignJWT } from "jose"
  * - See auth.ts (server) for authentication flow
  * - See crypto.ts (server) for signature verification
  *
+ * @param supabase - Supabase client for database queries
  * @param userId - The authenticated user's ID from Supabase auth.users
  * @param email - The authenticated user's email address
  * @param jwtSecret - Supabase project JWT secret (from environment)
  * @returns Object containing accessToken, refreshToken, expiresAt, and expiresIn
  */
 export async function generateSupabaseAccessToken(
+  supabase: SupabaseClient,
   userId: string,
   email: string,
   jwtSecret: string
@@ -71,11 +112,15 @@ export async function generateSupabaseAccessToken(
   const expiresIn = 3600 // 1 hour
   const expiresAt = now + expiresIn
 
+  // Fetch user roles for RBAC claims
+  const roleClaims = await getUserRoles(supabase, userId)
+
   // Get the JWT secret from environment (this is your Supabase JWT secret)
   const secret = new TextEncoder().encode(jwtSecret)
 
   // Create the access token with required Supabase claims
   // Including app_metadata and user_metadata for proper user object population
+  // IMPORTANT: Including RBAC claims (user_role, user_roles, is_admin) for authorization
   const accessToken = await new SignJWT({
     sub: userId,
     email: email,
@@ -92,7 +137,11 @@ export async function generateSupabaseAccessToken(
     },
     user_metadata: {
       email: email
-    }
+    },
+    // RBAC claims (matches auth hook format)
+    user_role: roleClaims.userRole,
+    user_roles: roleClaims.userRoles,
+    is_admin: roleClaims.isAdmin
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuedAt(now)

@@ -26,10 +26,35 @@ enum class WebAuthnCredentialType(val displayName: String, val icon: String) {
 }
 
 /**
- * User information
+ * User information with role data
  */
 data class UserInfo(
     val id: String,
     val email: String,
-    val createdAt: String
-)
+    val createdAt: String,
+    val roleClaims: RoleClaims? = null
+) {
+    /**
+     * Get user's primary role (defaults to USER if no claims)
+     */
+    val primaryRole: AppRole
+        get() = roleClaims?.userRole ?: AppRole.USER
+
+    /**
+     * Get all user roles
+     */
+    val roles: List<AppRole>
+        get() = roleClaims?.userRoles ?: listOf(AppRole.USER)
+
+    /**
+     * Check if user is an admin
+     */
+    val isAdmin: Boolean
+        get() = roleClaims?.isAdmin ?: false
+
+    /**
+     * Check if user has a specific role
+     */
+    fun hasRole(role: AppRole): Boolean =
+        roleClaims?.hasRole(role) ?: (role == AppRole.USER)
+}

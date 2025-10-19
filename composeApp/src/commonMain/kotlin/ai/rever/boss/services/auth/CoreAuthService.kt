@@ -9,6 +9,7 @@ import io.github.jan.supabase.auth.auth
 import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.services.supabase.RoleService
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlin.time.ExperimentalTime
 
@@ -48,12 +49,21 @@ internal object CoreAuthService {
                             if (currentUser == null || (userId.isNotEmpty() && currentUser.id != userId)) {
                                 if (userId.isNotEmpty()) {
                                     // Update user info from session.user (standard Supabase auth)
+                                    // Parse role claims from JWT
+                                    val roleClaims = RoleService.parseRoleClaimsFromSession(sessionStatus.session)
+
                                     AuthStateManager.setCurrentUser(UserInfo(
                                         id = userId,
                                         email = user?.email ?: "",
-                                        createdAt = user?.createdAt?.toString() ?: ""
+                                        createdAt = user?.createdAt?.toString() ?: "",
+                                        roleClaims = roleClaims
                                     ))
-                                    println("CoreAuthService.initialize: Updated user info from session.user")
+                                    val rolesInfo = if (roleClaims != null) {
+                                        "Roles: ${roleClaims.userRoles.joinToString(", ")}, Primary: ${roleClaims.userRole}, Admin: ${roleClaims.isAdmin}"
+                                    } else {
+                                        "No role claims"
+                                    }
+                                    println("CoreAuthService.initialize: Updated user info from session.user ($rolesInfo)")
                                 } else {
                                     // Session user is null (custom JWT) - load from SessionManager
                                     SessionManager.loadSession().fold(

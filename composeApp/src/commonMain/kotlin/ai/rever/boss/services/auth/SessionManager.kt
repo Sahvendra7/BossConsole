@@ -3,6 +3,7 @@ package ai.rever.boss.services.auth
 import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.services.supabase.RoleService
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.user.UserSession
 import kotlin.time.ExperimentalTime
@@ -134,10 +135,14 @@ object SessionManager {
                 val sessionUser = currentSession.user
                 if (sessionUser?.id?.isNotEmpty() == true) {
                     println("SessionManager: Using user data from session.user (standard auth)")
+                    // Parse role claims from JWT
+                    val roleClaims = RoleService.parseRoleClaimsFromSession(currentSession)
+
                     val userInfo = UserInfo(
                         id = sessionUser.id,
                         email = sessionUser.email ?: "",
-                        createdAt = sessionUser.createdAt?.toString() ?: ""
+                        createdAt = sessionUser.createdAt?.toString() ?: "",
+                        roleClaims = roleClaims
                     )
                     return Result.success(userInfo)
                 }

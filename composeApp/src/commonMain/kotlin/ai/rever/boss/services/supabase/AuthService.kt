@@ -112,6 +112,60 @@ object AuthService {
         return PasskeyAuthService.deletePasskey(credentialId)
     }
 
+    // ============================================================================
+    // RBAC - Role-Based Access Control
+    // ============================================================================
+
+    /**
+     * Get current user's role claims from JWT
+     * Returns null if no user is authenticated
+     */
+    fun getCurrentUserRoleClaims(): RoleClaims? {
+        return currentUser.value?.roleClaims
+    }
+
+    /**
+     * Check if current user is an admin
+     */
+    fun isCurrentUserAdmin(): Boolean {
+        return currentUser.value?.isAdmin ?: false
+    }
+
+    /**
+     * Check if current user has a specific role
+     */
+    fun currentUserHasRole(role: AppRole): Boolean {
+        return currentUser.value?.hasRole(role) ?: false
+    }
+
+    /**
+     * Assign a role to a user (admin only)
+     */
+    suspend fun assignRole(targetUserId: String, role: AppRole): Result<Unit> {
+        return RoleService.assignRole(targetUserId, role)
+    }
+
+    /**
+     * Remove a role from a user (admin only)
+     */
+    suspend fun removeRole(targetUserId: String, role: AppRole): Result<Unit> {
+        return RoleService.removeRole(targetUserId, role)
+    }
+
+    /**
+     * Get all roles for a specific user
+     */
+    suspend fun getUserRoles(userId: String): Result<List<UserRole>> {
+        return RoleService.getUserRoles(userId)
+    }
+
+    /**
+     * Check if a user has a specific permission
+     */
+    suspend fun userHasPermission(userId: String, permission: AppPermission): Result<Boolean> {
+        return RoleService.canPerformAction(userId, permission)
+    }
+
     /**
      * Authentication state
      */
@@ -121,5 +175,5 @@ object AuthService {
         object Authenticated : AuthState()
         data class Error(val message: String) : AuthState()
     }
-    
+
 }

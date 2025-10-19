@@ -260,6 +260,7 @@ export const completeAuthentication = withErrorHandler(
       }
 
       const tokens = await generateSupabaseAccessToken(
+        supabase,
         passkey.user_id,
         userEmail,
         jwtSecret
@@ -364,6 +365,7 @@ export const checkAuthStatus = withStatusErrorHandler(
         }
 
         const tokens = await generateSupabaseAccessToken(
+          supabase,
           completedAuth.user_id,
           userResult.user.email,
           jwtSecret
