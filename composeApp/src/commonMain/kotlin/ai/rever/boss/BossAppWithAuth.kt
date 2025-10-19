@@ -3,7 +3,6 @@ package ai.rever.boss
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import ai.rever.boss.components.auth.LoginScreen
-import ai.rever.boss.components.dialogs.SupabaseSettingsDialog
 import ai.rever.boss.components.misc.LoadingScreen
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.utils.DeepLinkHandler
@@ -18,7 +17,6 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun ComponentContext.BossAppWithAuth() {
-    var showSupabaseSettings by remember { mutableStateOf(false) }
     val authState by AuthService.authState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     
@@ -137,18 +135,4 @@ fun ComponentContext.BossAppWithAuth() {
             BossApp()
         }
     }
-    
-    // Supabase settings dialog
-    if (showSupabaseSettings) {
-        SupabaseSettingsDialog(
-            onDismiss = { showSupabaseSettings = false },
-            onConfigured = {
-                coroutineScope.launch {
-                    AuthService.initialize()
-                }
-            }
-        )
-    }
-    
-    // Password reset dialog
 }

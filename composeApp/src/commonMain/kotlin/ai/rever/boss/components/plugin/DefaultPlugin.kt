@@ -56,7 +56,6 @@ class DefaultPlugin(
         registerRpaRecorder()
         registerRpaEngine()
         registerTopOfMind()
-        registerSupabaseDemo()
         registerAdminRoleManagement()
 
         registerEhrExplorer()
