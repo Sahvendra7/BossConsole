@@ -20,11 +20,18 @@ import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.components.registery.TabRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class DefaultPlugin(
     val panelRegistry: PanelRegistry,
     val tabRegistry: TabRegistry
 ) {
+    // Lifecycle-aware scope for long-running operations like dynamic panel registration
+    // This scope should be cancelled when the plugin is disposed
+    internal val pluginScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     init {
         registerCodeBase()
         registerLighthouse()
@@ -50,12 +57,21 @@ class DefaultPlugin(
         registerRpaEngine()
         registerTopOfMind()
         registerSupabaseDemo()
+        registerAdminRoleManagement()
 
         registerEhrExplorer()
 
         registerCodeEditor()
         registerFluckPanel()
         registerTerminalTab()
+    }
+
+    /**
+     * Dispose the plugin and cancel all coroutines
+     * Should be called when the plugin is no longer needed
+     */
+    fun dispose() {
+        pluginScope.cancel()
     }
 }
 

@@ -1,5 +1,6 @@
 package ai.rever.boss.services.supabase.models
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.datetime.Instant
 
@@ -55,10 +56,14 @@ enum class AppPermission(val value: String) {
 @Serializable
 data class UserRole(
     val id: String,
+    @SerialName("user_id")
     val userId: String,
     val role: String,
+    @SerialName("assigned_by")
     val assignedBy: String? = null,
+    @SerialName("assigned_at")
     val assignedAt: String,
+    @SerialName("created_at")
     val createdAt: String
 ) {
     fun getRoleEnum(): AppRole? = AppRole.fromString(role)
@@ -72,6 +77,7 @@ data class RolePermission(
     val id: String,
     val role: String,
     val permission: String,
+    @SerialName("created_at")
     val createdAt: String
 ) {
     fun getRoleEnum(): AppRole? = AppRole.fromString(role)

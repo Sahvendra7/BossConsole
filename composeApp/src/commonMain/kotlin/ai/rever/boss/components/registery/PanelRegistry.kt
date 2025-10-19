@@ -13,12 +13,30 @@ class PanelRegistry {
     private val contentProviders = mutableStateMapOf<PanelId, (ComponentContext, PanelInfo) -> PanelComponentWithUI>()
     private val availablePanelInfo = mutableStateMapOf<PanelId, PanelInfo>()
 
+    // Callbacks to notify when panels are registered/unregistered
+    private val changeListeners = mutableListOf<() -> Unit>()
+
     fun registerPanel(
         content: PanelInfo,
         factory: (ComponentContext, PanelInfo) -> PanelComponentWithUI
     ) {
         contentProviders[content.id] = factory
         availablePanelInfo[content.id] = content
+        notifyChange()
+    }
+
+    fun unregisterPanel(id: PanelId) {
+        contentProviders.remove(id)
+        availablePanelInfo.remove(id)
+        notifyChange()
+    }
+
+    fun addChangeListener(listener: () -> Unit) {
+        changeListeners.add(listener)
+    }
+
+    private fun notifyChange() {
+        changeListeners.forEach { it() }
     }
 
     fun createComponent(id: PanelId, componentContext: ComponentContext): PanelComponentWithUI? {

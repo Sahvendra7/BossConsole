@@ -1,0 +1,286 @@
+package ai.rever.boss.services.supabase
+
+import ai.rever.boss.services.supabase.models.*
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
+import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+/**
+ * Service for managing user queries and user-related operations
+ *
+ * This service provides methods to fetch user data from the public.users table
+ * and combines it with role information from RoleService.
+ *
+ * Security Model:
+ * - All queries are protected by Row Level Security (RLS)
+ * - Admin-only operations will fail for non-admin users
+ * - RLS policies enforce server-side authorization
+ *
+ * Features:
+ * - Fetch all users (admin only)
+ * - Fetch users with their roles combined
+ * - Query individual user details
+ */
+object UserService {
+
+    /**
+     * Get the Supabase client
+     */
+    private val client
+        get() = SupabaseConfig.client
+
+    /**
+     * Fetch all users from the public.users table with pagination
+     *
+     * This operation requires admin access - RLS will enforce this.
+     * Non-admin users will receive an empty list or error.
+     *
+     * @param limit Maximum number of users to fetch (default: 50)
+     * @param offset Number of users to skip for pagination (default: 0)
+     * @return Result containing list of users and whether there are more users to load
+     */
+    suspend fun getAllUsers(limit: Int = 50, offset: Int = 0): Result<PaginatedResult<UserBasicInfo>> {
+        return try {
+            // Fetch limit + 1 to check if there are more results
+            val users = client.from("users")
+                .select(Columns.ALL) {
+                    range(offset.toLong(), (offset + limit).toLong())
+                }
+                .decodeList<UserBasicInfo>()
+
+            // Check if there are more results
+            val hasMore = users.size > limit
+            val actualUsers = if (hasMore) users.take(limit) else users
+
+            println("✅ Fetched ${actualUsers.size} users (offset: $offset, hasMore: $hasMore)")
+            Result.success(PaginatedResult(actualUsers, hasMore))
+        } catch (e: Exception) {
+            println("❌ Failed to fetch users: ${e.message}")
+            Result.failure(Exception("Failed to fetch users: ${e.message}"))
+        }
+    }
+
+    /**
+     * Fetch all users with their roles combined (paginated)
+     *
+     * This method:
+     * 1. Fetches users from public.users with pagination (admin only)
+     * 2. For each user, fetches their roles using RoleService
+     * 3. Combines the data into UserWithRoles objects
+     *
+     * This is the primary method for the Admin Role Management UI.
+     *
+     * @param limit Maximum number of users to fetch (default: 50)
+     * @param offset Number of users to skip for pagination (default: 0)
+     * @return Result containing list of users with roles and whether there are more to load
+     */
+    suspend fun getAllUsersWithRoles(limit: Int = 50, offset: Int = 0): Result<PaginatedResult<UserWithRoles>> {
+        return try {
+            // Step 1: Fetch users with pagination
+            val usersResult = getAllUsers(limit, offset)
+            if (usersResult.isFailure) {
+                return Result.failure(usersResult.exceptionOrNull()!!)
+            }
+
+            val paginatedUsers = usersResult.getOrNull()!!
+            val users = paginatedUsers.data
+            println("🔍 Fetching roles for ${users.size} users (offset: $offset)")
+
+            // Step 2: Fetch roles for each user
+            val usersWithRoles = users.map { user ->
+                val rolesResult = RoleService.getUserRoles(user.id)
+                val userRoles = rolesResult.getOrNull() ?: emptyList()
+
+                // Convert UserRole to AppRole
+                val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
+                val isAdmin = appRoles.contains(AppRole.ADMIN)
+
+                UserWithRoles(
+                    userId = user.id,
+                    email = user.email,
+                    roles = appRoles,
+                    isAdmin = isAdmin
+                )
+            }
+
+            println("✅ Successfully fetched ${usersWithRoles.size} users with roles (hasMore: ${paginatedUsers.hasMore})")
+            Result.success(PaginatedResult(usersWithRoles, paginatedUsers.hasMore))
+        } catch (e: Exception) {
+            println("❌ Failed to fetch users with roles: ${e.message}")
+            Result.failure(Exception("Failed to fetch users with roles: ${e.message}"))
+        }
+    }
+
+    /**
+     * Search users by email with pagination (server-side)
+     *
+     * Uses PostgreSQL ILIKE for case-insensitive search across ALL users in database.
+     * Much more efficient and accurate than client-side filtering.
+     *
+     * @param searchQuery Email search query (case-insensitive)
+     * @param limit Maximum number of users to fetch (default: 50)
+     * @param offset Number of users to skip for pagination (default: 0)
+     * @return Result containing list of matching users with roles and whether there are more
+     */
+    suspend fun searchUsersByEmail(
+        searchQuery: String,
+        limit: Int = 50,
+        offset: Int = 0
+    ): Result<PaginatedResult<UserWithRoles>> {
+        return try {
+            // If search query is blank, return all users
+            if (searchQuery.isBlank()) {
+                return getAllUsersWithRoles(limit, offset)
+            }
+
+            // Step 1: Search users in database with ILIKE (case-insensitive)
+            val users = client.from("users")
+                .select(Columns.ALL) {
+                    filter {
+                        ilike("email", "%$searchQuery%")
+                    }
+                    range(offset.toLong(), (offset + limit).toLong())
+                }
+                .decodeList<UserBasicInfo>()
+
+            // Check if there are more results
+            val hasMore = users.size > limit
+            val actualUsers = if (hasMore) users.take(limit) else users
+
+            println("🔍 Search found ${actualUsers.size} users matching '$searchQuery' (offset: $offset, hasMore: $hasMore)")
+
+            // Step 2: Fetch roles for each user
+            val usersWithRoles = actualUsers.map { user ->
+                val rolesResult = RoleService.getUserRoles(user.id)
+                val userRoles = rolesResult.getOrNull() ?: emptyList()
+
+                // Convert UserRole to AppRole
+                val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
+                val isAdmin = appRoles.contains(AppRole.ADMIN)
+
+                UserWithRoles(
+                    userId = user.id,
+                    email = user.email,
+                    roles = appRoles,
+                    isAdmin = isAdmin
+                )
+            }
+
+            println("✅ Successfully fetched ${usersWithRoles.size} users with roles for search '$searchQuery'")
+            Result.success(PaginatedResult(usersWithRoles, hasMore))
+        } catch (e: Exception) {
+            println("❌ Failed to search users: ${e.message}")
+            Result.failure(Exception("Failed to search users: ${e.message}"))
+        }
+    }
+
+    /**
+     * Fetch a single user by their ID
+     */
+    suspend fun getUserById(userId: String): Result<UserBasicInfo> {
+        return try {
+            val user = client.from("users")
+                .select(Columns.ALL) {
+                    filter {
+                        eq("id", userId)
+                    }
+                }
+                .decodeSingle<UserBasicInfo>()
+
+            Result.success(user)
+        } catch (e: Exception) {
+            println("❌ Failed to fetch user $userId: ${e.message}")
+            Result.failure(Exception("Failed to fetch user: ${e.message}"))
+        }
+    }
+
+    /**
+     * Fetch a single user with their roles
+     */
+    suspend fun getUserWithRoles(userId: String): Result<UserWithRoles> {
+        return try {
+            val userResult = getUserById(userId)
+            if (userResult.isFailure) {
+                return Result.failure(userResult.exceptionOrNull()!!)
+            }
+
+            val user = userResult.getOrNull()!!
+            val rolesResult = RoleService.getUserRoles(userId)
+            val userRoles = rolesResult.getOrNull() ?: emptyList()
+
+            val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
+            val isAdmin = appRoles.contains(AppRole.ADMIN)
+
+            val userWithRoles = UserWithRoles(
+                userId = user.id,
+                email = user.email,
+                roles = appRoles,
+                isAdmin = isAdmin
+            )
+
+            Result.success(userWithRoles)
+        } catch (e: Exception) {
+            println("❌ Failed to fetch user with roles: ${e.message}")
+            Result.failure(Exception("Failed to fetch user with roles: ${e.message}"))
+        }
+    }
+
+    /**
+     * Delete a user account (admin only)
+     *
+     * This operation:
+     * - Requires admin access (enforced by database function)
+     * - Deletes user's role assignments
+     * - Deletes user record from public.users table
+     * - Cannot delete yourself
+     * - Cannot delete other admin users (remove admin role first)
+     *
+     * @param userId The ID of the user to delete
+     * @return Result indicating success or failure
+     */
+    suspend fun deleteUser(userId: String): Result<Unit> {
+        return try {
+            println("🗑️  Attempting to delete user: $userId")
+
+            // Call the PostgreSQL delete_user function via RPC
+            client.postgrest.rpc(
+                function = "delete_user",
+                parameters = kotlinx.serialization.json.buildJsonObject {
+                    put("target_user_id", userId)
+                }
+            )
+
+            println("✅ Successfully deleted user: $userId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            println("❌ Failed to delete user: ${e.message}")
+            Result.failure(Exception("Failed to delete user: ${e.message}"))
+        }
+    }
+}
+
+/**
+ * Basic user information from the public.users table
+ */
+@Serializable
+data class UserBasicInfo(
+    val id: String,
+    val email: String,
+    val created_at: String? = null,
+    val updated_at: String? = null
+)
+
+/**
+ * Paginated result wrapper
+ *
+ * @param data The list of items in this page
+ * @param hasMore Whether there are more items to load
+ */
+data class PaginatedResult<T>(
+    val data: List<T>,
+    val hasMore: Boolean
+)

@@ -108,10 +108,10 @@ fun ComponentContext.BossApp() {
     var saveMessage by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(panelRegistry, tabRegistry) {
-        DefaultPlugin(panelRegistry, tabRegistry)
+        val plugin = DefaultPlugin(panelRegistry, tabRegistry)
         draggablePanelComponent.update()
 
-        onDispose { 
+        onDispose {
             // Save current workspace as "Last Session" when app closes
             coroutineScope.launch {
                 val currentLayout = extractCurrentWorkspace(splitViewState)
@@ -123,7 +123,10 @@ fun ComponentContext.BossApp() {
                 workspaceManager.updateCurrentWorkspace(lastSessionConfig)
                 workspaceManager.saveCurrentWorkspace("Last Session")
             }
-            
+
+            // Cleanup plugin coroutines
+            plugin.dispose()
+
             // Cleanup update manager
             UpdateManager.instance.cleanup()
         }

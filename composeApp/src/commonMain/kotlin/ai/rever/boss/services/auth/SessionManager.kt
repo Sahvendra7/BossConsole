@@ -152,8 +152,17 @@ object SessionManager {
                 val storedUser = UserDataStorage.loadUserData()
 
                 if (storedUser != null) {
-                    println("SessionManager: ✅ Loaded user from storage (${storedUser.email})")
-                    return Result.success(storedUser)
+                    // IMPORTANT: Parse role claims from JWT even when loading from storage
+                    // The JWT token contains the role claims, and they're needed for admin features
+                    val roleClaims = RoleService.parseRoleClaimsFromSession(currentSession)
+                    val userWithRoles = UserInfo(
+                        id = storedUser.id,
+                        email = storedUser.email,
+                        createdAt = storedUser.createdAt,
+                        roleClaims = roleClaims
+                    )
+                    println("SessionManager: ✅ Loaded user from storage (${storedUser.email}) with role claims: isAdmin=${roleClaims?.isAdmin}")
+                    return Result.success(userWithRoles)
                 } else {
                     println("SessionManager: ⚠️ No stored user data found")
                     return Result.success(null)

@@ -31,6 +31,15 @@ data class SidebarItem(
 // Holds the state and logic for the draggable sidebar system
 @Stable
 class BossDraggableComponent(val panelRegistry: PanelRegistry) {
+
+    init {
+        // Register listener to update sidebar when panels are dynamically added/removed
+        panelRegistry.addChangeListener {
+            println("🔄 [Sidebar] Panel registry changed, updating sidebar")
+            update()
+        }
+    }
+
     // The item currently being dragged, and its original slot
     var draggingItem by mutableStateOf<Pair<SidebarItem, Panel>?>(null)
         private set
