@@ -24,7 +24,7 @@ pty4j = "0.13.9"
 purejavacomm = "0.0.11.1"
 jna = "5.18.1"
 slf4j = "2.0.17"
-supabase = "3.2.4"
+supabase = "3.2.5"
 uiAndroid = "1.8.2"
 zxing = "3.5.3"
 
