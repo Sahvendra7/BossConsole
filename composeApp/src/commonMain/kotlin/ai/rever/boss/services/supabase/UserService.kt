@@ -83,10 +83,10 @@ object UserService {
             // Step 1: Fetch users with pagination
             val usersResult = getAllUsers(limit, offset)
             if (usersResult.isFailure) {
-                return Result.failure(usersResult.exceptionOrNull()!!)
+                return Result.failure(usersResult.exceptionOrNull() ?: Exception("Unknown error fetching users"))
             }
 
-            val paginatedUsers = usersResult.getOrNull()!!
+            val paginatedUsers = usersResult.getOrThrow()
             val users = paginatedUsers.data
             println("🔍 Fetching roles for ${users.size} users (offset: $offset)")
 
@@ -205,10 +205,10 @@ object UserService {
         return try {
             val userResult = getUserById(userId)
             if (userResult.isFailure) {
-                return Result.failure(userResult.exceptionOrNull()!!)
+                return Result.failure(userResult.exceptionOrNull() ?: Exception("Unknown error fetching user"))
             }
 
-            val user = userResult.getOrNull()!!
+            val user = userResult.getOrThrow()
             val rolesResult = RoleService.getUserRoles(userId)
             val userRoles = rolesResult.getOrNull() ?: emptyList()
 

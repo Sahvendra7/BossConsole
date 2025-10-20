@@ -62,8 +62,7 @@ class AdminRoleManagementViewModel {
         scope.launch {
             val result = UserService.getAllUsersWithRoles(limit = state.pageSize, offset = 0)
 
-            if (result.isSuccess) {
-                val paginatedResult = result.getOrNull()!!
+            result.onSuccess { paginatedResult ->
                 val users = paginatedResult.data
                 state = state.copy(
                     allUsers = users,
@@ -73,8 +72,8 @@ class AdminRoleManagementViewModel {
                     hasMore = paginatedResult.hasMore
                 )
                 println("✅ Loaded ${users.size} users successfully (hasMore: ${paginatedResult.hasMore})")
-            } else {
-                val error = result.exceptionOrNull()?.message ?: "Unknown error"
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
                     errorMessage = error
@@ -109,8 +108,7 @@ class AdminRoleManagementViewModel {
                 offset = state.currentOffset
             )
 
-            if (result.isSuccess) {
-                val paginatedResult = result.getOrNull()!!
+            result.onSuccess { paginatedResult ->
                 val newUsers = paginatedResult.data
                 val allUsers = state.allUsers + newUsers
 
@@ -122,8 +120,8 @@ class AdminRoleManagementViewModel {
                     hasMore = paginatedResult.hasMore
                 )
                 println("✅ Loaded ${newUsers.size} more users (total: ${allUsers.size}, hasMore: ${paginatedResult.hasMore})")
-            } else {
-                val error = result.exceptionOrNull()?.message ?: "Unknown error"
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,
                     errorMessage = error
@@ -212,8 +210,7 @@ class AdminRoleManagementViewModel {
                 offset = 0
             )
 
-            if (result.isSuccess) {
-                val paginatedResult = result.getOrNull()!!
+            result.onSuccess { paginatedResult ->
                 val users = paginatedResult.data
                 state = state.copy(
                     allUsers = users,
@@ -223,8 +220,8 @@ class AdminRoleManagementViewModel {
                     hasMore = paginatedResult.hasMore
                 )
                 println("✅ Search completed: ${users.size} users found for '$query'")
-            } else {
-                val error = result.exceptionOrNull()?.message ?: "Unknown error"
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
                     errorMessage = error
@@ -251,8 +248,7 @@ class AdminRoleManagementViewModel {
                 offset = state.currentOffset
             )
 
-            if (result.isSuccess) {
-                val paginatedResult = result.getOrNull()!!
+            result.onSuccess { paginatedResult ->
                 val newUsers = paginatedResult.data
                 val allUsers = state.allUsers + newUsers
 
@@ -264,8 +260,8 @@ class AdminRoleManagementViewModel {
                     hasMore = paginatedResult.hasMore
                 )
                 println("✅ Loaded ${newUsers.size} more search results (total: ${allUsers.size})")
-            } else {
-                val error = result.exceptionOrNull()?.message ?: "Unknown error"
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,
                     errorMessage = error

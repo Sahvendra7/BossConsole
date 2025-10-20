@@ -3,12 +3,14 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 /**
  * Fetch user roles from the database for JWT claims
+ * Updated for table-based RBAC schema (ENUM -> table migration)
  */
 async function getUserRoles(supabase: SupabaseClient, userId: string): Promise<{ userRole: string; userRoles: string[]; isAdmin: boolean }> {
   try {
+    // JOIN with roles table to get role names (table-based schema)
     const { data: roles, error } = await supabase
       .from('user_roles')
-      .select('role')
+      .select('roles!inner(name)')
       .eq('user_id', userId)
       .order('assigned_at', { ascending: true })
 
@@ -22,7 +24,8 @@ async function getUserRoles(supabase: SupabaseClient, userId: string): Promise<{
       return { userRole: 'user', userRoles: ['user'], isAdmin: false }
     }
 
-    const userRoles = roles.map(r => r.role)
+    // Extract role names from nested structure
+    const userRoles = roles.map(r => r.roles.name)
     const primaryRole = userRoles[0] // First role assigned (usually 'user')
     const isAdmin = userRoles.includes('admin')
 

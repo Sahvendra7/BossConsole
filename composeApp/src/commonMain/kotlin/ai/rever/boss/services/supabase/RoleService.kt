@@ -143,16 +143,20 @@ object RoleService {
 
     /**
      * Get all roles for a specific user
+     * Uses helper RPC function for backward compatibility with table-based schema
      */
     suspend fun getUserRoles(userId: String): Result<List<UserRole>> {
         return try {
-            val roles = client.from("user_roles")
-                .select(Columns.ALL) {
-                    filter {
-                        eq("user_id", userId)
-                    }
+            // Call helper RPC function that JOINs with roles table
+            val postgrestResult = client.postgrest.rpc(
+                function = "get_user_roles_with_names",
+                parameters = buildJsonObject {
+                    put("target_user_id", userId)
                 }
-                .decodeList<UserRole>()
+            )
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val roles = Json.decodeFromJsonElement<List<UserRole>>(jsonElement)
 
             Result.success(roles)
         } catch (e: Exception) {
@@ -163,19 +167,23 @@ object RoleService {
 
     /**
      * Check if a user has a specific role
+     * Uses helper RPC function for backward compatibility with table-based schema
      */
     suspend fun userHasRole(userId: String, role: AppRole): Result<Boolean> {
         return try {
-            val roles = client.from("user_roles")
-                .select(Columns.list("id")) {
-                    filter {
-                        eq("user_id", userId)
-                        eq("role", role.value)
-                    }
+            // Call helper RPC function that checks role by name
+            val postgrestResult = client.postgrest.rpc(
+                function = "check_user_has_role",
+                parameters = buildJsonObject {
+                    put("target_user_id", userId)
+                    put("role_name", role.value)
                 }
-                .decodeList<UserRole>()
+            )
 
-            Result.success(roles.isNotEmpty())
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val hasRole = jsonElement.jsonPrimitive.boolean
+
+            Result.success(hasRole)
         } catch (e: Exception) {
             println("Failed to check user role: ${e.message}")
             Result.failure(e)
@@ -243,16 +251,20 @@ object RoleService {
 
     /**
      * Get all role permissions
+     * Uses helper RPC function for backward compatibility with table-based schema
      */
     suspend fun getRolePermissions(role: AppRole): Result<List<RolePermission>> {
         return try {
-            val permissions = client.from("role_permissions")
-                .select(Columns.ALL) {
-                    filter {
-                        eq("role", role.value)
-                    }
+            // Call helper RPC function that JOINs with permissions table
+            val postgrestResult = client.postgrest.rpc(
+                function = "get_role_permissions_with_names",
+                parameters = buildJsonObject {
+                    put("role_name", role.value)
                 }
-                .decodeList<RolePermission>()
+            )
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val permissions = Json.decodeFromJsonElement<List<RolePermission>>(jsonElement)
 
             Result.success(permissions)
         } catch (e: Exception) {

@@ -165,3 +165,62 @@ data class UserWithRoles(
     val primaryRole: AppRole
         get() = roles.firstOrNull() ?: AppRole.USER
 }
+
+/**
+ * Role information from database (includes all roles, even dynamically created ones)
+ * Now uses table-based schema with full CRUD support
+ */
+data class RoleInfo(
+    val id: String? = null,              // UUID from roles table (null for backward compatibility)
+    val name: String,
+    val description: String? = null,
+    val isSystem: Boolean = false,       // System roles (user, admin) cannot be deleted
+    val createdAt: String? = null,       // Timestamp when role was created
+    val updatedAt: String? = null,       // Timestamp when role was last updated
+    val ordinal: Int = 0                 // For backward compatibility (deprecated)
+) {
+    /**
+     * Check if this role can be deleted
+     */
+    fun canDelete(): Boolean = !isSystem
+
+    /**
+     * Get display name (for UI)
+     */
+    fun getDisplayName(): String = name.replaceFirstChar { it.uppercase() }
+}
+
+/**
+ * Permission information from database (includes all permissions, even dynamically created ones)
+ * Now uses table-based schema with full CRUD support
+ */
+data class PermissionInfo(
+    val id: String? = null,              // UUID from permissions table (null for backward compatibility)
+    val name: String,
+    val description: String? = null,
+    val isSystem: Boolean = false,       // System permissions cannot be deleted
+    val createdAt: String? = null,       // Timestamp when permission was created
+    val updatedAt: String? = null,       // Timestamp when permission was last updated
+    val ordinal: Int = 0                 // For backward compatibility (deprecated)
+) {
+    /**
+     * Check if this permission can be deleted
+     */
+    fun canDelete(): Boolean = !isSystem
+
+    /**
+     * Get domain and action parts (e.g., "users.read" -> "users" and "read")
+     */
+    fun getDomain(): String = name.substringBefore(".")
+    fun getAction(): String = name.substringAfter(".")
+}
+
+/**
+ * Role with its assigned permissions
+ */
+data class RoleWithPermissions(
+    val roleName: String,
+    val permissions: List<String> = emptyList()
+) {
+    fun hasPermission(permission: String): Boolean = permissions.contains(permission)
+}
