@@ -1,8 +1,9 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.services.supabase.RoleCreationService
 import ai.rever.boss.services.supabase.RoleService
 import ai.rever.boss.services.supabase.UserService
-import ai.rever.boss.services.supabase.models.AppRole
+import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.UserWithRoles
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ class AdminRoleManagementViewModel {
 
     init {
         loadAllUsers()
+        loadAvailableRoles()
     }
 
     /**
@@ -79,6 +81,24 @@ class AdminRoleManagementViewModel {
                     errorMessage = error
                 )
                 println("❌ Failed to load users: $error")
+            }
+        }
+    }
+
+    /**
+     * Load all available roles from database (includes dynamically created roles)
+     */
+    fun loadAvailableRoles() {
+        scope.launch {
+            val result = RoleCreationService.getAllRoles()
+
+            result.onSuccess { roles ->
+                state = state.copy(availableRoles = roles)
+                println("✅ Loaded ${roles.size} roles")
+            }.onFailure { exception ->
+                println("❌ Failed to load roles: ${exception.message}")
+                // Fallback to empty list - UI will still work
+                state = state.copy(availableRoles = emptyList())
             }
         }
     }
@@ -132,19 +152,19 @@ class AdminRoleManagementViewModel {
     }
 
     /**
-     * Assign a role to a user
+     * Assign a role to a user (supports dynamic roles)
      */
-    fun assignRole(userId: String, role: AppRole) {
+    fun assignRole(userId: String, roleName: String) {
         state = state.copy(isOperationInProgress = true, errorMessage = null)
 
         scope.launch {
-            val result = RoleService.assignRole(userId, role)
+            val result = RoleService.assignRoleByName(userId, roleName)
 
             if (result.isSuccess) {
-                println("✅ Successfully assigned role ${role.value} to user $userId")
+                println("✅ Successfully assigned role $roleName to user $userId")
                 state = state.copy(
                     isOperationInProgress = false,
-                    successMessage = "Role ${role.value} assigned successfully"
+                    successMessage = "Role $roleName assigned successfully"
                 )
                 // Reload users to reflect changes
                 loadAllUsers()
@@ -160,19 +180,19 @@ class AdminRoleManagementViewModel {
     }
 
     /**
-     * Remove a role from a user
+     * Remove a role from a user (supports dynamic roles)
      */
-    fun removeRole(userId: String, role: AppRole) {
+    fun removeRole(userId: String, roleName: String) {
         state = state.copy(isOperationInProgress = true, errorMessage = null)
 
         scope.launch {
-            val result = RoleService.removeRole(userId, role)
+            val result = RoleService.removeRoleByName(userId, roleName)
 
             if (result.isSuccess) {
-                println("✅ Successfully removed role ${role.value} from user $userId")
+                println("✅ Successfully removed role $roleName from user $userId")
                 state = state.copy(
                     isOperationInProgress = false,
-                    successMessage = "Role ${role.value} removed successfully"
+                    successMessage = "Role $roleName removed successfully"
                 )
                 // Reload users to reflect changes
                 loadAllUsers()
@@ -306,12 +326,12 @@ class AdminRoleManagementViewModel {
     }
 
     /**
-     * Show remove role dialog
+     * Show remove role dialog (supports dynamic roles)
      */
-    fun showRemoveRoleDialog(user: UserWithRoles, role: AppRole) {
+    fun showRemoveRoleDialog(user: UserWithRoles, roleName: String) {
         state = state.copy(
             selectedUser = user,
-            selectedRoleToRemove = role,
+            selectedRoleToRemove = roleName,
             showRemoveRoleDialog = true
         )
     }
@@ -378,19 +398,21 @@ class AdminRoleManagementViewModel {
     }
 
     /**
-     * Set the role to assign
+     * Set the role to assign (supports dynamic roles)
      */
-    fun setRoleToAssign(role: AppRole) {
-        state = state.copy(selectedRoleToAssign = role)
+    fun setRoleToAssign(roleName: String) {
+        state = state.copy(selectedRoleToAssign = roleName)
     }
 
     /**
      * Get available roles for a user (roles they don't have yet)
+     * Returns role names from database, filtered by what user already has
      */
-    fun getAvailableRolesForUser(user: UserWithRoles): List<AppRole> {
-        return AppRole.entries.filter { role ->
-            !user.roles.contains(role)
-        }
+    fun getAvailableRolesForUser(user: UserWithRoles): List<String> {
+        val userRoleNames = user.roles  // Already List<String>, no need to map
+        return state.availableRoles
+            .map { it.name }
+            .filter { roleName -> !userRoleNames.contains(roleName) }
     }
 
     /**
@@ -424,8 +446,9 @@ data class AdminRoleState(
     val showAssignRoleDialog: Boolean = false,
     val showRemoveRoleDialog: Boolean = false,
     val showDeleteUserDialog: Boolean = false,
-    val selectedRoleToAssign: AppRole? = null,
-    val selectedRoleToRemove: AppRole? = null,
+    val selectedRoleToAssign: String? = null,  // Changed from AppRole to String for dynamic roles
+    val selectedRoleToRemove: String? = null,  // Changed from AppRole to String for dynamic roles
+    val availableRoles: List<RoleInfo> = emptyList(),  // All roles from database
     // Pagination state
     val currentOffset: Int = 0,
     val pageSize: Int = 50,

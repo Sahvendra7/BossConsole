@@ -8,7 +8,7 @@ BOSS implements a comprehensive Role-Based Access Control (RBAC) system using Su
 
 ### Components
 
-1. **Database Layer** - PostgreSQL tables, enums, RLS policies, and functions
+1. **Database Layer** - PostgreSQL tables with UUID-based relationships, RLS policies, and functions
 2. **Auth Hooks** - JWT claim injection for Supabase native auth (magic link, OAuth)
 3. **Edge Functions** - Custom JWT generation for passkey authentication with RBAC claims
 4. **Kotlin Services** - Client-side role management and checking
@@ -68,25 +68,68 @@ BOSS supports multiple authentication methods, and RBAC role claims are consiste
 
 ### Tables
 
+#### `roles`
+Defines available roles in the system (fully dynamic).
+
+```sql
+CREATE TABLE public.roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    is_system BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**System Roles:**
+- `user` - Default role for all users (is_system=true, cannot be deleted)
+- `admin` - Administrative role with full permissions (is_system=true, cannot be deleted)
+
+**Extensibility:** Add custom roles dynamically via RoleCreationService:
+```kotlin
+RoleCreationService.createRole("ai_trainer", "AI Training Team Member")
+```
+
+#### `permissions`
+Defines granular permissions (fully dynamic).
+
+```sql
+CREATE TABLE public.permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    is_system BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**System Permissions:**
+- `users.read`, `users.write`
+- `workspaces.read`, `workspaces.write`, `workspaces.delete`
+- `plugins.install`, `plugins.manage`
+- `admin.access`
+
 #### `user_roles`
 Maps users to their assigned roles (many-to-many relationship).
 
 ```sql
 CREATE TABLE public.user_roles (
-    id UUID PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id),
-    role app_role NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role_id UUID REFERENCES public.roles(id) ON DELETE CASCADE,
     assigned_by UUID REFERENCES auth.users(id),
-    assigned_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ,
-    UNIQUE (user_id, role)
+    assigned_at TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (user_id, role_id)
 );
 ```
 
 **Fields:**
 - `id` - Unique identifier
 - `user_id` - Reference to user in auth.users
-- `role` - The assigned role (from app_role enum)
+- `role_id` - Reference to role in roles table (UUID foreign key)
 - `assigned_by` - Admin who assigned the role (audit trail)
 - `assigned_at` - When the role was assigned (audit trail)
 
@@ -95,45 +138,11 @@ Maps roles to specific permissions for fine-grained access control.
 
 ```sql
 CREATE TABLE public.role_permissions (
-    id UUID PRIMARY KEY,
-    role app_role NOT NULL,
-    permission app_permission NOT NULL,
-    created_at TIMESTAMPTZ,
-    UNIQUE (role, permission)
-);
-```
-
-### Enums
-
-#### `app_role`
-Defines available roles in the system.
-
-```sql
-CREATE TYPE public.app_role AS ENUM ('user', 'admin');
-```
-
-**System Roles:**
-- `user` - Default role for all users
-- `admin` - Administrative role with full permissions
-
-**Extensibility:** Add plugin-specific roles with:
-```sql
-ALTER TYPE public.app_role ADD VALUE 'plugin_xyz_manager';
-```
-
-#### `app_permission`
-Defines granular permissions.
-
-```sql
-CREATE TYPE public.app_permission AS ENUM (
-    'users.read',
-    'users.write',
-    'workspaces.read',
-    'workspaces.write',
-    'workspaces.delete',
-    'plugins.install',
-    'plugins.manage',
-    'admin.access'
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role_id UUID REFERENCES public.roles(id) ON DELETE CASCADE,
+    permission_id UUID REFERENCES public.permissions(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (role_id, permission_id)
 );
 ```
 
@@ -141,29 +150,16 @@ CREATE TYPE public.app_permission AS ENUM (
 
 ### Models
 
-#### `AppRole` Enum
-```kotlin
-enum class AppRole(val value: String) {
-    USER("user"),
-    ADMIN("admin");
-
-    companion object {
-        fun fromString(value: String): AppRole?
-        fun fromStringOrDefault(value: String?, default: AppRole = USER): AppRole
-    }
-}
-```
-
 #### `RoleClaims` Data Class
 ```kotlin
 data class RoleClaims(
-    val userRole: AppRole,        // Primary role
-    val userRoles: List<AppRole>,  // All roles
-    val isAdmin: Boolean           // Quick admin check
+    val userRole: String,          // Primary role name
+    val userRoles: List<String>,   // All role names
+    val isAdmin: Boolean            // Quick admin check
 ) {
-    fun hasRole(role: AppRole): Boolean
-    fun hasAnyRole(vararg roles: AppRole): Boolean
-    fun hasAllRoles(vararg roles: AppRole): Boolean
+    fun hasRole(role: String): Boolean
+    fun hasAnyRole(vararg roles: String): Boolean
+    fun hasAllRoles(vararg roles: String): Boolean
 }
 ```
 
@@ -175,10 +171,22 @@ data class UserInfo(
     val createdAt: String,
     val roleClaims: RoleClaims? = null
 ) {
-    val primaryRole: AppRole
-    val roles: List<AppRole>
+    val primaryRole: String        // Returns role name (e.g., "admin")
+    val roles: List<String>        // Returns list of role names
     val isAdmin: Boolean
-    fun hasRole(role: AppRole): Boolean
+    fun hasRole(role: String): Boolean
+}
+```
+
+#### `UserWithRoles` Data Class
+```kotlin
+data class UserWithRoles(
+    val userId: String,
+    val email: String,
+    val roles: List<String>,       // Role names
+    val isAdmin: Boolean
+) {
+    val primaryRole: String        // First role or "user"
 }
 ```
 
@@ -196,16 +204,37 @@ object RoleService {
     suspend fun getUserRoles(userId: String): Result<List<UserRole>>
 
     // Check if user has role
-    suspend fun userHasRole(userId: String, role: AppRole): Result<Boolean>
+    suspend fun userHasRole(userId: String, roleName: String): Result<Boolean>
     suspend fun isUserAdmin(userId: String): Result<Boolean>
 
     // Assign/remove roles (admin only)
-    suspend fun assignRole(targetUserId: String, role: AppRole): Result<Unit>
-    suspend fun removeRole(targetUserId: String, role: AppRole): Result<Unit>
+    suspend fun assignRoleByName(targetUserId: String, roleName: String): Result<Unit>
+    suspend fun removeRoleByName(targetUserId: String, roleName: String): Result<Unit>
 
     // Permission checking
-    suspend fun getRolePermissions(role: AppRole): Result<List<RolePermission>>
-    suspend fun canPerformAction(userId: String, permission: AppPermission): Result<Boolean>
+    suspend fun getRolePermissions(roleName: String): Result<List<RolePermission>>
+    suspend fun canPerformAction(userId: String, permissionName: String): Result<Boolean>
+}
+```
+
+#### `RoleCreationService`
+Service for creating and managing roles and permissions dynamically.
+
+```kotlin
+object RoleCreationService {
+    // Role management
+    suspend fun createRole(name: String, description: String?): Result<Unit>
+    suspend fun getAllRoles(): Result<List<RoleInfo>>
+    suspend fun deleteRole(roleName: String): Result<Unit>
+
+    // Permission management
+    suspend fun createPermission(name: String, description: String?): Result<Unit>
+    suspend fun getAllPermissions(): Result<List<PermissionInfo>>
+    suspend fun deletePermission(permissionName: String): Result<Unit>
+
+    // Role-Permission mapping
+    suspend fun assignPermissionToRole(roleName: String, permissionName: String): Result<Unit>
+    suspend fun removePermissionFromRole(roleName: String, permissionName: String): Result<Unit>
 }
 ```
 
@@ -215,13 +244,13 @@ object AuthService {
     // Current user role checking
     fun getCurrentUserRoleClaims(): RoleClaims?
     fun isCurrentUserAdmin(): Boolean
-    fun currentUserHasRole(role: AppRole): Boolean
+    fun currentUserHasRole(roleName: String): Boolean
 
     // Role management (proxies to RoleService)
-    suspend fun assignRole(targetUserId: String, role: AppRole): Result<Unit>
-    suspend fun removeRole(targetUserId: String, role: AppRole): Result<Unit>
+    suspend fun assignRoleByName(targetUserId: String, roleName: String): Result<Unit>
+    suspend fun removeRoleByName(targetUserId: String, roleName: String): Result<Unit>
     suspend fun getUserRoles(userId: String): Result<List<UserRole>>
-    suspend fun userHasPermission(userId: String, permission: AppPermission): Result<Boolean>
+    suspend fun userHasPermission(userId: String, permissionName: String): Result<Boolean>
 }
 ```
 
@@ -231,7 +260,6 @@ object AuthService {
 
 ```kotlin
 import ai.rever.boss.services.supabase.AuthService
-import ai.rever.boss.services.supabase.models.AppRole
 
 // Simple admin check
 if (AuthService.isCurrentUserAdmin()) {
@@ -239,15 +267,20 @@ if (AuthService.isCurrentUserAdmin()) {
 }
 
 // Check specific role
-if (AuthService.currentUserHasRole(AppRole.ADMIN)) {
+if (AuthService.currentUserHasRole("admin")) {
     println("User has admin role")
+}
+
+// Check custom role
+if (AuthService.currentUserHasRole("ai_trainer")) {
+    println("User is an AI trainer")
 }
 
 // Get all role claims
 val claims = AuthService.getCurrentUserRoleClaims()
 claims?.let {
-    println("Primary role: ${it.userRole}")
-    println("All roles: ${it.userRoles}")
+    println("Primary role: ${it.userRole}")      // e.g., "admin"
+    println("All roles: ${it.userRoles}")       // e.g., ["user", "admin", "ai_trainer"]
     println("Is admin: ${it.isAdmin}")
 }
 ```
@@ -262,11 +295,15 @@ import kotlinx.coroutines.flow.collectLatest
 AuthService.currentUser.collectLatest { user ->
     user?.let {
         println("User: ${it.email}")
-        println("Primary role: ${it.primaryRole}")
+        println("Primary role: ${it.primaryRole}")  // String role name
         println("Is admin: ${it.isAdmin}")
 
-        if (it.hasRole(AppRole.ADMIN)) {
+        if (it.hasRole("admin")) {
             // Show admin UI
+        }
+
+        if (it.hasRole("ai_trainer")) {
+            // Show AI trainer features
         }
     }
 }
@@ -276,26 +313,31 @@ AuthService.currentUser.collectLatest { user ->
 
 ```kotlin
 import ai.rever.boss.services.supabase.AuthService
-import ai.rever.boss.services.supabase.models.AppRole
 
-// Must be called by an admin
-val result = AuthService.assignRole(
+// Assign system role
+val result = AuthService.assignRoleByName(
     targetUserId = "user-uuid",
-    role = AppRole.ADMIN
+    roleName = "admin"
 )
 
 result.fold(
     onSuccess = { println("Role assigned successfully") },
     onFailure = { error -> println("Failed to assign role: ${error.message}") }
 )
+
+// Assign custom role
+val customResult = AuthService.assignRoleByName(
+    targetUserId = "user-uuid",
+    roleName = "ai_trainer"
+)
 ```
 
 ### Remove Role (Admin Only)
 
 ```kotlin
-val result = AuthService.removeRole(
+val result = AuthService.removeRoleByName(
     targetUserId = "user-uuid",
-    role = AppRole.ADMIN
+    roleName = "admin"
 )
 
 result.fold(
@@ -304,14 +346,30 @@ result.fold(
 )
 ```
 
+### Create Custom Role (Admin Only)
+
+```kotlin
+import ai.rever.boss.services.supabase.RoleCreationService
+
+val result = RoleCreationService.createRole(
+    name = "ai_trainer",
+    description = "AI Training Team Member"
+)
+
+result.fold(
+    onSuccess = { println("Role created successfully") },
+    onFailure = { error -> println("Failed to create role: ${error.message}") }
+)
+```
+
 ### Check Permissions
 
 ```kotlin
-import ai.rever.boss.services.supabase.models.AppPermission
+import ai.rever.boss.services.supabase.AuthService
 
 val canManagePlugins = AuthService.userHasPermission(
     userId = "user-uuid",
-    permission = AppPermission.PLUGINS_MANAGE
+    permissionName = "plugins.manage"
 )
 
 canManagePlugins.fold(
@@ -349,34 +407,34 @@ fun AdminPanel() {
 ### Admin Functions
 
 #### `assign_role_to_user(target_user_id, target_role)`
-Assigns a role to a user. Only callable by admins.
+Assigns a role to a user by role name. Only callable by admins.
 
 ```sql
 SELECT public.assign_role_to_user(
     'user-uuid'::uuid,
-    'admin'::public.app_role
+    'admin'::text
 );
 ```
 
 #### `remove_role_from_user(target_user_id, target_role)`
-Removes a role from a user. Only callable by admins. Cannot remove own admin role.
+Removes a role from a user by role name. Only callable by admins. Cannot remove own admin role.
 
 ```sql
 SELECT public.remove_role_from_user(
     'user-uuid'::uuid,
-    'admin'::public.app_role
+    'admin'::text
 );
 ```
 
 ### Query Functions
 
-#### `user_has_role(check_user_id, check_role)`
-Check if a user has a specific role.
+#### `check_user_has_role(target_user_id, role_name)`
+Check if a user has a specific role by role name.
 
 ```sql
-SELECT public.user_has_role(
+SELECT public.check_user_has_role(
     'user-uuid'::uuid,
-    'admin'::public.app_role
+    'admin'::text
 );
 ```
 
@@ -506,7 +564,7 @@ suspend fun testRBAC() {
 
     // For admins
     if (AuthService.isCurrentUserAdmin()) {
-        val result = AuthService.assignRole("other-user-id", AppRole.ADMIN)
+        val result = AuthService.assignRoleByName("other-user-id", "admin")
         println("Assign result: $result")
     }
 }
@@ -514,61 +572,88 @@ suspend fun testRBAC() {
 
 ## Plugin Integration
 
-### Adding Plugin-Specific Roles
+### Adding Plugin-Specific Roles (Dynamically)
 
-1. **Extend the enum** (via migration):
-```sql
-ALTER TYPE public.app_role ADD VALUE 'plugin_analytics_viewer';
-ALTER TYPE public.app_role ADD VALUE 'plugin_analytics_manager';
-```
+Plugins can create roles at runtime without database migrations or code changes:
 
-2. **Add Kotlin enum values**:
+1. **Create plugin-specific role**:
 ```kotlin
-enum class AppRole(val value: String) {
-    USER("user"),
-    ADMIN("admin"),
-    PLUGIN_ANALYTICS_VIEWER("plugin_analytics_viewer"),
-    PLUGIN_ANALYTICS_MANAGER("plugin_analytics_manager");
-}
+import ai.rever.boss.services.supabase.RoleCreationService
+
+// Create roles for analytics plugin
+RoleCreationService.createRole(
+    name = "analytics_viewer",
+    description = "Can view analytics dashboards"
+)
+
+RoleCreationService.createRole(
+    name = "analytics_manager",
+    description = "Can view and manage analytics"
+)
 ```
 
-3. **Add plugin permissions** (optional):
-```sql
-ALTER TYPE public.app_permission ADD VALUE 'plugin.analytics.view';
-ALTER TYPE public.app_permission ADD VALUE 'plugin.analytics.manage';
+2. **Add plugin permissions**:
+```kotlin
+// Create permissions
+RoleCreationService.createPermission(
+    name = "plugin.analytics.view",
+    description = "View analytics data"
+)
 
--- Map permissions to roles
-INSERT INTO public.role_permissions (role, permission)
-VALUES
-    ('plugin_analytics_viewer', 'plugin.analytics.view'),
-    ('plugin_analytics_manager', 'plugin.analytics.view'),
-    ('plugin_analytics_manager', 'plugin.analytics.manage');
+RoleCreationService.createPermission(
+    name = "plugin.analytics.manage",
+    description = "Manage analytics settings"
+)
+
+// Map permissions to roles
+RoleCreationService.assignPermissionToRole(
+    roleName = "analytics_viewer",
+    permissionName = "plugin.analytics.view"
+)
+
+RoleCreationService.assignPermissionToRole(
+    roleName = "analytics_manager",
+    permissionName = "plugin.analytics.view"
+)
+
+RoleCreationService.assignPermissionToRole(
+    roleName = "analytics_manager",
+    permissionName = "plugin.analytics.manage"
+)
 ```
 
-4. **Use in plugin code**:
+3. **Use in plugin code**:
 ```kotlin
 // Check if user can access plugin
-if (AuthService.currentUserHasRole(AppRole.PLUGIN_ANALYTICS_VIEWER)) {
+if (AuthService.currentUserHasRole("analytics_viewer")) {
     // Show analytics dashboard
 }
 
 // Or check permission
 val canManage = AuthService.userHasPermission(
     userId = currentUserId,
-    permission = AppPermission.fromString("plugin.analytics.manage")!!
+    permissionName = "plugin.analytics.manage"
+)
+
+canManage.fold(
+    onSuccess = { hasPermission ->
+        if (hasPermission) {
+            // Show management UI
+        }
+    },
+    onFailure = { /* Handle error */ }
 )
 ```
 
-### Dynamic Role Management (Alternative)
+### Role Management UI
 
-For plugins that need to create roles dynamically without migrations:
+The Admin Role Management plugin provides a UI for:
+- Viewing all users with their roles
+- Assigning/removing roles (including custom roles)
+- Creating new roles and permissions
+- Managing role-permission mappings
 
-1. **Add a custom_roles column** (future enhancement):
-```sql
-ALTER TABLE public.user_roles ADD COLUMN custom_role TEXT;
-```
-
-2. **Plugins can manage roles via API** using the custom_role field for plugin-specific roles while keeping system roles in the enum.
+All role management operations are available at runtime without code changes.
 
 ## Security Considerations
 
@@ -772,11 +857,12 @@ For questions or issues with the RBAC system:
 
 ---
 
-**Version:** 1.2.0
-**Last Updated:** 2025-10-18
+**Version:** 2.0.0
+**Last Updated:** 2025-10-20
 **Author:** BOSS Development Team
 
 **Changelog:**
+- v2.0.0 (2025-10-20): **BREAKING CHANGE** - Removed ENUM-based roles/permissions, migrated to fully table-based dynamic RBAC system
 - v1.2.0 (2025-10-18): Added critical security model documentation (JWT signature verification)
 - v1.1.0 (2025-10-18): Added passkey authentication RBAC integration documentation
 - v1.0.0 (2025-01-18): Initial RBAC system release

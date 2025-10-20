@@ -35,16 +35,16 @@ data class UserInfo(
     val roleClaims: RoleClaims? = null
 ) {
     /**
-     * Get user's primary role (defaults to USER if no claims)
+     * Get user's primary role (defaults to "user" if no claims)
      */
-    val primaryRole: AppRole
-        get() = roleClaims?.userRole ?: AppRole.USER
+    val primaryRole: String
+        get() = roleClaims?.userRole ?: "user"
 
     /**
      * Get all user roles
      */
-    val roles: List<AppRole>
-        get() = roleClaims?.userRoles ?: listOf(AppRole.USER)
+    val roles: List<String>
+        get() = roleClaims?.userRoles ?: listOf("user")
 
     /**
      * Check if user is an admin
@@ -55,6 +55,6 @@ data class UserInfo(
     /**
      * Check if user has a specific role
      */
-    fun hasRole(role: AppRole): Boolean =
-        roleClaims?.hasRole(role) ?: (role == AppRole.USER)
+    fun hasRole(role: String): Boolean =
+        roleClaims?.hasRole(role) ?: (role == "user")
 }

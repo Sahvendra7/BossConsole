@@ -95,14 +95,14 @@ object UserService {
                 val rolesResult = RoleService.getUserRoles(user.id)
                 val userRoles = rolesResult.getOrNull() ?: emptyList()
 
-                // Convert UserRole to AppRole
-                val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
-                val isAdmin = appRoles.contains(AppRole.ADMIN)
+                // Get role names as strings (supports dynamic roles)
+                val roleNames = userRoles.map { it.role }
+                val isAdmin = roleNames.contains("admin")
 
                 UserWithRoles(
                     userId = user.id,
                     email = user.email,
-                    roles = appRoles,
+                    roles = roleNames,
                     isAdmin = isAdmin
                 )
             }
@@ -158,14 +158,14 @@ object UserService {
                 val rolesResult = RoleService.getUserRoles(user.id)
                 val userRoles = rolesResult.getOrNull() ?: emptyList()
 
-                // Convert UserRole to AppRole
-                val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
-                val isAdmin = appRoles.contains(AppRole.ADMIN)
+                // Get role names as strings (supports dynamic roles)
+                val roleNames = userRoles.map { it.role }
+                val isAdmin = roleNames.contains("admin")
 
                 UserWithRoles(
                     userId = user.id,
                     email = user.email,
-                    roles = appRoles,
+                    roles = roleNames,
                     isAdmin = isAdmin
                 )
             }
@@ -212,13 +212,14 @@ object UserService {
             val rolesResult = RoleService.getUserRoles(userId)
             val userRoles = rolesResult.getOrNull() ?: emptyList()
 
-            val appRoles = userRoles.mapNotNull { it.getRoleEnum() }
-            val isAdmin = appRoles.contains(AppRole.ADMIN)
+            // Get role names as strings (supports dynamic roles)
+            val roleNames = userRoles.map { it.role }
+            val isAdmin = roleNames.contains("admin")
 
             val userWithRoles = UserWithRoles(
                 userId = user.id,
                 email = user.email,
-                roles = appRoles,
+                roles = roleNames,
                 isAdmin = isAdmin
             )
 

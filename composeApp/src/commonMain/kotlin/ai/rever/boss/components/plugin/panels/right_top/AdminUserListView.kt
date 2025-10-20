@@ -1,6 +1,5 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.services.supabase.models.AppRole
 import ai.rever.boss.services.supabase.models.UserWithRoles
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -128,7 +127,7 @@ fun AdminRoleManagementContent(viewModel: AdminRoleManagementViewModel) {
         if (state.showRemoveRoleDialog && state.selectedUser != null && state.selectedRoleToRemove != null) {
             RemoveRoleConfirmationDialog(
                 user = state.selectedUser,
-                role = state.selectedRoleToRemove,
+                roleName = state.selectedRoleToRemove,  // Changed from role to roleName
                 onConfirm = {
                     viewModel.removeRole(state.selectedUser.userId, state.selectedRoleToRemove)
                     viewModel.hideRemoveRoleDialog()
@@ -200,7 +199,7 @@ fun SearchBar(
 fun UserList(
     users: List<UserWithRoles>,
     onAssignRole: (UserWithRoles) -> Unit,
-    onRemoveRole: (UserWithRoles, AppRole) -> Unit,
+    onRemoveRole: (UserWithRoles, String) -> Unit,  // Changed AppRole to String
     onDeleteUser: (UserWithRoles) -> Unit,
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
@@ -297,7 +296,7 @@ fun LoadingMoreIndicator(
 fun UserCard(
     user: UserWithRoles,
     onAssignRole: () -> Unit,
-    onRemoveRole: (AppRole) -> Unit,
+    onRemoveRole: (String) -> Unit,  // Changed AppRole to String
     onDeleteUser: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -331,11 +330,11 @@ fun UserCard(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
                 } else {
-                    user.roles.forEach { role ->
+                    user.roles.forEach { roleName ->  // Now String instead of AppRole
                         RoleBadge(
-                            role = role,
+                            roleName = roleName,  // Changed parameter name
                             userId = user.userId,
-                            onRemove = { onRemoveRole(role) }
+                            onRemove = { onRemoveRole(roleName) }  // Pass String
                         )
                     }
                 }
@@ -389,7 +388,7 @@ fun UserCard(
 }
 
 /**
- * Role badge with optional remove button
+ * Role badge with optional remove button (supports dynamic roles)
  *
  * Uses a single color for all roles to support extensibility.
  * Admin roles get a small shield icon for visual distinction.
@@ -401,7 +400,7 @@ fun UserCard(
  */
 @Composable
 fun RoleBadge(
-    role: AppRole,
+    roleName: String,  // Changed from AppRole to String for dynamic roles
     userId: String,
     onRemove: () -> Unit
 ) {
@@ -414,8 +413,8 @@ fun RoleBadge(
 
     // Determine if role is removable
     val isRemovable = when {
-        role == AppRole.USER -> false  // USER role is never removable
-        role == AppRole.ADMIN && isOwnAccount -> false  // Can't remove own admin role
+        roleName == "user" -> false  // USER role is never removable
+        roleName == "admin" && isOwnAccount -> false  // Can't remove own admin role
         else -> true  // All other roles are removable
     }
 
@@ -428,7 +427,7 @@ fun RoleBadge(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Show shield icon for admin role
-            if (role == AppRole.ADMIN) {
+            if (roleName == "admin") {
                 Icon(
                     FeatherIcons.Shield,
                     contentDescription = "Admin",
@@ -439,7 +438,7 @@ fun RoleBadge(
             }
 
             Text(
-                role.value,
+                roleName,  // Changed from role.value to roleName
                 color = badgeColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -454,7 +453,7 @@ fun RoleBadge(
                 ) {
                     Icon(
                         FeatherIcons.X,
-                        contentDescription = "Remove ${role.value} role",
+                        contentDescription = "Remove $roleName role",  // Changed from role.value
                         tint = badgeColor,
                         modifier = Modifier.size(12.dp)
                     )

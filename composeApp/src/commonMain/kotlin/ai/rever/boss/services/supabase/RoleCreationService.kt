@@ -408,7 +408,12 @@ object RoleCreationService {
 private data class RpcResponse(
     val success: Boolean,
     val error: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    val permission: String? = null,       // Returned by create_new_permission()
+    val description: String? = null,      // Returned by create_new_permission()
+    val permission_id: String? = null,    // Returned by create_new_permission() (table-based)
+    val role: String? = null,             // Returned by create_new_role()
+    val role_id: String? = null           // Returned by create_new_role() (table-based)
 )
 
 @Serializable

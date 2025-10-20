@@ -1,6 +1,5 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.services.supabase.models.AppRole
 import ai.rever.boss.services.supabase.models.UserWithRoles
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,14 +24,14 @@ import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.Trash2
 
 /**
- * Dialog for assigning a role to a user
+ * Dialog for assigning a role to a user (supports dynamic roles)
  */
 @Composable
 fun AssignRoleDialog(
     user: UserWithRoles,
-    availableRoles: List<AppRole>,
-    selectedRole: AppRole?,
-    onRoleSelected: (AppRole) -> Unit,
+    availableRoles: List<String>,  // Changed to String for dynamic roles
+    selectedRole: String?,          // Changed to String for dynamic roles
+    onRoleSelected: (String) -> Unit,  // Changed to String for dynamic roles
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     isLoading: Boolean
@@ -141,13 +140,13 @@ fun AssignRoleDialog(
 }
 
 /**
- * Role dropdown menu
+ * Role dropdown menu (supports dynamic roles)
  */
 @Composable
 fun RoleDropdown(
-    roles: List<AppRole>,
-    selectedRole: AppRole?,
-    onRoleSelected: (AppRole) -> Unit
+    roles: List<String>,           // Changed to String for dynamic roles
+    selectedRole: String?,          // Changed to String for dynamic roles
+    onRoleSelected: (String) -> Unit  // Changed to String for dynamic roles
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -166,7 +165,7 @@ fun RoleDropdown(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    selectedRole?.value ?: "Select a role...",
+                    selectedRole ?: "Select a role...",  // Changed: no .value needed
                     color = if (selectedRole != null) Color.White else Color.Gray,
                     fontSize = 14.sp
                 )
@@ -185,15 +184,15 @@ fun RoleDropdown(
             onDismissRequest = { expanded = false },
             modifier = Modifier.background(Color(0xFF3C3F41))
         ) {
-            roles.forEach { role ->
+            roles.forEach { roleName ->  // Changed: role -> roleName
                 DropdownMenuItem(
                     onClick = {
-                        onRoleSelected(role)
+                        onRoleSelected(roleName)  // Changed: pass roleName directly
                         expanded = false
                     }
                 ) {
                     Text(
-                        role.value,
+                        roleName,  // Changed: use roleName directly
                         color = Color.White,
                         fontSize = 14.sp
                     )
@@ -209,7 +208,7 @@ fun RoleDropdown(
 @Composable
 fun RemoveRoleConfirmationDialog(
     user: UserWithRoles,
-    role: AppRole,
+    roleName: String,  // Changed from AppRole to String
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     isLoading: Boolean
@@ -245,7 +244,7 @@ fun RemoveRoleConfirmationDialog(
 
                 // Confirmation message
                 Text(
-                    "Are you sure you want to remove the \"${role.value}\" role from this user?",
+                    "Are you sure you want to remove the \"$roleName\" role from this user?",  // Changed from role.value
                     color = Color.White,
                     fontSize = 14.sp
                 )

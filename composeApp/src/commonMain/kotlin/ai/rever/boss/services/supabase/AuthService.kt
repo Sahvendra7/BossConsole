@@ -134,22 +134,22 @@ object AuthService {
     /**
      * Check if current user has a specific role
      */
-    fun currentUserHasRole(role: AppRole): Boolean {
-        return currentUser.value?.hasRole(role) ?: false
+    fun currentUserHasRole(roleName: String): Boolean {
+        return currentUser.value?.hasRole(roleName) ?: false
     }
 
     /**
      * Assign a role to a user (admin only)
      */
-    suspend fun assignRole(targetUserId: String, role: AppRole): Result<Unit> {
-        return RoleService.assignRole(targetUserId, role)
+    suspend fun assignRoleByName(targetUserId: String, roleName: String): Result<Unit> {
+        return RoleService.assignRoleByName(targetUserId, roleName)
     }
 
     /**
      * Remove a role from a user (admin only)
      */
-    suspend fun removeRole(targetUserId: String, role: AppRole): Result<Unit> {
-        return RoleService.removeRole(targetUserId, role)
+    suspend fun removeRoleByName(targetUserId: String, roleName: String): Result<Unit> {
+        return RoleService.removeRoleByName(targetUserId, roleName)
     }
 
     /**
@@ -162,8 +162,8 @@ object AuthService {
     /**
      * Check if a user has a specific permission
      */
-    suspend fun userHasPermission(userId: String, permission: AppPermission): Result<Boolean> {
-        return RoleService.canPerformAction(userId, permission)
+    suspend fun userHasPermission(userId: String, permissionName: String): Result<Boolean> {
+        return RoleService.canPerformAction(userId, permissionName)
     }
 
     /**

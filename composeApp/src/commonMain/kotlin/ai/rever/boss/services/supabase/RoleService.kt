@@ -47,7 +47,7 @@ import kotlinx.serialization.json.*
  * }
  *
  * // Assign admin role (server verifies you're admin via RLS)
- * val result = RoleService.assignRole(userId, AppRole.ADMIN)
+ * val result = RoleService.assignRoleByName(userId, "admin")
  * ```
  */
 object RoleService {
@@ -167,16 +167,15 @@ object RoleService {
 
     /**
      * Check if a user has a specific role
-     * Uses helper RPC function for backward compatibility with table-based schema
      */
-    suspend fun userHasRole(userId: String, role: AppRole): Result<Boolean> {
+    suspend fun userHasRole(userId: String, roleName: String): Result<Boolean> {
         return try {
             // Call helper RPC function that checks role by name
             val postgrestResult = client.postgrest.rpc(
                 function = "check_user_has_role",
                 parameters = buildJsonObject {
                     put("target_user_id", userId)
-                    put("role_name", role.value)
+                    put("role_name", roleName)
                 }
             )
 
@@ -194,21 +193,20 @@ object RoleService {
      * Check if a user is an admin
      */
     suspend fun isUserAdmin(userId: String): Result<Boolean> {
-        return userHasRole(userId, AppRole.ADMIN)
+        return userHasRole(userId, "admin")
     }
 
     /**
-     * Assign a role to a user (admin only)
-     * Calls the assign_role_to_user() PostgreSQL function via RPC
+     * Assign a role to a user by role name (admin only)
+     * Supports dynamic roles created at runtime
      */
-    suspend fun assignRole(targetUserId: String, role: AppRole): Result<Unit> {
+    suspend fun assignRoleByName(targetUserId: String, roleName: String): Result<Unit> {
         return try {
-            // Call the PostgreSQL function via RPC (not Edge Functions!)
             client.postgrest.rpc(
                 function = "assign_role_to_user",
                 parameters = buildJsonObject {
                     put("target_user_id", targetUserId)
-                    put("target_role", role.value)
+                    put("target_role", roleName)
                 }
             )
 
@@ -220,17 +218,16 @@ object RoleService {
     }
 
     /**
-     * Remove a role from a user (admin only)
-     * Calls the remove_role_from_user() PostgreSQL function via RPC
+     * Remove a role from a user by role name (admin only)
+     * Supports dynamic roles created at runtime
      */
-    suspend fun removeRole(targetUserId: String, role: AppRole): Result<Unit> {
+    suspend fun removeRoleByName(targetUserId: String, roleName: String): Result<Unit> {
         return try {
-            // Call the PostgreSQL function via RPC (not Edge Functions!)
             client.postgrest.rpc(
                 function = "remove_role_from_user",
                 parameters = buildJsonObject {
                     put("target_user_id", targetUserId)
-                    put("target_role", role.value)
+                    put("target_role", roleName)
                 }
             )
 
@@ -242,24 +239,15 @@ object RoleService {
     }
 
     /**
-     * Get all available roles from the database
+     * Get all role permissions by role name
      */
-    suspend fun getAllRoles(): Result<List<AppRole>> {
-        // Since roles are defined in an enum, we return the Kotlin enum values
-        return Result.success(AppRole.entries)
-    }
-
-    /**
-     * Get all role permissions
-     * Uses helper RPC function for backward compatibility with table-based schema
-     */
-    suspend fun getRolePermissions(role: AppRole): Result<List<RolePermission>> {
+    suspend fun getRolePermissions(roleName: String): Result<List<RolePermission>> {
         return try {
             // Call helper RPC function that JOINs with permissions table
             val postgrestResult = client.postgrest.rpc(
                 function = "get_role_permissions_with_names",
                 parameters = buildJsonObject {
-                    put("role_name", role.value)
+                    put("role_name", roleName)
                 }
             )
 
@@ -277,7 +265,7 @@ object RoleService {
      * Check if current user can perform an action
      * This checks against the role_permissions table
      */
-    suspend fun canPerformAction(userId: String, permission: AppPermission): Result<Boolean> {
+    suspend fun canPerformAction(userId: String, permissionName: String): Result<Boolean> {
         return try {
             // Get user's roles
             val userRolesResult = getUserRoles(userId)
@@ -286,14 +274,14 @@ object RoleService {
             }
 
             val userRoles = userRolesResult.getOrNull() ?: emptyList()
-            val roleValues = userRoles.mapNotNull { it.getRoleEnum() }
+            val roleNames = userRoles.map { it.role }
 
             // Check if any of the user's roles have the required permission
-            for (role in roleValues) {
-                val permissionsResult = getRolePermissions(role)
+            for (roleName in roleNames) {
+                val permissionsResult = getRolePermissions(roleName)
                 if (permissionsResult.isSuccess) {
                     val permissions = permissionsResult.getOrNull() ?: emptyList()
-                    if (permissions.any { it.permission == permission.value }) {
+                    if (permissions.any { it.permission == permissionName }) {
                         return Result.success(true)
                     }
                 }
