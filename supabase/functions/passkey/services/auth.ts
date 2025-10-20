@@ -243,50 +243,23 @@ export const completeAuthentication = withErrorHandler(
 
     const userEmail = userResult.user.email
 
-    // Generate custom Supabase JWT for direct authentication completion
-    console.log('🎫 Generating custom Supabase JWT for user:', userEmail)
+    // Generate Supabase session for authenticated user
+    console.log('🎫 Generating Supabase session for user:', userEmail)
 
-    try {
-      const jwtSecret = Deno.env.get('JWT_SECRET')
-      console.log('🔍 JWT_SECRET length:', jwtSecret?.length || 0, '(should be >0)')
-      if (!jwtSecret) {
-        console.error('❌ JWT_SECRET not configured')
-        return {
-          success: true,
-          userId: passkey.user_id,
-          email: userEmail,
-          passkeyId: passkey.id
-        }
-      }
+    const tokens = await generateSupabaseAccessToken(supabase, userEmail)
 
-      const tokens = await generateSupabaseAccessToken(
-        supabase,
-        passkey.user_id,
-        userEmail,
-        jwtSecret
-      )
+    console.log('✅ Generated Supabase session successfully')
+    console.log('   Access token length:', tokens.accessToken.length)
+    console.log('   Refresh token length:', tokens.refreshToken.length)
 
-      console.log('✅ Generated custom JWT tokens successfully')
-      console.log('   Access token length:', tokens.accessToken.length)
-      console.log('   Refresh token length:', tokens.refreshToken.length)
-
-      return {
-        success: true,
-        userId: passkey.user_id,
-        email: userEmail,
-        passkeyId: passkey.id,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt
-      }
-    } catch (error) {
-      console.error('❌ Failed to generate JWT tokens:', error)
-      return {
-        success: true,
-        userId: passkey.user_id,
-        email: userEmail,
-        passkeyId: passkey.id
-      }
+    return {
+      success: true,
+      userId: passkey.user_id,
+      email: userEmail,
+      passkeyId: passkey.id,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt
     }
   },
   'Failed to complete authentication',
@@ -348,48 +321,21 @@ export const checkAuthStatus = withStatusErrorHandler(
         }
       }
 
-      // Generate custom Supabase JWT tokens for passkey authentication
-      console.log('🎫 Generating custom Supabase JWT for passkey auth:', userResult.user.email)
+      // Generate Supabase session for passkey authentication
+      console.log('🎫 Generating Supabase session for passkey auth:', userResult.user.email)
 
-      try {
-        // Get JWT secret from environment
-        const jwtSecret = Deno.env.get('JWT_SECRET')
-        if (!jwtSecret) {
-          console.error('❌ JWT_SECRET not configured')
-          return {
-            status: 'completed' as const,
-            userId: completedAuth.user_id,
-            email: userResult.user.email,
-            completedAt: completedAuth.created_at
-          }
-        }
+      const tokens = await generateSupabaseAccessToken(supabase, userResult.user.email)
 
-        const tokens = await generateSupabaseAccessToken(
-          supabase,
-          completedAuth.user_id,
-          userResult.user.email,
-          jwtSecret
-        )
+      console.log('✅ Generated Supabase session successfully')
 
-        console.log('✅ Generated custom JWT tokens successfully')
-
-        return {
-          status: 'completed' as const,
-          userId: completedAuth.user_id,
-          email: userResult.user.email,
-          completedAt: completedAuth.created_at,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresAt: tokens.expiresAt
-        }
-      } catch (error) {
-        console.error('❌ Failed to generate JWT tokens:', error)
-        return {
-          status: 'completed' as const,
-          userId: completedAuth.user_id,
-          email: userResult.user.email,
-          completedAt: completedAuth.created_at
-        }
+      return {
+        status: 'completed' as const,
+        userId: completedAuth.user_id,
+        email: userResult.user.email,
+        completedAt: completedAuth.created_at,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt
       }
     }
 
