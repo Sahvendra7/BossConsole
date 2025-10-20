@@ -57,7 +57,7 @@ The app implements a sophisticated WebAuthn system with cross-device support:
 
 **Core Services:**
 - **`PasskeyService`** - Cross-platform interface
-- **`DesktopPasskeyService`** - Desktop implementation with biometric integration  
+- **`DesktopPasskeyService`** - Desktop implementation with biometric integration
 - **`SupabasePasskeyService`** - Server-side passkey management
 
 **Authentication Flows:**
@@ -65,9 +65,17 @@ The app implements a sophisticated WebAuthn system with cross-device support:
 2. **Cross-device**: QR code generation for mobile/browser authentication
 3. **Session Coordination**: `sessionId` tracking across devices
 
+**Session Generation** (Fixed in PR #78):
+- Uses **Supabase Admin API** (`admin.generateLink()` + `verifyOtp()`)
+- Generates proper sessions with unique string refresh tokens
+- Tokens stored in `auth.sessions` table for automatic rotation
+- Auth hooks inject RBAC claims during token generation
+- **No manual JWT generation** - Supabase handles all token signing
+
 **Database Schema** (Supabase):
 - `user_passkeys` table with RLS policies
 - `passkey_challenges` table for temporary challenge storage
+- `auth.sessions` table for refresh token tracking
 - Edge Functions at `/functions/v1/passkey`
 
 ### Platform-Specific Integration
@@ -199,10 +207,12 @@ Uses **Compose Multiplatform Resource API** (not Android resources):
 ## Development Notes
 
 ### Current Focus Areas
-- **2FA/WebAuthn authentication system** (fix/2FA branch)
+- **RBAC (Role-Based Access Control)** - Dynamic role and permission management
 - **Cross-device authentication flows**
 - **GitHub Actions CI/CD improvements**
-- **Code quality improvements** (manual_cleanup branch)
+
+### Resolved Issues
+- ✅ Issue #75: Passkey refresh token bug - Users were logged out after 1 hour (Fixed in PR #78)
 
 ### Known Issues
 - Issue #33: Remove hardcoded credential fallbacks after testing
@@ -212,12 +222,23 @@ Uses **Compose Multiplatform Resource API** (not Android resources):
 **Limited test coverage** - focus on build verification rather than unit/integration tests. Future development should prioritize comprehensive testing of authentication flows.
 
 ### Key Files to Understand
+
+**Client-side (Kotlin):**
 - `AuthService.kt` - Core authentication orchestration
+- `SessionManager.kt` - Session establishment and persistence
 - `DesktopPasskeyService.kt` - Desktop WebAuthn implementation
 - `SupabaseConfig.kt` - Backend configuration and client management
+- `RoleService.kt` - RBAC role management
+- `LoadingScreen.kt` - Centralized loading screen component (uses new resource API)
+
+**Server-side (Edge Functions):**
+- `supabase/functions/passkey/services/auth.ts` - Passkey authentication flow
+- `supabase/functions/passkey/utils/jwt.ts` - Session token generation (Admin API)
+- `supabase/functions/passkey/utils/crypto.ts` - WebAuthn signature verification
+
+**Build & Config:**
 - `version.properties` - Single source of truth for versioning
 - `build.gradle.kts` files - Kotlin Multiplatform configuration
-- `LoadingScreen.kt` - Centralized loading screen component (uses new resource API)
 
 ## Deep Link Support
 
