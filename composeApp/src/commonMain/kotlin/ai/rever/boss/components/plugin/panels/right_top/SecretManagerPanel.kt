@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -36,10 +37,10 @@ import kotlinx.coroutines.launch
  * - Non-authorized users will never see this panel
  */
 object SecretManagerInfo : PanelInfo {
-    override val id = PanelId("secret-manager", 21)
+    override val id = PanelId("secret-manager", 24)
     override val displayName = "Secret Manager"
     override val icon = FeatherIcons.Lock
-    override val defaultSlotPosition = right.top.top  // Below admin panels
+    override val defaultSlotPosition = right.top.bottom
 }
 
 /**

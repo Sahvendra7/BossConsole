@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -33,10 +34,10 @@ import kotlinx.coroutines.launch
  * - Non-admin users will see permission errors if they try to access
  */
 object RoleCreationInfo : PanelInfo {
-    override val id = PanelId("role-creation", 21)
+    override val id = PanelId("role-creation", 23)
     override val displayName = "Admin: Create Roles"
     override val icon = FeatherIcons.PlusCircle
-    override val defaultSlotPosition = right.top.top
+    override val defaultSlotPosition = right.top.bottom
 }
 
 /**

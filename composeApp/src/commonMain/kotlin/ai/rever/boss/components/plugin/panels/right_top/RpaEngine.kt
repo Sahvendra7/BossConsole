@@ -44,7 +44,7 @@ object RpaEngineInfo : PanelInfo {
     override val id = PanelId(panelId = "rpa_engine", defaultOrder = 20)
     override val displayName = "RPA Engine"
     override val icon = Icons.Default.SmartToy // Robot icon for automation
-    override val defaultSlotPosition = right.top.bottom
+    override val defaultSlotPosition = right.top.top
 }
 
 /**

@@ -1,20 +1,15 @@
 package ai.rever.boss.components.plugin
 
-import ai.rever.boss.components.plugin.panels.bottom.registerActivity
-import ai.rever.boss.components.plugin.panels.bottom.registerBugReport
-import ai.rever.boss.components.plugin.panels.bottom.registerErrors
-import ai.rever.boss.components.plugin.panels.bottom.registerGit
 import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
-import ai.rever.boss.components.plugin.panels.left_bottom.registerLanager
-import ai.rever.boss.components.plugin.panels.left_bottom.registerMastery
-import ai.rever.boss.components.plugin.panels.left_bottom.registerTaskResolver
-import ai.rever.boss.components.plugin.panels.left_top.registerCodeBase
-import ai.rever.boss.components.plugin.panels.left_top.registerLighthouse
-import ai.rever.boss.components.plugin.panels.left_top.registerSystemOfRecord
-import ai.rever.boss.components.plugin.panels.left_top.registerValue
-import ai.rever.boss.components.plugin.panels.right_bottom.registerEhrExplorer
-import ai.rever.boss.components.plugin.panels.right_top.*
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
+import ai.rever.boss.components.plugin.panels.left_top.registerCodeBase
+import ai.rever.boss.components.plugin.panels.right_top.registerAdminRoleManagement
+import ai.rever.boss.components.plugin.panels.right_top.registerFluckPanel
+import ai.rever.boss.components.plugin.panels.right_top.registerLLMRpa
+import ai.rever.boss.components.plugin.panels.right_top.registerRoleCreation
+import ai.rever.boss.components.plugin.panels.right_top.registerRpaEngine
+import ai.rever.boss.components.plugin.panels.right_top.registerRpaRecorder
+import ai.rever.boss.components.plugin.panels.right_top.registerSecretManager
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
@@ -33,37 +28,23 @@ class DefaultPlugin(
     // This scope should be cancelled when the plugin is disposed
     internal val pluginScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     init {
+        // Panels
         registerCodeBase()
-        registerLighthouse()
-        registerSystemOfRecord()
-        registerValue()
-
-        registerLanager()
-        registerMastery()
-        registerTaskResolver()
-
         registerTerminal()
-        registerBugReport()
-        registerGit()
-        registerActivity()
-        registerErrors()
+        registerTopOfMind()
 
-        registerDocker()
-        registerDatabase()
-        registerFluck()
-        registerAgent()
+        registerFluckPanel()
         registerLLMRpa()
         registerRpaRecorder()
         registerRpaEngine()
-        registerTopOfMind()
+
         registerAdminRoleManagement()
         registerRoleCreation()
         registerSecretManager()
 
-        registerEhrExplorer()
-
+        // Tab Types
+        registerFluck()
         registerCodeEditor()
-        registerFluckPanel()
         registerTerminalTab()
     }
 
