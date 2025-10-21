@@ -13,8 +13,8 @@ import kotlinx.serialization.json.*
  * Service for dynamic role and permission creation
  *
  * This service provides methods to:
- * - Create new roles at runtime (ALTER TYPE app_role)
- * - Create new permissions at runtime (ALTER TYPE app_permission)
+ * - Create new roles at runtime (table-based, not ENUM)
+ * - Create new permissions at runtime (table-based, not ENUM)
  * - Assign permissions to roles
  * - Remove permissions from roles
  * - Query all roles and permissions

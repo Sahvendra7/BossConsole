@@ -21,8 +21,8 @@ import kotlinx.coroutines.launch
  * Panel info for Role Creation
  *
  * This panel allows administrators to:
- * - Create new roles dynamically (ALTER TYPE app_role)
- * - Create new permissions dynamically (ALTER TYPE app_permission)
+ * - Create new roles dynamically (table-based, not ENUM)
+ * - Create new permissions dynamically (table-based, not ENUM)
  * - Assign permissions to roles
  * - Remove permissions from roles
  * - View all roles and their permissions
