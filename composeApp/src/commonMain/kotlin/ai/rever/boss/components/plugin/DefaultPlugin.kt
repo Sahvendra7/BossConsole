@@ -58,6 +58,7 @@ class DefaultPlugin(
         registerTopOfMind()
         registerAdminRoleManagement()
         registerRoleCreation()
+        registerSecretManager()
 
         registerEhrExplorer()
 

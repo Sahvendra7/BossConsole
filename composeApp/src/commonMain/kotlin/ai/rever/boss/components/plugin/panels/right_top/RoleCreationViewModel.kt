@@ -462,6 +462,16 @@ class RoleCreationViewModel {
     fun clearErrorMessage() {
         state = state.copy(errorMessage = null)
     }
+
+    /**
+     * Clear both success and error messages
+     */
+    fun clearMessages() {
+        state = state.copy(
+            successMessage = null,
+            errorMessage = null
+        )
+    }
 }
 
 /**

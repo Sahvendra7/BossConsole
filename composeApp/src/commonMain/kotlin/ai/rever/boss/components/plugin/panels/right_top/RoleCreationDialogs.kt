@@ -142,11 +142,21 @@ fun CreateRoleDialog(
 @Composable
 fun CreatePermissionDialog(
     onDismiss: () -> Unit,
-    onConfirm: (permissionName: String, description: String?) -> Unit
+    onConfirm: (permissionName: String, description: String?) -> Unit,
+    isOperationInProgress: Boolean = false,
+    errorMessage: String? = null
 ) {
     var permissionName by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var localError by remember { mutableStateOf<String?>(null) }
+
+    // Auto-close on success (when not in progress and no error after confirming)
+    var hasConfirmed by remember { mutableStateOf(false) }
+    LaunchedEffect(isOperationInProgress, errorMessage) {
+        if (hasConfirmed && !isOperationInProgress && errorMessage == null) {
+            onDismiss()
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -175,13 +185,14 @@ fun CreatePermissionDialog(
                     value = permissionName,
                     onValueChange = {
                         permissionName = it
-                        error = null
+                        localError = null
                     },
                     label = { Text("Permission Name") },
                     placeholder = { Text("e.g., code.review") },
                     modifier = Modifier.fillMaxWidth(),
-                    isError = error != null,
-                    singleLine = true
+                    isError = localError != null || errorMessage != null,
+                    singleLine = true,
+                    enabled = !isOperationInProgress
                 )
 
                 // Description input (optional)
@@ -191,7 +202,8 @@ fun CreatePermissionDialog(
                     label = { Text("Description (optional)") },
                     placeholder = { Text("e.g., Review code changes") },
                     modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3
+                    maxLines = 3,
+                    enabled = !isOperationInProgress
                 )
 
                 // Validation rules
@@ -201,8 +213,9 @@ fun CreatePermissionDialog(
                     color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                 )
 
-                // Error message
-                error?.let { errorMsg ->
+                // Error message (show ViewModel error or local error)
+                val displayError = errorMessage ?: localError
+                displayError?.let { errorMsg ->
                     Text(
                         text = errorMsg,
                         color = MaterialTheme.colors.error,
@@ -225,22 +238,32 @@ fun CreatePermissionDialog(
                     Button(
                         onClick = {
                             if (permissionName.isBlank()) {
-                                error = "Permission name cannot be empty"
+                                localError = "Permission name cannot be empty"
                                 return@Button
                             }
 
                             val validationError = ai.rever.boss.services.supabase.RoleCreationService.validatePermissionName(permissionName)
                             if (validationError != null) {
-                                error = validationError
+                                localError = validationError
                                 return@Button
                             }
 
+                            hasConfirmed = true
                             onConfirm(permissionName.trim(), description.trim().takeIf { it.isNotBlank() })
                         },
+                        enabled = !isOperationInProgress,
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = MaterialTheme.colors.secondary
                         )
                     ) {
+                        if (isOperationInProgress) {
+                            androidx.compose.material.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colors.onSecondary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                         Text("Create")
                     }
                 }

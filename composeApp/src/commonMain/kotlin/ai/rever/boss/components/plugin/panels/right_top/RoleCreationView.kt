@@ -96,11 +96,15 @@ fun RoleCreationContent(viewModel: RoleCreationViewModel) {
 
     if (state.showCreatePermissionDialog) {
         CreatePermissionDialog(
-            onDismiss = { viewModel.hideCreatePermissionDialog() },
+            onDismiss = {
+                viewModel.clearMessages()
+                viewModel.hideCreatePermissionDialog()
+            },
             onConfirm = { permissionName, description ->
                 viewModel.createPermission(permissionName, description)
-                viewModel.hideCreatePermissionDialog()
-            }
+            },
+            isOperationInProgress = state.isOperationInProgress,
+            errorMessage = state.errorMessage
         )
     }
 
