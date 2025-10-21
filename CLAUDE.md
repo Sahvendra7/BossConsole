@@ -169,6 +169,24 @@ The project uses **centralized version management**:
 ### Navigation
 Uses **Decompose** for component lifecycle and navigation management rather than traditional Android Navigation.
 
+### Top Bar Components
+The application's top bar (`BossTopBar.kt`) provides core UI navigation and controls.
+
+**Currently Implemented:**
+- **Project Selector** - Switch between projects with recent project history
+- **Workspace Management** - Save/load UI workspace layouts (if configured)
+- **User Display** - Shows logged-in user's email
+- **Sign Out** - Logout with confirmation dialog
+- **Settings** - Access application settings
+
+**Disabled Features** (commented out with tracking issues):
+- **Git Integration** (#90) - Branch selector and git operations
+- **Run/Debug Controls** (#91) - Lanager controls, Run, Debug, Stop buttons
+- **Global Search** (#92) - Search for files, commands, or actions
+- **Lanager Plugin** (#93) - AI agent swarm management (under discussion)
+
+These features are commented out in the code with TODO references and will be implemented according to their respective GitHub issues.
+
 ## Code Quality
 
 ### Static Analysis

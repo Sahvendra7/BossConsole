@@ -63,8 +63,10 @@ fun BossDraggableComponent.BossTopBar(
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
             BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind)
             Spacer(modifier = Modifier.weight(1f))
-            BossTopRunBar()
-            Spacer(modifier = Modifier.weight(0.1f))
+            // TODO: #91 - Implement run/debug controls
+            // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/91
+            // BossTopRunBar()
+            // Spacer(modifier = Modifier.weight(0.1f))
             BossTopRightBar()
         }
     }
@@ -141,12 +143,14 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
     }
 }
 
-val gitContextMenuItems get() = listOf(
-    ContextMenuItem(
-        text = "dev",
-        onClick = { /* Handle branch 1 action */ }
-    )
-)
+// TODO: #90 - Git integration helper (currently disabled)
+// See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
+// val gitContextMenuItems get() = listOf(
+//     ContextMenuItem(
+//         text = "dev",
+//         onClick = { /* Handle branch 1 action */ }
+//     )
+// )
 
 @Composable
 fun BossDraggableComponent.BossTopLeftBar(
@@ -165,12 +169,14 @@ fun BossDraggableComponent.BossTopLeftBar(
         ),
         hintText = "Current Project: ${selectedProject.path}"
     )
-    BossActionButton(
-        leftIcon = FeatherIcons.GitBranch, 
-        text = "main",
-        contextMenuItems = gitContextMenuItems,
-        hintText = "Current Git Branch: main"
-    )
+    // TODO: #90 - Implement Git integration
+    // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
+    // BossActionButton(
+    //     leftIcon = FeatherIcons.GitBranch,
+    //     text = "main",
+    //     contextMenuItems = gitContextMenuItems,
+    //     hintText = "Current Git Branch: main"
+    // )
     
     // Workspace button
     if (workspaceManager != null && onApplyWorkspace != null) {
@@ -211,69 +217,73 @@ fun BossDraggableComponent.BossTopLeftBar(
     }
 }
 
-val lanagerContextMenuItems get() = listOf(
-    ContextMenuItem(
-        text = "Start Lanager",
-        icon = Icons.Outlined.PlayArrow,
-        onClick = { /* Handle start lanager action */ }
-    ),
-    ContextMenuItem(
-        text = "View Agents",
-        icon = Icons.Outlined.People,
-        onClick = { /* Handle view agents action */ }
-    ),
-    ContextMenuItem(isDivider = true),
-    ContextMenuItem(
-        text = "Configure Lanager",
-        icon = Icons.Outlined.Settings,
-        onClick = { /* Handle configure action */ }
-    ),
-    ContextMenuItem(isDivider = true),
-    ContextMenuItem(
-        text = "Restart Lanager",
-        icon = Icons.Outlined.Refresh,
-        onClick = { /* Handle restart action */ }
-    ),
-    ContextMenuItem(
-        text = "Stop Lanager",
-        icon = Icons.Outlined.Stop,
-        onClick = { /* Handle stop action */ }
-    )
-)
+// TODO: #93 - Lanager functionality (currently disabled - plugin removed)
+// See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/93
+// val lanagerContextMenuItems get() = listOf(
+//     ContextMenuItem(
+//         text = "Start Lanager",
+//         icon = Icons.Outlined.PlayArrow,
+//         onClick = { /* Handle start lanager action */ }
+//     ),
+//     ContextMenuItem(
+//         text = "View Agents",
+//         icon = Icons.Outlined.People,
+//         onClick = { /* Handle view agents action */ }
+//     ),
+//     ContextMenuItem(isDivider = true),
+//     ContextMenuItem(
+//         text = "Configure Lanager",
+//         icon = Icons.Outlined.Settings,
+//         onClick = { /* Handle configure action */ }
+//     ),
+//     ContextMenuItem(isDivider = true),
+//     ContextMenuItem(
+//         text = "Restart Lanager",
+//         icon = Icons.Outlined.Refresh,
+//         onClick = { /* Handle restart action */ }
+//     ),
+//     ContextMenuItem(
+//         text = "Stop Lanager",
+//         icon = Icons.Outlined.Stop,
+//         onClick = { /* Handle stop action */ }
+//     )
+// )
 
-@Composable
-fun BossTopRunBar() {
-    BossActionButton(
-        leftIcon = Icons.Outlined.Diversity2,
-        text = "lanager [boss]",
-        contextMenuItems = lanagerContextMenuItems,
-        hintText = "Lanager: Manage AI agent swarm for collaborative tasks"
-    )
-    
-    BossActionButton(
-        imageVector = Icons.Outlined.PlayArrow,
-        text = "Run",
-        hintText = "Run the current workspace"
-    ) {}
-    
-    BossActionButton(
-        imageVector = Icons.Outlined.BugReport,
-        text = "Bug",
-        hintText = "Debug the current execution"
-    ) {}
-    
-    BossActionButton(
-        imageVector = Icons.Outlined.Stop,
-        text = "Stop",
-        hintText = "Stop all running processes"
-    ) {}
-    
-    BossActionButton(
-        imageVector = Icons.Outlined.MoreVert,
-        text = "More",
-        hintText = "Additional actions and settings"
-    ) {}
-}
+// TODO: #91 - BossTopRunBar function (currently disabled)
+// See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/91
+// @Composable
+// fun BossTopRunBar() {
+//     BossActionButton(
+//         leftIcon = Icons.Outlined.Diversity2,
+//         text = "lanager [boss]",
+//         contextMenuItems = lanagerContextMenuItems,
+//         hintText = "Lanager: Manage AI agent swarm for collaborative tasks"
+//     )
+//
+//     BossActionButton(
+//         imageVector = Icons.Outlined.PlayArrow,
+//         text = "Run",
+//         hintText = "Run the current workspace"
+//     ) {}
+//
+//     BossActionButton(
+//         imageVector = Icons.Outlined.BugReport,
+//         text = "Bug",
+//         hintText = "Debug the current execution"
+//     ) {}
+//
+//     BossActionButton(
+//         imageVector = Icons.Outlined.Stop,
+//         text = "Stop",
+//         hintText = "Stop all running processes"
+//     ) {}
+//
+//     BossActionButton(
+//         imageVector = Icons.Outlined.MoreVert,
+//         text = "More",
+//         hintText = "Additional actions and settings"
+//     ) {}
+// }
 
 @Composable
 fun BossTopRightBar() {
@@ -299,12 +309,14 @@ fun BossTopRightBar() {
         showLogoutDialog = true
     }
     
-    BossActionButton(
-        imageVector = Icons.Outlined.Search,
-        text = "Search",
-        hintText = "Search for files, commands, or actions"
-    ) {}
-    
+    // TODO: #92 - Implement global search functionality
+    // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/92
+    // BossActionButton(
+    //     imageVector = Icons.Outlined.Search,
+    //     text = "Search",
+    //     hintText = "Search for files, commands, or actions"
+    // ) {}
+
     BossActionButton(
         imageVector = Icons.Outlined.Settings,
         text = "Settings",
