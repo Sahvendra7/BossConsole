@@ -9,6 +9,7 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,17 +67,22 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
             ,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Collect state once at the top level to avoid multiple subscriptions
+            val currentProject by ProjectState.selectedProject.collectAsState()
+
             if (tabsComponent != null) {
                 val tabsState by tabsComponent.tabsState.subscribeAsState()
                 val activeTab = tabsState.activeTab
-                
+
                 when (activeTab) {
                     is EditorTabInfo -> {
                         // Show file path from project root
-                        val projectRoot = "/Users/kshivang/Development/BOSS-Kotlin/"
+                        val projectRoot = currentProject.path.let {
+                            if (it.endsWith("/")) it else "$it/"
+                        }
                         val relativePath = activeTab.filePath.removePrefix(projectRoot)
                         val pathParts = relativePath.split("/")
-                        
+
                         pathParts.forEachIndexed { index, part ->
                             if (part.isNotEmpty()) {
                                 BossActionButton(
@@ -109,22 +116,33 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                             modifier = Modifier.padding(horizontal = 4.dp)
                         )
                     }
+                    null -> {
+                        // Explicitly handle null case (no tab active)
+                        Text(
+                            text = "${currentProject.name} | Ready",
+                            color = BossDarkTextSecondary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
                     else -> {
-                        // Default content when no tab is active
-                        BossActionButton(text = "Lanager", color = BossDarkTextSecondary, onClick = {})
-                        RightArrow()
-                        BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
-                        RightArrow()
-                        BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+                        // Handle unknown tab types
+                        Text(
+                            text = "${currentProject.name} | ${activeTab.title}",
+                            color = BossDarkTextSecondary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
                 }
             } else {
-                // Fallback to default content if no tabs component
-                BossActionButton(text = "Lanager", color = BossDarkTextSecondary, onClick = {})
-                RightArrow()
-                BossActionButton(text = "Mastery", color = BossDarkTextSecondary, onClick = {})
-                RightArrow()
-                BossActionButton(text = "Task Resolver", color = BossDarkTextSecondary, onClick = {})
+                // Show minimal content if no tabs component (shouldn't happen in normal use)
+                Text(
+                    text = "Ready",
+                    color = BossDarkTextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
             }
         }
     }

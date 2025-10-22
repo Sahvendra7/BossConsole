@@ -535,7 +535,7 @@ fun ComponentContext.BossApp() {
                         )
                         BossRightSideBar()
                     }
-                    BossBottomBar(tabsComponent)
+                    BossBottomBar(splitViewState.getActiveTabsComponent())
                 }
                 // Draw the dragging item overlay (ghost) if an item is being dragged
                 DraggingItemOverlay()

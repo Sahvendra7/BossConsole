@@ -97,7 +97,7 @@ class SplitViewState(
     
     fun openFileInActivePanel(filePath: String, fileName: String) {
         val activeComponent = getActiveTabsComponent() ?: return
-        
+
         // Check if file is already open in any panel
         findPanelWithFile(filePath)?.let { (panelId, component) ->
             component.tabsState.value.tabs
@@ -111,7 +111,7 @@ class SplitViewState(
                 }
             return
         }
-        
+
         // File not open, create new tab in active panel
         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
             id = "editor-${Random.nextLong()}",
