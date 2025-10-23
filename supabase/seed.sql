@@ -21,7 +21,8 @@ ON CONFLICT (name) DO NOTHING;
 -- ============================================================================
 -- Manual Admin Assignment Instructions
 -- ============================================================================
--- After a user signs up, you can manually assign them the admin role using:
+-- After a user signs up through the normal authentication flow, you can
+-- manually assign them the admin role using:
 --
 -- DO $$
 -- DECLARE

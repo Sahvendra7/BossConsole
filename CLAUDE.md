@@ -134,6 +134,116 @@ The project uses **Supabase Cloud** (not self-hosted). Important dashboard confi
 
 **Important**: The `local.properties` file is gitignored and contains sensitive keys.
 
+### Migration Development Best Practices
+
+**Golden Rule**: Only commit migrations that work correctly. Test locally first!
+
+#### Development Workflow
+
+1. **Create migration**:
+   ```bash
+   supabase db diff -f my_feature_name
+   ```
+
+2. **Test locally**:
+   ```bash
+   supabase db reset --linked
+   # Verify the migration works
+   ```
+
+3. **If migration has bugs**:
+   - ❌ DON'T create a fix migration
+   - ✅ DELETE the migration file
+   - ✅ Fix the SQL
+   - ✅ Run `supabase db reset --linked` again
+   - Repeat until it works
+
+4. **Only commit when working**:
+   - One feature = one clean migration file
+   - No iterative fix files during development
+
+#### After Production Deployment
+
+- Migrations become **immutable**
+- Never delete deployed migrations
+- Add new migration to fix issues
+- Periodically consolidate with `supabase db pull`
+
+#### Periodic Consolidation
+
+Every few months, consolidate migrations:
+```bash
+# Pull current production schema
+supabase db pull --linked
+
+# Delete old migrations
+rm supabase/migrations/202510*.sql
+
+# Rename new file to baseline
+mv supabase/migrations/[new-file].sql supabase/migrations/[date]_baseline_schema.sql
+
+# Commit
+git add supabase/migrations/
+git commit -m "chore: Consolidate migrations into baseline"
+```
+
+This keeps the migration history clean and manageable.
+
+### Database Schema Structure
+
+The BOSS database schema consists of **13 core tables** organized into functional areas:
+
+#### Authentication & Passkeys
+- `user_passkeys` - WebAuthn credential storage
+- `passkey_challenges` - Temporary authentication challenges
+- `completed_authentications` - Cross-device auth coordination
+
+#### RBAC (Role-Based Access Control)
+- `roles` - System and custom roles
+- `permissions` - Granular permissions (format: `resource.action`)
+- `role_permissions` - Many-to-many role-permission mapping
+- `user_roles` - User role assignments
+- `users` - User profile data synced with `auth.users`
+
+#### Secrets Management
+- `secrets` - Encrypted credential storage (website, username, password)
+- `secret_metadata` - 2FA configuration (TOTP, recovery codes)
+- `secret_tags` - Tags for organizing secrets
+- `secret_shares` - User/role-based secret sharing
+- `secret_access_log` - Audit trail for secret operations
+
+#### Key Database Functions (42 total)
+
+**RBAC Functions** (11):
+- `assign_role_to_user`, `remove_role_from_user`
+- `create_new_role`, `delete_role`, `get_all_roles`
+- `create_new_permission`, `delete_permission`, `get_all_permissions`
+- `assign_permission_to_role`, `remove_permission_from_role`
+- `authorize` - Permission check for RLS policies
+
+**Secret Functions** (9):
+- `create_secret`, `update_secret`, `delete_secret`
+- `get_user_secrets` - User's owned secrets
+- `get_user_secrets_with_shared` - Owned + shared secrets (handles duplicates with DISTINCT ON)
+- `search_user_secrets` - Search by website/username
+- `share_secret`, `unshare_secret`, `get_secret_shares`
+
+**Encryption Helpers** (4):
+- `encrypt_text`, `decrypt_text` - AES encryption with base64 encoding
+- `get_encryption_key` - Retrieves key from Supabase Vault
+- `safe_decrypt_recovery_codes` - Safe decryption with error handling
+
+**Passkey Functions** (4):
+- `create_mobile_registration_session`, `get_session_status`
+- `clean_expired_passkey_challenges`, `cleanup_expired_completed_authentications`
+
+**Schema Notes**:
+- All sensitive data encrypted with **AES + base64** (NOT PGP)
+- 50 RLS policies enforce access control
+- 35 indexes for query optimization
+- 5 PostgreSQL extensions enabled (pgcrypto, uuid-ossp, supabase_vault, etc.)
+- Recovery codes stored as encrypted JSON arrays in `secret_metadata.recovery_codes_encrypted`
+
 ## Version Management System
 
 The project uses **centralized version management**:
