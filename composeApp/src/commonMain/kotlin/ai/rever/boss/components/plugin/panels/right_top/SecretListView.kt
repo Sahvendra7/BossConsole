@@ -25,6 +25,7 @@ fun SecretList(
     onToggleMetadata: (String) -> Unit,
     onEdit: (SecretEntry) -> Unit,
     onDelete: (SecretEntry) -> Unit,
+    onShare: (SecretEntry) -> Unit = {},
     onLoadMore: () -> Unit,
     isLoadingMore: Boolean,
     hasMore: Boolean,
@@ -63,7 +64,8 @@ fun SecretList(
                 onTogglePassword = { onTogglePassword(secret.id) },
                 onToggleMetadata = { onToggleMetadata(secret.id) },
                 onEdit = { onEdit(secret) },
-                onDelete = { onDelete(secret) }
+                onDelete = { onDelete(secret) },
+                onShare = { onShare(secret) }
             )
         }
 

@@ -113,6 +113,7 @@ fun SecretManagerContent(viewModel: SecretManagerViewModel) {
                         onToggleMetadata = { viewModel.toggleMetadataExpanded(it) },
                         onEdit = { viewModel.showEditDialog(it) },
                         onDelete = { viewModel.showDeleteDialog(it) },
+                        onShare = { viewModel.showShareDialog(it) },
                         onLoadMore = { viewModel.loadMoreSecrets() },
                         isLoadingMore = state.isLoadingMore,
                         hasMore = state.hasMore,
@@ -148,6 +149,36 @@ fun SecretManagerContent(viewModel: SecretManagerViewModel) {
                 },
                 onDismiss = { viewModel.hideDeleteDialog() },
                 isLoading = state.isOperationInProgress
+            )
+        }
+
+        if (state.showShareDialog && state.selectedSecret != null) {
+            ShareSecretDialog(
+                secret = state.selectedSecret,
+                shares = state.secretShares,
+                availableUsers = state.availableUsers,
+                availableRoles = state.availableRoles,
+                onShare = { request ->
+                    viewModel.shareSecret(request)
+                },
+                onRevoke = { userId, roleId ->
+                    viewModel.unshareSecret(
+                        secretId = state.selectedSecret.id,
+                        userId = userId,
+                        roleId = roleId
+                    )
+                },
+                onDismiss = { viewModel.hideShareDialog() },
+                isLoading = state.isOperationInProgress,
+                isLoadingShares = state.isLoadingShares,
+                onSearchUsers = { query ->
+                    if (query.isBlank()) {
+                        viewModel.loadAvailableUsers()
+                    } else {
+                        viewModel.searchUsersForSharing(query)
+                    }
+                },
+                isLoadingUsers = state.isLoadingUsers
             )
         }
     }

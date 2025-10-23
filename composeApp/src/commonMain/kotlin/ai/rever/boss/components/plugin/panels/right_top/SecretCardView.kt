@@ -28,7 +28,8 @@ fun SecretCard(
     onTogglePassword: () -> Unit,
     onToggleMetadata: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShare: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -73,6 +74,17 @@ fun SecretCard(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    IconButton(
+                        onClick = onShare,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            FeatherIcons.Share2,
+                            contentDescription = "Share",
+                            tint = Color(0xFF64B5F6),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     IconButton(
                         onClick = onEdit,
                         modifier = Modifier.size(32.dp)

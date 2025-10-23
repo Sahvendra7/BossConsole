@@ -4,6 +4,7 @@ import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,7 @@ import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Eye
 import compose.icons.feathericons.EyeOff
+import compose.icons.feathericons.Trash2
 
 /**
  * Create secret dialog
@@ -655,4 +657,555 @@ fun DeleteSecretConfirmationDialog(
         },
         backgroundColor = Color(0xFF3C3F41)
     )
+}
+
+/**
+ * Share secret dialog
+ * Allows sharing secrets with users or roles and viewing existing shares
+ */
+@Composable
+fun ShareSecretDialog(
+    secret: SecretEntry,
+    shares: List<ai.rever.boss.services.supabase.models.SecretShareEntry>,
+    availableUsers: List<ai.rever.boss.services.supabase.models.UserWithRoles>,
+    availableRoles: List<ai.rever.boss.services.supabase.models.RoleInfo>,
+    onShare: (ai.rever.boss.services.supabase.models.ShareSecretRequest) -> Unit,
+    onRevoke: (userId: String?, roleId: String?) -> Unit,
+    onDismiss: () -> Unit,
+    isLoading: Boolean,
+    isLoadingShares: Boolean,
+    onSearchUsers: (String) -> Unit = {},
+    isLoadingUsers: Boolean = false
+) {
+    var selectedUser by remember { mutableStateOf<ai.rever.boss.services.supabase.models.UserWithRoles?>(null) }
+    var selectedRole by remember { mutableStateOf<ai.rever.boss.services.supabase.models.RoleInfo?>(null) }
+    var shareNotes by remember { mutableStateOf("") }
+    var expiresAt by remember { mutableStateOf("") }
+    var shareType by remember { mutableStateOf("user") } // "user" or "role"
+
+    Dialog(onDismissRequest = { if (!isLoading) onDismiss() }) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF3C3F41),
+            modifier = Modifier.width(600.dp).heightIn(max = 700.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Title
+                Text(
+                    "Share Secret",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Secret info
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF2B2D30), RoundedCornerShape(4.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = secret.website,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = secret.username,
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Divider(color = Color(0xFF4E5254), thickness = 1.dp)
+
+                // Existing shares section
+                Text(
+                    "Current Shares",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                if (isLoadingShares) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                } else if (shares.isEmpty()) {
+                    Text(
+                        "No one has access to this secret yet",
+                        color = Color.Gray,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF2B2D30), RoundedCornerShape(4.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        shares.forEach { share ->
+                            ShareItem(
+                                share = share,
+                                onRevoke = {
+                                    onRevoke(share.sharedWithUserId, share.sharedWithRoleId)
+                                },
+                                isLoading = isLoading
+                            )
+                        }
+                    }
+                }
+
+                Divider(color = Color(0xFF4E5254), thickness = 1.dp)
+
+                // Add new share section
+                Text(
+                    "Grant Access",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Share type selector (User or Role)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { shareType = "user" },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = if (shareType == "user") Color(0xFF4CAF50) else Color(0xFF2B2D30)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("User", color = Color.White)
+                    }
+                    Button(
+                        onClick = { shareType = "role" },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = if (shareType == "role") Color(0xFF4CAF50) else Color(0xFF2B2D30)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Role", color = Color.White)
+                    }
+                }
+
+                // Dropdown selector based on share type
+                if (shareType == "user") {
+                    Text(
+                        "Select User:",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    UserDropdown(
+                        users = availableUsers,
+                        selectedUser = selectedUser,
+                        onUserSelected = { selectedUser = it },
+                        onSearch = onSearchUsers,
+                        isLoading = isLoadingUsers,
+                        enabled = !isLoading
+                    )
+                } else {
+                    Text(
+                        "Select Role:",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    RoleDropdownForSharing(
+                        roles = availableRoles,
+                        selectedRole = selectedRole,
+                        onRoleSelected = { selectedRole = it },
+                        enabled = !isLoading
+                    )
+                }
+
+                // Notes
+                OutlinedTextField(
+                    value = shareNotes,
+                    onValueChange = { shareNotes = it },
+                    label = { Text("Notes (Optional)", color = Color.Gray) },
+                    placeholder = { Text("Why are you sharing this?", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth().height(80.dp),
+                    enabled = !isLoading,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    maxLines = 3
+                )
+
+                // Expiration date
+                OutlinedTextField(
+                    value = expiresAt,
+                    onValueChange = { expiresAt = it },
+                    label = { Text("Expires At (Optional)", color = Color.Gray) },
+                    placeholder = { Text("YYYY-MM-DD HH:MM:SS", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
+                )
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isLoading
+                    ) {
+                        Text("Close", color = Color.Gray)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val request = ai.rever.boss.services.supabase.models.ShareSecretRequest(
+                                secretId = secret.id,
+                                targetUserId = if (shareType == "user") selectedUser?.userId else null,
+                                targetRoleId = if (shareType == "role") selectedRole?.id else null,
+                                notes = shareNotes.ifBlank { null },
+                                expiresAt = expiresAt.ifBlank { null }
+                            )
+                            onShare(request)
+                            // Clear form
+                            selectedUser = null
+                            selectedRole = null
+                            shareNotes = ""
+                            expiresAt = ""
+                        },
+                        enabled = !isLoading &&
+                            ((shareType == "user" && selectedUser != null) ||
+                             (shareType == "role" && selectedRole != null)),
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF4CAF50),
+                            disabledBackgroundColor = Color.Gray
+                        )
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text("Share", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Share item component showing a single share entry
+ */
+@Composable
+fun ShareItem(
+    share: ai.rever.boss.services.supabase.models.SecretShareEntry,
+    onRevoke: () -> Unit,
+    isLoading: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF3C3F41), RoundedCornerShape(4.dp))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            // Show user email or role name
+            Text(
+                text = share.sharedWithUserEmail ?: share.sharedWithRoleName ?: "Unknown",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            // Show who shared it
+            Text(
+                text = "Shared by ${share.sharedByEmail}",
+                color = Color.Gray,
+                fontSize = 11.sp
+            )
+
+            // Show access level
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Access: ${share.accessLevel}",
+                    color = Color(0xFF4CAF50),
+                    fontSize = 11.sp
+                )
+
+                // Show expiration if set
+                if (share.expiresAt != null) {
+                    Text(
+                        text = " • Expires: ${share.expiresAt}",
+                        color = Color(0xFFFFB74D),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        // Revoke button
+        IconButton(
+            onClick = onRevoke,
+            enabled = !isLoading,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                FeatherIcons.Trash2,
+                contentDescription = "Revoke access",
+                tint = Color(0xFFE57373),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * User dropdown for selecting a user to share with (server-side search)
+ */
+@Composable
+fun UserDropdown(
+    users: List<ai.rever.boss.services.supabase.models.UserWithRoles>,
+    selectedUser: ai.rever.boss.services.supabase.models.UserWithRoles?,
+    onUserSelected: (ai.rever.boss.services.supabase.models.UserWithRoles) -> Unit,
+    onSearch: (String) -> Unit,
+    isLoading: Boolean = false,
+    enabled: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    Box {
+        // Dropdown button
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) { expanded = true },
+            shape = RoundedCornerShape(4.dp),
+            color = if (enabled) Color(0xFF2B2D30) else Color(0xFF1E1E1E)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    selectedUser?.email ?: "Select a user...",
+                    color = if (selectedUser != null) Color.White else Color.Gray,
+                    fontSize = 14.sp
+                )
+                Icon(
+                    FeatherIcons.ChevronDown,
+                    contentDescription = "Expand",
+                    tint = Color.Gray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        // Dropdown menu with search
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = {
+                expanded = false
+                searchQuery = ""
+            },
+            modifier = Modifier.background(Color(0xFF3C3F41)).heightIn(max = 300.dp)
+        ) {
+            // Search field
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { query ->
+                    searchQuery = query
+                    // Trigger server-side search
+                    onSearch(query)
+                },
+                placeholder = { Text("Search users...", color = Color.Gray) },
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                enabled = !isLoading,
+                colors = TextFieldDefaults.outlinedTextFieldColors(
+                    textColor = Color.White,
+                    backgroundColor = Color(0xFF2B2D30),
+                    focusedBorderColor = Color(0xFF4CAF50),
+                    unfocusedBorderColor = Color.Gray
+                ),
+                singleLine = true,
+                trailingIcon = {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            )
+
+            Divider(color = Color(0xFF4E5254), thickness = 1.dp)
+
+            if (isLoading) {
+                // Show loading indicator
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = Color(0xFF4CAF50),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            } else if (users.isEmpty()) {
+                DropdownMenuItem(onClick = {}) {
+                    Text(
+                        "No users found",
+                        color = Color.Gray,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                users.forEach { user ->
+                    DropdownMenuItem(
+                        onClick = {
+                            onUserSelected(user)
+                            expanded = false
+                            searchQuery = ""
+                        }
+                    ) {
+                        Column {
+                            Text(
+                                user.email,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            if (user.roles.isNotEmpty()) {
+                                Text(
+                                    "Roles: ${user.roles.joinToString(", ")}",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Role dropdown for selecting a role to share with
+ */
+@Composable
+fun RoleDropdownForSharing(
+    roles: List<ai.rever.boss.services.supabase.models.RoleInfo>,
+    selectedRole: ai.rever.boss.services.supabase.models.RoleInfo?,
+    onRoleSelected: (ai.rever.boss.services.supabase.models.RoleInfo) -> Unit,
+    enabled: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        // Dropdown button
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) { expanded = true },
+            shape = RoundedCornerShape(4.dp),
+            color = if (enabled) Color(0xFF2B2D30) else Color(0xFF1E1E1E)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    selectedRole?.name ?: "Select a role...",
+                    color = if (selectedRole != null) Color.White else Color.Gray,
+                    fontSize = 14.sp
+                )
+                Icon(
+                    FeatherIcons.ChevronDown,
+                    contentDescription = "Expand",
+                    tint = Color.Gray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        // Dropdown menu
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(Color(0xFF3C3F41))
+        ) {
+            if (roles.isEmpty()) {
+                DropdownMenuItem(onClick = {}) {
+                    Text(
+                        "No roles available",
+                        color = Color.Gray,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                roles.forEach { role ->
+                    DropdownMenuItem(
+                        onClick = {
+                            onRoleSelected(role)
+                            expanded = false
+                        }
+                    ) {
+                        Column {
+                            Text(
+                                role.name,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (role.description != null && role.description.isNotBlank()) {
+                                Text(
+                                    role.description,
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

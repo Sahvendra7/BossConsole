@@ -3,6 +3,10 @@ package ai.rever.boss.services.supabase
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.PaginatedSecrets
 import ai.rever.boss.services.supabase.models.SecretEntry
+import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
+import ai.rever.boss.services.supabase.models.SecretShareEntry
+import ai.rever.boss.services.supabase.models.ShareSecretRequest
+import ai.rever.boss.services.supabase.models.UnshareSecretRequest
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
@@ -307,6 +311,218 @@ object SecretService {
             }
         } catch (e: Exception) {
             println("❌ SecretService.deleteSecret failed: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Get user secrets including shared secrets
+     *
+     * @param limit Maximum number of secrets to return
+     * @param offset Number of secrets to skip
+     * @return Paginated result with decrypted secrets (own + shared)
+     */
+    suspend fun getUserSecretsWithShared(limit: Int = 50, offset: Int = 0): Result<PaginatedSecrets> {
+        return try {
+            println("🔍 [SecretService.getUserSecretsWithShared] Starting with limit=$limit, offset=$offset")
+
+            val params = buildJsonObject {
+                put("p_limit", limit)
+                put("p_offset", offset)
+            }
+
+            println("🔍 [SecretService.getUserSecretsWithShared] Calling RPC function: get_user_secrets_with_shared")
+
+            val postgrestResult = client.postgrest.rpc(
+                function = "get_user_secrets_with_shared",
+                parameters = params
+            )
+
+            println("✅ [SecretService.getUserSecretsWithShared] RPC call completed")
+            println("🔍 [SecretService.getUserSecretsWithShared] Response data length: ${postgrestResult.data.length} chars")
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val secretsWithSharing = Json.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
+
+            // Convert to regular SecretEntry for compatibility
+            val secrets = secretsWithSharing.map { it.toSecretEntry() }
+
+            // Check if there might be more results
+            val hasMore = secrets.size >= limit
+
+            println("✅ [SecretService.getUserSecretsWithShared] Successfully parsed ${secrets.size} secrets, hasMore=$hasMore")
+
+            Result.success(
+                PaginatedSecrets(
+                    data = secrets,
+                    hasMore = hasMore
+                )
+            )
+        } catch (e: Exception) {
+            println("❌ [SecretService.getUserSecretsWithShared] Exception caught:")
+            println("   Type: ${e::class.simpleName}")
+            println("   Message: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Share a secret with a user or role
+     *
+     * @param request Share request with secret ID and target user/role
+     * @return Result with success/failure
+     */
+    suspend fun shareSecret(request: ShareSecretRequest): Result<Unit> {
+        return try {
+            println("🔍 [SecretService.shareSecret] Starting...")
+            println("🔍 [SecretService.shareSecret] Request: secretId=${request.secretId}, userId=${request.targetUserId}, roleId=${request.targetRoleId}")
+
+            // Validate request
+            request.validate().getOrElse {
+                println("❌ [SecretService.shareSecret] Validation failed: ${it.message}")
+                return Result.failure(it)
+            }
+            println("✅ [SecretService.shareSecret] Validation passed")
+
+            val params = buildJsonObject {
+                put("p_secret_id", request.secretId)
+                if (request.targetUserId != null) {
+                    put("p_target_user_id", request.targetUserId)
+                }
+                if (request.targetRoleId != null) {
+                    put("p_target_role_id", request.targetRoleId)
+                }
+                if (request.notes != null) {
+                    put("p_notes", request.notes)
+                }
+                if (request.expiresAt != null) {
+                    put("p_expires_at", request.expiresAt)
+                }
+            }
+
+            println("🔍 [SecretService.shareSecret] Parameters built")
+            println("🔍 [SecretService.shareSecret] Calling RPC function: share_secret")
+
+            val postgrestResult = client.postgrest.rpc(
+                function = "share_secret",
+                parameters = params
+            )
+
+            println("✅ [SecretService.shareSecret] RPC call completed")
+            println("🔍 [SecretService.shareSecret] Response data: ${postgrestResult.data}")
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val result = Json.decodeFromJsonElement<RpcResponse>(jsonElement)
+
+            println("🔍 [SecretService.shareSecret] Parsed response: success=${result.success}, message=${result.message}, error=${result.error}")
+
+            if (result.success) {
+                println("✅ [SecretService.shareSecret] Secret shared successfully")
+                Result.success(Unit)
+            } else {
+                println("❌ [SecretService.shareSecret] Server returned error: ${result.error}")
+                Result.failure(Exception(result.error ?: "Failed to share secret"))
+            }
+        } catch (e: Exception) {
+            println("❌ [SecretService.shareSecret] Exception caught:")
+            println("   Type: ${e::class.simpleName}")
+            println("   Message: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Unshare a secret (revoke access)
+     *
+     * @param request Unshare request with secret ID and target user/role
+     * @return Result with success/failure
+     */
+    suspend fun unshareSecret(request: UnshareSecretRequest): Result<Unit> {
+        return try {
+            println("🔍 [SecretService.unshareSecret] Starting...")
+            println("🔍 [SecretService.unshareSecret] Request: secretId=${request.secretId}, userId=${request.targetUserId}, roleId=${request.targetRoleId}")
+
+            // Validate request
+            request.validate().getOrElse {
+                println("❌ [SecretService.unshareSecret] Validation failed: ${it.message}")
+                return Result.failure(it)
+            }
+
+            val params = buildJsonObject {
+                put("p_secret_id", request.secretId)
+                if (request.targetUserId != null) {
+                    put("p_target_user_id", request.targetUserId)
+                }
+                if (request.targetRoleId != null) {
+                    put("p_target_role_id", request.targetRoleId)
+                }
+            }
+
+            println("🔍 [SecretService.unshareSecret] Calling RPC function: unshare_secret")
+
+            val postgrestResult = client.postgrest.rpc(
+                function = "unshare_secret",
+                parameters = params
+            )
+
+            println("✅ [SecretService.unshareSecret] RPC call completed")
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val result = Json.decodeFromJsonElement<RpcResponse>(jsonElement)
+
+            if (result.success) {
+                println("✅ [SecretService.unshareSecret] Access revoked successfully")
+                Result.success(Unit)
+            } else {
+                println("❌ [SecretService.unshareSecret] Server returned error: ${result.error}")
+                Result.failure(Exception(result.error ?: "Failed to unshare secret"))
+            }
+        } catch (e: Exception) {
+            println("❌ [SecretService.unshareSecret] Exception caught:")
+            println("   Type: ${e::class.simpleName}")
+            println("   Message: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Get all shares for a secret
+     *
+     * @param secretId ID of the secret to get shares for
+     * @return Result with list of share entries
+     */
+    suspend fun getSecretShares(secretId: String): Result<List<SecretShareEntry>> {
+        return try {
+            println("🔍 [SecretService.getSecretShares] Starting for secretId=$secretId")
+
+            val params = buildJsonObject {
+                put("p_secret_id", secretId)
+            }
+
+            println("🔍 [SecretService.getSecretShares] Calling RPC function: get_secret_shares")
+
+            val postgrestResult = client.postgrest.rpc(
+                function = "get_secret_shares",
+                parameters = params
+            )
+
+            println("✅ [SecretService.getSecretShares] RPC call completed")
+            println("🔍 [SecretService.getSecretShares] Response data length: ${postgrestResult.data.length} chars")
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val shares = Json.decodeFromJsonElement<List<SecretShareEntry>>(jsonElement)
+
+            println("✅ [SecretService.getSecretShares] Successfully parsed ${shares.size} shares")
+
+            Result.success(shares)
+        } catch (e: Exception) {
+            println("❌ [SecretService.getSecretShares] Exception caught:")
+            println("   Type: ${e::class.simpleName}")
+            println("   Message: ${e.message}")
             e.printStackTrace()
             Result.failure(e)
         }

@@ -4,6 +4,13 @@ import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
+import ai.rever.boss.services.supabase.models.SecretShareEntry
+import ai.rever.boss.services.supabase.models.ShareSecretRequest
+import ai.rever.boss.services.supabase.models.UnshareSecretRequest
+import ai.rever.boss.services.supabase.UserService
+import ai.rever.boss.services.supabase.RoleCreationService
+import ai.rever.boss.services.supabase.models.UserWithRoles
+import ai.rever.boss.services.supabase.models.RoleInfo
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -41,6 +48,8 @@ class SecretManagerViewModel {
 
     init {
         loadSecrets()
+        loadAvailableUsers()
+        loadAvailableRoles()
     }
 
     /**
@@ -333,6 +342,196 @@ class SecretManagerViewModel {
     fun clearError() {
         state = state.copy(errorMessage = null)
     }
+
+    /**
+     * Show share secret dialog
+     */
+    fun showShareDialog(secret: SecretEntry) {
+        state = state.copy(
+            showShareDialog = true,
+            selectedSecret = secret,
+            secretShares = emptyList(),
+            isLoadingShares = false
+        )
+        // Automatically load existing shares when dialog opens
+        loadSecretShares(secret.id)
+    }
+
+    /**
+     * Hide share secret dialog
+     */
+    fun hideShareDialog() {
+        state = state.copy(
+            showShareDialog = false,
+            selectedSecret = null,
+            secretShares = emptyList(),
+            isLoadingShares = false
+        )
+    }
+
+    /**
+     * Load all shares for a specific secret
+     */
+    fun loadSecretShares(secretId: String) {
+        state = state.copy(isLoadingShares = true)
+
+        scope.launch {
+            val result = SecretService.getSecretShares(secretId)
+
+            result.onSuccess { shares ->
+                state = state.copy(
+                    secretShares = shares,
+                    isLoadingShares = false
+                )
+                println("✅ Loaded ${shares.size} shares for secret $secretId")
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isLoadingShares = false,
+                    errorMessage = error
+                )
+                println("❌ Failed to load secret shares: $error")
+            }
+        }
+    }
+
+    /**
+     * Share a secret with a user or role
+     */
+    fun shareSecret(request: ShareSecretRequest) {
+        state = state.copy(isOperationInProgress = true)
+
+        scope.launch {
+            val result = SecretService.shareSecret(request)
+
+            result.onSuccess {
+                println("✅ Successfully shared secret ${request.secretId}")
+                state = state.copy(isOperationInProgress = false)
+                // Reload shares to show the new share
+                loadSecretShares(request.secretId)
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isOperationInProgress = false,
+                    errorMessage = error
+                )
+                println("❌ Failed to share secret: $error")
+            }
+        }
+    }
+
+    /**
+     * Revoke access to a secret from a user or role
+     */
+    fun unshareSecret(secretId: String, userId: String? = null, roleId: String? = null) {
+        state = state.copy(isOperationInProgress = true)
+
+        scope.launch {
+            val request = UnshareSecretRequest(
+                secretId = secretId,
+                targetUserId = userId,
+                targetRoleId = roleId
+            )
+
+            val result = SecretService.unshareSecret(request)
+
+            result.onSuccess {
+                println("✅ Successfully revoked access to secret $secretId")
+                state = state.copy(isOperationInProgress = false)
+                // Reload shares to reflect the change
+                loadSecretShares(secretId)
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isOperationInProgress = false,
+                    errorMessage = error
+                )
+                println("❌ Failed to revoke secret access: $error")
+            }
+        }
+    }
+
+    /**
+     * Load available users for sharing (initial load)
+     */
+    fun loadAvailableUsers() {
+        state = state.copy(isLoadingUsers = true)
+
+        scope.launch {
+            val result = UserService.getAllUsersWithRoles(limit = 10, offset = 0)
+
+            result.onSuccess { paginatedResult ->
+                state = state.copy(
+                    availableUsers = paginatedResult.data,
+                    isLoadingUsers = false
+                )
+                println("✅ Loaded ${paginatedResult.data.size} available users for sharing")
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isLoadingUsers = false,
+                    errorMessage = error
+                )
+                println("❌ Failed to load available users: $error")
+            }
+        }
+    }
+
+    /**
+     * Search users for sharing by email
+     */
+    fun searchUsersForSharing(query: String) {
+        state = state.copy(isLoadingUsers = true)
+
+        scope.launch {
+            val result = UserService.searchUsersByEmail(
+                searchQuery = query,
+                limit = 10,
+                offset = 0
+            )
+
+            result.onSuccess { paginatedResult ->
+                state = state.copy(
+                    availableUsers = paginatedResult.data,
+                    isLoadingUsers = false
+                )
+                println("✅ Search completed: ${paginatedResult.data.size} users found for '$query'")
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isLoadingUsers = false,
+                    errorMessage = error
+                )
+                println("❌ User search failed: $error")
+            }
+        }
+    }
+
+    /**
+     * Load available roles for sharing
+     */
+    fun loadAvailableRoles() {
+        state = state.copy(isLoadingRoles = true)
+
+        scope.launch {
+            val result = RoleCreationService.getAllRoles()
+
+            result.onSuccess { roles ->
+                state = state.copy(
+                    availableRoles = roles,
+                    isLoadingRoles = false
+                )
+                println("✅ Loaded ${roles.size} available roles for sharing")
+            }.onFailure { exception ->
+                val error = exception.message ?: "Unknown error"
+                state = state.copy(
+                    isLoadingRoles = false,
+                    errorMessage = error
+                )
+                println("❌ Failed to load available roles: $error")
+            }
+        }
+    }
 }
 
 /**
@@ -353,5 +552,14 @@ data class SecretManagerState(
     val visiblePasswordIds: Set<String> = emptySet(),
     val pageSize: Int = 50,
     val currentOffset: Int = 0,
-    val hasMore: Boolean = true
+    val hasMore: Boolean = true,
+    // Sharing-related state
+    val showShareDialog: Boolean = false,
+    val secretShares: List<SecretShareEntry> = emptyList(),
+    val isLoadingShares: Boolean = false,
+    // Available users and roles for sharing
+    val availableUsers: List<UserWithRoles> = emptyList(),
+    val availableRoles: List<RoleInfo> = emptyList(),
+    val isLoadingUsers: Boolean = false,
+    val isLoadingRoles: Boolean = false
 )
