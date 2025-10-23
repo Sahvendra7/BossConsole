@@ -10,6 +10,7 @@ import ai.rever.boss.components.plugin.panels.right_top.registerRoleCreation
 import ai.rever.boss.components.plugin.panels.right_top.registerRpaEngine
 import ai.rever.boss.components.plugin.panels.right_top.registerRpaRecorder
 import ai.rever.boss.components.plugin.panels.right_top.registerSecretManager
+import ai.rever.boss.components.plugin.panels.right_top.registerUserSecretList
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
@@ -41,6 +42,7 @@ class DefaultPlugin(
         registerAdminRoleManagement()
         registerRoleCreation()
         registerSecretManager()
+        registerUserSecretList()
 
         // Tab Types
         registerFluck()

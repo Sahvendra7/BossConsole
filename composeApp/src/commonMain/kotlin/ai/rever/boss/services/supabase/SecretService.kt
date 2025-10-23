@@ -2,6 +2,7 @@ package ai.rever.boss.services.supabase
 
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.PaginatedSecrets
+import ai.rever.boss.services.supabase.models.PaginatedSecretsWithSharing
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
 import ai.rever.boss.services.supabase.models.SecretShareEntry
@@ -369,6 +370,59 @@ object SecretService {
     }
 
     /**
+     * Get user secrets with sharing information (keeps sharing metadata)
+     *
+     * Similar to getUserSecretsWithShared but returns SecretEntryWithSharing objects
+     * which include ownership and sharing context (isOwner, sharedByEmail, accessLevel).
+     * Used by the user-level secret list panel to display ownership badges.
+     *
+     * @param limit Maximum number of secrets to return
+     * @param offset Number of secrets to skip
+     * @return Paginated result with secrets including sharing metadata
+     */
+    suspend fun getUserSecretsWithSharingInfo(limit: Int = 50, offset: Int = 0): Result<PaginatedSecretsWithSharing> {
+        return try {
+            println("🔍 [SecretService.getUserSecretsWithSharingInfo] Starting with limit=$limit, offset=$offset")
+
+            val params = buildJsonObject {
+                put("p_limit", limit)
+                put("p_offset", offset)
+            }
+
+            println("🔍 [SecretService.getUserSecretsWithSharingInfo] Calling RPC function: get_user_secrets_with_shared")
+
+            val postgrestResult = client.postgrest.rpc(
+                function = "get_user_secrets_with_shared",
+                parameters = params
+            )
+
+            println("✅ [SecretService.getUserSecretsWithSharingInfo] RPC call completed")
+            println("🔍 [SecretService.getUserSecretsWithSharingInfo] Response data length: ${postgrestResult.data.length} chars")
+
+            val jsonElement = Json.parseToJsonElement(postgrestResult.data)
+            val secretsWithSharing = Json.decodeFromJsonElement<List<SecretEntryWithSharing>>(jsonElement)
+
+            // Check if there might be more results
+            val hasMore = secretsWithSharing.size >= limit
+
+            println("✅ [SecretService.getUserSecretsWithSharingInfo] Successfully parsed ${secretsWithSharing.size} secrets, hasMore=$hasMore")
+
+            Result.success(
+                PaginatedSecretsWithSharing(
+                    data = secretsWithSharing,
+                    hasMore = hasMore
+                )
+            )
+        } catch (e: Exception) {
+            println("❌ [SecretService.getUserSecretsWithSharingInfo] Exception caught:")
+            println("   Type: ${e::class.simpleName}")
+            println("   Message: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Share a secret with a user or role
      *
      * @param request Share request with secret ID and target user/role
@@ -536,6 +590,9 @@ object SecretService {
         val success: Boolean,
         val error: String? = null,
         val message: String? = null,
-        val secret_id: String? = null  // ID of created/updated secret
+        val secret_id: String? = null,  // ID of created/updated secret
+        val target_email: String? = null,  // Email of user shared with (for share_secret)
+        val target_role: String? = null,  // Name of role shared with (for share_secret)
+        val revoked_count: Int? = null  // Number of shares revoked (for unshare_secret)
     )
 }

@@ -32,6 +32,8 @@ data class SecretMetadata(
     val twofaEnabled: Boolean = false,
     @SerialName("twofa_type")
     val twofaType: String? = null,  // 'app', 'sms', 'email', 'hardware'
+    @SerialName("twofa_secret")
+    val twofaSecret: String? = null,  // Encrypted 2FA secret (for TOTP apps)
     @SerialName("recovery_codes")
     val recoveryCodes: List<String> = emptyList()
 )
@@ -245,3 +247,13 @@ data class UnshareSecretRequest(
         return Result.success(Unit)
     }
 }
+
+/**
+ * Paginated result for secrets with sharing information
+ * Used by user-level secret list to show ownership and sharing details
+ */
+data class PaginatedSecretsWithSharing(
+    val data: List<SecretEntryWithSharing>,
+    val hasMore: Boolean,
+    val total: Int? = null
+)
