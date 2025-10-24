@@ -1,6 +1,7 @@
 package ai.rever.boss.viewmodels.auth
 
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.services.supabase.models.AvailableWebAuthnCredential
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,12 +16,16 @@ import kotlinx.coroutines.launch
  */
 class AuthOptionsManager {
     private val viewModelScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-    
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // Store available credentials from UserExistence check
+    private val _availableCredentials = MutableStateFlow<List<AvailableWebAuthnCredential>>(emptyList())
+    val availableCredentials: StateFlow<List<AvailableWebAuthnCredential>> = _availableCredentials.asStateFlow()
 
     /**
      * Check if a user exists with the given email and return their authentication options
@@ -38,7 +43,11 @@ class AuthOptionsManager {
             AuthService.checkUserExists(email).fold(
                 onSuccess = { userExistence ->
                     println("AuthOptionsManager: User existence check completed - exists: ${userExistence.exists}, hasPasskeys: ${userExistence.hasPasskeys}")
-                    
+
+                    // Store available credentials for passkey selection
+                    _availableCredentials.value = userExistence.availableCredentials
+                    println("AuthOptionsManager: Stored ${userExistence.availableCredentials.size} available credentials")
+
                     val authOptions = when {
                         userExistence.exists && userExistence.hasPasskeys -> {
                             // User has passkeys - show simplified passkey + password options
@@ -49,7 +58,7 @@ class AuthOptionsManager {
                             AuthOptions.MagicLinkOnly(email)
                         }
                     }
-                    
+
                     _isLoading.value = false
                     onResult(authOptions)
                 },

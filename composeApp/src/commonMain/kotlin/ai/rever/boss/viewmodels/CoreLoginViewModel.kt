@@ -31,15 +31,16 @@ class CoreLoginViewModel {
             _errorMessage.value = "Please enter your email"
             return
         }
-        
+
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            
+
             AuthService.sendMagicLink(email).fold(
                 onSuccess = {
                     println("Magic link sent successfully")
-                    _errorMessage.value = "Magic link sent! Check your email to sign in."
+                    // Don't set success message as error - navigate to waiting screen instead
+                    _errorMessage.value = null
                     onSuccess()
                 },
                 onFailure = { error ->
@@ -47,9 +48,16 @@ class CoreLoginViewModel {
                     _errorMessage.value = error.message
                 }
             )
-            
+
             _isLoading.value = false
         }
+    }
+
+    /**
+     * Clear error message
+     */
+    fun clearError() {
+        _errorMessage.value = null
     }
 
 }

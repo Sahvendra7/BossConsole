@@ -87,8 +87,8 @@ object AuthService {
      * Authenticate using passkey
      * Supports both user-identified and usernameless authentication
      */
-    suspend fun authenticateWithPasskey(email: String): Result<Unit> {
-        return PasskeyAuthService.authenticateWithPasskey(email)
+    suspend fun authenticateWithPasskey(email: String, credentialId: String? = null): Result<Unit> {
+        return PasskeyAuthService.authenticateWithPasskey(email, credentialId)
     }
     
     /**

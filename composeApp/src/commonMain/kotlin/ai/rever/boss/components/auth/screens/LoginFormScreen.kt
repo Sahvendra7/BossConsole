@@ -28,6 +28,7 @@ import BossDarkAccent
 import ai.rever.boss.components.auth.forms.*
 import ai.rever.boss.viewmodels.LoginViewModel
 import ai.rever.boss.viewmodels.auth.AuthOptions
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -36,12 +37,20 @@ fun LoginFormScreen(
     onLoginSuccess: () -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
-    onMagicLinkSent: (String) -> Unit = {}
+    onMagicLinkSent: (String) -> Unit = {},
+    onPasskeyAuthInitiated: (String) -> Unit = {},
+    onPasskeySelectionRequired: (String) -> Unit = {}
 ) {
     var email by remember { mutableStateOf("") }
     var authOptions by remember { mutableStateOf<AuthOptions?>(null) }
-    var checkingUserExists by remember { mutableStateOf(false) }
     var showAuthOptions by remember { mutableStateOf(false) }
+
+    // Collect loading states from ViewModels
+    val checkingUserExists by viewModel.authOptionsManager.isLoading.collectAsState()
+    val passkeyAuthLoading by viewModel.passkeyAuthViewModel.isLoading.collectAsState()
+
+    // Collect available credentials from AuthOptionsManager
+    val availableCredentials by viewModel.authOptionsManager.availableCredentials.collectAsState()
 
     LocalSoftwareKeyboardController.current
     
@@ -79,15 +88,13 @@ fun LoginFormScreen(
                         authOptions = null
                     }
                 },
-                enabled = !isLoading,
+                enabled = !isLoading && !checkingUserExists,
                 keyboardActions = KeyboardActions(
-                    onGo = { 
+                    onGo = {
                         if (email.isNotBlank() && email.contains("@") && !showAuthOptions) {
-                            checkingUserExists = true
                             viewModel.checkUserExists(email) { options ->
                                 authOptions = options
                                 showAuthOptions = true
-                                checkingUserExists = false
                             }
                         }
                     }
@@ -103,18 +110,19 @@ fun LoginFormScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Continue Button (when email not yet validated)
-            val isEmailValidAndReady = !showAuthOptions && !checkingUserExists &&
+            // Show button when email is valid AND auth options not yet shown
+            // Keep button visible during loading to show spinner feedback
+            val shouldShowContinueButton = !showAuthOptions &&
                 email.isNotBlank() && email.contains("@")
-            if (isEmailValidAndReady) {
+
+            if (shouldShowContinueButton) {
                 PrimaryActionButton(
                     text = "Continue",
                     onClick = {
                         if (email.isNotBlank() && email.contains("@")) {
-                            checkingUserExists = true
                             viewModel.checkUserExists(email) { options ->
                                 authOptions = options
                                 showAuthOptions = true
-                                checkingUserExists = false
                             }
                         }
                     },
@@ -125,6 +133,18 @@ fun LoginFormScreen(
             
             // Authentication Options (after email validation)
             if (showAuthOptions) {
+                // Auto-send magic link when it's the only authentication option
+                // This removes the redundant "Send Magic Link" button click for new users
+                LaunchedEffect(authOptions) {
+                    if (authOptions is AuthOptions.MagicLinkOnly && !isLoading) {
+                        // Automatically send magic link to skip redundant button click
+                        viewModel.sendMagicLink(email) {
+                            // Magic link sent successfully - navigate to waiting screen
+                            onMagicLinkSent(email)
+                        }
+                    }
+                }
+
                 when (val options = authOptions) {
                     null -> {
                         // Loading state - show checking indicator
@@ -139,26 +159,38 @@ fun LoginFormScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    
+
                     is AuthOptions.WithPasskey -> {
-                        // User has passkeys - show simple passkey option
+                        // Set available passkeys from already-fetched credentials
+                        LaunchedEffect(availableCredentials) {
+                            viewModel.passkeyAuthViewModel.setAvailablePasskeys(availableCredentials)
+                        }
+
+                        // User has passkeys - check if multiple or single
                         Button(
                             onClick = {
-                                viewModel.authenticateWithEmailAndPasskey(email) {
-                                    onLoginSuccess()
+                                // Navigate based on passkey count from ViewModel
+                                val passkeyCount = viewModel.passkeyAuthViewModel.availablePasskeys.value.size
+
+                                if (passkeyCount > 1) {
+                                    // Multiple passkeys - show selection screen
+                                    onPasskeySelectionRequired(email)
+                                } else {
+                                    // Single passkey - direct authentication
+                                    onPasskeyAuthInitiated(email)
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp),
-                            enabled = !isLoading,
+                            enabled = !isLoading && !passkeyAuthLoading,
                             shape = RoundedCornerShape(4.dp),
                             colors = ButtonDefaults.buttonColors(
                                 backgroundColor = BossDarkAccent,
                                 contentColor = Color.White
                             )
                         ) {
-                            if (isLoading) {
+                            if (passkeyAuthLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     color = Color.White,

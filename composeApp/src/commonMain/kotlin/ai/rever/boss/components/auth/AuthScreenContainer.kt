@@ -9,6 +9,8 @@ import BossDarkBackground
 import BossTheme
 import ai.rever.boss.components.auth.screens.LoginFormScreen
 import ai.rever.boss.components.auth.screens.MagicLinkWaitingScreen
+import ai.rever.boss.components.auth.screens.PasskeySelectionScreen
+import ai.rever.boss.components.auth.screens.PasskeyWaitingScreen
 import ai.rever.boss.components.dialogs.CrossDeviceAuthenticationDialog
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.viewmodels.LoginViewModel
@@ -16,7 +18,9 @@ import ai.rever.boss.utils.DeepLinkHandler
 
 enum class AuthScreen {
     LOGIN,
-    MAGIC_LINK_WAITING
+    MAGIC_LINK_WAITING,
+    PASSKEY_SELECTION,
+    PASSKEY_WAITING
 }
 
 /**
@@ -31,7 +35,9 @@ fun AuthScreenContainer(
     val viewModel = remember("login_viewmodel") { LoginViewModel() }
     var currentScreen by remember { mutableStateOf(AuthScreen.LOGIN) }
     var magicLinkEmail by remember { mutableStateOf("") }
-    
+    var passkeyEmail by remember { mutableStateOf("") }
+    var passkeySelectionEmail by remember { mutableStateOf("") }
+
     println("AuthScreenContainer: Recomposed - viewModel: ${viewModel.hashCode()}")
     
     // Watch AuthService state directly to handle 2FA
@@ -73,7 +79,15 @@ fun AuthScreenContainer(
     val crossDeviceQRUrl by viewModel.crossDeviceQRUrl.collectAsState()
     val crossDeviceChallenge by viewModel.crossDeviceChallenge.collectAsState()
     val crossDeviceSessionId by viewModel.crossDeviceSessionId.collectAsState()
-    
+
+    // Clear magic link errors when navigating away from magic link screens
+    LaunchedEffect(currentScreen) {
+        if (currentScreen != AuthScreen.MAGIC_LINK_WAITING &&
+            currentScreen != AuthScreen.LOGIN) {
+            viewModel.clearMagicLinkError()
+        }
+    }
+
     BossTheme {
         Box(
             modifier = Modifier
@@ -90,20 +104,66 @@ fun AuthScreenContainer(
                         onMagicLinkSent = { email ->
                             magicLinkEmail = email
                             currentScreen = AuthScreen.MAGIC_LINK_WAITING
+                        },
+                        onPasskeyAuthInitiated = { email ->
+                            passkeyEmail = email
+                            currentScreen = AuthScreen.PASSKEY_WAITING
+                            // Initiate passkey authentication when navigating to waiting screen
+                            viewModel.authenticateWithEmailAndPasskey(email) {
+                                onLoginSuccess()
+                            }
+                        },
+                        onPasskeySelectionRequired = { email ->
+                            passkeySelectionEmail = email
+                            currentScreen = AuthScreen.PASSKEY_SELECTION
                         }
                     )
                 }
-                
+
                 AuthScreen.MAGIC_LINK_WAITING -> {
                     MagicLinkWaitingScreen(
                         email = magicLinkEmail,
                         viewModel = viewModel,
-                        onBack = { 
-                            currentScreen = AuthScreen.LOGIN 
+                        onBack = {
+                            currentScreen = AuthScreen.LOGIN
                         },
                         onSuccess = onLoginSuccess,
                         isLoading = isLoading,
                         errorMessage = errorMessage
+                    )
+                }
+
+                AuthScreen.PASSKEY_SELECTION -> {
+                    PasskeySelectionScreen(
+                        email = passkeySelectionEmail,
+                        viewModel = viewModel,
+                        onPasskeySelected = { credentialId ->
+                            passkeyEmail = passkeySelectionEmail
+                            currentScreen = AuthScreen.PASSKEY_WAITING
+                            // Authenticate with selected passkey
+                            viewModel.passkeyAuthViewModel.authenticateWithSpecificPasskey(
+                                passkeySelectionEmail,
+                                credentialId
+                            ) {
+                                onLoginSuccess()
+                            }
+                        },
+                        onBack = {
+                            viewModel.passkeyAuthViewModel.cancelAuthentication()
+                            currentScreen = AuthScreen.LOGIN
+                        }
+                    )
+                }
+
+                AuthScreen.PASSKEY_WAITING -> {
+                    PasskeyWaitingScreen(
+                        email = passkeyEmail,
+                        viewModel = viewModel,
+                        onBack = {
+                            viewModel.passkeyAuthViewModel.cancelAuthentication()
+                            currentScreen = AuthScreen.LOGIN
+                        },
+                        onSuccess = onLoginSuccess
                     )
                 }
             }

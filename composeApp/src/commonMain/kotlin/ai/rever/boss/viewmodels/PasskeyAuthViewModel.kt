@@ -5,6 +5,7 @@ import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
 import ai.rever.boss.services.supabase.models.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +18,10 @@ import kotlinx.coroutines.launch
  */
 class PasskeyAuthViewModel {
     private val viewModelScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
+
+    // Store authentication job reference for cancellation
+    private var authJob: Job? = null
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
     
@@ -37,6 +41,59 @@ class PasskeyAuthViewModel {
     private val _crossDeviceSessionId = MutableStateFlow<String?>(null)
     val crossDeviceSessionId: StateFlow<String?> = _crossDeviceSessionId.asStateFlow()
 
+    // Passkey selection state
+    private val _availablePasskeys = MutableStateFlow<List<ai.rever.boss.services.passkey.PasskeyInfo>>(emptyList())
+    val availablePasskeys: StateFlow<List<ai.rever.boss.services.passkey.PasskeyInfo>> = _availablePasskeys.asStateFlow()
+
+    private val _fetchingPasskeys = MutableStateFlow(false)
+    val fetchingPasskeys: StateFlow<Boolean> = _fetchingPasskeys.asStateFlow()
+
+    /**
+     * Set available passkeys from external source (e.g. UserExistence check)
+     * Used during login flow when credentials are already known from checkUserExists()
+     */
+    fun setAvailablePasskeys(credentials: List<ai.rever.boss.services.supabase.models.AvailableWebAuthnCredential>) {
+        val passkeyInfos = credentials.map { cred ->
+            ai.rever.boss.services.passkey.PasskeyInfo(
+                id = "",  // Not needed for selection
+                credentialId = cred.credentialId,
+                displayName = cred.displayName,
+                createdAt = System.currentTimeMillis(),  // Use current time as placeholder
+                lastUsed = null,  // Last used is nullable
+                rpId = "localhost",  // Use local rpId for local testing
+                transports = cred.transports
+            )
+        }
+        _availablePasskeys.value = passkeyInfos
+        println("PasskeyAuthViewModel: Set ${passkeyInfos.size} available passkeys from credentials")
+    }
+
+    /**
+     * Fetch user's registered passkeys for selection (used in settings/management screens)
+     */
+    suspend fun fetchUserPasskeys(email: String): Result<List<ai.rever.boss.services.passkey.PasskeyInfo>> {
+        _fetchingPasskeys.value = true
+        val result = AuthService.getUserPasskeys()
+        _fetchingPasskeys.value = false
+
+        result.onSuccess { passkeys ->
+            _availablePasskeys.value = passkeys
+        }
+
+        return result
+    }
+
+    /**
+     * Cancel ongoing authentication and reset state
+     */
+    fun cancelAuthentication() {
+        authJob?.cancel()
+        authJob = null
+        _isLoading.value = false
+        _errorMessage.value = null
+        println("PasskeyAuthViewModel: Authentication cancelled")
+    }
+
     /**
      * Authenticate with email and Touch ID - streamlined flow
      */
@@ -45,8 +102,8 @@ class PasskeyAuthViewModel {
             _errorMessage.value = "Please enter your email"
             return
         }
-        
-        viewModelScope.launch {
+
+        authJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             
@@ -90,6 +147,54 @@ class PasskeyAuthViewModel {
     }
 
     /**
+     * Authenticate with specific passkey (when user selects from multiple passkeys)
+     */
+    fun authenticateWithSpecificPasskey(email: String, credentialId: String, onSuccess: () -> Unit) {
+        if (email.isBlank()) {
+            _errorMessage.value = "Please enter your email"
+            return
+        }
+
+        authJob = viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            // Authenticate with specific credential ID
+            AuthService.authenticateWithPasskey(email = email, credentialId = credentialId).fold(
+                onSuccess = {
+                    println("PasskeyAuthViewModel: Specific passkey authentication successful")
+                    _isLoading.value = false
+                    onSuccess()
+                },
+                onFailure = { error ->
+                    println("PasskeyAuthViewModel: Specific passkey authentication failed: ${error.message}")
+
+                    // Check if this is a cross-device authentication requirement
+                    if (error is CrossDeviceAuthenticationRequired) {
+                        _showCrossDeviceQR.value = true
+                        _crossDeviceQRUrl.value = error.qrCodeUrl
+                        _crossDeviceChallenge.value = error.challenge
+                        _crossDeviceSessionId.value = error.sessionId
+                        _isLoading.value = false
+                        return@fold
+                    }
+
+                    _errorMessage.value = when {
+                        error.message?.contains("not supported") == true ->
+                            "Biometric authentication is not supported on this device"
+                        error.message?.contains("cancelled") == true ->
+                            "Authentication was cancelled"
+                        error.message?.contains("not available") == true ->
+                            "Biometric authentication not available"
+                        else -> error.message ?: "Authentication failed"
+                    }
+                    _isLoading.value = false
+                }
+            )
+        }
+    }
+
+    /**
      * Dismiss the cross-device QR dialog
      */
     fun dismissCrossDeviceQR() {
@@ -97,5 +202,5 @@ class PasskeyAuthViewModel {
         _crossDeviceQRUrl.value = null
         _crossDeviceChallenge.value = null
     }
-    
+
 }

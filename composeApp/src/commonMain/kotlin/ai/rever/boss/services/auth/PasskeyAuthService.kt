@@ -124,7 +124,7 @@ internal object PasskeyAuthService {
      * Authenticate using passkey
      * Supports both user-identified and usernameless authentication
      */
-    suspend fun authenticateWithPasskey(email: String? = null): Result<Unit> {
+    suspend fun authenticateWithPasskey(email: String? = null, credentialId: String? = null): Result<Unit> {
         return try {
             val passkeyService = passkeyService ?: return Result.failure(Exception("Passkey service not available"))
             
@@ -143,10 +143,17 @@ internal object PasskeyAuthService {
             // Step 2: Try platform authentication first, let browser handle fallbacks
             // No more manual flow determination - let WebAuthn API decide the best method
             println("Attempting passkey authentication with browser-native flow selection")
-            
-            val allowedCredentials = challenge.allowCredentials?.map { it.id }
-            val allowedCredentialTransports = challenge.allowCredentials?.associate { 
-                it.id to (it.transports ?: emptyList()) 
+
+            // Filter to specific credential if provided (for multi-passkey selection)
+            val filteredCredentials = if (credentialId != null) {
+                challenge.allowCredentials?.filter { it.id == credentialId }
+            } else {
+                challenge.allowCredentials
+            }
+
+            val allowedCredentials = filteredCredentials?.map { it.id }
+            val allowedCredentialTransports = filteredCredentials?.associate {
+                it.id to (it.transports ?: emptyList())
             }
             val assertionResult = passkeyService.authenticateWithPasskey(
                 challenge = Base64.getUrlDecoder().decode(challenge.challenge),
