@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.Version
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -10,6 +11,9 @@ import io.ktor.client.statement.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -222,249 +226,42 @@ actual class UpdateService {
     }
     
     actual suspend fun installUpdate(downloadPath: String): Boolean {
-        return try {
-            val downloadFile = File(downloadPath)
-            if (!downloadFile.exists()) {
-                println("Update file not found: $downloadPath")
-                return false
-            }
-            
-            when (getCurrentPlatform()) {
-                "macOS" -> installMacOSUpdate(downloadFile)
-                "Windows" -> installWindowsUpdate(downloadFile)
-                else -> installJarUpdate(downloadFile)
-            }
-        } catch (e: Exception) {
-            println("Error installing update: ${e.message}")
-            false
-        }
-    }
-    
-    private suspend fun installMacOSUpdate(downloadFile: File): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                println("Starting automated macOS update installation...")
-                
-                // Get current application bundle path
-                val currentAppPath = getCurrentApplicationPath()
-                if (currentAppPath == null) {
-                    println("⚠️ Could not determine current application path")
-                    println("   This is expected when running in development mode (IDE/Gradle)")
-                    println("   Falling back to manual DMG installation")
-                    return@withContext openDMGForManualInstallation(downloadFile)
-                }
-                
-                println("🎯 Target application path: $currentAppPath")
-                
-                // Mount the DMG
-                val mountResult = ProcessBuilder("hdiutil", "attach", downloadFile.absolutePath, "-nobrowse", "-quiet")
-                    .start()
-                mountResult.waitFor()
-                
-                if (mountResult.exitValue() != 0) {
-                    println("Failed to mount DMG, falling back to manual installation")
-                    return@withContext openDMGForManualInstallation(downloadFile)
-                }
-                
-                // Find the mounted volume
-                val volumesDir = File("/Volumes")
-                val mountedVolume = volumesDir.listFiles()?.find { 
-                    it.name.contains("BOSS", ignoreCase = true) && it.isDirectory 
-                }
-                
-                if (mountedVolume == null) {
-                    println("Could not find mounted BOSS volume, falling back to manual installation")
-                    return@withContext openDMGForManualInstallation(downloadFile)
-                }
-                
-                // Find the .app bundle in the mounted volume
-                val appBundle = mountedVolume.listFiles()?.find { 
-                    it.name.endsWith(".app") && it.name.contains("BOSS", ignoreCase = true)
-                }
-                
-                if (appBundle == null) {
-                    println("Could not find BOSS.app in mounted volume, falling back to manual installation")
-                    cleanupDMG(mountedVolume)
-                    return@withContext openDMGForManualInstallation(downloadFile)
-                }
-                
-                // Remove existing app bundle
-                val currentApp = File(currentAppPath)
-                if (currentApp.exists()) {
-                    currentApp.deleteRecursively()
-                }
-                
-                // Copy new app bundle to Applications
-                val copyResult = ProcessBuilder("cp", "-R", appBundle.absolutePath, currentAppPath)
-                    .start()
-                copyResult.waitFor()
-                
-                // Cleanup
-                cleanupDMG(mountedVolume)
-                
-                if (copyResult.exitValue() == 0) {
-                    println("✅ macOS update installed successfully")
-                    true
-                } else {
-                    println("❌ Failed to copy new app bundle")
-                    false
-                }
-                
-            } catch (e: Exception) {
-                println("Error during automated installation: ${e.message}")
-                println("Falling back to manual installation")
-                openDMGForManualInstallation(downloadFile)
-            }
-        }
-    }
-    
-    private fun getCurrentApplicationPath(): String? {
-        return try {
-            println("🔍 Attempting to detect current application path...")
-            
-            // Method 1: Check java.library.path for .app bundle
-            val libraryPath = System.getProperty("java.library.path")
-            println("   java.library.path: $libraryPath")
-            
-            val bundlePath = libraryPath
-                ?.split(":")
-                ?.find { it.contains(".app") }
-                ?.let { "${it.substringBefore(".app")}.app" }
-            
-            if (bundlePath?.contains(".app") == true && File(bundlePath).exists()) {
-                println("✅ Found app bundle via library path: $bundlePath")
-                return bundlePath
-            }
-            
-            // Method 2: Try to find app bundle from current JAR/class location
-            val jarPath = this::class.java.protectionDomain.codeSource.location.path
-            println("   Current code source: $jarPath")
-            
-            var currentFile = File(jarPath)
-            // Walk up the directory tree looking for .app bundle
-            for (i in 0..5) { // Max 5 levels up
-                println("   Checking parent $i: ${currentFile.absolutePath}")
-                if (currentFile.name.endsWith(".app")) {
-                    println("✅ Found app bundle via directory traversal: ${currentFile.absolutePath}")
-                    return currentFile.absolutePath
-                }
-                currentFile = currentFile.parentFile ?: break
-            }
-            
-            // Method 3: Check if running from Applications folder
-            val applicationsPath = "/Applications/BOSS.app"
-            if (File(applicationsPath).exists()) {
-                println("✅ Found BOSS in Applications folder: $applicationsPath")
-                return applicationsPath
-            }
-            
-            // Method 4: Development mode - try to find existing BOSS.app in common locations
-            val commonPaths = listOf(
-                "/Applications/BOSS.app",
-                System.getProperty("user.home") + "/Applications/BOSS.app",
-                System.getProperty("user.home") + "/Desktop/BOSS.app"
-            )
-            
-            for (path in commonPaths) {
-                if (File(path).exists()) {
-                    println("✅ Found existing BOSS.app for development update: $path")
-                    return path
-                }
-            }
-            
-            println("❌ Could not determine application path - running in development mode?")
-            println("   This is normal when running from IDE/Gradle")
-            null
-            
-        } catch (e: Exception) {
-            println("❌ Error getting application path: ${e.message}")
-            null
-        }
-    }
-    
-    private fun openDMGForManualInstallation(downloadFile: File): Boolean {
-        return try {
-            val process = ProcessBuilder("open", downloadFile.absolutePath).start()
-            process.waitFor()
-            println("DMG opened for manual installation: ${downloadFile.absolutePath}")
-            true
-        } catch (e: Exception) {
-            println("Failed to open DMG: ${e.message}")
-            false
-        }
-    }
-    
-    private fun cleanupDMG(mountedVolume: File) {
-        try {
-            ProcessBuilder("hdiutil", "detach", mountedVolume.absolutePath, "-quiet")
-                .start()
-                .waitFor()
-            println("DMG unmounted successfully")
-        } catch (e: Exception) {
-            println("Warning: Could not unmount DMG: ${e.message}")
-        }
-    }
-    
-    private suspend fun installWindowsUpdate(downloadFile: File): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                // For MSI files on Windows, we'll launch the installer
-                val process = ProcessBuilder("msiexec", "/i", downloadFile.absolutePath).start()
-                process.waitFor()
-                
-                println("MSI installer launched: ${downloadFile.absolutePath}")
+        // Delegate to UpdateInstaller
+        val result = UpdateInstaller.installUpdate(downloadPath)
+
+        return when (result) {
+            is InstallResult.Success -> {
+                println("✅ ${result.message}")
                 true
-            } catch (e: Exception) {
-                println("Failed to launch MSI installer: ${e.message}")
-                false
             }
-        }
-    }
-    
-    private suspend fun installJarUpdate(downloadFile: File): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                // For JAR updates, we need to replace the current JAR
-                val currentJar = getCurrentJarPath()
-                if (currentJar != null) {
-                    // Replace current JAR
-                    downloadFile.copyTo(currentJar, overwrite = true)
-                    
-                    println("✅ JAR updated successfully")
-                    true
-                } else {
-                    println("❌ Could not determine current JAR path")
-                    false
+            is InstallResult.RequiresRestart -> {
+                println("🔄 ${result.message}")
+                println("   Helper script is waiting for app to quit...")
+
+                // The helper script is now running and waiting for this process to exit
+                // We need to quit the app so the script can proceed with installation
+                @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                GlobalScope.launch {
+                    // Give the UI a moment to show the "installing" message
+                    delay(1000)
+
+                    // Quit the application cleanly
+                    ApplicationRestarter.quitForUpdate()
                 }
-            } catch (e: Exception) {
-                println("Failed to update JAR: ${e.message}")
+
+                true
+            }
+            is InstallResult.Error -> {
+                println("❌ ${result.message}")
                 false
             }
-        }
-    }
-    
-    private fun getCurrentJarPath(): File? {
-        return try {
-            val jarPath = UpdateService::class.java.protectionDomain.codeSource.location.toURI().path
-            val jarFile = File(jarPath)
-            if (jarFile.exists() && jarFile.name.endsWith(".jar")) {
-                jarFile
-            } else null
-        } catch (e: Exception) {
-            null
         }
     }
     
     actual fun getCurrentPlatform(): String {
-        val osName = System.getProperty("os.name").lowercase(Locale.getDefault())
-        return when {
-            osName.contains("mac") || osName.contains("darwin") -> "macOS"
-            osName.contains("win") -> "Windows"
-            osName.contains("linux") -> "Linux"
-            else -> "Unknown"
-        }
+        return UpdateInstaller.getCurrentPlatform()
     }
-    
+
     actual fun getExpectedAssetName(version: Version): String {
         return when (getCurrentPlatform()) {
             "macOS" -> "BOSS-${version}-Universal.dmg"

@@ -5,6 +5,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -101,5 +102,46 @@ object ApplicationRestarter {
             delay(delayMillis)
             restartApplication()
         }
+    }
+
+    /**
+     * Quit the application without restarting
+     * Used when an update helper script is waiting to install the update after the app quits
+     *
+     * This performs a graceful shutdown and exits cleanly, allowing external scripts
+     * to monitor the process PID and proceed with installation once the app has fully terminated.
+     *
+     * Uses runBlocking to ensure cleanup completes synchronously before exit,
+     * preventing race conditions with other code.
+     */
+    fun quitForUpdate() {
+        if (isRestarting) return // Prevent multiple quit attempts
+        isRestarting = true
+
+        println("Quitting application for update installation...")
+
+        // Use runBlocking to ensure cleanup completes synchronously
+        // This prevents race conditions where the function might return
+        // before cleanup has even started
+        runBlocking {
+            try {
+                // Perform graceful shutdown
+                performGracefulShutdown()
+
+                println("Shutdown complete. Exiting...")
+
+                // Give cleanup time to complete
+                delay(200)
+
+                // Exit cleanly - update script will wait for this PID to terminate
+                exitProcess(0)
+
+            } catch (e: Exception) {
+                println("Error during quit: ${e.message}")
+                // Exit anyway
+                exitProcess(1)
+            }
+        }
+        // This point is NEVER reached - exitProcess() terminates the JVM
     }
 }
