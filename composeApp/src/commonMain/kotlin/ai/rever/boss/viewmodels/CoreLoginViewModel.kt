@@ -60,4 +60,13 @@ class CoreLoginViewModel {
         _errorMessage.value = null
     }
 
+    /**
+     * Set magic link verification error
+     * Called when deep link verification fails (expired/invalid token)
+     */
+    fun setMagicLinkVerificationError(errorMessage: String) {
+        println("CoreLoginViewModel: Setting magic link verification error: $errorMessage")
+        _errorMessage.value = errorMessage
+    }
+
 }

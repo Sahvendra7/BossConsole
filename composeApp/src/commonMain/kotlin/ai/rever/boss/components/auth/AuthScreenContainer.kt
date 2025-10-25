@@ -12,6 +12,7 @@ import ai.rever.boss.components.auth.screens.MagicLinkWaitingScreen
 import ai.rever.boss.components.auth.screens.PasskeySelectionScreen
 import ai.rever.boss.components.auth.screens.PasskeyWaitingScreen
 import ai.rever.boss.components.dialogs.CrossDeviceAuthenticationDialog
+import ai.rever.boss.services.auth.MagicLinkErrorService
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.viewmodels.LoginViewModel
 import ai.rever.boss.utils.DeepLinkHandler
@@ -96,11 +97,24 @@ fun AuthScreenContainer(
     val crossDeviceChallenge by viewModel.crossDeviceChallenge.collectAsState()
     val crossDeviceSessionId by viewModel.crossDeviceSessionId.collectAsState()
 
+    // Observe magic link verification errors from deep link handler
+    val magicLinkVerificationError by MagicLinkErrorService.verificationError.collectAsState()
+    LaunchedEffect(magicLinkVerificationError) {
+        magicLinkVerificationError?.let { error ->
+            println("AuthScreenContainer: Received magic link verification error: $error")
+            // Set error in viewModel so MagicLinkWaitingScreen can display it
+            viewModel.setMagicLinkVerificationError(error)
+            // Clear the service error after setting it in ViewModel
+            MagicLinkErrorService.clearError()
+        }
+    }
+
     // Clear magic link errors when navigating away from magic link screens
     LaunchedEffect(currentScreen) {
         if (currentScreen != AuthScreen.MAGIC_LINK_WAITING &&
             currentScreen != AuthScreen.LOGIN) {
             viewModel.clearMagicLinkError()
+            MagicLinkErrorService.clearError()
         }
     }
 

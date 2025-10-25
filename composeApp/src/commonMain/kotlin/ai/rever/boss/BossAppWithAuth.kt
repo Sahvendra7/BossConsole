@@ -4,9 +4,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import ai.rever.boss.components.auth.LoginScreen
 import ai.rever.boss.components.misc.LoadingScreen
+import ai.rever.boss.services.auth.MagicLinkErrorService
+import ai.rever.boss.services.auth.PasskeySessionEventHandler
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.utils.DeepLinkHandler
-import ai.rever.boss.services.auth.PasskeySessionEventHandler
 import ai.rever.boss.utils.WindowFocusManager
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.launch
@@ -94,6 +95,10 @@ fun ComponentContext.BossAppWithAuth() {
                                 },
                                 onFailure = { error ->
                                     println("BossAppWithAuth: Magic link authentication failed: ${error.message}")
+                                    // Set error so UI can display it
+                                    MagicLinkErrorService.setError(
+                                        error.message ?: "Magic link verification failed"
+                                    )
                                 }
                             )
                         }

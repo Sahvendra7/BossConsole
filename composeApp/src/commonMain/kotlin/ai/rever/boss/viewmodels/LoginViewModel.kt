@@ -78,5 +78,13 @@ class LoginViewModel {
     fun clearMagicLinkError() {
         coreLoginViewModel.clearError()
     }
+
+    /**
+     * Set magic link verification error
+     * Called from AuthScreenContainer when deep link verification fails
+     */
+    fun setMagicLinkVerificationError(errorMessage: String) {
+        coreLoginViewModel.setMagicLinkVerificationError(errorMessage)
+    }
 }
 
