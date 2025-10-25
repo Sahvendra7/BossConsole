@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.rever.boss.utils.Version
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 /**
  * Update notification banner that appears at the top of the application
@@ -381,7 +382,51 @@ fun UpdateSettingsSection(
                     color = Color.White
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
+                // Automatic Update Check Toggle
+                var autoCheckEnabled by remember { mutableStateOf(UpdateSettings.autoCheckEnabled) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Automatic Update Checks",
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            "Check for updates every 6 hours",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = autoCheckEnabled,
+                        onCheckedChange = { enabled ->
+                            autoCheckEnabled = enabled
+                            UpdateSettings.autoCheckEnabled = enabled
+                            coroutineScope.launch {
+                                UpdateSettingsManager.saveSettings()
+                                // Apply change immediately
+                                if (enabled) {
+                                    updateManager.startPeriodicChecks()
+                                } else {
+                                    updateManager.stopPeriodicChecks()
+                                }
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF4CAF50),
+                            checkedTrackColor = Color(0xFF4CAF50).copy(alpha = 0.5f)
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 // Check for Updates Button
                 Button(
                     onClick = {
@@ -531,12 +576,33 @@ fun UpdateSettingsSection(
     }
 }
 
-// Helper function to format time (you might want to use a proper date formatting library)
+/**
+ * Format a timestamp as a human-readable "time ago" string
+ *
+ * Calculates the duration between now and the given instant, then formats it
+ * as a relative time string (e.g., "Just now", "2 hours ago", "3 days ago")
+ *
+ * @param instant The point in time to format
+ * @return Human-readable relative time string
+ */
 private fun formatTime(instant: kotlin.time.Instant): String {
-    val millis = instant.toEpochMilliseconds()
-    val seconds = millis / 1000
-    val days = seconds / (24 * 3600)
-    return if (days > 0) "$days days ago" else "Today"
+    val now = Clock.System.now()
+    val duration = now - instant
+    val days = duration.inWholeDays
+    val hours = duration.inWholeHours
+    val minutes = duration.inWholeMinutes
+
+    return when {
+        days == 0L && hours == 0L && minutes < 5 -> "Just now"
+        days == 0L && hours == 0L -> "$minutes minutes ago"
+        days == 0L && hours == 1L -> "1 hour ago"
+        days == 0L -> "$hours hours ago"
+        days == 1L -> "Yesterday"
+        days < 7 -> "$days days ago"
+        days < 30 -> "${days / 7} ${if (days / 7 == 1L) "week" else "weeks"} ago"
+        days < 365 -> "${days / 30} ${if (days / 30 == 1L) "month" else "months"} ago"
+        else -> "${days / 365} ${if (days / 365 == 1L) "year" else "years"} ago"
+    }
 }
 
 // Platform-specific restart function

@@ -30,7 +30,6 @@ class UpdateManager {
     
     companion object {
         val instance = UpdateManager()
-        private const val CHECK_INTERVAL_HOURS = 6L // Check every 6 hours
     }
     
     /**
@@ -42,7 +41,7 @@ class UpdateManager {
             while (isActive) {
                 try {
                     checkForUpdatesInternal()
-                    delay(CHECK_INTERVAL_HOURS * 60 * 60 * 1000) // Convert hours to milliseconds
+                    delay(UpdateSettings.checkIntervalHours * 60 * 60 * 1000) // Convert hours to milliseconds
                 } catch (e: Exception) {
                     println("Error in periodic update check: ${e.message}")
                     delay(60 * 60 * 1000) // Retry in 1 hour on error
@@ -147,10 +146,10 @@ class UpdateManager {
     fun shouldCheckForUpdates(): Boolean {
         val lastCheck = _lastCheckTime.value
         if (lastCheck == null) return true
-        
+
         val now = Clock.System.now()
         val timeSinceLastCheck = now - lastCheck
-        return timeSinceLastCheck.inWholeHours >= CHECK_INTERVAL_HOURS
+        return timeSinceLastCheck.inWholeHours >= UpdateSettings.checkIntervalHours
     }
     
     /**

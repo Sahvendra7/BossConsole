@@ -67,6 +67,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.updater.UpdateBanner
+import ai.rever.boss.updater.UpdateSettings
 import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
 
@@ -142,13 +143,17 @@ fun ComponentContext.BossApp() {
         }
     }
     
-    // Initialize update manager and start periodic checks
+    // Initialize update manager and conditionally start periodic checks
     LaunchedEffect(Unit) {
         try {
-            UpdateManager.instance.startPeriodicChecks()
-            // Check for updates on startup if enough time has passed
-            if (UpdateManager.instance.shouldCheckForUpdates()) {
-                UpdateManager.instance.checkForUpdates()
+            // Only start periodic checks if enabled in settings
+            if (UpdateSettings.autoCheckEnabled) {
+                UpdateManager.instance.startPeriodicChecks()
+
+                // Check for updates on startup if enough time has passed
+                if (UpdateManager.instance.shouldCheckForUpdates()) {
+                    UpdateManager.instance.checkForUpdates()
+                }
             }
         } catch (e: Exception) {
             println("Warning: Failed to initialize update manager: ${e.message}")
