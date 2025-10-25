@@ -11,6 +11,7 @@ class CrossDeviceAuthenticationRequired(
     val qrCodeUrl: String,
     val challenge: String,
     val sessionId: String,
+    val browserAlreadyOpened: Boolean = false,
     override val message: String = "Cross-device authentication required"
 ) : Exception(message)
 
@@ -67,7 +68,12 @@ object AuthService {
         PasskeyAuthService.setPasskeyService(service)
         UserExistenceService.setPasskeyService(service)
     }
-    
+
+    /**
+     * Get passkey state flow from the passkey service
+     */
+    fun getPasskeyState() = PasskeyAuthService.getPasskeyState()
+
     /**
      * Check if passkey authentication is available
      */

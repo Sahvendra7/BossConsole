@@ -131,6 +131,9 @@ internal object CoreAuthService {
                 }
             )
 
+            // Reset passkey state on logout
+            PasskeyAuthService.resetPasskeyState()
+
             Result.success(Unit)
         } catch (e: Exception) {
             println("Logout failed: ${e.message}")

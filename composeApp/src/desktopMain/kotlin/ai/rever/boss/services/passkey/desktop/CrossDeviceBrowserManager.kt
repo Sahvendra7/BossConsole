@@ -80,7 +80,30 @@ class CrossDeviceBrowserManager {
             }
         }
     }
-    
+
+    /**
+     * Prepare URL for embedded Fluck browser display
+     * Returns the URL to be displayed in an embedded JxBrowser instance
+     */
+    suspend fun openInFluckBrowser(url: String, sessionId: String): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            println("CrossDeviceBrowserManager: Preparing URL for embedded Fluck browser: $url")
+
+            // Validate that we have a WebAuthn engine available
+            if (webAuthnEngine == null || webAuthnBrowser == null) {
+                println("CrossDeviceBrowserManager: WebAuthn engine not available, falling back to system browser")
+                return@withContext Result.failure(Exception("JxBrowser not available for embedded display"))
+            }
+
+            println("CrossDeviceBrowserManager: Ready to display WebAuthn in embedded browser (sessionId: $sessionId)")
+            Result.success(url)
+
+        } catch (e: Exception) {
+            println("CrossDeviceBrowserManager: Failed to prepare Fluck browser: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     /**
      * Fallback method to open browser using ProcessBuilder when Desktop API is not available
      */

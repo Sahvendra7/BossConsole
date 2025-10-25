@@ -20,7 +20,8 @@ enum class AuthScreen {
     LOGIN,
     MAGIC_LINK_WAITING,
     PASSKEY_SELECTION,
-    PASSKEY_WAITING
+    PASSKEY_WAITING,
+    PASSKEY_BROWSER
 }
 
 /**
@@ -37,6 +38,8 @@ fun AuthScreenContainer(
     var magicLinkEmail by remember { mutableStateOf("") }
     var passkeyEmail by remember { mutableStateOf("") }
     var passkeySelectionEmail by remember { mutableStateOf("") }
+    var passkeyBrowserUrl by remember { mutableStateOf("") }
+    var passkeyBrowserSessionId by remember { mutableStateOf("") }
 
     println("AuthScreenContainer: Recomposed - viewModel: ${viewModel.hashCode()}")
     
@@ -72,7 +75,20 @@ fun AuthScreenContainer(
     LaunchedEffect(currentScreen) {
         println("AuthScreenContainer: currentScreen changed to: $currentScreen")
     }
-    
+
+    // Monitor passkey state for embedded browser trigger
+    val passkeyStateFlow = viewModel.passkeyAuthViewModel.passkeyState
+    val passkeyState by passkeyStateFlow?.collectAsState() ?: remember { mutableStateOf(null) }
+    LaunchedEffect(passkeyState) {
+        if (passkeyState is ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser) {
+            val browserState = passkeyState as ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser
+            println("AuthScreenContainer: Passkey state changed to ShowEmbeddedBrowser, navigating to browser screen")
+            passkeyBrowserUrl = browserState.url
+            passkeyBrowserSessionId = browserState.sessionId
+            currentScreen = AuthScreen.PASSKEY_BROWSER
+        }
+    }
+
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val showCrossDeviceQR by viewModel.showCrossDeviceQR.collectAsState()
@@ -164,6 +180,21 @@ fun AuthScreenContainer(
                             currentScreen = AuthScreen.LOGIN
                         },
                         onSuccess = onLoginSuccess
+                    )
+                }
+
+                AuthScreen.PASSKEY_BROWSER -> {
+                    ai.rever.boss.components.auth.screens.PasskeyBrowserScreen(
+                        url = passkeyBrowserUrl,
+                        sessionId = passkeyBrowserSessionId,
+                        onSuccess = {
+                            println("AuthScreenContainer: Passkey browser authentication successful")
+                            onLoginSuccess()
+                        },
+                        onBack = {
+                            viewModel.passkeyAuthViewModel.cancelAuthentication()
+                            currentScreen = AuthScreen.LOGIN
+                        }
                     )
                 }
             }

@@ -48,6 +48,10 @@ class PasskeyAuthViewModel {
     private val _fetchingPasskeys = MutableStateFlow(false)
     val fetchingPasskeys: StateFlow<Boolean> = _fetchingPasskeys.asStateFlow()
 
+    // Passkey state from PasskeyService (for embedded browser trigger)
+    val passkeyState: StateFlow<ai.rever.boss.services.passkey.PasskeyState>?
+        get() = AuthService.getPasskeyState()
+
     /**
      * Set available passkeys from external source (e.g. UserExistence check)
      * Used during login flow when credentials are already known from checkUserExists()
@@ -117,14 +121,18 @@ class PasskeyAuthViewModel {
                 },
                 onFailure = { error ->
                     println("PasskeyAuthViewModel: Email + Touch ID authentication failed: ${error.message}")
-                    
+
                     // Check if this is a cross-device authentication requirement
                     if (error is CrossDeviceAuthenticationRequired) {
-                        // Handle cross-device authentication flow
-                        _showCrossDeviceQR.value = true
-                        _crossDeviceQRUrl.value = error.qrCodeUrl
-                        _crossDeviceChallenge.value = error.challenge
-                        _crossDeviceSessionId.value = error.sessionId
+                        // Only show QR dialog if browser is not already opened (embedded browser case)
+                        if (!error.browserAlreadyOpened) {
+                            _showCrossDeviceQR.value = true
+                            _crossDeviceQRUrl.value = error.qrCodeUrl
+                            _crossDeviceChallenge.value = error.challenge
+                            _crossDeviceSessionId.value = error.sessionId
+                        } else {
+                            println("PasskeyAuthViewModel: Browser already opened (embedded), skipping QR dialog")
+                        }
                         _isLoading.value = false
                         return@fold
                     }
@@ -171,10 +179,15 @@ class PasskeyAuthViewModel {
 
                     // Check if this is a cross-device authentication requirement
                     if (error is CrossDeviceAuthenticationRequired) {
-                        _showCrossDeviceQR.value = true
-                        _crossDeviceQRUrl.value = error.qrCodeUrl
-                        _crossDeviceChallenge.value = error.challenge
-                        _crossDeviceSessionId.value = error.sessionId
+                        // Only show QR dialog if browser is not already opened (embedded browser case)
+                        if (!error.browserAlreadyOpened) {
+                            _showCrossDeviceQR.value = true
+                            _crossDeviceQRUrl.value = error.qrCodeUrl
+                            _crossDeviceChallenge.value = error.challenge
+                            _crossDeviceSessionId.value = error.sessionId
+                        } else {
+                            println("PasskeyAuthViewModel: Browser already opened (embedded), skipping QR dialog")
+                        }
                         _isLoading.value = false
                         return@fold
                     }

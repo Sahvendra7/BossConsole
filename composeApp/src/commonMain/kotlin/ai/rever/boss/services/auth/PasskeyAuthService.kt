@@ -34,7 +34,12 @@ internal object PasskeyAuthService {
         PasskeyCredentialManager.setPasskeyService(service)
         println("PasskeyAuthService: Platform passkey service initialized")
     }
-    
+
+    /**
+     * Get passkey state flow from the passkey service
+     */
+    fun getPasskeyState() = passkeyService?.passkeyState
+
     /**
      * Check if passkey authentication is available
      */
@@ -169,7 +174,7 @@ internal object PasskeyAuthService {
                 
                 // Check if this is a cross-device authentication requirement
                 return if (exception is CrossDeviceAuthenticationRequired) {
-                    CrossDeviceAuthService.handleCrossDeviceAuthentication(exception) { authData ->
+                    val result = CrossDeviceAuthService.handleCrossDeviceAuthentication(exception) { authData ->
                         // Add email to authData if missing (cross-device flow doesn't always return it)
                         val enrichedAuthData = if (authData.email == null && email != null) {
                             authData.copy(email = email)
@@ -179,6 +184,13 @@ internal object PasskeyAuthService {
                         // Use PasskeySessionHandler for session establishment
                         PasskeySessionHandler.completeAuthentication(enrichedAuthData)
                     }
+
+                    // Reset passkey state after cross-device authentication
+                    if (result.isSuccess) {
+                        passkeyService.resetState()
+                    }
+
+                    result
                 } else {
                     Result.failure(exception ?: Exception("Passkey authentication failed"))
                 }
@@ -199,7 +211,14 @@ internal object PasskeyAuthService {
             val authData = authResult.getOrThrow()
 
             // Step 4: Use PasskeySessionHandler to complete authentication
-            return PasskeySessionHandler.completeAuthentication(authData)
+            val sessionResult = PasskeySessionHandler.completeAuthentication(authData)
+
+            // Reset passkey state on successful authentication
+            if (sessionResult.isSuccess) {
+                passkeyService.resetState()
+            }
+
+            return sessionResult
         } catch (e: Exception) {
             println("Passkey authentication failed: ${e.message}")
             Result.failure(e)
@@ -220,5 +239,13 @@ internal object PasskeyAuthService {
      */
     suspend fun deletePasskey(credentialId: String): Result<Unit> {
         return PasskeyCredentialManager.deletePasskey(credentialId)
+    }
+
+    /**
+     * Reset passkey state to Idle
+     * Called after successful authentication or on logout
+     */
+    fun resetPasskeyState() {
+        passkeyService?.resetState()
     }
 }

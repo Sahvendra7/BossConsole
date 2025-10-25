@@ -363,6 +363,63 @@ compose.desktop {
     }
 }
 
+// ============================================================================
+// Application Run Tasks with Environment Configuration
+// ============================================================================
+
+// Simple wrapper task to run with local Supabase configuration
+tasks.register("runLocal") {
+    group = "application"
+    description = "Run desktop application with local Supabase configuration (localhost:54321)"
+    dependsOn("run")
+}
+
+// Simple wrapper task to run with production Supabase configuration
+tasks.register("runProduction") {
+    group = "application"
+    description = "Run desktop application with production Supabase configuration (api.risaboss.com)"
+    dependsOn("run")
+}
+
+// Configure run task based on which wrapper task will execute
+// This runs after task graph is built but before execution
+gradle.taskGraph.whenReady {
+    if (gradle.taskGraph.hasTask(":composeApp:runLocal")) {
+        println("🏠 Running BOSS with LOCAL Supabase configuration")
+        println()
+        println("Configuration:")
+        println("  SUPABASE_URL: http://localhost:54321")
+        println("  SUPABASE_ANON_KEY: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH")
+        println("  SUPABASE_FUNCTION_URL: http://localhost:54321/functions/v1")
+        println("  (System properties will override local.properties)")
+        println()
+
+        tasks.named<JavaExec>("run") {
+            systemProperty("SUPABASE_URL", "http://localhost:54321")
+            systemProperty("SUPABASE_ANON_KEY", "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH")
+            systemProperty("SUPABASE_FUNCTION_URL", "http://localhost:54321/functions/v1")
+        }
+    } else if (gradle.taskGraph.hasTask(":composeApp:runProduction")) {
+        println("☁️  Running BOSS with PRODUCTION Supabase configuration")
+        println()
+        println("Configuration:")
+        println("  SUPABASE_URL: https://api.risaboss.com")
+        println("  SUPABASE_FUNCTION_URL: https://api.risaboss.com/functions/v1")
+        println("  (System properties will override local.properties)")
+        println()
+
+        tasks.named<JavaExec>("run") {
+            systemProperty("SUPABASE_URL", "https://api.risaboss.com")
+            systemProperty("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjbndxYW1xZG5zYWRyYW51Zmp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxMDUwMzMsImV4cCI6MjA3NDY4MTAzM30.WZ6jSKuqM2EMyZLgoGJnI8Bn_Sdwk6plW0PkVNLIYVY")
+            systemProperty("SUPABASE_FUNCTION_URL", "https://api.risaboss.com/functions/v1")
+        }
+    }
+}
+
+// ============================================================================
+// Native Library Extraction Tasks
+// ============================================================================
+
 // Manually extract pty4j native libraries
 tasks.register("extractPty4jNative") {
     doLast {

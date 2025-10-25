@@ -93,20 +93,25 @@ internal object CrossDeviceAuthService {
     ): Result<Unit> {
         return try {
             println("Cross-device authentication required - starting cross-device flow")
-            
-            // Open browser with the QR URL for mobile authentication
-            try {
-                openUrlInBrowser(exception.qrCodeUrl)
-                println("Opened mobile authentication URL: ${exception.qrCodeUrl}")
-            } catch (e: Exception) {
-                println("Failed to open mobile authentication URL: ${e.message}")
-                return Result.failure(Exception("Failed to open mobile authentication: ${e.message}"))
+
+            // Check if browser is already opened (e.g., embedded browser)
+            if (exception.browserAlreadyOpened) {
+                println("Browser already opened (embedded), skipping system browser opening")
+            } else {
+                // Open browser with the QR URL for mobile authentication
+                try {
+                    openUrlInBrowser(exception.qrCodeUrl)
+                    println("Opened mobile authentication URL: ${exception.qrCodeUrl}")
+                } catch (e: Exception) {
+                    println("Failed to open mobile authentication URL: ${e.message}")
+                    return Result.failure(Exception("Failed to open mobile authentication: ${e.message}"))
+                }
             }
-            
+
             // Poll for authentication completion instead of calling completeAuthentication
             println("Polling for cross-device authentication completion...")
             val pollingResult = pollForAuthenticationCompletion(exception.challenge, exception.sessionId)
-            
+
             if (pollingResult.isSuccess) {
                 val authData = pollingResult.getOrThrow()
                 return onAuthenticationComplete(authData)

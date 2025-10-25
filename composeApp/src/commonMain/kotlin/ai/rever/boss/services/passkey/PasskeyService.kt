@@ -70,6 +70,12 @@ interface PasskeyService {
      * Check if user gesture is available (user presence)
      */
     suspend fun isUserPresent(): Boolean
+
+    /**
+     * Reset passkey state to Idle
+     * Called after successful authentication or on logout to clean up state
+     */
+    fun resetState()
 }
 
 /**
@@ -79,6 +85,7 @@ sealed class PasskeyState {
     object Idle : PasskeyState()
     object Loading : PasskeyState()
     object UserGestureRequired : PasskeyState()
+    data class ShowEmbeddedBrowser(val url: String, val sessionId: String) : PasskeyState()
     data class Success(val credentialId: String) : PasskeyState()
     data class Error(val message: String, val code: PasskeyErrorCode) : PasskeyState()
 }

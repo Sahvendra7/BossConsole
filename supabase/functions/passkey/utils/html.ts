@@ -380,6 +380,18 @@ const REGISTRATION_TEMPLATE = `<!DOCTYPE html>
                 button.textContent = '🔐 Try Again';
             }
         });
+
+        // Auto-click the register button on page load for seamless embedded browser experience
+        document.addEventListener('DOMContentLoaded', () => {
+            // Slight delay to ensure all event listeners are attached
+            setTimeout(() => {
+                const button = document.getElementById('registerBtn');
+                if (button && !button.disabled) {
+                    console.log('Auto-clicking registration button...');
+                    button.click();
+                }
+            }, 100);  // 100ms to ensure DOM and listeners are ready
+        });
     </script>
 </body>
 </html>
@@ -805,6 +817,18 @@ const AUTHENTICATION_TEMPLATE = `<!DOCTYPE html>
                 button.disabled = false;
                 button.textContent = '🔐 Try Again';
             }
+        });
+
+        // Auto-click the auth button on page load for seamless embedded browser experience
+        document.addEventListener('DOMContentLoaded', () => {
+            // Slight delay to ensure all event listeners are attached
+            setTimeout(() => {
+                const button = document.getElementById('authButton');
+                if (button && !button.disabled) {
+                    console.log('Auto-clicking authentication button...');
+                    button.click();
+                }
+            }, 100);  // 100ms to ensure DOM and listeners are ready
         });
     </script>
 </body>

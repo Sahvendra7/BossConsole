@@ -121,6 +121,15 @@ private suspend fun detectWebAuthnCapabilities(): WebAuthnCapabilities {
 fun SecuritySettings() {
     val authState by AuthService.authState.collectAsState()
     val currentUser by AuthService.currentUser.collectAsState()
+
+    // Observe passkey state for embedded browser trigger
+    val passkeyStateFlow = AuthService.getPasskeyState()
+    val passkeyState by passkeyStateFlow?.collectAsState() ?: remember { mutableStateOf(null) }
+    var showEmbeddedBrowser by remember { mutableStateOf(false) }
+    var passkeyBrowserUrl by remember { mutableStateOf("") }
+    var passkeyBrowserSessionId by remember { mutableStateOf("") }
+    var initialPasskeyCount by remember { mutableStateOf(0) }  // Track count when browser opens for polling fallback
+
     var passkeyFactors by remember { mutableStateOf<List<PasskeyInfo>>(emptyList()) }
     var isLoadingPasskeys by remember { mutableStateOf(false) }
     var touchIDSupported by remember { mutableStateOf(false) }
@@ -182,6 +191,12 @@ fun SecuritySettings() {
                             if (passkeys.size != currentCount) {
                                 passkeyFactors = passkeys
                                 errorMessage = null
+
+                                // Fallback: Close embedded browser if new passkey detected during registration
+                                if (showEmbeddedBrowser && passkeys.size > initialPasskeyCount) {
+                                    println("SecuritySettings: New passkey detected via polling (count: $currentCount -> ${passkeys.size}), closing embedded browser")
+                                    showEmbeddedBrowser = false
+                                }
                             }
                         },
                         onFailure = { /* Ignore periodic refresh errors */ }
@@ -190,7 +205,20 @@ fun SecuritySettings() {
             }
         }
     }
-    
+
+    // Monitor passkey state for embedded browser trigger
+    LaunchedEffect(passkeyState) {
+        if (passkeyState is ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser) {
+            val browserState = passkeyState as ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser
+            println("SecuritySettings: Passkey state changed to ShowEmbeddedBrowser, showing browser screen")
+            passkeyBrowserUrl = browserState.url
+            passkeyBrowserSessionId = browserState.sessionId
+            initialPasskeyCount = passkeyFactors.size  // Track initial count for polling fallback detection
+            showEmbeddedBrowser = true
+            showEnhancedEnrollDialog = false  // Close the enrollment dialog if it's open
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -660,7 +688,7 @@ fun SecuritySettings() {
     if (showEnhancedEnrollDialog) {
         PasskeyEnrollmentDialog(
             onDismiss = { showEnhancedEnrollDialog = false },
-            onSuccess = { 
+            onSuccess = {
                 showEnhancedEnrollDialog = false
                 // Trigger refresh of passkey list after successful enrollment
                 refreshKey++
@@ -668,6 +696,24 @@ fun SecuritySettings() {
             onError = { error ->
                 errorMessage = error
                 showEnhancedEnrollDialog = false
+            }
+        )
+    }
+
+    // Show embedded browser for passkey registration
+    if (showEmbeddedBrowser) {
+        ai.rever.boss.components.auth.screens.PasskeyBrowserScreen(
+            url = passkeyBrowserUrl,
+            sessionId = passkeyBrowserSessionId,
+            onSuccess = {
+                println("SecuritySettings: Passkey browser registration successful")
+                showEmbeddedBrowser = false
+                // Trigger refresh of passkey list after successful registration
+                refreshKey++
+            },
+            onBack = {
+                println("SecuritySettings: User cancelled passkey registration from browser")
+                showEmbeddedBrowser = false
             }
         )
     }
