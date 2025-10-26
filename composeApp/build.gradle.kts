@@ -30,10 +30,14 @@ println("📦 Building BOSS Version: $appVersion")
 val generateVersionConstants = tasks.register("generateVersionConstants") {
     val outputDir = layout.buildDirectory.dir("generated/source/version")
     val outputFile = outputDir.map { it.file("ai/rever/boss/utils/VersionConstants.kt") }
-    
+
     inputs.file(versionPropsFile)
     outputs.file(outputFile)
-    
+
+    // CRITICAL: Force regeneration on every build to prevent stale version constants
+    // This prevents Issue #111 where builds had wrong version embedded in artifacts
+    outputs.upToDateWhen { false }
+
     doLast {
         val major = versionProps.getProperty("app.version.major", "8")
         val minor = versionProps.getProperty("app.version.minor", "8") 

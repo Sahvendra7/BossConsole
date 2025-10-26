@@ -10,6 +10,7 @@ import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.RoleService
+import ai.rever.boss.utils.VersionVerifier
 import androidx.compose.runtime.mutableStateOf
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,9 @@ internal object CoreAuthService {
      */
     fun initialize() {
         try {
+            // Verify version consistency at startup (Issue #111 fix)
+            VersionVerifier.verifyVersionConsistency()
+
             // Initialize Supabase with build-time configuration
             if (!SupabaseConfig.isInitialized.value) {
                 SupabaseConfig.initializeFromEnvironment()

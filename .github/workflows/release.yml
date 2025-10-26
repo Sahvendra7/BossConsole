@@ -238,18 +238,54 @@ jobs:
           DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
         run: |
           echo "🏗️ Building macOS DMG with integrated PTY4J signing..."
-          
+
           # Debug environment variables
           echo "DISABLE_MACOS_SIGNING: $DISABLE_MACOS_SIGNING"
-          
+
           # Make gradlew executable
           chmod +x ./gradlew
-          
+
           # The Gradle build now automatically handles PTY4J signing
           # The signPty4jBinaries task will run automatically when needed
           ./gradlew packageDmg
-          
+
           echo "✅ macOS DMG build completed successfully"
+
+      - name: 🔍 Verify Built Version (macOS)
+        run: |
+          echo "🔍 Verifying version inside built artifacts..."
+
+          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check generated VersionConstants.kt
+          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if [[ -f "$GENERATED_FILE" ]]; then
+            echo "Checking generated VersionConstants.kt..."
+
+            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+
+            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+
+            if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "❌ VERSION MISMATCH DETECTED!"
+              echo "   Expected: $EXPECTED_VERSION"
+              echo "   Built: $BUILT_VERSION"
+              echo "   This is the root cause of Issue #111"
+              echo ""
+              echo "VersionConstants.kt contents:"
+              cat "$GENERATED_FILE"
+              exit 1
+            else
+              echo "✅ Version verification passed: $BUILT_VERSION"
+            fi
+          else
+            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            exit 1
+          fi
 
       # macOS notarization (only for signed DMGs)
       - name: 🍎 Notarize macOS DMG
@@ -367,14 +403,50 @@ jobs:
       - name: 🏗️ Build Linux Packages
         run: |
           echo "🏗️ Building Linux packages..."
-          
+
           # Create DEB and RPM packages
           ./gradlew :composeApp:packageDistributionForCurrentOS
           echo "✅ Linux native packages (DEB, RPM) created successfully"
-          
+
           # Create executable JAR for universal Linux distribution
           ./gradlew :composeApp:createExecutableJar
           echo "✅ Executable JAR created successfully"
+
+      - name: 🔍 Verify Built Version (Linux)
+        run: |
+          echo "🔍 Verifying version inside built artifacts..."
+
+          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check generated VersionConstants.kt
+          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if [[ -f "$GENERATED_FILE" ]]; then
+            echo "Checking generated VersionConstants.kt..."
+
+            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+
+            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+
+            if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "❌ VERSION MISMATCH DETECTED!"
+              echo "   Expected: $EXPECTED_VERSION"
+              echo "   Built: $BUILT_VERSION"
+              echo "   This is the root cause of Issue #111"
+              echo ""
+              echo "VersionConstants.kt contents:"
+              cat "$GENERATED_FILE"
+              exit 1
+            else
+              echo "✅ Version verification passed: $BUILT_VERSION"
+            fi
+          else
+            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            exit 1
+          fi
 
       - name: 📊 Verify Linux Build Artifacts
         run: |
@@ -445,11 +517,48 @@ jobs:
       - name: 🏗️ Build Windows MSI
         run: |
           echo "🏗️ Building Windows MSI..."
-          
+
           # Make gradlew executable and build
           ./gradlew packageMsi
-          
+
           echo "✅ Windows MSI build completed successfully"
+
+      - name: 🔍 Verify Built Version (Windows)
+        run: |
+          echo "🔍 Verifying version inside built artifacts..."
+
+          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check generated VersionConstants.kt
+          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if [ -f "$GENERATED_FILE" ]; then
+            echo "Checking generated VersionConstants.kt..."
+
+            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+
+            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+
+            if [ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]; then
+              echo "❌ VERSION MISMATCH DETECTED!"
+              echo "   Expected: $EXPECTED_VERSION"
+              echo "   Built: $BUILT_VERSION"
+              echo "   This is the root cause of Issue #111"
+              echo ""
+              echo "VersionConstants.kt contents:"
+              cat "$GENERATED_FILE"
+              exit 1
+            else
+              echo "✅ Version verification passed: $BUILT_VERSION"
+            fi
+          else
+            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            exit 1
+          fi
+        shell: bash
 
       - name: Check if signing secret is available
         id: check-secret

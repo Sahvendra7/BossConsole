@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.Version
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -76,6 +77,85 @@ object UpdateInstaller {
     }
 
     /**
+     * Extract version from update file name.
+     *
+     * Expected formats:
+     * - macOS: BOSS-8.12.18-Universal.dmg
+     * - Windows: BOSS-8.12.18.msi
+     * - Linux: BOSS-8.12.18.jar
+     *
+     * @param file The update file
+     * @return Parsed version, or null if version cannot be extracted
+     */
+    private fun extractVersionFromFilename(file: File): Version? {
+        return try {
+            val filename = file.name
+            println("Extracting version from filename: $filename")
+
+            // Remove BOSS- prefix and file extension
+            val versionStr = filename
+                .removePrefix("BOSS-")
+                .removeSuffix("-Universal.dmg")
+                .removeSuffix(".dmg")
+                .removeSuffix(".msi")
+                .removeSuffix(".jar")
+                .removeSuffix(".deb")
+                .removeSuffix(".rpm")
+
+            println("Extracted version string: $versionStr")
+
+            Version.parse(versionStr)
+        } catch (e: Exception) {
+            println("Failed to extract version from filename: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Verify update is not a downgrade (Issue #111 fix).
+     *
+     * Prevents installing older versions which was the root cause of Issue #111.
+     *
+     * @param downloadFile The update file to verify
+     * @return true if safe to install, false if downgrade detected
+     */
+    private fun verifyNoDowngrade(downloadFile: File): Boolean {
+        val downloadedVersion = extractVersionFromFilename(downloadFile)
+
+        if (downloadedVersion == null) {
+            println("⚠️ Cannot verify update version - version extraction failed")
+            println("   Filename: ${downloadFile.name}")
+            println("   Proceeding with caution...")
+            // Allow installation if version cannot be extracted (for manual updates)
+            return true
+        }
+
+        val currentVersion = Version.CURRENT
+
+        println("Version check:")
+        println("  Current: $currentVersion")
+        println("  Download: $downloadedVersion")
+
+        if (downloadedVersion < currentVersion) {
+            println("❌ DOWNGRADE DETECTED!")
+            println("   Cannot install older version $downloadedVersion")
+            println("   Current version is $currentVersion")
+            println("   This is prevented to avoid Issue #111")
+            return false
+        }
+
+        if (downloadedVersion == currentVersion) {
+            println("⚠️ Same version detected ($downloadedVersion)")
+            println("   Allowing reinstall of same version")
+            // Allow reinstall of same version (useful for repairs)
+        } else {
+            println("✅ Update verified: $currentVersion → $downloadedVersion")
+        }
+
+        return true
+    }
+
+    /**
      * Install update for the current platform
      *
      * @param downloadPath Path to the downloaded update file
@@ -87,6 +167,13 @@ object UpdateInstaller {
             if (!downloadFile.exists()) {
                 println("Update file not found: $downloadPath")
                 return InstallResult.Error("Update file not found")
+            }
+
+            // Verify this is not a downgrade (Issue #111 fix)
+            if (!verifyNoDowngrade(downloadFile)) {
+                return InstallResult.Error(
+                    "Cannot install older version. This update appears to be a downgrade from your current version."
+                )
             }
 
             when (getCurrentPlatform()) {
