@@ -414,3 +414,109 @@ Uses **Compose Multiplatform Resource API** (not Android resources):
 ## Deep Link Support
 
 The app registers `boss://` protocol for deep link handling, primarily for authentication callback flows from external browsers or mobile devices.
+
+## Default Browser Support
+
+BOSS Console can be set as the default system browser to handle http:// and https:// URLs. When set as default, clicking web links in other applications will open them in BOSS's Fluck browser.
+
+### Platform Behavior
+
+**macOS:**
+- Automatic registration via Info.plist CFBundleURLTypes (http, https schemes)
+- Programmatic setting via Swift scripts using LSSetDefaultHandlerForURLScheme
+- Falls back to opening System Preferences if programmatic setting fails
+- User can verify/change in System Preferences > General > Default web browser
+
+**Windows:**
+- Registry keys created in `HKEY_CURRENT_USER\SOFTWARE\Clients\StartMenuInternet\BOSS`
+- Includes Capabilities, URLAssociations for http/https, and file type associations
+- Windows 10+ requires user to manually select default in Settings (Microsoft security restriction)
+- App automatically opens Windows Settings (ms-settings:defaultapps) for user selection
+- Cannot be set programmatically due to hash algorithm protection
+
+**Linux:**
+- Creates `~/.local/share/applications/boss.desktop` file with proper MIME types
+- Uses xdg-settings and xdg-mime for registration
+- Supports x-scheme-handler/http, x-scheme-handler/https, and text/html MIME types
+- May require desktop session restart for changes to take effect
+- Compatible with GNOME, KDE, XFCE, and other XDG-compliant desktop environments
+
+### Implementation
+
+**Key Files:**
+- `DefaultBrowserManager.kt` (common) - Cross-platform interface (80 lines)
+- `DefaultBrowserManager.kt` (desktop) - Desktop platform dispatcher (100 lines)
+- `MacOSDefaultBrowserHandler.kt` - macOS implementation (200 lines)
+- `WindowsDefaultBrowserHandler.kt` - Windows implementation (250 lines)
+- `LinuxDefaultBrowserHandler.kt` - Linux implementation (220 lines)
+- `URLHandlerService.kt` - Handles incoming http/https URLs (120 lines)
+- `DefaultBrowserSection.kt` - Settings UI component (220 lines)
+- `ProfileManagementSection.kt` - Extracted profile management (190 lines)
+- `boss.desktop.template` - Linux .desktop file template (30 lines)
+
+**URL Handling Flow:**
+1. User clicks http/https link in external application
+2. OS passes URL to BOSS via registered protocol handler
+3. `DeepLinkHandler` receives URL and checks protocol
+4. If http/https: forwards to `URLHandlerService`
+5. If boss://: processes as authentication deep link
+6. `URLHandlerService` validates URL and extracts domain
+7. Creates new Fluck browser tab with URL
+8. Tab displayed in active window (or creates new window if none exist)
+
+**File Size Management:**
+All implementation files kept under 300 lines for maintainability:
+- `FluckBrowserSettings.kt` reduced from 420 to 229 lines
+- Profile management extracted to separate component
+- Platform handlers separated by OS
+
+### Settings UI
+
+**Location:** Settings > Fluck Browser > Default Browser
+
+**Features:**
+- Real-time status indicator (✓ Default / × Not Default)
+- "Set as Default Browser" button with loading states
+- Automatic status refresh
+- Platform-specific instructions and messaging
+- Error handling with user-friendly messages
+- Success/instructions dialogs based on platform
+
+**Status Display:**
+- Green checkmark if BOSS is default
+- Gray X if BOSS is not default
+- Loading spinner while checking/setting
+- Error icon with message if operation fails
+
+**Platform-Specific Behavior:**
+- macOS: Shows "Set as Default Browser" button, attempts automatic setting
+- Windows: Shows warning that Settings will open, guides user through manual selection
+- Linux: Shows XDG information, sets automatically via xdg-settings
+
+### URL Validation
+
+`URLHandlerService` validates incoming URLs for security:
+- Only accepts http:// and https:// protocols
+- Rejects malformed URLs (missing domain, invalid format)
+- Extracts domain name for tab title display
+- Removes "www." prefix for cleaner titles
+- Example: "https://www.github.com/user/repo" → tab title "github.com"
+
+### Integration Points
+
+**Deep Link Handler:**
+- Extended to handle http/https URLs alongside boss:// deep links
+- Routes http/https to URLHandlerService
+- Routes boss:// to authentication flow
+- Works across all platforms (macOS, Windows, Linux)
+
+**Window Management:**
+- URLHandlerService integrates with WindowManager
+- Adds tabs to first available window
+- Creates new window if no windows exist
+- Maintains multi-window support
+
+**Browser Profiles:**
+- Default browser setting works independently of browser profiles
+- Profile selection affects cookie/cache storage
+- Profile changes require application restart

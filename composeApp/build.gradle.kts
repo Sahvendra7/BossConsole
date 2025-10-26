@@ -359,6 +359,22 @@ compose.desktop {
                                 <key>CFBundleURLSchemes</key>
                                 <array>
                                     <string>boss</string>
+                                    <string>http</string>
+                                    <string>https</string>
+                                </array>
+                            </dict>
+                        </array>
+                        <key>CFBundleDocumentTypes</key>
+                        <array>
+                            <dict>
+                                <key>CFBundleTypeName</key>
+                                <string>HTML Document</string>
+                                <key>CFBundleTypeRole</key>
+                                <string>Viewer</string>
+                                <key>LSItemContentTypes</key>
+                                <array>
+                                    <string>public.html</string>
+                                    <string>public.url</string>
                                 </array>
                             </dict>
                         </array>

@@ -1,5 +1,6 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.services.URLHandlerService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.awt.Desktop
@@ -31,7 +32,15 @@ actual object DeepLinkHandler {
                 Desktop.getDesktop().setOpenURIHandler { event ->
                     val uri = event.uri.toString()
                     println("Received deep link (macOS): $uri")
-                    _deepLinkFlow.value = uri
+
+                    // Handle http/https URLs for default browser functionality
+                    if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                        println("Handling as HTTP(S) URL")
+                        URLHandlerService.handleURL(uri)
+                    } else {
+                        // Handle boss:// deep links for auth
+                        _deepLinkFlow.value = uri
+                    }
                 }
                 println("macOS deep link handler registered successfully")
             } catch (e: Exception) {
@@ -59,7 +68,15 @@ actual object DeepLinkHandler {
                     Desktop.getDesktop().setOpenURIHandler { event ->
                         val uri = event.uri.toString()
                         println("Received deep link (Windows via Desktop): $uri")
-                        _deepLinkFlow.value = uri
+
+                        // Handle http/https URLs for default browser functionality
+                        if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                            println("Handling as HTTP(S) URL")
+                            URLHandlerService.handleURL(uri)
+                        } else {
+                            // Handle boss:// deep links for auth
+                            _deepLinkFlow.value = uri
+                        }
                     }
                 } catch (e: Exception) {
                     println("Desktop.setOpenURIHandler not supported on Windows: ${e.message}")
@@ -77,7 +94,15 @@ actual object DeepLinkHandler {
                 Desktop.getDesktop().setOpenURIHandler { event ->
                     val uri = event.uri.toString()
                     println("Received deep link: $uri")
-                    _deepLinkFlow.value = uri
+
+                    // Handle http/https URLs for default browser functionality
+                    if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                        println("Handling as HTTP(S) URL")
+                        URLHandlerService.handleURL(uri)
+                    } else {
+                        // Handle boss:// deep links for auth
+                        _deepLinkFlow.value = uri
+                    }
                 }
             } catch (e: Exception) {
                 println("Failed to set up deep link handler: ${e.message}")
