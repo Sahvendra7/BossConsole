@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.config.GitHubConfig
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.Version
 import io.ktor.client.*
@@ -39,12 +40,44 @@ actual class UpdateService {
     
     actual suspend fun checkForUpdates(): UpdateInfo {
         return try {
-            val releases = httpClient.get("$RELEASES_ENDPOINT") {
+            // Log authentication status
+            if (GitHubConfig.hasToken) {
+                println("✅ Using authenticated GitHub API (5,000 requests/hour)")
+            } else {
+                println("⚠️ Using unauthenticated GitHub API (60 requests/hour)")
+                println("   Add GITHUB_TOKEN to local.properties for higher rate limits")
+            }
+
+            val response = httpClient.get("$RELEASES_ENDPOINT") {
                 headers {
                     append("Accept", "application/vnd.github.v3+json")
                     append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+
+                    // Add authentication token if available
+                    GitHubConfig.token?.let { token ->
+                        append("Authorization", "Bearer $token")
+                    }
                 }
-            }.body<List<GitHubRelease>>()
+            }
+
+            // Check for error responses (rate limits, etc.)
+            if (response.status.value !in 200..299) {
+                val errorBody = response.bodyAsText()
+                val errorMessage = when {
+                    errorBody.contains("rate limit", ignoreCase = true) ->
+                        "GitHub API rate limit exceeded. Please try again later."
+                    else -> "Unable to check for updates (HTTP ${response.status.value})"
+                }
+                println("Update check failed: $errorMessage")
+                return UpdateInfo(
+                    available = false,
+                    currentVersion = Version.CURRENT,
+                    latestVersion = Version.CURRENT,
+                    releaseNotes = ""
+                )
+            }
+
+            val releases = response.body<List<GitHubRelease>>()
             
             // Get the latest non-draft, non-prerelease version
             val latestRelease = releases
@@ -102,13 +135,23 @@ actual class UpdateService {
             )
             
         } catch (e: Exception) {
-            // Log error but don't print stack trace for expected serialization issues
-            println("Error checking for updates: ${e.message}")
+            // Handle JSON parsing errors (rate limits, malformed responses, etc.)
+            val errorMessage = when {
+                e.message?.contains("rate limit", ignoreCase = true) == true ->
+                    "GitHub API rate limit exceeded. Please try again later."
+                e.message?.contains("Expected start of the array", ignoreCase = true) == true ->
+                    "Unexpected API response format. Please try again later."
+                e.message?.contains("JSON", ignoreCase = true) == true ->
+                    "Error parsing update information. Please try again later."
+                else -> "Unable to check for updates: ${e.message?.take(100) ?: "Unknown error"}"
+            }
+            println("Error checking for updates: $errorMessage")
+
             UpdateInfo(
                 available = false,
                 currentVersion = Version.CURRENT,
                 latestVersion = Version.CURRENT,
-                releaseNotes = "Unable to check for updates at this time"
+                releaseNotes = ""
             )
         }
     }

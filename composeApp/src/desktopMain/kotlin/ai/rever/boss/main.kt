@@ -1,16 +1,11 @@
 package ai.rever.boss
 
-import BossDarkSurface
-import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import ai.rever.boss.utils.DeepLinkHandler
-import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
+import ai.rever.boss.window.WindowManager
+import ai.rever.boss.window.BossWindow
+import androidx.compose.runtime.key
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
-import java.awt.Color
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -57,27 +52,23 @@ fun main(args: Array<String>) {
     }
     
     println("===========================================")
-    
+
+    // Create initial window BEFORE entering application scope
+    // This ensures there's at least one window to render on first composition
+    WindowManager.createNewWindow()
+
     application {
-        val windowState = rememberWindowState(
-            size = DpSize(1280.dp, 800.dp) // Set larger initial window size
-        )
-
-        Window(
-            onCloseRequest = ::exitApplication,
-            title = "BOSS - Business Operating System Service",
-            state = windowState
-        ) {
-            window.background = Color(BossDarkSurface.value.toInt())
-            window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
-            window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
-            window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
-
-            // Register window for focus management (deep links, etc.)
-            WindowFocusManager.registerWindow(window)
-
-            with(createBossAppContext) {
-                BossAppWithAuth()
+        // Render each window with stable identity via key()
+        // This prevents re-composition of existing windows when new windows are added
+        WindowManager.windows.forEach { windowState ->
+            key(windowState.id) {
+                BossWindow(
+                    windowState = windowState,
+                    onCloseRequest = {
+                        WindowManager.closeWindow(windowState.id)
+                        // Don't call exitApplication - keep app running (macOS style)
+                    }
+                )
             }
         }
     }

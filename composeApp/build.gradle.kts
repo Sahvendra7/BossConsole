@@ -131,7 +131,8 @@ kotlin {
     
     sourceSets {
         val desktopMain by getting
-        
+        val desktopTest by getting
+
         // Add generated source directory to commonMain
         commonMain {
             kotlin.srcDir(generateVersionConstants.map { it.outputs.files.singleFile.parent })
@@ -213,6 +214,11 @@ kotlin {
             implementation(libs.ktor.client.cio)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+        }
+
+        desktopTest.dependencies {
+            implementation(kotlin("test-junit5"))
+            implementation("org.junit.jupiter:junit-jupiter:5.10.0")
         }
     }
 }

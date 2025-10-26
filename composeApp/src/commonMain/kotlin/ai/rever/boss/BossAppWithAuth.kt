@@ -15,9 +15,11 @@ import kotlinx.coroutines.launch
 
 /**
  * Main app entry point with authentication
+ *
+ * @param windowId The ID of the window this app instance belongs to
  */
 @Composable
-fun ComponentContext.BossAppWithAuth() {
+fun ComponentContext.BossAppWithAuth(windowId: String) {
     val authState by AuthService.authState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     
@@ -137,7 +139,7 @@ fun ComponentContext.BossAppWithAuth() {
         
         is AuthService.AuthState.Authenticated -> {
             // Show main BOSS app - all auth methods provide inherent 2FA
-            BossApp()
+            BossApp(windowId = windowId)
         }
     }
 }

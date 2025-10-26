@@ -28,7 +28,7 @@ object AuthService {
     /**
      * Initialize the auth service and check for existing session
      */
-    suspend fun initialize() {
+    fun initialize() {
         CoreAuthService.initialize()
     }
 

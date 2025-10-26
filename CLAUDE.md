@@ -95,7 +95,50 @@ jxbrowser.license.key=<your-license-key>
 SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1
+
+# GitHub API token (optional, recommended for development)
+# Without token: 60 requests/hour (unauthenticated)
+# With token: 5,000 requests/hour (authenticated)
+# Option 1: Run `gh auth login` (auto-detected, no config needed)
+# Option 2: Manual token from https://github.com/settings/tokens
+GITHUB_TOKEN=ghp_your_token_here
 ```
+
+### GitHub API Rate Limits
+The update checker uses GitHub API to fetch release information. Rate limits apply:
+
+**Unauthenticated (no token):**
+- 60 requests per hour per IP address
+- Suitable for production use
+- May hit limits during rapid development/testing
+
+**Authenticated (with token):**
+- 5,000 requests per hour
+- Recommended for development
+- Prevents rate limit issues when frequently restarting app
+
+**Setting up GitHub Authentication:**
+
+**Option 1 (Easiest) - GitHub CLI:**
+```bash
+gh auth login
+```
+The app will automatically use `gh auth token` to get your token. No manual configuration needed!
+
+**Option 2 - Manual Token:**
+1. Go to https://github.com/settings/tokens
+2. Click "Generate new token (classic)"
+3. Give it a descriptive name (e.g., "BOSS Update Checker")
+4. **No scopes needed** - public repo access only
+5. Copy token and add to `local.properties`: `GITHUB_TOKEN=ghp_...`
+6. Restart app to apply
+
+**Priority Order:**
+1. Environment variable: `GITHUB_TOKEN`
+2. System property: `GITHUB_TOKEN`
+3. `local.properties` file
+4. GitHub CLI (`gh auth token`)
+5. Unauthenticated (fallback)
 
 ### Supabase Deployment
 The project uses **Supabase CLI** for all function deployments and database migrations:

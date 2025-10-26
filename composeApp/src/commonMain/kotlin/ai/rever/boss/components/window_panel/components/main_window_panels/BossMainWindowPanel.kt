@@ -140,7 +140,17 @@ fun BossTabsComponent.BossMainTabBar(
                                 })
                                 add(ContextMenuItem(isDivider = true))
                             }
-                            
+
+                            // Open in New Window (if multi-window is supported)
+                            if (ai.rever.boss.window.WindowOperations.isMultiWindowSupported()) {
+                                add(ContextMenuItem("Open in New Window", Icons.Outlined.OpenInNew) {
+                                    ai.rever.boss.window.WindowOperations.openTabInNewWindow(config)
+                                    // Remove tab from current window after opening in new window
+                                    removeTab(index)
+                                })
+                                add(ContextMenuItem(isDivider = true))
+                            }
+
                             // Close current tab
                             add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
                                 removeTab(index)
@@ -360,10 +370,10 @@ private fun EmptyContent() {
     var selectedTip by remember { mutableStateOf(0) }
     val tips = listOf(
         Triple(Icons.Outlined.Code, "Open a file", "Cmd+O to browse files"),
-        Triple(Icons.Outlined.Add, "New tab", "Cmd+N opens in active panel"),
+        Triple(Icons.Outlined.Add, "New tab", "Cmd+T opens tab dialog"),
         Triple(Icons.Outlined.ViewColumn, "Split panels", "Right-click tab → Split Right/Down"),
         Triple(Icons.Outlined.SwapHoriz, "Switch panels", "Cmd+← → to navigate panels"),
-        Triple(Icons.Outlined.Terminal, "Quick terminal", "Cmd+T opens terminal in active panel")
+        Triple(Icons.Outlined.OpenInBrowser, "New window", "Cmd+N creates new window")
     )
     
     // Animation values

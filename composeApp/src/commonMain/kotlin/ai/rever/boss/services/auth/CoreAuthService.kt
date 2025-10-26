@@ -10,7 +10,12 @@ import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.RoleService
+import androidx.compose.runtime.mutableStateOf
 import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.publish
 import kotlin.time.ExperimentalTime
 
 /**
@@ -21,11 +26,16 @@ import kotlin.time.ExperimentalTime
 internal object CoreAuthService {
     // Coroutine scope for auth service
     private val authScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
+
+    // Track when session status first resolves (authenticated or not)
+    // Used by UI to know when auth system is ready
+    private val _isSessionResolved = MutableStateFlow(false)
+    val isSessionResolved: StateFlow<Boolean> = _isSessionResolved.asStateFlow()
+
     /**
      * Initialize the auth service and check for existing session
      */
-    suspend fun initialize() {
+    fun initialize() {
         try {
             // Initialize Supabase with build-time configuration
             if (!SupabaseConfig.isInitialized.value) {
@@ -39,6 +49,9 @@ internal object CoreAuthService {
                     
                     when (sessionStatus) {
                         is SessionStatus.Authenticated -> {
+                            // Mark session as resolved (user is authenticated)
+                            _isSessionResolved.value = true
+
                             val user = sessionStatus.session.user
                             val userId = user?.id ?: ""
                             println("CoreAuthService.initialize: Session authenticated, User ID: $userId")
@@ -91,6 +104,9 @@ internal object CoreAuthService {
                             println("CoreAuthService.initialize: Setting state to Authenticated")
                         }
                         is SessionStatus.NotAuthenticated -> {
+                            // Mark session as resolved (user is not authenticated)
+                            _isSessionResolved.value = true
+
                             AuthStateManager.setCurrentUser(null)
                             AuthStateManager.setAuthState(AuthService.AuthState.NotAuthenticated)
                             // Reset magic link flag when session ends

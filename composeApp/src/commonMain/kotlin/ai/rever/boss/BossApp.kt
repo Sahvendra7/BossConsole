@@ -46,6 +46,9 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
@@ -70,10 +73,11 @@ import ai.rever.boss.updater.UpdateBanner
 import ai.rever.boss.updater.UpdateSettings
 import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
+import ai.rever.boss.services.auth.CoreAuthService
 
 
 @Composable
-fun ComponentContext.BossApp() {
+fun ComponentContext.BossApp(windowId: String) {
 
     val panelRegistry = remember { PanelRegistry() }
     val tabRegistry = remember { TabRegistry() }
@@ -92,7 +96,20 @@ fun ComponentContext.BossApp() {
     // Workspace manager
     val workspaceManager = remember { WorkspaceManager() }
     val coroutineScope = rememberCoroutineScope()
-    
+
+    // Focus requester for keyboard shortcuts
+    val focusRequester = remember { FocusRequester() }
+
+    // Request focus when auth session resolves (event-driven, no delays)
+    val isSessionResolved by CoreAuthService.isSessionResolved.collectAsState()
+
+    LaunchedEffect(isSessionResolved) {
+        if (isSessionResolved) {
+            focusRequester.requestFocus()
+            println("🎯 BossApp: Focus requested after session resolved for window $windowId")
+        }
+    }
+
     // Set up workspace deletion callback to cleanup tabs
     LaunchedEffect(workspaceManager, splitViewState) {
         workspaceManager.setOnWorkspaceDeleted { deletedWorkspaceId ->
@@ -328,36 +345,29 @@ fun ComponentContext.BossApp() {
             ) {
                 Box(modifier = Modifier
                 .fillMaxSize()
+                .focusRequester(focusRequester)
+                .focusable()
                 .onPreviewKeyEvent { event ->
                     // Use onPreviewKeyEvent to catch events before they reach children
                     if (event.type == KeyEventType.KeyDown) {
                         when {
-                            event.isMetaPressed && event.key == Key.N -> {
-                                showNewTabDialog = true
-                                true
+                            // Cmd+N / Ctrl+N - New Window (standard browser pattern)
+                            event.isMetaPressed && event.key == Key.N && !event.isShiftPressed -> {
+                                ai.rever.boss.window.WindowOperations.createNewWindow()
+                                true  // Consume event
                             }
+                            // Cmd+Shift+N / Ctrl+Shift+N - New Window (explicit)
+                            event.isMetaPressed && event.key == Key.N && event.isShiftPressed -> {
+                                ai.rever.boss.window.WindowOperations.createNewWindow()
+                                true  // Consume event
+                            }
+                            // Cmd+T / Ctrl+T - New Tab Dialog (standard browser pattern)
                             event.isMetaPressed && event.key == Key.T -> {
-                                // Open terminal tab in the active panel
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                if (activeTabsComponent != null) {
-                                    val terminalTab = TerminalTabInfo(
-                                        id = "terminal-${Random.nextLong()}",
-                                        typeId = TerminalTab.typeId,
-                                        title = "Terminal"
-                                    )
-                                    activeTabsComponent.addTab(terminalTab)
-                                } else {
-                                    // Fallback to main tabs component
-                                    val terminalTab = TerminalTabInfo(
-                                        id = "terminal-${Random.nextLong()}",
-                                        typeId = TerminalTab.typeId,
-                                        title = "Terminal"
-                                    )
-                                    tabsComponent.addTab(terminalTab)
-                                }
-                                true
+                                showNewTabDialog = true
+                                true  // Consume event
                             }
-                            event.isMetaPressed && event.key == Key.W -> {
+                            // Cmd+W / Ctrl+W - Close Tab (standard browser pattern)
+                            event.isMetaPressed && event.key == Key.W && !event.isShiftPressed -> {
                                 // Close current tab in the active panel
                                 val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                                 if (activeTabsComponent != null) {
@@ -365,9 +375,25 @@ fun ComponentContext.BossApp() {
                                     val activeIndex = activeTabsComponent.tabsState.value.activeIndex
                                     if (activeIndex >= 0 && activeIndex < tabs.size) {
                                         activeTabsComponent.removeTab(activeIndex)
+
+                                        // Check if all panels in window are now empty
+                                        val allPanels = splitViewState.getAllPanels()
+                                        val totalTabs = allPanels.sumOf { panel ->
+                                            panel.tabsComponent.tabsState.value.tabs.size
+                                        }
+
+                                        // If no tabs remaining in any panel, close the window
+                                        if (totalTabs == 0) {
+                                            ai.rever.boss.window.WindowOperations.closeWindowIfEmpty(windowId)
+                                        }
                                     }
                                 }
-                                true
+                                true  // Consume event
+                            }
+                            // Cmd+Shift+W / Ctrl+Shift+W - Force Close Window
+                            event.isMetaPressed && event.key == Key.W && event.isShiftPressed -> {
+                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
+                                true  // Consume event
                             }
                             event.isMetaPressed && event.key == Key.O -> {
                                 // Open CodeBase panel (left.top.top)
