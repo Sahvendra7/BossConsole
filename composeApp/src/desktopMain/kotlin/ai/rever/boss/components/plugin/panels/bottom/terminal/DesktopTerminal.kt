@@ -2,8 +2,10 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import com.pty4j.PtyProcess
 import com.pty4j.PtyProcessBuilder
+import com.pty4j.WinSize
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.channels.BufferOverflow
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -13,167 +15,108 @@ class DesktopTerminal : Terminal {
     private var ptyProcess: PtyProcess? = null
     private var writer: OutputStreamWriter? = null
     private var reader: BufferedReader? = null
-    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    
-    private val _output = MutableSharedFlow<String>()
+    private var scope: CoroutineScope? = null
+
+    private val _output = MutableSharedFlow<String>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     override val output: Flow<String> = _output.asSharedFlow()
-    
+
     private val _isRunning = MutableStateFlow(false)
     override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
-    
-    override suspend fun start() {
-        if (_isRunning.value) {
-            return
-        }
-        
-        withContext(Dispatchers.IO) {
-            try {
-                // Get the user's shell
-                val shell = System.getenv("SHELL") ?: "/bin/bash"
-                val env = System.getenv().toMutableMap()
-                
-                // Set up proper PATH including Homebrew locations
-                val homebrewPath = "/opt/homebrew/bin:/opt/homebrew/sbin"
-                val defaultPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-                env["PATH"] = "$homebrewPath:$defaultPath:${env["PATH"] ?: ""}"
-                
-                // Set HOME if not already set
-                if (!env.containsKey("HOME")) {
-                    env["HOME"] = System.getProperty("user.home")
-                }
 
-                // Use full terminal support for oh-my-zsh and powerline
-                env["TERM"] = "xterm-256color"
-                // Ensure UTF-8 encoding
-                env["LANG"] = env["LANG"] ?: "en_US.UTF-8"
-                env["LC_ALL"] = env["LC_ALL"] ?: "en_US.UTF-8"
-                env["LC_CTYPE"] = "en_US.UTF-8"
-                // Ensure COLUMNS and LINES are not set - let PTY handle it
-                env.remove("COLUMNS")
-                env.remove("LINES")
-                
-                // Build the PTY process with login shell to load full environment
-                val cmd = when {
-                    shell.contains("zsh") -> arrayOf(shell, "-l", "-i")
-                    shell.contains("bash") -> arrayOf(shell, "-l", "-i")
-                    else -> arrayOf(shell, "-l")
-                }
-                
-                
-                val builder = PtyProcessBuilder()
-                    .setCommand(cmd)
-                    .setEnvironment(env)
-                    .setDirectory(System.getProperty("user.home"))
-                    .setInitialColumns(120)  // Start with a wider default
-                    .setInitialRows(24)
-                    .setConsole(false)
-                    .setWindowsAnsiColorEnabled(true)
-                    .setRedirectErrorStream(true)
-                
-                ptyProcess = builder.start()
-                
-                ptyProcess?.let { process ->
-                    reader = BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8), 8192)
-                    writer = OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
-                    
-                    _isRunning.value = true
-                    
-                    // Give the shell a moment to initialize
-                    delay(100)
-                    
-                    // Start reading output in a coroutine
-                    coroutineScope.launch {
-                        try {
-                            val buffer = CharArray(4096)
-                            var totalBytesRead = 0
-                            
-                            while (isActive && process.isAlive) {
-                                try {
-                                    val count = reader?.read(buffer) ?: -1
-                                    if (count > 0) {
-                                        totalBytesRead += count
-                                        val output = String(buffer, 0, count)
-                                        // Debug: Check for Nerd Font characters
-                                        if (output.contains('\uE0A0') || output.contains('\uF113') || output.contains('\uE0B0')) {
-                                            println("Nerd Font characters detected in terminal output!")
-                                        }
-                                        _output.emit(output)
-                                    } else if (count == -1) {
-                                        // End of stream reached
-                                            break
-                                    }
-                                } catch (e: Exception) {
-                                    if (!process.isAlive) break
-                                    delay(100)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            if (process.isAlive) {
-                            }
-                        } finally {
-                            _isRunning.value = false
-                        }
-                    }
-                    
-                    // Monitor the process itself
-                    coroutineScope.launch {
-                        try {
-                            process.waitFor()
-                            _isRunning.value = false
-                        } catch (e: Exception) {
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                _isRunning.value = false
-                // Emit error information to help diagnose
-                _output.emit("\n[Terminal Error]\n")
-                _output.emit("Failed to start terminal: ${e.message}\n")
-                _output.emit("Error type: ${e.javaClass.simpleName}\n")
-                _output.emit("\nPossible causes:\n")
-                _output.emit("- PTY4J native libraries not found or incompatible\n")
-                _output.emit("- Security restrictions preventing terminal access\n")
-                _output.emit("- Architecture mismatch (Intel vs Apple Silicon)\n")
-                _output.emit("\nSystem info:\n")
-                _output.emit("- OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}\n")
-                _output.emit("- Arch: ${System.getProperty("os.arch")}\n")
-                _output.emit("- Java: ${System.getProperty("java.version")}\n")
-                // Don't throw, just log the error - the UI will handle the error state
-            }
-        }
-    }
-    
-    override suspend fun write(input: String) {
+    override suspend fun start() {
+        if (_isRunning.value) return
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val scope = scope!!
+
         withContext(Dispatchers.IO) {
-            writer?.let {
-                it.write(input)
-                it.flush()
+            val env = System.getenv().toMutableMap()
+            val shell = System.getenv("SHELL") ?: "/bin/bash"
+            val isWindows = System.getProperty("os.name").lowercase().contains("win")
+
+            env["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${env["PATH"].orEmpty()}"
+            env["HOME"] = env["HOME"] ?: System.getProperty("user.home")
+            env["TERM"] = "xterm-256color"
+            env["LANG"] = env["LANG"] ?: "en_US.UTF-8"
+            env["LC_ALL"] = env["LC_ALL"] ?: "en_US.UTF-8"
+            env["LC_CTYPE"] = "en_US.UTF-8"
+            env.remove("COLUMNS")
+            env.remove("LINES")
+
+            val cmd = when {
+                isWindows -> arrayOf("powershell.exe", "-NoLogo", "-NoExit")
+                shell.contains("zsh") -> arrayOf(shell, "-l", "-i")
+                shell.contains("bash") -> arrayOf(shell, "-l", "-i")
+                else -> arrayOf(shell, "-l", "-i")
+            }
+
+            val builder = PtyProcessBuilder()
+                .setCommand(cmd)
+                .setEnvironment(env)
+                .setDirectory(System.getProperty("user.home"))
+                .setInitialColumns(80)
+                .setInitialRows(30)
+                .setConsole(false)
+                .setRedirectErrorStream(true)
+            if (isWindows) builder.setWindowsAnsiColorEnabled(true)
+
+            val process = builder.start()
+            ptyProcess = process
+            reader = BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8), 8192)
+            writer = OutputStreamWriter(process.outputStream, StandardCharsets.UTF_8)
+
+            _isRunning.value = true
+
+            scope.launch {
+                val buf = CharArray(1024)
+                try {
+                    while (isActive && process.isAlive) {
+                        val n = reader?.read(buf) ?: -1
+                        if (n <= 0) break
+
+                        val output = String(buf, 0, n)
+
+                        _output.tryEmit(output)
+                    }
+                } finally {
+                    closeInternal()
+                }
+            }
+
+            scope.launch {
+                try { process.waitFor() } finally { closeInternal() }
             }
         }
     }
-    
-    override suspend fun resize(columns: Int, rows: Int) {
-        withContext(Dispatchers.IO) {
-            ptyProcess?.let {
-                it.winSize = com.pty4j.WinSize(columns, rows)
-            }
-        }
-    }
-    
-    override fun stop() {
-        _isRunning.value = false
-        coroutineScope.cancel()
-        
-        try {
-            writer?.close()
-            reader?.close()
-            ptyProcess?.destroyForcibly()
-        } catch (e: Exception) {
-        }
-        
+
+    private fun closeInternal() {
+        if (_isRunning.value) _isRunning.value = false
+        runCatching { writer?.close() }
+        runCatching { reader?.close() }
+        runCatching { ptyProcess?.destroy() }
         ptyProcess = null
         writer = null
         reader = null
+    }
+
+    override suspend fun write(input: String) {
+        withContext(Dispatchers.IO) {
+            writer?.apply { write(input); flush() }
+        }
+    }
+
+    override suspend fun resize(columns: Int, rows: Int) = withContext(Dispatchers.IO) {
+        if (columns > 0 && rows > 0) ptyProcess?.winSize = WinSize(columns, rows)
+    }
+
+    override fun stop() {
+        _isRunning.value = false
+        scope?.cancel()
+        closeInternal()
+        scope = null
     }
 }
 

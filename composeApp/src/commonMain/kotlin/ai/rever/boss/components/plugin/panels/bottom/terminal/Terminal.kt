@@ -12,8 +12,7 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.Composable
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,27 +47,19 @@ class TerminalComponent(
             }
         )
         
-        // Monitor terminal running state
+        // Monitor terminal running state using Flow - more robust approach
         coroutineScope.launch {
-            // Wait for terminal to fully initialize
+            var hasEverStarted = false
             
-            // First wait for terminal to start
-            var hasStarted = false
-            while (!hasStarted && isActive) {
-                if (terminalViewModel.wasStarted) {
-                    hasStarted = true
-                } else {
-                    delay(100)
-                }
-            }
-            
-            // Now monitor for when it stops
+            // Monitor terminal state changes
             terminalViewModel.isRunning.collect { isRunning ->
-                if (hasStarted && !isRunning) {
-                    // Terminal was running but now stopped
-                    // Give a small delay to ensure clean shutdown
-                    delay(500)
+                if (isRunning && !hasEverStarted) {
+                    // Terminal started for the first time
+                    hasEverStarted = true
+                } else if (!isRunning && hasEverStarted) {
+                    // Terminal was running but now stopped - close panel
                     PanelEventBus.closePanel(panelInfo.id)
+                    return@collect // Exit the collection
                 }
             }
         }

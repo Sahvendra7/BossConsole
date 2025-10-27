@@ -6,16 +6,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
-// Global settings object
-object TerminalSettings {
-    var fontFamily: String = "MesloLGS NF"
-    var fontSize: Int = 14
-    var colorScheme: String = "BOSS Dark"
-    var shell: String = "/bin/zsh"
-    var startupCommand: String = ""
-
-}
-
 @Serializable
 data class TerminalSettingsData(
     val fontFamily: String = "MesloLGS NF",

@@ -53,11 +53,13 @@ fun main(args: Array<String>) {
     
     println("===========================================")
 
-    // Create initial window BEFORE entering application scope
-    // This ensures there's at least one window to render on first composition
-    WindowManager.createNewWindow()
-
     application {
+        // Create initial window on first composition if none exist
+        // This handles both normal startup and deep link startup
+        if (WindowManager.windows.isEmpty()) {
+            WindowManager.createNewWindow()
+        }
+
         // Render each window with stable identity via key()
         // This prevents re-composition of existing windows when new windows are added
         WindowManager.windows.forEach { windowState ->

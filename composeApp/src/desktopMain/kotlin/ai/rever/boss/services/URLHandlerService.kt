@@ -19,15 +19,60 @@ import ai.rever.boss.window.WindowManager
  */
 object URLHandlerService {
 
+    // Queue for URLs received before the app is ready
+    private val urlQueue = mutableListOf<String>()
+
+    // Flag to track if the app is ready to handle URLs
+    @Volatile
+    private var isAppReady = false
+
+    /**
+     * Mark the app as ready to handle URLs and process any queued URLs
+     */
+    fun markAppReady() {
+        isAppReady = true
+        processQueuedURLs()
+    }
+
+    /**
+     * Process all URLs that were queued while app was initializing
+     */
+    private fun processQueuedURLs() {
+        if (urlQueue.isEmpty()) return
+
+        println("URLHandlerService: Processing ${urlQueue.size} queued URL(s)")
+        val urls = urlQueue.toList()
+        urlQueue.clear()
+
+        urls.forEach { url ->
+            handleURLInternal(url)
+        }
+    }
+
     /**
      * Handle an incoming URL from the operating system
      *
      * Creates a new Fluck browser tab with the URL and adds it to
      * an existing window, or creates a new window if needed.
      *
+     * If the app is not ready yet, queues the URL for later processing.
+     *
      * @param url The http/https URL to open
      */
     fun handleURL(url: String) {
+        if (!isAppReady) {
+            println("URLHandlerService: App not ready, queueing URL: $url")
+            urlQueue.add(url)
+            return
+        }
+
+        handleURLInternal(url)
+    }
+
+    /**
+     * Internal URL handler that does the actual processing
+     */
+    private fun handleURLInternal(url: String) {
         try {
             println("URLHandlerService: Received URL: $url")
 

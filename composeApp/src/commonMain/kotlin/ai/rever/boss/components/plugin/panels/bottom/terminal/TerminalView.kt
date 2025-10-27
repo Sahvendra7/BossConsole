@@ -1,8 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import BossDarkTextSecondary
-import BossDarkBackground
-import BossDarkTextPrimary
 import BossDarkAccent
 import BossDarkBorder
 import ai.rever.boss.components.bars.ScrollbarConfig
@@ -13,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Text
@@ -21,6 +20,8 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -29,51 +30,65 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import kotlin.math.max
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun TerminalView(viewModel: TerminalViewModel) {
+    // State collection
     val terminalLines by viewModel.terminalLines.collectAsState()
     val isRunning by viewModel.isRunning.collectAsState()
     val terminalCursorPosition by viewModel.terminalCursorPosition.collectAsState()
     val terminalCursorVisible by viewModel.terminalCursorVisible.collectAsState()
+
+    // UI state
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
-    LocalFocusManager.current
     var hasFocus by remember { mutableStateOf(false) }
-    
-    // Use a text field value to capture input
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
-    
-    // Track if user has manually scrolled
     var userHasScrolled by remember { mutableStateOf(false) }
     
-    // Terminal size tracking
-    var terminalSize by remember { mutableStateOf(Pair(120, 24)) } // Default columns x rows
+    // Terminal sizing
+    var terminalSize by remember { mutableStateOf(Pair(120, 30)) }
+    var ptySize by remember { mutableStateOf(Pair(114, 30)) }
     var hasInitialSize by remember { mutableStateOf(false) }
-    var pendingResize by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var pendingResize by remember { mutableStateOf<Triple<Int, Int, Pair<Int, Int>>?>(null) }
+
+
     val density = LocalDensity.current
-    
-    // Character dimensions for size calculation
-    // Match the cursor positioning width for consistency
-    14.sp
-    val charWidthDp = 8.4.dp  // Slightly wider to prevent wrapping
-    val charHeightDp = 17.dp   // Same as cursor height
+
+    // Character dimensions
+    val fontSize = TerminalSettings.fontSize.sp
+    val charHeightDp = (TerminalSettings.fontSize + 3).dp
+    val charWidthDp = remember(TerminalSettings.fontSize) {
+        (TerminalSettings.fontSize * 0.6).dp
+    }
     val charWidthPx = with(density) { charWidthDp.toPx() }
     val charHeightPx = with(density) { charHeightDp.toPx() }
     
-    // Cursor blink animation
+    // Colors and styles
+    val backgroundColor = TerminalSettings.getBackgroundColor()
+    val textColor = TerminalSettings.getForegroundColor()
+    val cursorColor = TerminalSettings.getCursorColor()
+    val borderColor = if (hasFocus) BossDarkAccent else BossDarkBorder
+    val terminalFontFamily = rememberTerminalFontFamily()
+    
+    val terminalTextStyle = TextStyle(
+        fontFamily = terminalFontFamily,
+        fontSize = fontSize,
+        fontWeight = FontWeight.Normal
+    )
+    
+    // Cursor animation
     val cursorAlpha by rememberInfiniteTransition().animateFloat(
         initialValue = 1f,
         targetValue = 0f,
@@ -83,161 +98,40 @@ fun TerminalView(viewModel: TerminalViewModel) {
         )
     )
     
-    // Terminal colors - Using Boss theme colors
-    val backgroundColor = BossDarkBackground  // Boss dark background
-    val textColor = BossDarkTextPrimary      // Boss text color
-    val cursorColor = Color(0xFF00FF00)      // Bright green cursor (keep for visibility)
-    val borderColor = if (hasFocus) BossDarkAccent else BossDarkBorder
-    
-    // Terminal font - try to use Nerd Fonts for powerline symbols
-    val terminalFontFamily = rememberTerminalFontFamily()
-    
-    // Terminal text style
-    val terminalTextStyle = TextStyle(
-        fontFamily = terminalFontFamily,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Normal
-    )
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
-            .border(2.dp, borderColor) // Visual feedback for focus
-            .clipToBounds() // Ensure nothing overflows
+            .border(2.dp, borderColor)
+            .clipToBounds()
+            .graphicsLayer {
+                compositingStrategy = CompositingStrategy.Offscreen
+                renderEffect = null
+            }
     ) {
-        // Hidden BasicTextField to capture keyboard input
+        // Hidden input field
         BasicTextField(
             value = textFieldValue,
             onValueChange = { newValue ->
-                // Handle text input
                 val oldText = textFieldValue.text
                 val newText = newValue.text
                 
                 if (newText.length > oldText.length) {
-                    // Characters were added
                     val addedText = newText.substring(oldText.length)
-                    viewModel.sendInput(addedText)
+                    if (addedText.all { char -> char.code < 32 || char.code >= 127 }) {
+                        viewModel.sendInput(addedText)
+                    }
                 }
-                
-                // Reset the field to prevent accumulation
                 textFieldValue = TextFieldValue("")
             },
             modifier = Modifier
-                .size(0.dp) // Make it invisible
+                .size(0.dp)
                 .focusRequester(focusRequester)
-                .onFocusChanged { focusState ->
-                    hasFocus = focusState.hasFocus
-                }
+                .onFocusChanged { hasFocus = it.hasFocus }
                 .onPreviewKeyEvent { keyEvent ->
-                    // Use onPreviewKeyEvent to intercept keys before BasicTextField processes them
                     if (keyEvent.type == KeyEventType.KeyDown) {
-                        // Handle special keys that don't produce text input
-                        when (keyEvent.key) {
-                            Key.Enter -> {
-                                viewModel.sendInput("\n")
-                                true
-                            }
-                            Key.Backspace -> {
-                                viewModel.sendInput("\u007F")
-                                true
-                            }
-                            Key.Delete -> {
-                                viewModel.sendInput("\u001B[3~")
-                                true
-                            }
-                            Key.Escape -> {
-                                viewModel.sendInput("\u001B")
-                                true
-                            }
-                            Key.DirectionLeft -> {
-                                viewModel.sendInput("\u001B[D")
-                                true
-                            }
-                            Key.DirectionRight -> {
-                                viewModel.sendInput("\u001B[C")
-                                true
-                            }
-                            Key.DirectionUp -> {
-                                viewModel.sendInput("\u001B[A")
-                                true
-                            }
-                            Key.DirectionDown -> {
-                                viewModel.sendInput("\u001B[B")
-                                true
-                            }
-                            Key.Tab -> {
-                                viewModel.sendInput("\t")
-                                true
-                            }
-                            Key.F1 -> {
-                                viewModel.sendInput("\u001BOP")
-                                true
-                            }
-                            Key.F2 -> {
-                                viewModel.sendInput("\u001BOQ")
-                                true
-                            }
-                            Key.F3 -> {
-                                viewModel.sendInput("\u001BOR")
-                                true
-                            }
-                            Key.F4 -> {
-                                viewModel.sendInput("\u001BOS")
-                                true
-                            }
-                            Key.F5 -> {
-                                viewModel.sendInput("\u001B[15~")
-                                true
-                            }
-                            Key.F6 -> {
-                                viewModel.sendInput("\u001B[17~")
-                                true
-                            }
-                            Key.F7 -> {
-                                viewModel.sendInput("\u001B[18~")
-                                true
-                            }
-                            Key.F8 -> {
-                                viewModel.sendInput("\u001B[19~")
-                                true
-                            }
-                            Key.F9 -> {
-                                viewModel.sendInput("\u001B[20~")
-                                true
-                            }
-                            Key.F10 -> {
-                                viewModel.sendInput("\u001B[21~")
-                                true
-                            }
-                            Key.F11 -> {
-                                viewModel.sendInput("\u001B[23~")
-                                true
-                            }
-                            Key.F12 -> {
-                                viewModel.sendInput("\u001B[24~")
-                                true
-                            }
-                            Key.MoveHome -> {
-                                viewModel.sendInput("\u001B[H")
-                                true
-                            }
-                            Key.MoveEnd -> {
-                                viewModel.sendInput("\u001B[F")
-                                true
-                            }
-                            else -> {
-                                // Handle Ctrl and Alt combinations
-                                if (keyEvent.isCtrlPressed || keyEvent.isAltPressed) {
-                                    handleKeyEvent(keyEvent, viewModel)
-                                } else {
-                                    false // Let BasicTextField handle regular characters
-                                }
-                            }
-                        }
-                    } else {
-                        false
-                    }
+                        handleKeyEvent(keyEvent, viewModel)
+                    } else false
                 },
             textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
             cursorBrush = SolidColor(Color.Transparent)
@@ -248,25 +142,23 @@ fun TerminalView(viewModel: TerminalViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { size ->
-                    // Skip if size is zero (during initial layout)
                     if (size.width > 0 && size.height > 0) {
-                        // Calculate terminal size in columns and rows
                         with(density) {
-                            // Account for padding (8dp on each side = 16dp total) and scrollbar (4dp)
-                            val horizontalPaddingPx = 16.dp.toPx() + 4.dp.toPx() // padding + scrollbar
-                            val verticalPaddingPx = 16.dp.toPx()
+                            val horizontalPaddingPx = 24.dp.toPx() + 12.dp.toPx()
+                            val verticalPaddingPx = 24.dp.toPx()
                             val availableWidth = size.width - horizontalPaddingPx
                             val availableHeight = size.height - verticalPaddingPx
 
-                            // Calculate columns and rows based on character dimensions in pixels
                             val calculatedColumns = kotlin.math.floor(availableWidth / charWidthPx).toInt()
-                            val newColumns = max(20, calculatedColumns) // No artificial cap
-                            val newRows = max(5, kotlin.math.floor(availableHeight / charHeightPx).toInt())
+                            val displayColumns = calculatedColumns.coerceIn(80, 150)
+                            val ptyColumns = (displayColumns * 0.95).toInt().coerceIn(75, 140)
                             
-                            // Only resize if dimensions actually changed
-                            if (terminalSize.first != newColumns || terminalSize.second != newRows) {
-                                // Store the pending resize instead of applying immediately
-                                pendingResize = Pair(newColumns, newRows)
+                            val calculatedRows = kotlin.math.floor(availableHeight / charHeightPx).toInt()
+                            val displayRows = max(24, calculatedRows)
+                            val ptyRows = displayRows
+                            
+                            if (terminalSize.first != displayColumns || terminalSize.second != displayRows) {
+                                pendingResize = Triple(displayColumns, displayRows, Pair(ptyColumns, ptyRows))
                             }
                         }
                     }
@@ -275,15 +167,14 @@ fun TerminalView(viewModel: TerminalViewModel) {
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {
-                    // Request focus when clicked
                     focusRequester.requestFocus()
                 }
         ) {
-            // Terminal output area with padding
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp)
+                    .padding(12.dp)
+                    .clipToBounds()
                     .verticalScrollWithScrollbar(
                         scrollState = scrollState,
                         scrollbarConfig = ScrollbarConfig(
@@ -293,37 +184,50 @@ fun TerminalView(viewModel: TerminalViewModel) {
                         )
                     )
             ) {
-                // If terminal is not running or no lines yet, show status
                 if (!isRunning || terminalLines.isEmpty()) {
                     Text(
                         text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
                         style = terminalTextStyle,
-                        color = BossDarkTextSecondary // Use theme secondary text color
+                        color = BossDarkTextSecondary
                     )
                 }
 
                 terminalLines.forEachIndexed { rowIndex, line ->
+                    val needsWrapping = line.text.length > terminalSize.first
+                    
                     Box(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .width(charWidthDp * terminalSize.first)
+                            .height(charHeightDp)
+                            .clipToBounds()
+                            .graphicsLayer {
+                                compositingStrategy = if (needsWrapping) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+                            }
                     ) {
                         Text(
-                            text = line,
-                            style = terminalTextStyle,
-                            color = textColor,
-                            modifier = Modifier.fillMaxWidth(),
+                            text = if (line.text.isEmpty()) AnnotatedString(" ") else line,
+                            style = terminalTextStyle.copy(
+                                lineHeight = charHeightDp.value.sp
+                            ),
+                            modifier = Modifier
+                                .width(charWidthDp * terminalSize.first)
+                                .height(charHeightDp)
+                                .wrapContentHeight(align = Alignment.Top),
                             softWrap = false,
-                            overflow = TextOverflow.Visible
+                            overflow = TextOverflow.Clip,
+                            maxLines = 1
                         )
                         
-                        // Show cursor if this is the cursor row
+                        // Cursor
                         if (rowIndex == terminalCursorPosition.first && hasFocus && terminalCursorVisible) {
-                            // Calculate cursor position using same char width
                             val cursorCol = terminalCursorPosition.second
+                            val scaleFactor = terminalSize.first.toFloat() / ptySize.first.toFloat()
+                            val displayCursorCol = (cursorCol * scaleFactor).toInt()
+                            
                             Box(
                                 modifier = Modifier
-                                    .offset(x = charWidthDp * cursorCol)
-                                    .width(charWidthDp)
-                                    .height(charHeightDp)
+                                    .offset(x = charWidthDp * displayCursorCol)
+                                    .size(charWidthDp, charHeightDp)
                                     .alpha(cursorAlpha)
                                     .background(cursorColor)
                             )
@@ -334,224 +238,113 @@ fun TerminalView(viewModel: TerminalViewModel) {
         }
     }
     
-    // Initialize terminal without requesting focus
-    LaunchedEffect(Unit) {
-        // Fallback: ensure terminal starts after a timeout
-        delay(1000)
-        if (!hasInitialSize) {
-            // println("[TerminalView] Fallback startup - starting terminal with default size")
+    // Terminal initialization
+    LaunchedEffect(terminalSize) {
+        if (terminalSize.first > 0 && terminalSize.second > 0 && !hasInitialSize) {
+            focusRequester.requestFocus()
             hasInitialSize = true
             viewModel.ensureStarted()
-            viewModel.resize(terminalSize.first, terminalSize.second)
         }
     }
     
-    // Handle pending resize with debouncing
+    // Resize handling
     LaunchedEffect(pendingResize) {
-        pendingResize?.let { (cols, rows) ->
-            // println("[TerminalView] Pending resize: ${cols}x${rows}")
+        pendingResize?.let { (cols, rows, ptyResize) ->
+            delay(50) // Simple debouncing
             
-            // Wait for resize events to settle
-            delay(300)
-            
-            // Check if we still have the same pending resize
-            if (pendingResize == Pair(cols, rows)) {
-                // println("[TerminalView] Applying resize: ${cols}x${rows}, hasInitialSize=$hasInitialSize")
-                
-                // First time setup
-                if (!hasInitialSize) {
-                    hasInitialSize = true
-                    // Start the terminal
-                    viewModel.ensureStarted()
-                    // Wait for terminal to start
-                    delay(500)
-                }
-                
-                // Apply the resize
-                if (terminalSize.first != cols || terminalSize.second != rows) {
-                    val oldCols = terminalSize.first
-                    terminalSize = Pair(cols, rows)
-                    viewModel.resize(cols, rows)
-                    
-                    // Clear screen after significant column change to remove artifacts
-                    if (kotlin.math.abs(oldCols - cols) > 10 && hasInitialSize) {
-                        delay(200)
-                        viewModel.sendInput("\u000C") // Ctrl+L
-                    }
-                }
-                
-                pendingResize = null
+            if (!hasInitialSize) {
+                hasInitialSize = true
+                viewModel.ensureStarted()
             }
+            
+            if (terminalSize.first != cols || terminalSize.second != rows) {
+                terminalSize = Pair(cols, rows)
+                ptySize = ptyResize
+                viewModel.resizeWithDeception(cols, rows, ptyResize.first, ptyResize.second)
+            }
+            
+            pendingResize = null
         }
     }
     
-    // Don't automatically grab focus - let user click to focus
-    
-    // Track user scroll interactions
+    // Scroll tracking
     LaunchedEffect(scrollState.value) {
-        // Check if this scroll was user-initiated (not from auto-scroll)
         if (scrollState.isScrollInProgress) {
             val currentMax = scrollState.maxValue
             val currentValue = scrollState.value
             
-            // User scrolled up if they're not at the bottom
-            userHasScrolled = currentValue < (currentMax - 50) // 50px tolerance for being "at bottom"
+            userHasScrolled = currentValue < (currentMax - 50)
             
-            // If user scrolled to bottom, reset the flag
             if (currentValue >= (currentMax - 50)) {
                 userHasScrolled = false
             }
         }
     }
     
-    // Auto-scroll to bottom when terminal updates
-    LaunchedEffect(terminalLines.size) {
+    // Auto-scroll to bottom
+    LaunchedEffect(terminalLines.size, userHasScrolled) {
         if (terminalLines.isNotEmpty() && !userHasScrolled) {
-            // Auto-scroll to bottom if user hasn't manually scrolled up
-            coroutineScope.launch {
-                scrollState.animateScrollTo(scrollState.maxValue)
-            }
-        }
-    }
-    
-    // Force scroll to bottom when terminal content changes
-    LaunchedEffect(terminalLines) {
-        if (terminalLines.isNotEmpty() && !userHasScrolled) {
-            // Ensure we're always at the bottom when new content arrives
-            coroutineScope.launch {
-                // Small delay to let the UI update
-                delay(10)
-                scrollState.scrollTo(scrollState.maxValue)
-            }
+            scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 private fun handleKeyEvent(keyEvent: KeyEvent, viewModel: TerminalViewModel): Boolean {
-    if (keyEvent.type != KeyEventType.KeyDown) {
-        return false
-    }
-    
     return when (keyEvent.key) {
-        Key.Enter -> {
-            viewModel.sendInput("\n")
-            true
-        }
-        Key.Backspace -> {
-            viewModel.sendInput("\u007F") // DEL character
-            true
-        }
-        Key.Delete -> {
-            viewModel.sendInput("\u001B[3~") // Delete key sequence
-            true
-        }
-        Key.Escape -> {
-            viewModel.sendInput("\u001B") // ESC character
-            true
-        }
-        Key.DirectionLeft -> {
-            viewModel.sendInput("\u001B[D") // Left arrow
-            true
-        }
-        Key.DirectionRight -> {
-            viewModel.sendInput("\u001B[C") // Right arrow
-            true
-        }
-        Key.DirectionUp -> {
-            viewModel.sendInput("\u001B[A") // Up arrow (for history)
-            true
-        }
-        Key.DirectionDown -> {
-            viewModel.sendInput("\u001B[B") // Down arrow (for history)
-            true
-        }
-        Key.MoveHome -> {
-            viewModel.sendInput("\u001B[H") // Home
-            true
-        }
-        Key.MoveEnd -> {
-            viewModel.sendInput("\u001B[F") // End
-            true
-        }
-        Key.Tab -> {
-            viewModel.sendInput("\t") // Tab for completion
-            true
-        }
+        Key.Enter -> { viewModel.sendInput("\r"); true }
+        Key.Backspace -> { viewModel.sendInput("\u007F"); true }
+        Key.Delete -> { viewModel.sendInput("\u001B[3~"); true }
+        Key.Escape -> { viewModel.sendInput("\u001B"); true }
+        Key.DirectionLeft -> { viewModel.sendInput("\u001B[D"); true }
+        Key.DirectionRight -> { viewModel.sendInput("\u001B[C"); true }
+        Key.DirectionUp -> { viewModel.sendInput("\u001B[A"); true }
+        Key.DirectionDown -> { viewModel.sendInput("\u001B[B"); true }
+        Key.Tab -> { viewModel.sendInput("\t"); true }
+        Key.MoveHome -> { viewModel.sendInput("\u001B[H"); true }
+        Key.MoveEnd -> { viewModel.sendInput("\u001B[F"); true }
+        
         else -> {
-            // Handle control keys
-            if (keyEvent.isCtrlPressed) {
-                when (keyEvent.key) {
-                    Key.C -> {
-                        viewModel.sendInput("\u0003") // Ctrl+C
+            when {
+                keyEvent.isCtrlPressed -> handleCtrlKey(keyEvent, viewModel)
+                keyEvent.isAltPressed -> handleAltKey(keyEvent, viewModel)
+                else -> {
+                    val char = keyEvent.utf16CodePoint.toChar()
+                    if (char.code in 32..126) {
+                        viewModel.sendInput(char.toString())
                         true
-                    }
-                    Key.D -> {
-                        viewModel.sendInput("\u0004") // Ctrl+D
-                        true
-                    }
-                    Key.Z -> {
-                        viewModel.sendInput("\u001A") // Ctrl+Z
-                        true
-                    }
-                    Key.L -> {
-                        viewModel.sendInput("\u000C") // Ctrl+L (clear)
-                        true
-                    }
-                    Key.A -> {
-                        viewModel.sendInput("\u0001") // Ctrl+A (beginning of line)
-                        true
-                    }
-                    Key.E -> {
-                        viewModel.sendInput("\u0005") // Ctrl+E (end of line)
-                        true
-                    }
-                    Key.K -> {
-                        viewModel.sendInput("\u000B") // Ctrl+K (kill to end of line)
-                        true
-                    }
-                    Key.U -> {
-                        viewModel.sendInput("\u0015") // Ctrl+U (kill to beginning of line)
-                        true
-                    }
-                    Key.W -> {
-                        viewModel.sendInput("\u0017") // Ctrl+W (kill word)
-                        true
-                    }
-                    else -> false
-                }
-            } else if (keyEvent.isAltPressed) {
-                // Handle Alt key combinations
-                when (keyEvent.key) {
-                    Key.B -> {
-                        viewModel.sendInput("\u001Bb") // Alt+B (backward word)
-                        true
-                    }
-                    Key.F -> {
-                        viewModel.sendInput("\u001Bf") // Alt+F (forward word)
-                        true
-                    }
-                    else -> {
-                        // For other Alt combinations, send ESC + character
-                        val char = keyEvent.utf16CodePoint.toChar()
-                        if (char.code >= 32 && char.code < 127) {
-                            viewModel.sendInput("\u001B$char")
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                }
-            } else {
-                // Regular character input
-                val char = keyEvent.utf16CodePoint.toChar()
-                if (char.code >= 32 && char.code < 127) {
-                    viewModel.sendInput(char.toString())
-                    true
-                } else {
-                    false
+                    } else false
                 }
             }
+        }
+    }
+}
+
+private fun handleCtrlKey(keyEvent: KeyEvent, viewModel: TerminalViewModel): Boolean {
+    return when (keyEvent.key) {
+        Key.C -> { viewModel.sendInput("\u0003"); true }
+        Key.D -> { viewModel.sendInput("\u0004"); true }
+        Key.Z -> { viewModel.sendInput("\u001A"); true }
+        Key.L -> { viewModel.sendInput("\u000C"); true }
+        Key.A -> { viewModel.sendInput("\u0001"); true }
+        Key.E -> { viewModel.sendInput("\u0005"); true }
+        Key.K -> { viewModel.sendInput("\u000B"); true }
+        Key.U -> { viewModel.sendInput("\u0015"); true }
+        Key.W -> { viewModel.sendInput("\u0017"); true }
+        else -> false
+    }
+}
+
+private fun handleAltKey(keyEvent: KeyEvent, viewModel: TerminalViewModel): Boolean {
+    return when (keyEvent.key) {
+        Key.B -> { viewModel.sendInput("\u001Bb"); true }
+        Key.F -> { viewModel.sendInput("\u001Bf"); true }
+        else -> {
+            val char = keyEvent.utf16CodePoint.toChar()
+            if (char.code in 32..126) {
+                viewModel.sendInput("\u001B$char")
+                true
+            } else false
         }
     }
 }
