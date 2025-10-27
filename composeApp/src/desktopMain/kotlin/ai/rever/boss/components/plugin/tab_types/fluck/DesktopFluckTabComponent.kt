@@ -51,4 +51,53 @@ class DesktopFluckTabComponent(
             jxBrowser.navigation().reload()
         }
     }
+
+    override fun zoomIn() {
+        val jxBrowser = browser as? Browser
+        if (jxBrowser != null && !jxBrowser.isClosed) {
+            try {
+                val currentLevel = jxBrowser.zoom().level().value()
+                val newLevel = getNextZoomLevel(currentLevel, isZoomIn = true)
+                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
+                println("🔍 Zoom In: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
+            } catch (e: Exception) {
+                println("Error zooming in: ${e.message}")
+            }
+        }
+    }
+
+    override fun zoomOut() {
+        val jxBrowser = browser as? Browser
+        if (jxBrowser != null && !jxBrowser.isClosed) {
+            try {
+                val currentLevel = jxBrowser.zoom().level().value()
+                val newLevel = getNextZoomLevel(currentLevel, isZoomIn = false)
+                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
+                println("🔍 Zoom Out: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
+            } catch (e: Exception) {
+                println("Error zooming out: ${e.message}")
+            }
+        }
+    }
+
+    override fun actualSize() {
+        val jxBrowser = browser as? Browser
+        if (jxBrowser != null && !jxBrowser.isClosed) {
+            try {
+                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.P_100)
+                println("🔍 Actual Size: Reset to 100%")
+            } catch (e: Exception) {
+                println("Error resetting zoom: ${e.message}")
+            }
+        }
+    }
+
+    private fun getNextZoomLevel(current: Double, isZoomIn: Boolean): Double {
+        val levels = listOf(0.25, 0.50, 0.75, 0.90, 1.0, 1.10, 1.25, 1.50, 1.75, 2.0, 2.50, 3.0)
+        return if (isZoomIn) {
+            levels.firstOrNull { it > current } ?: 3.0
+        } else {
+            levels.lastOrNull { it < current } ?: 0.25
+        }
+    }
 }

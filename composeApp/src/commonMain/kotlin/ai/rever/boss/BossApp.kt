@@ -337,6 +337,90 @@ fun ComponentContext.BossApp(windowId: String) {
             .launchIn(this)
     }
 
+    // Listen for menu actions from MenuBar (File > New Tab, etc.)
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.newTabEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    // Show new tab dialog when menu item is clicked
+                    showNewTabDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.closeTabEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    // Close current tab when menu item is clicked
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    if (activeTabsComponent != null) {
+                        val tabs = activeTabsComponent.tabsState.value.tabs
+                        val activeIndex = activeTabsComponent.tabsState.value.activeIndex
+                        if (activeIndex >= 0 && activeIndex < tabs.size) {
+                            activeTabsComponent.removeTab(activeIndex)
+
+                            // Check if all panels in window are now empty
+                            val allPanels = splitViewState.getAllPanels()
+                            val totalTabs = allPanels.sumOf { panel ->
+                                panel.tabsComponent.tabsState.value.tabs.size
+                            }
+
+                            // If no tabs remaining in any panel, close the window
+                            if (totalTabs == 0) {
+                                ai.rever.boss.window.WindowOperations.closeWindowIfEmpty(windowId)
+                            }
+                        }
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Listen for zoom menu actions
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.zoomInEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    val activeTab = activeTabsComponent?.getActiveComponent()
+                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                        activeTab.zoomIn()
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.zoomOutEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    val activeTab = activeTabsComponent?.getActiveComponent()
+                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                        activeTab.zoomOut()
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.actualSizeEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    val activeTab = activeTabsComponent?.getActiveComponent()
+                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                        activeTab.actualSize()
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
     with(draggablePanelComponent) {
         BossTheme {
             CompositionLocalProvider(
@@ -424,6 +508,33 @@ fun ComponentContext.BossApp(windowId: String) {
                                             activeTabComponent.reload()
                                         }
                                     }
+                                }
+                                true
+                            }
+                            // Cmd+0 - Actual Size (Reset Zoom to 100%)
+                            event.isMetaPressed && event.key == Key.Zero -> {
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                val activeTab = activeTabsComponent?.getActiveComponent()
+                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                                    activeTab.actualSize()
+                                }
+                                true
+                            }
+                            // Cmd++ / Cmd+= - Zoom In
+                            event.isMetaPressed && (event.key == Key.Plus || event.key == Key.Equals) -> {
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                val activeTab = activeTabsComponent?.getActiveComponent()
+                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                                    activeTab.zoomIn()
+                                }
+                                true
+                            }
+                            // Cmd+- - Zoom Out
+                            event.isMetaPressed && event.key == Key.Minus -> {
+                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                val activeTab = activeTabsComponent?.getActiveComponent()
+                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                                    activeTab.zoomOut()
                                 }
                                 true
                             }

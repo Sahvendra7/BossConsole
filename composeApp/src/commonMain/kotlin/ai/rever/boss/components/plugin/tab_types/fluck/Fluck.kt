@@ -34,12 +34,14 @@ data class FluckTabInfo(
     val url: String = "", // Initial URL
     private var _currentUrl: String = url, // Current URL being viewed
     val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
-    var historyIndex: Int = -1 // Current position in navigation history
+    var historyIndex: Int = -1, // Current position in navigation history
+    private var _currentZoomLevel: Double = 1.0 // Current zoom level (1.0 = 100%)
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
     override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
     val currentUrl: String get() = _currentUrl
+    val currentZoomLevel: Double get() = _currentZoomLevel
     
     fun updateTitle(newTitle: String): FluckTabInfo {
         return copy(_title = newTitle)
@@ -51,6 +53,10 @@ data class FluckTabInfo(
     
     fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
         return copy(_tabIcon = newTabIcon)
+    }
+
+    fun updateZoomLevel(newLevel: Double): FluckTabInfo {
+        return copy(_currentZoomLevel = newLevel)
     }
 
     fun navigateToPage(title: String, url: String) {
@@ -139,6 +145,21 @@ open class FluckTabComponent(
     
     // Method to be overridden by platform-specific classes
     open fun reload() {
+        // Default implementation does nothing
+        // Platform-specific implementations will override this
+    }
+
+    open fun zoomIn() {
+        // Default implementation does nothing
+        // Platform-specific implementations will override this
+    }
+
+    open fun zoomOut() {
+        // Default implementation does nothing
+        // Platform-specific implementations will override this
+    }
+
+    open fun actualSize() {
         // Default implementation does nothing
         // Platform-specific implementations will override this
     }
