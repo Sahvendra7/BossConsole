@@ -176,10 +176,41 @@ fun JxBrowserCompose(
         }
     }
 
+    // Track if this composable is being disposed to prevent race conditions with browser closure
+    val isComposableDisposed = remember { mutableStateOf(false) }
+
+    // Helper function to check if browser environment is still valid
+    fun isBrowserEnvironmentValid(): Boolean {
+        return !isComposableDisposed.value &&
+               !browser.isClosed &&
+               try {
+                   // Check if any window is still valid by checking AWT window list
+                   val windows = java.awt.Window.getWindows()
+                   windows.any { window ->
+                       try {
+                           window.isDisplayable && window.isShowing
+                       } catch (e: Exception) {
+                           false
+                       }
+                   }
+               } catch (e: Exception) {
+                   false
+               }
+    }
+
+    // Dispose effect for browser lifecycle coordination
+    DisposableEffect(browser) {
+        onDispose {
+            // Signal that composable is being disposed
+            isComposableDisposed.value = true
+            // Coroutines will detect this flag and exit gracefully via isBrowserEnvironmentValid()
+        }
+    }
+
     // Set up browser navigation listeners
     LaunchedEffect(browser, initialUrl) {
-        // Check if browser is disposed
-        if (browser.isClosed) return@LaunchedEffect
+        // Exit immediately if browser environment is not valid
+        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
         
         // Load initial URL if browser is on blank page
         try {
@@ -199,7 +230,13 @@ fun JxBrowserCompose(
         
         // Set up navigation listeners
         browser.navigation().on(LoadStarted::class.java) {
+            // Check if browser environment is still valid before accessing
+            if (!isBrowserEnvironmentValid()) return@on
+
             coroutineScope.launch(Dispatchers.Main) {
+                // Double-check before UI update
+                if (!isBrowserEnvironmentValid()) return@launch
+
                 isLoading = true
                 val newUrl = browser.url()
                 urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
@@ -210,14 +247,20 @@ fun JxBrowserCompose(
         
         // Listen for NavigationFinished to update title even if LoadFinished doesn't fire
         browser.navigation().on(NavigationFinished::class.java) { event ->
+            // Check if browser environment is still valid before accessing
+            if (!isBrowserEnvironmentValid()) return@on
+
             if (event.isInMainFrame) {
                 coroutineScope.launch(Dispatchers.Main) {
+                    // Double-check before UI update
+                    if (!isBrowserEnvironmentValid()) return@launch
+
                     // Update URL bar
                     val newUrl = event.url()
                     urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
-                    
+
                     // Update title immediately when navigation finishes
-                    if (!browser.isClosed) {
+                    if (isBrowserEnvironmentValid()) {
                         val title = browser.title()
                         val displayTitle = if (title.isNotEmpty()) {
                             truncateTitle(title, newUrl)
@@ -253,7 +296,13 @@ fun JxBrowserCompose(
         }
         
         browser.navigation().on(LoadFinished::class.java) {
+            // Check if browser environment is still valid before accessing
+            if (!isBrowserEnvironmentValid()) return@on
+
             coroutineScope.launch(Dispatchers.Main) {
+                // Double-check before UI update
+                if (!isBrowserEnvironmentValid()) return@launch
+
                 isLoading = false
                 canGoBack = browser.navigation().canGoBack()
                 canGoForward = browser.navigation().canGoForward()
@@ -321,9 +370,9 @@ fun JxBrowserCompose(
                         }
                     }
                 }
-                
+
                 // Update title when page finishes loading
-                if (browser.isClosed) return@launch
+                if (!isBrowserEnvironmentValid()) return@launch
                 val title = browser.title()
                 val url = browser.url()
                 
@@ -405,29 +454,30 @@ fun JxBrowserCompose(
                 onIconChange(Icons.Filled.Language)
             }
         }
-        
+
         // Load initial URL if browser hasn't loaded anything yet
-        if (browser.url() == "about:blank" || browser.url().isEmpty()) {
-            browser.navigation().loadUrl(initialUrl)
-        } else {
-            // Browser already has content loaded, update the title with current state
-            val currentTitle = browser.title()
-            val currentUrl = browser.url()
-            
-            if (currentTitle.isNotEmpty()) {
-                onTitleChange(truncateTitle(currentTitle, currentUrl))
+        if (isBrowserEnvironmentValid()) {
+            if (browser.url() == "about:blank" || browser.url().isEmpty()) {
+                browser.navigation().loadUrl(initialUrl)
             } else {
-                // Fallback to domain name if no title
-                try {
-                    val host = java.net.URL(currentUrl).host.removePrefix("www.")
-                    onTitleChange(host)
-                } catch (e: Exception) {
-                    onTitleChange("New Tab")
+                // Browser already has content loaded, update the title with current state
+                val currentTitle = browser.title()
+                val currentUrl = browser.url()
+
+                if (currentTitle.isNotEmpty()) {
+                    onTitleChange(truncateTitle(currentTitle, currentUrl))
+                } else {
+                    // Fallback to domain name if no title
+                    try {
+                        val host = java.net.URL(currentUrl).host.removePrefix("www.")
+                        onTitleChange(host)
+                    } catch (e: Exception) {
+                        onTitleChange("New Tab")
+                    }
                 }
-            }
-            
-            // Try to extract favicon for already loaded page
-            browser.mainFrame().ifPresent { frame ->
+
+                // Try to extract favicon for already loaded page
+                browser.mainFrame().ifPresent { frame ->
                 frame.executeJavaScript<String?>("""
                     (function() {
                         // Try to find favicon in various ways
@@ -473,18 +523,25 @@ fun JxBrowserCompose(
                     }
                 }
             }
-            
+
             // Update icon for already loaded page
             onIconChange(Icons.Filled.Language)
+            }
         }
     }
     
     // Set up polling for new tab requests
     LaunchedEffect(browser) {
+        // Exit immediately if browser environment is not valid
+        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
+
         coroutineScope.launch {
-            while (!browser.isClosed) {
+            while (isBrowserEnvironmentValid()) {
                 delay(100) // Check every 100ms
-                if (browser.isClosed) break
+
+                // Double-check environment validity after delay
+                if (!isBrowserEnvironmentValid()) break
+
                 try {
                     browser.mainFrame().ifPresent { frame ->
                         frame.executeJavaScript<String?>("""
@@ -497,13 +554,13 @@ fun JxBrowserCompose(
                                 return null;
                             })();
                         """)?.let { newTabUrl ->
-                            if (newTabUrl.isNotEmpty()) {
+                            if (newTabUrl.isNotEmpty() && isBrowserEnvironmentValid()) {
                                 onOpenInNewTab(newTabUrl)
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    // Browser might be closed, exit the loop
+                    // Browser might be closed or disposed, exit the loop
                     break
                 }
             }
@@ -539,7 +596,7 @@ fun JxBrowserCompose(
                         text = "Back",
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         onClick = {
-                            if (!browser.isClosed) {
+                            if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goBack()
                                 onNavigationStateChange?.invoke(true)
                             }
@@ -552,19 +609,19 @@ fun JxBrowserCompose(
                         text = "Forward",
                         icon = Icons.AutoMirrored.Filled.ArrowForward,
                         onClick = {
-                            if (!browser.isClosed) {
+                            if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goForward()
                                 onNavigationStateChange?.invoke(false)
                             }
                         }
                     ))
                 }
-            
+
             // Always show reload
             add(ContextMenuItem(
                 text = "Reload",
                 icon = Icons.Default.Refresh,
-                onClick = { if (!browser.isClosed) browser.navigation().reload() }
+                onClick = { if (isBrowserEnvironmentValid()) browser.navigation().reload() }
             ))
             
             add(ContextMenuItem(isDivider = true))
@@ -575,7 +632,7 @@ fun JxBrowserCompose(
                     text = "Picture in Picture",
                     icon = Icons.Outlined.PictureInPictureAlt,
                     onClick = {
-                        if (!browser.isClosed) {
+                        if (isBrowserEnvironmentValid()) {
                             browser.mainFrame().ifPresent { frame ->
                                 // Execute JavaScript to enable PiP on the video
                                 frame.executeJavaScript<Unit>("""
@@ -629,13 +686,13 @@ fun JxBrowserCompose(
                 text = "Copy URL",
                 icon = Icons.Outlined.ContentCopy,
                 onClick = {
-                    if (!browser.isClosed) {
+                    if (isBrowserEnvironmentValid()) {
                         val clipboard = Toolkit.getDefaultToolkit().systemClipboard
                         clipboard.setContents(StringSelection(browser.url()), null)
                     }
                 }
             ))
-            
+
             // Open link in new tab option - only show if right-clicked on a link
             if (!rightClickedLinkUrl.isNullOrEmpty()) {
                 add(ContextMenuItem(
@@ -650,12 +707,12 @@ fun JxBrowserCompose(
                     }
                 ))
             }
-            
+
             // Developer tools
             add(ContextMenuItem(
                 text = "Inspect Element",
                 icon = Icons.Outlined.Code,
-                onClick = { if (!browser.isClosed) browser.devTools().show() }
+                onClick = { if (isBrowserEnvironmentValid()) browser.devTools().show() }
             ))
             }
         }
@@ -678,8 +735,8 @@ fun JxBrowserCompose(
                 ) {
                     // Back button
                     IconButton(
-                        onClick = { 
-                            if (!browser.isClosed) {
+                        onClick = {
+                            if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goBack()
                                 onNavigationStateChange?.invoke(true)
                             }
@@ -688,16 +745,16 @@ fun JxBrowserCompose(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack, 
+                            Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                    
+
                     // Forward button
                     IconButton(
-                        onClick = { 
-                            if (!browser.isClosed) {
+                        onClick = {
+                            if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goForward()
                                 onNavigationStateChange?.invoke(false)
                             }
@@ -706,7 +763,7 @@ fun JxBrowserCompose(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowForward, 
+                            Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Forward",
                             modifier = Modifier.size(18.dp)
                         )
@@ -794,7 +851,7 @@ fun JxBrowserCompose(
                                                 processUrlInput(input)
                                             }
                                         }
-                                        if (!browser.isClosed) browser.navigation().loadUrl(urlToLoad)
+                                        if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
                                         autocompleteSuggestion = null
                                         showDropdown = false
                                         true
@@ -865,14 +922,14 @@ fun JxBrowserCompose(
                                 }
                                 IconButton(
                                     onClick = {
-                                        val urlToLoad = if (autocompleteSuggestion != null && 
+                                        val urlToLoad = if (autocompleteSuggestion != null &&
                                             urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
                                             processUrlInput(autocompleteSuggestion!!)
                                         } else {
                                             val input = urlInput.text.trim()
                                             processUrlInput(input)
                                         }
-                                        if (!browser.isClosed) browser.navigation().loadUrl(urlToLoad)
+                                        if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
                                         autocompleteSuggestion = null
                                         showDropdown = false
                                     },
@@ -980,7 +1037,7 @@ fun JxBrowserCompose(
                                         MaterialTheme.colors.surface
                                 )
                                 .clickable {
-                                    if (!browser.isClosed) {
+                                    if (isBrowserEnvironmentValid()) {
                                         browser.navigation().loadUrl(entry.url)
                                         urlInput = TextFieldValue(entry.url)
                                         showDropdown = false

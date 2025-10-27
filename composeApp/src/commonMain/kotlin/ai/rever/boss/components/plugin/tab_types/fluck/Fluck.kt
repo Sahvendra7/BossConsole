@@ -7,7 +7,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -92,7 +92,8 @@ data class FluckTabInfo(
 expect fun createBrowser(): Any
 
 // Platform-specific browser view state creation
-expect fun createBrowserViewState(browser: Any): Any
+// Returns null if no valid window is available
+expect fun createBrowserViewState(browser: Any): Any?
 
 // Platform-specific browser disposal
 expect fun disposeBrowser(browser: Any)
@@ -126,13 +127,14 @@ open class FluckTabComponent(
 
     // Store the URL to load
     private val initialUrl = (config as? FluckTabInfo)?.url ?: "https://www.risalabs.ai"
-    
-    // Get or create browser from state manager (platform-specific)
+
+    // Browser state will be initialized lazily in Content() - NOT during construction
+    // This prevents blocking the UI thread during window initialization
     private var browserError: Throwable? = null
-    val browserState = getBrowserState(initialUrl)
-    val browser: Any? = browserState?.first
-    val browserViewState: Any? = browserState?.second
-    
+    private var browserState: Pair<Any, Any>? = null
+    val browser: Any? get() = browserState?.first
+    val browserViewState: Any? get() = browserState?.second
+
     private var isDisposed = false
     
     // Method to be overridden by platform-specific classes
@@ -145,6 +147,30 @@ open class FluckTabComponent(
 
     @Composable
     override fun Content() {
+        // Lazy initialization - happens AFTER window is composed and displayed
+        var browserState by remember { mutableStateOf<Pair<Any, Any>?>(null) }
+        var browserError by remember { mutableStateOf<Throwable?>(null) }
+        var isInitializing by remember { mutableStateOf(true) }
+
+        // Initialize browser asynchronously when composable enters composition
+        LaunchedEffect(Unit) {
+            try {
+                // This runs in a coroutine, won't block UI thread
+                kotlinx.coroutines.delay(100) // Give window time to be displayed
+                val state = getBrowserState(initialUrl)
+                if (state != null) {
+                    this@FluckTabComponent.browserState = state
+                    browserState = state
+                } else {
+                    browserError = Exception("Could not initialize browser - window not ready")
+                }
+            } catch (e: Exception) {
+                browserError = e
+            } finally {
+                isInitializing = false
+            }
+        }
+
         if (!isDisposed) {
             when {
                 browserError != null -> {
@@ -154,7 +180,9 @@ open class FluckTabComponent(
                         url = initialUrl
                     )
                 }
-                browser != null && browserViewState != null -> {
+                browserState != null -> {
+                    val browser = browserState!!.first
+                    val browserViewState = browserState!!.second
                     FluckView(
                         fileId = config.id,
                         content = initialUrl,
@@ -195,6 +223,7 @@ open class FluckTabComponent(
         if (!isDisposed) {
             isDisposed = true
             // Dispose the browser and view state
+            // The composable's DisposableEffect and disposal guards will handle cleanup coordination
             try {
                 browserViewState?.let { disposeBrowserViewState(it) }
                 browser?.let { disposeBrowser(it) }

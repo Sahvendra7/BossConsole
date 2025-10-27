@@ -53,15 +53,17 @@ fun main(args: Array<String>) {
     
     println("===========================================")
 
-    application {
-        // Create initial window on first composition if none exist
-        // This handles both normal startup and deep link startup
-        if (WindowManager.windows.isEmpty()) {
-            WindowManager.createNewWindow()
-        }
+    // Create initial window BEFORE application{} to prevent auto-recreation
+    // This runs once on startup, not during recomposition
+    WindowManager.createNewWindow()
 
+    application {
         // Render each window with stable identity via key()
         // This prevents re-composition of existing windows when new windows are added
+        //
+        // IMPORTANT: No auto-creation logic here!
+        // When all windows close, app stays running (standard macOS behavior)
+        // User can create new windows via UI elements (+ button, File menu, etc.)
         WindowManager.windows.forEach { windowState ->
             key(windowState.id) {
                 BossWindow(
@@ -69,6 +71,8 @@ fun main(args: Array<String>) {
                     onCloseRequest = {
                         WindowManager.closeWindow(windowState.id)
                         // Don't call exitApplication - keep app running (macOS style)
+                        // When window count reaches 0, app stays in Dock
+                        // User can quit via Cmd+Q or right-click Dock → Quit
                     }
                 )
             }
