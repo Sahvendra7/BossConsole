@@ -1209,3 +1209,204 @@ fun RoleDropdownForSharing(
         }
     }
 }
+
+/**
+ * Quick create secret dialog for browser integration (Issue #56).
+ *
+ * Streamlined version of CreateSecretDialog optimized for quick credential entry
+ * from the browser. Pre-fills website domain and focuses on essential fields.
+ */
+@Composable
+fun QuickCreateSecretDialog(
+    websitePrefill: String,
+    onConfirm: (CreateSecretRequest) -> Unit,
+    onDismiss: () -> Unit,
+    isLoading: Boolean
+) {
+    var website by remember { mutableStateOf(websitePrefill) }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var tags by remember { mutableStateOf("") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = { if (!isLoading) onDismiss() }) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF3C3F41),
+            modifier = Modifier.width(450.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Title
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Quick Add Secret",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "🔑",
+                        fontSize = 24.sp
+                    )
+                }
+
+                Text(
+                    "Save credentials for this website to auto-fill in the future",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+
+                // Website (pre-filled)
+                OutlinedTextField(
+                    value = website,
+                    onValueChange = { website = it },
+                    label = { Text("Website", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
+                )
+
+                // Username
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username / Email", color = Color.Gray) },
+                    placeholder = { Text("user@example.com", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
+                )
+
+                // Password
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password", color = Color.Gray) },
+                    placeholder = { Text("••••••••", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                            Icon(
+                                if (isPasswordVisible) FeatherIcons.EyeOff else FeatherIcons.Eye,
+                                contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                                tint = Color.Gray
+                            )
+                        }
+                    },
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
+                )
+
+                // Tags (optional)
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags (Optional)", color = Color.Gray) },
+                    placeholder = { Text("work, personal", color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        textColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color(0xFF4CAF50),
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
+                )
+
+                // Help text
+                Surface(
+                    color = Color(0xFF2B2D30),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("💡", fontSize = 16.sp)
+                        Text(
+                            "You can add notes, expiration dates, and 2FA info later by editing the secret.",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isLoading
+                    ) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val tagsList = tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                            onConfirm(
+                                CreateSecretRequest(
+                                    website = website,
+                                    username = username,
+                                    password = password,
+                                    notes = null,
+                                    expirationDate = null,
+                                    tags = tagsList,
+                                    twofaEnabled = false,
+                                    twofaType = null,
+                                    recoveryCodes = emptyList()
+                                )
+                            )
+                        },
+                        enabled = !isLoading && website.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF4CAF50),
+                            disabledBackgroundColor = Color.Gray
+                        )
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text("Save Secret", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

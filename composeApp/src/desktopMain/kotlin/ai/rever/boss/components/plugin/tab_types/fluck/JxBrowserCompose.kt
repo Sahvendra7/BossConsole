@@ -158,7 +158,24 @@ fun JxBrowserCompose(
     var dropdownSuggestions by remember { mutableStateOf<List<UrlHistoryEntry>>(emptyList()) }
     var selectedDropdownIndex by remember { mutableStateOf(-1) }
     val coroutineScope = rememberCoroutineScope()
-    
+
+    // Secret integration state
+    val secretViewModel = remember { BrowserSecretIntegrationViewModel() }
+    var focusedFieldInfo by remember { mutableStateOf<FormFieldDetector.FormFieldInfo?>(null) }
+    var showSecretContextMenu by remember { mutableStateOf(false) }
+
+    // Initialize secret integration
+    LaunchedEffect(Unit) {
+        secretViewModel.initialize()
+    }
+
+    // Dispose ViewModel when composable leaves composition
+    DisposableEffect(Unit) {
+        onDispose {
+            secretViewModel.dispose()
+        }
+    }
+
     // Set up browser navigation listeners
     LaunchedEffect(browser, initialUrl) {
         // Check if browser is disposed
@@ -240,7 +257,14 @@ fun JxBrowserCompose(
                 isLoading = false
                 canGoBack = browser.navigation().canGoBack()
                 canGoForward = browser.navigation().canGoForward()
-                
+
+                // Update secret ViewModel with current URL
+                val currentUrl = browser.url()
+                secretViewModel.onUrlChanged(currentUrl)
+
+                // Inject form field detection script for secret auto-fill (Issue #56)
+                FormFieldDetector.injectFormDetectionScript(browser)
+
                 // Inject JavaScript to handle cmd+click on links
                 browser.mainFrame().ifPresent { frame ->
                     frame.executeJavaScript<Unit>("""
@@ -487,34 +511,54 @@ fun JxBrowserCompose(
     }
     
     // Create context menu items dynamically based on browser state
-    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl) {
-        buildList {
-            // Navigation items
-            if (canGoBack) {
-                add(ContextMenuItem(
-                    text = "Back",
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    onClick = { 
-                        if (!browser.isClosed) {
-                            browser.navigation().goBack()
-                            onNavigationStateChange?.invoke(true)
+    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, focusedFieldInfo, secretViewModel.state) {
+        // Issue #56: If form field is focused, show secret context menu
+        if (focusedFieldInfo != null) {
+            SecretContextMenuBuilder.buildSecretMenu(
+                browser = browser,
+                fieldInfo = focusedFieldInfo!!,
+                currentUrl = browser.url(),
+                allSecrets = secretViewModel.state.allSecrets,
+                coroutineScope = coroutineScope,
+                onShowAllSecrets = {
+                    secretViewModel.showAllSecretsDialog()
+                },
+                onAddNewSecret = { websitePrefill ->
+                    secretViewModel.showQuickCreateDialog(websitePrefill)
+                },
+                onDismiss = {
+                    focusedFieldInfo = null
+                }
+            )
+        } else {
+            // Default context menu
+            buildList {
+                // Navigation items
+                if (canGoBack) {
+                    add(ContextMenuItem(
+                        text = "Back",
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        onClick = {
+                            if (!browser.isClosed) {
+                                browser.navigation().goBack()
+                                onNavigationStateChange?.invoke(true)
+                            }
                         }
-                    }
-                ))
-            }
-            
-            if (canGoForward) {
-                add(ContextMenuItem(
-                    text = "Forward",
-                    icon = Icons.AutoMirrored.Filled.ArrowForward,
-                    onClick = { 
-                        if (!browser.isClosed) {
-                            browser.navigation().goForward()
-                            onNavigationStateChange?.invoke(false)
+                    ))
+                }
+
+                if (canGoForward) {
+                    add(ContextMenuItem(
+                        text = "Forward",
+                        icon = Icons.AutoMirrored.Filled.ArrowForward,
+                        onClick = {
+                            if (!browser.isClosed) {
+                                browser.navigation().goForward()
+                                onNavigationStateChange?.invoke(false)
+                            }
                         }
-                    }
-                ))
-            }
+                    ))
+                }
             
             // Always show reload
             add(ContextMenuItem(
@@ -613,6 +657,7 @@ fun JxBrowserCompose(
                 icon = Icons.Outlined.Code,
                 onClick = { if (!browser.isClosed) browser.devTools().show() }
             ))
+            }
         }
     }
     
@@ -864,7 +909,12 @@ fun JxBrowserCompose(
                         val change = event.changes.firstOrNull()
                         if (change != null) {
                             rightClickPosition = change.position
-                            
+
+                            // Check for form fields first (Issue #56 - Secret integration)
+                            coroutineScope.launch {
+                                focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
+                            }
+
                             // Get the right-clicked link URL and check for video
                             browser.mainFrame().ifPresent { frame ->
                                 // Get the right-clicked link URL
@@ -873,25 +923,25 @@ fun JxBrowserCompose(
                                         return window._rightClickedLinkUrl || null;
                                     })();
                                 """.trimIndent())
-                                
+
                                 coroutineScope.launch(Dispatchers.Main) {
                                     rightClickedLinkUrl = linkUrl
                                 }
-                                
+
                                 // Check if there's a video element on the page
                                 val hasVideo = frame.executeJavaScript<Boolean>("""
                                     (function() {
                                         // Check for any video elements on the page
                                         const videos = document.querySelectorAll('video');
-                                        
+
                                         // Also check for YouTube specific selectors
                                         const ytVideo = document.querySelector('video.html5-main-video, video.video-stream');
-                                        
+
                                         // Return true if we found any video
                                         return videos.length > 0 || ytVideo !== null;
                                     })();
                                 """.trimIndent())
-                                
+
                                 coroutineScope.launch(Dispatchers.Main) {
                                     hasVideoAtClick = hasVideo ?: false
                                 }
@@ -998,6 +1048,70 @@ fun JxBrowserCompose(
                     }
                 }
             }
+        }
+
+        // Secret Selection Dialog (Issue #56)
+        if (secretViewModel.state.showAllSecretsDialog) {
+            SecretSelectionDialog(
+                browser = browser,
+                currentUrl = browser.url(),
+                secrets = secretViewModel.state.allSecrets,
+                coroutineScope = coroutineScope,
+                onDismiss = {
+                    secretViewModel.hideAllSecretsDialog()
+                },
+                onAddNewSecret = { websitePrefill ->
+                    secretViewModel.hideAllSecretsDialog()
+                    secretViewModel.showQuickCreateDialog(websitePrefill)
+                }
+            )
+        }
+
+        // Quick Create Secret Dialog (Issue #56)
+        if (secretViewModel.state.showQuickCreateDialog && secretViewModel.state.quickCreateWebsitePrefill != null) {
+            var isCreating by remember { mutableStateOf(false) }
+
+            ai.rever.boss.components.plugin.panels.right_top.QuickCreateSecretDialog(
+                websitePrefill = secretViewModel.state.quickCreateWebsitePrefill ?: "",
+                onConfirm = { request ->
+                    isCreating = true
+                    coroutineScope.launch {
+                        try {
+                            println("🔐 [JxBrowserCompose] Creating secret for: ${request.website}")
+                            val result = ai.rever.boss.services.supabase.SecretService.createSecret(request)
+                            result.fold(
+                                onSuccess = {
+                                    println("✅ [JxBrowserCompose] Secret created successfully for ${request.website}")
+
+                                    // Reload secrets and wait for completion
+                                    secretViewModel.reloadSecrets()
+
+                                    // Notify other components about the new secret
+                                    SecretChangeNotifier.notifyRefresh()
+
+                                    secretViewModel.hideQuickCreateDialog()
+                                    isCreating = false
+
+                                    println("✅ [JxBrowserCompose] Secret added and list refreshed - total secrets now: ${secretViewModel.state.allSecrets.size}")
+                                },
+                                onFailure = { error ->
+                                    println("❌ [JxBrowserCompose] Failed to create secret: ${error.message}")
+                                    error.printStackTrace()
+                                    isCreating = false
+                                }
+                            )
+                        } catch (e: Exception) {
+                            println("❌ [JxBrowserCompose] Exception creating secret: ${e.message}")
+                            e.printStackTrace()
+                            isCreating = false
+                        }
+                    }
+                },
+                onDismiss = {
+                    secretViewModel.hideQuickCreateDialog()
+                },
+                isLoading = isCreating
+            )
         }
     }
 }

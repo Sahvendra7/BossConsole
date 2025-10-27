@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.SecretEntry
@@ -247,6 +248,8 @@ class SecretManagerViewModel {
                 hideCreateDialog()
                 // Reload secrets to show the new one
                 loadSecrets()
+                // Notify other components about the change
+                SecretChangeNotifier.notifyRefresh()
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
@@ -273,6 +276,8 @@ class SecretManagerViewModel {
                 hideEditDialog()
                 // Reload secrets to show the updated one
                 loadSecrets()
+                // Notify other components about the change
+                SecretChangeNotifier.notifySecretUpdated(request.secretId)
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
@@ -301,6 +306,8 @@ class SecretManagerViewModel {
                 state = state.copy(
                     secrets = state.secrets.filter { it.id != secretId }
                 )
+                // Notify other components about the deletion
+                SecretChangeNotifier.notifySecretDeleted(secretId)
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
 import androidx.compose.runtime.getValue
@@ -37,6 +38,15 @@ class UserSecretListViewModel {
 
     init {
         loadSecrets()
+
+        // Observe secret change events for automatic synchronization
+        scope.launch {
+            SecretChangeNotifier.secretChangeEvents.collect { event ->
+                println("🔔 [UserSecretListVM] Received event: $event")
+                // Reload secrets whenever they change in other components
+                loadSecrets()
+            }
+        }
     }
 
     /**
