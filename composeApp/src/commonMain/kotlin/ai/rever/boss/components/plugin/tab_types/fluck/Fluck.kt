@@ -108,7 +108,10 @@ expect fun disposeBrowser(browser: Any)
 expect fun disposeBrowserViewState(browserViewState: Any)
 
 // Platform-specific browser state retrieval
-expect fun getBrowserState(url: String): Pair<Any, Any>?
+expect fun getBrowserState(
+    url: String,
+    onOpenInNewTab: ((String) -> Unit)? = null
+): Pair<Any, Any>?
 
 // Platform-specific FluckTabComponent creation
 expect fun createFluckTabComponent(
@@ -168,29 +171,32 @@ open class FluckTabComponent(
 
     @Composable
     override fun Content() {
-        // Lazy initialization - happens AFTER window is composed and displayed
-        // Use config.id as remember key to ensure each tab has unique state
-        var browserState by remember(config.id) { mutableStateOf<Pair<Any, Any>?>(null) }
-        var browserError by remember(config.id) { mutableStateOf<Throwable?>(null) }
-        var isInitializing by remember(config.id) { mutableStateOf(true) }
+        // Local Compose state to trigger recomposition when browser is ready
+        // Initialized from class-level browserState which persists across tab switches
+        var localBrowserState by remember(config.id) {
+            mutableStateOf(this@FluckTabComponent.browserState)
+        }
 
-        // Initialize browser asynchronously when composable enters composition
-        // Use config.id as key to ensure each tab runs its own initialization
+        // Initialize browser only once - check class-level browserState
         LaunchedEffect(config.id) {
-            try {
-                // This runs in a coroutine, won't block UI thread
-                kotlinx.coroutines.delay(100) // Give window time to be displayed
-                val state = getBrowserState(initialUrl)
-                if (state != null) {
-                    this@FluckTabComponent.browserState = state
-                    browserState = state
-                } else {
-                    browserError = Exception("Could not initialize browser - window not ready")
+            if (this@FluckTabComponent.browserState == null && browserError == null) {
+                try {
+                    // This runs in a coroutine, won't block UI thread
+                    kotlinx.coroutines.delay(100) // Give window time to be displayed
+                    // Pass onOpenInNewTab callback to configure popup handler
+                    val state = getBrowserState(initialUrl, onOpenInNewTab)
+                    if (state != null) {
+                        this@FluckTabComponent.browserState = state
+                        localBrowserState = state  // Update local state to trigger recomposition
+                    } else {
+                        browserError = Exception("Could not initialize browser - window not ready")
+                    }
+                } catch (e: Exception) {
+                    browserError = e
                 }
-            } catch (e: Exception) {
-                browserError = e
-            } finally {
-                isInitializing = false
+            } else if (this@FluckTabComponent.browserState != null) {
+                // Browser already exists (tab switch), use it
+                localBrowserState = this@FluckTabComponent.browserState
             }
         }
 
@@ -203,9 +209,9 @@ open class FluckTabComponent(
                         url = initialUrl
                     )
                 }
-                browserState != null -> {
-                    val browser = browserState!!.first
-                    val browserViewState = browserState!!.second
+                localBrowserState != null -> {
+                    val browser = localBrowserState!!.first
+                    val browserViewState = localBrowserState!!.second
                     FluckView(
                         fileId = config.id,
                         content = initialUrl,

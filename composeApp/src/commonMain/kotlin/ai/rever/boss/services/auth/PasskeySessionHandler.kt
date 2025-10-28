@@ -54,7 +54,7 @@ object PasskeySessionHandler {
                 println("PasskeySessionHandler: Server provided real Supabase session tokens")
 
                 // Parse role claims from access token if available
-                val roleClaims = authData.accessToken?.let { token ->
+                val roleClaims = authData.accessToken.let { token ->
                     try {
                         // Create temporary session for parsing
                         val tempSession = UserSession(

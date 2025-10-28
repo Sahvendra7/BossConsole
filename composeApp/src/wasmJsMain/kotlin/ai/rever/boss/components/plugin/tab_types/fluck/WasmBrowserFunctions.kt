@@ -18,7 +18,10 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
     // No-op for WASM
 }
 
-actual fun getBrowserState(url: String): Pair<Any, Any>? {
+actual fun getBrowserState(
+    url: String,
+    onOpenInNewTab: ((String) -> Unit)?
+): Pair<Any, Any>? {
     // WASM doesn't support browser state preservation yet
     return null
 }

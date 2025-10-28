@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 
 /**
  * Manages layout workspaces with file-based storage
@@ -74,7 +74,7 @@ class WorkspaceManager {
     fun saveCurrentWorkspace(name: String? = null): LayoutWorkspace? {
         val current = _currentWorkspace.value ?: return null
         val savedWorkspace = current.copy(
-            id = if (current.id.isEmpty()) LayoutWorkspace.generateId() else current.id,
+            id = current.id.ifEmpty { LayoutWorkspace.generateId() },
             name = name ?: current.name,
             timestamp = Clock.System.now().toEpochMilliseconds()
         )

@@ -97,7 +97,7 @@ internal object CoreAuthService {
                                         }
                                     )
                                 }
-                            } else if (userId.isEmpty() && currentUser != null) {
+                            } else if (userId.isEmpty()) {
                                 // Session user is null but we have user data (custom auth like passkey)
                                 println("CoreAuthService.initialize: Keeping existing user info from custom auth (ID: ${currentUser.id})")
                             }

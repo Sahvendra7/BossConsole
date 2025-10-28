@@ -34,6 +34,39 @@ private fun getValidComposeWindow(): Window? {
         }
 }
 
+/**
+ * Configures browser to intercept popup requests and open them as new tabs
+ * instead of creating detached OS windows.
+ *
+ * Handles scenarios like:
+ * - Links with target="_blank"
+ * - JavaScript window.open() calls
+ * - Email compose links (Gmail, etc.)
+ *
+ * @param browser The browser instance to configure
+ * @param onOpenInNewTab Callback invoked with the target URL when popup is requested
+ */
+private fun configureBrowserPopupHandler(
+    browser: Browser,
+    onOpenInNewTab: (String) -> Unit
+) {
+    browser.set(
+        com.teamdev.jxbrowser.browser.callback.CreatePopupCallback::class.java,
+        com.teamdev.jxbrowser.browser.callback.CreatePopupCallback { params ->
+            // Extract the target URL from popup parameters
+            val targetUrl = params.targetUrl()
+
+            println("🪟 [PopupHandler] Intercepted popup request: $targetUrl")
+
+            // Invoke callback to open URL in new tab instead of popup window
+            onOpenInNewTab(targetUrl)
+
+            // Suppress the popup window creation
+            com.teamdev.jxbrowser.browser.callback.CreatePopupCallback.Response.suppress()
+        }
+    )
+}
+
 actual fun createBrowser(): Any {
     return FluckEngine.engine.newBrowser()
 }
@@ -70,10 +103,20 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
     // BrowserViewState doesn't have explicit disposal on JVM
 }
 
-actual fun getBrowserState(url: String): Pair<Any, Any>? {
+actual fun getBrowserState(
+    url: String,
+    onOpenInNewTab: ((String) -> Unit)?
+): Pair<Any, Any>? {
     return try {
         // Create a new browser - each tab has its own independent browser
         val browser = createBrowser() as Browser
+
+        // Configure popup handler BEFORE creating view state
+        // This intercepts target="_blank" and window.open() to open in new tabs
+        onOpenInNewTab?.let { callback ->
+            configureBrowserPopupHandler(browser, callback)
+        }
+
         val browserViewState = createBrowserViewState(browser)
 
         // If browserViewState creation failed (no valid window), clean up and return null

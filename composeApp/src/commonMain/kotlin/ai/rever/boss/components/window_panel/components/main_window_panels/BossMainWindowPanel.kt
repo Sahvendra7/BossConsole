@@ -42,15 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.rotate
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -59,7 +51,6 @@ import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
-import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
 @Composable
@@ -125,7 +116,7 @@ fun BossTabsComponent.BossMainTabBar(
 
                             // Open in New Window (if multi-window is supported)
                             if (ai.rever.boss.window.WindowOperations.isMultiWindowSupported()) {
-                                add(ContextMenuItem("Open in New Window", Icons.Outlined.OpenInNew) {
+                                add(ContextMenuItem("Open in New Window", Icons.AutoMirrored.Outlined.OpenInNew) {
                                     ai.rever.boss.window.WindowOperations.openTabInNewWindow(config)
                                     // Remove tab from current window after opening in new window
                                     removeTab(index)

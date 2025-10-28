@@ -46,6 +46,7 @@ homebrew-cask/
 # Supabase/Deno dependencies
 supabase/node_modules/
 supabase/deno.lock
+supabase/.temp
 
 # Edge runtime fork
 supabase_v2/edge-runtime/
