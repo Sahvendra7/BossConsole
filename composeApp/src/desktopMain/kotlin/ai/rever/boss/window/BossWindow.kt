@@ -45,7 +45,7 @@ fun ApplicationScope.BossWindow(
         window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
 
         // Register window for focus management (deep links, etc.)
-        WindowFocusManager.registerWindow(window)
+        WindowFocusManager.registerWindow(windowState.id, window)
 
         // macOS MenuBar - provides native menu integration
         // Note: Keyboard shortcuts (Cmd+N, Cmd+T, etc.) are handled in BossApp.kt via onPreviewKeyEvent

@@ -16,6 +16,10 @@ import kotlin.random.Random
 import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
+import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
+import ai.rever.boss.components.registery.TabTypeId
 
 // Sealed class representing the split tree structure
 sealed class SplitNode {
@@ -102,7 +106,7 @@ class SplitViewState(
         findPanelWithFile(filePath)?.let { (panelId, component) ->
             component.tabsState.value.tabs
                 .indexOfFirst { tab ->
-                    tab is ai.rever.boss.components.plugin.tab_types.EditorTabInfo && tab.filePath == filePath
+                    tab is EditorTabInfo && tab.filePath == filePath
                 }
                 .takeIf { it >= 0 }
                 ?.let { tabIndex ->
@@ -113,7 +117,7 @@ class SplitViewState(
         }
 
         // File not open, create new tab in active panel
-        val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+        val editorTab = EditorTabInfo(
             id = "editor-${Random.nextLong()}",
             typeId = ai.rever.boss.components.registery.TabTypeId("editor"),
             title = fileName,
@@ -124,7 +128,46 @@ class SplitViewState(
             activeComponent.selectTab(it)
         }
     }
-    
+
+    /**
+     * Open a URL in the active panel
+     *
+     * If the URL is already open in any panel, switches to that tab.
+     * Otherwise, creates a new Fluck browser tab in the active panel.
+     *
+     * @param url The URL to open
+     * @param title Initial title for the tab
+     */
+    fun openUrlInActivePanel(url: String, title: String) {
+        val activeComponent = getActiveTabsComponent() ?: return
+
+        // Check if URL is already open in any panel
+        findPanelWithUrl(url)?.let { (panelId, component) ->
+            component.tabsState.value.tabs
+                .indexOfFirst { tab ->
+                    tab is FluckTabInfo &&
+                    (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
+                }
+                .takeIf { it >= 0 }
+                ?.let { tabIndex ->
+                    component.selectTab(tabIndex)
+                    setActivePanel(panelId)
+                }
+            return
+        }
+
+        // URL not open, create new Fluck tab in active panel
+        val fluckTab = FluckTabInfo(
+            id = "fluck-${Random.nextLong()}",
+            typeId = TabTypeId("fluck"),
+            _title = title,
+            url = url
+        )
+        activeComponent.addTab(fluckTab).takeIf { it >= 0 }?.let {
+            activeComponent.selectTab(it)
+        }
+    }
+
     fun splitPanel(
         panelId: String,
         orientation: SplitOrientation,
@@ -139,14 +182,14 @@ class SplitViewState(
         // Copy tab if specified
         tabToMove?.let { tab ->
             val copiedTab = when (tab) {
-                is ai.rever.boss.components.plugin.tab_types.EditorTabInfo -> 
+                is EditorTabInfo -> 
                     tab.copy(id = "editor-${Random.nextLong()}")
-                is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> 
+                is FluckTabInfo -> 
                     tab.copy(
                         id = "fluck-${Random.nextLong()}",
                         navigationHistory = tab.navigationHistory.toMutableList() // Deep copy the history
                     )
-                is ai.rever.boss.components.plugin.tab_types.TerminalTabInfo -> 
+                is TerminalTabInfo -> 
                     tab.copy(id = "terminal-${Random.nextLong()}")
                 else -> tab
             }
@@ -328,7 +371,25 @@ class SplitViewState(
         }
         return null
     }
-    
+
+    /**
+     * Find the panel that contains a tab with the given URL
+     *
+     * @param url The URL to search for
+     * @return Pair of panel ID and BossTabsComponent if found, null otherwise
+     */
+    private fun findPanelWithUrl(url: String): Pair<String, BossTabsComponent>? {
+        getAllPanels().forEach { panel ->
+            if (panel.tabsComponent.tabsState.value.tabs.any { tab ->
+                tab is FluckTabInfo &&
+                (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
+            }) {
+                return panel.id to panel.tabsComponent
+            }
+        }
+        return null
+    }
+
     fun getAllPanels(): List<SplitNode.Panel> {
         return getAllPanelsInNode(_rootNode.value)
     }
@@ -441,7 +502,7 @@ class SplitViewState(
                 
             getAllPanels().forEach { panel ->
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo && !seenTabIds.contains(tab.id)) {
+                    if (tab is FluckTabInfo && !seenTabIds.contains(tab.id)) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
@@ -552,7 +613,7 @@ class SplitViewState(
         when (node) {
             is SplitNode.Panel -> {
                 node.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo && !seenTabIds.contains(tab.id)) {
+                    if (tab is FluckTabInfo && !seenTabIds.contains(tab.id)) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,

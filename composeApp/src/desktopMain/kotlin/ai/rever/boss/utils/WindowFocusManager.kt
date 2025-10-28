@@ -1,27 +1,102 @@
 package ai.rever.boss.utils
 
 import java.awt.Window
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import javax.swing.SwingUtilities
 
 /**
- * WindowFocusManager - Handles bringing the application window to front
+ * WindowFocusManager - Handles multi-window focus tracking
  *
- * Used when deep links are received to ensure the user sees the app response
+ * Tracks all application windows and their focus state to ensure
+ * external events (deep links, file opens) are handled by the focused window only.
  */
 actual object WindowFocusManager {
-    private var mainWindow: Window? = null
+    private val windows = mutableMapOf<String, Window>()
+    private val windowListeners = mutableMapOf<String, WindowAdapter>()
+    private var focusedWindowId: String? = null
+    private var mainWindow: Window? = null  // Kept for backward compatibility
 
     /**
-     * Register the main application window
-     * Note: This is desktop-specific and not part of the expect/actual interface
+     * Register an application window with focus tracking
+     *
+     * @param windowId Unique identifier for the window
+     * @param window The AWT window instance
      */
-    fun registerWindow(window: Window) {
-        mainWindow = window
-        println("WindowFocusManager: Registered main window")
+    fun registerWindow(windowId: String, window: Window) {
+        windows[windowId] = window
+
+        // First window becomes the main window (backward compatibility)
+        if (mainWindow == null) {
+            mainWindow = window
+            focusedWindowId = windowId
+        }
+
+        // Create focus listener to track window focus changes
+        val listener = object : WindowAdapter() {
+            override fun windowGainedFocus(e: WindowEvent?) {
+                focusedWindowId = windowId
+                println("WindowFocusManager: Window $windowId gained focus")
+            }
+
+            override fun windowLostFocus(e: WindowEvent?) {
+                if (focusedWindowId == windowId) {
+                    println("WindowFocusManager: Window $windowId lost focus")
+                }
+            }
+        }
+
+        // Store listener reference for cleanup
+        windowListeners[windowId] = listener
+
+        // Add listener to window
+        window.addWindowFocusListener(listener)
+
+        println("WindowFocusManager: Registered window $windowId (total: ${windows.size})")
     }
 
     /**
-     * Bring the application window to front and request focus
+     * Register the main application window (backward compatibility)
+     *
+     * @param window The AWT window instance
+     */
+    fun registerWindow(window: Window) {
+        // Generate a default ID for backward compatibility
+        val windowId = "window-${System.identityHashCode(window)}"
+        registerWindow(windowId, window)
+    }
+
+    /**
+     * Unregister a window when it closes
+     *
+     * @param windowId The window ID to unregister
+     */
+    fun unregisterWindow(windowId: String) {
+        // Remove the focus listener to prevent memory leak
+        windowListeners.remove(windowId)?.let { listener ->
+            windows[windowId]?.removeWindowFocusListener(listener)
+        }
+
+        windows.remove(windowId)
+        if (focusedWindowId == windowId) {
+            // If the focused window closed, clear focus (another window will gain focus via listener)
+            focusedWindowId = null
+        }
+        println("WindowFocusManager: Unregistered window $windowId (remaining: ${windows.size})")
+    }
+
+    /**
+     * Check if a specific window is currently focused
+     *
+     * @param windowId The window ID to check
+     * @return true if the window is focused, false otherwise
+     */
+    actual fun isWindowFocused(windowId: String): Boolean {
+        return focusedWindowId == windowId
+    }
+
+    /**
+     * Bring the first registered window to front (backward compatibility)
      */
     actual fun bringToFront() {
         mainWindow?.let { window ->

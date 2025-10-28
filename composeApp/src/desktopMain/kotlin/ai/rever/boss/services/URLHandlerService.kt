@@ -1,7 +1,9 @@
 package ai.rever.boss.services
 
-import ai.rever.boss.utils.FluckTabCreator
-import ai.rever.boss.window.WindowManager
+import ai.rever.boss.components.events.URLEventBus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Service for handling incoming URLs from the operating system
@@ -71,6 +73,9 @@ object URLHandlerService {
 
     /**
      * Internal URL handler that does the actual processing
+     *
+     * Validates the URL and emits an event through URLEventBus.
+     * All windows listen to this event, and the active window will create a tab.
      */
     private fun handleURLInternal(url: String) {
         try {
@@ -85,24 +90,11 @@ object URLHandlerService {
             // Extract domain for tab title
             val title = extractDomain(url) ?: "Loading..."
 
-            // Create Fluck tab for the URL
-            val fluckTab = FluckTabCreator.createFluckTab(url, title)
-
-            // Find an existing window to add the tab to, or create a new one
-            val windows = WindowManager.windows
-
-            if (windows.isEmpty()) {
-                // No windows exist - create a new window with this tab
-                println("URLHandlerService: No windows exist, creating new window")
-                WindowManager.createNewWindow(initialTab = fluckTab)
-            } else {
-                // Add to the first window (most recently focused)
-                val targetWindow = windows.first()
-                println("URLHandlerService: Adding tab to window ${targetWindow.id}")
-                targetWindow.tabs.add(fluckTab)
+            // Emit URL open event - all windows will receive it and the active window handles it
+            CoroutineScope(Dispatchers.Main).launch {
+                URLEventBus.openURL(url, title)
+                println("URLHandlerService: Emitted URL open event for $url")
             }
-
-            println("URLHandlerService: Successfully opened URL in Fluck tab")
         } catch (e: Exception) {
             println("URLHandlerService: Error handling URL: ${e.message}")
             e.printStackTrace()

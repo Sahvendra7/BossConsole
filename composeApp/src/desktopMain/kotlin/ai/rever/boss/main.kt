@@ -70,6 +70,7 @@ fun main(args: Array<String>) {
                     windowState = windowState,
                     onCloseRequest = {
                         WindowManager.closeWindow(windowState.id)
+                        ai.rever.boss.utils.WindowFocusManager.unregisterWindow(windowState.id)
                         // Don't call exitApplication - keep app running (macOS style)
                         // When window count reaches 0, app stays in Dock
                         // User can quit via Cmd+Q or right-click Dock → Quit

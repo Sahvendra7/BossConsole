@@ -74,6 +74,7 @@ import ai.rever.boss.updater.UpdateSettings
 import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
 import ai.rever.boss.services.auth.CoreAuthService
+import ai.rever.boss.utils.WindowFocusManager
 
 
 @Composable
@@ -215,7 +216,19 @@ fun ComponentContext.BossApp(windowId: String) {
             }
             .launchIn(this)
     }
-    
+
+    // Listen for URL open events - only handle if this window is focused
+    LaunchedEffect(splitViewState, windowId) {
+        ai.rever.boss.components.events.URLEventBus.urlOpenEvents
+            .onEach { event ->
+                // Only handle URL events in the focused window to prevent duplicates
+                if (WindowFocusManager.isWindowFocused(windowId)) {
+                    splitViewState.openUrlInActivePanel(event.url, event.title)
+                }
+            }
+            .launchIn(this)
+    }
+
     // Monitor for layout changes to mark workspace as dirty and auto-save
     LaunchedEffect(splitViewState, workspaceManager) {
         var lastWorkspaceSnapshot: LayoutWorkspace? = null
@@ -583,6 +596,18 @@ fun ComponentContext.BossApp(windowId: String) {
                                         delay(3000)
                                         saveMessage = null
                                     }
+                                }
+                                true
+                            }
+                            // TEST: Cmd+Shift+G - Test external link handling (opens google.com)
+                            // This simulates clicking a link in an external app to test the URL event flow
+                            event.isMetaPressed && event.isShiftPressed && event.key == Key.G -> {
+                                println("🧪 [TEST] Triggering URL handler with google.com (simulating external link)")
+                                coroutineScope.launch {
+                                    ai.rever.boss.components.events.URLEventBus.openURL(
+                                        "https://www.google.com",
+                                        "Google"
+                                    )
                                 }
                                 true
                             }

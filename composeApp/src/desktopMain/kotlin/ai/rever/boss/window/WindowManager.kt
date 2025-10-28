@@ -1,9 +1,7 @@
 package ai.rever.boss.window
 
-import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.services.URLHandlerService
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
@@ -38,13 +36,11 @@ object WindowManager {
     /**
      * Create a new window
      *
-     * @param initialTab Optional tab to open in the new window
      * @param position Window position (null for default cascade)
      * @param size Window size (default 1280x800)
      * @return The newly created window state
      */
     fun createNewWindow(
-        initialTab: TabInfo? = null,
         position: WindowPosition? = null,
         size: DpSize = DpSize(1280.dp, 800.dp)
     ): BossWindowState {
@@ -53,15 +49,9 @@ object WindowManager {
         // Calculate cascade position if not specified
         val windowPosition = position ?: calculateCascadePosition()
 
-        val tabs = mutableStateListOf<TabInfo>()
-        if (initialTab != null) {
-            tabs.add(initialTab)
-        }
-
         val windowState = BossWindowState(
             id = windowId,
             title = "BOSS - Business Operating System Service",
-            tabs = tabs,
             position = windowPosition,
             size = size
         )
@@ -95,41 +85,37 @@ object WindowManager {
     /**
      * Close window if it has no tabs
      *
-     * Used when the last tab is closed via Cmd+W.
-     * If the window has no tabs remaining, it will be closed.
+     * Note: Tabs are now managed by BossApp/SplitViewState, not WindowManager.
+     * This method is kept for backward compatibility but no longer checks tabs.
+     * Windows should be closed explicitly via closeWindow() or by user action.
      *
-     * @param windowId The window ID to check and potentially close
+     * @param windowId The window ID to potentially close
      */
+    @Deprecated("Tabs are managed by BossApp/SplitViewState, not WindowManager")
     fun closeWindowIfEmpty(windowId: String) {
-        val window = _windows.find { it.id == windowId }
-        if (window != null && window.tabs.isEmpty()) {
-            closeWindow(windowId)
-            println("Closed empty window: $windowId")
-        }
+        // No-op: tab management moved to BossApp/SplitViewState
+        // Windows are closed explicitly or by user action
     }
 
     /**
      * Move a tab to a new window
      *
-     * Creates a new window and moves the specified tab there.
-     * The tab should be removed from the source window by the caller.
+     * Note: Tab management moved to BossApp/SplitViewState.
+     * This method now just creates an empty window.
+     * The caller should handle moving the tab through BossApp/SplitViewState.
      *
-     * @param sourceWindowId The window the tab is currently in
-     * @param tabInfo The tab to move
-     * @return The newly created window containing the tab
+     * @param sourceWindowId The window the tab is currently in (for logging)
+     * @return The newly created window
      */
+    @Deprecated("Tab management moved to BossApp/SplitViewState")
     fun moveTabToNewWindow(
-        sourceWindowId: String,
-        tabInfo: TabInfo
+        sourceWindowId: String
     ): BossWindowState {
-        println("Moving tab '${tabInfo.title}' from window $sourceWindowId to new window")
+        println("Creating new window (tab will be moved by caller)")
 
-        // Create new window with the tab
+        // Create new window - tab will be moved by caller through BossApp
         val position = calculateCascadePosition()
-        return createNewWindow(
-            initialTab = tabInfo,
-            position = position
-        )
+        return createNewWindow(position = position)
     }
 
     /**
@@ -179,16 +165,17 @@ object WindowManager {
 /**
  * State for a single BOSS window
  *
+ * Note: Tabs are managed by each window's BossApp/SplitViewState,
+ * not by WindowManager. This class only tracks window-level properties.
+ *
  * @property id Unique identifier for this window
  * @property title Window title
- * @property tabs List of tabs in this window
  * @property position Window position on screen
  * @property size Window size
  */
 data class BossWindowState(
     val id: String,
     var title: String,
-    val tabs: SnapshotStateList<TabInfo>,
     val position: WindowPosition?,
     val size: DpSize
 )

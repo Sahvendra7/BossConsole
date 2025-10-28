@@ -2,10 +2,21 @@ package ai.rever.boss.utils
 
 /**
  * WindowFocusManager - Platform-specific window focus management
+ *
+ * Tracks which application window currently has focus to ensure
+ * external events (deep links, file opens) are handled by the correct window.
  */
 expect object WindowFocusManager {
     /**
      * Bring the application window to front and request focus
      */
     fun bringToFront()
+
+    /**
+     * Check if a specific window is currently focused
+     *
+     * @param windowId The window ID to check
+     * @return true if the window is focused, false otherwise
+     */
+    fun isWindowFocused(windowId: String): Boolean
 }
