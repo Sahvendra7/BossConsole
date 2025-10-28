@@ -169,12 +169,14 @@ open class FluckTabComponent(
     @Composable
     override fun Content() {
         // Lazy initialization - happens AFTER window is composed and displayed
-        var browserState by remember { mutableStateOf<Pair<Any, Any>?>(null) }
-        var browserError by remember { mutableStateOf<Throwable?>(null) }
-        var isInitializing by remember { mutableStateOf(true) }
+        // Use config.id as remember key to ensure each tab has unique state
+        var browserState by remember(config.id) { mutableStateOf<Pair<Any, Any>?>(null) }
+        var browserError by remember(config.id) { mutableStateOf<Throwable?>(null) }
+        var isInitializing by remember(config.id) { mutableStateOf(true) }
 
         // Initialize browser asynchronously when composable enters composition
-        LaunchedEffect(Unit) {
+        // Use config.id as key to ensure each tab runs its own initialization
+        LaunchedEffect(config.id) {
             try {
                 // This runs in a coroutine, won't block UI thread
                 kotlinx.coroutines.delay(100) // Give window time to be displayed
