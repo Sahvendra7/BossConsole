@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
@@ -41,6 +42,12 @@ fun BossDraggableComponent.SidePanel(
         BossPanelTopBar(
             title = title,
             isHovered = isHovered,
+            onReset = pluginContentId?.let { panelId ->
+                {
+                    // Trigger component reset via PanelComponentStore
+                    panelComponentStore.resetComponent(panelId)
+                }
+            },
             onMinimize = {
                 setPanelVisible(panel, false)
             }
@@ -48,7 +55,11 @@ fun BossDraggableComponent.SidePanel(
         Divider(color = BossDarkBorder)
 
         Box(modifier = Modifier.fillMaxSize()) {
-            component?.Content()
+            // Force recomposition when component instance changes (e.g., after reset)
+            // This ensures the UI fully refreshes instead of showing stale state
+            key(component) {
+                component?.Content()
+            }
         }
     }
 }

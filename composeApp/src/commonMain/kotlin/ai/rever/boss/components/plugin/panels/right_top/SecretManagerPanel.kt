@@ -75,6 +75,18 @@ class SecretManagerComponent(
         }
     }
 
+    override fun onInitialized() {
+        println("🎬 [SecretManager] Panel initialized")
+        // ViewModel already loads secrets in its init block
+        // No additional initialization needed
+    }
+
+    override fun onBeforeReset() {
+        println("🔄 [SecretManager] Preparing to reset panel")
+        // ViewModel will be disposed automatically by Decompose lifecycle
+        // A fresh ViewModel will be created with the new component instance
+    }
+
     @Composable
     override fun Content() {
         SecretManagerContent(viewModel)

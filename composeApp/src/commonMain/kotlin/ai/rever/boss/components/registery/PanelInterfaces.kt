@@ -21,10 +21,17 @@ interface PanelInfo {
     val sidebarItem get() = SidebarItem(id, icon, displayName)
 }
 
-interface PanelComponentWithUI: ComponentContext {
+interface PanelComponentWithUI: ComponentContext, PanelLifecycle {
     val panelInfo: PanelInfo
 
     @Composable
     fun Content()
+
+    /**
+     * Default implementation of resetPanelId from PanelLifecycle.
+     * Returns the panel's ID from panelInfo for component reset operations.
+     */
+    override val resetPanelId: PanelId
+        get() = panelInfo.id
 }
 
