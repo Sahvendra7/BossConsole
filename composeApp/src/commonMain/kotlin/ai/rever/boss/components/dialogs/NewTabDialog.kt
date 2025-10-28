@@ -63,9 +63,10 @@ data class UrlSuggestion(
 @Composable
 fun NewTabDialog(
     onDismiss: () -> Unit,
-    onCreateTab: (type: TabType, path: String) -> Unit
+    onCreateTab: (type: TabType, path: String) -> Unit,
+    initialTabType: TabType? = null
 ) {
-    var selectedType by remember { mutableStateOf(TabType.URL) }
+    var selectedType by remember { mutableStateOf(initialTabType ?: TabType.URL) }
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf(SystemUtils.getDefaultProjectPath() + "/README.md") }
     var inputText by remember { 

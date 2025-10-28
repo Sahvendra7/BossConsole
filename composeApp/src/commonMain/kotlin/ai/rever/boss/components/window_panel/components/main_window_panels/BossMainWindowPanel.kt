@@ -18,6 +18,8 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
+import ai.rever.boss.components.window_panel.SplitOrientation
+import ai.rever.boss.window.WindowOperations
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -61,33 +63,13 @@ import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
 @Composable
-fun RowScope.BossLeftTabBar(content: @Composable RowScope.() -> Unit) {
-    Column(modifier = Modifier.weight(2f).padding(horizontal = 8.dp)) {
-        Row(
-            modifier = Modifier
-                .horizontalScrollWithScrollbar(
-                    rememberScrollState(),
-                    scrollbarConfig = ScrollbarConfig(
-                        indicatorThickness = 2.dp,
-                        indicatorColor = BossDarkTextSecondary,
-                        indicatorCornerRadius = 4.dp,
-                        horizontalScrollbarAtTop = true
-                    )
-                )
-            ,
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
-    }
-}
-
-@Composable
 fun BossTabsComponent.BossMainTabBar(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
     currentPanelId: String? = null
 ) {
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
+    var selectedTabType by remember { mutableStateOf<TabType?>(null) }
 
     HorizontalBar(
         height = 42.dp, 
@@ -228,7 +210,11 @@ fun BossTabsComponent.BossMainTabBar(
     // New Tab Dialog
     if (showNewTabDialog) {
         NewTabDialog(
-            onDismiss = { showNewTabDialog = false },
+            onDismiss = {
+                showNewTabDialog = false
+                selectedTabType = null
+            },
+            initialTabType = selectedTabType,
             onCreateTab = { type, path ->
                 when (type) {
                     TabType.URL -> {
@@ -342,7 +328,11 @@ fun BossTabsComponent.BossMainPanelContent(
 ) {
     // Subscribe to tab state changes to trigger recomposition
     val tabsState = tabsState.subscribeAsState()
-    
+
+    // State for new tab dialog (needed for EmptyContent callbacks)
+    var showNewTabDialog by remember { mutableStateOf(false) }
+    var selectedTabType by remember { mutableStateOf<TabType?>(null) }
+
     Box(
         modifier = modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
@@ -360,204 +350,97 @@ fun BossTabsComponent.BossMainPanelContent(
         // Force recomposition when tab changes by reading the state
         tabsState.value.activeIndex
         val activeComponent = getActiveComponent()
-        
-        activeComponent?.Content() ?: EmptyContent()
-    }
-}
 
-@Composable
-private fun EmptyContent() {
-    var selectedTip by remember { mutableStateOf(0) }
-    val tips = listOf(
-        Triple(Icons.Outlined.Code, "Open a file", "Cmd+O to browse files"),
-        Triple(Icons.Outlined.Add, "New tab", "Cmd+T opens tab dialog"),
-        Triple(Icons.Outlined.ViewColumn, "Split panels", "Right-click tab → Split Right/Down"),
-        Triple(Icons.Outlined.SwapHoriz, "Switch panels", "Cmd+← → to navigate panels"),
-        Triple(Icons.Outlined.OpenInBrowser, "New window", "Cmd+N creates new window")
-    )
-    
-    // Animation values
-    val infiniteTransition = rememberInfiniteTransition()
-    val scale = infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-    
-    val rotation = infiniteTransition.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BossDarkBackground),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            // Animated BOSS logo/icon
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .scale(scale.value)
-                    .rotate(rotation.value),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Dashboard,
-                    contentDescription = "BOSS",
-                    tint = Color(0xFF4A9EFF),
-                    modifier = Modifier.size(80.dp)
-                )
+        activeComponent?.Content() ?: EmptyContent(
+            onOpenFile = {
+                selectedTabType = TabType.FILE
+                showNewTabDialog = true
+            },
+            onNewTab = {
+                selectedTabType = null
+                showNewTabDialog = true
+            },
+            onSplitPanel = if (splitViewState != null && currentPanelId != null && tabsState.value.tabs.isNotEmpty()) {
+                {
+                    splitViewState.splitPanel(
+                        panelId = currentPanelId,
+                        orientation = SplitOrientation.HORIZONTAL,
+                        tabToMove = null
+                    )
+                }
+            } else null,
+            onSwitchPanel = if (splitViewState != null) {
+                val allPanels = splitViewState.getAllPanels()
+                if (allPanels.size > 1) {
+                    {
+                        val currentIndex = allPanels.indexOfFirst { it.id == currentPanelId }
+                        if (currentIndex >= 0) {
+                            val nextIndex = (currentIndex + 1) % allPanels.size
+                            splitViewState.setActivePanel(allPanels[nextIndex].id)
+                        }
+                    }
+                } else null
+            } else null,
+            onNewWindow = {
+                WindowOperations.createNewWindow()
             }
-            
-            // Welcome text
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Welcome to BOSS",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Text(
-                    text = "Multi-panel development environment",
-                    color = BossDarkTextSecondary,
-                    fontSize = 16.sp
-                )
-            }
-            
-            // Quick tips carousel
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Quick Tips",
-                    color = Color(0xFF4A9EFF),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                // Tip cards
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    tips.forEachIndexed { index, (icon, title, description) ->
-                        Card(
-                            icon = icon,
-                            title = title,
-                            description = description,
-                            isSelected = index == selectedTip,
-                            onClick = { selectedTip = index },
-                            modifier = Modifier.weight(1f)
+        )
+    }
+
+    // New Tab Dialog (for EmptyContent interactions)
+    if (showNewTabDialog) {
+        NewTabDialog(
+            onDismiss = {
+                showNewTabDialog = false
+                selectedTabType = null
+            },
+            initialTabType = selectedTabType,
+            onCreateTab = { type, path ->
+                when (type) {
+                    TabType.URL -> {
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
+                        val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+                            id = "fluck-$timestamp",
+                            typeId = Fluck.typeId,
+                            _title = "Loading...",
+                            url = path
                         )
+                        val tabIndex = addTab(fluckTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                    TabType.FILE -> {
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
+                        val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+                            id = "editor-$timestamp",
+                            title = fileName,
+                            typeId = CodeEditor.typeId,
+                            icon = CodeEditor.icon,
+                            filePath = path
+                        )
+                        val tabIndex = addTab(editorTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
+                    }
+                    TabType.TERMINAL -> {
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
+                        val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                            id = "terminal-$timestamp",
+                            typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                            title = "Terminal",
+                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon
+                        )
+                        val tabIndex = addTab(terminalTab)
+                        if (tabIndex >= 0) {
+                            selectTab(tabIndex)
+                        }
                     }
                 }
             }
-            
-            // Fun message
-            val messages = listOf(
-                "Ready to build something amazing? 🚀",
-                "Code is poetry in motion 💫",
-                "Let's turn ideas into reality ✨",
-                "Your next breakthrough awaits 🌟",
-                "Time to create magic 🎨"
-            )
-            
-            var messageIndex by remember { mutableStateOf((0..messages.lastIndex).random()) }
-            
-            LaunchedEffect(Unit) {
-                while (true) {
-                    delay(5000)
-                    messageIndex = (0..messages.lastIndex).random()
-                }
-            }
-            
-            Text(
-                text = messages[messageIndex],
-                color = BossDarkTextSecondary.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun Card(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val animatedAlpha by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0.6f,
-        animationSpec = tween(300)
-    )
-    
-    val animatedScale by animateFloatAsState(
-        targetValue = if (isSelected) 1.05f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f)
-    )
-    
-    Column(
-        modifier = modifier
-            .scale(animatedScale)
-            .alpha(animatedAlpha)
-            .background(
-                color = if (isSelected) Color(0xFF2A2D30) else Color(0xFF1E1F22),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-            )
-            .clickable { onClick() }
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = title,
-            tint = if (isSelected) Color(0xFF4A9EFF) else BossDarkTextSecondary,
-            modifier = Modifier.size(32.dp)
         )
-        
-        Text(
-            text = title,
-            color = if (isSelected) Color.White else BossDarkTextSecondary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center
-        )
-        
-        AnimatedVisibility(
-            visible = isSelected,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Text(
-                text = description,
-                color = BossDarkTextSecondary,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
     }
 }
 
