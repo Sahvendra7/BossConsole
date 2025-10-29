@@ -314,6 +314,11 @@ fun JxBrowserCompose(
                 // Inject form field detection script for secret auto-fill (Issue #56)
                 FormFieldDetector.injectFormDetectionScript(browser)
 
+                // Install form submission monitor for debugging autofill issues
+                coroutineScope.launch {
+                    FormFieldInjector.installFormSubmissionMonitor(browser)
+                }
+
                 // Inject JavaScript to handle cmd+click on links
                 browser.mainFrame().ifPresent { frame ->
                     frame.executeJavaScript<Unit>("""

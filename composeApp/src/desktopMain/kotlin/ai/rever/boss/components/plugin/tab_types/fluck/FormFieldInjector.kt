@@ -39,7 +39,71 @@ object FormFieldInjector {
     }
 
     /**
+     * Debug logger for form field operations.
+     * Logs field state, attributes, and context for troubleshooting autofill issues.
+     *
+     * @param browser JxBrowser instance
+     * @param phase Debug phase (e.g., "BEFORE_FILL", "AFTER_FILL", "ON_SUBMIT")
+     * @param fieldIdentifier Identifier for the field (default: activeElement)
+     * @return JSON string with field debug information
+     */
+    private suspend fun logFieldDebugInfo(
+        browser: Browser,
+        phase: String,
+        fieldIdentifier: String = "activeElement"
+    ): String {
+        return try {
+            val result = CompletableDeferred<String>()
+
+            browser.mainFrame().ifPresent { frame ->
+                try {
+                    val debugInfo = frame.executeJavaScript<String>("""
+                        (function() {
+                            const field = document.activeElement;
+                            if (!field || (field.tagName !== 'INPUT' && field.tagName !== 'TEXTAREA')) {
+                                return 'NO_FIELD_FOCUSED';
+                            }
+
+                            const info = {
+                                phase: '$phase',
+                                tagName: field.tagName,
+                                type: field.type || 'N/A',
+                                name: field.name || 'N/A',
+                                id: field.id || 'N/A',
+                                value: field.value ? `'${'$'}{field.value}' (length: ${'$'}{field.value.length})` : 'EMPTY',
+                                placeholder: field.placeholder || 'N/A',
+                                readonly: field.readOnly,
+                                disabled: field.disabled,
+                                autocomplete: field.autocomplete || 'N/A',
+                                hasForm: field.form ? 'YES' : 'NO',
+                                formAction: field.form?.action || 'N/A',
+                                classList: Array.from(field.classList).join(', ') || 'NONE',
+                                bossFilled: field.getAttribute('data-boss-filled') || 'NO'
+                            };
+
+                            return JSON.stringify(info, null, 2);
+                        })();
+                    """.trimIndent())
+
+                    result.complete(debugInfo ?: "NULL_RESPONSE")
+                } catch (e: Exception) {
+                    result.complete("EXCEPTION: ${e.message}")
+                }
+            }
+
+            withTimeout(2.seconds) {
+                result.await()
+            }
+        } catch (e: Exception) {
+            "ERROR: ${e.message}"
+        }
+    }
+
+    /**
      * Fill a specific form field with a value.
+     *
+     * Enhanced with comprehensive debugging and improved event sequence to
+     * properly trigger modern framework (React/Vue/Angular) change detection.
      *
      * @param browser JxBrowser instance
      * @param fieldInfo Information about the field to fill
@@ -52,6 +116,12 @@ object FormFieldInjector {
         value: String
     ): FillResult {
         return try {
+            // === PHASE 1: PRE-FILL DEBUG ===
+            println("🔍 [FormFieldInjector] ===== FILL OPERATION START =====")
+            val preDebug = logFieldDebugInfo(browser, "BEFORE_FILL")
+            println("🔍 [FormFieldInjector] PRE-FILL STATE:")
+            println(preDebug)
+
             val result = CompletableDeferred<FillResult>()
 
             browser.mainFrame().ifPresent { frame ->
@@ -67,24 +137,82 @@ object FormFieldInjector {
                             const field = window.__BOSS_FOCUSED_FIELD || document.activeElement;
 
                             if (!field || (field.tagName !== 'INPUT' && field.tagName !== 'TEXTAREA')) {
+                                console.error('[BOSS] No valid field focused');
                                 return 'ERROR: No field focused';
                             }
 
-                            // Set the value
-                            field.value = '$escapedValue';
+                            console.log('[BOSS] Starting fill sequence for:', field.name || field.id || 'unnamed');
+                            console.log('[BOSS] Initial value:', field.value);
 
-                            // Trigger events for framework compatibility
-                            field.dispatchEvent(new Event('input', { bubbles: true }));
-                            field.dispatchEvent(new Event('change', { bubbles: true }));
+                            // Step 1: Ensure field is focused
+                            if (document.activeElement !== field) {
+                                console.log('[BOSS] Step 1: Focusing field...');
+                                field.focus();
+                            } else {
+                                console.log('[BOSS] Step 1: Field already focused');
+                            }
 
-                            // For React compatibility
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                                window.HTMLInputElement.prototype, 'value'
-                            ).set;
-                            nativeInputValueSetter.call(field, '$escapedValue');
+                            // Step 2: Dispatch focus event (in case programmatic focus didn't trigger it)
+                            console.log('[BOSS] Step 2: Dispatching focus event...');
+                            field.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
 
-                            const event = new Event('input', { bubbles: true });
-                            field.dispatchEvent(event);
+                            // Small delay to let framework process focus
+                            setTimeout(() => {
+                                console.log('[BOSS] Step 3: Beginning value update...');
+
+                                // Step 3: Simulate keydown (user starts typing)
+                                const keydownEvent = new KeyboardEvent('keydown', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                });
+                                field.dispatchEvent(keydownEvent);
+                                console.log('[BOSS] Step 3a: keydown dispatched');
+
+                                // Step 4: Set value using React-compatible method
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                    window.HTMLInputElement.prototype, 'value'
+                                ).set;
+                                nativeInputValueSetter.call(field, '$escapedValue');
+                                console.log('[BOSS] Step 4: Value set via native setter');
+
+                                // Step 5: Dispatch input event (React listens to this)
+                                const inputEvent = new Event('input', { bubbles: true });
+                                field.dispatchEvent(inputEvent);
+                                console.log('[BOSS] Step 5: input event dispatched');
+
+                                // Step 6: Simulate keyup (user finishes typing)
+                                const keyupEvent = new KeyboardEvent('keyup', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                });
+                                field.dispatchEvent(keyupEvent);
+                                console.log('[BOSS] Step 6: keyup dispatched');
+
+                                // Small delay before blur
+                                setTimeout(() => {
+                                    console.log('[BOSS] Step 7: Dispatching blur...');
+
+                                    // Step 7: Blur field (triggers validation in many frameworks)
+                                    field.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+                                    console.log('[BOSS] Step 7a: blur event dispatched');
+
+                                    // Step 8: Change event (final commit)
+                                    const changeEvent = new Event('change', { bubbles: true });
+                                    field.dispatchEvent(changeEvent);
+                                    console.log('[BOSS] Step 8: change event dispatched');
+
+                                    console.log('[BOSS] Fill sequence complete. Final value:', field.value);
+
+                                    // Mark field as BOSS-filled for monitoring
+                                    field.setAttribute('data-boss-filled', 'true');
+                                    field.setAttribute('data-boss-filled-at', new Date().toISOString());
+                                }, 50); // 50ms delay before blur
+
+                            }, 50); // 50ms delay after focus
 
                             return 'SUCCESS';
                         })();
@@ -100,13 +228,25 @@ object FormFieldInjector {
                         }
                     )
                 } catch (e: Exception) {
+                    println("❌ [FormFieldInjector] Exception during fill: ${e.message}")
                     result.complete(FillResult.Error("Exception: ${e.message}"))
                 }
             }
 
-            withTimeout(2.seconds) {
+            val fillResult = withTimeout(5.seconds) {  // Increased timeout for async operations
                 result.await()
             }
+
+            // Wait for async operations to complete (frameworks may update state asynchronously)
+            kotlinx.coroutines.delay(200)
+
+            // === PHASE 2: POST-FILL DEBUG ===
+            val postDebug = logFieldDebugInfo(browser, "AFTER_FILL")
+            println("🔍 [FormFieldInjector] POST-FILL STATE:")
+            println(postDebug)
+            println("🔍 [FormFieldInjector] ===== FILL OPERATION END =====")
+
+            fillResult
         } catch (e: Exception) {
             println("❌ [FormFieldInjector] Failed to fill field: ${e.message}")
             FillResult.Error("Timeout or exception: ${e.message}")
@@ -185,6 +325,60 @@ object FormFieldInjector {
 
                     val script = """
                         (function() {
+                            console.log('[BOSS] 🔍 findAndFillUsername: Starting username field detection and fill');
+
+                            // Helper function: Enhanced fill with proper event sequence for React compatibility
+                            function enhancedFillField(field, value, fieldType) {
+                                console.log('[BOSS] 📝 Filling ' + fieldType + ' field:', field.name || field.id || 'unnamed');
+                                console.log('[BOSS] Pre-fill value:', field.value || 'EMPTY');
+
+                                // Step 1: Ensure field is focused
+                                if (document.activeElement !== field) {
+                                    field.focus();
+                                }
+                                field.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+
+                                // Step 2: Keydown event (simulate typing start)
+                                field.dispatchEvent(new KeyboardEvent('keydown', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                }));
+
+                                // Step 3: Set value using React-compatible native setter
+                                // This is critical for React 16+ to detect the change
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                    window.HTMLInputElement.prototype, 'value'
+                                ).set;
+                                nativeInputValueSetter.call(field, value);
+
+                                // Step 4: Input event (React's onChange listens to this)
+                                field.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                // Step 5: Keyup event (simulate typing end)
+                                field.dispatchEvent(new KeyboardEvent('keyup', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                }));
+
+                                // Step 6: Blur event (triggers validation)
+                                field.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+
+                                // Step 7: Change event (final commit)
+                                field.dispatchEvent(new Event('change', { bubbles: true }));
+
+                                // Mark field as BOSS-filled for debugging
+                                field.setAttribute('data-boss-filled', 'true');
+                                field.setAttribute('data-boss-filled-at', new Date().toISOString());
+                                field.setAttribute('data-boss-field-type', fieldType);
+
+                                console.log('[BOSS] ✅ Post-fill value:', field.value || 'EMPTY');
+                                console.log('[BOSS] Field marked with data-boss-filled=true');
+                            }
+
                             // Strategy 1: Check if focused field is username field
                             const focused = document.activeElement;
                             if (focused && focused.tagName === 'INPUT' &&
@@ -192,53 +386,55 @@ object FormFieldInjector {
                                 const name = (focused.name || focused.id || '').toLowerCase();
                                 if (name.includes('user') || name.includes('email') ||
                                     name.includes('login') || name.includes('account')) {
-                                    focused.value = '$escapedUsername';
-                                    focused.dispatchEvent(new Event('input', { bubbles: true }));
-                                    focused.dispatchEvent(new Event('change', { bubbles: true }));
+                                    console.log('[BOSS] Strategy 1: Using focused username field');
+                                    enhancedFillField(focused, '$escapedUsername', 'username-focused');
                                     return 'SUCCESS: Filled focused username field';
                                 }
                             }
 
                             // Strategy 2: Find by autocomplete attribute
                             let field = document.querySelector('[autocomplete="username"], [autocomplete="email"]');
+                            if (field) {
+                                console.log('[BOSS] Strategy 2: Found field by autocomplete attribute');
+                                enhancedFillField(field, '$escapedUsername', 'username-autocomplete');
+                                return 'SUCCESS: Filled username field (autocomplete)';
+                            }
 
                             // Strategy 3: Find by type="email"
-                            if (!field) {
-                                field = document.querySelector('input[type="email"]');
+                            field = document.querySelector('input[type="email"]');
+                            if (field) {
+                                console.log('[BOSS] Strategy 3: Found field by type=email');
+                                enhancedFillField(field, '$escapedUsername', 'username-email-type');
+                                return 'SUCCESS: Filled email field';
                             }
 
                             // Strategy 4: Find by name/id containing keywords
-                            if (!field) {
-                                const inputs = document.querySelectorAll('input[type="text"], input[type="email"]');
-                                for (const input of inputs) {
-                                    const name = (input.name || input.id || '').toLowerCase();
-                                    if (name.includes('user') || name.includes('email') ||
-                                        name.includes('login') || name.includes('account')) {
-                                        field = input;
-                                        break;
-                                    }
+                            const inputs = document.querySelectorAll('input[type="text"], input[type="email"]');
+                            for (const input of inputs) {
+                                const name = (input.name || input.id || '').toLowerCase();
+                                if (name.includes('user') || name.includes('email') ||
+                                    name.includes('login') || name.includes('account')) {
+                                    console.log('[BOSS] Strategy 4: Found field by name/id keywords');
+                                    enhancedFillField(input, '$escapedUsername', 'username-keyword');
+                                    return 'SUCCESS: Filled username field (keyword match)';
                                 }
                             }
 
                             // Strategy 5: Find first text input in form with password field
-                            if (!field) {
-                                const forms = document.querySelectorAll('form');
-                                for (const form of forms) {
-                                    const hasPassword = form.querySelector('input[type="password"]');
-                                    if (hasPassword) {
-                                        field = form.querySelector('input[type="text"], input[type="email"]');
-                                        if (field) break;
+                            const forms = document.querySelectorAll('form');
+                            for (const form of forms) {
+                                const hasPassword = form.querySelector('input[type="password"]');
+                                if (hasPassword) {
+                                    field = form.querySelector('input[type="text"], input[type="email"]');
+                                    if (field) {
+                                        console.log('[BOSS] Strategy 5: Found first text field in form with password');
+                                        enhancedFillField(field, '$escapedUsername', 'username-form-first');
+                                        return 'SUCCESS: Filled username field (first in form)';
                                     }
                                 }
                             }
 
-                            if (field) {
-                                field.value = '$escapedUsername';
-                                field.dispatchEvent(new Event('input', { bubbles: true }));
-                                field.dispatchEvent(new Event('change', { bubbles: true }));
-                                return 'SUCCESS: Username field filled';
-                            }
-
+                            console.log('[BOSS] ❌ ERROR: Username field not found with any strategy');
                             return 'ERROR: Username field not found';
                         })();
                     """.trimIndent()
@@ -290,42 +486,96 @@ object FormFieldInjector {
 
                     val script = """
                         (function() {
+                            console.log('[BOSS] 🔍 findAndFillPassword: Starting password field detection and fill');
+
+                            // Helper function: Enhanced fill with proper event sequence for React compatibility
+                            function enhancedFillField(field, value, fieldType) {
+                                console.log('[BOSS] 📝 Filling ' + fieldType + ' field:', field.name || field.id || 'unnamed');
+                                console.log('[BOSS] Pre-fill value:', field.value ? '***' : 'EMPTY');
+
+                                // Step 1: Ensure field is focused
+                                if (document.activeElement !== field) {
+                                    field.focus();
+                                }
+                                field.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+
+                                // Step 2: Keydown event (simulate typing start)
+                                field.dispatchEvent(new KeyboardEvent('keydown', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                }));
+
+                                // Step 3: Set value using React-compatible native setter
+                                // This is critical for React 16+ to detect the change
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                    window.HTMLInputElement.prototype, 'value'
+                                ).set;
+                                nativeInputValueSetter.call(field, value);
+
+                                // Step 4: Input event (React's onChange listens to this)
+                                field.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                // Step 5: Keyup event (simulate typing end)
+                                field.dispatchEvent(new KeyboardEvent('keyup', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'Unidentified',
+                                    code: 'Unidentified'
+                                }));
+
+                                // Step 6: Blur event (triggers validation)
+                                field.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+
+                                // Step 7: Change event (final commit)
+                                field.dispatchEvent(new Event('change', { bubbles: true }));
+
+                                // Mark field as BOSS-filled for debugging
+                                field.setAttribute('data-boss-filled', 'true');
+                                field.setAttribute('data-boss-filled-at', new Date().toISOString());
+                                field.setAttribute('data-boss-field-type', fieldType);
+
+                                console.log('[BOSS] ✅ Post-fill value:', field.value ? '***' : 'EMPTY');
+                                console.log('[BOSS] Field marked with data-boss-filled=true');
+                            }
+
                             // Strategy 1: Check if focused field is password field
                             const focused = document.activeElement;
                             if (focused && focused.tagName === 'INPUT' && focused.type === 'password') {
-                                focused.value = '$escapedPassword';
-                                focused.dispatchEvent(new Event('input', { bubbles: true }));
-                                focused.dispatchEvent(new Event('change', { bubbles: true }));
+                                console.log('[BOSS] Strategy 1: Using focused password field');
+                                enhancedFillField(focused, '$escapedPassword', 'password-focused');
                                 return 'SUCCESS: Filled focused password field';
                             }
 
                             // Strategy 2: Find by autocomplete attribute
                             let field = document.querySelector('[autocomplete="current-password"]');
-
-                            // Strategy 3: Find by type="password"
-                            if (!field) {
-                                field = document.querySelector('input[type="password"]');
+                            if (field) {
+                                console.log('[BOSS] Strategy 2: Found field by autocomplete=current-password');
+                                enhancedFillField(field, '$escapedPassword', 'password-autocomplete');
+                                return 'SUCCESS: Filled password field (autocomplete)';
                             }
 
-                            // Strategy 4: Find by name/id containing "pass"
-                            if (!field) {
-                                const inputs = document.querySelectorAll('input[type="password"]');
-                                for (const input of inputs) {
-                                    const name = (input.name || input.id || '').toLowerCase();
-                                    if (name.includes('pass') || name.includes('pwd')) {
-                                        field = input;
-                                        break;
-                                    }
+                            // Strategy 3: Find by type="password"
+                            field = document.querySelector('input[type="password"]');
+                            if (field) {
+                                console.log('[BOSS] Strategy 3: Found field by type=password');
+                                enhancedFillField(field, '$escapedPassword', 'password-type');
+                                return 'SUCCESS: Filled password field (type)';
+                            }
+
+                            // Strategy 4: Find by name/id containing "pass" or "pwd"
+                            const inputs = document.querySelectorAll('input[type="password"]');
+                            for (const input of inputs) {
+                                const name = (input.name || input.id || '').toLowerCase();
+                                if (name.includes('pass') || name.includes('pwd')) {
+                                    console.log('[BOSS] Strategy 4: Found field by name/id keywords');
+                                    enhancedFillField(input, '$escapedPassword', 'password-keyword');
+                                    return 'SUCCESS: Filled password field (keyword match)';
                                 }
                             }
 
-                            if (field) {
-                                field.value = '$escapedPassword';
-                                field.dispatchEvent(new Event('input', { bubbles: true }));
-                                field.dispatchEvent(new Event('change', { bubbles: true }));
-                                return 'SUCCESS: Password field filled';
-                            }
-
+                            console.log('[BOSS] ❌ ERROR: Password field not found with any strategy');
                             return 'ERROR: Password field not found';
                         })();
                     """.trimIndent()
@@ -366,5 +616,172 @@ object FormFieldInjector {
         } catch (e: Exception) {
             println("❌ [FormFieldInjector] Failed to copy to clipboard: ${e.message}")
         }
+    }
+
+    /**
+     * Install form submission monitor to debug what happens on Enter key press.
+     * Monitors form submissions and field value changes to diagnose why autofilled
+     * values might disappear.
+     *
+     * This helps track:
+     * - Form submission events
+     * - BOSS-filled field states during submission
+     * - Enter key presses in form fields
+     * - Value changes after Enter press
+     *
+     * @param browser JxBrowser instance
+     */
+    suspend fun installFormSubmissionMonitor(browser: Browser) {
+        browser.mainFrame().ifPresent { frame ->
+            frame.executeJavaScript<Unit>("""
+                (function() {
+                    if (window.__BOSS_FORM_MONITOR_INSTALLED) {
+                        console.log('[BOSS] Form monitor already installed, skipping');
+                        return;
+                    }
+                    window.__BOSS_FORM_MONITOR_INSTALLED = true;
+
+                    console.log('[BOSS] 📊 Form submission monitor installed');
+
+                    // Monitor all form submissions
+                    document.addEventListener('submit', function(e) {
+                        console.log('[BOSS] ===== FORM SUBMIT DETECTED =====');
+                        console.log('[BOSS] Form action:', e.target.action || 'N/A');
+                        console.log('[BOSS] Form method:', e.target.method || 'N/A');
+
+                        // Log all BOSS-filled fields
+                        const filledFields = document.querySelectorAll('[data-boss-filled="true"]');
+                        console.log('[BOSS] BOSS-filled fields count:', filledFields.length);
+
+                        filledFields.forEach((field, index) => {
+                            console.log(`[BOSS] Field ${'$'}{index + 1}:`, {
+                                name: field.name || field.id || 'unnamed',
+                                type: field.type || 'N/A',
+                                value: field.value || 'EMPTY',
+                                valueLength: field.value.length,
+                                filledAt: field.getAttribute('data-boss-filled-at')
+                            });
+                        });
+
+                        console.log('[BOSS] ===== FORM SUBMIT END =====');
+                    }, true);
+
+                    // Monitor Enter key presses in form fields
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                            console.log('[BOSS] ===== ENTER KEY IN FORM FIELD =====');
+                            console.log('[BOSS] Field:', e.target.name || e.target.id || 'unnamed');
+                            console.log('[BOSS] Field type:', e.target.type || 'N/A');
+                            console.log('[BOSS] Current value:', e.target.value || 'EMPTY');
+                            console.log('[BOSS] Value length:', e.target.value.length);
+                            console.log('[BOSS] Is BOSS-filled:', e.target.getAttribute('data-boss-filled') || 'NO');
+                            console.log('[BOSS] Form:', e.target.form ? (e.target.form.action || 'has form') : 'NO FORM');
+
+                            // Store reference to field for delayed checks
+                            const field = e.target;
+
+                            // Check value again after delays to see if it gets cleared
+                            setTimeout(() => {
+                                console.log('[BOSS] Value after 100ms:', field.value || 'EMPTY', `(length: ${'$'}{field.value.length})`);
+                            }, 100);
+
+                            setTimeout(() => {
+                                console.log('[BOSS] Value after 500ms:', field.value || 'EMPTY', `(length: ${'$'}{field.value.length})`);
+                            }, 500);
+
+                            setTimeout(() => {
+                                console.log('[BOSS] Value after 1000ms:', field.value || 'EMPTY', `(length: ${'$'}{field.value.length})`);
+                                console.log('[BOSS] ===== ENTER KEY END =====');
+                            }, 1000);
+                        }
+                    }, true);
+
+                    // Monitor button clicks in forms (critical for DocuSign flow)
+                    document.addEventListener('click', function(e) {
+                        // Check if clicked element is a button or submit input
+                        const isButton = e.target.tagName === 'BUTTON' ||
+                                       (e.target.tagName === 'INPUT' && (e.target.type === 'submit' || e.target.type === 'button'));
+
+                        // Also check if clicked on element inside a button
+                        const buttonParent = e.target.closest('button, input[type="submit"], input[type="button"]');
+
+                        if (isButton || buttonParent) {
+                            const button = buttonParent || e.target;
+                            console.log('[BOSS] ===== BUTTON CLICK DETECTED =====');
+                            console.log('[BOSS] Button tag:', button.tagName);
+                            console.log('[BOSS] Button type:', button.type || 'N/A');
+                            console.log('[BOSS] Button text:', button.textContent?.trim() || button.value || 'N/A');
+                            console.log('[BOSS] Button name:', button.name || button.id || 'unnamed');
+
+                            // Get all BOSS-filled fields
+                            const bossFilled = document.querySelectorAll('[data-boss-filled="true"]');
+                            console.log('[BOSS] BOSS-filled fields count:', bossFilled.length);
+
+                            // Log each field's state BEFORE button action
+                            bossFilled.forEach((field, index) => {
+                                console.log(`[BOSS] Field ${'$'}{index + 1} BEFORE button click:`, {
+                                    name: field.name || field.id || 'unnamed',
+                                    type: field.type || 'N/A',
+                                    fieldType: field.getAttribute('data-boss-field-type'),
+                                    value: field.type === 'password' ? '***' : (field.value || 'EMPTY'),
+                                    valueLength: field.value.length,
+                                    filledAt: field.getAttribute('data-boss-filled-at')
+                                });
+                            });
+
+                            // Check field values after delays to detect when clearing happens
+                            setTimeout(() => {
+                                console.log('[BOSS] ----- After 100ms -----');
+                                bossFilled.forEach((field, index) => {
+                                    console.log(`[BOSS] Field ${'$'}{index + 1}:`, field.name || field.id,
+                                               'Value:', field.type === 'password' ? '***' : (field.value || 'EMPTY'),
+                                               `(length: ${'$'}{field.value.length})`);
+                                });
+                            }, 100);
+
+                            setTimeout(() => {
+                                console.log('[BOSS] ----- After 500ms -----');
+                                bossFilled.forEach((field, index) => {
+                                    console.log(`[BOSS] Field ${'$'}{index + 1}:`, field.name || field.id,
+                                               'Value:', field.type === 'password' ? '***' : (field.value || 'EMPTY'),
+                                               `(length: ${'$'}{field.value.length})`);
+                                });
+                            }, 500);
+
+                            setTimeout(() => {
+                                console.log('[BOSS] ----- After 1000ms -----');
+                                bossFilled.forEach((field, index) => {
+                                    console.log(`[BOSS] Field ${'$'}{index + 1}:`, field.name || field.id,
+                                               'Value:', field.type === 'password' ? '***' : (field.value || 'EMPTY'),
+                                               `(length: ${'$'}{field.value.length})`);
+                                });
+                                console.log('[BOSS] ===== BUTTON CLICK END =====');
+                            }, 1000);
+                        }
+                    }, true);
+
+                    // Monitor blur events on BOSS-filled fields
+                    document.addEventListener('blur', function(e) {
+                        if ((e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') &&
+                            e.target.getAttribute('data-boss-filled') === 'true') {
+                            console.log('[BOSS] 🔵 BLUR on BOSS-filled field:', e.target.name || e.target.id || 'unnamed');
+                            console.log('[BOSS] Value on blur:', e.target.value || 'EMPTY');
+                        }
+                    }, true);
+
+                    // Monitor focus events to track field interactions
+                    document.addEventListener('focus', function(e) {
+                        if ((e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') &&
+                            e.target.getAttribute('data-boss-filled') === 'true') {
+                            console.log('[BOSS] 🟢 FOCUS on BOSS-filled field:', e.target.name || e.target.id || 'unnamed');
+                            console.log('[BOSS] Value on focus:', e.target.value || 'EMPTY');
+                        }
+                    }, true);
+
+                    console.log('[BOSS] 📊 Form monitor ready - will log form submissions, button clicks, and Enter key events');
+                })();
+            """.trimIndent())
+        }
+        println("✅ [FormFieldInjector] Form submission monitor installed")
     }
 }
