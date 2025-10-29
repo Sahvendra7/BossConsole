@@ -6,6 +6,8 @@ import ai.rever.boss.utils.Version
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.network.sockets.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -23,12 +25,36 @@ import java.util.*
 
 actual class UpdateService {
     
-    private val httpClient = HttpClient(CIO) {
+    // HTTP client for GitHub API calls - fast timeouts
+    private val apiClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true
                 isLenient = true
             })
+        }
+
+        install(HttpTimeout) {
+            // API calls should complete quickly or fail fast
+            requestTimeoutMillis = 30_000   // 30 seconds for entire API request
+            connectTimeoutMillis = 15_000   // 15 seconds to establish connection
+            socketTimeoutMillis = 15_000    // 15 seconds between data packets
+        }
+    }
+
+    // HTTP client for file downloads - long timeouts for large files
+    private val downloadClient = HttpClient(CIO) {
+        install(HttpTimeout) {
+            // Allow up to 15 minutes for entire download (for slow connections)
+            // 275MB at 500KB/s = ~9 minutes, so 15 min provides buffer
+            requestTimeoutMillis = 900_000  // 15 minutes
+
+            // Connection establishment should be quick
+            connectTimeoutMillis = 30_000   // 30 seconds
+
+            // Socket timeout: max time between data packets
+            // Ensures connection stays alive during continuous download
+            socketTimeoutMillis = 60_000    // 60 seconds
         }
     }
     
@@ -48,7 +74,7 @@ actual class UpdateService {
                 println("   Add GITHUB_TOKEN to local.properties for higher rate limits")
             }
 
-            val response = httpClient.get("$RELEASES_ENDPOINT") {
+            val response = apiClient.get("$RELEASES_ENDPOINT") {
                 headers {
                     append("Accept", "application/vnd.github.v3+json")
                     append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
@@ -169,8 +195,9 @@ actual class UpdateService {
             
             println("Starting download from: $downloadUrl")
             println("Expected asset: ${updateInfo.assetName} (${updateInfo.assetSize} bytes)")
-            
-            val response = httpClient.get(downloadUrl)
+            println("Download timeout configuration: request=15min, connect=30s, socket=60s")
+
+            val response = downloadClient.get(downloadUrl)
             if (response.status.value !in 200..299) {
                 println("Download failed with HTTP status: ${response.status.value} ${response.status.description}")
                 return null
@@ -263,7 +290,13 @@ actual class UpdateService {
             }
             
         } catch (e: Exception) {
-            println("Error downloading update: ${e.message}")
+            val errorMessage = when (e) {
+                is HttpRequestTimeoutException -> "Download timeout: File too large or connection too slow. Please try again with a faster connection."
+                is ConnectTimeoutException -> "Connection timeout: Unable to reach download server. Check your internet connection."
+                is SocketTimeoutException -> "Network timeout: Download interrupted. Check your network stability."
+                else -> e.message ?: "Unknown error"
+            }
+            println("Error downloading update: $errorMessage")
             null
         }
     }
