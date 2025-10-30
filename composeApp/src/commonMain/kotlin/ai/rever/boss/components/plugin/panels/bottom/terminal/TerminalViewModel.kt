@@ -112,17 +112,23 @@ class TerminalViewModel {
         val lines: List<AnnotatedString>
         val cursorPos: Pair<Int, Int>
         val cursorVisible: Boolean
-        
+        val scrollbackSize: Int
+
         synchronized(terminalEmulator) {
             lines = terminalEmulator.getAnnotatedLines()
             cursorPos = terminalEmulator.getCursorPosition()
             cursorVisible = terminalEmulator.isCursorVisible()
+            scrollbackSize = terminalEmulator.getScrollbackSize()
         }
-        
+
+        // Calculate absolute cursor position (includes scrollback offset)
+        val absoluteCursorRow = scrollbackSize + cursorPos.first
+        val absoluteCursorPos = absoluteCursorRow to cursorPos.second
+
         // Update on main thread
         withContext(Dispatchers.Main.immediate) {
             _terminalLines.value = lines
-            _terminalCursorPosition.value = cursorPos
+            _terminalCursorPosition.value = absoluteCursorPos
             _terminalCursorVisible.value = cursorVisible
         }
     }

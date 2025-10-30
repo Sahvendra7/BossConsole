@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -104,6 +105,12 @@ fun TerminalView(viewModel: TerminalViewModel) {
             .background(backgroundColor)
             .border(2.dp, borderColor)
             .clipToBounds()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                focusRequester.requestFocus()
+            }
             .graphicsLayer {
                 compositingStrategy = CompositingStrategy.Offscreen
                 renderEffect = null
@@ -152,47 +159,43 @@ fun TerminalView(viewModel: TerminalViewModel) {
                             val calculatedColumns = kotlin.math.floor(availableWidth / charWidthPx).toInt()
                             val displayColumns = calculatedColumns.coerceIn(80, 150)
                             val ptyColumns = (displayColumns * 0.95).toInt().coerceIn(75, 140)
-                            
+
                             val calculatedRows = kotlin.math.floor(availableHeight / charHeightPx).toInt()
                             val displayRows = max(24, calculatedRows)
                             val ptyRows = displayRows
-                            
+
                             if (terminalSize.first != displayColumns || terminalSize.second != displayRows) {
                                 pendingResize = Triple(displayColumns, displayRows, Pair(ptyColumns, ptyRows))
                             }
                         }
                     }
                 }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    focusRequester.requestFocus()
-                }
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp)
-                    .clipToBounds()
-                    .verticalScrollWithScrollbar(
-                        scrollState = scrollState,
-                        scrollbarConfig = ScrollbarConfig(
-                            indicatorThickness = 6.dp,
-                            indicatorColor = BossDarkTextSecondary,
-                            padding = PaddingValues(end = 0.dp)
+            // Enable multi-line text selection in Terminal
+            SelectionContainer {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp)
+                        .clipToBounds()
+                        .verticalScrollWithScrollbar(
+                            scrollState = scrollState,
+                            scrollbarConfig = ScrollbarConfig(
+                                indicatorThickness = 6.dp,
+                                indicatorColor = BossDarkTextSecondary,
+                                padding = PaddingValues(end = 0.dp)
+                            )
                         )
-                    )
-            ) {
-                if (!isRunning || terminalLines.isEmpty()) {
-                    Text(
-                        text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
-                        style = terminalTextStyle,
-                        color = BossDarkTextSecondary
-                    )
-                }
+                ) {
+                    if (!isRunning || terminalLines.isEmpty()) {
+                        Text(
+                            text = if (!hasInitialSize) "Waiting for layout..." else "Terminal starting...",
+                            style = terminalTextStyle,
+                            color = BossDarkTextSecondary
+                        )
+                    }
 
-                terminalLines.forEachIndexed { rowIndex, line ->
+                    terminalLines.forEachIndexed { rowIndex, line ->
                     val needsWrapping = line.text.length > terminalSize.first
                     
                     Box(
@@ -234,6 +237,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
                         }
                     }
                 }
+            }
             }
         }
     }

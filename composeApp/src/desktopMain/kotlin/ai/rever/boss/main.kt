@@ -4,6 +4,7 @@ import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
+import ai.rever.boss.components.plugin.panels.bottom.console.GlobalLogCapture
 import androidx.compose.runtime.key
 import androidx.compose.ui.window.application
 import java.io.File
@@ -20,7 +21,10 @@ fun main(args: Array<String>) {
     
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()
-    
+
+    // Start global log capture from app startup
+    GlobalLogCapture.start()
+
     // Debug: Check environment variables
     println("=== Checking LLM API Keys in Environment ===")
     println("Current working directory: ${System.getProperty("user.dir")}")

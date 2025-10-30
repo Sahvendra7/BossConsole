@@ -97,12 +97,13 @@ actual fun rememberTerminalFontFamily(): FontFamily {
             )
         }
         else -> {
-            // Default fallback to bundled MesloLGS NF - prioritize symbol support
+            // Default fallback to bundled MesloLGS NF with emoji support
             FontFamily(
                 Font(Res.font.meslolgs_nf_regular, FontWeight.Normal, FontStyle.Normal),
                 Font(Res.font.meslolgs_nf_bold, FontWeight.Bold, FontStyle.Normal),
                 Font(Res.font.meslolgs_nf_italic, FontWeight.Normal, FontStyle.Italic),
-                Font(Res.font.meslolgs_nf_bold_italic, FontWeight.Bold, FontStyle.Italic)
+                Font(Res.font.meslolgs_nf_bold_italic, FontWeight.Bold, FontStyle.Italic),
+                Font(Res.font.noto_color_emoji, FontWeight.Normal, FontStyle.Normal) // Emoji support!
             )
         }
     }

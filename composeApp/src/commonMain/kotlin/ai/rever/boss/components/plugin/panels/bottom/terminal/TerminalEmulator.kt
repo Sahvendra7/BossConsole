@@ -1016,18 +1016,23 @@ class TerminalEmulator(
         // Ensure cursor is within bounds and return validated position
         val safeRow = minOf(cursorRow, rows - 1).coerceAtLeast(0)
         val safeCol = minOf(cursorCol, columns - 1).coerceAtLeast(0)
-        
+
         // Validate cursor position is within terminal bounds
-        
+
         // Update internal cursor to safe values if they were out of bounds
         if (cursorRow != safeRow || cursorCol != safeCol) {
             cursorRow = safeRow
             cursorCol = safeCol
         }
-        
+
         return safeRow to safeCol  // Return validated cursor position
     }
-    
+
+    fun getScrollbackSize(): Int {
+        // Return scrollback size (0 when in alternate buffer)
+        return if (usingAlternateBuffer) 0 else scrollbackLines.size
+    }
+
     fun isCursorVisible(): Boolean = cursorVisible
     
     private fun trimBuffer() {
