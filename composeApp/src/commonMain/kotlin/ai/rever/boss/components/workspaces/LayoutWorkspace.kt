@@ -12,7 +12,8 @@ data class TabConfig(
     val type: String, // "browser", "terminal", "editor"
     val title: String,
     val url: String? = null, // For browser tabs
-    val filePath: String? = null // For editor tabs
+    val filePath: String? = null, // For editor tabs
+    val faviconCacheKey: String? = null // Cache key for browser tab favicon
 )
 
 /**

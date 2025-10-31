@@ -13,7 +13,8 @@ actual fun createFluckTabComponent(
     onIconUpdate: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
-    onNavigationUpdate: ((String, String) -> Unit)?
+    onNavigationUpdate: ((String, String) -> Unit)?,
+    onFaviconCacheKeyUpdate: ((String?) -> Unit)?
 ): FluckTabComponent {
     return DesktopFluckTabComponent(
         config = config,
@@ -22,7 +23,8 @@ actual fun createFluckTabComponent(
         onIconUpdate = onIconUpdate,
         onTabIconUpdate = onTabIconUpdate,
         onOpenInNewTab = onOpenInNewTab,
-        onNavigationUpdate = onNavigationUpdate
+        onNavigationUpdate = onNavigationUpdate,
+        onFaviconCacheKeyUpdate = onFaviconCacheKeyUpdate
     )
 }
 
@@ -33,7 +35,8 @@ class DesktopFluckTabComponent(
     onIconUpdate: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
-    onNavigationUpdate: ((String, String) -> Unit)? = null
+    onNavigationUpdate: ((String, String) -> Unit)? = null,
+    onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null
 ) : FluckTabComponent(
     config = config,
     componentContext = componentContext,
@@ -41,7 +44,8 @@ class DesktopFluckTabComponent(
     onIconUpdate = onIconUpdate,
     onTabIconUpdate = onTabIconUpdate,
     onOpenInNewTab = onOpenInNewTab,
-    onNavigationUpdate = onNavigationUpdate
+    onNavigationUpdate = onNavigationUpdate,
+    onFaviconCacheKeyUpdate = onFaviconCacheKeyUpdate
 ) {
     
     override fun reload() {

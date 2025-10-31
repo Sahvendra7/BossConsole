@@ -38,7 +38,8 @@ data class FluckTabInfo(
     private var _currentUrl: String = url, // Current URL being viewed
     val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
     var historyIndex: Int = -1, // Current position in navigation history
-    private var _currentZoomLevel: Double = 1.0 // Current zoom level (1.0 = 100%)
+    private var _currentZoomLevel: Double = 1.0, // Current zoom level (1.0 = 100%)
+    var faviconCacheKey: String? = null // Cache key for persisted favicon
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
@@ -56,6 +57,10 @@ data class FluckTabInfo(
     
     fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
         return copy(_tabIcon = newTabIcon)
+    }
+
+    fun updateFaviconCacheKey(newCacheKey: String?): FluckTabInfo {
+        return copy(faviconCacheKey = newCacheKey)
     }
 
     fun updateZoomLevel(newLevel: Double): FluckTabInfo {
@@ -124,7 +129,8 @@ expect fun createFluckTabComponent(
     onIconUpdate: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
-    onNavigationUpdate: ((String, String) -> Unit)? = null
+    onNavigationUpdate: ((String, String) -> Unit)? = null,
+    onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null
 ): FluckTabComponent
 
 open class FluckTabComponent(
@@ -134,7 +140,8 @@ open class FluckTabComponent(
     private val onIconUpdate: (ImageVector) -> Unit,
     private val onTabIconUpdate: (TabIcon) -> Unit,
     private val onOpenInNewTab: (String) -> Unit,
-    private val onNavigationUpdate: ((String, String) -> Unit)? = null
+    private val onNavigationUpdate: ((String, String) -> Unit)? = null,
+    private val onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     // Store the URL to load
@@ -300,6 +307,10 @@ open class FluckTabComponent(
                                         (config as? FluckTabInfo)?.navigateForward()
                                     }
                                 }
+                            },
+                            onFaviconCached = { cacheKey ->
+                                // Update favicon cache key through proper callback (Issue #160)
+                                onFaviconCacheKeyUpdate?.invoke(cacheKey)
                             }
                         )
                     }
@@ -530,12 +541,26 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
             parentComponent?.let { parent ->
                 val tabs = parent.tabsState.value.tabs
                 val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-                
+
                 if (tabIndex >= 0) {
                     val currentTab = tabs[tabIndex]
                     if (currentTab is FluckTabInfo) {
                         // Navigate to page
                         currentTab.navigateToPage(title, url)
+                    }
+                }
+            }
+        },
+        onFaviconCacheKeyUpdate = { newCacheKey ->
+            // Update favicon cache key (Issue #160)
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is FluckTabInfo) {
+                        parent.updateTab(tabIndex, currentTab.updateFaviconCacheKey(newCacheKey))
                     }
                 }
             }

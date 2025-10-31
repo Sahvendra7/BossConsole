@@ -182,7 +182,8 @@ fun JxBrowserCompose(
     onTabIconUpdate: (TabIcon) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {},
     onNavigationUpdate: ((String, String) -> Unit)? = null,
-    onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null,
+    onFaviconCached: ((String?) -> Unit)? = null
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -475,26 +476,25 @@ fun JxBrowserCompose(
                     // Get favicon from event
                     val favicon = event.favicon()
                     if (favicon != null) {
-                        println("🎨 [JxBrowser Native] Favicon changed - converting to TabIcon")
-
                         // Convert JxBrowser Bitmap to AWT BufferedImage manually
                         val bufferedImage = bitmapToBufferedImage(favicon)
 
                         // Convert BufferedImage to Compose ImageBitmap
                         val imageBitmap = bufferedImage.toComposeImageBitmap()
 
-                        // Create TabIcon
-                        val tabIcon = TabIcon.Image(BitmapPainter(imageBitmap))
+                        // Cache the favicon (Issue #160)
+                        val currentUrl = browser.url()
+                        val cacheKey = com.risa.boss.cache.FaviconCache.saveFavicon(currentUrl, imageBitmap)
+                        if (cacheKey != null) {
+                            onFaviconCached?.invoke(cacheKey)
+                        }
 
-                        // Update tab icon
+                        // Create TabIcon and update
+                        val tabIcon = TabIcon.Image(BitmapPainter(imageBitmap))
                         onTabIconUpdate(tabIcon)
-                        println("✅ [JxBrowser Native] Favicon successfully updated")
-                    } else {
-                        println("⚠️ [JxBrowser Native] Favicon changed but bitmap is null")
                     }
                 } catch (e: Exception) {
                     println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
-                    e.printStackTrace()
                 }
             }
         }

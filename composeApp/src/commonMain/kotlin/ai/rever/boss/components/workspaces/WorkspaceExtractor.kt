@@ -33,7 +33,8 @@ private fun extractSplitConfig(node: SplitNode): SplitConfig {
                     is FluckTabInfo -> TabConfig(
                         type = "browser",
                         title = tab.title,
-                        url = tab.currentUrl  // Use currentUrl to get the actual current URL
+                        url = tab.currentUrl,
+                        faviconCacheKey = tab.faviconCacheKey
                     )
                     is TerminalTabInfo -> TabConfig(
                         type = "terminal",

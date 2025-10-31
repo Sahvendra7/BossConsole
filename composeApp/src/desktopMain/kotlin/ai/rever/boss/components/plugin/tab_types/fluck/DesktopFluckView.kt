@@ -19,7 +19,8 @@ actual fun FluckView(
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
     onNavigationUpdate: ((String, String) -> Unit)?,
-    onNavigationStateChange: ((isBack: Boolean) -> Unit)?
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)?,
+    onFaviconCached: ((String?) -> Unit)?
 ) {
     // Cast browser and view state to the proper types
     val jxBrowser = browser as? Browser
@@ -36,7 +37,8 @@ actual fun FluckView(
             onTabIconUpdate = onTabIconUpdate,
             onOpenInNewTab = onOpenInNewTab,
             onNavigationUpdate = onNavigationUpdate,
-            onNavigationStateChange = onNavigationStateChange
+            onNavigationStateChange = onNavigationStateChange,
+            onFaviconCached = onFaviconCached
         )
     }
 }

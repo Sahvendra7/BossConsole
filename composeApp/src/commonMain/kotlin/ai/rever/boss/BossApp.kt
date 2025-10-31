@@ -133,15 +133,20 @@ fun ComponentContext.BossApp(windowId: String) {
 
         onDispose {
             // Save current workspace as "Last Session" when app closes
-            coroutineScope.launch {
-                val currentLayout = extractCurrentWorkspace(splitViewState)
-                val lastSessionConfig = currentLayout.copy(
-                    id = "last-session",
-                    name = "Last Session",
-                    description = "Automatically saved session"
-                )
-                workspaceManager.updateCurrentWorkspace(lastSessionConfig)
-                workspaceManager.saveCurrentWorkspace("Last Session")
+            try {
+                // Use runBlocking to ensure save completes before app closes
+                kotlinx.coroutines.runBlocking {
+                    val currentLayout = extractCurrentWorkspace(splitViewState)
+                    val lastSessionConfig = currentLayout.copy(
+                        id = "last-session",
+                        name = "Last Session",
+                        description = "Automatically saved session"
+                    )
+                    workspaceManager.updateCurrentWorkspace(lastSessionConfig)
+                    workspaceManager.saveCurrentWorkspace("Last Session")
+                }
+            } catch (e: Exception) {
+                println("❌ [BossApp] Failed to save Last Session workspace: ${e.message}")
             }
 
             // Cleanup plugin coroutines

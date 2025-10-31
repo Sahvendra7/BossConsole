@@ -149,12 +149,19 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
 
 private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
     return when (tabConfig.type) {
-        "browser" -> FluckTabInfo(
-            id = "browser-${Random.nextLong()}",
-            typeId = Fluck.typeId,
-            _title = tabConfig.title,
-            url = tabConfig.url ?: "about:blank"
-        )
+        "browser" -> {
+            // Load favicon from cache if available (Issue #160)
+            val cachedFavicon = com.risa.boss.cache.loadFaviconFromCache(tabConfig.faviconCacheKey)
+
+            FluckTabInfo(
+                id = "browser-${Random.nextLong()}",
+                typeId = Fluck.typeId,
+                _title = tabConfig.title,
+                _tabIcon = cachedFavicon,
+                url = tabConfig.url ?: "about:blank",
+                faviconCacheKey = tabConfig.faviconCacheKey
+            )
+        }
         "terminal" -> TerminalTabInfo(
             id = "terminal-${Random.nextLong()}",
             typeId = TerminalTab.typeId,
