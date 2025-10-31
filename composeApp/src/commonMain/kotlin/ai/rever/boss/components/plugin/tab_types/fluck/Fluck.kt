@@ -5,6 +5,7 @@ import ai.rever.boss.components.registery.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
@@ -12,7 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
@@ -145,7 +148,12 @@ open class FluckTabComponent(
     val browserViewState: Any? get() = browserState?.second
 
     private var isDisposed = false
-    
+
+    // Retry mechanism for browser initialization (Issue #162)
+    private var retryCount = 0
+    private val maxRetries = 3
+    private var retryTrigger by mutableStateOf(0)
+
     // Method to be overridden by platform-specific classes
     open fun reload() {
         // Default implementation does nothing
@@ -178,21 +186,64 @@ open class FluckTabComponent(
         }
 
         // Initialize browser only once - check class-level browserState
-        LaunchedEffect(config.id) {
+        // Retry mechanism: LaunchedEffect re-runs when retryTrigger changes (Issue #162)
+        LaunchedEffect(config.id, retryTrigger) {
             if (this@FluckTabComponent.browserState == null && browserError == null) {
+                // Check if we should retry
+                if (retryCount >= maxRetries) {
+                    println("❌ [BrowserRetry] Max retries ($maxRetries) exhausted for tab ${config.id}")
+                    browserError = Exception("Failed to initialize browser after $maxRetries attempts")
+                    return@LaunchedEffect
+                }
+
                 try {
-                    // This runs in a coroutine, won't block UI thread
-                    kotlinx.coroutines.delay(100) // Give window time to be displayed
+                    // Exponential backoff: 100ms, 200ms, 400ms
+                    val delayMs = 100L * (1 shl retryCount)
+
+                    if (retryCount > 0) {
+                        println("🔄 [BrowserRetry] Attempt ${retryCount + 1}/$maxRetries for tab ${config.id}, waiting ${delayMs}ms")
+                    }
+
+                    kotlinx.coroutines.delay(delayMs)
+
                     // Pass onOpenInNewTab callback to configure popup handler
                     val state = getBrowserState(initialUrl, onOpenInNewTab)
+
                     if (state != null) {
                         this@FluckTabComponent.browserState = state
                         localBrowserState = state  // Update local state to trigger recomposition
+
+                        if (retryCount > 0) {
+                            println("✅ [BrowserRetry] Success on attempt ${retryCount + 1}/$maxRetries for tab ${config.id}")
+                        }
+
+                        // Reset retry count on success
+                        retryCount = 0
                     } else {
-                        browserError = Exception("Could not initialize browser - window not ready")
+                        // State creation failed, increment retry and try again
+                        retryCount++
+                        println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+
+                        if (retryCount < maxRetries) {
+                            // Trigger retry by incrementing retryTrigger
+                            retryTrigger++
+                        } else {
+                            // Max retries reached
+                            browserError = Exception("Could not initialize browser after $maxRetries attempts - window not ready")
+                        }
                     }
                 } catch (e: Exception) {
-                    browserError = e
+                    retryCount++
+                    println("⚠️  [BrowserRetry] Failed attempt $retryCount/$maxRetries: ${e.message}")
+
+                    if (retryCount < maxRetries) {
+                        // Trigger retry by incrementing retryTrigger
+                        retryTrigger++
+                    } else {
+                        // Max retries reached
+                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${e.message}")
+                        browserError = e
+                    }
                 }
             } else if (this@FluckTabComponent.browserState != null) {
                 // Browser already exists (tab switch), use it
@@ -203,10 +254,24 @@ open class FluckTabComponent(
         if (!isDisposed) {
             when {
                 browserError != null -> {
-                    // Show error message instead of browser
+                    // Show error message instead of browser with retry/reset options (Issue #162)
                     BrowserErrorView(
                         error = browserError!!,
-                        url = initialUrl
+                        url = initialUrl,
+                        retryCount = retryCount,
+                        maxRetries = maxRetries,
+                        onRetry = {
+                            // Clear error and trigger retry
+                            browserError = null
+                            retryTrigger++
+                        },
+                        onReset = {
+                            // Full reset: clear error, reset counter, clear browser state
+                            browserError = null
+                            retryCount = 0
+                            this@FluckTabComponent.browserState = null
+                            retryTrigger++
+                        }
                     )
                 }
                 localBrowserState != null -> {
@@ -268,7 +333,14 @@ open class FluckTabComponent(
 }
 
 @Composable
-fun BrowserErrorView(error: Throwable, url: String) {
+fun BrowserErrorView(
+    error: Throwable,
+    url: String,
+    retryCount: Int = 0,
+    maxRetries: Int = 3,
+    onRetry: (() -> Unit)? = null,
+    onReset: (() -> Unit)? = null
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -290,48 +362,100 @@ fun BrowserErrorView(error: Throwable, url: String) {
                     tint = Color(0xFFFF6B6B),
                     modifier = Modifier.size(48.dp)
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text(
                     text = "Browser Not Available",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Text(
                     text = "Unable to initialize the web browser component.",
                     fontSize = 14.sp,
                     color = Color(0xFFCCCCCC)
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text(
                     text = "URL: $url",
                     fontSize = 12.sp,
                     color = Color(0xFF999999)
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Text(
                     text = "Error: ${error.message ?: error.toString()}",
                     fontSize = 12.sp,
                     color = Color(0xFF999999),
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                
+
+                // Show retry progress if retries were attempted
+                if (retryCount > 0) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Attempted $retryCount/$maxRetries times with exponential backoff",
+                        fontSize = 12.sp,
+                        color = Color(0xFF888888),
+                        fontStyle = FontStyle.Italic
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
-                Text(
-                    text = "Try using the code editor or terminal tabs instead.",
-                    fontSize = 14.sp,
-                    color = Color(0xFFCCCCCC)
-                )
+
+                // Show appropriate button based on retry status
+                if (retryCount < maxRetries && onRetry != null) {
+                    // Still have retries left - show Retry button
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4A90E2))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Retry",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Retry Loading (Attempt ${retryCount + 1}/$maxRetries)")
+                    }
+                } else if (retryCount >= maxRetries && onReset != null) {
+                    // Max retries exhausted - show Reset button
+                    Button(
+                        onClick = onReset,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE2724A))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reset",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reset Tab")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Resets retry counter and attempts to load the browser again",
+                        fontSize = 11.sp,
+                        color = Color(0xFF888888),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    // No callbacks provided - show fallback message
+                    Text(
+                        text = "Try using the code editor or terminal tabs instead.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFCCCCCC)
+                    )
+                }
             }
         }
     }
