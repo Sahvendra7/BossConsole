@@ -905,28 +905,26 @@ fun JxBrowserCompose(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(modifier = Modifier.weight(1f)) {
+                                    // Show placeholder when empty
                                     if (urlInput.text.isEmpty()) {
                                         Text(
                                             "Enter URL or search",
                                             style = MaterialTheme.typography.body2,
                                             color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                         )
-                                    } else {
-                                        // Show inline autocomplete
-                                        Box {
-                                            // Show the autocomplete suggestion
-                                            if (autocompleteSuggestion != null && 
-                                                autocompleteSuggestion!!.lowercase().startsWith(urlInput.text.lowercase())) {
-                                                Text(
-                                                    text = autocompleteSuggestion!!,
-                                                    style = MaterialTheme.typography.body2,
-                                                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
-                                                )
-                                            }
-                                            // Show the actual input on top
-                                            innerTextField()
-                                        }
                                     }
+                                    // Show autocomplete suggestion when available
+                                    if (autocompleteSuggestion != null &&
+                                        urlInput.text.isNotEmpty() &&
+                                        autocompleteSuggestion!!.lowercase().startsWith(urlInput.text.lowercase())) {
+                                        Text(
+                                            text = autocompleteSuggestion!!,
+                                            style = MaterialTheme.typography.body2,
+                                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                                        )
+                                    }
+                                    // ALWAYS render the text field (including cursor)
+                                    innerTextField()
                                 }
                                 IconButton(
                                     onClick = {
