@@ -26,6 +26,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Divider
@@ -62,29 +64,60 @@ fun BossTabsComponent.BossMainTabBar(
     var showNewTabDialog by remember { mutableStateOf(false) }
     var selectedTabType by remember { mutableStateOf<TabType?>(null) }
 
+    // LazyListState for tab bar scrolling
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to active tab when it changes
+    LaunchedEffect(tabsState.value.activeIndex) {
+        val activeIndex = tabsState.value.activeIndex
+        if (activeIndex >= 0 && activeIndex < tabsState.value.tabs.size) {
+            // Only scroll if the tab is not fully visible
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+
+            // Check if the tab is fully visible (both left and right edges within viewport)
+            val activeItem = visibleItems.find { it.index == activeIndex }
+            val isFullyVisible = activeItem?.let { item ->
+                val itemStart = item.offset
+                val itemEnd = item.offset + item.size
+                val viewportStart = layoutInfo.viewportStartOffset
+                val viewportEnd = layoutInfo.viewportEndOffset
+
+                // Item is fully visible if both edges are within viewport
+                itemStart >= viewportStart && itemEnd <= viewportEnd
+            } ?: false
+
+            if (!isFullyVisible) {
+                // Scroll to bring the tab fully into view
+                listState.scrollToItem(activeIndex)
+            }
+        }
+    }
+
     HorizontalBar(
         height = 42.dp, 
         backgroundColor = BossDarkBackground
     ) {
         HorizontalBarRow {
-            BossLeftTabBar {
-                tabsState.value.tabs.forEachIndexed { index, config ->
+            BossLeftTabBar(listState) {
+                // Render tab buttons as lazy items
+                itemsIndexed(tabsState.value.tabs) { index, config ->
                     val isSelected = index == tabsState.value.activeIndex
                     val totalTabs = tabsState.value.tabs.size
-                    
+
                     BossTabButton(
                         fileName = config.title,
                         icon = config.icon,
                         tabIcon = config.tabIcon,
                         isSelected = isSelected,
-                        onClick = { 
+                        onClick = {
                             selectTab(index)
                             // Track this tab interaction for Cmd+R/Cmd+N
                             if (splitViewState != null && currentPanelId != null) {
                                 splitViewState.trackTabInteraction(currentPanelId, config.id)
                             }
                         },
-                        onClose = { 
+                        onClose = {
                             removeTab(index)
                             // Tab removal is handled, cleanup will happen via LaunchedEffect
                         },
@@ -94,7 +127,7 @@ fun BossTabsComponent.BossMainTabBar(
                                 // Track this tab interaction when right-clicking
                                 splitViewState.trackTabInteraction(currentPanelId, config.id)
                             }
-                            
+
                             // Split operations (if split state is available)
                             if (splitViewState != null && currentPanelId != null) {
                                 add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
@@ -128,21 +161,21 @@ fun BossTabsComponent.BossMainTabBar(
                             add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
                                 removeTab(index)
                             })
-                            
+
                             // Close other tabs (only show if there are other tabs)
                             if (totalTabs > 1) {
                                 add(ContextMenuItem("Close Other Tabs", Icons.Outlined.Clear) {
                                     closeOtherTabs(index)
                                 })
                             }
-                            
+
                             // Close tabs to the right (only show if there are tabs to the right)
                             if (index < totalTabs - 1) {
                                 add(ContextMenuItem("Close Tabs to the Right", Icons.Outlined.ChevronRight) {
                                     closeTabsToRight(index)
                                 })
                             }
-                            
+
                             // Close tabs to the left (only show if there are tabs to the left)
                             if (index > 0) {
                                 add(ContextMenuItem("Close Tabs to the Left", Icons.Outlined.ChevronLeft) {
@@ -152,32 +185,34 @@ fun BossTabsComponent.BossMainTabBar(
                         }
                     )
                 }
-                
+
                 // Plus button for new tab
-                Box(
-                    modifier = Modifier
-                        .height(32.dp)
-                        .width(32.dp)
-                        .padding(4.dp)
-                        .background(
-                            color = Color(0xFF3C3F41),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                item {
+                    Box(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .width(32.dp)
+                            .padding(4.dp)
+                            .background(
+                                color = Color(0xFF3C3F41),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                            )
+                            .clickable {
+                                showNewTabDialog = true
+                                // Track panel interaction when plus button is clicked
+                                if (splitViewState != null && currentPanelId != null) {
+                                    splitViewState.setActivePanel(currentPanelId)
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Tab",
+                            tint = Color(0xFF999999),
+                            modifier = Modifier.size(16.dp)
                         )
-                        .clickable { 
-                            showNewTabDialog = true
-                            // Track panel interaction when plus button is clicked
-                            if (splitViewState != null && currentPanelId != null) {
-                                splitViewState.setActivePanel(currentPanelId)
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "New Tab",
-                        tint = Color(0xFF999999),
-                        modifier = Modifier.size(16.dp)
-                    )
+                    }
                 }
             }
             Spacer(

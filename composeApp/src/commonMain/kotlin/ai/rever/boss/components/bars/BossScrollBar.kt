@@ -7,6 +7,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -126,3 +127,121 @@ fun Modifier.horizontalScrollWithScrollbar(
 ): Modifier = this
     .scrollbar(scrollState, direction = Orientation.Horizontal, config = scrollbarConfig)
     .horizontalScroll(scrollState, enabled, flingBehavior, reverseScrolling)
+
+/**
+ * Scrollbar modifier for LazyList (LazyRow/LazyColumn)
+ * Works with LazyListState instead of ScrollState
+ */
+fun Modifier.lazyListScrollbar(
+    listState: LazyListState,
+    direction: Orientation,
+    config: ScrollbarConfig = ScrollbarConfig(),
+): Modifier = composed {
+    var (
+        indicatorThickness, indicatorColor, indicatorCornerRadius,
+        alpha, alphaAnimationSpec, padding
+    ) = config
+
+    val isScrolling = listState.isScrollInProgress
+    val isVertical = direction == Orientation.Vertical
+
+    alpha = alpha ?: if (isScrolling) 0.8f else 0f
+    alphaAnimationSpec = alphaAnimationSpec ?: tween(
+        delayMillis = if (isScrolling) 0 else 1500,
+        durationMillis = if (isScrolling) 150 else 500
+    )
+
+    val scrollbarAlpha by animateFloatAsState(alpha, alphaAnimationSpec)
+
+    drawWithContent {
+        drawContent()
+
+        val showScrollbar = isScrolling || scrollbarAlpha > 0.0f
+
+        if (showScrollbar) {
+            val layoutInfo = listState.layoutInfo
+            val viewportLength = if (isVertical) size.height.toInt() else size.width.toInt()
+
+            // Calculate total content length from all items
+            // Use average of ALL visible items for better accuracy (tabs have varying widths)
+            val averageItemSize = if (layoutInfo.visibleItemsInfo.isNotEmpty()) {
+                layoutInfo.visibleItemsInfo.sumOf { it.size } / layoutInfo.visibleItemsInfo.size
+            } else {
+                0
+            }
+            val contentLength = layoutInfo.totalItemsCount * averageItemSize
+
+            // Only show scrollbar if content is larger than viewport
+            if (contentLength > viewportLength && averageItemSize > 0) {
+                val (topPadding, bottomPadding, startPadding, endPadding) = arrayOf(
+                    padding.calculateTopPadding().toPx(),
+                    padding.calculateBottomPadding().toPx(),
+                    padding.calculateStartPadding(layoutDirection).toPx(),
+                    padding.calculateEndPadding(layoutDirection).toPx()
+                )
+
+                val scrollbarLength = viewportLength -
+                    (if (isVertical) topPadding + bottomPadding else startPadding + endPadding)
+
+                // Calculate current scroll offset
+                val scrollOffset = listState.firstVisibleItemIndex * averageItemSize +
+                    listState.firstVisibleItemScrollOffset
+
+                // Calculate indicator length proportional to viewport/content ratio
+                val indicatorLength = max(
+                    (scrollbarLength / contentLength.toFloat()) * viewportLength,
+                    20f.dp.toPx()
+                )
+
+                // Calculate indicator offset proportional to scroll position
+                val maxScroll = contentLength - viewportLength
+                val indicatorOffset = if (maxScroll > 0) {
+                    (scrollbarLength / contentLength.toFloat()) * scrollOffset
+                } else 0f
+
+                val indicatorThicknessPx = indicatorThickness.toPx()
+                val scrollIndicatorSize = if (isVertical)
+                    Size(indicatorThicknessPx, indicatorLength)
+                else
+                    Size(indicatorLength, indicatorThicknessPx)
+
+                val isLtr = layoutDirection == LayoutDirection.Ltr
+                val viewPortCrossAxisLength = if (isVertical) size.width else size.height
+
+                val scrollIndicatorPosition = if (isVertical)
+                    Offset(
+                        x = if (isLtr) viewPortCrossAxisLength - indicatorThicknessPx - endPadding
+                        else startPadding,
+                        y = indicatorOffset + topPadding
+                    )
+                else
+                    Offset(
+                        x = if (isLtr) indicatorOffset + startPadding
+                        else viewportLength - indicatorOffset - indicatorLength - endPadding,
+                        y = if (config.horizontalScrollbarAtTop) topPadding
+                        else viewPortCrossAxisLength - indicatorThicknessPx - bottomPadding
+                    )
+
+                drawRoundRect(
+                    color = indicatorColor,
+                    cornerRadius = indicatorCornerRadius.let { CornerRadius(it.toPx(), it.toPx()) },
+                    topLeft = scrollIndicatorPosition,
+                    size = scrollIndicatorSize,
+                    alpha = scrollbarAlpha
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Helper extension for horizontal LazyList scrollbar
+ */
+fun Modifier.horizontalLazyListScrollbar(
+    listState: LazyListState,
+    scrollbarConfig: ScrollbarConfig = ScrollbarConfig()
+): Modifier = this.lazyListScrollbar(
+    listState,
+    direction = Orientation.Horizontal,
+    config = scrollbarConfig
+)
