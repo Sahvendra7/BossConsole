@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
  * 5. New Fluck tab created with URL
  * 6. Tab displayed in active window (or new window if none exist)
  */
-object URLHandlerService {
+actual object URLHandlerService {
 
     // Queue for URLs received before the app is ready
     private val urlQueue = mutableListOf<String>()
@@ -31,7 +31,7 @@ object URLHandlerService {
     /**
      * Mark the app as ready to handle URLs and process any queued URLs
      */
-    fun markAppReady() {
+    actual fun markAppReady() {
         isAppReady = true
         processQueuedURLs()
     }
@@ -61,7 +61,7 @@ object URLHandlerService {
      *
      * @param url The http/https URL to open
      */
-    fun handleURL(url: String) {
+    actual fun handleURL(url: String) {
         if (!isAppReady) {
             println("URLHandlerService: App not ready, queueing URL: $url")
             urlQueue.add(url)
@@ -86,6 +86,10 @@ object URLHandlerService {
                 println("URLHandlerService: Invalid URL: $url")
                 return
             }
+
+            // Bring BOSS window to front BEFORE processing URL
+            ai.rever.boss.utils.WindowFocusManager.bringToFront()
+            println("URLHandlerService: Brought window to front")
 
             // Extract domain for tab title
             val title = extractDomain(url) ?: "Loading..."
@@ -188,7 +192,7 @@ object URLHandlerService {
      *
      * @param urls List of URLs to open
      */
-    fun handleURLs(urls: List<String>) {
+    actual fun handleURLs(urls: List<String>) {
         urls.forEach { url ->
             handleURL(url)
         }

@@ -74,6 +74,7 @@ import ai.rever.boss.updater.UpdateSettings
 import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
 import ai.rever.boss.services.auth.CoreAuthService
+import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.utils.WindowFocusManager
 
 
@@ -227,6 +228,11 @@ fun ComponentContext.BossApp(windowId: String) {
                 }
             }
             .launchIn(this)
+
+        // Mark app as ready AFTER URL listener is set up
+        // This ensures queued URLs from before app start are processed now that the listener is ready
+        URLHandlerService.markAppReady()
+        println("BossApp: Marked app as ready for URL handling (window: $windowId)")
     }
 
     // Monitor for layout changes to mark workspace as dirty and auto-save

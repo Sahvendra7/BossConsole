@@ -134,12 +134,47 @@ class SplitViewState(
      *
      * If the URL is already open in any panel, switches to that tab.
      * Otherwise, creates a new Fluck browser tab in the active panel.
+     * If no active panel exists (app just started), uses the first available panel.
      *
      * @param url The URL to open
      * @param title Initial title for the tab
      */
     fun openUrlInActivePanel(url: String, title: String) {
-        val activeComponent = getActiveTabsComponent() ?: return
+        val activeComponent = getActiveTabsComponent()
+
+        // If no active component, this is likely the first URL on app startup
+        // Find any available panel to add the tab to
+        if (activeComponent == null) {
+            println("SplitView: No active component found, searching for any panel")
+
+            // Try to get first available panel
+            val firstPanel = getAllPanels().firstOrNull()
+            if (firstPanel == null) {
+                println("SplitView: ERROR - No panels available to create tab")
+                return
+            }
+
+            val component = firstPanel.tabsComponent
+            println("SplitView: Found panel ${firstPanel.id}, creating tab there")
+
+            // Create tab in first available panel
+            val fluckTab = FluckTabInfo(
+                id = "fluck-${Random.nextLong()}",
+                typeId = TabTypeId("fluck"),
+                _title = title,
+                url = url
+            )
+
+            val tabIndex = component.addTab(fluckTab)
+            if (tabIndex >= 0) {
+                component.selectTab(tabIndex)
+                setActivePanel(firstPanel.id)
+                println("SplitView: Created tab at index $tabIndex in panel ${firstPanel.id}")
+            } else {
+                println("SplitView: ERROR - Failed to add tab to panel")
+            }
+            return
+        }
 
         // Check if URL is already open in any panel
         findPanelWithUrl(url)?.let { (panelId, component) ->

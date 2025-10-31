@@ -1,6 +1,5 @@
 package ai.rever.boss.window
 
-import ai.rever.boss.services.URLHandlerService
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -29,11 +28,6 @@ object WindowManager {
         get() = _windows
 
     /**
-     * Flag to track if the first window has been created
-     */
-    private var firstWindowCreated = false
-
-    /**
      * Create a new window
      *
      * @param position Window position (null for default cascade)
@@ -58,13 +52,6 @@ object WindowManager {
 
         _windows.add(windowState)
         println("Created new window: $windowId (total windows: ${_windows.size})")
-
-        // Mark app as ready after first window is created
-        if (!firstWindowCreated) {
-            firstWindowCreated = true
-            println("First window created, marking app as ready for URL handling")
-            URLHandlerService.markAppReady()
-        }
 
         return windowState
     }
