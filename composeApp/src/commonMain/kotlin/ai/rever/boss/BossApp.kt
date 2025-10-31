@@ -79,7 +79,10 @@ import ai.rever.boss.utils.WindowFocusManager
 
 
 @Composable
-fun ComponentContext.BossApp(windowId: String) {
+fun ComponentContext.BossApp(
+    windowId: String,
+    isFirstWindow: Boolean = false
+) {
 
     val panelRegistry = remember { PanelRegistry() }
     val tabRegistry = remember { TabRegistry() }
@@ -195,20 +198,25 @@ fun ComponentContext.BossApp(windowId: String) {
                 
                 // Only load on first emission when configs are available
                 if (configs.isNotEmpty() && workspaceManager.currentWorkspace.value == null) {
-                    // Check if there's a saved "last-session" workspace
-                    val lastSessionConfig = configs.find { it.name == "Last Session" }
-                    
-                    if (lastSessionConfig != null) {
-                        // Ensure it has the correct ID
-                        val configWithId = if (lastSessionConfig.id != "last-session") {
-                            lastSessionConfig.copy(id = "last-session")
-                        } else {
-                            lastSessionConfig
+                    // Only load "Last Session" for the first window (app startup)
+                    // New windows should start fresh (Issue #129)
+                    if (isFirstWindow) {
+                        // Check if there's a saved "last-session" workspace
+                        val lastSessionConfig = configs.find { it.name == "Last Session" }
+
+                        if (lastSessionConfig != null) {
+                            // Ensure it has the correct ID
+                            val configWithId = if (lastSessionConfig.id != "last-session") {
+                                lastSessionConfig.copy(id = "last-session")
+                            } else {
+                                lastSessionConfig
+                            }
+                            // Apply the last session workspace
+                            workspaceManager.loadWorkspace(configWithId)
+                            applyWorkspace(configWithId, splitViewState)
                         }
-                        // Apply the last session workspace
-                        workspaceManager.loadWorkspace(configWithId)
-                        applyWorkspace(configWithId, splitViewState)
                     }
+                    // Else: New window - don't load Last Session, start with empty workspace
                 }
             }
             .launchIn(this)
@@ -393,7 +401,7 @@ fun ComponentContext.BossApp(windowId: String) {
 
                             // If no tabs remaining in any panel, close the window
                             if (totalTabs == 0) {
-                                ai.rever.boss.window.WindowOperations.closeWindowIfEmpty(windowId)
+                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
                             }
                         }
                     }
@@ -476,23 +484,32 @@ fun ComponentContext.BossApp(windowId: String) {
                             }
                             // Cmd+W / Ctrl+W - Close Tab (standard browser pattern)
                             event.isMetaPressed && event.key == Key.W && !event.isShiftPressed -> {
-                                // Close current tab in the active panel
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                if (activeTabsComponent != null) {
-                                    val tabs = activeTabsComponent.tabsState.value.tabs
-                                    val activeIndex = activeTabsComponent.tabsState.value.activeIndex
-                                    if (activeIndex >= 0 && activeIndex < tabs.size) {
-                                        activeTabsComponent.removeTab(activeIndex)
+                                // First, check if all panels are already empty
+                                val allPanels = splitViewState.getAllPanels()
+                                val totalTabs = allPanels.sumOf { panel ->
+                                    panel.tabsComponent.tabsState.value.tabs.size
+                                }
 
-                                        // Check if all panels in window are now empty
-                                        val allPanels = splitViewState.getAllPanels()
-                                        val totalTabs = allPanels.sumOf { panel ->
-                                            panel.tabsComponent.tabsState.value.tabs.size
-                                        }
+                                if (totalTabs == 0) {
+                                    // No tabs in any panel - close the window
+                                    ai.rever.boss.window.WindowOperations.closeWindow(windowId)
+                                } else {
+                                    // Has tabs - try to close current tab
+                                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                                    if (activeTabsComponent != null) {
+                                        val tabs = activeTabsComponent.tabsState.value.tabs
+                                        val activeIndex = activeTabsComponent.tabsState.value.activeIndex
+                                        if (activeIndex >= 0 && activeIndex < tabs.size) {
+                                            activeTabsComponent.removeTab(activeIndex)
 
-                                        // If no tabs remaining in any panel, close the window
-                                        if (totalTabs == 0) {
-                                            ai.rever.boss.window.WindowOperations.closeWindowIfEmpty(windowId)
+                                            // Check if all panels now empty after closing tab
+                                            val updatedTotalTabs = allPanels.sumOf { panel ->
+                                                panel.tabsComponent.tabsState.value.tabs.size
+                                            }
+
+                                            if (updatedTotalTabs == 0) {
+                                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
+                                            }
                                         }
                                     }
                                 }

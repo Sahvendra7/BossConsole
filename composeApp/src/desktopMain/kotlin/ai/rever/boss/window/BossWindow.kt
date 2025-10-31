@@ -208,7 +208,12 @@ fun ApplicationScope.BossWindow(
         // Create independent component context for this window
         // Each window gets its own Decompose context tree
         with(createBossAppContext) {
-            BossAppWithAuth(windowId = windowState.id)
+            // Only the first window should load "Last Session" workspace (Issue #129)
+            val isFirstWindow = WindowManager.windowCount == 1
+            BossAppWithAuth(
+                windowId = windowState.id,
+                isFirstWindow = isFirstWindow
+            )
         }
     }
 }
