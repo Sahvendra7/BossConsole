@@ -212,28 +212,32 @@ open class FluckTabComponent(
                 localBrowserState != null -> {
                     val browser = localBrowserState!!.first
                     val browserViewState = localBrowserState!!.second
-                    FluckView(
-                        fileId = config.id,
-                        content = initialUrl,
-                        browser = browser,
-                        browserViewState = browserViewState,
-                        onContentChange = { }, // Not used for browser
-                        onTitleChange = onTitleUpdate,
-                        onIconChange = onIconUpdate,
-                        onTabIconUpdate = onTabIconUpdate,
-                        onOpenInNewTab = onOpenInNewTab,
-                        onNavigationUpdate = onNavigationUpdate,
-                        onNavigationStateChange = { isBack ->
-                            // Handle back/forward navigation
-                            if (config is FluckTabInfo) {
-                                if (isBack) {
-                                    (config as? FluckTabInfo)?.navigateBack()
-                                } else {
-                                    (config as? FluckTabInfo)?.navigateForward()
+                    // Wrap FluckView in key() to ensure proper state isolation per browser instance
+                    // This prevents URL bar state from being shared across tabs (fixes #151)
+                    key(browser) {
+                        FluckView(
+                            fileId = config.id,
+                            content = initialUrl,
+                            browser = browser,
+                            browserViewState = browserViewState,
+                            onContentChange = { }, // Not used for browser
+                            onTitleChange = onTitleUpdate,
+                            onIconChange = onIconUpdate,
+                            onTabIconUpdate = onTabIconUpdate,
+                            onOpenInNewTab = onOpenInNewTab,
+                            onNavigationUpdate = onNavigationUpdate,
+                            onNavigationStateChange = { isBack ->
+                                // Handle back/forward navigation
+                                if (config is FluckTabInfo) {
+                                    if (isBack) {
+                                        (config as? FluckTabInfo)?.navigateBack()
+                                    } else {
+                                        (config as? FluckTabInfo)?.navigateForward()
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
                 else -> {
                     // Loading state
