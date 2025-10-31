@@ -191,6 +191,7 @@ fun JxBrowserCompose(
     var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hasVideoAtClick by remember { mutableStateOf(false) }
     var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
+    var selectedText by remember { mutableStateOf<String?>(null) }
     var autocompleteSuggestion by remember { mutableStateOf<String?>(null) }
     var showDropdown by remember { mutableStateOf(false) }
     var dropdownSuggestions by remember { mutableStateOf<List<UrlHistoryEntry>>(emptyList()) }
@@ -576,7 +577,7 @@ fun JxBrowserCompose(
     }
     
     // Create context menu items dynamically based on browser state
-    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, focusedFieldInfo, secretViewModel.state) {
+    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, selectedText, focusedFieldInfo, secretViewModel.state) {
         // Issue #56: If form field is focused, show secret context menu
         if (focusedFieldInfo != null) {
             SecretContextMenuBuilder.buildSecretMenu(
@@ -642,45 +643,8 @@ fun JxBrowserCompose(
                     onClick = {
                         if (isBrowserEnvironmentValid()) {
                             browser.mainFrame().ifPresent { frame ->
-                                // Execute JavaScript to enable PiP on the video
-                                frame.executeJavaScript<Unit>("""
-                                (function() {
-                                    // Find all video elements on the page
-                                    const videos = document.querySelectorAll('video');
-                                    
-                                    // For YouTube and similar sites, find the main video player
-                                    let targetVideo = null;
-                                    
-                                    // Check for YouTube specific video
-                                    const ytVideo = document.querySelector('video.html5-main-video, video.video-stream');
-                                    if (ytVideo) {
-                                        targetVideo = ytVideo;
-                                    } else if (videos.length === 1) {
-                                        // If there's only one video, use it
-                                        targetVideo = videos[0];
-                                    } else if (videos.length > 1) {
-                                        // If multiple videos, try to find the visible one
-                                        for (let video of videos) {
-                                            const rect = video.getBoundingClientRect();
-                                            if (rect.width > 100 && rect.height > 100 && 
-                                                video.readyState >= 2) { // HAVE_CURRENT_DATA
-                                                targetVideo = video;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (targetVideo) {
-                                        if (document.pictureInPictureElement) {
-                                            document.exitPictureInPicture();
-                                        } else if (targetVideo.requestPictureInPicture) {
-                                            targetVideo.requestPictureInPicture().catch(err => {
-                                                console.error('PiP failed:', err);
-                                            });
-                                        }
-                                    }
-                                })();
-                            """.trimIndent())
+                                // Use centralized JavaScript for PiP
+                                frame.executeJavaScript<Unit>(BrowserJavaScripts.enablePictureInPicture)
                             }
                         }
                     }
@@ -688,7 +652,21 @@ fun JxBrowserCompose(
                 
                 add(ContextMenuItem(isDivider = true))
             }
-            
+
+            // Copy selected text (Issue #159)
+            if (!selectedText.isNullOrEmpty()) {
+                add(ContextMenuItem(
+                    text = "Copy",
+                    icon = Icons.Default.ContentCopy,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                            clipboard.setContents(StringSelection(selectedText), null)
+                        }
+                    }
+                ))
+            }
+
             // Copy current URL
             add(ContextMenuItem(
                 text = "Copy URL",
@@ -978,32 +956,24 @@ fun JxBrowserCompose(
                                 focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
                             }
 
-                            // Get the right-clicked link URL and check for video
+                            // Get the right-clicked link URL, selected text, and check for video
                             browser.mainFrame().ifPresent { frame ->
                                 // Get the right-clicked link URL
-                                val linkUrl = frame.executeJavaScript<String?>("""
-                                    (function() {
-                                        return window._rightClickedLinkUrl || null;
-                                    })();
-                                """.trimIndent())
+                                val linkUrl = frame.executeJavaScript<String?>(BrowserJavaScripts.getRightClickedLinkUrl)
 
                                 coroutineScope.launch(Dispatchers.Main) {
                                     rightClickedLinkUrl = linkUrl
                                 }
 
+                                // Get selected text (Issue #159 - Copy text context menu)
+                                val selection = frame.executeJavaScript<String?>(BrowserJavaScripts.getSelectedText)
+
+                                coroutineScope.launch(Dispatchers.Main) {
+                                    selectedText = if (!selection.isNullOrBlank()) selection else null
+                                }
+
                                 // Check if there's a video element on the page
-                                val hasVideo = frame.executeJavaScript<Boolean>("""
-                                    (function() {
-                                        // Check for any video elements on the page
-                                        const videos = document.querySelectorAll('video');
-
-                                        // Also check for YouTube specific selectors
-                                        const ytVideo = document.querySelector('video.html5-main-video, video.video-stream');
-
-                                        // Return true if we found any video
-                                        return videos.length > 0 || ytVideo !== null;
-                                    })();
-                                """.trimIndent())
+                                val hasVideo = frame.executeJavaScript<Boolean>(BrowserJavaScripts.hasVideoElements)
 
                                 coroutineScope.launch(Dispatchers.Main) {
                                     hasVideoAtClick = hasVideo ?: false
