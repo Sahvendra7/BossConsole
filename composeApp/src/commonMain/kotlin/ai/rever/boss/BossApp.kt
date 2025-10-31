@@ -41,6 +41,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
@@ -231,8 +233,10 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
-    // Listen for URL open events - only handle if this window is focused
+    // Combined LaunchedEffect for URL handling and auto-show dialog (Issue #168)
+    // Uses reactive state observation with processing state tracking to eliminate race conditions
     LaunchedEffect(splitViewState, windowId) {
+        // Step 1: Set up URL listener for incoming URLs
         ai.rever.boss.components.events.URLEventBus.urlOpenEvents
             .onEach { event ->
                 // Only handle URL events in the focused window to prevent duplicates
@@ -242,10 +246,34 @@ fun ComponentContext.BossApp(
             }
             .launchIn(this)
 
-        // Mark app as ready AFTER URL listener is set up
-        // This ensures queued URLs from before app start are processed now that the listener is ready
+        // Step 2: Mark app as ready and process queued URLs
         URLHandlerService.markAppReady()
         println("BossApp: Marked app as ready for URL handling (window: $windowId)")
+
+        // Step 3: Observe BOTH tab count AND processing state reactively
+        // This eliminates all timing assumptions by waiting for actual completion
+        snapshotFlow {
+            val allPanels = splitViewState.getAllPanels()
+            val totalTabs = allPanels.sumOf { panel ->
+                panel.tabsComponent.tabsState.value.tabs.size
+            }
+            val isProcessing = URLHandlerService.isProcessingURLs()
+
+            Pair(totalTabs, isProcessing)
+        }
+            .debounce(200) // Wait for 200ms of stability
+            .take(1)       // Only take first stabilized value
+            .collect { (totalTabs, isProcessing) ->
+                println("BossApp: State stabilized - tabs: $totalTabs, processing: $isProcessing (window: $windowId)")
+
+                // Only show dialog if no tabs AND no URLs being processed
+                if (totalTabs == 0 && !isProcessing) {
+                    showNewTabDialog = true
+                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing)")
+                } else {
+                    println("BossApp: Skipping auto-show (window: $windowId, tabs: $totalTabs, processing: $isProcessing)")
+                }
+            }
     }
 
     // Monitor for layout changes to mark workspace as dirty and auto-save

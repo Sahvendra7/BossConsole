@@ -9,6 +9,24 @@ package ai.rever.boss.services
  */
 expect object URLHandlerService {
     /**
+     * Check if there are any URLs queued for processing
+     *
+     * @return true if URLs are waiting to be processed
+     */
+    fun hasQueuedURLs(): Boolean
+
+    /**
+     * Check if URLs are currently being processed
+     *
+     * Returns true while async URL processing operations are in progress,
+     * even after the queue has been cleared. This prevents race conditions
+     * when checking if tabs are being created.
+     *
+     * @return true if URL processing operations are in progress
+     */
+    fun isProcessingURLs(): Boolean
+
+    /**
      * Mark the app as ready to handle URLs and process any queued URLs
      */
     fun markAppReady()

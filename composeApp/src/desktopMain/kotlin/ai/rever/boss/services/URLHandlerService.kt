@@ -4,6 +4,7 @@ import ai.rever.boss.components.events.URLEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Service for handling incoming URLs from the operating system
@@ -27,6 +28,29 @@ actual object URLHandlerService {
     // Flag to track if the app is ready to handle URLs
     @Volatile
     private var isAppReady = false
+
+    // Track active URL processing operations
+    // Incremented when a coroutine is launched to process a URL
+    // Decremented when the URL event emission completes
+    private val processingCount = AtomicInteger(0)
+
+    /**
+     * Check if there are any URLs queued for processing
+     *
+     * @return true if URLs are waiting to be processed
+     */
+    actual fun hasQueuedURLs(): Boolean = urlQueue.isNotEmpty()
+
+    /**
+     * Check if URLs are currently being processed
+     *
+     * Returns true while async URL processing operations are in progress,
+     * even after the queue has been cleared. This prevents race conditions
+     * when checking if tabs are being created.
+     *
+     * @return true if URL processing operations are in progress
+     */
+    actual fun isProcessingURLs(): Boolean = processingCount.get() > 0
 
     /**
      * Mark the app as ready to handle URLs and process any queued URLs
@@ -76,8 +100,15 @@ actual object URLHandlerService {
      *
      * Validates the URL and emits an event through URLEventBus.
      * All windows listen to this event, and the active window will create a tab.
+     *
+     * Tracks processing state to prevent race conditions when checking if tabs
+     * are being created.
      */
     private fun handleURLInternal(url: String) {
+        // Track whether THIS specific invocation incremented the counter
+        // Used for thread-safe error handling to avoid decrementing other threads' counts
+        var incremented = false
+
         try {
             println("URLHandlerService: Received URL: $url")
 
@@ -94,14 +125,31 @@ actual object URLHandlerService {
             // Extract domain for tab title
             val title = extractDomain(url) ?: "Loading..."
 
+            // Increment processing counter BEFORE launching coroutine
+            processingCount.incrementAndGet()
+            incremented = true  // Mark that THIS invocation incremented
+            println("URLHandlerService: Processing count incremented: ${processingCount.get()}")
+
             // Emit URL open event - all windows will receive it and the active window handles it
             CoroutineScope(Dispatchers.Main).launch {
-                URLEventBus.openURL(url, title)
-                println("URLHandlerService: Emitted URL open event for $url")
+                try {
+                    URLEventBus.openURL(url, title)
+                    println("URLHandlerService: Emitted URL open event for $url")
+                } finally {
+                    // Decrement counter after emission completes (success or failure)
+                    processingCount.decrementAndGet()
+                    println("URLHandlerService: Processing count decremented: ${processingCount.get()}")
+                }
             }
         } catch (e: Exception) {
             println("URLHandlerService: Error handling URL: ${e.message}")
             e.printStackTrace()
+            // Only decrement if THIS specific invocation actually incremented
+            // This prevents decrementing other threads' counts in multi-threaded scenarios
+            if (incremented) {
+                processingCount.decrementAndGet()
+                println("URLHandlerService: Processing count decremented due to error: ${processingCount.get()}")
+            }
         }
     }
 
