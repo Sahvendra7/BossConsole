@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.AnnotatedString
@@ -194,6 +195,7 @@ fun JxBrowserCompose(
     var showDropdown by remember { mutableStateOf(false) }
     var dropdownSuggestions by remember { mutableStateOf<List<UrlHistoryEntry>>(emptyList()) }
     var selectedDropdownIndex by remember { mutableStateOf(-1) }
+    val dropdownListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
     // Secret integration state
@@ -204,6 +206,13 @@ fun JxBrowserCompose(
     // Initialize secret integration
     LaunchedEffect(Unit) {
         secretViewModel.initialize()
+    }
+
+    // Auto-scroll to selected suggestion when using arrow keys
+    LaunchedEffect(selectedDropdownIndex) {
+        if (selectedDropdownIndex >= 0 && dropdownSuggestions.isNotEmpty()) {
+            dropdownListState.animateScrollToItem(selectedDropdownIndex)
+        }
     }
 
     // Dispose ViewModel when composable leaves composition
@@ -1021,6 +1030,7 @@ fun JxBrowserCompose(
                 backgroundColor = MaterialTheme.colors.surface
             ) {
                 LazyColumn(
+                    state = dropdownListState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 300.dp)

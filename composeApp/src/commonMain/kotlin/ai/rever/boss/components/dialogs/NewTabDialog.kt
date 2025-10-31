@@ -27,6 +27,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
@@ -84,7 +85,8 @@ fun NewTabDialog(
     var urlSuggestions by remember { mutableStateOf<List<UrlSuggestion>>(emptyList()) }
     var showUrlDropdown by remember { mutableStateOf(false) }
     var selectedSuggestionIndex by remember { mutableStateOf(-1) }
-    
+    val listState = rememberLazyListState()
+
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
@@ -101,7 +103,14 @@ fun NewTabDialog(
             showUrlDropdown = false
         }
     }
-    
+
+    // Auto-scroll to selected suggestion when using arrow keys
+    LaunchedEffect(selectedSuggestionIndex) {
+        if (selectedSuggestionIndex >= 0 && urlSuggestions.isNotEmpty()) {
+            listState.animateScrollToItem(selectedSuggestionIndex)
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -231,20 +240,22 @@ fun NewTabDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester)
-                                .onKeyEvent { event ->
+                                .onPreviewKeyEvent { event ->
                                     if (selectedType == TabType.URL && event.type == KeyEventType.KeyDown) {
                                         when (event.key) {
                                             Key.DirectionDown -> {
+                                                // Always consume arrow keys to prevent cursor movement in text field
                                                 if (showUrlDropdown && urlSuggestions.isNotEmpty()) {
                                                     selectedSuggestionIndex = (selectedSuggestionIndex + 1).coerceAtMost(urlSuggestions.size - 1)
-                                                    true
-                                                } else false
+                                                }
+                                                true
                                             }
                                             Key.DirectionUp -> {
+                                                // Always consume arrow keys to prevent cursor movement in text field
                                                 if (showUrlDropdown && urlSuggestions.isNotEmpty()) {
                                                     selectedSuggestionIndex = (selectedSuggestionIndex - 1).coerceAtLeast(-1)
-                                                    true
-                                                } else false
+                                                }
+                                                true
                                             }
                                             Key.Enter -> {
                                                 if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < urlSuggestions.size) {
@@ -297,7 +308,7 @@ fun NewTabDialog(
                                 elevation = 4.dp,
                                 shape = RoundedCornerShape(0.dp, 0.dp, 4.dp, 4.dp)
                             ) {
-                                LazyColumn {
+                                LazyColumn(state = listState) {
                                     itemsIndexed(urlSuggestions) { index, suggestion ->
                                         Row(
                                             modifier = Modifier
