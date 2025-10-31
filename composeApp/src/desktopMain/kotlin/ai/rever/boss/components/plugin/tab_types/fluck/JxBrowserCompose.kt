@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.overlays.ContextMenuItem
+import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.background
@@ -16,6 +17,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,16 +42,19 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.teamdev.jxbrowser.browser.Browser
+import com.teamdev.jxbrowser.browser.event.FaviconChanged
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
+import java.awt.image.BufferedImage
 
 
 // Helper function to process URL input - either as URL or search query
@@ -77,6 +83,37 @@ private fun processUrlInput(input: String): String {
         isLikelyUrl -> "https://$trimmed"
         else -> "https://www.google.com/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
     }
+}
+
+// Helper function to convert JxBrowser Bitmap to AWT BufferedImage
+private fun bitmapToBufferedImage(bitmap: com.teamdev.jxbrowser.ui.Bitmap): BufferedImage {
+    val size = bitmap.size()
+    val width = size.width()
+    val height = size.height()
+
+    // Create BufferedImage with ARGB color model
+    val bufferedImage = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+
+    // Get pixel data from bitmap (BGRA format - Chromium's native format)
+    val pixels = bitmap.pixels()
+
+    // Convert BGRA bytes to ARGB integers and set pixels
+    var pixelIndex = 0
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            // Read BGRA bytes (each pixel is 4 bytes)
+            val b = pixels[pixelIndex++].toInt() and 0xFF
+            val g = pixels[pixelIndex++].toInt() and 0xFF
+            val r = pixels[pixelIndex++].toInt() and 0xFF
+            val a = pixels[pixelIndex++].toInt() and 0xFF
+
+            // Combine into ARGB integer
+            val argb = (a shl 24) or (r shl 16) or (g shl 8) or b
+            bufferedImage.setRGB(x, y, argb)
+        }
+    }
+
+    return bufferedImage
 }
 
 // Helper function to intelligently truncate long titles
@@ -141,7 +178,7 @@ fun JxBrowserCompose(
     initialUrl: String = JxBrowserConfig.defaultUrl,
     onTitleChange: (String) -> Unit = {},
     onIconChange: (ImageVector) -> Unit = {},
-    onTabIconChange: (String) -> Unit = {},
+    onTabIconUpdate: (TabIcon) -> Unit = {},
     onOpenInNewTab: (String) -> Unit = {},
     onNavigationUpdate: ((String, String) -> Unit)? = null,
     onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null
@@ -211,25 +248,29 @@ fun JxBrowserCompose(
     LaunchedEffect(browser, initialUrl) {
         // Exit immediately if browser environment is not valid
         if (!isBrowserEnvironmentValid()) return@LaunchedEffect
-        
-        // Load initial URL if browser is on blank page
+
+        // Store subscriptions for cleanup to prevent memory leaks
+        val subscriptions = mutableListOf<com.teamdev.jxbrowser.event.Subscription>()
+
         try {
-            val currentUrl = browser.url()
-            if (currentUrl.isBlank() || currentUrl == "about:blank") {
-                browser.navigation().loadUrl(initialUrl)
+            // Load initial URL if browser is on blank page
+            try {
+                val currentUrl = browser.url()
+                if (currentUrl.isBlank() || currentUrl == "about:blank") {
+                    browser.navigation().loadUrl(initialUrl)
+                }
+
+                // Initial state
+                canGoBack = browser.navigation().canGoBack()
+                canGoForward = browser.navigation().canGoForward()
+                urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
+            } catch (e: Exception) {
+                // Browser might be disposed
+                return@LaunchedEffect
             }
-            
-            // Initial state
-            canGoBack = browser.navigation().canGoBack()
-            canGoForward = browser.navigation().canGoForward()
-            urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
-        } catch (e: Exception) {
-            // Browser might be disposed
-            return@LaunchedEffect
-        }
-        
-        // Set up navigation listeners
-        browser.navigation().on(LoadStarted::class.java) {
+
+            // Set up navigation listeners (store subscriptions for cleanup)
+            subscriptions += browser.navigation().on(LoadStarted::class.java) {
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -244,9 +285,9 @@ fun JxBrowserCompose(
                 canGoForward = browser.navigation().canGoForward()
             }
         }
-        
+
         // Listen for NavigationFinished to update title even if LoadFinished doesn't fire
-        browser.navigation().on(NavigationFinished::class.java) { event ->
+        subscriptions += browser.navigation().on(NavigationFinished::class.java) { event ->
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -294,8 +335,8 @@ fun JxBrowserCompose(
                 }
             }
         }
-        
-        browser.navigation().on(LoadFinished::class.java) {
+
+        subscriptions += browser.navigation().on(LoadFinished::class.java) {
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -405,58 +446,46 @@ fun JxBrowserCompose(
                 coroutineScope.launch {
                     UrlHistoryManager.saveHistory()
                 }
-                
-                // Try to extract favicon
-                browser.mainFrame().ifPresent { frame ->
-                    frame.executeJavaScript<String?>("""
-                        (function() {
-                            // Try to find favicon in various ways
-                            let favicon = null;
-                            
-                            // Method 1: Look for rel="icon" or rel="shortcut icon"
-                            const icons = document.querySelectorAll('link[rel*="icon"]');
-                            if (icons.length > 0) {
-                                // Prefer larger icons
-                                for (let icon of icons) {
-                                    const sizes = icon.getAttribute('sizes');
-                                    if (sizes && (sizes.includes('32x32') || sizes.includes('64x64') || sizes.includes('128x128'))) {
-                                        favicon = icon.href;
-                                        break;
-                                    }
-                                }
-                                // If no sized icon found, use the first one
-                                if (!favicon) {
-                                    favicon = icons[0].href;
-                                }
-                            }
-                            
-                            // Method 2: Check for apple-touch-icon (often higher quality)
-                            if (!favicon) {
-                                const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-                                if (appleIcon) {
-                                    favicon = appleIcon.href;
-                                }
-                            }
-                            
-                            // Method 3: Try default favicon.ico
-                            if (!favicon && window.location.origin && window.location.origin !== 'null') {
-                                favicon = window.location.origin + '/favicon.ico';
-                            }
-                            
-                            return favicon;
-                        })();
-                    """.trimIndent())?.let { faviconUrl ->
-                        if (faviconUrl.isNotEmpty()) {
-                            // Pass favicon URL to the callback
-                            coroutineScope.launch(Dispatchers.Main) {
-                                onTabIconChange(faviconUrl)
-                            }
-                        }
+
+                // Note: Favicon is now handled by FaviconChanged event listener below
+                // No longer calling onIconChange here to avoid overriding the favicon
+            }
+        }
+
+        // Listen for favicon changes (using JxBrowser's native API)
+        subscriptions += browser.on(FaviconChanged::class.java) { event ->
+            // Check if browser environment is still valid before accessing
+            if (!isBrowserEnvironmentValid()) return@on
+
+            coroutineScope.launch(Dispatchers.Main) {
+                // Double-check before UI update
+                if (!isBrowserEnvironmentValid()) return@launch
+
+                try {
+                    // Get favicon from event
+                    val favicon = event.favicon()
+                    if (favicon != null) {
+                        println("🎨 [JxBrowser Native] Favicon changed - converting to TabIcon")
+
+                        // Convert JxBrowser Bitmap to AWT BufferedImage manually
+                        val bufferedImage = bitmapToBufferedImage(favicon)
+
+                        // Convert BufferedImage to Compose ImageBitmap
+                        val imageBitmap = bufferedImage.toComposeImageBitmap()
+
+                        // Create TabIcon
+                        val tabIcon = TabIcon.Image(BitmapPainter(imageBitmap))
+
+                        // Update tab icon
+                        onTabIconUpdate(tabIcon)
+                        println("✅ [JxBrowser Native] Favicon successfully updated")
+                    } else {
+                        println("⚠️ [JxBrowser Native] Favicon changed but bitmap is null")
                     }
+                } catch (e: Exception) {
+                    println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
+                    e.printStackTrace()
                 }
-                
-                // Update icon to filled version when page loads (fallback)
-                onIconChange(Icons.Filled.Language)
             }
         }
 
@@ -481,60 +510,25 @@ fun JxBrowserCompose(
                     }
                 }
 
-                // Try to extract favicon for already loaded page
-                browser.mainFrame().ifPresent { frame ->
-                frame.executeJavaScript<String?>("""
-                    (function() {
-                        // Try to find favicon in various ways
-                        let favicon = null;
-                        
-                        // Method 1: Look for rel="icon" or rel="shortcut icon"
-                        const icons = document.querySelectorAll('link[rel*="icon"]');
-                        if (icons.length > 0) {
-                            // Prefer larger icons
-                            for (let icon of icons) {
-                                const sizes = icon.getAttribute('sizes');
-                                if (sizes && (sizes.includes('32x32') || sizes.includes('64x64') || sizes.includes('128x128'))) {
-                                    favicon = icon.href;
-                                    break;
-                                }
-                            }
-                            // If no sized icon found, use the first one
-                            if (!favicon) {
-                                favicon = icons[0].href;
-                            }
-                        }
-                        
-                        // Method 2: Check for apple-touch-icon (often higher quality)
-                        if (!favicon) {
-                            const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-                            if (appleIcon) {
-                                favicon = appleIcon.href;
-                            }
-                        }
-                        
-                        // Method 3: Try default favicon.ico
-                        if (!favicon && window.location.origin && window.location.origin !== 'null') {
-                            favicon = window.location.origin + '/favicon.ico';
-                        }
-                        
-                        return favicon;
-                    })();
-                """.trimIndent())?.let { faviconUrl ->
-                    if (faviconUrl.isNotEmpty()) {
-                        coroutineScope.launch(Dispatchers.Main) {
-                            onTabIconChange(faviconUrl)
-                        }
-                    }
-                }
+                // Note: Favicon is handled by FaviconChanged event listener
+                // If browser already has a favicon loaded, the event will fire automatically
             }
+        }
 
-            // Update icon for already loaded page
-            onIconChange(Icons.Filled.Language)
+            // Keep effect alive - listeners stay active until effect is cancelled
+            awaitCancellation()
+        } finally {
+            // Clean up event listener subscriptions to prevent memory leaks
+            subscriptions.forEach { subscription ->
+                try {
+                    subscription.unsubscribe()
+                } catch (e: Exception) {
+                    // Ignore errors during cleanup (browser might already be closed)
+                }
             }
         }
     }
-    
+
     // Set up polling for new tab requests
     LaunchedEffect(browser) {
         // Exit immediately if browser environment is not valid
