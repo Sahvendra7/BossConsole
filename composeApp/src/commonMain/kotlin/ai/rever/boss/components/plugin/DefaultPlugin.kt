@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin
 import ai.rever.boss.components.plugin.panels.bottom.console.registerConsole
 import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
+import ai.rever.boss.components.plugin.panels.left_top.registerBookmarks
 import ai.rever.boss.components.plugin.panels.left_top.registerCodeBase
 import ai.rever.boss.components.plugin.panels.right_top.registerAdminRoleManagement
 import ai.rever.boss.components.plugin.panels.right_top.registerFluckPanel
@@ -31,6 +32,7 @@ class DefaultPlugin(
     internal val pluginScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     init {
         // Panels
+        registerBookmarks()  // Priority 1 - First position
         registerCodeBase()
         registerTerminal()
         registerConsole()

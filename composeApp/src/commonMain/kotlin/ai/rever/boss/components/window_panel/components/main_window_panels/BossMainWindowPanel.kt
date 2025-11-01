@@ -12,12 +12,22 @@ import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
+import ai.rever.boss.components.bookmarks.Bookmark
+import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
+import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.NewTabDialog
+import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
+import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
+import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.workspaces.TabConfig
+import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.foundation.background
@@ -36,6 +46,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
@@ -63,6 +74,16 @@ fun BossTabsComponent.BossMainTabBar(
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
     var selectedTabType by remember { mutableStateOf<TabType?>(null) }
+    var showBookmarkDialog by remember { mutableStateOf(false) }
+    var tabToBookmark by remember { mutableStateOf<TabInfo?>(null) }
+
+    // Observe collections for reactive context menu updates
+    val collections by bookmarkManager.collections.collectAsState()
+
+    // Remove bookmark dialog state
+    var showRemoveBookmarkDialog by remember { mutableStateOf(false) }
+    var bookmarkToRemove by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    // Triple = (collectionId, bookmarkId, tabTitle)
 
     // LazyListState for tab bar scrolling
     val listState = rememberLazyListState()
@@ -147,6 +168,46 @@ fun BossTabsComponent.BossMainTabBar(
                                 add(ContextMenuItem(isDivider = true))
                             }
 
+                            // Bookmark current tab
+                            // Reference collections to ensure recomposition on bookmark changes
+                            collections
+
+                            val tabConfig = convertTabInfoToTabConfig(config)
+                            val existingBookmark = bookmarkManager.findBookmarkForTab(tabConfig)
+
+                            if (existingBookmark != null) {
+                                // Tab is already bookmarked - show remove option WITH CONFIRMATION
+                                val (collectionId, bookmarkId) = existingBookmark
+                                add(ContextMenuItem("Remove from Bookmarks", Icons.Filled.Star) {
+                                    bookmarkToRemove = Triple(collectionId, bookmarkId, config.title)
+                                    showRemoveBookmarkDialog = true
+                                })
+                            } else {
+                                // Tab is not bookmarked - show add option
+                                add(ContextMenuItem("Add to Bookmarks", Icons.Outlined.Star) {
+                                    tabToBookmark = config
+                                    showBookmarkDialog = true
+                                })
+                            }
+
+                            // Favorite current workspace
+                            val currentWorkspace = workspaceManager.currentWorkspace.value
+                            if (currentWorkspace != null) {
+                                val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
+                                add(ContextMenuItem(
+                                    if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
+                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder
+                                ) {
+                                    if (isFavorited) {
+                                        bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                    } else {
+                                        bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                    }
+                                })
+                            }
+
+                            add(ContextMenuItem(isDivider = true))
+
                             // Open in New Window (if multi-window is supported)
                             if (ai.rever.boss.window.WindowOperations.isMultiWindowSupported()) {
                                 add(ContextMenuItem("Open in New Window", Icons.AutoMirrored.Outlined.OpenInNew) {
@@ -217,7 +278,8 @@ fun BossTabsComponent.BossMainTabBar(
             }
             Spacer(
                 modifier = Modifier
-                    .weight(0.1f)
+                    .weight(1f)
+                    .fillMaxHeight()
                     .contextMenu(
                         items = buildList {
                             add(ContextMenuItem("New Tab", Icons.Default.Add) {
@@ -227,6 +289,24 @@ fun BossTabsComponent.BossMainTabBar(
                                     splitViewState.setActivePanel(currentPanelId)
                                 }
                             })
+
+                            add(ContextMenuItem(isDivider = true))
+
+                            // Favorite current workspace
+                            val currentWorkspace = workspaceManager.currentWorkspace.value
+                            if (currentWorkspace != null) {
+                                val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
+                                add(ContextMenuItem(
+                                    if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
+                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder
+                                ) {
+                                    if (isFavorited) {
+                                        bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                    } else {
+                                        bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                    }
+                                })
+                            }
                         }
                     )
             )
@@ -285,6 +365,64 @@ fun BossTabsComponent.BossMainTabBar(
                         }
                     }
                 }
+            }
+        )
+    }
+
+    // Bookmark dialog
+    if (showBookmarkDialog && tabToBookmark != null) {
+        val collections by bookmarkManager.collections.collectAsState()
+        val workspaces by workspaceManager.workspaces.collectAsState()
+        BookmarkDialog(
+            tabTitle = tabToBookmark!!.title,
+            collections = collections,
+            workspaces = workspaces,
+            onDismiss = {
+                showBookmarkDialog = false
+                tabToBookmark = null
+            },
+            onConfirm = { collectionIds, workspacePanelMap ->
+                val tabConfig = convertTabInfoToTabConfig(tabToBookmark!!)
+                val workspace = workspaceManager.currentWorkspace.value
+
+                // Convert workspacePanelMap to list of WorkspacePanelTarget
+                val targetWorkspaces = workspacePanelMap.map { (workspaceName, panelId) ->
+                    WorkspacePanelTarget(workspaceName = workspaceName, panelId = panelId)
+                }
+
+                // Create bookmark for each selected collection
+                collectionIds.forEach { collectionId ->
+                    val bookmark = Bookmark(
+                        tabConfig = tabConfig,
+                        workspaceName = workspace?.name ?: "Unknown",
+                        targetWorkspaces = targetWorkspaces
+                    )
+                    val collection = collections.find { it.id == collectionId }
+                    if (collection != null) {
+                        bookmarkManager.addBookmark(collection.name, bookmark)
+                    }
+                }
+
+                showBookmarkDialog = false
+                tabToBookmark = null
+            }
+        )
+    }
+
+    // Remove bookmark confirmation dialog
+    if (showRemoveBookmarkDialog && bookmarkToRemove != null) {
+        RemoveBookmarkConfirmationDialog(
+            bookmarkTitle = bookmarkToRemove!!.third,
+            onDismiss = {
+                showRemoveBookmarkDialog = false
+                bookmarkToRemove = null
+            },
+            onConfirm = {
+                bookmarkToRemove?.let { (collectionId, bookmarkId, _) ->
+                    bookmarkManager.removeBookmark(collectionId, bookmarkId)
+                }
+                showRemoveBookmarkDialog = false
+                bookmarkToRemove = null
             }
         )
     }
@@ -572,11 +710,38 @@ class BossTabsComponent(
     // Close tabs to the left of the specified index
     fun closeTabsToLeft(fromIndex: Int) {
         if (fromIndex <= 0) return
-        
+
         // Remove tabs from right to left to avoid index issues
         for (i in fromIndex - 1 downTo 0) {
             removeTab(i)
         }
+    }
+}
+
+/**
+ * Convert TabInfo to TabConfig for bookmark storage
+ */
+private fun convertTabInfoToTabConfig(tabInfo: TabInfo): TabConfig {
+    return when (tabInfo) {
+        is FluckTabInfo -> TabConfig(
+            type = "browser",
+            title = tabInfo.title,
+            url = tabInfo.url,
+            faviconCacheKey = tabInfo.faviconCacheKey
+        )
+        is EditorTabInfo -> TabConfig(
+            type = "editor",
+            title = tabInfo.title,
+            filePath = tabInfo.filePath
+        )
+        is TerminalTabInfo -> TabConfig(
+            type = "terminal",
+            title = tabInfo.title
+        )
+        else -> TabConfig(
+            type = "unknown",
+            title = tabInfo.title
+        )
     }
 }
 

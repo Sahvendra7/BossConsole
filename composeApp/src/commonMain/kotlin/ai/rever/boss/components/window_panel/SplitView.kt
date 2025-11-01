@@ -139,7 +139,7 @@ class SplitViewState(
      * @param url The URL to open
      * @param title Initial title for the tab
      */
-    fun openUrlInActivePanel(url: String, title: String) {
+    fun openUrlInActivePanel(url: String, title: String, forceNewTab: Boolean = false) {
         val activeComponent = getActiveTabsComponent()
 
         // If no active component, this is likely the first URL on app startup
@@ -176,19 +176,21 @@ class SplitViewState(
             return
         }
 
-        // Check if URL is already open in any panel
-        findPanelWithUrl(url)?.let { (panelId, component) ->
-            component.tabsState.value.tabs
-                .indexOfFirst { tab ->
-                    tab is FluckTabInfo &&
-                    (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
-                }
-                .takeIf { it >= 0 }
-                ?.let { tabIndex ->
-                    component.selectTab(tabIndex)
-                    setActivePanel(panelId)
-                }
-            return
+        // Check if URL is already open in any panel (skip if forceNewTab is true)
+        if (!forceNewTab) {
+            findPanelWithUrl(url)?.let { (panelId, component) ->
+                component.tabsState.value.tabs
+                    .indexOfFirst { tab ->
+                        tab is FluckTabInfo &&
+                        (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
+                    }
+                    .takeIf { it >= 0 }
+                    ?.let { tabIndex ->
+                        component.selectTab(tabIndex)
+                        setActivePanel(panelId)
+                    }
+                return
+            }
         }
 
         // URL not open, create new Fluck tab in active panel

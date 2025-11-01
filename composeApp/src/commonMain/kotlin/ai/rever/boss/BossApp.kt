@@ -56,6 +56,7 @@ import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.workspaces.WorkspaceManager
+import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
@@ -100,8 +101,8 @@ fun ComponentContext.BossApp(
         initialTabsComponent = tabsComponent
     )
     
-    // Workspace manager
-    val workspaceManager = remember { WorkspaceManager() }
+    // Workspace manager - use global singleton to ensure Bookmarks panel sees updates
+    val workspaceManager = remember { workspaceManager }
     val coroutineScope = rememberCoroutineScope()
 
     // Focus requester for keyboard shortcuts

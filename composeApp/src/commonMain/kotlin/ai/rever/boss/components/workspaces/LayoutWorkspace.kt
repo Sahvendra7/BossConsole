@@ -49,6 +49,25 @@ sealed class SplitConfig {
 }
 
 /**
+ * Extract all panels from a SplitConfig with human-readable labels
+ * Returns list of (panelId, label) pairs
+ */
+fun SplitConfig.extractPanels(prefix: String = ""): List<Pair<String, String>> {
+    return when (this) {
+        is SplitConfig.SinglePanel -> {
+            val label = if (prefix.isEmpty()) "Main Panel" else prefix.trim() + " Panel"
+            listOf(panel.id to label)
+        }
+        is SplitConfig.VerticalSplit -> {
+            left.extractPanels("${prefix}Left ") + right.extractPanels("${prefix}Right ")
+        }
+        is SplitConfig.HorizontalSplit -> {
+            top.extractPanels("${prefix}Top ") + bottom.extractPanels("${prefix}Bottom ")
+        }
+    }
+}
+
+/**
  * Breadcrumb display workspace
  */
 @Serializable

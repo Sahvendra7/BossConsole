@@ -1,8 +1,15 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.components.bookmarks.Bookmark
+import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
+import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.components.dialogs.BookmarkDialog
+import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.workspaces.TabConfig
+import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -205,6 +212,45 @@ fun JxBrowserCompose(
     var focusedFieldInfo by remember { mutableStateOf<FormFieldDetector.FormFieldInfo?>(null) }
     var showSecretContextMenu by remember { mutableStateOf(false) }
 
+    // Bookmark state management
+    val collections by bookmarkManager.collections.collectAsState()
+    var currentTitle by remember { mutableStateOf(initialUrl) }
+    var currentFaviconKey by remember { mutableStateOf<String?>(null) }
+
+    // Wrap callbacks to track title and favicon for bookmarks
+    val wrappedOnTitleChange: (String) -> Unit = { title ->
+        currentTitle = title
+        onTitleChange(title)
+    }
+
+    val wrappedOnFaviconCached: ((String?) -> Unit)? = if (onFaviconCached != null) {
+        { cacheKey ->
+            currentFaviconKey = cacheKey
+            onFaviconCached(cacheKey)
+        }
+    } else {
+        { cacheKey -> currentFaviconKey = cacheKey }
+    }
+
+    // Create TabConfig for current page
+    val currentTabConfig = remember(browser.url(), currentTitle, currentFaviconKey) {
+        TabConfig(
+            type = "browser",
+            title = currentTitle,
+            url = browser.url(),
+            faviconCacheKey = currentFaviconKey
+        )
+    }
+
+    // Check if current page is bookmarked
+    val isBookmarked = remember(currentTabConfig, collections) {
+        bookmarkManager.isTabBookmarked(currentTabConfig)
+    }
+
+    // Dialog states for bookmark management
+    var showBookmarkDialog by remember { mutableStateOf(false) }
+    var showRemoveBookmarkDialog by remember { mutableStateOf(false) }
+
     // Initialize secret integration
     LaunchedEffect(Unit) {
         secretViewModel.initialize()
@@ -325,7 +371,7 @@ fun JxBrowserCompose(
                                 "Loading..."
                             }
                         }
-                        onTitleChange(displayTitle)
+                        wrappedOnTitleChange(displayTitle)
                         
                         // Also update navigation state
                         onNavigationUpdate?.invoke(displayTitle, newUrl)
@@ -337,7 +383,7 @@ fun JxBrowserCompose(
                                 val delayedTitle = browser.title()
                                 if (delayedTitle.isNotEmpty() && delayedTitle != title) {
                                     val delayedDisplayTitle = truncateTitle(delayedTitle, newUrl)
-                                    onTitleChange(delayedDisplayTitle)
+                                    wrappedOnTitleChange(delayedDisplayTitle)
                                     onNavigationUpdate?.invoke(delayedDisplayTitle, newUrl)
                                 }
                             }
@@ -486,7 +532,7 @@ fun JxBrowserCompose(
                         val currentUrl = browser.url()
                         val cacheKey = com.risa.boss.cache.FaviconCache.saveFavicon(currentUrl, imageBitmap)
                         if (cacheKey != null) {
-                            onFaviconCached?.invoke(cacheKey)
+                            wrappedOnFaviconCached?.invoke(cacheKey)
                         }
 
                         // Create TabIcon and update
@@ -754,7 +800,30 @@ fun JxBrowserCompose(
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                    
+
+                    // Refresh button
+                    IconButton(
+                        onClick = {
+                            val urlToLoad = if (autocompleteSuggestion != null &&
+                                urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
+                                processUrlInput(autocompleteSuggestion!!)
+                            } else {
+                                val input = urlInput.text.trim()
+                                processUrlInput(input)
+                            }
+                            if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
+                            autocompleteSuggestion = null
+                            showDropdown = false
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     // URL Input with inline autocomplete
                     BasicTextField(
                         value = urlInput,
@@ -904,24 +973,24 @@ fun JxBrowserCompose(
                                     // ALWAYS render the text field (including cursor)
                                     innerTextField()
                                 }
+
+                                // Bookmark star button
                                 IconButton(
                                     onClick = {
-                                        val urlToLoad = if (autocompleteSuggestion != null &&
-                                            urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
-                                            processUrlInput(autocompleteSuggestion!!)
+                                        if (isBookmarked) {
+                                            // Show remove confirmation dialog
+                                            showRemoveBookmarkDialog = true
                                         } else {
-                                            val input = urlInput.text.trim()
-                                            processUrlInput(input)
+                                            // Show add bookmark dialog
+                                            showBookmarkDialog = true
                                         }
-                                        if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
-                                        autocompleteSuggestion = null
-                                        showDropdown = false
                                     },
                                     modifier = Modifier.size(20.dp)
                                 ) {
                                     Icon(
-                                        Icons.Default.Refresh,
-                                        contentDescription = "Refresh",
+                                        imageVector = if (isBookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = if (isBookmarked) "Remove from Bookmarks" else "Add to Bookmarks",
+                                        tint = if (isBookmarked) Color(0xFFFFD700) else MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1146,6 +1215,59 @@ fun JxBrowserCompose(
                 },
                 isLoading = isCreating
             )
+        }
+
+        // Bookmark Dialog
+        if (showBookmarkDialog) {
+            val workspaces by workspaceManager.workspaces.collectAsState()
+            BookmarkDialog(
+                tabTitle = currentTitle,
+                collections = collections,
+                workspaces = workspaces,
+                onDismiss = { showBookmarkDialog = false },
+                onConfirm = { collectionIds, workspacePanelMap ->
+                    val workspace = workspaceManager.currentWorkspace.value
+
+                    // Convert workspacePanelMap to list of WorkspacePanelTarget
+                    val targetWorkspaces = workspacePanelMap.map { (workspaceName, panelId) ->
+                        WorkspacePanelTarget(workspaceName = workspaceName, panelId = panelId)
+                    }
+
+                    // Create bookmark for each selected collection
+                    collectionIds.forEach { collectionId ->
+                        val bookmark = Bookmark(
+                            tabConfig = currentTabConfig,
+                            workspaceName = workspace?.name ?: "Unknown",
+                            targetWorkspaces = targetWorkspaces
+                        )
+                        val collection = collections.find { it.id == collectionId }
+                        if (collection != null) {
+                            bookmarkManager.addBookmark(collection.name, bookmark)
+                        }
+                    }
+
+                    showBookmarkDialog = false
+                }
+            )
+        }
+
+        // Remove Bookmark Confirmation Dialog
+        if (showRemoveBookmarkDialog) {
+            val existingBookmark = bookmarkManager.findBookmarkForTab(currentTabConfig)
+            if (existingBookmark != null) {
+                val (collectionId, bookmarkId) = existingBookmark
+                RemoveBookmarkConfirmationDialog(
+                    bookmarkTitle = currentTitle,
+                    onDismiss = { showRemoveBookmarkDialog = false },
+                    onConfirm = {
+                        bookmarkManager.removeBookmark(collectionId, bookmarkId)
+                        showRemoveBookmarkDialog = false
+                    }
+                )
+            } else {
+                // Bookmark not found, close dialog
+                showRemoveBookmarkDialog = false
+            }
         }
     }
 }
