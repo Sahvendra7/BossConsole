@@ -278,7 +278,6 @@ fun BossTabsComponent.BossMainTabBar(
             }
             Spacer(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxHeight()
                     .contextMenu(
                         items = buildList {

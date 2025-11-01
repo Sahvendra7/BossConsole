@@ -27,7 +27,7 @@ fun RowScope.BossLeftTabBar(
     listState: LazyListState,
     content: LazyListScope.() -> Unit
 ) {
-    Column(modifier = Modifier.weight(2f).padding(horizontal = 8.dp)) {
+    Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
         LazyRow(
             state = listState,
             modifier = Modifier
