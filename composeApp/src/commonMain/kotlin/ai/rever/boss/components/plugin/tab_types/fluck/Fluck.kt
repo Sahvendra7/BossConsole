@@ -19,6 +19,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
 object Fluck: TabTypeInfo {
@@ -332,13 +336,22 @@ open class FluckTabComponent(
     fun dispose() {
         if (!isDisposed) {
             isDisposed = true
-            // Dispose the browser and view state
+            // Dispose the browser and view state on background thread to avoid blocking UI
             // The composable's DisposableEffect and disposal guards will handle cleanup coordination
-            try {
-                browserViewState?.let { disposeBrowserViewState(it) }
-                browser?.let { disposeBrowser(it) }
-            } catch (e: Exception) {
-                println("Error disposing browser: ${e.message}")
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    browserViewState?.let { disposeBrowserViewState(it) }
+
+                    // Add small delay to allow JxBrowser's internal RPC queue to drain
+                    // This prevents a race condition where browser.close() tears down RPC connections
+                    // while pending messages are still being processed, which causes NPE in
+                    // com.teamdev.jxbrowser.internal.rpc.transport.SharedMemoryTransport.onDataAvailable
+                    delay(50)
+
+                    browser?.let { disposeBrowser(it) }
+                } catch (e: Exception) {
+                    println("Error disposing browser: ${e.message}")
+                }
             }
         }
     }

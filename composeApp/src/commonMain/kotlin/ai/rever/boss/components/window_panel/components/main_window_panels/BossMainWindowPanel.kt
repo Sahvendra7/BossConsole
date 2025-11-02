@@ -89,6 +89,13 @@ fun BossTabsComponent.BossMainTabBar(
     // LazyListState for tab bar scrolling
     val listState = rememberLazyListState()
 
+    // Track if tab bar is scrollable to determine plus button placement
+    val isScrollable by remember {
+        derivedStateOf {
+            listState.canScrollForward || listState.canScrollBackward
+        }
+    }
+
     // Auto-scroll to active tab when it changes
     LaunchedEffect(tabsState.value.activeIndex) {
         val activeIndex = tabsState.value.activeIndex
@@ -249,39 +256,71 @@ fun BossTabsComponent.BossMainTabBar(
 
                     // Vertical divider after tab (only if not the last tab)
                     if (index < tabsState.value.tabs.size - 1) {
-                        VDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        VDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp))
                     }
                 }
 
-                // Plus button for new tab
-                item {
-                    Box(
-                        modifier = Modifier
-                            .height(32.dp)
-                            .width(32.dp)
-                            .padding(4.dp)
-                            .background(
-                                color = Color(0xFF3C3F41),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                // Plus button as item when not scrollable (appears right after last tab)
+                if (!isScrollable) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .height(32.dp)
+                                .width(32.dp)
+                                .padding(4.dp)
+                                .background(
+                                    color = Color(0xFF3C3F41),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                )
+                                .clickable {
+                                    showNewTabDialog = true
+                                    // Track panel interaction when plus button is clicked
+                                    if (splitViewState != null && currentPanelId != null) {
+                                        splitViewState.setActivePanel(currentPanelId)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "New Tab",
+                                tint = Color(0xFF999999),
+                                modifier = Modifier.size(16.dp)
                             )
-                            .clickable {
-                                showNewTabDialog = true
-                                // Track panel interaction when plus button is clicked
-                                if (splitViewState != null && currentPanelId != null) {
-                                    splitViewState.setActivePanel(currentPanelId)
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "New Tab",
-                            tint = Color(0xFF999999),
-                            modifier = Modifier.size(16.dp)
-                        )
+                        }
                     }
                 }
             }
+
+            // Fixed plus button (stays visible when tabs scroll - only when scrollable)
+            if (isScrollable) {
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .width(32.dp)
+                        .padding(4.dp)
+                        .background(
+                            color = Color(0xFF3C3F41),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                        )
+                        .clickable {
+                            showNewTabDialog = true
+                            // Track panel interaction when plus button is clicked
+                            if (splitViewState != null && currentPanelId != null) {
+                                splitViewState.setActivePanel(currentPanelId)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Tab",
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
             Spacer(
                 modifier = Modifier
                     .fillMaxHeight()
