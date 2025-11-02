@@ -19,6 +19,7 @@ import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.dialogs.TabType
+import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
@@ -245,6 +246,11 @@ fun BossTabsComponent.BossMainTabBar(
                             }
                         }
                     )
+
+                    // Vertical divider after tab (only if not the last tab)
+                    if (index < tabsState.value.tabs.size - 1) {
+                        VDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
                 }
 
                 // Plus button for new tab
