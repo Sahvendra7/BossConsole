@@ -206,9 +206,10 @@ kotlin {
             implementation(libs.zxing.core)
             implementation(libs.zxing.javase)
             
-            // JxBrowser with Compose support
+            // JxBrowser with Compose and Swing support
             implementation(jxbrowser.currentPlatform)
             implementation(jxbrowser.compose)
+            implementation(jxbrowser.swing)
             
             // JavaCV for video recording - removed due to notarization issues
             // implementation("org.bytedeco:javacv-platform:1.5.11")

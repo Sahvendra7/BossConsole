@@ -213,7 +213,8 @@ open class FluckTabComponent(
 
                     kotlinx.coroutines.delay(delayMs)
 
-                    // Pass onOpenInNewTab callback to configure popup handler
+                    // Pass callback to configure popup handler
+                    // OAuth popups with dimensions will be real popups, regular links will be tabs
                     val state = getBrowserState(initialUrl, onOpenInNewTab)
 
                     if (state != null) {

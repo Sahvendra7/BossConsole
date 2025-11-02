@@ -1,9 +1,23 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import com.teamdev.jxbrowser.browser.Browser
+import com.teamdev.jxbrowser.browser.event.BrowserClosed
+import com.teamdev.jxbrowser.event.Subscription
+import com.teamdev.jxbrowser.navigation.event.NavigationFinished
+import com.teamdev.jxbrowser.ui.Rect
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
+import com.teamdev.jxbrowser.view.swing.BrowserView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.awt.Window
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.swing.JFrame
+import javax.swing.SwingUtilities
 
 // User agent settings
 object BrowserSettings {
@@ -35,34 +49,156 @@ private fun getValidComposeWindow(): Window? {
 }
 
 /**
- * Configures browser to intercept popup requests and open them as new tabs
- * instead of creating detached OS windows.
+ * Configures browser to handle popup requests intelligently based on window features.
  *
- * Handles scenarios like:
- * - Links with target="_blank"
- * - JavaScript window.open() calls
- * - Email compose links (Gmail, etc.)
+ * Complete solution using JxBrowser's two-phase popup handling:
+ * 1. CreatePopupCallback - Allows all popup creation (returns create())
+ * 2. OpenPopupCallback - Checks initialBounds() to decide:
+ *    - Empty bounds (regular links) → Open as tab in BOSS
+ *    - Non-empty bounds (OAuth popups) → Create Swing window to display popup
+ *
+ * This properly fixes both issues:
+ * - Issue #137: Mail app links open as tabs, not OS windows
+ * - Issue #173: OAuth popups work correctly with window.opener communication
+ *
+ * Implementation details:
+ * - Empty bounds popups: Close popup browser, open URL as tab via callback
+ * - Non-empty bounds popups: Create JFrame, embed BrowserView, handle window lifecycle
  *
  * @param browser The browser instance to configure
- * @param onOpenInNewTab Callback invoked with the target URL when popup is requested
+ * @param onOpenInNewTab Callback invoked with the target URL when popup should open in new tab
  */
 private fun configureBrowserPopupHandler(
     browser: Browser,
     onOpenInNewTab: (String) -> Unit
 ) {
+    // Phase 1: Allow all popup creation
     browser.set(
         com.teamdev.jxbrowser.browser.callback.CreatePopupCallback::class.java,
-        com.teamdev.jxbrowser.browser.callback.CreatePopupCallback { params ->
-            // Extract the target URL from popup parameters
-            val targetUrl = params.targetUrl()
+        com.teamdev.jxbrowser.browser.callback.CreatePopupCallback {
+            // Allow popup creation - we'll decide what to do in OpenPopupCallback
+            com.teamdev.jxbrowser.browser.callback.CreatePopupCallback.Response.create()
+        }
+    )
 
-            println("🪟 [PopupHandler] Intercepted popup request: $targetUrl")
+    // Phase 2: Handle popup display based on bounds
+    browser.set(
+        com.teamdev.jxbrowser.browser.callback.OpenPopupCallback::class.java,
+        com.teamdev.jxbrowser.browser.callback.OpenPopupCallback { params ->
+            val popupBrowser = params.popupBrowser()
+            val initialBounds = params.initialBounds()
+            val targetUrl = popupBrowser.url()
 
-            // Invoke callback to open URL in new tab instead of popup window
-            onOpenInNewTab(targetUrl)
+            // Check if popup has specific window dimensions
+            val isEmptyBounds = initialBounds == Rect.empty()
 
-            // Suppress the popup window creation
-            com.teamdev.jxbrowser.browser.callback.CreatePopupCallback.Response.suppress()
+            if (isEmptyBounds) {
+                // No dimensions = regular link (mail app, target="_blank")
+                // Open as tab in BOSS instead of OS window
+                if (targetUrl.isEmpty() || targetUrl == "about:blank") {
+                    // Wait for URL to load with timeout protection
+                    val cleanedUp = AtomicBoolean(false)
+                    var subscription: Subscription? = null
+                    val scope = CoroutineScope(Dispatchers.Default + Job())
+
+                    subscription = popupBrowser.navigation().on(NavigationFinished::class.java) {
+                        val loadedUrl = popupBrowser.url()
+                        if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
+                            // Only cleanup if we're the first handler to run
+                            if (cleanedUp.compareAndSet(false, true)) {
+                                onOpenInNewTab(loadedUrl)
+                                subscription?.unsubscribe()
+                                scope.cancel()
+                                if (!popupBrowser.isClosed) {
+                                    popupBrowser.close()
+                                }
+                            }
+                        }
+                    }
+
+                    // Timeout fallback: cleanup after 10 seconds
+                    scope.launch {
+                        delay(10_000)
+                        // Only cleanup if we're the first handler to run
+                        if (cleanedUp.compareAndSet(false, true)) {
+                            subscription?.unsubscribe()
+                            if (!popupBrowser.isClosed) {
+                                popupBrowser.close()
+                            }
+                            println("Warning: Popup navigation timed out after 10s, closing browser")
+                        }
+                    }
+                } else {
+                    onOpenInNewTab(targetUrl)
+                    popupBrowser.close()
+                }
+            } else {
+                // Has dimensions = OAuth/payment popup (window.open with features)
+                // Create Swing window to display the popup browser
+                SwingUtilities.invokeLater {
+                    try {
+                        // Create JFrame for the popup
+                        val frame = JFrame()
+                        val subscriptions = mutableListOf<Subscription>()
+
+                        frame.title = "Popup" // Will be updated by page title
+                        frame.defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
+
+                        // Set position and size from bounds
+                        frame.setLocation(initialBounds.origin().x(), initialBounds.origin().y())
+                        frame.setSize(initialBounds.size().width(), initialBounds.size().height())
+
+                        // Create BrowserView and add to frame
+                        val browserView = BrowserView.newInstance(popupBrowser)
+                        frame.contentPane.add(browserView)
+
+                        // Update frame title when page title changes - store subscription
+                        subscriptions += popupBrowser.on(com.teamdev.jxbrowser.browser.event.TitleChanged::class.java) { event ->
+                            SwingUtilities.invokeLater {
+                                frame.title = event.title()
+                            }
+                        }
+
+                        // Close frame when browser closes - store subscription
+                        subscriptions += popupBrowser.on(BrowserClosed::class.java) {
+                            SwingUtilities.invokeLater {
+                                // Cleanup subscriptions before disposing
+                                subscriptions.forEach { it.unsubscribe() }
+                                frame.dispose()
+                            }
+                        }
+
+                        // Close browser when frame closes
+                        frame.addWindowListener(object : java.awt.event.WindowAdapter() {
+                            override fun windowClosing(e: java.awt.event.WindowEvent?) {
+                                // Cleanup subscriptions before closing browser
+                                subscriptions.forEach {
+                                    try {
+                                        it.unsubscribe()
+                                    } catch (_: Exception) {
+                                        // Ignore errors during cleanup
+                                    }
+                                }
+                                if (!popupBrowser.isClosed) {
+                                    popupBrowser.close()
+                                }
+                            }
+                        })
+
+                        // Show the popup window
+                        frame.isVisible = true
+                    } catch (e: Exception) {
+                        println("Error creating popup window: ${e.message}")
+                        // Close browser on error
+                        if (!popupBrowser.isClosed) {
+                            popupBrowser.close()
+                        }
+                    }
+                }
+            }
+
+            // Return proceed() to notify the engine we've handled the popup
+            com.teamdev.jxbrowser.browser.callback.OpenPopupCallback.Response.proceed()
         }
     )
 }
@@ -112,9 +248,11 @@ actual fun getBrowserState(
         val browser = createBrowser() as Browser
 
         // Configure popup handler BEFORE creating view state
-        // This intercepts target="_blank" and window.open() to open in new tabs
-        onOpenInNewTab?.let { callback ->
-            configureBrowserPopupHandler(browser, callback)
+        // This intercepts target="_blank" and window.open() intelligently:
+        // - OAuth popups with specific dimensions → Real popup windows
+        // - Regular links without dimensions → New tabs
+        if (onOpenInNewTab != null) {
+            configureBrowserPopupHandler(browser, onOpenInNewTab)
         }
 
         val browserViewState = createBrowserViewState(browser)
@@ -134,7 +272,6 @@ actual fun getBrowserState(
         Pair(browser, browserViewState)
     } catch (e: Exception) {
         println("Error getting browser state: ${e.message}")
-        e.printStackTrace()
         null
     }
 }
