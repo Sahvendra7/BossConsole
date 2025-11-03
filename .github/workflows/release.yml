@@ -714,7 +714,7 @@ jobs:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
       - name: 📥 Download All Artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: ./artifacts
 
