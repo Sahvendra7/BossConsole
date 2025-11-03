@@ -68,7 +68,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
@@ -1435,6 +1437,7 @@ private fun WorkspaceTabItem(
 /**
  * Favicon icon with fallback to Material icon
  * Displays cached favicon if available, otherwise shows fallback icon
+ * Loads favicon asynchronously on IO thread to prevent UI blocking
  */
 @Composable
 private fun FaviconIcon(
@@ -1443,22 +1446,27 @@ private fun FaviconIcon(
     modifier: Modifier = Modifier,
     tint: Color? = null
 ) {
-    // Try to load favicon from cache (platform-specific implementation)
-    val tabIcon = remember(faviconCacheKey) {
-        com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+    // State to hold the loaded favicon
+    var tabIcon by remember(faviconCacheKey) { mutableStateOf<TabIcon.Image?>(null) }
+
+    // Load favicon asynchronously on IO thread
+    LaunchedEffect(faviconCacheKey) {
+        tabIcon = withContext(Dispatchers.IO) {
+            com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+        }
     }
 
     when {
         tabIcon != null -> {
             // Display actual favicon
             Image(
-                painter = tabIcon.asPainter(),
+                painter = tabIcon!!.asPainter(),
                 contentDescription = null,
                 modifier = modifier
             )
         }
         else -> {
-            // Fallback to Material icon
+            // Fallback to Material icon (shows while loading or if favicon unavailable)
             Icon(
                 imageVector = fallbackIcon,
                 contentDescription = null,

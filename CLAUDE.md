@@ -297,7 +297,7 @@ The project uses **centralized version management**:
 
 ## Build and Deployment
 
-### GitHub Actions Workflows
+### Running Workflows
 - **`build.yml`** - Multi-platform testing (Ubuntu, macOS, Windows)
 - **`release.yml`** - Production builds with code signing
 

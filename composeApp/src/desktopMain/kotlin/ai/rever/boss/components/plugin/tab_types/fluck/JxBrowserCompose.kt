@@ -541,6 +541,8 @@ fun JxBrowserCompose(
                     }
                 } catch (e: Exception) {
                     println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
+                    // Set default Language icon on error
+                    onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
                 }
             }
         }

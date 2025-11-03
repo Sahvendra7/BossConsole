@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.BreadcrumbConfig
+import ai.rever.boss.components.workspaces.SplitConfig
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -11,8 +12,10 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
+import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,10 +29,12 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Workspaces
 import androidx.compose.material.icons.outlined.ViewModule
 import androidx.compose.material.icons.outlined.Tab
@@ -40,48 +45,55 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // Data class for active tabs (all types)
 data class ActiveTab(
     val tabInfo: TabInfo,
     val workspaceId: String,
     val workspaceName: String,
-    val panelId: String
+    val panelId: String,
+    val splitPosition: String? = null // "Left", "Right", "Top", "Bottom", or null for single panel
 )
 
-// Hierarchical tree structure for organizing tabs
+// Hierarchical structure for workspace tab sections
+sealed class WorkspaceTabStructure {
+    data class TabItem(
+        val activeTab: ActiveTab
+    ) : WorkspaceTabStructure()
+
+    data class SplitSection(
+        val sectionName: String,  // "Left", "Right", "Top", "Bottom"
+        val children: List<WorkspaceTabStructure>,
+        val level: Int = 0
+    ) : WorkspaceTabStructure()
+}
+
+// Simplified tree structure for organizing tabs (workspace level only)
 sealed class TabTreeNode {
     abstract val id: String
     abstract val name: String
     abstract val level: Int
-    
+
     data class WorkspaceNode(
         override val id: String,
         override val name: String,
         override val level: Int = 0,
         val workspaceId: String,
         var isExpanded: Boolean = true,
-        val children: MutableList<TabTreeNode> = mutableListOf()
+        val tabStructure: List<WorkspaceTabStructure> = emptyList()
     ) : TabTreeNode()
-    
-    data class SplitNode(
-        override val id: String,
-        override val name: String,
-        override val level: Int,
-        val splitType: String, // "vertical", "horizontal", "panel"
-        val panelId: String? = null,
-        var isExpanded: Boolean = true,
-        val children: MutableList<TabTreeNode> = mutableListOf()
-    ) : TabTreeNode()
-    
+
     data class TabNode(
         override val id: String,
         override val name: String,
@@ -130,84 +142,194 @@ object TabTreeState {
     fun isWorkspaceModified(workspaceId: String): Boolean {
         return _modifiedWorkspaces.value.contains(workspaceId)
     }
+
+    // Track expanded sections (workspace:sectionPath) - sections collapsed by default
+    private val _expandedSections = MutableStateFlow<Set<String>>(emptySet())
+    val expandedSections: StateFlow<Set<String>> = _expandedSections
+
+    fun toggleSectionExpansion(sectionKey: String) {
+        val current = _expandedSections.value.toMutableSet()
+        if (current.contains(sectionKey)) {
+            current.remove(sectionKey)
+        } else {
+            current.add(sectionKey)
+        }
+        _expandedSections.value = current
+    }
+
+    fun isSectionExpanded(sectionKey: String): Boolean {
+        return _expandedSections.value.contains(sectionKey)
+    }
 }
 
 // Utility to build tree structure from active tabs
 object TabTreeBuilder {
-    fun buildTree(activeTabs: List<ActiveTab>): List<TabTreeNode> {
+    /**
+     * Extract all panel IDs from layout in depth-first order
+     */
+    private fun extractPanelIds(layout: SplitConfig): List<String> {
+        return when (layout) {
+            is SplitConfig.SinglePanel -> listOf(layout.panel.id)
+            is SplitConfig.VerticalSplit -> extractPanelIds(layout.left) + extractPanelIds(layout.right)
+            is SplitConfig.HorizontalSplit -> extractPanelIds(layout.top) + extractPanelIds(layout.bottom)
+        }
+    }
+
+    /**
+     * Build hierarchical tab structure from workspace layout and panel assignments
+     * Uses position-based mapping instead of ID-based filtering to handle randomly-generated panel IDs
+     */
+    private fun buildTabStructure(
+        tabs: List<ActiveTab>,
+        layout: SplitConfig?,
+        panelIdMapping: Map<String, String>,
+        level: Int = 0
+    ): List<WorkspaceTabStructure> {
+        if (layout == null || tabs.isEmpty()) {
+            // No layout info or no tabs - return flat list
+            return tabs.map { WorkspaceTabStructure.TabItem(it) }
+        }
+
+        return when (layout) {
+            is SplitConfig.SinglePanel -> {
+                // Map layout panel ID to runtime panel ID
+                val runtimePanelId = panelIdMapping[layout.panel.id]
+                val panelTabs = if (runtimePanelId != null) {
+                    tabs.filter { it.panelId == runtimePanelId }
+                } else {
+                    // Fallback: if mapping fails, try direct ID match
+                    tabs.filter { it.panelId == layout.panel.id }
+                }
+                panelTabs.map { WorkspaceTabStructure.TabItem(it) }
+            }
+
+            is SplitConfig.VerticalSplit -> {
+                listOf(
+                    WorkspaceTabStructure.SplitSection(
+                        sectionName = "Left",
+                        children = buildTabStructure(tabs, layout.left, panelIdMapping, level + 1),
+                        level = level
+                    ),
+                    WorkspaceTabStructure.SplitSection(
+                        sectionName = "Right",
+                        children = buildTabStructure(tabs, layout.right, panelIdMapping, level + 1),
+                        level = level
+                    )
+                )
+            }
+
+            is SplitConfig.HorizontalSplit -> {
+                listOf(
+                    WorkspaceTabStructure.SplitSection(
+                        sectionName = "Top",
+                        children = buildTabStructure(tabs, layout.top, panelIdMapping, level + 1),
+                        level = level
+                    ),
+                    WorkspaceTabStructure.SplitSection(
+                        sectionName = "Bottom",
+                        children = buildTabStructure(tabs, layout.bottom, panelIdMapping, level + 1),
+                        level = level
+                    )
+                )
+            }
+        }
+    }
+
+    fun buildTree(activeTabs: List<ActiveTab>, workspaceManager: WorkspaceManager?): List<TabTreeNode> {
         val workspaceGroups = activeTabs.groupBy { it.workspaceId }
         val rootNodes = mutableListOf<TabTreeNode>()
-        
+
         workspaceGroups.forEach { (workspaceId, tabs) ->
             // Use the workspace name from the first tab (they should all be the same)
             val workspaceName = tabs.firstOrNull()?.workspaceName ?: "Unknown"
-            
+
+            // Get workspace layout from WorkspaceManager
+            val workspace = workspaceManager?.workspaces?.value?.find { it.id == workspaceId }
+            val layout = workspace?.layout
+
+            // Create panel ID mapping: layout panel ID -> runtime panel ID
+            // Match panels by their position in depth-first traversal
+            val panelIdMapping = if (layout != null) {
+                val layoutPanelIds = extractPanelIds(layout)
+                val runtimePanelIds = tabs.map { it.panelId }.distinct()
+
+                println("🔍 [TopOfMind] Panel ID mapping for workspace '$workspaceName':")
+                println("  Layout panel IDs: $layoutPanelIds")
+                println("  Runtime panel IDs: $runtimePanelIds")
+
+                // Validate panel count matches
+                if (layoutPanelIds.size != runtimePanelIds.size) {
+                    println("⚠️ [TopOfMind] Panel count mismatch! Layout: ${layoutPanelIds.size}, Runtime: ${runtimePanelIds.size}")
+                    println("  This may indicate workspace layout has changed. Falling back to flat layout.")
+                    // Fallback: return empty map to trigger flat layout rendering
+                    emptyMap()
+                } else {
+                    // Map layout panel IDs to runtime panel IDs by position
+                    val mapping = layoutPanelIds.zip(runtimePanelIds).toMap()
+                    println("  Mapping: $mapping")
+                    mapping
+                }
+            } else {
+                emptyMap()
+            }
+
+            // Build tab structure based on layout with panel ID mapping
+            val tabStructure = buildTabStructure(tabs, layout, panelIdMapping)
+
             val workspaceNode = TabTreeNode.WorkspaceNode(
                 id = "workspace-$workspaceId",
                 name = workspaceName,
                 workspaceId = workspaceId,
-                level = 0
+                level = 0,
+                tabStructure = tabStructure
             )
-            
-            // Group tabs by panel for this workspace
-            val panelGroups = tabs.groupBy { it.panelId }
-            
-            panelGroups.forEach { (panelId, panelTabs) ->
-                val splitNode = TabTreeNode.SplitNode(
-                    id = "panel-$workspaceId-$panelId", // Make panel IDs unique per workspace
-                    name = "Panel $panelId",
-                    level = 1,
-                    splitType = "panel",
-                    panelId = panelId
-                )
-                
-                // Add individual tabs to this panel
-                panelTabs.forEach { activeTab ->
-                    val tabNode = TabTreeNode.TabNode(
-                        id = "tab-${activeTab.workspaceId}-${activeTab.tabInfo.id}", // Make tab IDs unique per workspace
-                        name = activeTab.tabInfo.title,
-                        level = 2,
-                        activeTab = activeTab
-                    )
-                    splitNode.children.add(tabNode)
-                }
-                
-                workspaceNode.children.add(splitNode)
-            }
-            
+
             rootNodes.add(workspaceNode)
         }
-        
+
         return rootNodes
     }
-    
+
+    // Filter tab structure based on search query
+    private fun filterTabStructure(structure: List<WorkspaceTabStructure>, searchQuery: String): List<WorkspaceTabStructure> {
+        return structure.mapNotNull { item ->
+            when (item) {
+                is WorkspaceTabStructure.TabItem -> {
+                    val tabMatches = item.activeTab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
+                        (item.activeTab.tabInfo is FluckTabInfo &&
+                         item.activeTab.tabInfo.url.contains(searchQuery, ignoreCase = true))
+
+                    if (tabMatches) item else null
+                }
+
+                is WorkspaceTabStructure.SplitSection -> {
+                    val matchingChildren = filterTabStructure(item.children, searchQuery)
+                    if (matchingChildren.isNotEmpty()) {
+                        item.copy(children = matchingChildren)
+                    } else null
+                }
+            }
+        }
+    }
+
     // Filter tree nodes based on search query
     fun filterTreeNodes(nodes: List<TabTreeNode>, searchQuery: String): List<TabTreeNode> {
         return nodes.mapNotNull { node ->
             when (node) {
                 is TabTreeNode.WorkspaceNode -> {
-                    val matchingChildren = filterTreeNodes(node.children, searchQuery)
+                    val filteredStructure = filterTabStructure(node.tabStructure, searchQuery)
                     val workspaceMatches = node.name.contains(searchQuery, ignoreCase = true)
-                    
-                    if (workspaceMatches || matchingChildren.isNotEmpty()) {
-                        node.copy(children = matchingChildren.toMutableList())
+
+                    if (workspaceMatches || filteredStructure.isNotEmpty()) {
+                        node.copy(tabStructure = filteredStructure)
                     } else null
                 }
-                
-                is TabTreeNode.SplitNode -> {
-                    val matchingChildren = filterTreeNodes(node.children, searchQuery)
-                    val splitMatches = node.name.contains(searchQuery, ignoreCase = true)
-                    
-                    if (splitMatches || matchingChildren.isNotEmpty()) {
-                        node.copy(children = matchingChildren.toMutableList())
-                    } else null
-                }
-                
+
                 is TabTreeNode.TabNode -> {
                     val tabMatches = node.activeTab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
-                        (node.activeTab.tabInfo is FluckTabInfo && 
+                        (node.activeTab.tabInfo is FluckTabInfo &&
                          node.activeTab.tabInfo.url.contains(searchQuery, ignoreCase = true))
-                    
+
                     if (tabMatches) node else null
                 }
             }
@@ -354,35 +476,36 @@ fun TopOfMindContent(
         if (splitViewState != null) {
             val tabs = splitViewState.collectAllActiveTabs(workspaceManager)
             TopOfMindState.updateActiveTabs(tabs)
-            
+
             // Initialize tree expansion state
-            val treeNodes = TabTreeBuilder.buildTree(tabs)
+            val treeNodes = TabTreeBuilder.buildTree(tabs, workspaceManager)
             TabTreeState.initializeDefaultExpansion(treeNodes)
         }
     }
     
-    // Subscribe to real-time tab state changes from all panels
+    // Subscribe to real-time tab state changes from all panels with single debounced effect
     if (splitViewState != null) {
         val allPanels = splitViewState.getAllPanels()
-        
-        // Create a key that changes when panels change
-        val panelsKey = allPanels.map { it.id }.sorted().joinToString(",")
-        
-        LaunchedEffect(panelsKey) {
-            // Update tabs when panel structure changes
-            val tabs = splitViewState.collectAllActiveTabs(workspaceManager)
-            TopOfMindState.updateActiveTabs(tabs)
+
+        // Collect tab states from all panels as a single dependency
+        val allPanelStates = allPanels.map { panel ->
+            val tabsState by panel.tabsComponent.tabsState.subscribeAsState()
+            // Create a snapshot of panel ID + tab count + tab identities
+            Triple(
+                panel.id,
+                tabsState.tabs.size,
+                tabsState.tabs.map { tab -> tab.id + tab.title }
+            )
         }
-        
-        // Listen to tab state changes in each panel
-        allPanels.forEach { panel ->
-            val panelTabsState by panel.tabsComponent.tabsState.subscribeAsState()
-            
-            LaunchedEffect(panel.id, panelTabsState.tabs.size, panelTabsState.tabs.map { tab -> tab.id + tab.title }) {
-                // Update when tabs are added/removed or their content changes in this panel
-                val updatedTabs = splitViewState.collectAllActiveTabs(workspaceManager)
-                TopOfMindState.updateActiveTabs(updatedTabs)
-            }
+
+        // Single LaunchedEffect that triggers on any panel state change
+        LaunchedEffect(allPanelStates) {
+            // Debounce to avoid rapid successive updates
+            delay(100)
+
+            // Single point of tab collection and state update
+            val updatedTabs = splitViewState.collectAllActiveTabs(workspaceManager)
+            TopOfMindState.updateActiveTabs(updatedTabs)
         }
     }
     
@@ -449,7 +572,7 @@ fun TopOfMindContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Workspaces",
+                text = "Running Workspaces",
                 fontSize = 10.sp,
                 color = Color.Gray,
                 modifier = Modifier.weight(1f)
@@ -471,7 +594,7 @@ fun TopOfMindContent(
             val currentWorkspaceId = workspaceManager?.currentWorkspace?.value?.id
             activeTabs.filter { it.workspaceId != currentWorkspaceId }
         }
-        val treeNodes = TabTreeBuilder.buildTree(filteredTabs)
+        val treeNodes = TabTreeBuilder.buildTree(filteredTabs, workspaceManager)
         
         // Apply search filter to tree
         val filteredTreeNodes = if (searchQuery.isBlank()) {
@@ -568,16 +691,16 @@ private fun TreeNodeItem(
                         if (splitViewState != null && workspaceManager != null) {
                             coroutineScope.launch {
                                 val currentWorkspace = workspaceManager.currentWorkspace.value
-                                val targetWorkspace = workspaceManager.workspaces.value.find { 
-                                    it.id == node.workspaceId 
+                                val targetWorkspace = workspaceManager.workspaces.value.find {
+                                    it.id == node.workspaceId
                                 }
-                                
+
                                 if (targetWorkspace != null && currentWorkspace?.id != node.workspaceId) {
                                     // Preserve current state before switching
                                     if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
                                         splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                                     }
-                                    
+
                                     // Load and apply the target workspace
                                     workspaceManager.loadWorkspace(targetWorkspace)
                                     applyWorkspace(targetWorkspace, splitViewState)
@@ -586,41 +709,19 @@ private fun TreeNodeItem(
                         }
                     }
                 )
-                
+
                 if (isExpanded) {
-                    node.children.forEach { childNode ->
-                        TreeNodeItem(
-                            node = childNode,
-                            workspaceManager = workspaceManager,
-                            splitViewState = splitViewState,
-                            onTabClick = onTabClick,
-                            modifier = Modifier.padding(start = 16.dp)
-                        )
-                    }
+                    // Render tab structure with sections
+                    RenderTabStructure(
+                        structure = node.tabStructure,
+                        onTabClick = onTabClick,
+                        workspaceId = node.workspaceId
+                    )
                 }
             }
-            
-            is TabTreeNode.SplitNode -> {
-                SplitFolderItem(
-                    node = node,
-                    isExpanded = isExpanded,
-                    onToggleExpand = { TabTreeState.toggleExpansion(node.id) }
-                )
-                
-                if (isExpanded) {
-                    node.children.forEach { childNode ->
-                        TreeNodeItem(
-                            node = childNode,
-                            workspaceManager = workspaceManager,
-                            splitViewState = splitViewState,
-                            onTabClick = onTabClick,
-                            modifier = Modifier.padding(start = 16.dp)
-                        )
-                    }
-                }
-            }
-            
+
             is TabTreeNode.TabNode -> {
+                // Individual tab nodes (used for search results or backward compatibility)
                 TabCardItem(
                     node = node,
                     onTabClick = { onTabClick(node.activeTab) }
@@ -716,55 +817,15 @@ private fun WorkspaceFolderItem(
 }
 
 @Composable
-private fun SplitFolderItem(
-    node: TabTreeNode.SplitNode,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggleExpand() }
-            .padding(vertical = 3.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            if (isExpanded) Icons.Outlined.ExpandMore else Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = if (isExpanded) "Collapse" else "Expand",
-            modifier = Modifier.size(14.dp),
-            tint = Color.Gray.copy(alpha = 0.6f)
-        )
-        
-        Spacer(modifier = Modifier.width(4.dp))
-        
-        Icon(
-            Icons.Outlined.ViewModule,
-            contentDescription = "Split Panel",
-            modifier = Modifier.size(14.dp),
-            tint = Color(0xFF569CD6) // VS Code folder color
-        )
-        
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        Text(
-            text = node.name,
-            fontSize = 11.sp,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.9f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
 private fun TabCardItem(
     node: TabTreeNode.TabNode,
-    onTabClick: () -> Unit
+    onTabClick: () -> Unit,
+    indentation: Dp = 44.dp
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
+            .padding(start = indentation, end = 24.dp, top = 2.dp, bottom = 2.dp)
             .clip(RoundedCornerShape(4.dp))
             .clickable { onTabClick() },
         color = Color(0xFF3C3F43),
@@ -776,15 +837,16 @@ private fun TabCardItem(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Tab icon based on type
-            val tabIcon = when (node.activeTab.tabInfo) {
+            // Tab icon with favicon support
+            val faviconCacheKey = (node.activeTab.tabInfo as? FluckTabInfo)?.faviconCacheKey
+            val fallbackIcon = when (node.activeTab.tabInfo) {
                 is FluckTabInfo -> Icons.Outlined.Language
-                else -> Icons.Outlined.Tab // Default icon for other tab types
+                else -> Icons.Outlined.Tab
             }
-            
-            Icon(
-                tabIcon,
-                contentDescription = "Tab",
+
+            FaviconIcon(
+                faviconCacheKey = faviconCacheKey,
+                fallbackIcon = fallbackIcon,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
             )
@@ -814,6 +876,167 @@ private fun TabCardItem(
                         color = Color.Gray,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Favicon icon with fallback to Material icon
+ * Displays cached favicon if available, otherwise shows fallback icon
+ * Loads favicon asynchronously on IO thread to prevent UI blocking
+ */
+@Composable
+private fun FaviconIcon(
+    faviconCacheKey: String?,
+    fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    tint: Color? = null
+) {
+    // State to hold the loaded favicon
+    var tabIcon by remember(faviconCacheKey) { mutableStateOf<TabIcon.Image?>(null) }
+
+    // Load favicon asynchronously on IO thread
+    LaunchedEffect(faviconCacheKey) {
+        tabIcon = withContext(Dispatchers.IO) {
+            com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+        }
+    }
+
+    when {
+        tabIcon != null -> {
+            // Display actual favicon
+            Image(
+                painter = tabIcon!!.asPainter(),
+                contentDescription = null,
+                modifier = modifier
+            )
+        }
+        else -> {
+            // Fallback to Material icon (shows while loading or if favicon unavailable)
+            Icon(
+                imageVector = fallbackIcon,
+                contentDescription = null,
+                modifier = modifier,
+                tint = tint ?: Color(0xFF9CA3AF)
+            )
+        }
+    }
+}
+
+/**
+ * Split section header with collapse/expand functionality
+ */
+@Composable
+private fun SplitSectionHeader(
+    sectionName: String,
+    level: Int,
+    sectionKey: String,
+    isExpanded: Boolean,
+    onToggleExpansion: () -> Unit
+) {
+    val indentation = (44 + (level * 16)).dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggleExpansion() }
+            .padding(start = indentation, end = 24.dp, top = 6.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Chevron icon for collapse/expand
+        Icon(
+            imageVector = if (isExpanded) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = if (isExpanded) "Collapse section" else "Expand section",
+            modifier = Modifier.size(14.dp),
+            tint = Color(0xFF9CA3AF)
+        )
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Left divider
+        Box(
+            modifier = Modifier
+                .width(16.dp)
+                .height(1.dp)
+                .background(Color(0xFF4B5563))
+        )
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Section name
+        Text(
+            text = sectionName,
+            fontSize = 10.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            color = Color(0xFF9CA3AF),
+            letterSpacing = 0.5.sp
+        )
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Right divider
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Color(0xFF4B5563))
+        )
+    }
+}
+
+/**
+ * Render hierarchical tab structure recursively
+ */
+@Composable
+private fun RenderTabStructure(
+    structure: List<WorkspaceTabStructure>,
+    onTabClick: (ActiveTab) -> Unit,
+    workspaceId: String,
+    sectionPath: String = "",
+    baseIndentation: Int = 44
+) {
+    val expandedSections by TabTreeState.expandedSections.collectAsState()
+
+    structure.forEach { item ->
+        when (item) {
+            is WorkspaceTabStructure.TabItem -> {
+                TabCardItem(
+                    node = TabTreeNode.TabNode(
+                        id = item.activeTab.tabInfo.id,
+                        name = item.activeTab.tabInfo.title,
+                        level = 0,
+                        activeTab = item.activeTab
+                    ),
+                    onTabClick = { onTabClick(item.activeTab) },
+                    indentation = baseIndentation.dp
+                )
+            }
+
+            is WorkspaceTabStructure.SplitSection -> {
+                // Generate unique section key for expansion state
+                val currentPath = if (sectionPath.isEmpty()) item.sectionName else "$sectionPath/${item.sectionName}"
+                val sectionKey = "$workspaceId:$currentPath"
+                val isExpanded = expandedSections.contains(sectionKey)
+
+                SplitSectionHeader(
+                    sectionName = item.sectionName,
+                    level = item.level,
+                    sectionKey = sectionKey,
+                    isExpanded = isExpanded,
+                    onToggleExpansion = { TabTreeState.toggleSectionExpansion(sectionKey) }
+                )
+
+                // Only render children if section is expanded
+                if (isExpanded) {
+                    RenderTabStructure(
+                        structure = item.children,
+                        onTabClick = onTabClick,
+                        workspaceId = workspaceId,
+                        sectionPath = currentPath,
+                        baseIndentation = baseIndentation + (item.level * 16)
                     )
                 }
             }
