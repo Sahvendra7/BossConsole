@@ -43,6 +43,19 @@ data class UpdateInfo(
 }
 
 /**
+ * Extended version information for version selection
+ */
+data class VersionInfo(
+    val version: Version,
+    val releaseDate: String,
+    val downloadSize: Long,
+    val releaseNotes: String,
+    val downloadUrl: String,
+    val isDraft: Boolean,
+    val isPrerelease: Boolean
+)
+
+/**
  * Platform-specific update service interface
  */
 expect class UpdateService() {
@@ -51,6 +64,10 @@ expect class UpdateService() {
     suspend fun installUpdate(downloadPath: String): Boolean
     fun getCurrentPlatform(): String
     fun getExpectedAssetName(version: Version): String
+
+    // New methods for version selection
+    suspend fun fetchAllReleases(): List<VersionInfo>
+    suspend fun fetchVersionDetails(version: Version): UpdateInfo?
 }
 
 /**

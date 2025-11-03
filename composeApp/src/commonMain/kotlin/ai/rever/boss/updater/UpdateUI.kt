@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -327,7 +328,30 @@ fun UpdateSettingsSection(
     val lastCheckTime by updateManager.lastCheckTime.collectAsState()
     val currentVersion = updateManager.getCurrentVersion()
     val coroutineScope = rememberCoroutineScope()
-    
+
+    // Version selection state
+    var showVersionDialog by remember { mutableStateOf(false) }
+    var showDowngradeWarning by remember { mutableStateOf(false) }
+    var selectedVersion by remember { mutableStateOf<VersionInfo?>(null) }
+
+    val versionListManager = remember { VersionListManager(updateManager.updateService) }
+    val versions by versionListManager.versions.collectAsState()
+    val isLoadingVersions by versionListManager.isLoading.collectAsState()
+    val versionError by versionListManager.error.collectAsState()
+
+    // Cleanup VersionListManager when composable leaves composition
+    DisposableEffect(versionListManager) {
+        onDispose {
+            versionListManager.cleanup()
+        }
+    }
+
+    // Prefetch version list on Settings load to avoid 2-5 second delay on button click
+    // Uses cache if available (1 hour expiry), so this is cheap on repeated visits
+    LaunchedEffect(Unit) {
+        versionListManager.fetchVersions()
+    }
+
     Column {
         // Version Information
         Card(
@@ -427,31 +451,59 @@ fun UpdateSettingsSection(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Check for Updates Button
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            updateManager.checkForUpdates()
-                        }
-                    },
-                    enabled = updateState !is UpdateState.CheckingForUpdates,
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2196F3)),
-                    modifier = Modifier.fillMaxWidth()
+                // Update action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (updateState is UpdateState.CheckingForUpdates) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
+                    // Check for Updates Button
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                updateManager.checkForUpdates()
+                            }
+                        },
+                        enabled = updateState !is UpdateState.CheckingForUpdates,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2196F3)),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (updateState is UpdateState.CheckingForUpdates) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            if (updateState is UpdateState.CheckingForUpdates) "Checking..." else "Check for Updates",
+                            color = Color.White
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Text(
-                        if (updateState is UpdateState.CheckingForUpdates) "Checking..." else "Check for Updates",
-                        color = Color.White
-                    )
+
+                    // Select Version Button
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                versionListManager.fetchVersions()
+                                showVersionDialog = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Select Version")
+                    }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 // Update Status
@@ -572,6 +624,53 @@ fun UpdateSettingsSection(
                     else -> { /* Show nothing for other states */ }
                 }
             }
+        }
+
+        // Version selection dialog
+        if (showVersionDialog) {
+            VersionSelectionDialog(
+                currentVersion = currentVersion,
+                versions = versions,
+                isLoading = isLoadingVersions,
+                error = versionError,
+                onVersionSelected = { versionInfo ->
+                    selectedVersion = versionInfo
+                    showVersionDialog = false
+
+                    // Check if downgrade
+                    // Note: Version comparison treats stable > prerelease for same version numbers
+                    // (e.g., 8.11.4 > 8.11.4-beta), so going from beta to stable is treated
+                    // as an upgrade and won't show the downgrade warning. This is intentional.
+                    if (versionInfo.version < currentVersion) {
+                        showDowngradeWarning = true
+                    } else {
+                        // Direct download for upgrades or same version
+                        coroutineScope.launch {
+                            updateManager.downloadSpecificVersion(versionInfo)
+                        }
+                    }
+                },
+                onDismiss = { showVersionDialog = false }
+            )
+        }
+
+        // Downgrade warning dialog
+        if (showDowngradeWarning && selectedVersion != null) {
+            DowngradeWarningDialog(
+                currentVersion = currentVersion,
+                targetVersion = selectedVersion!!.version,
+                onConfirm = {
+                    coroutineScope.launch {
+                        updateManager.downloadSpecificVersion(selectedVersion!!)
+                        showDowngradeWarning = false
+                        selectedVersion = null
+                    }
+                },
+                onDismiss = {
+                    showDowngradeWarning = false
+                    selectedVersion = null
+                }
+            )
         }
     }
 }

@@ -345,4 +345,119 @@ actual class UpdateService {
             else -> "BOSS-${version}-all.jar"
         }
     }
+
+    /**
+     * Fetch all releases from GitHub with pagination support
+     */
+    actual suspend fun fetchAllReleases(): List<VersionInfo> = withContext(Dispatchers.IO) {
+        try {
+            val allReleases = mutableListOf<GitHubRelease>()
+            var page = 1
+            val perPage = 100 // GitHub max per page
+
+            // Fetch all pages until we get an empty response
+            while (true) {
+                val response = apiClient.get("$RELEASES_ENDPOINT") {
+                    headers {
+                        append("Accept", "application/vnd.github.v3+json")
+                        append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+
+                        // Add authentication token if available
+                        GitHubConfig.token?.let { token ->
+                            append("Authorization", "Bearer $token")
+                        }
+                    }
+                    parameter("page", page)
+                    parameter("per_page", perPage)
+                }
+
+                if (response.status.value !in 200..299) {
+                    println("Failed to fetch releases page $page: HTTP ${response.status.value}")
+                    break
+                }
+
+                val releases = response.body<List<GitHubRelease>>()
+                if (releases.isEmpty()) break
+
+                allReleases.addAll(releases)
+
+                // If we got fewer than perPage, we've reached the last page
+                if (releases.size < perPage) break
+                page++
+            }
+
+            // Convert to VersionInfo
+            allReleases.mapNotNull { release ->
+                try {
+                    val version = Version.parse(release.tag_name) ?: return@mapNotNull null
+                    val expectedAssetName = getExpectedAssetName(version)
+                    val asset = release.assets.find {
+                        it.name.equals(expectedAssetName, ignoreCase = true)
+                    }
+
+                    if (asset != null) {
+                        VersionInfo(
+                            version = version,
+                            releaseDate = release.published_at,
+                            downloadSize = asset.size,
+                            releaseNotes = release.body,
+                            downloadUrl = asset.browser_download_url ?: "",
+                            isDraft = release.draft,
+                            isPrerelease = release.prerelease
+                        )
+                    } else null
+                } catch (e: Exception) {
+                    println("Failed to parse release ${release.tag_name}: ${e.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            println("Error fetching all releases: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetch details for a specific version
+     */
+    actual suspend fun fetchVersionDetails(version: Version): UpdateInfo? = withContext(Dispatchers.IO) {
+        try {
+            val tagName = "v$version"
+            val response = apiClient.get("$RELEASES_ENDPOINT/tags/$tagName") {
+                headers {
+                    append("Accept", "application/vnd.github.v3+json")
+                    append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+
+                    // Add authentication token if available
+                    GitHubConfig.token?.let { token ->
+                        append("Authorization", "Bearer $token")
+                    }
+                }
+            }
+
+            if (response.status.value !in 200..299) {
+                println("Failed to fetch version $version: HTTP ${response.status.value}")
+                return@withContext null
+            }
+
+            val release = response.body<GitHubRelease>()
+            val expectedAssetName = getExpectedAssetName(version)
+            val asset = release.assets.find {
+                it.name.equals(expectedAssetName, ignoreCase = true)
+            }
+
+            UpdateInfo(
+                available = true,
+                currentVersion = Version.CURRENT,
+                latestVersion = version,
+                releaseNotes = release.body,
+                downloadUrl = asset?.browser_download_url,
+                assetSize = asset?.size ?: 0,
+                assetName = asset?.name ?: ""
+            )
+        } catch (e: Exception) {
+            println("Error fetching version $version details: ${e.message}")
+            null
+        }
+    }
 }

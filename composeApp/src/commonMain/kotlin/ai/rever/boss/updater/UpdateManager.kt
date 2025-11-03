@@ -12,8 +12,9 @@ import kotlin.time.Duration
  * Central update manager that handles periodic update checks and state management
  */
 class UpdateManager {
-    
-    private val updateService = UpdateService()
+
+    // Internal for access by VersionListManager
+    internal val updateService = UpdateService()
     
     // Update state flows
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -95,16 +96,53 @@ class UpdateManager {
     suspend fun downloadUpdate(updateInfo: UpdateInfo): UpdateResult {
         return try {
             _updateState.value = UpdateState.Downloading(0f)
-            
+
             val downloadPath = updateService.downloadUpdate(updateInfo) { progress ->
                 _updateState.value = UpdateState.Downloading(progress)
             }
-            
+
             if (downloadPath != null) {
                 _updateState.value = UpdateState.ReadyToInstall(downloadPath)
                 UpdateResult.UpdateAvailable(updateInfo.copy())
             } else {
                 val errorMsg = "Failed to download update"
+                _updateState.value = UpdateState.Error(errorMsg)
+                UpdateResult.Error(errorMsg)
+            }
+        } catch (e: Exception) {
+            val errorMsg = "Download failed: ${e.message}"
+            _updateState.value = UpdateState.Error(errorMsg)
+            UpdateResult.Error(errorMsg, e)
+        }
+    }
+
+    /**
+     * Download a specific version (for upgrades or downgrades)
+     */
+    suspend fun downloadSpecificVersion(versionInfo: VersionInfo): UpdateResult {
+        return try {
+            _updateState.value = UpdateState.Downloading(0f)
+
+            // Convert VersionInfo to UpdateInfo
+            val updateInfo = UpdateInfo(
+                available = true,
+                currentVersion = Version.CURRENT,
+                latestVersion = versionInfo.version,
+                releaseNotes = versionInfo.releaseNotes,
+                downloadUrl = versionInfo.downloadUrl,
+                assetSize = versionInfo.downloadSize,
+                assetName = updateService.getExpectedAssetName(versionInfo.version)
+            )
+
+            val downloadPath = updateService.downloadUpdate(updateInfo) { progress ->
+                _updateState.value = UpdateState.Downloading(progress)
+            }
+
+            if (downloadPath != null) {
+                _updateState.value = UpdateState.ReadyToInstall(downloadPath)
+                UpdateResult.UpdateAvailable(updateInfo)
+            } else {
+                val errorMsg = "Failed to download version ${versionInfo.version}"
                 _updateState.value = UpdateState.Error(errorMsg)
                 UpdateResult.Error(errorMsg)
             }
