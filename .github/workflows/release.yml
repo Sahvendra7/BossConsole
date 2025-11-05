@@ -1,9 +1,6 @@
 name: 🚀 Release Build
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version_increment:
@@ -20,6 +17,9 @@ on:
         required: true
         default: true
         type: boolean
+  push:
+    tags:
+      - 'v*.*.*'
 
 env:
   GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
@@ -36,6 +36,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
       should-build: ${{ steps.check-changes.outputs.should-build }}
       updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
+      should-create-tag: ${{ steps.commit-version.outputs.should-create-tag }}
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v5
@@ -81,18 +82,16 @@ jobs:
             git commit -m "🔖 Bump version to $NEW_VERSION" \
                        -m "Auto-increment version for release build" \
                        -m "🤖 Automated by release workflow"
-            
+
             # Push changes
             git push
-            
-            # Create and push tag for the new version
-            git tag "v$NEW_VERSION"
-            git push origin "v$NEW_VERSION"
-            
+
+            # DO NOT create tag here - will be created after successful builds
             # Get the new commit SHA
             NEW_SHA=$(git rev-parse HEAD)
             echo "updated-sha=$NEW_SHA" >> $GITHUB_OUTPUT
-            echo "✅ Version committed and tagged: $NEW_VERSION"
+            echo "should-create-tag=true" >> $GITHUB_OUTPUT
+            echo "✅ Version committed: $NEW_VERSION (tag will be created after builds)"
           fi
 
       - name: 📋 Get Version
@@ -841,4 +840,37 @@ jobs:
           echo "- 🐧 Linux RPM (RHEL/Fedora)" >> $GITHUB_STEP_SUMMARY
           echo "- 🐧 Linux JAR (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
+
+  create-tag:
+    name: Create Git Tag
+    runs-on: ubuntu-latest
+    needs: [prepare-version, create-release]
+    if: github.event_name == 'workflow_dispatch' && needs.prepare-version.outputs.should-create-tag == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+        run: |
+          echo "🏷️  Creating tag v$VERSION after successful release"
+
+          # Create annotated tag
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+
+          # Push tag
+          git push origin "v$VERSION"
+
+          echo "✅ Tag v$VERSION created and pushed successfully"
 
