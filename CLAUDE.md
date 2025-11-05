@@ -340,6 +340,87 @@ The application's top bar (`BossTopBar.kt`) provides core UI navigation and cont
 
 These features are commented out in the code with TODO references and will be implemented according to their respective GitHub issues.
 
+### Keyboard Shortcuts System
+
+The application features a comprehensive, customizable keyboard shortcuts system (Issue #201) with:
+
+**Core Features:**
+- **Context-aware shortcuts** - Different key bindings for GLOBAL, BROWSER, TERMINAL, EDITOR, and WORKSPACE contexts
+- **Conflict detection** - Visual warnings when multiple shortcuts use the same key combination
+- **Preset keymaps** - Pre-configured schemes: BOSS Default, VS Code, IntelliJ IDEA, Emacs
+- **Import/Export** - Backup and share keymap configurations via JSON
+- **UI Editor** - Visual interface for capturing and editing shortcuts
+- **JSON Editing** - Direct file editing at `~/.boss/keymap-settings.json`
+
+**Architecture:**
+
+*Data Models* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/model/):
+- **`ShortcutContext.kt`** - Enum defining where shortcuts are active (GLOBAL, BROWSER, etc.)
+- **`KeyBinding.kt`** - Individual shortcut with key, modifiers, context, category, description
+- **`KeymapSettings.kt`** - Container for all shortcuts with preset tracking
+- **`KeymapActions.kt`** - Registry of 14+ action IDs with metadata
+
+*Handler System* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/handler/):
+- **`KeymapMatcher.kt`** - Matches keyboard events to configured bindings
+- **`KeymapValidator.kt`** - Detects conflicts and validates shortcuts
+- **`KeymapHandler.kt`** - Context-aware event dispatcher (used in BossApp.kt)
+
+*Presets* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/presets/):
+- **`KeymapPresets.kt`** - BOSS Default, VS Code, IntelliJ IDEA presets
+- **`PresetDefinitions.kt`** - Emacs preset with Ctrl-based shortcuts
+
+*UI Components* (composeApp/src/commonMain/kotlin/ai/rever/boss/components/settings/keymap/):
+- **`EditableKeymapSettings.kt`** - Main settings UI with search/filter
+- **`KeyCaptureDialog.kt`** - Modal for capturing key presses
+- **`ConflictWarningBadge.kt`** - Visual conflict indicators
+- **`PresetSelector.kt`** - Preset switcher with customization badges
+- **`KeymapImportExport.kt`** - JSON import/export dialogs
+
+*Settings Manager* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/):
+- **`KeymapSettingsManager.kt`** - Expect/actual pattern for platform-specific persistence
+- Desktop implementation saves to `~/.boss/keymap-settings.json`
+- Reactive StateFlow for settings updates
+
+**Preset Keymaps:**
+
+1. **BOSS Default** - Browser-style with Cmd-based bindings
+   - Cmd+N: New window, Cmd+W: Close tab, Cmd+T: New browser tab
+
+2. **VS Code** - Visual Studio Code inspired
+   - Cmd+P: Quick file switcher, Cmd+Shift+E: Project explorer, Cmd+Alt+Arrow: Split navigation
+
+3. **IntelliJ IDEA** - JetBrains IDE inspired
+   - Cmd+E: Recent files, Cmd+1: Project window, Cmd+Alt+Arrow: Navigate splits
+
+4. **Emacs** - Ctrl-based shortcuts
+   - Ctrl+F: New file, Ctrl+K: Close tab, Alt+X: Quick switcher
+
+**Integration:**
+- Settings accessible via Settings > Keyboard Shortcuts
+- Shortcuts handled in `BossApp.kt` via `KeymapHandler`
+- Context detection based on active tab type (browser/terminal/editor)
+- Platform-aware display (⌘ on macOS, Ctrl on Windows/Linux)
+
+**JSON Format:**
+```json
+{
+  "shortcuts": {
+    "window.new": {
+      "actionId": "window.new",
+      "key": "N",
+      "modifiers": ["Cmd"],
+      "context": "GLOBAL",
+      "category": "Window Management",
+      "description": "Open New Window",
+      "enabled": true
+    }
+  },
+  "presetName": "BOSS Default",
+  "customized": false,
+  "version": 1
+}
+```
+
 ## Code Quality
 
 ### Static Analysis

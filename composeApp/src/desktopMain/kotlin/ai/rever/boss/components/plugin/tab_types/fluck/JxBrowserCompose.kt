@@ -11,6 +11,10 @@ import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.components.events.KeyboardEventBus
+import ai.rever.boss.components.events.KeyEventSource
+import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
+import ai.rever.boss.keymap.model.ShortcutContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -878,7 +882,7 @@ fun JxBrowserCompose(
                                 }
                             }
                             .onPreviewKeyEvent { keyEvent ->
-                                when {
+                                val consumed = when {
                                     keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Tab -> {
                                         // Accept autocomplete suggestion
                                         if (autocompleteSuggestion != null) {
@@ -898,7 +902,7 @@ fun JxBrowserCompose(
                                                 // Use selected dropdown item
                                                 dropdownSuggestions[selectedDropdownIndex].url
                                             }
-                                            autocompleteSuggestion != null && 
+                                            autocompleteSuggestion != null &&
                                             urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length) -> {
                                                 // Use the full autocomplete suggestion
                                                 processUrlInput(autocompleteSuggestion!!)
@@ -933,6 +937,22 @@ fun JxBrowserCompose(
                                     }
                                     else -> false
                                 }
+
+                                // If URL bar didn't consume the event, emit to KeyboardEventBus
+                                // This allows global shortcuts (like Cmd+N) to work when URL bar has focus
+                                if (!consumed && keyEvent.type == KeyEventType.KeyDown) {
+                                    coroutineScope.launch {
+                                        KeyboardEventBus.emit(
+                                            BossKeyboardEvent(
+                                                keyEvent = keyEvent,
+                                                source = KeyEventSource.COMPONENT_BROWSER,
+                                                context = ShortcutContext.BROWSER
+                                            )
+                                        )
+                                    }
+                                }
+
+                                consumed
                             },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.body2.copy(color = MaterialTheme.colors.onSurface),

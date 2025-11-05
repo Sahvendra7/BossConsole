@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import kotlin.random.Random
 import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
@@ -42,6 +44,41 @@ sealed class SplitNode {
 enum class SplitOrientation {
     HORIZONTAL, // Split top/bottom
     VERTICAL    // Split left/right
+}
+
+/**
+ * Represents the screen bounds of a panel in global coordinates.
+ */
+data class PanelBounds(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float
+) {
+    val left: Float get() = x
+    val right: Float get() = x + width
+    val top: Float get() = y
+    val bottom: Float get() = y + height
+
+    val centerX: Float get() = x + width / 2
+    val centerY: Float get() = y + height / 2
+
+    /** Check if this bounds overlaps with another vertically */
+    fun hasVerticalOverlapWith(other: PanelBounds): Boolean {
+        return !(bottom <= other.top || top >= other.bottom)
+    }
+
+    /** Check if this bounds overlaps with another horizontally */
+    fun hasHorizontalOverlapWith(other: PanelBounds): Boolean {
+        return !(right <= other.left || left >= other.right)
+    }
+}
+
+/**
+ * Navigation direction for spatial panel navigation.
+ */
+enum class NavigationDirection {
+    LEFT, RIGHT, UP, DOWN
 }
 
 @Stable
@@ -79,7 +116,36 @@ class SplitViewState(
         val activePanelId: String,
         val workspaceName: String = ""
     )
-    
+
+    // Track panel positions for spatial navigation
+    /**
+     * Maps panel IDs to their screen bounds.
+     * Updated by RenderSplitNode via onGloballyPositioned callbacks.
+     */
+    private val _panelBounds = mutableStateMapOf<String, PanelBounds>()
+
+    /**
+     * Update the bounds for a specific panel.
+     * Called from Compose layout during positioning.
+     */
+    fun updatePanelBounds(panelId: String, bounds: PanelBounds) {
+        _panelBounds[panelId] = bounds
+    }
+
+    /**
+     * Get the current bounds for a panel, or null if not yet positioned.
+     */
+    fun getPanelBounds(panelId: String): PanelBounds? {
+        return _panelBounds[panelId]
+    }
+
+    /**
+     * Clear bounds for a specific panel (e.g., when removed).
+     */
+    fun clearPanelBounds(panelId: String) {
+        _panelBounds.remove(panelId)
+    }
+
     fun setActivePanel(panelId: String) {
         _activePanelId.value = panelId
     }
@@ -145,8 +211,6 @@ class SplitViewState(
         // If no active component, this is likely the first URL on app startup
         // Find any available panel to add the tab to
         if (activeComponent == null) {
-            println("SplitView: No active component found, searching for any panel")
-
             // Try to get first available panel
             val firstPanel = getAllPanels().firstOrNull()
             if (firstPanel == null) {
@@ -155,7 +219,6 @@ class SplitViewState(
             }
 
             val component = firstPanel.tabsComponent
-            println("SplitView: Found panel ${firstPanel.id}, creating tab there")
 
             // Create tab in first available panel
             val fluckTab = FluckTabInfo(
@@ -169,7 +232,6 @@ class SplitViewState(
             if (tabIndex >= 0) {
                 component.selectTab(tabIndex)
                 setActivePanel(firstPanel.id)
-                println("SplitView: Created tab at index $tabIndex in panel ${firstPanel.id}")
             } else {
                 println("SplitView: ERROR - Failed to add tab to panel")
             }
@@ -434,13 +496,203 @@ class SplitViewState(
     private fun getAllPanelsInNode(node: SplitNode): List<SplitNode.Panel> {
         return when (node) {
             is SplitNode.Panel -> listOf(node)
-            is SplitNode.VerticalSplit -> 
+            is SplitNode.VerticalSplit ->
                 getAllPanelsInNode(node.left) + getAllPanelsInNode(node.right)
-            is SplitNode.HorizontalSplit -> 
+            is SplitNode.HorizontalSplit ->
                 getAllPanelsInNode(node.top) + getAllPanelsInNode(node.bottom)
         }
     }
-    
+
+    // Spatial Navigation Methods
+
+    /**
+     * Find the best panel to navigate to in the given direction from the active panel.
+     * Returns null if no suitable panel exists in that direction.
+     */
+    fun findPanelInDirection(direction: NavigationDirection): SplitNode.Panel? {
+        val currentBounds = getPanelBounds(activePanelId) ?: return null
+        val allPanels = getAllPanels().filter { it.id != activePanelId }
+
+        return when (direction) {
+            NavigationDirection.LEFT -> findClosestPanelToLeft(currentBounds, allPanels)
+            NavigationDirection.RIGHT -> findClosestPanelToRight(currentBounds, allPanels)
+            NavigationDirection.UP -> findClosestPanelAbove(currentBounds, allPanels)
+            NavigationDirection.DOWN -> findClosestPanelBelow(currentBounds, allPanels)
+        }
+    }
+
+    /**
+     * Find the closest panel to the left of the current bounds.
+     * Prioritizes panels with maximum vertical overlap.
+     */
+    private fun findClosestPanelToLeft(
+        currentBounds: PanelBounds,
+        allPanels: List<SplitNode.Panel>
+    ): SplitNode.Panel? {
+        data class Candidate(
+            val panel: SplitNode.Panel,
+            val bounds: PanelBounds,
+            val overlap: Float,
+            val distance: Float
+        )
+
+        val candidates = allPanels.mapNotNull { panel ->
+            val bounds = getPanelBounds(panel.id) ?: return@mapNotNull null
+
+            // Panel must be to the left (right edge <= current left edge, with small tolerance)
+            if (bounds.right > currentBounds.left + 1f) return@mapNotNull null
+
+            // Calculate vertical overlap
+            val overlapTop = maxOf(currentBounds.top, bounds.top)
+            val overlapBottom = minOf(currentBounds.bottom, bounds.bottom)
+            val overlap = maxOf(0f, overlapBottom - overlapTop)
+
+            // Must have some vertical overlap to be reachable
+            if (overlap <= 0f) return@mapNotNull null
+
+            // Calculate horizontal distance (gap between panels)
+            val distance = currentBounds.left - bounds.right
+
+            Candidate(panel, bounds, overlap, distance)
+        }
+
+        if (candidates.isEmpty()) return null
+
+        // Sort by overlap (descending), then by distance (ascending)
+        val best = candidates.maxByOrNull { candidate ->
+            candidate.overlap * 1000f - candidate.distance
+        }!!
+
+        return best.panel
+    }
+
+    /**
+     * Find the closest panel to the right of the current bounds.
+     */
+    private fun findClosestPanelToRight(
+        currentBounds: PanelBounds,
+        allPanels: List<SplitNode.Panel>
+    ): SplitNode.Panel? {
+        data class Candidate(
+            val panel: SplitNode.Panel,
+            val bounds: PanelBounds,
+            val overlap: Float,
+            val distance: Float
+        )
+
+        val candidates = allPanels.mapNotNull { panel ->
+            val bounds = getPanelBounds(panel.id) ?: return@mapNotNull null
+
+            // Panel must be to the right (left edge >= current right edge)
+            if (bounds.left < currentBounds.right - 1f) return@mapNotNull null
+
+            // Calculate vertical overlap
+            val overlapTop = maxOf(currentBounds.top, bounds.top)
+            val overlapBottom = minOf(currentBounds.bottom, bounds.bottom)
+            val overlap = maxOf(0f, overlapBottom - overlapTop)
+
+            if (overlap <= 0f) return@mapNotNull null
+
+            // Calculate horizontal distance
+            val distance = bounds.left - currentBounds.right
+
+            Candidate(panel, bounds, overlap, distance)
+        }
+
+        if (candidates.isEmpty()) return null
+
+        val best = candidates.maxByOrNull { candidate ->
+            candidate.overlap * 1000f - candidate.distance
+        }!!
+
+        return best.panel
+    }
+
+    /**
+     * Find the closest panel above the current bounds.
+     * Prioritizes panels with maximum horizontal overlap.
+     */
+    private fun findClosestPanelAbove(
+        currentBounds: PanelBounds,
+        allPanels: List<SplitNode.Panel>
+    ): SplitNode.Panel? {
+        data class Candidate(
+            val panel: SplitNode.Panel,
+            val bounds: PanelBounds,
+            val overlap: Float,
+            val distance: Float
+        )
+
+        val candidates = allPanels.mapNotNull { panel ->
+            val bounds = getPanelBounds(panel.id) ?: return@mapNotNull null
+
+            // Panel must be above (bottom edge <= current top edge)
+            if (bounds.bottom > currentBounds.top + 1f) return@mapNotNull null
+
+            // Calculate horizontal overlap
+            val overlapLeft = maxOf(currentBounds.left, bounds.left)
+            val overlapRight = minOf(currentBounds.right, bounds.right)
+            val overlap = maxOf(0f, overlapRight - overlapLeft)
+
+            if (overlap <= 0f) return@mapNotNull null
+
+            // Calculate vertical distance
+            val distance = currentBounds.top - bounds.bottom
+
+            Candidate(panel, bounds, overlap, distance)
+        }
+
+        if (candidates.isEmpty()) return null
+
+        val best = candidates.maxByOrNull { candidate ->
+            candidate.overlap * 1000f - candidate.distance
+        }!!
+
+        return best.panel
+    }
+
+    /**
+     * Find the closest panel below the current bounds.
+     */
+    private fun findClosestPanelBelow(
+        currentBounds: PanelBounds,
+        allPanels: List<SplitNode.Panel>
+    ): SplitNode.Panel? {
+        data class Candidate(
+            val panel: SplitNode.Panel,
+            val bounds: PanelBounds,
+            val overlap: Float,
+            val distance: Float
+        )
+
+        val candidates = allPanels.mapNotNull { panel ->
+            val bounds = getPanelBounds(panel.id) ?: return@mapNotNull null
+
+            // Panel must be below (top edge >= current bottom edge)
+            if (bounds.top < currentBounds.bottom - 1f) return@mapNotNull null
+
+            // Calculate horizontal overlap
+            val overlapLeft = maxOf(currentBounds.left, bounds.left)
+            val overlapRight = minOf(currentBounds.right, bounds.right)
+            val overlap = maxOf(0f, overlapRight - overlapLeft)
+
+            if (overlap <= 0f) return@mapNotNull null
+
+            // Calculate vertical distance
+            val distance = bounds.top - currentBounds.bottom
+
+            Candidate(panel, bounds, overlap, distance)
+        }
+
+        if (candidates.isEmpty()) return null
+
+        val best = candidates.maxByOrNull { candidate ->
+            candidate.overlap * 1000f - candidate.distance
+        }!!
+
+        return best.panel
+    }
+
     fun checkAndCloseEmptyPanels() {
         // First, count how many panels we have in total
         val allPanels = getAllPanels()
@@ -524,19 +776,19 @@ class SplitViewState(
         }
     }
     
-    fun collectAllActiveFluckTabs(): List<ActiveTab> {
+    fun collectAllActiveFluckTabs(windowId: String = "unknown"): List<ActiveTab> {
         val result = mutableListOf<ActiveTab>()
         val seenTabIds = mutableSetOf<String>()
-        
+
         // Collect from current state
         _currentWorkspaceId?.let { workspaceId ->
             // Get the actual workspace name from preserved states or use a default
-            val workspaceName = preservedWorkspaceStates[workspaceId]?.workspaceName 
+            val workspaceName = preservedWorkspaceStates[workspaceId]?.workspaceName
                 ?: when (workspaceId) {
                     "last-session" -> "Last Session"
                     else -> "Current Workspace"
                 }
-                
+
             getAllPanels().forEach { panel ->
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
                     if (tab is FluckTabInfo && !seenTabIds.contains(tab.id)) {
@@ -545,7 +797,8 @@ class SplitViewState(
                                 tabInfo = tab,
                                 workspaceId = workspaceId,
                                 workspaceName = workspaceName,
-                                panelId = panel.id
+                                panelId = panel.id,
+                                windowId = windowId
                             )
                         )
                         seenTabIds.add(tab.id)
@@ -553,14 +806,14 @@ class SplitViewState(
                 }
             }
         }
-        
+
         // Collect from preserved states (only if not already in current state)
         preservedWorkspaceStates.forEach { (workspaceId, state) ->
             if (workspaceId != _currentWorkspaceId) {
-                collectFluckTabsFromNode(state.rootNode, workspaceId, state.workspaceName, result, seenTabIds)
+                collectFluckTabsFromNode(state.rootNode, workspaceId, state.workspaceName, windowId, result, seenTabIds)
             }
         }
-        
+
         return result
     }
     
@@ -585,7 +838,7 @@ class SplitViewState(
         }
     }
     
-    fun collectAllActiveTabs(workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager? = null): List<ActiveTab> {
+    fun collectAllActiveTabs(workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager? = null, windowId: String = "unknown"): List<ActiveTab> {
         val result = mutableListOf<ActiveTab>()
         val seenTabIds = mutableSetOf<String>()
         val seenConfigIds = mutableSetOf<String>()
@@ -612,7 +865,8 @@ class SplitViewState(
                                 tabInfo = tab,
                                 workspaceId = workspaceId,
                                 workspaceName = getWorkspaceName(workspaceId),
-                                panelId = panel.id
+                                panelId = panel.id,
+                                windowId = windowId
                             )
                         )
                         seenTabIds.add(tab.id)
@@ -630,7 +884,7 @@ class SplitViewState(
         // Collect from preserved states (only if not already added)
         preservedWorkspaceStates.forEach { (workspaceId, state) ->
             if (!seenConfigIds.contains(workspaceId)) {
-                collectAllTabsFromNode(state.rootNode, workspaceId, getWorkspaceName(workspaceId), result, seenTabIds)
+                collectAllTabsFromNode(state.rootNode, workspaceId, getWorkspaceName(workspaceId), windowId, result, seenTabIds)
                 if (result.any { it.workspaceId == workspaceId }) {
                     seenConfigIds.add(workspaceId)
                 }
@@ -641,9 +895,10 @@ class SplitViewState(
     }
     
     private fun collectFluckTabsFromNode(
-        node: SplitNode, 
-        workspaceId: String, 
+        node: SplitNode,
+        workspaceId: String,
         workspaceName: String,
+        windowId: String,
         result: MutableList<ActiveTab>,
         seenTabIds: MutableSet<String>
     ) {
@@ -656,7 +911,8 @@ class SplitViewState(
                                 tabInfo = tab,
                                 workspaceId = workspaceId,
                                 workspaceName = workspaceName,
-                                panelId = node.id
+                                panelId = node.id,
+                                windowId = windowId
                             )
                         )
                         seenTabIds.add(tab.id)
@@ -664,20 +920,21 @@ class SplitViewState(
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectFluckTabsFromNode(node.left, workspaceId, workspaceName, result, seenTabIds)
-                collectFluckTabsFromNode(node.right, workspaceId, workspaceName, result, seenTabIds)
+                collectFluckTabsFromNode(node.left, workspaceId, workspaceName, windowId, result, seenTabIds)
+                collectFluckTabsFromNode(node.right, workspaceId, workspaceName, windowId, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectFluckTabsFromNode(node.top, workspaceId, workspaceName, result, seenTabIds)
-                collectFluckTabsFromNode(node.bottom, workspaceId, workspaceName, result, seenTabIds)
+                collectFluckTabsFromNode(node.top, workspaceId, workspaceName, windowId, result, seenTabIds)
+                collectFluckTabsFromNode(node.bottom, workspaceId, workspaceName, windowId, result, seenTabIds)
             }
         }
     }
     
     private fun collectAllTabsFromNode(
-        node: SplitNode, 
-        workspaceId: String, 
+        node: SplitNode,
+        workspaceId: String,
         workspaceName: String,
+        windowId: String,
         result: MutableList<ActiveTab>,
         seenTabIds: MutableSet<String>
     ) {
@@ -690,7 +947,8 @@ class SplitViewState(
                                 tabInfo = tab,
                                 workspaceId = workspaceId,
                                 workspaceName = workspaceName,
-                                panelId = node.id
+                                panelId = node.id,
+                                windowId = windowId
                             )
                         )
                         seenTabIds.add(tab.id)
@@ -698,12 +956,12 @@ class SplitViewState(
                 }
             }
             is SplitNode.VerticalSplit -> {
-                collectAllTabsFromNode(node.left, workspaceId, workspaceName, result, seenTabIds)
-                collectAllTabsFromNode(node.right, workspaceId, workspaceName, result, seenTabIds)
+                collectAllTabsFromNode(node.left, workspaceId, workspaceName, windowId, result, seenTabIds)
+                collectAllTabsFromNode(node.right, workspaceId, workspaceName, windowId, result, seenTabIds)
             }
             is SplitNode.HorizontalSplit -> {
-                collectAllTabsFromNode(node.top, workspaceId, workspaceName, result, seenTabIds)
-                collectAllTabsFromNode(node.bottom, workspaceId, workspaceName, result, seenTabIds)
+                collectAllTabsFromNode(node.top, workspaceId, workspaceName, windowId, result, seenTabIds)
+                collectAllTabsFromNode(node.bottom, workspaceId, workspaceName, windowId, result, seenTabIds)
             }
         }
     }
@@ -739,7 +997,7 @@ private fun RenderSplitNode(
         is SplitNode.Panel -> {
             // Note: Panel activation is now handled by user interactions (tab clicks, etc.)
             // rather than automatic activation on render
-            
+
             // Monitor this specific panel's tab count
             val tabsState = node.tabsComponent.tabsState.subscribeAsState()
             LaunchedEffect(node.id, tabsState.value.tabs.size) {
@@ -749,11 +1007,29 @@ private fun RenderSplitNode(
                     splitViewState.checkAndCloseEmptyPanels()
                 }
             }
-            
-            node.tabsComponent.BossMainPanel(
-                splitViewState = splitViewState,
-                currentPanelId = node.id
-            )
+
+            // Capture panel position for spatial navigation
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { coordinates ->
+                        val bounds = coordinates.boundsInRoot()
+                        splitViewState.updatePanelBounds(
+                            panelId = node.id,
+                            bounds = PanelBounds(
+                                x = bounds.left,
+                                y = bounds.top,
+                                width = bounds.width,
+                                height = bounds.height
+                            )
+                        )
+                    }
+            ) {
+                node.tabsComponent.BossMainPanel(
+                    splitViewState = splitViewState,
+                    currentPanelId = node.id
+                )
+            }
         }
         is SplitNode.VerticalSplit -> {
             BossResizablePanel(

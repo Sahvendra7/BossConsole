@@ -63,6 +63,7 @@ data class ActiveTab(
     val workspaceId: String,
     val workspaceName: String,
     val panelId: String,
+    val windowId: String, // Window identifier for multi-window support
     val splitPosition: String? = null // "Left", "Right", "Top", "Bottom", or null for single panel
 )
 

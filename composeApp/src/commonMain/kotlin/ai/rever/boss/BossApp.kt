@@ -21,6 +21,7 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.rememberSplitViewState
+import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,8 +55,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.input.key.*
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -79,6 +78,18 @@ import kotlin.time.Clock
 import ai.rever.boss.services.auth.CoreAuthService
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.keymap.handler.KeymapHandler
+import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
+import ai.rever.boss.keymap.lifecycle.conditions.*
+import ai.rever.boss.components.events.KeyboardEventBus
+import ai.rever.boss.components.events.KeyboardEventPriority
+import ai.rever.boss.components.events.KeyEventSource
+import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
+import ai.rever.boss.components.events.KeyboardEventResult
+import ai.rever.boss.actions.BossActionHandler
 
 
 @Composable
@@ -100,7 +111,12 @@ fun ComponentContext.BossApp(
         tabRegistry = tabRegistry,
         initialTabsComponent = tabsComponent
     )
-    
+
+    // Register this window's state in the global registry for multi-window features
+    LaunchedEffect(splitViewState, windowId) {
+        SplitViewStateRegistry.register(windowId, splitViewState)
+    }
+
     // Workspace manager - use global singleton to ensure Bookmarks panel sees updates
     val workspaceManager = remember { workspaceManager }
     val coroutineScope = rememberCoroutineScope()
@@ -108,13 +124,19 @@ fun ComponentContext.BossApp(
     // Focus requester for keyboard shortcuts
     val focusRequester = remember { FocusRequester() }
 
+    // Keyboard shortcut handler with customizable keymaps
+    val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
+    val keymapHandler = remember(keymapSettings) {
+        KeymapHandler.from(keymapSettings)
+    }
+
+
     // Request focus when auth session resolves (event-driven, no delays)
     val isSessionResolved by CoreAuthService.isSessionResolved.collectAsState()
 
     LaunchedEffect(isSessionResolved) {
         if (isSessionResolved) {
             focusRequester.requestFocus()
-            println("🎯 BossApp: Focus requested after session resolved for window $windowId")
         }
     }
 
@@ -132,6 +154,113 @@ fun ComponentContext.BossApp(
     
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
+
+    // Action handler for keyboard shortcuts
+    val actionHandler = remember(
+        splitViewState,
+        windowId,
+        workspaceManager,
+        draggablePanelComponent,
+        coroutineScope
+    ) {
+        BossActionHandler(
+            splitViewState = splitViewState,
+            windowId = windowId,
+            workspaceManager = workspaceManager,
+            draggablePanelComponent = draggablePanelComponent,
+            onShowNewTabDialog = { showNewTabDialog = true },
+            onShowTopOfMindDialog = { showTopOfMindDialog = true },
+            onShowSaveMessage = { saveMessage = it },
+            coroutineScope = coroutineScope
+        )
+    }
+
+    // Register lifecycle conditions for shortcuts
+    LaunchedEffect(Unit) {
+        // Note: TAB_CLOSE does not use lifecycle conditions because it has inline
+        // tab count checking in its handler. Using lifecycle conditions would break
+        // multi-window support since ShortcutLifecycleManager is a singleton and
+        // each window would overwrite the previous window's condition.
+
+        // Panel-dependent shortcuts
+        ShortcutLifecycleManager.registerCondition(
+            KeymapActions.PANEL_NAVIGATE_LEFT,
+            SplitNavigationCondition(
+                getSplitCount = { splitViewState.getAllPanels().size }
+            )
+        )
+
+        ShortcutLifecycleManager.registerCondition(
+            KeymapActions.PANEL_NAVIGATE_RIGHT,
+            SplitNavigationCondition(
+                getSplitCount = { splitViewState.getAllPanels().size }
+            )
+        )
+
+        ShortcutLifecycleManager.registerCondition(
+            KeymapActions.PANEL_NAVIGATE_UP,
+            SplitNavigationCondition(
+                getSplitCount = { splitViewState.getAllPanels().size }
+            )
+        )
+
+        ShortcutLifecycleManager.registerCondition(
+            KeymapActions.PANEL_NAVIGATE_DOWN,
+            SplitNavigationCondition(
+                getSplitCount = { splitViewState.getAllPanels().size }
+            )
+        )
+    }
+
+    // Reevaluate lifecycle conditions when panels change
+    LaunchedEffect(splitViewState.getAllPanels().size) {
+        ShortcutLifecycleManager.reevaluate()
+    }
+
+    // Subscribe to keyboard events with WORKSPACE priority
+    LaunchedEffect(keymapHandler, splitViewState, windowId) {
+        val handlerName = "BossApp-Workspace-$windowId"
+        KeyboardEventBus.subscribe(
+            priority = KeyboardEventPriority.WORKSPACE,
+            handlerName = handlerName
+        ) { event ->
+            // IMPORTANT: Only handle keyboard events if this window is focused
+            // This prevents multiple windows from processing the same shortcut
+            if (!WindowFocusManager.isWindowFocused(windowId)) {
+                return@subscribe KeyboardEventResult(
+                    consumed = false,
+                    handlerName = handlerName
+                )
+            }
+
+            // Determine current context based on active tab type
+            val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+            val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
+            val currentContext = when {
+                activeTab is FluckTabInfo -> ShortcutContext.BROWSER
+                activeTab is TerminalTabInfo -> ShortcutContext.TERMINAL
+                activeTab is EditorTabInfo -> ShortcutContext.EDITOR
+                else -> ShortcutContext.WORKSPACE
+            }
+
+            // Try to handle as workspace shortcut using the KeymapHandler
+            val handled = keymapHandler.handleKeyEvent(event.keyEvent, currentContext) { actionId ->
+                // Check lifecycle condition before executing (synchronous check)
+                // Skip lifecycle check for TAB_CLOSE - it has inline tab count checking
+                if (actionId != KeymapActions.TAB_CLOSE) {
+                    val state = ShortcutLifecycleManager.getState(actionId)
+                    if (state != null && !state.enabled) {
+                        return@handleKeyEvent false
+                    }
+                }
+
+                // Execute the shortcut action via the action handler
+                actionHandler.handleAction(actionId)
+            }
+
+            KeyboardEventResult(consumed = handled, handlerName = handlerName)
+        }
+    }
 
     DisposableEffect(panelRegistry, tabRegistry) {
         val plugin = DefaultPlugin(panelRegistry, tabRegistry)
@@ -160,6 +289,9 @@ fun ComponentContext.BossApp(
 
             // Cleanup update manager
             UpdateManager.instance.cleanup()
+
+            // Unregister this window's state from the global registry
+            SplitViewStateRegistry.unregister(windowId)
         }
     }
     
@@ -493,202 +625,33 @@ fun ComponentContext.BossApp(
                 .focusRequester(focusRequester)
                 .focusable()
                 .onPreviewKeyEvent { event ->
-                    // Use onPreviewKeyEvent to catch events before they reach children
+                    // Emit keyboard events to the event bus for priority-based handling
+                    // Child components (terminal, browser) consume their own events first
+                    // Events that reach here are passed to the KeyboardEventBus subscribers
                     if (event.type == KeyEventType.KeyDown) {
-                        when {
-                            // Cmd+N / Ctrl+N - New Window (standard browser pattern)
-                            event.isMetaPressed && event.key == Key.N && !event.isShiftPressed -> {
-                                ai.rever.boss.window.WindowOperations.createNewWindow()
-                                true  // Consume event
-                            }
-                            // Cmd+Shift+N / Ctrl+Shift+N - New Window (explicit)
-                            event.isMetaPressed && event.key == Key.N && event.isShiftPressed -> {
-                                ai.rever.boss.window.WindowOperations.createNewWindow()
-                                true  // Consume event
-                            }
-                            // Cmd+T / Ctrl+T - New Tab Dialog (standard browser pattern)
-                            event.isMetaPressed && event.key == Key.T -> {
-                                showNewTabDialog = true
-                                true  // Consume event
-                            }
-                            // Cmd+W / Ctrl+W - Close Tab (standard browser pattern)
-                            event.isMetaPressed && event.key == Key.W && !event.isShiftPressed -> {
-                                // First, check if all panels are already empty
-                                val allPanels = splitViewState.getAllPanels()
-                                val totalTabs = allPanels.sumOf { panel ->
-                                    panel.tabsComponent.tabsState.value.tabs.size
-                                }
-
-                                if (totalTabs == 0) {
-                                    // No tabs in any panel - close the window
-                                    ai.rever.boss.window.WindowOperations.closeWindow(windowId)
-                                } else {
-                                    // Has tabs - try to close current tab
-                                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                    if (activeTabsComponent != null) {
-                                        val tabs = activeTabsComponent.tabsState.value.tabs
-                                        val activeIndex = activeTabsComponent.tabsState.value.activeIndex
-                                        if (activeIndex >= 0 && activeIndex < tabs.size) {
-                                            activeTabsComponent.removeTab(activeIndex)
-
-                                            // Check if all panels now empty after closing tab
-                                            val updatedTotalTabs = allPanels.sumOf { panel ->
-                                                panel.tabsComponent.tabsState.value.tabs.size
-                                            }
-
-                                            if (updatedTotalTabs == 0) {
-                                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
-                                            }
-                                        }
-                                    }
-                                }
-                                true  // Consume event
-                            }
-                            // Cmd+Shift+W / Ctrl+Shift+W - Force Close Window
-                            event.isMetaPressed && event.key == Key.W && event.isShiftPressed -> {
-                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
-                                true  // Consume event
-                            }
-                            event.isMetaPressed && event.key == Key.O -> {
-                                // Open CodeBase panel (left.top.top)
-                                // Find the CodeBase item in the sidebar
-                                val codebaseItems = getItemsForSlot(left.top.top)
-                                val codebaseItem = codebaseItems.firstOrNull { 
-                                    it.pluginContentId == CodeBaseInfo.id 
-                                }
-                                if (codebaseItem != null) {
-                                    // Make left.top visible first
-                                    if (!isVisible(left.top)) {
-                                        setPanelVisible(left.top, true)
-                                    }
-                                    // Then invoke the onClick to select CodeBase
-                                    codebaseItem.onClick?.invoke()
-                                }
-                                true
-                            }
-                            event.isMetaPressed && event.key == Key.R -> {
-                                // Reload current browser tab if it's a Fluck tab in the active panel
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                if (activeTabsComponent != null) {
-                                    val activeTab = activeTabsComponent.tabsState.value.activeTab
-                                    if (activeTab is FluckTabInfo) {
-                                        // Trigger reload event for the browser
-                                        val activeTabComponent = activeTabsComponent.getActiveComponent()
-                                        if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
-                                            activeTabComponent.reload()
-                                        }
-                                    }
-                                }
-                                true
-                            }
-                            // Cmd+0 - Actual Size (Reset Zoom to 100%)
-                            event.isMetaPressed && event.key == Key.Zero -> {
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                val activeTab = activeTabsComponent?.getActiveComponent()
-                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
-                                    activeTab.actualSize()
-                                }
-                                true
-                            }
-                            // Cmd++ / Cmd+= - Zoom In
-                            event.isMetaPressed && (event.key == Key.Plus || event.key == Key.Equals) -> {
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                val activeTab = activeTabsComponent?.getActiveComponent()
-                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
-                                    activeTab.zoomIn()
-                                }
-                                true
-                            }
-                            // Cmd+- - Zoom Out
-                            event.isMetaPressed && event.key == Key.Minus -> {
-                                val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                                val activeTab = activeTabsComponent?.getActiveComponent()
-                                if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
-                                    activeTab.zoomOut()
-                                }
-                                true
-                            }
-                            event.isCtrlPressed && event.key == Key.Spacebar -> {
-                                // Open Boss Active Tabs quick switcher
-                                showTopOfMindDialog = true
-                                true
-                            }
-                            event.isMetaPressed && event.isShiftPressed && event.key == Key.S -> {
-                                // Save current workspace (Cmd+Shift+S)
-                                coroutineScope.launch {
-                                    val currentConfig = workspaceManager.currentWorkspace.value
-                                    if (currentConfig != null) {
-                                        // Extract current layout state
-                                        val currentLayout = extractCurrentWorkspace(splitViewState)
-                                        
-                                        // Update the workspace with current layout
-                                        val updatedConfig = currentConfig.copy(
-                                            layout = currentLayout.layout,
-                                            timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
-                                        )
-                                        
-                                        // Save the updated workspace
-                                        workspaceManager.updateCurrentWorkspace(updatedConfig)
-                                        workspaceManager.saveCurrentWorkspace()
-                                        
-                                        // Mark as saved (remove from modified list)
-                                        TabTreeState.markWorkspaceAsSaved(currentConfig.id)
-                                        
-                                        // Show feedback
-                                        saveMessage = "Workspace '${currentConfig.name}' saved successfully"
-                                        delay(3000)
-                                        saveMessage = null
-                                    } else {
-                                        // No workspace loaded, create new one
-                                        val currentLayout = extractCurrentWorkspace(splitViewState)
-                                        val newConfig = currentLayout.copy(
-                                            name = "Workspace ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
-                                            description = "Saved workspace"
-                                        )
-                                        workspaceManager.updateCurrentWorkspace(newConfig)
-                                        workspaceManager.saveCurrentWorkspace()
-                                        
-                                        // Show feedback
-                                        saveMessage = "New workspace '${newConfig.name}' saved successfully"
-                                        delay(3000)
-                                        saveMessage = null
-                                    }
-                                }
-                                true
-                            }
-                            // TEST: Cmd+Shift+G - Test external link handling (opens google.com)
-                            // This simulates clicking a link in an external app to test the URL event flow
-                            event.isMetaPressed && event.isShiftPressed && event.key == Key.G -> {
-                                println("🧪 [TEST] Triggering URL handler with google.com (simulating external link)")
-                                coroutineScope.launch {
-                                    ai.rever.boss.components.events.URLEventBus.openURL(
-                                        "https://www.google.com",
-                                        "Google"
-                                    )
-                                }
-                                true
-                            }
-                            // Navigate between panels with Cmd+Arrow keys
-                            event.isMetaPressed && event.key == Key.DirectionLeft -> {
-                                // Switch to left/previous panel
-                                val panels = splitViewState.getAllPanels()
-                                val currentIndex = panels.indexOfFirst { it.id == splitViewState.activePanelId }
-                                if (currentIndex > 0) {
-                                    splitViewState.setActivePanel(panels[currentIndex - 1].id)
-                                }
-                                true
-                            }
-                            event.isMetaPressed && event.key == Key.DirectionRight -> {
-                                // Switch to right/next panel
-                                val panels = splitViewState.getAllPanels()
-                                val currentIndex = panels.indexOfFirst { it.id == splitViewState.activePanelId }
-                                if (currentIndex >= 0 && currentIndex < panels.size - 1) {
-                                    splitViewState.setActivePanel(panels[currentIndex + 1].id)
-                                }
-                                true
-                            }
-                            else -> false
+                        // Determine current context based on active tab type
+                        val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                        val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
+                        val currentContext = when {
+                            activeTab is FluckTabInfo -> ShortcutContext.BROWSER
+                            activeTab is TerminalTabInfo -> ShortcutContext.TERMINAL
+                            activeTab is EditorTabInfo -> ShortcutContext.EDITOR
+                            else -> ShortcutContext.WORKSPACE
                         }
+
+                        // Emit to KeyboardEventBus for priority-based handling
+                        coroutineScope.launch {
+                            KeyboardEventBus.emit(
+                                BossKeyboardEvent(
+                                    keyEvent = event,
+                                    source = KeyEventSource.WORKSPACE,
+                                    context = currentContext
+                                )
+                            )
+                        }
+
+                        // Don't consume the event - let KeyboardEventBus handlers decide
+                        false
                     } else {
                         false
                     }

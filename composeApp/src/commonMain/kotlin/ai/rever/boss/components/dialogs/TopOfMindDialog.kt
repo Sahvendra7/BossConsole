@@ -5,6 +5,8 @@ import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.components.window_panel.SplitViewStateRegistry
+import ai.rever.boss.utils.WindowFocusManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,7 +33,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun TopOfMindDialog(
-    splitViewState: SplitViewState,
+    splitViewState: SplitViewState? = null, // Kept for backward compatibility but not used
     workspaceManager: WorkspaceManager,
     onDismiss: () -> Unit,
     onTabSelect: (ActiveTab) -> Unit
@@ -41,19 +43,51 @@ fun TopOfMindDialog(
     var selectedIndex by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    
+
+    // Helper function to handle tab selection with window focusing
+    fun handleTabSelect(activeTab: ActiveTab) {
+        println("[TopOfMindDialog] Selecting tab '${activeTab.tabInfo.title}' from window '${activeTab.windowId}'")
+
+        // Focus the window that contains the tab
+        val focused = WindowFocusManager.focusWindow(activeTab.windowId)
+
+        if (focused) {
+            println("[TopOfMindDialog] Successfully focused window '${activeTab.windowId}'")
+            // Call the original callback which will handle tab selection
+            onTabSelect(activeTab)
+        } else {
+            println("[TopOfMindDialog] Warning: Failed to focus window '${activeTab.windowId}'")
+            // Still try to select the tab even if window focusing failed
+            onTabSelect(activeTab)
+        }
+    }
+
     // Update active tabs when dialog opens and refresh periodically
+    // Collects tabs from ALL open windows using the global registry
     LaunchedEffect(Unit) {
+        // Helper function to collect tabs from all windows
+        fun collectTabsFromAllWindows(): List<ActiveTab> {
+            val allWindowStates = SplitViewStateRegistry.getAllStates()
+            val allTabs = mutableListOf<ActiveTab>()
+
+            allWindowStates.forEach { (windowId, state) ->
+                val windowTabs = state.collectAllActiveTabs(workspaceManager, windowId)
+                allTabs.addAll(windowTabs)
+            }
+
+            return allTabs
+        }
+
         // Immediate update when dialog opens
-        val tabs = splitViewState.collectAllActiveTabs()
+        val tabs = collectTabsFromAllWindows()
         TopOfMindState.updateActiveTabs(tabs)
-        
+
         // Periodic refresh to ensure dialog has latest data
         while (true) {
             delay(1000) // Check every second while dialog is open
-            val currentTabs = splitViewState.collectAllActiveTabs()
+            val currentTabs = collectTabsFromAllWindows()
             val existingTabs = TopOfMindState.activeTabs.value
-            
+
             if (currentTabs != existingTabs) {
                 TopOfMindState.updateActiveTabs(currentTabs)
             }
@@ -117,7 +151,7 @@ fun TopOfMindDialog(
                             }
                             Key.Enter -> {
                                 if (filteredTabs.isNotEmpty() && selectedIndex < filteredTabs.size) {
-                                    onTabSelect(filteredTabs[selectedIndex])
+                                    handleTabSelect(filteredTabs[selectedIndex])
                                 }
                                 true
                             }
@@ -225,7 +259,7 @@ fun TopOfMindDialog(
                             ActiveTabDialogItem(
                                 activeTab = activeTab,
                                 isSelected = isSelected,
-                                onTabClick = { onTabSelect(activeTab) }
+                                onTabClick = { handleTabSelect(activeTab) }
                             )
                         }
                     }

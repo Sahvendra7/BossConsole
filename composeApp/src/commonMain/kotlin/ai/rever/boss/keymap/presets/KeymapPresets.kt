@@ -1,0 +1,469 @@
+package ai.rever.boss.keymap.presets
+
+import ai.rever.boss.keymap.model.KeyBinding
+import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.keymap.model.KeymapSettings
+import ai.rever.boss.keymap.model.ShortcutContext
+
+/**
+ * Preset keyboard shortcut configurations.
+ * Provides default keymaps and popular IDE-style presets.
+ */
+object KeymapPresets {
+    /**
+     * Get the default BOSS keymap (matches current hardcoded shortcuts).
+     */
+    fun getBOSSDefault(): KeymapSettings {
+        val bindings = listOf(
+            // Window Management
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_NEW,
+                key = "N",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_CLOSE)
+            ),
+            // Tab Management
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEW,
+                key = "T",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
+            ),
+            // Browser Controls
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_RELOAD,
+                key = "R",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_RELOAD)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_RESET,
+                key = "Zero",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_RESET)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_IN,
+                key = "Equals",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_IN)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_OUT,
+                key = "Minus",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
+            ),
+            // Navigation
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_LEFT,
+                key = "DirectionLeft",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_LEFT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_RIGHT,
+                key = "DirectionRight",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_RIGHT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_UP,
+                key = "DirectionUp",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_UP)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_DOWN,
+                key = "DirectionDown",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.QUICK_SWITCHER_OPEN,
+                key = "Spacebar",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.QUICK_SWITCHER_OPEN)
+            ),
+            // Workspace
+            KeyBinding(
+                actionId = KeymapActions.WORKSPACE_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.WORKSPACE,
+                category = KeymapActions.Categories.WORKSPACE,
+                description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
+            ),
+            // Tools
+            KeyBinding(
+                actionId = KeymapActions.CODEBASE_OPEN,
+                key = "O",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TOOLS,
+                description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
+            ),
+            // Debug
+            KeyBinding(
+                actionId = KeymapActions.TEST_EXTERNAL_LINK,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.DEBUG,
+                description = KeymapActions.getDescription(KeymapActions.TEST_EXTERNAL_LINK)
+            )
+        )
+
+        return KeymapSettings.fromBindings(bindings, presetName = "BOSS Default", customized = false)
+    }
+
+    /**
+     * Get VS Code-style keymap.
+     * Based on Visual Studio Code's default keyboard shortcuts.
+     */
+    fun getVSCodePreset(): KeymapSettings {
+        val bindings = listOf(
+            // Window Management - VS Code uses Cmd+Shift+N for new window
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_NEW,
+                key = "N",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_CLOSE)
+            ),
+            // Tab Management - VS Code uses Cmd+N for new file, Cmd+W for close
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEW,
+                key = "N",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
+            ),
+            // Browser Controls
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_RELOAD,
+                key = "R",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_RELOAD)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_RESET,
+                key = "Zero",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_RESET)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_IN,
+                key = "Equals",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_IN)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_OUT,
+                key = "Minus",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
+            ),
+            // Navigation - VS Code uses Cmd+Alt+Arrow for editor group navigation
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_LEFT,
+                key = "DirectionLeft",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_LEFT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_RIGHT,
+                key = "DirectionRight",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_RIGHT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_UP,
+                key = "DirectionUp",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_UP)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_DOWN,
+                key = "DirectionDown",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
+            ),
+            // VS Code uses Cmd+P for quick open (quick switcher)
+            KeyBinding(
+                actionId = KeymapActions.QUICK_SWITCHER_OPEN,
+                key = "P",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.QUICK_SWITCHER_OPEN)
+            ),
+            // Workspace - VS Code uses Cmd+K S for save workspace
+            KeyBinding(
+                actionId = KeymapActions.WORKSPACE_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.WORKSPACE,
+                category = KeymapActions.Categories.WORKSPACE,
+                description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
+            ),
+            // Tools - VS Code uses Cmd+Shift+E for Explorer (sidebar)
+            KeyBinding(
+                actionId = KeymapActions.CODEBASE_OPEN,
+                key = "E",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TOOLS,
+                description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
+            ),
+            // Debug - Keep same as BOSS
+            KeyBinding(
+                actionId = KeymapActions.TEST_EXTERNAL_LINK,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.DEBUG,
+                description = KeymapActions.getDescription(KeymapActions.TEST_EXTERNAL_LINK)
+            )
+        )
+
+        return KeymapSettings.fromBindings(bindings, presetName = "VS Code", customized = false)
+    }
+
+    /**
+     * Get IntelliJ IDEA-style keymap.
+     * Based on IntelliJ IDEA's default macOS keyboard shortcuts.
+     */
+    fun getIntelliJPreset(): KeymapSettings {
+        val bindings = listOf(
+            // Window Management - IntelliJ uses Cmd+Shift+N for search, we'll use for new window
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_NEW,
+                key = "N",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.WINDOW_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.WINDOW_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.WINDOW_CLOSE)
+            ),
+            // Tab Management - IntelliJ uses Cmd+N for "New..."
+            KeyBinding(
+                actionId = KeymapActions.TAB_NEW,
+                key = "N",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_NEW)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.TAB_CLOSE,
+                key = "W",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TAB_MANAGEMENT,
+                description = KeymapActions.getDescription(KeymapActions.TAB_CLOSE)
+            ),
+            // Browser Controls - IntelliJ uses Cmd+R for Run, we'll use for reload
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_RELOAD,
+                key = "R",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_RELOAD)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_RESET,
+                key = "Zero",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_RESET)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_IN,
+                key = "Equals",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_IN)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_ZOOM_OUT,
+                key = "Minus",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
+            ),
+            // Navigation - IntelliJ uses Cmd+Alt+Arrow for navigation
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_LEFT,
+                key = "DirectionLeft",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_LEFT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_RIGHT,
+                key = "DirectionRight",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_RIGHT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_UP,
+                key = "DirectionUp",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_UP)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_NAVIGATE_DOWN,
+                key = "DirectionDown",
+                modifiers = listOf("Cmd", "Alt"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
+            ),
+            // IntelliJ uses Cmd+E for Recent Files (like quick switcher)
+            KeyBinding(
+                actionId = KeymapActions.QUICK_SWITCHER_OPEN,
+                key = "E",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.QUICK_SWITCHER_OPEN)
+            ),
+            // Workspace - IntelliJ uses Cmd+S for save
+            KeyBinding(
+                actionId = KeymapActions.WORKSPACE_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.WORKSPACE,
+                category = KeymapActions.Categories.WORKSPACE,
+                description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
+            ),
+            // Tools - IntelliJ uses Cmd+1 for Project tool window
+            KeyBinding(
+                actionId = KeymapActions.CODEBASE_OPEN,
+                key = "One",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.TOOLS,
+                description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
+            ),
+            // Debug
+            KeyBinding(
+                actionId = KeymapActions.TEST_EXTERNAL_LINK,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.DEBUG,
+                description = KeymapActions.getDescription(KeymapActions.TEST_EXTERNAL_LINK)
+            )
+        )
+
+        return KeymapSettings.fromBindings(bindings, presetName = "IntelliJ IDEA", customized = false)
+    }
+
+    /**
+     * Get Emacs-style keymap.
+     * Uses Ctrl-based keyboard shortcuts inspired by Emacs.
+     */
+    fun getEmacsPreset(): KeymapSettings {
+        return EmacsPresetDefinition.create()
+    }
+
+    /**
+     * Get all available preset names.
+     */
+    fun getAvailablePresets(): List<String> = listOf(
+        "BOSS Default",
+        "VS Code",
+        "IntelliJ IDEA",
+        "Emacs"
+    )
+}

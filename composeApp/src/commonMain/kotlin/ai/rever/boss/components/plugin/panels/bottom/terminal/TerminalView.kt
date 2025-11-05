@@ -5,6 +5,10 @@ import BossDarkAccent
 import BossDarkBorder
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.verticalScrollWithScrollbar
+import ai.rever.boss.components.events.KeyboardEventBus
+import ai.rever.boss.components.events.KeyEventSource
+import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
+import ai.rever.boss.keymap.model.ShortcutContext
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -137,7 +141,23 @@ fun TerminalView(viewModel: TerminalViewModel) {
                 .onFocusChanged { hasFocus = it.hasFocus }
                 .onPreviewKeyEvent { keyEvent ->
                     if (keyEvent.type == KeyEventType.KeyDown) {
-                        handleKeyEvent(keyEvent, viewModel)
+                        val consumed = handleKeyEvent(keyEvent, viewModel)
+
+                        // If terminal didn't consume the event, emit to KeyboardEventBus
+                        // This allows global shortcuts (like Cmd+N) to work even when terminal has focus
+                        if (!consumed) {
+                            coroutineScope.launch {
+                                KeyboardEventBus.emit(
+                                    BossKeyboardEvent(
+                                        keyEvent = keyEvent,
+                                        source = KeyEventSource.COMPONENT_TERMINAL,
+                                        context = ShortcutContext.TERMINAL
+                                    )
+                                )
+                            }
+                        }
+
+                        consumed
                     } else false
                 },
             textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),

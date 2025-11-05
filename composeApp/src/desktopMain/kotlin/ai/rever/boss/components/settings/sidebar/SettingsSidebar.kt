@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP
 }
 
 @Composable
@@ -93,7 +93,17 @@ fun SettingsSidebar(
             isSelected = selectedSection == SettingsSection.SECURITY,
             onClick = { onSectionChange(SettingsSection.SECURITY) }
         )
-        
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.Keyboard,
+            title = "Keyboard Shortcuts",
+            subtitle = "Edit shortcuts, presets",
+            isSelected = selectedSection == SettingsSection.KEYMAP,
+            onClick = { onSectionChange(SettingsSection.KEYMAP) }
+        )
+
     }
 }
 

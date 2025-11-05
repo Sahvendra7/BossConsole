@@ -96,6 +96,36 @@ actual object WindowFocusManager {
     }
 
     /**
+     * Bring a specific window to front by its ID
+     *
+     * @param windowId The ID of the window to focus
+     * @return true if the window was found and focused, false otherwise
+     */
+    actual fun focusWindow(windowId: String): Boolean {
+        val window = windows[windowId]
+        return if (window != null) {
+            SwingUtilities.invokeLater {
+                // Make window visible if minimized
+                if (!window.isVisible) {
+                    window.isVisible = true
+                }
+
+                // Bring to front
+                window.toFront()
+
+                // Request focus
+                window.requestFocus()
+
+                println("WindowFocusManager: Focused window $windowId")
+            }
+            true
+        } else {
+            println("WindowFocusManager: Window $windowId not found")
+            false
+        }
+    }
+
+    /**
      * Bring the first registered window to front (backward compatibility)
      */
     actual fun bringToFront() {

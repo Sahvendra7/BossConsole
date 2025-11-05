@@ -77,3 +77,9 @@ detekt-report.sarif
 
 # Compilation logs
 compile.log
+
+# JVM crash logs
+hs_err_pid*.log
+
+# External tool configurations
+.serena/

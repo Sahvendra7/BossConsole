@@ -70,7 +70,8 @@ import kotlin.time.Clock
 @Composable
 fun BossTabsComponent.BossMainTabBar(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
-    currentPanelId: String? = null
+    currentPanelId: String? = null,
+    focusRequester: FocusRequester? = null
 ) {
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
@@ -148,7 +149,9 @@ fun BossTabsComponent.BossMainTabBar(
                         },
                         onClose = {
                             removeTab(index)
-                            // Tab removal is handled, cleanup will happen via LaunchedEffect
+                            // Request focus back to the main panel after closing tab
+                            // This ensures keyboard shortcuts continue to work
+                            focusRequester?.requestFocus()
                         },
                         contextMenuItems = buildList {
                             // Track interaction when context menu is opened
@@ -222,6 +225,8 @@ fun BossTabsComponent.BossMainTabBar(
                                     ai.rever.boss.window.WindowOperations.openTabInNewWindow(config)
                                     // Remove tab from current window after opening in new window
                                     removeTab(index)
+                                    // Request focus back to the main panel
+                                    focusRequester?.requestFocus()
                                 })
                                 add(ContextMenuItem(isDivider = true))
                             }
@@ -229,12 +234,16 @@ fun BossTabsComponent.BossMainTabBar(
                             // Close current tab
                             add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
                                 removeTab(index)
+                                // Request focus back to the main panel
+                                focusRequester?.requestFocus()
                             })
 
                             // Close other tabs (only show if there are other tabs)
                             if (totalTabs > 1) {
                                 add(ContextMenuItem("Close Other Tabs", Icons.Outlined.Clear) {
                                     closeOtherTabs(index)
+                                    // Request focus back to the main panel
+                                    focusRequester?.requestFocus()
                                 })
                             }
 
@@ -242,6 +251,8 @@ fun BossTabsComponent.BossMainTabBar(
                             if (index < totalTabs - 1) {
                                 add(ContextMenuItem("Close Tabs to the Right", Icons.Outlined.ChevronRight) {
                                     closeTabsToRight(index)
+                                    // Request focus back to the main panel
+                                    focusRequester?.requestFocus()
                                 })
                             }
 
@@ -249,6 +260,8 @@ fun BossTabsComponent.BossMainTabBar(
                             if (index > 0) {
                                 add(ContextMenuItem("Close Tabs to the Left", Icons.Outlined.ChevronLeft) {
                                     closeTabsToLeft(index)
+                                    // Request focus back to the main panel
+                                    focusRequester?.requestFocus()
                                 })
                             }
                         }
@@ -514,7 +527,8 @@ fun BossTabsComponent.BossMainPanel(
     ) {
         BossMainTabBar(
             splitViewState = splitViewState,
-            currentPanelId = currentPanelId
+            currentPanelId = currentPanelId,
+            focusRequester = focusRequester
         )
         Divider(color = BossDarkBorder)
         BossMainPanelContent(

@@ -13,6 +13,14 @@ expect object WindowFocusManager {
     fun bringToFront()
 
     /**
+     * Bring a specific window to front by its ID
+     *
+     * @param windowId The ID of the window to focus
+     * @return true if the window was found and focused, false otherwise
+     */
+    fun focusWindow(windowId: String): Boolean
+
+    /**
      * Check if a specific window is currently focused
      *
      * @param windowId The window ID to check

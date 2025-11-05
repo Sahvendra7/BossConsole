@@ -4,7 +4,13 @@ import BossDarkSurface
 import ai.rever.boss.BossAppWithAuth
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.window.*
@@ -46,6 +52,24 @@ fun ApplicationScope.BossWindow(
 
         // Register window for focus management (deep links, etc.)
         WindowFocusManager.registerWindow(windowState.id, window)
+
+        // Attach GlobalKeyboardInterceptor for AWT-level keyboard interception
+        val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
+        val globalInterceptor = remember { GlobalKeyboardInterceptor(keymapSettings) }
+
+        DisposableEffect(window, globalInterceptor) {
+            globalInterceptor.attach(window)
+
+            onDispose {
+                globalInterceptor.detach(window)
+            }
+        }
+
+        // Update interceptor when keymap settings change
+        DisposableEffect(keymapSettings) {
+            globalInterceptor.updateSettings(keymapSettings)
+            onDispose { }
+        }
 
         // macOS MenuBar - provides native menu integration
         // Note: Keyboard shortcuts (Cmd+N, Cmd+T, etc.) are handled in BossApp.kt via onPreviewKeyEvent

@@ -4,6 +4,7 @@ import BossDarkBackground
 import BossDarkSurface
 import BossDarkBorder
 import ai.rever.boss.components.settings.sections.*
+import ai.rever.boss.components.settings.keymap.EditableKeymapSettings
 import ai.rever.boss.components.settings.sidebar.SettingsSection
 import ai.rever.boss.components.settings.sidebar.SettingsSidebar
 import ai.rever.boss.updater.UpdateSettingsSection
@@ -91,6 +92,7 @@ private fun SettingsContent() {
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                         SettingsSection.UPDATES -> UpdatesSettings()
                         SettingsSection.SECURITY -> SecuritySettings()
+                        SettingsSection.KEYMAP -> EditableKeymapSettings()
                     }
                 }
             }
