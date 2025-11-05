@@ -851,7 +851,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
           fetch-depth: 0
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
@@ -863,10 +863,12 @@ jobs:
       - name: Create and push tag
         env:
           VERSION: ${{ needs.prepare-version.outputs.version }}
+          COMMIT_SHA: ${{ needs.prepare-version.outputs.updated-sha }}
         run: |
-          echo "🏷️  Creating tag v$VERSION after successful release"
+          echo "🏷️  Creating tag v$VERSION on commit $COMMIT_SHA"
+          echo "This ensures tag points to version bump commit, not current main HEAD"
 
-          # Create annotated tag
+          # Create annotated tag on the specific commit
           git tag -a "v$VERSION" -m "Release v$VERSION"
 
           # Push tag
