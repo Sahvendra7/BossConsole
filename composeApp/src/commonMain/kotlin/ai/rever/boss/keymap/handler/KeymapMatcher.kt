@@ -117,8 +117,20 @@ class KeymapMatcher(
         val eventShift = event.isShiftPressed
         val eventAlt = event.isAltPressed
 
-        // Match logic: binding requires Cmd OR Ctrl → event has Meta OR Ctrl
-        val modifierMatch = (hasCmd == eventMeta || hasCtrl == eventCtrl) &&
+        // Match logic: Handle platform-agnostic Cmd/Ctrl matching
+        // Fix: Previous logic (hasCmd == eventMeta || hasCtrl == eventCtrl) incorrectly matched
+        // when neither was required/pressed because (false == false) evaluates to true
+        val primaryModifierMatch = if (hasCmd || hasCtrl) {
+            // Binding requires a primary modifier (Cmd or Ctrl)
+            // Event must have the corresponding platform modifier pressed
+            (hasCmd && eventMeta) || (hasCtrl && eventCtrl)
+        } else {
+            // Binding doesn't require primary modifier
+            // Event must not have any primary modifier pressed
+            !eventMeta && !eventCtrl
+        }
+
+        val modifierMatch = primaryModifierMatch &&
                 hasShift == eventShift &&
                 hasAlt == eventAlt
 
