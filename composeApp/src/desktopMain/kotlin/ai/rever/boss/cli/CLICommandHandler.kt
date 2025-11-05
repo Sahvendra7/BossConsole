@@ -222,14 +222,15 @@ class CLICommandHandler private constructor() {
      * Opens URL in Fluck browser tab.
      */
     private suspend fun handleOpenUrl(url: String) {
-        // Validate URL
-        if (!CLISecurityValidator.isValidUrl(url)) {
+        // Normalize and validate URL (adds https:// if missing)
+        val normalizedUrl = CLISecurityValidator.normalizeAndValidateUrl(url)
+        if (normalizedUrl == null) {
             println("CLI: Invalid URL: $url")
             return
         }
 
         withContext(Dispatchers.Main) {
-            URLHandlerService.handleURL(url)
+            URLHandlerService.handleURL(normalizedUrl)
         }
     }
 

@@ -244,7 +244,7 @@ class SplitViewState(
                 component.tabsState.value.tabs
                     .indexOfFirst { tab ->
                         tab is FluckTabInfo &&
-                        (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
+                        tab.currentUrl == url  // Only check current URL to avoid focusing tabs that navigated away
                     }
                     .takeIf { it >= 0 }
                     ?.let { tabIndex ->
@@ -540,7 +540,7 @@ class SplitViewState(
         getAllPanels().forEach { panel ->
             if (panel.tabsComponent.tabsState.value.tabs.any { tab ->
                 tab is FluckTabInfo &&
-                (tab.url == url || tab.currentUrl == url)  // Check both initial and current URL
+                tab.currentUrl == url  // Only check current URL to avoid focusing tabs that navigated away
             }) {
                 return panel.id to panel.tabsComponent
             }
