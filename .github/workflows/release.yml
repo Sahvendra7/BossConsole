@@ -840,39 +840,3 @@ jobs:
           echo "- 🐧 Linux RPM (RHEL/Fedora)" >> $GITHUB_STEP_SUMMARY
           echo "- 🐧 Linux JAR (Universal)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
-
-  create-tag:
-    name: Create Git Tag
-    runs-on: ubuntu-latest
-    needs: [prepare-version, create-release]
-    if: github.event_name == 'workflow_dispatch' && needs.prepare-version.outputs.should-create-tag == 'true'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare-version.outputs.updated-sha }}
-          fetch-depth: 0
-          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Create and push tag
-        env:
-          VERSION: ${{ needs.prepare-version.outputs.version }}
-          COMMIT_SHA: ${{ needs.prepare-version.outputs.updated-sha }}
-        run: |
-          echo "🏷️  Creating tag v$VERSION on commit $COMMIT_SHA"
-          echo "This ensures tag points to version bump commit, not current main HEAD"
-
-          # Create annotated tag on the specific commit
-          git tag -a "v$VERSION" -m "Release v$VERSION"
-
-          # Push tag
-          git push origin "v$VERSION"
-
-          echo "✅ Tag v$VERSION created and pushed successfully"
-
