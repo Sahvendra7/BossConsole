@@ -715,6 +715,12 @@ tasks.register("extractCLIToAppResources") {
     doLast {
         println("📦 Extracting CLI script to app bundle Resources...")
 
+        // Check if signing is enabled
+        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
+        val developerId = System.getenv("MACOS_DEVELOPER_ID")
+            ?: System.getenv("DEVELOPER_ID")
+            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
+
         // Find the built app in the standard Compose Desktop location
         val appDir = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
         val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
@@ -741,6 +747,38 @@ tasks.register("extractCLIToAppResources") {
 
                 println("✅ CLI script installed to: ${targetScript.absolutePath}")
                 println("   Homebrew will symlink this to /opt/homebrew/bin/boss")
+
+                // CRITICAL: Re-sign the entire app bundle after adding the CLI script
+                // This is necessary because adding files to a signed bundle invalidates the signature
+                if (!signingDisabled) {
+                    println("🔒 Re-signing app bundle after CLI script installation...")
+                    try {
+                        project.exec {
+                            commandLine(
+                                "codesign",
+                                "--force",
+                                "--deep",
+                                "--options", "runtime",
+                                "--sign", developerId,
+                                "--timestamp",
+                                "--entitlements", project.file("src/desktopMain/resources/BOSS.entitlements").absolutePath,
+                                appFile.absolutePath
+                            )
+                        }
+
+                        // Verify the re-signed app
+                        project.exec {
+                            commandLine("codesign", "-vvv", "--deep", "--strict", appFile.absolutePath)
+                        }
+
+                        println("✅ App bundle re-signed successfully after CLI script installation")
+                    } catch (e: Exception) {
+                        println("❌ Failed to re-sign app bundle: ${e.message}")
+                        throw e
+                    }
+                } else {
+                    println("⚠️  Signing disabled - skipping app bundle re-signing")
+                }
             } else {
                 println("⚠️  Warning: Generated CLI script not found at ${cliScript.absolutePath}")
                 println("   Make sure generateVersionedCLIScripts task ran successfully")
