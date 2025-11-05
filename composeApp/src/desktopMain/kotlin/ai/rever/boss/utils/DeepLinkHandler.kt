@@ -1,18 +1,31 @@
 package ai.rever.boss.utils
 
 import ai.rever.boss.services.URLHandlerService
+import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.registery.PanelId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.awt.Desktop
 import java.net.URI
+import java.net.URLDecoder
+import java.io.File
 
 actual object DeepLinkHandler {
     private val _deepLinkFlow = MutableStateFlow<String?>(null)
     actual val deepLinkFlow: StateFlow<String?> = _deepLinkFlow
-    
+
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-    
+
     init {
         setupPlatformHandler()
     }
@@ -123,13 +136,224 @@ actual object DeepLinkHandler {
     }
     
     actual fun processDeepLink(uri: String) {
-        _deepLinkFlow.value = uri
+        println("DeepLinkHandler: Processing deep link: $uri")
+
+        when {
+            uri.startsWith("boss://url") -> handleUrlLink(uri)
+            uri.startsWith("boss://workspace") -> handleWorkspaceLink(uri)
+            uri.startsWith("boss://file") -> handleFileLink(uri)
+            uri.startsWith("boss://terminal") -> handleTerminalLink(uri)
+            uri.startsWith("boss://folder") -> handleFolderLink(uri)
+            uri.startsWith("boss://plugin") -> handlePluginLink(uri)
+            else -> {
+                // Default: emit to flow for auth/other handlers
+                _deepLinkFlow.value = uri
+            }
+        }
     }
     
     actual fun clearDeepLink() {
         _deepLinkFlow.value = null
     }
-    
+
+    /**
+     * Handle boss://terminal deep links
+     * Examples:
+     *   boss://terminal
+     *   boss://terminal?command=ls%20-la
+     */
+    private fun handleTerminalLink(uri: String) {
+        println("DeepLinkHandler: Handling terminal link")
+
+        val params = parseQueryParams(uri)
+        val command = params["command"]?.urlDecode()
+
+        // Create a CLI command and queue it
+        val cliCommand = ai.rever.boss.cli.CLICommand.OpenTerminal(command)
+        ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
+
+        println("DeepLinkHandler: Terminal command queued${if (command != null) " with command: $command" else ""}")
+    }
+
+    /**
+     * Handle boss://folder deep links
+     * Examples:
+     *   boss://folder?path=/Users/name/project
+     *   boss://folder?path=/path&name=MyProject
+     */
+    private fun handleFolderLink(uri: String) {
+        println("DeepLinkHandler: Handling folder link")
+
+        val params = parseQueryParams(uri)
+        val path = params["path"]?.urlDecode()
+
+        if (path == null) {
+            println("DeepLinkHandler: Missing 'path' parameter in folder deep link")
+            return
+        }
+
+        val folder = File(path).absoluteFile
+
+        if (!folder.exists()) {
+            println("DeepLinkHandler: Folder does not exist: ${folder.absolutePath}")
+            return
+        }
+
+        if (!folder.isDirectory) {
+            println("DeepLinkHandler: Path is not a directory: ${folder.absolutePath}")
+            return
+        }
+
+        val name = params["name"] ?: folder.name
+
+        // Update ProjectState directly (reactive)
+        scope.launch(Dispatchers.Main) {
+            ProjectState.selectProject(
+                Project(
+                    name = name,
+                    path = folder.absolutePath,
+                    lastOpened = System.currentTimeMillis()
+                )
+            )
+            println("DeepLinkHandler: Folder opened in codebase: ${folder.absolutePath}")
+
+            // Emit panel open event to show the codebase panel
+            PanelEventBus.openPanel(CodeBaseInfo.id)
+            println("DeepLinkHandler: Emitted codebase panel open event")
+        }
+    }
+
+    /**
+     * Handle boss://plugin deep links
+     * Opens any panel by its panel ID.
+     * Examples:
+     *   boss://plugin?id=bookmarks
+     *   boss://plugin?id=terminal
+     *   boss://plugin?id=secret-manager
+     */
+    private fun handlePluginLink(uri: String) {
+        println("DeepLinkHandler: Handling plugin link")
+
+        val params = parseQueryParams(uri)
+        val panelIdStr = params["id"]?.urlDecode()
+
+        if (panelIdStr == null) {
+            println("DeepLinkHandler: Missing 'id' parameter in plugin deep link")
+            return
+        }
+
+        // Emit panel open event
+        scope.launch(Dispatchers.Main) {
+            // Create PanelId with panelId string
+            // The event handler in BossApp will look it up in the registry
+            val panelId = PanelId(
+                panelId = panelIdStr,
+                defaultOrder = 0,  // Will be ignored, registry has real value
+                pluginId = "ai.rever.boss"  // Default plugin
+            )
+
+            PanelEventBus.openPanel(panelId)
+            println("DeepLinkHandler: Emitted panel open event for: $panelIdStr")
+        }
+    }
+
+    /**
+     * Handle boss://url deep links
+     * Examples:
+     *   boss://url?url=https%3A%2F%2Fexample.com
+     */
+    private fun handleUrlLink(uri: String) {
+        println("DeepLinkHandler: Handling URL link")
+
+        val params = parseQueryParams(uri)
+        val url = params["url"]?.urlDecode()
+
+        if (url == null) {
+            println("DeepLinkHandler: Missing 'url' parameter in URL deep link")
+            return
+        }
+
+        // Queue command via CLI handler
+        val cliCommand = ai.rever.boss.cli.CLICommand.OpenUrl(url)
+        ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
+
+        println("DeepLinkHandler: URL command queued: $url")
+    }
+
+    /**
+     * Handle boss://workspace deep links
+     * Examples:
+     *   boss://workspace?path=/path/to/workspace.json
+     */
+    private fun handleWorkspaceLink(uri: String) {
+        println("DeepLinkHandler: Handling workspace link")
+
+        val params = parseQueryParams(uri)
+        val path = params["path"]?.urlDecode()
+
+        if (path == null) {
+            println("DeepLinkHandler: Missing 'path' parameter in workspace deep link")
+            return
+        }
+
+        // Queue command via CLI handler
+        val cliCommand = ai.rever.boss.cli.CLICommand.LoadWorkspace(path)
+        ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
+
+        println("DeepLinkHandler: Workspace command queued: $path")
+    }
+
+    /**
+     * Handle boss://file deep links
+     * Examples:
+     *   boss://file?path=/path/to/file.kt
+     */
+    private fun handleFileLink(uri: String) {
+        println("DeepLinkHandler: Handling file link")
+
+        val params = parseQueryParams(uri)
+        val path = params["path"]?.urlDecode()
+
+        if (path == null) {
+            println("DeepLinkHandler: Missing 'path' parameter in file deep link")
+            return
+        }
+
+        // Queue command via CLI handler
+        val cliCommand = ai.rever.boss.cli.CLICommand.OpenFile(path)
+        ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
+
+        println("DeepLinkHandler: File command queued: $path")
+    }
+
+    /**
+     * Parse query parameters from URL
+     * Example: boss://terminal?command=ls&title=test -> {command: "ls", title: "test"}
+     */
+    private fun parseQueryParams(uri: String): Map<String, String> {
+        val query = uri.substringAfter("?", "")
+        if (query.isEmpty() || query == uri) return emptyMap()
+
+        return query.split("&")
+            .mapNotNull { param ->
+                val parts = param.split("=", limit = 2)
+                if (parts.size == 2) parts[0] to parts[1] else null
+            }
+            .toMap()
+    }
+
+    /**
+     * URL decode a string
+     */
+    private fun String.urlDecode(): String {
+        return try {
+            URLDecoder.decode(this, "UTF-8")
+        } catch (e: Exception) {
+            println("DeepLinkHandler: Error decoding URL: ${e.message}")
+            this
+        }
+    }
+
     actual fun extractVerificationToken(uri: String): String? {
         // Extract token from URLs like: boss://auth/verify#access_token=xxx or boss://auth/verify?token=xxx
         return try {

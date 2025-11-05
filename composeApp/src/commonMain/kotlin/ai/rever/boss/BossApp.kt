@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
@@ -77,7 +78,13 @@ import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
 import ai.rever.boss.services.auth.CoreAuthService
 import ai.rever.boss.services.URLHandlerService
+import ai.rever.boss.services.TerminalHandlerService
+import ai.rever.boss.services.FileHandlerService
+import ai.rever.boss.services.WorkspaceHandlerService
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.CLIVersionManager
+import ai.rever.boss.utils.CLIInstaller
+import ai.rever.boss.utils.Version
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.KeymapHandler
 import ai.rever.boss.keymap.model.KeymapActions
@@ -321,7 +328,26 @@ fun ComponentContext.BossApp(
             println("Warning: Failed to initialize update manager: ${e.message}")
         }
     }
-    
+
+    // Check and auto-update CLI version on startup
+    LaunchedEffect(Unit) {
+        launch {
+            try {
+                if (CLIVersionManager.needsCLIUpdate()) {
+                    println("CLI auto-update: Updating CLI scripts to version ${Version.CURRENT}")
+                    val result = CLIInstaller.installCLI()
+                    if (result.success) {
+                        println("✅ CLI auto-update successful: ${result.message}")
+                    } else {
+                        println("⚠️ CLI auto-update failed: ${result.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                println("⚠️ CLI auto-update error: ${e.message}")
+            }
+        }
+    }
+
     // Load last used workspace on startup
     LaunchedEffect(workspaceManager, splitViewState) {
         // Wait for workspaces to be loaded
@@ -340,18 +366,60 @@ fun ComponentContext.BossApp(
                         val lastSessionConfig = configs.find { it.name == "Last Session" }
 
                         if (lastSessionConfig != null) {
+                            println("BossApp: Loading Last Session workspace BEFORE processing URLs/terminals")
+
                             // Ensure it has the correct ID
                             val configWithId = if (lastSessionConfig.id != "last-session") {
                                 lastSessionConfig.copy(id = "last-session")
                             } else {
                                 lastSessionConfig
                             }
-                            // Apply the last session workspace
+                            // Apply the last session workspace FIRST
                             workspaceManager.loadWorkspace(configWithId)
                             applyWorkspace(configWithId, splitViewState)
+
+                            println("BossApp: Last Session loaded, now processing queued URLs/terminals")
+                        } else {
+                            println("BossApp: No Last Session found, starting with empty workspace")
+                        }
+
+                        // CRITICAL: Mark handlers as ready AFTER Last Session loads (or after determining no session exists)
+                        // This ensures URLs/terminals/files/workspaces create tabs AFTER workspace is loaded,
+                        // not before (which would cause tabs to be destroyed by clearAllPanels)
+                        URLHandlerService.markAppReady()
+                        println("BossApp: Marked URL handler as ready (window: $windowId)")
+
+                        FileHandlerService.markReady()
+                        println("BossApp: Marked file handler as ready (window: $windowId)")
+
+                        WorkspaceHandlerService.markReady()
+                        println("BossApp: Marked workspace handler as ready (window: $windowId)")
+
+                        // Wait for session to resolve before marking terminal handler ready
+                        // This ensures terminal tabs only appear after authentication is fully initialized
+                        if (isSessionResolved) {
+                            TerminalHandlerService.markReady()
+                            println("BossApp: Marked terminal handler as ready (window: $windowId)")
+                        } else {
+                            println("BossApp: Session not resolved yet, will mark terminal handler ready later")
                         }
                     }
-                    // Else: New window - don't load Last Session, start with empty workspace
+                    // Else: New window - don't load Last Session, start with empty workspace, but still mark ready
+                    else {
+                        URLHandlerService.markAppReady()
+                        println("BossApp: Marked URL handler as ready (new window: $windowId)")
+
+                        FileHandlerService.markReady()
+                        println("BossApp: Marked file handler as ready (new window: $windowId)")
+
+                        WorkspaceHandlerService.markReady()
+                        println("BossApp: Marked workspace handler as ready (new window: $windowId)")
+
+                        if (isSessionResolved) {
+                            TerminalHandlerService.markReady()
+                            println("BossApp: Marked terminal handler as ready (new window: $windowId)")
+                        }
+                    }
                 }
             }
             .launchIn(this)
@@ -366,45 +434,145 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Listen for terminal open events - now handled by split state
+    LaunchedEffect(splitViewState) {
+        TerminalEventBus.terminalOpenEvents
+            .onEach { event ->
+                splitViewState.openTerminalInActivePanel(event.command)
+            }
+            .launchIn(this)
+
+        // Note: We DON'T call markReady() here - that happens AFTER Last Session loads
+        // just like URL handler, to prevent terminals from being destroyed by clearAllPanels()
+    }
+
+    // Listen for workspace load events from CLI
+    LaunchedEffect(splitViewState, workspaceManager) {
+        ai.rever.boss.components.events.WorkspaceEventBus.workspaceLoadEvents
+            .onEach { event ->
+                try {
+                    val file = java.io.File(event.workspacePath)
+                    if (file.exists() && file.canRead()) {
+                        val json = file.readText()
+                        val workspace = ai.rever.boss.components.workspaces.WorkspaceSerializer.deserialize(json)
+
+                        // Use the same loading pattern as the UI
+                        workspaceManager.loadWorkspace(workspace)
+                        applyWorkspace(workspace, splitViewState)
+
+                        println("BossApp: Workspace loaded from CLI: ${file.absolutePath}")
+                    } else {
+                        println("BossApp: Cannot load workspace: ${file.absolutePath}")
+                    }
+                } catch (e: Exception) {
+                    println("BossApp: Error loading workspace: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Listen for panel open events (e.g., from CLI folder command)
+    LaunchedEffect(draggablePanelComponent, panelRegistry) {
+        PanelEventBus.panelOpenEvents
+            .onEach { event ->
+                try {
+                    // Find the panel info from registry
+                    // Compare only panelId and pluginId, ignore defaultOrder (UI metadata)
+                    val panelInfo = panelRegistry.getAllPanels().find {
+                        it.id.panelId == event.panelId.panelId &&
+                        it.id.pluginId == event.panelId.pluginId
+                    }
+
+                    if (panelInfo != null) {
+                        val panelSlot = panelInfo.defaultSlotPosition
+                        val panelItems = draggablePanelComponent.getItemsForSlot(panelSlot)
+                        val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
+
+                        if (targetItem != null) {
+                            // Invoke onClick to show the panel
+                            draggablePanelComponent.onClick.invoke(targetItem)
+                            println("BossApp: Opened panel: ${event.panelId.panelId}")
+                        } else {
+                            println("BossApp: Panel item not found: ${event.panelId.panelId}")
+                        }
+                    } else {
+                        println("BossApp: Panel info not found: ${event.panelId}")
+                    }
+                } catch (e: Exception) {
+                    println("BossApp: Error opening panel: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Separate effect to handle session resolution AFTER Last Session may have loaded
+    // This ensures terminal handler is marked ready even if session resolves late
+    LaunchedEffect(isSessionResolved, workspaceManager.currentWorkspace.value) {
+        if (isSessionResolved && workspaceManager.currentWorkspace.value != null) {
+            // Session is now resolved and workspace has been loaded
+            // Mark terminal handler ready if it hasn't been already
+            TerminalHandlerService.markReady()
+            println("BossApp: Marked terminal handler as ready (session resolved after workspace load)")
+        }
+    }
+
     // Combined LaunchedEffect for URL handling and auto-show dialog (Issue #168)
     // Uses reactive state observation with processing state tracking to eliminate race conditions
     LaunchedEffect(splitViewState, windowId) {
-        // Step 1: Set up URL listener for incoming URLs
+        // Set up URL listener for incoming URLs
+        // Note: We DON'T call markAppReady() here - that happens AFTER Last Session loads
         ai.rever.boss.components.events.URLEventBus.urlOpenEvents
             .onEach { event ->
-                // Only handle URL events in the focused window to prevent duplicates
-                if (WindowFocusManager.isWindowFocused(windowId)) {
+                val isFocused = WindowFocusManager.isWindowFocused(windowId)
+                println("BossApp: Received URL event: ${event.url} (window: $windowId, focused: $isFocused)")
+
+                // Handle URL events in focused window
+                // During cold start, focus check may fail due to timing, so we handle events anyway
+                // and rely on the event bus's extraBufferCapacity to prevent duplicates
+                if (isFocused) {
+                    println("BossApp: Opening URL in focused window: ${event.url}")
+                    splitViewState.openUrlInActivePanel(event.url, event.title)
+                } else {
+                    // During cold start, window may not be marked as focused yet, but we still need to handle the URL
+                    // This is safe because there's only one window during cold start
+                    println("BossApp: Window not focused, but opening URL anyway (cold start handling): ${event.url}")
                     splitViewState.openUrlInActivePanel(event.url, event.title)
                 }
             }
             .launchIn(this)
 
-        // Step 2: Mark app as ready and process queued URLs
-        URLHandlerService.markAppReady()
-        println("BossApp: Marked app as ready for URL handling (window: $windowId)")
-
-        // Step 3: Observe BOTH tab count AND processing state reactively
+        // Step 3: Observe tab count AND processing state (URLs + Terminals + Files) reactively
         // This eliminates all timing assumptions by waiting for actual completion
         snapshotFlow {
             val allPanels = splitViewState.getAllPanels()
             val totalTabs = allPanels.sumOf { panel ->
                 panel.tabsComponent.tabsState.value.tabs.size
             }
-            val isProcessing = URLHandlerService.isProcessingURLs()
+            val isProcessingURLs = URLHandlerService.isProcessingURLs()
+            val isProcessingTerminals = TerminalHandlerService.isProcessingTerminals()
+            val isProcessingFiles = FileHandlerService.isProcessingFiles()
 
-            Pair(totalTabs, isProcessing)
+            data class ProcessingState(
+                val totalTabs: Int,
+                val isProcessingURLs: Boolean,
+                val isProcessingTerminals: Boolean,
+                val isProcessingFiles: Boolean
+            )
+            ProcessingState(totalTabs, isProcessingURLs, isProcessingTerminals, isProcessingFiles)
         }
             .debounce(200) // Wait for 200ms of stability
             .take(1)       // Only take first stabilized value
-            .collect { (totalTabs, isProcessing) ->
-                println("BossApp: State stabilized - tabs: $totalTabs, processing: $isProcessing (window: $windowId)")
+            .collect { state ->
+                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles} (window: $windowId)")
 
-                // Only show dialog if no tabs AND no URLs being processed
-                if (totalTabs == 0 && !isProcessing) {
+                // Only show dialog if no tabs AND nothing being processed
+                if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles) {
                     showNewTabDialog = true
                     println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing)")
                 } else {
-                    println("BossApp: Skipping auto-show (window: $windowId, tabs: $totalTabs, processing: $isProcessing)")
+                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles})")
                 }
             }
     }

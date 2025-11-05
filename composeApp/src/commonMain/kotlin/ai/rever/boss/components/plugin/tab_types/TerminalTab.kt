@@ -29,7 +29,8 @@ data class TerminalTabInfo(
     override val typeId: TabTypeId,
     override val title: String = "Terminal",
     override val icon: androidx.compose.ui.graphics.vector.ImageVector = TerminalTab.icon,
-    override val tabIcon: TabIcon = TabIcon.Vector(icon)
+    override val tabIcon: TabIcon = TabIcon.Vector(icon),
+    val initialCommand: String? = null
 ) : TabInfo
 
 class TerminalTabComponent(
@@ -83,10 +84,19 @@ class TerminalTabComponent(
     @Composable
     override fun Content() {
         TerminalView(terminalViewModel)
-        
-        // Ensure terminal is started - use the terminal instance as key
+
+        // Ensure terminal is started and send initial command if provided
         LaunchedEffect(terminalViewModel) {
             terminalViewModel.ensureStarted()
+
+            // Send initial command if provided
+            val terminalConfig = config as? TerminalTabInfo
+            val initialCommand = terminalConfig?.initialCommand
+            if (initialCommand != null) {
+                // Wait for terminal to initialize
+                delay(500)
+                terminalViewModel.sendInput(initialCommand + "\n")
+            }
         }
     }
 }

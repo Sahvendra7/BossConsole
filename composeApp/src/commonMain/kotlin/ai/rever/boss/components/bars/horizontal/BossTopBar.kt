@@ -85,7 +85,13 @@ fun Logo(name: String) {
         color = BossDarkAccent,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            Text(text = name.substring(0, 2).uppercase(),
+            // Handle names with < 2 characters gracefully
+            val initials = when {
+                name.length >= 2 -> name.substring(0, 2)
+                name.isNotEmpty() -> name[0].toString()
+                else -> "?"  // Fallback for empty names
+            }
+            Text(text = initials.uppercase(),
                 fontSize = 11.sp,
                 modifier = Modifier
                     .align(Alignment.Center)

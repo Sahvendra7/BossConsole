@@ -1,8 +1,10 @@
 package ai.rever.boss.services
 
 import ai.rever.boss.components.events.URLEventBus
+import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -32,7 +34,9 @@ actual object URLHandlerService {
     // Track active URL processing operations
     // Incremented when a coroutine is launched to process a URL
     // Decremented when the URL event emission completes
+    // Uses hybrid AtomicInteger + mutableStateOf for thread safety and Compose reactivity
     private val processingCount = AtomicInteger(0)
+    private val _isProcessing = mutableStateOf(false)
 
     /**
      * Check if there are any URLs queued for processing
@@ -48,9 +52,11 @@ actual object URLHandlerService {
      * even after the queue has been cleared. This prevents race conditions
      * when checking if tabs are being created.
      *
+     * Returns Compose State to trigger recomposition.
+     *
      * @return true if URL processing operations are in progress
      */
-    actual fun isProcessingURLs(): Boolean = processingCount.get() > 0
+    actual fun isProcessingURLs(): Boolean = _isProcessing.value
 
     /**
      * Mark the app as ready to handle URLs and process any queued URLs
@@ -126,19 +132,41 @@ actual object URLHandlerService {
             val title = extractDomain(url) ?: "Loading..."
 
             // Increment processing counter BEFORE launching coroutine
-            processingCount.incrementAndGet()
+            val count = processingCount.incrementAndGet()
+            _isProcessing.value = (count > 0)
             incremented = true  // Mark that THIS invocation incremented
-            println("URLHandlerService: Processing count incremented: ${processingCount.get()}")
+            println("URLHandlerService: Processing count incremented: $count, isProcessing: ${_isProcessing.value}")
 
             // Emit URL open event - all windows will receive it and the active window handles it
             CoroutineScope(Dispatchers.Main).launch {
                 try {
                     URLEventBus.openURL(url, title)
                     println("URLHandlerService: Emitted URL open event for $url")
+                    
+                    // CRITICAL: Wait for tab to actually be created before decrementing
+                    // The event emission is instant, but tab creation (splitViewState.openUrlInActivePanel)
+                    // is async and takes time. If we decrement immediately, BossApp's state check
+                    // will see 0 tabs + isProcessing=false and show New Tab Dialog / load Last Session,
+                    // which clears panels and destroys the tab being created.
+                    // 
+                    // Timeline without delay:
+                    // - t=0ms: Event emitted, counter decremented to 0
+                    // - t=0ms: Tab creation starts (async)
+                    // - t=200ms: BossApp debounce checks: tabs=0, isProcessing=false → shows dialog
+                    // - t=250ms: Tab creation completes but gets immediately destroyed
+                    //
+                    // With 500ms delay:
+                    // - t=0ms: Event emitted
+                    // - t=0ms: Tab creation starts (async)
+                    // - t=200ms: BossApp debounce checks: tabs=0, but isProcessing=true → waits
+                    // - t=250ms: Tab creation completes, tabs=1
+                    // - t=500ms: Counter decremented, isProcessing=false (tab already exists)
+                    delay(500)
                 } finally {
-                    // Decrement counter after emission completes (success or failure)
-                    processingCount.decrementAndGet()
-                    println("URLHandlerService: Processing count decremented: ${processingCount.get()}")
+                    // Decrement counter after tab has time to be created
+                    val count = processingCount.decrementAndGet()
+                    _isProcessing.value = (count > 0)
+                    println("URLHandlerService: Processing count decremented: $count, isProcessing: ${_isProcessing.value}")
                 }
             }
         } catch (e: Exception) {
@@ -147,8 +175,9 @@ actual object URLHandlerService {
             // Only decrement if THIS specific invocation actually incremented
             // This prevents decrementing other threads' counts in multi-threaded scenarios
             if (incremented) {
-                processingCount.decrementAndGet()
-                println("URLHandlerService: Processing count decremented due to error: ${processingCount.get()}")
+                val count = processingCount.decrementAndGet()
+                _isProcessing.value = (count > 0)
+                println("URLHandlerService: Processing count decremented due to error: $count, isProcessing: ${_isProcessing.value}")
             }
         }
     }

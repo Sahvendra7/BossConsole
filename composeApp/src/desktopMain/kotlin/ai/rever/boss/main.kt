@@ -1,21 +1,47 @@
 package ai.rever.boss
 
+import ai.rever.boss.cli.createBossCLI
+import ai.rever.boss.cli.CLICommandHandler
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
 import ai.rever.boss.components.plugin.panels.bottom.console.GlobalLogCapture
 import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.application
 import java.io.File
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
-    
+
+    // Parse CLI arguments if provided
+    if (args.isNotEmpty()) {
+        try {
+            // Check if args contain deep link protocols
+            val hasDeepLink = args.any {
+                it.startsWith("boss://") || it.startsWith("http://") || it.startsWith("https://")
+            }
+
+            // If it's a deep link, let DeepLinkHandler process it
+            // Otherwise, treat as CLI command
+            if (!hasDeepLink) {
+                println("CLI: Processing arguments: ${args.joinToString(" ")}")
+                createBossCLI().main(args)
+                // Commands are queued, continue with app initialization
+            }
+        } catch (e: Exception) {
+            println("CLI Error: ${e.message}")
+            // Don't exit - let the app start normally
+            // CLI errors shouldn't prevent GUI from launching
+        }
+    }
+
     // Initialize deep link handler
     DeepLinkHandler
-    
+
     // Process command line arguments for deep links (Windows)
     DeepLinkHandler.processCommandLineArgs(args)
     
@@ -62,6 +88,18 @@ fun main(args: Array<String>) {
     WindowManager.createNewWindow()
 
     application {
+        // Initialize CLI handler once app is running
+        LaunchedEffect(Unit) {
+            CLICommandHandler.getInstance().initialize(
+                windowManager = WindowManager,
+                getSplitViewState = {
+                    // Workspace loading now handled via WorkspaceManager from BossApp
+                    // No need to expose SplitViewState to CLI handler
+                    null
+                }
+            )
+        }
+
         // Render each window with stable identity via key()
         // This prevents re-composition of existing windows when new windows are added
         //

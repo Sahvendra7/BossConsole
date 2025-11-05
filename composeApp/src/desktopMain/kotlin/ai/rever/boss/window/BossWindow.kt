@@ -2,7 +2,9 @@ package ai.rever.boss.window
 
 import BossDarkSurface
 import ai.rever.boss.BossAppWithAuth
+import ai.rever.boss.components.dialogs.CLIInstallationDialog
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
+import ai.rever.boss.utils.CLIInstaller
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
@@ -10,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.window.*
@@ -56,6 +60,10 @@ fun ApplicationScope.BossWindow(
         // Attach GlobalKeyboardInterceptor for AWT-level keyboard interception
         val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
         val globalInterceptor = remember { GlobalKeyboardInterceptor(keymapSettings) }
+
+        // State for CLI installation dialog
+        var showCLIInstallDialog by remember { mutableStateOf(false) }
+        var isCliInstalled by remember { mutableStateOf<Boolean>(CLIInstaller.isInstalled()) }
 
         DisposableEffect(window, globalInterceptor) {
             globalInterceptor.attach(window)
@@ -174,6 +182,16 @@ fun ApplicationScope.BossWindow(
                 )
             }
 
+            // Tools Menu
+            Menu("Tools") {
+                Item(
+                    text = if (isCliInstalled) "Reinstall BOSS CLI" else "Install BOSS CLI",
+                    onClick = {
+                        showCLIInstallDialog = true
+                    }
+                )
+            }
+
             // Window Menu
             Menu("Window") {
                 Item(
@@ -237,6 +255,17 @@ fun ApplicationScope.BossWindow(
             BossAppWithAuth(
                 windowId = windowState.id,
                 isFirstWindow = isFirstWindow
+            )
+        }
+
+        // CLI Installation Dialog
+        if (showCLIInstallDialog) {
+            CLIInstallationDialog(
+                onDismiss = {
+                    showCLIInstallDialog = false
+                    // Refresh CLI installation status after dialog closes
+                    isCliInstalled = CLIInstaller.isInstalled()
+                }
             )
         }
     }

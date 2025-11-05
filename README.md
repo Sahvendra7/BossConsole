@@ -272,4 +272,88 @@ Add these badges to show build status:
 - **Release Notes**: Auto-generated with download links and system requirements
 - **Version Tracking**: All builds tagged with centralized version system
 
-The CI/CD system integrates seamlessly with our centralized version management, ensuring consistent versioning across all platforms and deployment methods. 
+The CI/CD system integrates seamlessly with our centralized version management, ensuring consistent versioning across all platforms and deployment methods.
+
+## CLI Installation
+
+BOSS includes a powerful command-line interface for quick access to browser, files, folders, and terminal functionality.
+
+### macOS (Homebrew) - Recommended
+
+The BOSS CLI is automatically installed with the Homebrew Cask:
+
+```bash
+brew install --cask boss
+# CLI is immediately available
+boss --help
+```
+
+### macOS/Linux (Manual Installation)
+
+For DMG installations or non-Homebrew users:
+
+1. Open BOSS application
+2. Go to **Tools** > **Install BOSS CLI**
+3. Follow the installation wizard
+
+The installer will:
+- Detect if BOSS is in `/Applications/` (standard DMG installation)
+- Create symlink at `/opt/homebrew/bin/boss` → app bundle (macOS)
+- Or copy to `~/.local/bin/boss` for custom locations (macOS/Linux)
+
+### Windows
+
+1. Open BOSS application
+2. Go to **Tools** > **Install BOSS CLI**
+3. Follow the installation wizard
+4. Restart terminal to use `boss` command
+
+### CLI Usage
+
+```bash
+# Open URLs
+boss url https://github.com
+boss google.com  # Auto-detects and adds https://
+
+# Open folders
+boss folder ~/Documents
+boss .  # Open current directory
+boss folder  # Open home directory
+
+# Open files
+boss file README.md
+boss ./path/to/file.txt
+
+# Terminal
+boss terminal
+boss terminal -c "ls -la"
+
+# Plugin access
+boss plugin bookmarks
+boss plugin secret-manager
+
+# Help
+boss --help
+```
+
+### Verifying Installation
+
+```bash
+which boss          # Check installation path
+boss --version      # Show BOSS version
+```
+
+### Installation Paths
+
+**Homebrew/DMG (macOS):**
+- Symlink: `/opt/homebrew/bin/boss`
+- Target: `/Applications/BOSS.app/Contents/Resources/boss`
+- Updates automatically with app
+
+**Manual (macOS/Linux):**
+- Copy: `~/.local/bin/boss`
+- Requires manual PATH configuration if not already set
+
+**Windows:**
+- Copy: `%USERPROFILE%\bin\boss.bat`
+- Installer updates PATH automatically 

@@ -83,3 +83,7 @@ hs_err_pid*.log
 
 # External tool configurations
 .serena/
+
+# Reference repositories (not tracked)
+homebrew-boss/
+boss-releases/

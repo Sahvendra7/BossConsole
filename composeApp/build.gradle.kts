@@ -3,6 +3,8 @@ import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import java.util.Properties
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -40,9 +42,9 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
 
     doLast {
         val major = versionProps.getProperty("app.version.major", "8")
-        val minor = versionProps.getProperty("app.version.minor", "8") 
+        val minor = versionProps.getProperty("app.version.minor", "8")
         val patch = versionProps.getProperty("app.version.patch", "0")
-        
+
         outputFile.get().asFile.apply {
             parentFile.mkdirs()
             writeText("""
@@ -59,6 +61,47 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
                 |}
                 |
             """.trimMargin())
+        }
+    }
+}
+
+// Task to generate versioned CLI scripts from templates
+val generateVersionedCLIScripts = tasks.register("generateVersionedCLIScripts") {
+    val sourceDir = file("../scripts")
+    val outputDir = layout.buildDirectory.dir("generated/resources/cli")
+
+    inputs.dir(sourceDir)
+    inputs.file(versionPropsFile)
+    outputs.dir(outputDir)
+
+    // Force regeneration on every build to keep CLI version synchronized
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val version = appVersion
+        val buildDate = LocalDateTime.now().format(
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        )
+
+        outputDir.get().asFile.mkdirs()
+
+        sourceDir.listFiles()?.forEach { scriptFile ->
+            if (scriptFile.isFile && (scriptFile.name == "boss" || scriptFile.name.startsWith("boss."))) {
+                val content = scriptFile.readText()
+                val versioned = content
+                    .replace("{{VERSION}}", version)
+                    .replace("{{BUILD_DATE}}", buildDate)
+
+                val outputFile = outputDir.get().asFile.resolve(scriptFile.name)
+                outputFile.writeText(versioned)
+
+                // Preserve executable permission for bash script
+                if (scriptFile.name == "boss") {
+                    outputFile.setExecutable(true, false)
+                }
+
+                println("Generated versioned CLI script: ${scriptFile.name} (v$version)")
+            }
         }
     }
 }
@@ -142,6 +185,10 @@ kotlin {
             kotlin.srcDir(generateVersionConstants.map { it.outputs.files.singleFile.parent })
         }
 
+        // Add generated CLI scripts to desktopMain resources
+        // Note: srcDir needs parent directory to maintain /cli/ path structure
+        desktopMain.resources.srcDir(generateVersionedCLIScripts.map { it.outputs.files.singleFile.parentFile })
+
         // androidMain.dependencies disabled for desktop-focused development
         /*
         androidMain.dependencies {
@@ -219,6 +266,9 @@ kotlin {
             implementation(libs.ktor.client.cio)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+
+            // CLI argument parsing
+            implementation("com.github.ajalt.clikt:clikt:4.2.1")
         }
 
         desktopTest.dependencies {
@@ -645,10 +695,60 @@ tasks.register("extractJcefNatives") {
     doLast {
         val jcefNativeDir = layout.buildDirectory.dir("jcef-natives").get().asFile
         jcefNativeDir.mkdirs()
-        
+
         // The jcefmaven library will download natives automatically
         // We just need to ensure the directory exists
         println("JCEF natives directory: ${jcefNativeDir.absolutePath}")
+    }
+}
+
+// Extract CLI script to app bundle Resources for Homebrew installation
+tasks.register("extractCLIToAppResources") {
+    description = "Extracts CLI script to BOSS.app/Contents/Resources for Homebrew binary stanza"
+    group = "build"
+
+    // Only run on macOS
+    onlyIf {
+        System.getProperty("os.name").lowercase().contains("mac")
+    }
+
+    doLast {
+        println("📦 Extracting CLI script to app bundle Resources...")
+
+        // Find the built app in the standard Compose Desktop location
+        val appDir = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
+
+        if (appFile?.exists() == true) {
+            println("Found app: ${appFile.name}")
+
+            // Target location: BOSS.app/Contents/Resources/
+            val resourcesDir = File(appFile, "Contents/Resources")
+            resourcesDir.mkdirs()
+
+            // Source: generated CLI script from build/generated/resources/cli/boss
+            val generatedCLIDir = layout.buildDirectory.dir("generated/resources/cli").get().asFile
+            val cliScript = File(generatedCLIDir, "boss")
+
+            if (cliScript.exists()) {
+                val targetScript = File(resourcesDir, "boss")
+
+                // Copy the CLI script
+                cliScript.copyTo(targetScript, overwrite = true)
+
+                // Make it executable
+                targetScript.setExecutable(true, false)
+
+                println("✅ CLI script installed to: ${targetScript.absolutePath}")
+                println("   Homebrew will symlink this to /opt/homebrew/bin/boss")
+            } else {
+                println("⚠️  Warning: Generated CLI script not found at ${cliScript.absolutePath}")
+                println("   Make sure generateVersionedCLIScripts task ran successfully")
+            }
+        } else {
+            println("⚠️  Warning: Built app not found at ${appDir.absolutePath}")
+            println("   This task should run after createDistributable")
+        }
     }
 }
 
@@ -677,6 +777,11 @@ afterEvaluate {
         if (isMacOS && !signingDisabled) {
             finalizedBy("signPty4jBinaries")
             println("📝 createDistributable will be finalized by signPty4jBinaries")
+        }
+        // Always extract CLI script to app Resources on macOS (for Homebrew installation)
+        if (isMacOS) {
+            finalizedBy("extractCLIToAppResources")
+            println("📝 createDistributable will be finalized by extractCLIToAppResources")
         }
     }
 

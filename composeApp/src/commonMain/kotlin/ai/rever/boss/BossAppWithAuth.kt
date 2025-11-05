@@ -112,6 +112,13 @@ fun ComponentContext.BossAppWithAuth(
 
                     DeepLinkHandler.clearDeepLink()
                 }
+                else -> {
+                    // Route non-auth deep links (boss://url, boss://file, boss://folder, boss://terminal, boss://workspace)
+                    // back to DeepLinkHandler for processing
+                    println("BossAppWithAuth: Routing non-auth deep link to DeepLinkHandler")
+                    DeepLinkHandler.processDeepLink(uri)
+                    DeepLinkHandler.clearDeepLink()
+                }
             }
         }
     }

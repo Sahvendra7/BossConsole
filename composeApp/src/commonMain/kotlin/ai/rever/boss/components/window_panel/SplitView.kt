@@ -267,6 +267,65 @@ class SplitViewState(
         }
     }
 
+    /**
+     * Open a terminal tab in the active panel
+     *
+     * Creates a new terminal tab in the active panel.
+     * If no active panel exists (app just started), uses the first available panel.
+     *
+     * @param command Optional initial command to run in the terminal
+     */
+    fun openTerminalInActivePanel(command: String? = null) {
+        val activeComponent = getActiveTabsComponent()
+
+        // If no active component, this is likely the first terminal on app startup
+        // Find any available panel to add the tab to
+        if (activeComponent == null) {
+            // Try to get first available panel
+            val firstPanel = getAllPanels().firstOrNull()
+            if (firstPanel == null) {
+                println("SplitView: ERROR - No panels available to create terminal tab")
+                return
+            }
+
+            val component = firstPanel.tabsComponent
+
+            // Create terminal tab in first available panel
+            val terminalTab = TerminalTabInfo(
+                id = "terminal-${System.currentTimeMillis()}",
+                typeId = TabTypeId("terminal"),
+                title = if (command != null) "Terminal: $command" else "Terminal",
+                initialCommand = command
+            )
+
+            val tabIndex = component.addTab(terminalTab)
+            if (tabIndex >= 0) {
+                component.selectTab(tabIndex)
+                setActivePanel(firstPanel.id)
+                println("SplitView: Terminal tab created in first panel${if (command != null) " with command: $command" else ""}")
+            } else {
+                println("SplitView: ERROR - Failed to add terminal tab to panel")
+            }
+            return
+        }
+
+        // Create new terminal tab in active panel
+        val terminalTab = TerminalTabInfo(
+            id = "terminal-${System.currentTimeMillis()}",
+            typeId = TabTypeId("terminal"),
+            title = if (command != null) "Terminal: $command" else "Terminal",
+            initialCommand = command
+        )
+
+        val tabIndex = activeComponent.addTab(terminalTab)
+        if (tabIndex >= 0) {
+            activeComponent.selectTab(tabIndex)
+            println("SplitView: Terminal tab created${if (command != null) " with command: $command" else ""}")
+        } else {
+            println("SplitView: ERROR - Failed to create terminal tab")
+        }
+    }
+
     fun splitPanel(
         panelId: String,
         orientation: SplitOrientation,
