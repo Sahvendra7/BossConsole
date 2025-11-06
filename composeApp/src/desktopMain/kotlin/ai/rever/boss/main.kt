@@ -3,6 +3,7 @@ package ai.rever.boss
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.cli.CLICommandHandler
 import ai.rever.boss.utils.DeepLinkHandler
+import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
@@ -16,6 +17,78 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
+
+    // Single-instance check: ensure only one BOSS instance runs
+    // On Windows, this prevents multiple windows when clicking deep links
+    if (!SingleInstanceManager.acquireLock()) {
+        println("Another BOSS instance is already running")
+
+        // Check if we have a deep link or URL to send to the existing instance
+        val deepLink = args.firstOrNull {
+            it.startsWith("boss://") ||
+            it.startsWith("http://") ||
+            it.startsWith("https://")
+        }
+
+        if (deepLink != null) {
+            println("Sending URL to existing instance: $deepLink")
+
+            // Try to send with retry logic (important for auth deep links during sign-in)
+            // Note: runBlocking is acceptable here as this runs during pre-UI initialization,
+            // before the Compose application starts. No UI thread exists yet to block.
+            var success = false
+            val maxRetries = 3
+            for (attempt in 1..maxRetries) {
+                if (SingleInstanceManager.sendToExistingInstance(deepLink)) {
+                    println("URL sent successfully on attempt $attempt. Exiting this instance.")
+                    success = true
+                    break
+                } else {
+                    println("Failed to send URL (attempt $attempt/$maxRetries)")
+                    if (attempt < maxRetries) {
+                        // Use coroutine delay instead of Thread.sleep to avoid blocking
+                        kotlinx.coroutines.runBlocking {
+                            kotlinx.coroutines.delay(500)
+                        }
+                    }
+                }
+            }
+
+            if (success) {
+                exitProcess(0)
+            } else {
+                // IPC failed after retries - DO NOT create new window
+                // This prevents duplicate windows during sign-in
+                val switchKeyHint = when {
+                    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "Cmd+Tab"
+                    else -> "Alt+Tab"
+                }
+
+                println("ERROR: Could not send URL to existing BOSS instance after $maxRetries attempts.")
+                println("The existing BOSS window is still running. Please:")
+                println("  1. Switch to the existing window ($switchKeyHint)")
+                println("  2. Manually paste the URL if needed: $deepLink")
+                println("")
+                println("This prevents creating duplicate windows during authentication.")
+                exitProcess(1)
+            }
+        } else {
+            val switchKeyHint = when {
+                System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "Cmd+Tab"
+                else -> "Alt+Tab"
+            }
+            println("No URL to send. The existing BOSS window should already be visible.")
+            println("Use $switchKeyHint to switch to the existing window, or close it to start a new instance.")
+            exitProcess(0)
+        }
+    }
+
+    // Register shutdown hook to release the single-instance lock
+    Runtime.getRuntime().addShutdownHook(Thread {
+        SingleInstanceManager.release()
+    })
+
+    println("Successfully acquired single-instance lock. Starting BOSS...")
 
     // Parse CLI arguments if provided
     if (args.isNotEmpty()) {
