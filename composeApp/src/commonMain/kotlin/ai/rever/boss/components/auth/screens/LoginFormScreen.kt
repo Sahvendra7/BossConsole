@@ -2,9 +2,11 @@ package ai.rever.boss.components.auth.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
@@ -63,14 +65,16 @@ fun LoginFormScreen(
         }
     }
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        BossLogo()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .heightIn(min = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            BossLogo()
         
         Spacer(modifier = Modifier.height(24.dp))
         
@@ -270,8 +274,9 @@ fun LoginFormScreen(
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
+        }
         }
     }
 }

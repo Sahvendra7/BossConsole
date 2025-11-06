@@ -1,10 +1,18 @@
 package ai.rever.boss.window
 
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import java.util.UUID
+
+/**
+ * Window type enum for determining appropriate size calculation
+ */
+enum class WindowType {
+    MAIN,      // Main application window (70-75% of screen)
+    AUTH,      // Authentication windows (40-45% of screen)
+    SETTINGS   // Settings window (60-65% of screen)
+}
 
 /**
  * Central manager for all BOSS windows
@@ -12,6 +20,9 @@ import java.util.UUID
  * Manages the lifecycle of multiple application windows, including creation,
  * removal, and tab transfer between windows. Follows macOS-style lifecycle
  * where the app stays running even when all windows are closed.
+ *
+ * Window sizes are calculated adaptively based on screen dimensions using
+ * DisplayUtils to provide optimal sizing across different display resolutions.
  */
 object WindowManager {
 
@@ -31,12 +42,12 @@ object WindowManager {
      * Create a new window
      *
      * @param position Window position (null for default cascade)
-     * @param size Window size (default 1280x800)
+     * @param windowType Type of window (determines adaptive sizing)
      * @return The newly created window state
      */
     fun createNewWindow(
         position: WindowPosition? = null,
-        size: DpSize = DpSize(1280.dp, 800.dp)
+        windowType: WindowType = WindowType.MAIN
     ): BossWindowState {
         val windowId = UUID.randomUUID().toString()
 
@@ -47,11 +58,11 @@ object WindowManager {
             id = windowId,
             title = "BOSS - Business Operating System Service",
             position = windowPosition,
-            size = size
+            windowType = windowType
         )
 
         _windows.add(windowState)
-        println("Created new window: $windowId (total windows: ${_windows.size})")
+        println("Created new window: $windowId (type: $windowType, total windows: ${_windows.size})")
 
         return windowState
     }
@@ -155,14 +166,17 @@ object WindowManager {
  * Note: Tabs are managed by each window's BossApp/SplitViewState,
  * not by WindowManager. This class only tracks window-level properties.
  *
+ * Window size is calculated adaptively in BossWindow.kt based on windowType
+ * and screen dimensions using DisplayUtils.
+ *
  * @property id Unique identifier for this window
  * @property title Window title
  * @property position Window position on screen
- * @property size Window size
+ * @property windowType Type of window (determines adaptive size calculation)
  */
 data class BossWindowState(
     val id: String,
     var title: String,
     val position: WindowPosition?,
-    val size: DpSize
+    val windowType: WindowType = WindowType.MAIN
 )

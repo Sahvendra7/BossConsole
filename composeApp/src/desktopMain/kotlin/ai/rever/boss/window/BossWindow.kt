@@ -5,9 +5,11 @@ import ai.rever.boss.BossAppWithAuth
 import ai.rever.boss.components.dialogs.CLIInstallationDialog
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
 import ai.rever.boss.utils.CLIInstaller
+import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
+import ai.rever.boss.window.WindowType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -29,7 +31,10 @@ import java.awt.event.KeyEvent
  * Each window has its own BossAppWithAuth instance, allowing multiple independent
  * workspaces to coexist.
  *
- * @param windowState The state for this window (position, size, tabs, etc.)
+ * Window size is calculated adaptively based on windowType and screen dimensions
+ * using DisplayUtils to provide optimal sizing across different display resolutions.
+ *
+ * @param windowState The state for this window (position, windowType, etc.)
  * @param onCloseRequest Callback when the window should be closed
  */
 @Composable
@@ -37,10 +42,17 @@ fun ApplicationScope.BossWindow(
     windowState: BossWindowState,
     onCloseRequest: () -> Unit
 ) {
+    // Calculate adaptive window size based on window type and screen dimensions
+    val windowSize = when (windowState.windowType) {
+        WindowType.MAIN -> DisplayUtils.calculateMainWindowSize()
+        WindowType.AUTH -> DisplayUtils.calculateAuthWindowSize()
+        WindowType.SETTINGS -> DisplayUtils.calculateSettingsWindowSize()
+    }
+
     // Remember window state for Compose Window
     val composeWindowState = rememberWindowState(
         position = windowState.position ?: WindowPosition.Aligned(Alignment.Center),
-        size = windowState.size
+        size = windowSize
     )
 
     Window(

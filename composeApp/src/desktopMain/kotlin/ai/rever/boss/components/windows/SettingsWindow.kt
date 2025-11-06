@@ -8,6 +8,7 @@ import ai.rever.boss.components.settings.keymap.EditableKeymapSettings
 import ai.rever.boss.components.settings.sidebar.SettingsSection
 import ai.rever.boss.components.settings.sidebar.SettingsSidebar
 import ai.rever.boss.updater.UpdateSettingsSection
+import ai.rever.boss.utils.DisplayUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -16,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
@@ -37,7 +37,7 @@ actual fun SettingsWindow(
             },
             title = "BOSS Settings",
             state = rememberWindowState(
-                size = DpSize(1200.dp, 800.dp),
+                size = DisplayUtils.calculateSettingsWindowSize(),
                 position = WindowPosition.Aligned(Alignment.Center)
             )
         ) {
