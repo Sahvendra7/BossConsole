@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ai.rever.boss.components.common.BossSearchBar
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Key
 import compose.icons.feathericons.RefreshCw
@@ -125,30 +126,11 @@ fun UserSecretSearchBar(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier,
-        placeholder = {
-            Text(
-                "Search by website or username...",
-                color = Color.Gray
-            )
-        },
-        leadingIcon = {
-            Icon(
-                FeatherIcons.Search,
-                contentDescription = "Search",
-                tint = Color.Gray
-            )
-        },
-        colors = TextFieldDefaults.outlinedTextFieldColors(
-            textColor = Color.White,
-            cursorColor = Color.White,
-            focusedBorderColor = Color(0xFF4CAF50),
-            unfocusedBorderColor = Color.Gray
-        ),
-        singleLine = true
+    BossSearchBar(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = "Search by website or username...",
+        modifier = modifier
     )
 }
 

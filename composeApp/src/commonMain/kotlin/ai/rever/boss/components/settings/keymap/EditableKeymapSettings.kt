@@ -155,14 +155,12 @@ fun EditableKeymapSettings() {
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Search shortcuts...") },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search"
+                        )
                     },
-                    colors = TextFieldDefaults.textFieldColors(
-                        backgroundColor = MaterialTheme.colors.surface,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                    singleLine = true
                 )
 
                 // Category filter dropdown

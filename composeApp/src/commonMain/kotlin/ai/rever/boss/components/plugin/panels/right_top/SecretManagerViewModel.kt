@@ -17,9 +17,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * ViewModel for Secret Manager
@@ -42,6 +44,10 @@ import kotlinx.coroutines.launch
 class SecretManagerViewModel {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Job tracking to prevent race conditions
+    private var loadJob: Job? = null
+    private var searchJob: Job? = null
 
     // State
     var state by mutableStateOf(SecretManagerState())
@@ -98,16 +104,38 @@ class SecretManagerViewModel {
 
     /**
      * Load more secrets (pagination)
+     *
+     * Race condition fix: Checks for active search jobs and prevents pagination during search
      */
     fun loadMoreSecrets() {
-        // Don't load if already loading or no more data or in search mode
-        if (state.isLoadingMore || !state.hasMore || state.isLoading || state.searchQuery.isNotBlank()) {
+        // Enhanced guards to prevent race condition
+        if (state.isLoadingMore) {
+            println("⏸️  Pagination blocked: Already loading more")
+            return
+        }
+        if (!state.hasMore) {
+            println("⏸️  Pagination blocked: No more data")
+            return
+        }
+        if (state.isLoading) {
+            println("⏸️  Pagination blocked: Initial load in progress")
+            return
+        }
+        if (state.searchQuery.isNotBlank()) {
+            println("⏸️  Pagination blocked: Search mode active")
+            return
+        }
+        if (searchJob?.isActive == true) {
+            println("⏸️  Pagination blocked: Search job still running")
             return
         }
 
+        // Cancel any previous load job
+        loadJob?.cancel()
+
         state = state.copy(isLoadingMore = true)
 
-        scope.launch {
+        loadJob = scope.launch {
             val result = SecretService.getUserSecrets(
                 limit = state.pageSize,
                 offset = state.currentOffset
@@ -123,6 +151,13 @@ class SecretManagerViewModel {
                 )
                 println("✅ Loaded ${newSecrets.size} more secrets (total: ${state.secrets.size}, hasMore: ${paginatedResult.hasMore})")
             }.onFailure { exception ->
+                // Silently ignore cancellation - it's expected behavior
+                if (exception is CancellationException) {
+                    println("⏸️  Pagination cancelled (search started)")
+                    return@onFailure
+                }
+
+                // Log actual errors
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,
@@ -135,11 +170,21 @@ class SecretManagerViewModel {
 
     /**
      * Search secrets by website or username
+     *
+     * Race condition fix: Cancels in-flight pagination jobs to prevent duplicate entries
      */
     fun searchSecrets(query: String) {
+        // Cancel any in-flight pagination to prevent race condition
+        loadJob?.cancel()
+        loadJob = null
+
+        // Cancel previous search
+        searchJob?.cancel()
+
         state = state.copy(
             searchQuery = query,
             isLoading = true,
+            isLoadingMore = false,  // Prevent pagination during search
             errorMessage = null,
             currentOffset = 0,
             hasMore = false
@@ -147,11 +192,12 @@ class SecretManagerViewModel {
 
         if (query.isBlank()) {
             // Reset to full list
+            searchJob = null
             loadSecrets()
             return
         }
 
-        scope.launch {
+        searchJob = scope.launch {
             val result = SecretService.searchSecrets(
                 query = query,
                 limit = 100,  // Show more results for search
@@ -162,13 +208,24 @@ class SecretManagerViewModel {
                 val secrets = paginatedResult.data
                 state = state.copy(
                     secrets = secrets,
-                    isLoading = false
+                    isLoading = false,
+                    isLoadingMore = false,  // Ensure pagination is disabled
+                    currentOffset = 0,  // Reset offset for search results
+                    hasMore = false  // No pagination for search results
                 )
                 println("✅ Found ${secrets.size} secrets matching '$query'")
             }.onFailure { exception ->
+                // Silently ignore cancellation - it's expected behavior
+                if (exception is CancellationException) {
+                    println("⏸️  Search cancelled (typing in progress)")
+                    return@onFailure
+                }
+
+                // Log actual errors
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
+                    isLoadingMore = false,
                     errorMessage = error
                 )
                 println("❌ Failed to search secrets: $error")

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.services.supabase.models.UserWithRoles
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -18,7 +19,6 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Minus
 import compose.icons.feathericons.RefreshCw
-import compose.icons.feathericons.Search
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.X
@@ -174,21 +174,11 @@ fun SearchBar(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier,
-        placeholder = { Text("Search users by email...", color = Color.Gray) },
-        leadingIcon = {
-            Icon(FeatherIcons.Search, contentDescription = "Search", tint = Color.Gray)
-        },
-        colors = TextFieldDefaults.outlinedTextFieldColors(
-            textColor = Color.White,
-            backgroundColor = Color(0xFF3C3F41),
-            focusedBorderColor = Color(0xFF4A90E2),
-            unfocusedBorderColor = Color.Gray
-        ),
-        singleLine = true
+    BossSearchBar(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = "Search users by email...",
+        modifier = modifier
     )
 }
 

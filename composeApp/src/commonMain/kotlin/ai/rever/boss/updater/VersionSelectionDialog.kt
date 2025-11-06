@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.utils.Version
 
 /**
@@ -87,19 +88,11 @@ fun VersionSelectionDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Search bar
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search versions...") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, null)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.textFieldColors(
-                        backgroundColor = Color(0xFF1E1E1E),
-                        textColor = Color.White,
-                        placeholderColor = Color.Gray
-                    )
+                BossSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    placeholder = "Search versions...",
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))

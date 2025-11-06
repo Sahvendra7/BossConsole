@@ -34,7 +34,8 @@ fun SecretList(
     val listState = rememberLazyListState()
 
     // Trigger load more when scrolled to bottom
-    LaunchedEffect(listState) {
+    // Key on hasMore and isLoadingMore to properly react to state changes
+    LaunchedEffect(listState, hasMore, isLoadingMore) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastVisibleIndex ->
                 if (lastVisibleIndex != null &&

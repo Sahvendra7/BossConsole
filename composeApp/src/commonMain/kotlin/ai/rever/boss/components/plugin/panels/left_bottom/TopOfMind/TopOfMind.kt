@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
+import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.BreadcrumbConfig
@@ -517,50 +518,11 @@ fun TopOfMindContent(
             .padding(12.dp)
     ) {
         // Search bar (styled like browser URL bar)
-        BasicTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.body2.copy(color = MaterialTheme.colors.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colors.primary),
-            decorationBox = { innerTextField ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            MaterialTheme.colors.surface,
-                            RoundedCornerShape(4.dp)
-                        )
-                        .border(
-                            1.dp,
-                            MaterialTheme.colors.onSurface.copy(alpha = 0.3f),
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Outlined.Search,
-                        contentDescription = "Search",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (searchQuery.isEmpty()) {
-                            Text(
-                                "Search active tabs...",
-                                style = MaterialTheme.typography.body2,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                        innerTextField()
-                    }
-                }
-            }
+        BossSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            placeholder = "Search active tabs...",
+            modifier = Modifier.fillMaxWidth()
         )
         
         Spacer(modifier = Modifier.height(8.dp))
