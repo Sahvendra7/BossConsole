@@ -1,0 +1,19 @@
+package ai.rever.boss.focusmode
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Configuration for Focus Mode feature.
+ * Focus Mode minimizes distractions by hiding UI chrome (top bar, sidebars, bottom bar)
+ * while keeping tabs and main content visible.
+ *
+ * @property enabled Whether focus mode is currently active
+ * @property autoRevealEnabled Whether to auto-reveal hidden bars on mouse hover at edges
+ * @property revealOffsetPx Distance in pixels from window edge to trigger auto-reveal
+ */
+@Serializable
+data class FocusModeSettings(
+    val enabled: Boolean = true,
+    val autoRevealEnabled: Boolean = true,
+    val revealOffsetPx: Float = 10f
+)

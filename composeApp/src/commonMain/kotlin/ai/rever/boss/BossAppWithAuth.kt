@@ -18,11 +18,13 @@ import kotlinx.coroutines.launch
  *
  * @param windowId The ID of the window this app instance belongs to
  * @param isFirstWindow Whether this is the first window (for workspace loading)
+ * @param panelRegistry The panel registry instance for this window
  */
 @Composable
 fun ComponentContext.BossAppWithAuth(
     windowId: String,
-    isFirstWindow: Boolean = false
+    isFirstWindow: Boolean = false,
+    panelRegistry: ai.rever.boss.components.registery.PanelRegistry
 ) {
     val authState by AuthService.authState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -152,7 +154,8 @@ fun ComponentContext.BossAppWithAuth(
             // Show main BOSS app - all auth methods provide inherent 2FA
             BossApp(
                 windowId = windowId,
-                isFirstWindow = isFirstWindow
+                isFirstWindow = isFirstWindow,
+                panelRegistry = panelRegistry
             )
         }
     }

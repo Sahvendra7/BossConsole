@@ -243,6 +243,50 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         }
     }
 
+    /**
+     * Programmatically activate a plugin by its ID.
+     * Replicates the behavior of clicking a plugin icon in the sidebar.
+     * 
+     * @param pluginId The panel ID of the plugin to activate (e.g., "codebase", "terminal")
+     */
+    fun activatePlugin(pluginId: String) {
+        // Find the SidebarItem with matching pluginContentId
+        val slotEntry = itemsBySlot.entries.find { (_, items) ->
+            items.any { it.pluginContentId.panelId == pluginId }
+        }
+        
+        slotEntry?.let { (slot, items) ->
+            val sidebarItem = items.find { it.pluginContentId.panelId == pluginId }
+            
+            sidebarItem?.let { item ->
+                // Determine target panel based on the slot (same logic as onClick)
+                val targetPanel = when(slot) {
+                    left.bottom -> bottom
+                    left.top.top -> left.top
+                    right.top.top -> right.top
+                    left.top.bottom -> left.bottom
+                    right.top.bottom -> right.bottom
+                    else -> null
+                }
+                
+                targetPanel?.let { panel ->
+                    // Apply the same logic as toggleVisibility
+                    if (panelsData[panel]?.sidebarItem?.id == item.id) {
+                        // Same plugin - toggle visibility
+                        setPanelVisible(panel, panelsData[panel]?.visibility != true)
+                    } else {
+                        // Different plugin - show panel
+                        setPanelVisible(panel, true)
+                    }
+                    // Update active plugin for this panel
+                    panelsData[panel]?.let {
+                        panelsData[panel] = it.copy(sidebarItem = item)
+                    }
+                }
+            }
+        }
+    }
+
     fun isSelected(item: SidebarItem): Boolean {
         return panelsData.values.any { (it.sidebarItem?.id == item.id) && it.visibility }
     }

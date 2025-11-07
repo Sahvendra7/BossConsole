@@ -141,6 +141,23 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // View/UI - Emacs-style with Ctrl modifier
+            KeyBinding(
+                actionId = KeymapActions.FOCUS_MODE_TOGGLE,
+                key = "F",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.FOCUS_MODE_TOGGLE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.SETTINGS_OPEN,
+                key = "Comma",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
+            ),
             // Debug
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,

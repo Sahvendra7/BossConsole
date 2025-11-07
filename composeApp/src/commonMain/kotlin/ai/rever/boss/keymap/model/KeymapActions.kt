@@ -34,6 +34,10 @@ object KeymapActions {
     // Panel/Tool Actions
     const val CODEBASE_OPEN = "codebase.open"
 
+    // View/UI Actions
+    const val FOCUS_MODE_TOGGLE = "view.focus_mode_toggle"
+    const val SETTINGS_OPEN = "view.settings_open"
+
     // Test/Debug Actions
     const val TEST_EXTERNAL_LINK = "test.external_link"
 
@@ -47,6 +51,7 @@ object KeymapActions {
         const val NAVIGATION = "Navigation"
         const val WORKSPACE = "Workspace"
         const val TOOLS = "Tools"
+        const val VIEW = "View/UI"
         const val DEBUG = "Debug"
     }
 
@@ -69,6 +74,8 @@ object KeymapActions {
         QUICK_SWITCHER_OPEN to "Open quick switcher (Top of Mind)",
         WORKSPACE_SAVE to "Save the current workspace layout",
         CODEBASE_OPEN to "Open CodeBase panel",
+        FOCUS_MODE_TOGGLE to "Toggle Focus Mode (hide/show UI bars)",
+        SETTINGS_OPEN to "Open application settings",
         TEST_EXTERNAL_LINK to "Test external link handling (debug)"
     )
 
@@ -91,6 +98,8 @@ object KeymapActions {
         QUICK_SWITCHER_OPEN to Categories.NAVIGATION,
         WORKSPACE_SAVE to Categories.WORKSPACE,
         CODEBASE_OPEN to Categories.TOOLS,
+        FOCUS_MODE_TOGGLE to Categories.VIEW,
+        SETTINGS_OPEN to Categories.VIEW,
         TEST_EXTERNAL_LINK to Categories.DEBUG
     )
 
@@ -113,6 +122,8 @@ object KeymapActions {
         QUICK_SWITCHER_OPEN to ShortcutContext.GLOBAL,
         WORKSPACE_SAVE to ShortcutContext.WORKSPACE,
         CODEBASE_OPEN to ShortcutContext.GLOBAL,
+        FOCUS_MODE_TOGGLE to ShortcutContext.GLOBAL,
+        SETTINGS_OPEN to ShortcutContext.GLOBAL,
         TEST_EXTERNAL_LINK to ShortcutContext.GLOBAL
     )
 
@@ -126,6 +137,8 @@ object KeymapActions {
         PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN, QUICK_SWITCHER_OPEN,
         WORKSPACE_SAVE,
         CODEBASE_OPEN,
+        FOCUS_MODE_TOGGLE,
+        SETTINGS_OPEN,
         TEST_EXTERNAL_LINK
     )
 

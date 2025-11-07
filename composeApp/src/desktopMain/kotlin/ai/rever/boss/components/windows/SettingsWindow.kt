@@ -93,6 +93,7 @@ private fun SettingsContent() {
                         SettingsSection.UPDATES -> UpdatesSettings()
                         SettingsSection.SECURITY -> SecuritySettings()
                         SettingsSection.KEYMAP -> EditableKeymapSettings()
+                        SettingsSection.FOCUS_MODE -> FocusModeSettings()
                     }
                 }
             }

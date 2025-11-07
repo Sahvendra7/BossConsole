@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE
 }
 
 @Composable
@@ -105,6 +105,16 @@ fun SettingsSidebar(
             subtitle = "Edit shortcuts, presets",
             isSelected = selectedSection == SettingsSection.KEYMAP,
             onClick = { onSectionChange(SettingsSection.KEYMAP) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.Visibility,
+            title = "Focus Mode",
+            subtitle = "Hide UI, minimize distractions",
+            isSelected = selectedSection == SettingsSection.FOCUS_MODE,
+            onClick = { onSectionChange(SettingsSection.FOCUS_MODE) }
         )
 
     }

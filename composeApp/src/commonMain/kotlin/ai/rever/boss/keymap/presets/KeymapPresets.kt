@@ -141,6 +141,23 @@ object KeymapPresets {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // View/UI
+            KeyBinding(
+                actionId = KeymapActions.FOCUS_MODE_TOGGLE,
+                key = "F",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.FOCUS_MODE_TOGGLE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.SETTINGS_OPEN,
+                key = "Comma",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
+            ),
             // Debug
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,
@@ -288,6 +305,23 @@ object KeymapPresets {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // View/UI - VS Code doesn't have built-in zen mode toggle, use same as BOSS
+            KeyBinding(
+                actionId = KeymapActions.FOCUS_MODE_TOGGLE,
+                key = "F",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.FOCUS_MODE_TOGGLE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.SETTINGS_OPEN,
+                key = "Comma",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
+            ),
             // Debug - Keep same as BOSS
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,
@@ -434,6 +468,23 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
+            ),
+            // View/UI - IntelliJ uses Cmd+Shift+F12 for hide all tool windows, we'll use Cmd+Shift+F
+            KeyBinding(
+                actionId = KeymapActions.FOCUS_MODE_TOGGLE,
+                key = "F",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.FOCUS_MODE_TOGGLE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.SETTINGS_OPEN,
+                key = "Comma",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.VIEW,
+                description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
             ),
             // Debug
             KeyBinding(

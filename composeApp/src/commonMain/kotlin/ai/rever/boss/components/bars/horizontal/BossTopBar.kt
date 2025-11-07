@@ -41,7 +41,8 @@ fun BossDraggableComponent.BossTopBar(
     workspaceManager: WorkspaceManager? = null,
     onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
-    onShowTopOfMind: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null,
+    onShowSettings: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -67,7 +68,7 @@ fun BossDraggableComponent.BossTopBar(
             // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/91
             // BossTopRunBar()
             // Spacer(modifier = Modifier.weight(0.1f))
-            BossTopRightBar()
+            BossTopRightBar(onShowSettings = onShowSettings)
         }
     }
     Divider(color = BossDarkBorder)
@@ -292,8 +293,9 @@ fun BossDraggableComponent.BossTopLeftBar(
 // }
 
 @Composable
-fun BossTopRightBar() {
-    var showSettingsDialog by remember { mutableStateOf(false) }
+fun BossTopRightBar(
+    onShowSettings: (() -> Unit)? = null
+) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     val currentUser by AuthService.currentUser.collectAsState()
     
@@ -328,20 +330,13 @@ fun BossTopRightBar() {
         text = "Settings",
         hintText = "Configure application settings"
     ) {
-        showSettingsDialog = true
+        onShowSettings?.invoke()
     }
     
     // Logout confirmation dialog
     if (showLogoutDialog) {
         LogoutConfirmationDialog(
             onDismiss = { showLogoutDialog = false }
-        )
-    }
-    
-    // Settings Window
-    if (showSettingsDialog) {
-        SettingsWindow(
-            onClose = { showSettingsDialog = false }
         )
     }
 }

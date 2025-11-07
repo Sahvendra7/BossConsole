@@ -10,6 +10,7 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.focusmode.FocusModeSettingsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,14 +30,9 @@ class BossActionHandler(
     private val onShowNewTabDialog: () -> Unit,
     private val onShowTopOfMindDialog: () -> Unit,
     private val onShowSaveMessage: (String?) -> Unit,
+    private val onShowSettings: () -> Unit,
     private val coroutineScope: CoroutineScope
 ) {
-    /**
-     * Handles a keyboard shortcut action by delegating to the appropriate handler method.
-     *
-     * @param actionId The action ID from KeymapActions
-     * @return true if the action was handled successfully, false otherwise
-     */
     fun handleAction(actionId: String): Boolean {
         return when (actionId) {
             KeymapActions.WINDOW_NEW -> handleWindowNew()
@@ -54,6 +50,8 @@ class BossActionHandler(
             KeymapActions.QUICK_SWITCHER_OPEN -> handleQuickSwitcherOpen()
             KeymapActions.WORKSPACE_SAVE -> handleWorkspaceSave()
             KeymapActions.CODEBASE_OPEN -> handleCodebaseOpen()
+            KeymapActions.FOCUS_MODE_TOGGLE -> handleFocusModeToggle()
+            KeymapActions.SETTINGS_OPEN -> handleSettingsOpen()
             KeymapActions.TEST_EXTERNAL_LINK -> handleTestExternalLink()
             else -> false
         }
@@ -241,6 +239,20 @@ class BossActionHandler(
         } else {
             false
         }
+    }
+
+    // View/UI Actions
+
+    private fun handleFocusModeToggle(): Boolean {
+        coroutineScope.launch {
+            FocusModeSettingsManager.toggleFocusMode()
+        }
+        return true
+    }
+
+    private fun handleSettingsOpen(): Boolean {
+        onShowSettings()
+        return true
     }
 
     // Test Actions

@@ -34,8 +34,8 @@ actual class GlobalKeyboardInterceptor actual constructor(
             // 🔍 DIAGNOSTIC: Log EVERY key press that reaches AWT interceptor
             println("⌨️  [GlobalKeyboardInterceptor.keyPressed] AWT Key detected: keyCode=${e.keyCode}, keyChar=${e.keyChar}, modifiers: Cmd=${e.isMetaDown}, Ctrl=${e.isControlDown}, Shift=${e.isShiftDown}, Alt=${e.isAltDown}")
 
-            // Convert AWT KeyEvent to Compose KeyEvent
-            val composeEvent = convertAwtToCompose(e) ?: return
+            // Convert AWT KeyEvent to Compose KeyEvent (may be null, that's OK)
+            val composeEvent = convertAwtToCompose(e)
 
             // Check if this is a global-priority shortcut
             val binding = findGlobalPriorityBinding(composeEvent, e)
@@ -48,14 +48,16 @@ actual class GlobalKeyboardInterceptor actual constructor(
                     if (enabled) {
                         println("   ✓ [GlobalKeyboardInterceptor] Lifecycle enabled, emitting to bus")
 
-                        // Emit to KeyboardEventBus
-                        KeyboardEventBus.emit(
-                            KeyboardEvent(
-                                keyEvent = composeEvent,
-                                source = KeyEventSource.AWT_INTERCEPTOR,
-                                context = binding.context
+                        // Emit to KeyboardEventBus only if we have a Compose event
+                        if (composeEvent != null) {
+                            KeyboardEventBus.emit(
+                                KeyboardEvent(
+                                    keyEvent = composeEvent,
+                                    source = KeyEventSource.AWT_INTERCEPTOR,
+                                    context = binding.context
+                                )
                             )
-                        )
+                        }
 
                         // Consume the AWT event to prevent further processing
                         e.consume()
@@ -201,6 +203,18 @@ actual class GlobalKeyboardInterceptor actual constructor(
             AwtKeyEvent.VK_RIGHT -> "DirectionRight"
             AwtKeyEvent.VK_DOWN -> "DirectionDown"
             AwtKeyEvent.VK_DELETE -> "Delete"
+            // Punctuation keys
+            AwtKeyEvent.VK_COMMA -> "Comma"
+            AwtKeyEvent.VK_PERIOD -> "Period"
+            AwtKeyEvent.VK_SEMICOLON -> "Semicolon"
+            AwtKeyEvent.VK_SLASH -> "Slash"
+            AwtKeyEvent.VK_BACK_SLASH -> "Backslash"
+            AwtKeyEvent.VK_OPEN_BRACKET -> "OpenBracket"
+            AwtKeyEvent.VK_CLOSE_BRACKET -> "CloseBracket"
+            AwtKeyEvent.VK_MINUS -> "Minus"
+            AwtKeyEvent.VK_EQUALS -> "Equals"
+            AwtKeyEvent.VK_QUOTE -> "Apostrophe"
+            AwtKeyEvent.VK_BACK_QUOTE -> "Grave"
             else -> {
                 // For letters and numbers, use the key char
                 val char = e.keyChar
@@ -278,6 +292,18 @@ actual class GlobalKeyboardInterceptor actual constructor(
             AwtKeyEvent.VK_F10 -> Key.F10
             AwtKeyEvent.VK_F11 -> Key.F11
             AwtKeyEvent.VK_F12 -> Key.F12
+            // Punctuation keys
+            AwtKeyEvent.VK_COMMA -> Key.Comma
+            AwtKeyEvent.VK_PERIOD -> Key.Period
+            AwtKeyEvent.VK_SEMICOLON -> Key.Semicolon
+            AwtKeyEvent.VK_SLASH -> Key.Slash
+            AwtKeyEvent.VK_BACK_SLASH -> Key.Backslash
+            AwtKeyEvent.VK_OPEN_BRACKET -> Key.LeftBracket
+            AwtKeyEvent.VK_CLOSE_BRACKET -> Key.RightBracket
+            AwtKeyEvent.VK_MINUS -> Key.Minus
+            AwtKeyEvent.VK_EQUALS -> Key.Equals
+            AwtKeyEvent.VK_QUOTE -> Key.Apostrophe
+            AwtKeyEvent.VK_BACK_QUOTE -> Key.Grave
             else -> Key.Unknown
         }
     }

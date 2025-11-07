@@ -346,24 +346,39 @@ The application features a comprehensive, customizable keyboard shortcuts system
 
 **Core Features:**
 - **Context-aware shortcuts** - Different key bindings for GLOBAL, BROWSER, TERMINAL, EDITOR, and WORKSPACE contexts
+- **Priority-based event handling** - Component → Workspace → Global priority chain
 - **Conflict detection** - Visual warnings when multiple shortcuts use the same key combination
 - **Preset keymaps** - Pre-configured schemes: BOSS Default, VS Code, IntelliJ IDEA, Emacs
 - **Import/Export** - Backup and share keymap configurations via JSON
 - **UI Editor** - Visual interface for capturing and editing shortcuts
 - **JSON Editing** - Direct file editing at `~/.boss/keymap-settings.json`
+- **Focus mode support** - All shortcuts work in both normal and focus mode
 
 **Architecture:**
 
+*Event Flow:*
+1. **GlobalKeyboardInterceptor** (desktop AWT level) - Intercepts GLOBAL context shortcuts before Compose
+2. **KeyboardEventBus** - Central event distribution with priority-based handling:
+   - **COMPONENT** (priority 0) - Terminal, browser, editor handle their own shortcuts first
+   - **WORKSPACE** (priority 1) - Workspace-level shortcuts (panel navigation, workspace save)
+   - **GLOBAL** (priority 2) - App-wide shortcuts (window management, settings, focus mode)
+3. **BossActionHandler** - Executes the actual action for each shortcut
+
 *Data Models* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/model/):
-- **`ShortcutContext.kt`** - Enum defining where shortcuts are active (GLOBAL, BROWSER, etc.)
+- **`ShortcutContext.kt`** - Enum defining where shortcuts are active (GLOBAL, BROWSER, TERMINAL, EDITOR, WORKSPACE)
 - **`KeyBinding.kt`** - Individual shortcut with key, modifiers, context, category, description
 - **`KeymapSettings.kt`** - Container for all shortcuts with preset tracking
-- **`KeymapActions.kt`** - Registry of 14+ action IDs with metadata
+- **`KeymapActions.kt`** - Registry of 18 action IDs across 8 categories
 
 *Handler System* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/handler/):
+- **`GlobalKeyboardInterceptor.kt`** - AWT-level interception for GLOBAL shortcuts (desktop only)
 - **`KeymapMatcher.kt`** - Matches keyboard events to configured bindings
 - **`KeymapValidator.kt`** - Detects conflicts and validates shortcuts
 - **`KeymapHandler.kt`** - Context-aware event dispatcher (used in BossApp.kt)
+
+*Lifecycle System* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/lifecycle/):
+- **`ShortcutLifecycleManager.kt`** - Enables/disables shortcuts based on runtime conditions
+- **`conditions/`** - Conditions like SplitNavigationCondition (panel navigation only works with multiple panels)
 
 *Presets* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/presets/):
 - **`KeymapPresets.kt`** - BOSS Default, VS Code, IntelliJ IDEA presets
@@ -380,26 +395,114 @@ The application features a comprehensive, customizable keyboard shortcuts system
 - **`KeymapSettingsManager.kt`** - Expect/actual pattern for platform-specific persistence
 - Desktop implementation saves to `~/.boss/keymap-settings.json`
 - Reactive StateFlow for settings updates
+- Automatically creates settings file from preset if missing
 
-**Preset Keymaps:**
+**Available Actions (18 total):**
 
-1. **BOSS Default** - Browser-style with Cmd-based bindings
-   - Cmd+N: New window, Cmd+W: Close tab, Cmd+T: New browser tab
+*Window Management (2):*
+- `window.new` - Create new window
+- `window.close` - Close current window
 
-2. **VS Code** - Visual Studio Code inspired
-   - Cmd+P: Quick file switcher, Cmd+Shift+E: Project explorer, Cmd+Alt+Arrow: Split navigation
+*Tab Management (2):*
+- `tab.new` - Open new tab dialog
+- `tab.close` - Close current tab (or window if last tab)
 
-3. **IntelliJ IDEA** - JetBrains IDE inspired
-   - Cmd+E: Recent files, Cmd+1: Project window, Cmd+Alt+Arrow: Navigate splits
+*Browser Controls (4):*
+- `browser.reload` - Reload browser tab (BROWSER context only)
+- `browser.zoom_reset` - Reset zoom to 100% (BROWSER context only)
+- `browser.zoom_in` - Increase zoom (BROWSER context only)
+- `browser.zoom_out` - Decrease zoom (BROWSER context only)
 
-4. **Emacs** - Ctrl-based shortcuts
-   - Ctrl+F: New file, Ctrl+K: Close tab, Alt+X: Quick switcher
+*Navigation (5):*
+- `panel.navigate_left` - Switch to left panel
+- `panel.navigate_right` - Switch to right panel
+- `panel.navigate_up` - Switch to previous panel
+- `panel.navigate_down` - Switch to next panel
+- `quick_switcher.open` - Open Top of Mind quick switcher
 
-**Integration:**
-- Settings accessible via Settings > Keyboard Shortcuts
-- Shortcuts handled in `BossApp.kt` via `KeymapHandler`
-- Context detection based on active tab type (browser/terminal/editor)
-- Platform-aware display (⌘ on macOS, Ctrl on Windows/Linux)
+*Workspace (1):*
+- `workspace.save` - Save current workspace layout (WORKSPACE context)
+
+*Tools (1):*
+- `codebase.open` - Open CodeBase panel
+
+*View/UI (2):*
+- `view.focus_mode_toggle` - Toggle focus mode (hide/show UI bars)
+- `view.settings_open` - Open application settings (works in focus mode)
+
+*Debug (1):*
+- `test.external_link` - Test external link handling (debug only)
+
+**BOSS Default Preset (macOS-style):**
+
+```
+Window Management:
+  Cmd+N               - New window
+  Cmd+Shift+W         - Close window
+
+Tab Management:
+  Cmd+T               - New tab
+  Cmd+W               - Close tab
+
+Browser Controls (in browser tabs only):
+  Cmd+R               - Reload
+  Cmd+0               - Reset zoom
+  Cmd+=               - Zoom in
+  Cmd+-               - Zoom out
+
+Navigation:
+  Cmd+Arrow Keys      - Navigate between panels
+  Ctrl+Space          - Quick switcher (Top of Mind)
+
+Workspace:
+  Cmd+Shift+S         - Save workspace
+
+Tools:
+  Cmd+O               - Open CodeBase panel
+
+View/UI:
+  Cmd+Shift+F         - Toggle focus mode
+  Cmd+,               - Open settings
+
+Debug:
+  Cmd+Shift+G         - Test external link
+```
+
+**Other Preset Keymaps:**
+
+1. **VS Code** - Visual Studio Code inspired
+   - Cmd+P: Quick switcher, Cmd+Shift+E: CodeBase, Cmd+Alt+Arrow: Panel navigation
+
+2. **IntelliJ IDEA** - JetBrains IDE inspired
+   - Cmd+E: Quick switcher, Cmd+1: CodeBase, Cmd+Alt+Arrow: Panel navigation
+
+3. **Emacs** - Ctrl-based shortcuts
+   - Alt+X: Quick switcher, Ctrl+B: CodeBase, Ctrl+Arrow: Panel navigation
+
+**Integration with Focus Mode:**
+
+Focus mode (Cmd+Shift+F) hides UI bars (top bar, sidebars, bottom bar) while keeping tabs visible. All keyboard shortcuts continue to work in focus mode:
+- **Settings window** (Cmd+,) renders at app top level, not inside hidden top bar
+- **Quick switcher** (Ctrl+Space) works from anywhere
+- **All shortcuts** remain functional regardless of focus mode state
+
+**Settings Access:**
+- Via keyboard: Press **Cmd+,** (or configured shortcut)
+- Via UI: Click **Settings** button in top bar (when not in focus mode)
+- Via menu: **Settings > Keyboard Shortcuts** to customize shortcuts
+
+**Context Detection:**
+Shortcuts automatically detect the active context based on the focused tab:
+- **GLOBAL** - Always active (window, tab, settings, focus mode)
+- **BROWSER** - Active when browser tab is focused (reload, zoom)
+- **TERMINAL** - Active when terminal tab is focused (reserved for future terminal shortcuts)
+- **EDITOR** - Active when editor tab is focused (reserved for future editor shortcuts)
+- **WORKSPACE** - Active at workspace level (workspace save, panel navigation)
+
+**Platform Support:**
+- **macOS**: Cmd-based shortcuts with native key interception via AWT
+- **Windows/Linux**: Ctrl replaces Cmd, same event flow
+- **Display**: ⌘ symbol on macOS, "Ctrl" text on Windows/Linux
 
 **JSON Format:**
 ```json
@@ -411,7 +514,7 @@ The application features a comprehensive, customizable keyboard shortcuts system
       "modifiers": ["Cmd"],
       "context": "GLOBAL",
       "category": "Window Management",
-      "description": "Open New Window",
+      "description": "Create a new application window",
       "enabled": true
     }
   },
@@ -420,6 +523,19 @@ The application features a comprehensive, customizable keyboard shortcuts system
   "version": 1
 }
 ```
+
+**Troubleshooting:**
+
+If shortcuts stop working:
+1. Check `~/.boss/keymap-settings.json` exists
+2. Delete the file to force recreation from preset defaults
+3. Check Settings > Keyboard Shortcuts for conflicts
+4. Verify the correct preset is selected
+
+Common issues:
+- **Stale settings file**: If new shortcuts aren't available, delete `~/.boss/keymap-settings.json` and restart
+- **Conflicts**: Settings UI shows visual warnings for conflicting shortcuts
+- **Focus mode**: Settings window and shortcuts work in focus mode (fixed in Issue #74)
 
 ## Code Quality
 

@@ -9,6 +9,8 @@ import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
+import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -91,37 +93,103 @@ fun ApplicationScope.BossWindow(
             onDispose { }
         }
 
+        // Get focus mode state for menu item text
+        val focusModeSettings by FocusModeSettingsManager.currentSettings.collectAsState()
+        val isFocusModeEnabled = focusModeSettings.enabled
+
+        // Get workspace list for workspace submenu
+        val workspaceManager = remember { ai.rever.boss.components.workspaces.WorkspaceManager() }
+        val workspaces by workspaceManager.workspaces.collectAsState()
+        val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
+
+        // Get registered plugins for Plugin menu
+        val panelRegistry = remember { PanelRegistry() }
+        var registeredPluginsVersion by remember { mutableStateOf(0) }
+        val registeredPlugins = remember(registeredPluginsVersion) {
+            panelRegistry.getAllPanels()
+        }
+
+        // Listen for panel registry changes to update the menu
+        DisposableEffect(panelRegistry) {
+            val listener = {
+                registeredPluginsVersion++
+                Unit
+            }
+            panelRegistry.addChangeListener(listener)
+            onDispose { }
+        }
+
         // macOS MenuBar - provides native menu integration
         // Note: Keyboard shortcuts (Cmd+N, Cmd+T, etc.) are handled in BossApp.kt via onPreviewKeyEvent
         MenuBar {
             // File Menu
             Menu("File") {
                 Item(
-                    "New Window",
-                    onClick = { WindowOperations.createNewWindow() }
-                )
-                Item(
                     "New Tab",
                     onClick = {
                         MenuActionsHandler.triggerNewTab(windowState.id)
                     }
                 )
-
-                Separator()
-
                 Item(
-                    "Close Tab",
+                    "Open Project...",
                     onClick = {
-                        MenuActionsHandler.triggerCloseTab(windowState.id)
+                        MenuActionsHandler.triggerOpenProject(windowState.id)
                     }
                 )
                 Item(
-                    "Close Window",
-                    onClick = { WindowOperations.closeWindow(windowState.id) }
+                    "Open File...",
+                    onClick = {
+                        MenuActionsHandler.triggerOpenFile(windowState.id)
+                    }
+                )
+                Item(
+                    "New Terminal Tab",
+                    onClick = {
+                        MenuActionsHandler.triggerNewTerminal(windowState.id)
+                    }
                 )
 
                 Separator()
 
+                // Workspace submenu
+                Menu("Select Workspace") {
+                    workspaces.forEach { workspace ->
+                        Item(
+                            text = workspace.name,
+                            onClick = {
+                                MenuActionsHandler.triggerApplyWorkspace(windowState.id, workspace)
+                            },
+                            enabled = currentWorkspace?.id != workspace.id  // Disable current workspace
+                        )
+                    }
+
+                    if (workspaces.isEmpty()) {
+                        Item(
+                            text = "(No workspaces available)",
+                            onClick = { },
+                            enabled = false
+                        )
+                    }
+
+                    Separator()
+
+                    // Access TopOfMindDialog for workspace switching and quick navigation
+                    Item(
+                        "Top of the Mind",
+                        onClick = {
+                            MenuActionsHandler.triggerSelectWorkspace(windowState.id)
+                        }
+                    )
+                }
+
+                Separator()
+
+                Item(
+                    "Settings",
+                    onClick = {
+                        MenuActionsHandler.triggerOpenSettings(windowState.id)
+                    }
+                )
                 Item(
                     "Quit BOSS",
                     onClick = { exitApplication() }
@@ -162,6 +230,30 @@ fun ApplicationScope.BossWindow(
             // View Menu
             Menu("View") {
                 Item(
+                    text = if (isFocusModeEnabled) "Focus Mode (On)" else "Focus Mode (Off)",
+                    onClick = {
+                        MenuActionsHandler.triggerToggleFocusMode(windowState.id)
+                    }
+                )
+
+                Separator()
+
+                Item(
+                    "Split Vertically",
+                    onClick = {
+                        MenuActionsHandler.triggerSplitVertically(windowState.id)
+                    }
+                )
+                Item(
+                    "Split Horizontally",
+                    onClick = {
+                        MenuActionsHandler.triggerSplitHorizontally(windowState.id)
+                    }
+                )
+
+                Separator()
+
+                Item(
                     "Actual Size",
                     onClick = {
                         MenuActionsHandler.triggerActualSize(windowState.id)
@@ -194,6 +286,35 @@ fun ApplicationScope.BossWindow(
                 )
             }
 
+            // Plugin Menu - Dynamically populated from PanelRegistry
+            Menu("Plugin") {
+                registeredPlugins.forEachIndexed { index, panelInfo ->
+                    Item(
+                        text = panelInfo.displayName,
+                        onClick = {
+                            MenuActionsHandler.triggerRevealPlugin(
+                                windowId = windowState.id,
+                                pluginId = panelInfo.id.panelId
+                            )
+                        }
+                    )
+
+                    // Add separator after every 3rd item for visual grouping
+                    if ((index + 1) % 3 == 0 && index < registeredPlugins.size - 1) {
+                        Separator()
+                    }
+                }
+
+                // Fallback if no plugins registered
+                if (registeredPlugins.isEmpty()) {
+                    Item(
+                        text = "(No plugins available)",
+                        onClick = { },
+                        enabled = false
+                    )
+                }
+            }
+
             // Tools Menu
             Menu("Tools") {
                 Item(
@@ -206,6 +327,26 @@ fun ApplicationScope.BossWindow(
 
             // Window Menu
             Menu("Window") {
+                Item(
+                    "New Window",
+                    onClick = { WindowOperations.createNewWindow() }
+                )
+
+                Separator()
+
+                Item(
+                    "Close Tab",
+                    onClick = {
+                        MenuActionsHandler.triggerCloseTab(windowState.id)
+                    }
+                )
+                Item(
+                    "Close Window",
+                    onClick = { WindowOperations.closeWindow(windowState.id) }
+                )
+
+                Separator()
+
                 Item(
                     "Minimize",
                     onClick = {
@@ -266,7 +407,8 @@ fun ApplicationScope.BossWindow(
             val isFirstWindow = WindowManager.windowCount == 1
             BossAppWithAuth(
                 windowId = windowState.id,
-                isFirstWindow = isFirstWindow
+                isFirstWindow = isFirstWindow,
+                panelRegistry = panelRegistry
             )
         }
 

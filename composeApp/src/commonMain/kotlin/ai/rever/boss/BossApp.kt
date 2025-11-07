@@ -32,6 +32,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,6 +55,26 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
 import ai.rever.boss.components.workspaces.workspaceManager
@@ -69,6 +90,7 @@ import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitVi
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
+import ai.rever.boss.components.windows.SettingsWindow
 import androidx.compose.runtime.CompositionLocalProvider
 import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 import ai.rever.boss.updater.UpdateManager
@@ -97,15 +119,18 @@ import ai.rever.boss.components.events.KeyEventSource
 import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.components.events.KeyboardEventResult
 import ai.rever.boss.actions.BossActionHandler
+import ai.rever.boss.focusmode.FocusModeSettingsManager
 
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ComponentContext.BossApp(
     windowId: String,
-    isFirstWindow: Boolean = false
+    isFirstWindow: Boolean = false,
+    panelRegistry: PanelRegistry
 ) {
 
-    val panelRegistry = remember { PanelRegistry() }
+    // Use the passed panelRegistry instance (created in BossWindow for menu access)
     val tabRegistry = remember { TabRegistry() }
 
     val panelComponentStore = remember { PanelComponentStore(this, panelRegistry) }
@@ -137,6 +162,93 @@ fun ComponentContext.BossApp(
         KeymapHandler.from(keymapSettings)
     }
 
+    // Focus mode settings
+    val focusModeSettings by FocusModeSettingsManager.currentSettings.collectAsState()
+    val isFocusModeEnabled = focusModeSettings.enabled
+    val isAutoRevealEnabled = focusModeSettings.autoRevealEnabled
+    val revealOffsetDp = with(LocalDensity.current) { focusModeSettings.revealOffsetPx.toDp() }
+
+    // Focus mode hover reveal state - edge strip hover detection
+    var hoverRevealTop by remember { mutableStateOf(false) }
+    var hoverRevealLeft by remember { mutableStateOf(false) }
+    var hoverRevealRight by remember { mutableStateOf(false) }
+    var hoverRevealBottom by remember { mutableStateOf(false) }
+
+    // Interaction sources for sidebar hover tracking
+    val topBarInteractionSource = remember { MutableInteractionSource() }
+    val leftSidebarInteractionSource = remember { MutableInteractionSource() }
+    val rightSidebarInteractionSource = remember { MutableInteractionSource() }
+    val bottomBarInteractionSource = remember { MutableInteractionSource() }
+
+    // Track hover state on revealed content itself
+    val topBarHovered by topBarInteractionSource.collectIsHoveredAsState()
+    val leftSidebarHovered by leftSidebarInteractionSource.collectIsHoveredAsState()
+    val rightSidebarHovered by rightSidebarInteractionSource.collectIsHoveredAsState()
+    val bottomBarHovered by bottomBarInteractionSource.collectIsHoveredAsState()
+
+    // Debounced visibility states with grace period for smoother transitions
+    var showTopBar by remember { mutableStateOf(false) }
+    var showLeftSidebar by remember { mutableStateOf(false) }
+    var showRightSidebar by remember { mutableStateOf(false) }
+    var showBottomBar by remember { mutableStateOf(false) }
+
+    // Add grace period before hiding to prevent flicker when moving mouse from strip to sidebar
+    LaunchedEffect(hoverRevealTop, topBarHovered, isFocusModeEnabled) {
+        if (!isFocusModeEnabled) {
+            showTopBar = true
+        } else if (hoverRevealTop || topBarHovered) {
+            showTopBar = true
+        } else {
+            // Add 2000ms delay before hiding for menu interactions
+            delay(2000)
+            if (!hoverRevealTop && !topBarHovered) {
+                showTopBar = false
+            }
+        }
+    }
+
+    LaunchedEffect(hoverRevealLeft, leftSidebarHovered, isFocusModeEnabled) {
+        if (!isFocusModeEnabled) {
+            showLeftSidebar = true
+        } else if (hoverRevealLeft || leftSidebarHovered) {
+            showLeftSidebar = true
+        } else {
+            // Add 2000ms delay before hiding for menu interactions
+            delay(2000)
+            if (!hoverRevealLeft && !leftSidebarHovered) {
+                showLeftSidebar = false
+            }
+        }
+    }
+
+    LaunchedEffect(hoverRevealRight, rightSidebarHovered, isFocusModeEnabled) {
+        if (!isFocusModeEnabled) {
+            showRightSidebar = true
+        } else if (hoverRevealRight || rightSidebarHovered) {
+            showRightSidebar = true
+        } else {
+            // Add 2000ms delay before hiding for menu interactions
+            delay(2000)
+            if (!hoverRevealRight && !rightSidebarHovered) {
+                showRightSidebar = false
+            }
+        }
+    }
+
+    LaunchedEffect(hoverRevealBottom, bottomBarHovered, isFocusModeEnabled) {
+        if (!isFocusModeEnabled) {
+            showBottomBar = true
+        } else if (hoverRevealBottom || bottomBarHovered) {
+            showBottomBar = true
+        } else {
+            // Add 2000ms delay before hiding for menu interactions
+            delay(2000)
+            if (!hoverRevealBottom && !bottomBarHovered) {
+                showBottomBar = false
+            }
+        }
+    }
+
 
     // Request focus when auth session resolves (event-driven, no delays)
     val isSessionResolved by CoreAuthService.isSessionResolved.collectAsState()
@@ -157,10 +269,15 @@ fun ComponentContext.BossApp(
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
+    var newTabDialogInitialType by remember { mutableStateOf<ai.rever.boss.components.dialogs.TabType?>(null) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
-    
+    var showProjectDialog by remember { mutableStateOf(false) }
+
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
+
+    // State for showing settings dialog
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
@@ -178,6 +295,7 @@ fun ComponentContext.BossApp(
             onShowNewTabDialog = { showNewTabDialog = true },
             onShowTopOfMindDialog = { showTopOfMindDialog = true },
             onShowSaveMessage = { saveMessage = it },
+            onShowSettings = { showSettingsDialog = true },
             coroutineScope = coroutineScope
         )
     }
@@ -782,6 +900,133 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Handle new File menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.openProjectEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    showProjectDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.openFileEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    // Open file tab selection - show new tab dialog with File tab pre-selected
+                    newTabDialogInitialType = ai.rever.boss.components.dialogs.TabType.FILE
+                    showNewTabDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.newTerminalEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    // Directly create and open terminal tab
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    activeTabsComponent?.let { component ->
+                        val terminalTab = TerminalTabInfo(
+                            id = "terminal-${Random.nextLong()}",
+                            typeId = TerminalTab.typeId,
+                            title = "Terminal"
+                        )
+                        component.addTab(terminalTab)
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.selectWorkspaceEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    showTopOfMindDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId, workspaceManager, splitViewState) {
+        ai.rever.boss.window.MenuActionsHandler.applyWorkspaceEvents
+            .onEach { (eventWindowId, workspace) ->
+                if (eventWindowId == windowId) {
+                    // Load workspace into manager
+                    workspaceManager.loadWorkspace(workspace)
+
+                    // Apply workspace to UI
+                    applyWorkspace(workspace, splitViewState)
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.openSettingsEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    showSettingsDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle View menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.toggleFocusModeEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    coroutineScope.launch {
+                        FocusModeSettingsManager.toggleFocusMode()
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.splitVerticallyEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.splitPanel(
+                        panelId = splitViewState.activePanelId,
+                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL
+                    )
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.splitHorizontallyEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.splitPanel(
+                        panelId = splitViewState.activePanelId,
+                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL
+                    )
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Plugin menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.revealPluginEvents
+            .onEach { (eventWindowId, pluginId) ->
+                if (eventWindowId == windowId) {
+                    // Activate the plugin (same as clicking its sidebar icon)
+                    draggablePanelComponent.activatePlugin(pluginId)
+                }
+            }
+            .launchIn(this)
+    }
+
     with(draggablePanelComponent) {
         BossTheme {
             CompositionLocalProvider(
@@ -826,72 +1071,228 @@ fun ComponentContext.BossApp(
                 }
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
+                    // Title bar always visible (OS-level window chrome)
                     BossTitleBar()
-                    
-                    // Update banner
-                    val updateState by UpdateManager.instance.updateState.collectAsState()
-                    UpdateBanner(
-                        updateState = updateState,
-                        onCheckForUpdates = {
-                            coroutineScope.launch {
-                                UpdateManager.instance.checkForUpdates()
-                            }
-                        },
-                        onDownloadUpdate = { updateInfo ->
-                            coroutineScope.launch {
-                                UpdateManager.instance.downloadUpdate(updateInfo)
-                            }
-                        },
-                        onInstallUpdate = { downloadPath ->
-                            coroutineScope.launch {
-                                val success = UpdateManager.instance.installUpdate(downloadPath)
-                                if (success) {
-                                    // Optionally restart the application here
-                                    // ApplicationRestarter.restart()
+
+                    // Update banner - hidden in focus mode
+                    if (!isFocusModeEnabled) {
+                        val updateState by UpdateManager.instance.updateState.collectAsState()
+                        UpdateBanner(
+                            updateState = updateState,
+                            onCheckForUpdates = {
+                                coroutineScope.launch {
+                                    UpdateManager.instance.checkForUpdates()
                                 }
-                            }
-                        },
-                        onDismiss = {
-                            UpdateManager.instance.resetState()
-                        }
-                    )
-                    
-                    BossTopBar(
-                        workspaceManager = workspaceManager,
-                        onApplyWorkspace = { workspace ->
-                            coroutineScope.launch {
-                                // Preserve current state before switching
-                                val currentWorkspace = workspaceManager.currentWorkspace.value
-                                if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
-                                    splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
+                            },
+                            onDownloadUpdate = { updateInfo ->
+                                coroutineScope.launch {
+                                    UpdateManager.instance.downloadUpdate(updateInfo)
                                 }
-                                
-                                // First load the workspace to reset dirty state
-                                workspaceManager.loadWorkspace(workspace)
-                                // Then apply it to the UI (which will try to restore preserved state)
-                                applyWorkspace(workspace, splitViewState)
+                            },
+                            onInstallUpdate = { downloadPath ->
+                                coroutineScope.launch {
+                                    val success = UpdateManager.instance.installUpdate(downloadPath)
+                                    if (success) {
+                                        // Optionally restart the application here
+                                        // ApplicationRestarter.restart()
+                                    }
+                                }
+                            },
+                            onDismiss = {
+                                UpdateManager.instance.resetState()
                             }
-                        },
-                        getCurrentWorkspace = {
-                            extractCurrentWorkspace(splitViewState)
-                        },
-                        onShowTopOfMind = {
-                            showTopOfMindDialog = true
+                        )
+                    }
+
+                    // Top bar - hidden in focus mode with smooth slide animation
+                    AnimatedVisibility(
+                        visible = showTopBar,
+                        enter = slideInVertically(
+                            initialOffsetY = { -it },
+                            animationSpec = tween(durationMillis = 250)
+                        ),
+                        exit = slideOutVertically(
+                            targetOffsetY = { -it },
+                            animationSpec = tween(durationMillis = 250)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier.hoverable(interactionSource = topBarInteractionSource)
+                        ) {
+                            BossTopBar(
+                                workspaceManager = workspaceManager,
+                                onApplyWorkspace = { workspace ->
+                                    coroutineScope.launch {
+                                        // Preserve current state before switching
+                                        val currentWorkspace = workspaceManager.currentWorkspace.value
+                                        if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
+                                            splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
+                                        }
+
+                                        // First load the workspace to reset dirty state
+                                        workspaceManager.loadWorkspace(workspace)
+                                        // Then apply it to the UI (which will try to restore preserved state)
+                                        applyWorkspace(workspace, splitViewState)
+                                    }
+                                },
+                                getCurrentWorkspace = {
+                                    extractCurrentWorkspace(splitViewState)
+                                },
+                                onShowTopOfMind = {
+                                    showTopOfMindDialog = true
+                                },
+                                onShowSettings = {
+                                    showSettingsDialog = true
+                                }
+                            )
                         }
-                    )
-                    Row(modifier = Modifier.weight(1f)) {
-                        // Pass the shared model down to both sidebars
-                        BossLeftSideBar()
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .animateContentSize(animationSpec = tween(durationMillis = 250))
+                    ) {
+                        // Left sidebar - hidden in focus mode with smooth slide animation
+                        AnimatedVisibility(
+                            visible = showLeftSidebar,
+                            enter = slideInHorizontally(
+                                initialOffsetX = { -it },
+                                animationSpec = tween(durationMillis = 250)
+                            ),
+                            exit = slideOutHorizontally(
+                                targetOffsetX = { -it },
+                                animationSpec = tween(durationMillis = 250)
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier.hoverable(interactionSource = leftSidebarInteractionSource)
+                            ) {
+                                BossLeftSideBar()
+                            }
+                        }
+
+                        // Main content area - always visible (contains tabs)
                         BossWindow(
                             modifier = Modifier.weight(1f),
                             tabsComponent = tabsComponent,
                             panelComponentStore = panelComponentStore,
                             splitViewState = splitViewState
                         )
-                        BossRightSideBar()
+
+                        // Right sidebar - hidden in focus mode with smooth slide animation
+                        AnimatedVisibility(
+                            visible = showRightSidebar,
+                            enter = slideInHorizontally(
+                                initialOffsetX = { it },
+                                animationSpec = tween(durationMillis = 250)
+                            ),
+                            exit = slideOutHorizontally(
+                                targetOffsetX = { it },
+                                animationSpec = tween(durationMillis = 250)
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier.hoverable(interactionSource = rightSidebarInteractionSource)
+                            ) {
+                                BossRightSideBar()
+                            }
+                        }
                     }
-                    BossBottomBar(splitViewState.getActiveTabsComponent())
+
+                    // Bottom bar - hidden in focus mode with smooth slide animation
+                    AnimatedVisibility(
+                        visible = showBottomBar,
+                        enter = slideInVertically(
+                            initialOffsetY = { it },
+                            animationSpec = tween(durationMillis = 250)
+                        ),
+                        exit = slideOutVertically(
+                            targetOffsetY = { it },
+                            animationSpec = tween(durationMillis = 250)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier.hoverable(interactionSource = bottomBarInteractionSource)
+                        ) {
+                            BossBottomBar(splitViewState.getActiveTabsComponent())
+                        }
+                    }
                 }
+
+                // Hover reveal strips for focus mode - dynamic sizing to avoid blocking clicks
+                // Top hover strip - uses revealOffsetPx when hidden, 1dp when visible (doesn't block clicks)
+                if (isFocusModeEnabled && isAutoRevealEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (showTopBar) 1.dp else revealOffsetDp)
+                            .align(Alignment.TopStart)
+                            .zIndex(10f)
+                            .background(Color.Transparent)
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
+                                hoverRevealTop = true
+                            }
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
+                                hoverRevealTop = false
+                            }
+                    )
+                }
+
+                // Left hover strip - uses revealOffsetPx when hidden, 1dp when visible (doesn't block clicks)
+                if (isFocusModeEnabled && isAutoRevealEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(if (showLeftSidebar) 1.dp else revealOffsetDp)
+                            .align(Alignment.CenterStart)
+                            .zIndex(10f)
+                            .background(Color.Transparent)
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
+                                hoverRevealLeft = true
+                            }
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
+                                hoverRevealLeft = false
+                            }
+                    )
+                }
+
+                // Right hover strip - uses revealOffsetPx when hidden, 1dp when visible (doesn't block clicks)
+                if (isFocusModeEnabled && isAutoRevealEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(if (showRightSidebar) 1.dp else revealOffsetDp)
+                            .align(Alignment.CenterEnd)
+                            .zIndex(10f)
+                            .background(Color.Transparent)
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
+                                hoverRevealRight = true
+                            }
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
+                                hoverRevealRight = false
+                            }
+                    )
+                }
+
+                // Bottom hover strip - uses revealOffsetPx when hidden, 1dp when visible (doesn't block clicks)
+                if (isFocusModeEnabled && isAutoRevealEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (showBottomBar) 1.dp else revealOffsetDp)
+                            .align(Alignment.BottomStart)
+                            .zIndex(10f)
+                            .background(Color.Transparent)
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
+                                hoverRevealBottom = true
+                            }
+                            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
+                                hoverRevealBottom = false
+                            }
+                    )
+                }
+
                 // Draw the dragging item overlay (ghost) if an item is being dragged
                 DraggingItemOverlay()
             }
@@ -899,7 +1300,10 @@ fun ComponentContext.BossApp(
             // Show new tab dialog
             if (showNewTabDialog) {
                 NewTabDialog(
-                    onDismiss = { showNewTabDialog = false },
+                    onDismiss = {
+                        showNewTabDialog = false
+                        newTabDialogInitialType = null  // Reset initial type
+                    },
                     onCreateTab = { type, path ->
                         // Get the active panel component first, fallback to last interacted, then original
                         val targetComponent = splitViewState.getActiveTabsComponent() 
@@ -935,7 +1339,10 @@ fun ComponentContext.BossApp(
                                 targetComponent.addTab(tab)
                             }
                         }
-                    }
+                        // Reset the initial type after tab creation
+                        newTabDialogInitialType = null
+                    },
+                    initialTabType = newTabDialogInitialType
                 )
             }
             
@@ -953,17 +1360,17 @@ fun ComponentContext.BossApp(
                             if (currentWorkspace != null && currentWorkspace.id.isNotEmpty()) {
                                 splitViewState.preserveCurrentState(currentWorkspace.id, currentWorkspace.name)
                             }
-                            
+
                             // Find the workspace containing this tab
-                            val targetWorkspace = workspaceManager.workspaces.value.find { 
-                                it.id == activeTab.workspaceId 
+                            val targetWorkspace = workspaceManager.workspaces.value.find {
+                                it.id == activeTab.workspaceId
                             }
-                            
+
                             if (targetWorkspace != null) {
                                 // Load and apply the target workspace
                                 workspaceManager.loadWorkspace(targetWorkspace)
                                 applyWorkspace(targetWorkspace, splitViewState)
-                                
+
                                 // Focus the specific tab after a short delay to ensure workspace is applied
                                 delay(100)
                                 splitViewState.selectTabInPanel(activeTab.tabInfo.id, activeTab.panelId)
@@ -972,7 +1379,44 @@ fun ComponentContext.BossApp(
                     }
                 )
             }
-            
+
+            // Settings Window - always available, even in focus mode
+            if (showSettingsDialog) {
+                SettingsWindow(
+                    onClose = { showSettingsDialog = false }
+                )
+            }
+
+            // Project selection dialog (triggered from File > Open Project menu)
+            if (showProjectDialog) {
+                val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
+                    path?.let {
+                        val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                        ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(
+                            ai.rever.boss.components.plugin.panels.left_top.Project(
+                                name = projectName,
+                                path = it
+                            )
+                        )
+                        // Show CodeBase panel when project is selected
+                        draggablePanelComponent.setPanelVisible(
+                            ai.rever.boss.components.model.Panel.Companion.left.top,
+                            true
+                        )
+                        // Close the dialog after selection
+                        showProjectDialog = false
+                    }
+                }
+
+                ai.rever.boss.components.dialogs.ProjectSelectionDialog(
+                    onDismiss = { showProjectDialog = false },
+                    onOpenDirectoryPicker = {
+                        showProjectDialog = false
+                        directoryPicker.pickDirectory()
+                    }
+                )
+            }
+
             // Save feedback snackbar
             saveMessage?.let { message ->
                 Box(
