@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
 import ai.rever.boss.components.bookmarks.bookmarkManager
@@ -24,10 +25,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -534,7 +531,7 @@ fun JxBrowserCompose(
 
                         // Cache the favicon (Issue #160)
                         val currentUrl = browser.url()
-                        val cacheKey = com.risa.boss.cache.FaviconCache.saveFavicon(currentUrl, imageBitmap)
+                        val cacheKey = FaviconCache.saveFavicon(currentUrl, imageBitmap)
                         if (cacheKey != null) {
                             wrappedOnFaviconCached?.invoke(cacheKey)
                         }

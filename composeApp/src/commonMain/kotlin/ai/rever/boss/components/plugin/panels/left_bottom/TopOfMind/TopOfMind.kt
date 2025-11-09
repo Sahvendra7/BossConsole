@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
+import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -18,13 +19,11 @@ import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
@@ -35,16 +34,13 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Workspaces
-import androidx.compose.material.icons.outlined.ViewModule
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -864,7 +860,7 @@ private fun FaviconIcon(
     // Load favicon asynchronously on IO thread
     LaunchedEffect(faviconCacheKey) {
         tabIcon = withContext(Dispatchers.IO) {
-            com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+            loadFaviconFromCache(faviconCacheKey)
         }
     }
 

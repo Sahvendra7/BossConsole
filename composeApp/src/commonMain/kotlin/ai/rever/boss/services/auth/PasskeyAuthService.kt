@@ -26,12 +26,11 @@ internal object PasskeyAuthService {
     private var passkeyService: PasskeyService? = null
 
     /**
-     * Set the platform-specific passkey service implementation
-     * Also sets it for PasskeyCredentialManager which needs access to local passkeys
+     * Set the platform-specific passkey service implementation for authentication operations.
+     * Used for browser-based WebAuthn registration and authentication flows.
      */
     fun setPasskeyService(service: PasskeyService) {
         passkeyService = service
-        PasskeyCredentialManager.setPasskeyService(service)
         println("PasskeyAuthService: Platform passkey service initialized")
     }
 

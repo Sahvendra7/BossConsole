@@ -61,7 +61,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
     var hasFocus by remember { mutableStateOf(false) }
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var userHasScrolled by remember { mutableStateOf(false) }
-    
+
     // Terminal sizing
     var terminalSize by remember { mutableStateOf(Pair(120, 30)) }
     var ptySize by remember { mutableStateOf(Pair(114, 30)) }
@@ -79,20 +79,20 @@ fun TerminalView(viewModel: TerminalViewModel) {
     }
     val charWidthPx = with(density) { charWidthDp.toPx() }
     val charHeightPx = with(density) { charHeightDp.toPx() }
-    
+
     // Colors and styles
     val backgroundColor = TerminalSettings.getBackgroundColor()
     val textColor = TerminalSettings.getForegroundColor()
     val cursorColor = TerminalSettings.getCursorColor()
     val borderColor = if (hasFocus) BossDarkAccent else BossDarkBorder
     val terminalFontFamily = rememberTerminalFontFamily()
-    
+
     val terminalTextStyle = TextStyle(
         fontFamily = terminalFontFamily,
         fontSize = fontSize,
         fontWeight = FontWeight.Normal
     )
-    
+
     // Cursor animation
     val cursorAlpha by rememberInfiniteTransition().animateFloat(
         initialValue = 1f,
@@ -102,7 +102,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
             repeatMode = RepeatMode.Reverse
         )
     )
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -126,7 +126,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
             onValueChange = { newValue ->
                 val oldText = textFieldValue.text
                 val newText = newValue.text
-                
+
                 if (newText.length > oldText.length) {
                     val addedText = newText.substring(oldText.length)
                     if (addedText.all { char -> char.code < 32 || char.code >= 127 }) {
@@ -163,7 +163,7 @@ fun TerminalView(viewModel: TerminalViewModel) {
             textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
             cursorBrush = SolidColor(Color.Transparent)
         )
-        
+
         // Terminal content
         Box(
             modifier = Modifier
@@ -216,52 +216,52 @@ fun TerminalView(viewModel: TerminalViewModel) {
                     }
 
                     terminalLines.forEachIndexed { rowIndex, line ->
-                    val needsWrapping = line.text.length > terminalSize.first
-                    
-                    Box(
-                        modifier = Modifier
-                            .width(charWidthDp * terminalSize.first)
-                            .height(charHeightDp)
-                            .clipToBounds()
-                            .graphicsLayer {
-                                compositingStrategy = if (needsWrapping) CompositingStrategy.Offscreen else CompositingStrategy.Auto
-                            }
-                    ) {
-                        Text(
-                            text = if (line.text.isEmpty()) AnnotatedString(" ") else line,
-                            style = terminalTextStyle.copy(
-                                lineHeight = charHeightDp.value.sp
-                            ),
+                        val needsWrapping = line.text.length > terminalSize.first
+
+                        Box(
                             modifier = Modifier
                                 .width(charWidthDp * terminalSize.first)
                                 .height(charHeightDp)
-                                .wrapContentHeight(align = Alignment.Top),
-                            softWrap = false,
-                            overflow = TextOverflow.Clip,
-                            maxLines = 1
-                        )
-                        
-                        // Cursor
-                        if (rowIndex == terminalCursorPosition.first && hasFocus && terminalCursorVisible) {
-                            val cursorCol = terminalCursorPosition.second
-                            val scaleFactor = terminalSize.first.toFloat() / ptySize.first.toFloat()
-                            val displayCursorCol = (cursorCol * scaleFactor).toInt()
-                            
-                            Box(
+                                .clipToBounds()
+                                .graphicsLayer {
+                                    compositingStrategy = if (needsWrapping) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+                                }
+                        ) {
+                            Text(
+                                text = if (line.text.isEmpty()) AnnotatedString(" ") else line,
+                                style = terminalTextStyle.copy(
+                                    lineHeight = charHeightDp.value.sp
+                                ),
                                 modifier = Modifier
-                                    .offset(x = charWidthDp * displayCursorCol)
-                                    .size(charWidthDp, charHeightDp)
-                                    .alpha(cursorAlpha)
-                                    .background(cursorColor)
+                                    .width(charWidthDp * terminalSize.first)
+                                    .height(charHeightDp)
+                                    .wrapContentHeight(align = Alignment.Top),
+                                softWrap = false,
+                                overflow = TextOverflow.Clip,
+                                maxLines = 1
                             )
+
+                            // Cursor
+                            if (rowIndex == terminalCursorPosition.first && hasFocus && terminalCursorVisible) {
+                                val cursorCol = terminalCursorPosition.second
+                                val scaleFactor = terminalSize.first.toFloat() / ptySize.first.toFloat()
+                                val displayCursorCol = (cursorCol * scaleFactor).toInt()
+
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = charWidthDp * displayCursorCol)
+                                        .size(charWidthDp, charHeightDp)
+                                        .alpha(cursorAlpha)
+                                        .background(cursorColor)
+                                )
+                            }
                         }
                     }
                 }
             }
-            }
         }
     }
-    
+
     // Terminal initialization
     LaunchedEffect(terminalSize) {
         if (terminalSize.first > 0 && terminalSize.second > 0 && !hasInitialSize) {
@@ -270,41 +270,41 @@ fun TerminalView(viewModel: TerminalViewModel) {
             viewModel.ensureStarted()
         }
     }
-    
+
     // Resize handling
     LaunchedEffect(pendingResize) {
         pendingResize?.let { (cols, rows, ptyResize) ->
             delay(50) // Simple debouncing
-            
+
             if (!hasInitialSize) {
                 hasInitialSize = true
                 viewModel.ensureStarted()
             }
-            
+
             if (terminalSize.first != cols || terminalSize.second != rows) {
                 terminalSize = Pair(cols, rows)
                 ptySize = ptyResize
                 viewModel.resizeWithDeception(cols, rows, ptyResize.first, ptyResize.second)
             }
-            
+
             pendingResize = null
         }
     }
-    
+
     // Scroll tracking
     LaunchedEffect(scrollState.value) {
         if (scrollState.isScrollInProgress) {
             val currentMax = scrollState.maxValue
             val currentValue = scrollState.value
-            
+
             userHasScrolled = currentValue < (currentMax - 50)
-            
+
             if (currentValue >= (currentMax - 50)) {
                 userHasScrolled = false
             }
         }
     }
-    
+
     // Auto-scroll to bottom
     LaunchedEffect(terminalLines.size, userHasScrolled) {
         if (terminalLines.isNotEmpty() && !userHasScrolled) {
@@ -327,7 +327,7 @@ private fun handleKeyEvent(keyEvent: KeyEvent, viewModel: TerminalViewModel): Bo
         Key.Tab -> { viewModel.sendInput("\t"); true }
         Key.MoveHome -> { viewModel.sendInput("\u001B[H"); true }
         Key.MoveEnd -> { viewModel.sendInput("\u001B[F"); true }
-        
+
         else -> {
             when {
                 keyEvent.isCtrlPressed -> handleCtrlKey(keyEvent, viewModel)

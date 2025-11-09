@@ -8,6 +8,7 @@ import ai.rever.boss.components.settings.shared.SectionHeader
 import ai.rever.boss.components.settings.shared.SettingSection
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.passkey.PasskeyInfo
+import ai.rever.boss.services.passkey.PasskeyState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -120,7 +121,6 @@ private suspend fun detectWebAuthnCapabilities(): WebAuthnCapabilities {
 @Composable
 fun SecuritySettings() {
     val authState by AuthService.authState.collectAsState()
-    val currentUser by AuthService.currentUser.collectAsState()
 
     // Observe passkey state for embedded browser trigger
     val passkeyStateFlow = AuthService.getPasskeyState()
@@ -208,8 +208,8 @@ fun SecuritySettings() {
 
     // Monitor passkey state for embedded browser trigger
     LaunchedEffect(passkeyState) {
-        if (passkeyState is ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser) {
-            val browserState = passkeyState as ai.rever.boss.services.passkey.PasskeyState.ShowEmbeddedBrowser
+        if (passkeyState is PasskeyState.ShowEmbeddedBrowser) {
+            val browserState = passkeyState as PasskeyState.ShowEmbeddedBrowser
             println("SecuritySettings: Passkey state changed to ShowEmbeddedBrowser, showing browser screen")
             passkeyBrowserUrl = browserState.url
             passkeyBrowserSessionId = browserState.sessionId

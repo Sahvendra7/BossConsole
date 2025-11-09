@@ -1416,7 +1416,6 @@ fun ComponentContext.BossApp(
                     }
                 )
             }
-
             // Save feedback snackbar
             saveMessage?.let { message ->
                 Box(

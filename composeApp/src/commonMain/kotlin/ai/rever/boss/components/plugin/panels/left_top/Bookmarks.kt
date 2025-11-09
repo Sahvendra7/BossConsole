@@ -2,8 +2,8 @@ package ai.rever.boss.components.plugin.panels.left_top
 
 import BossDarkAccent
 import BossDarkBackground
-import BossDarkBorder
 import BossDarkTextSecondary
+import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.BookmarkCollection
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
@@ -19,19 +19,13 @@ import ai.rever.boss.components.dialogs.RenameDialog
 import ai.rever.boss.components.dialogs.WorkspaceSelectionDialog
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.registery.PanelComponentWithUI
-import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
 import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabTypeId
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.PanelConfig
@@ -1452,7 +1446,7 @@ private fun FaviconIcon(
     // Load favicon asynchronously on IO thread
     LaunchedEffect(faviconCacheKey) {
         tabIcon = withContext(Dispatchers.IO) {
-            com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+            loadFaviconFromCache(faviconCacheKey)
         }
     }
 

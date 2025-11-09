@@ -24,7 +24,6 @@ class DesktopPasskeyService : PasskeyService {
     
     // Component dependencies
     private val biometricAuthProvider = BiometricAuthProvider()
-    private val credentialManager = PasskeyCredentialManager(biometricAuthProvider)
     private val browserManager = CrossDeviceBrowserManager()
     private val dataMapper = DesktopPasskeyDataMapper()
     
@@ -46,11 +45,6 @@ class DesktopPasskeyService : PasskeyService {
             false
         }
     }
-    
-    override suspend fun hasPasskeys(): Boolean {
-        return credentialManager.hasPasskeys()
-    }
-    
     override suspend fun registerPasskey(
         userId: String,
         displayName: String,
@@ -197,17 +191,6 @@ class DesktopPasskeyService : PasskeyService {
             Result.failure(e)
         }
     }
-    
-    
-    override suspend fun getAvailablePasskeys(): Result<List<PasskeyInfo>> {
-        return credentialManager.getAvailablePasskeys()
-    }
-    
-    
-    override suspend fun deletePasskey(credentialId: String): Result<Unit> {
-        return credentialManager.deletePasskey(credentialId)
-    }
-    
     override suspend fun isUserPresent(): Boolean {
         // Check if user gesture is available (simplified implementation)
         return true

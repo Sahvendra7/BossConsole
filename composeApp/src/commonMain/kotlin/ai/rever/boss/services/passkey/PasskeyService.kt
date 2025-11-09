@@ -18,12 +18,7 @@ interface PasskeyService {
      * Check if passkeys are supported on the current platform
      */
     suspend fun isPasskeySupported(): Boolean
-    
-    /**
-     * Check if the current device has passkeys available
-     */
-    suspend fun hasPasskeys(): Boolean
-    
+
     /**
      * Register a new passkey for the user
      * @param userId Unique user identifier
@@ -38,7 +33,7 @@ interface PasskeyService {
         challenge: ByteArray,
         rpId: String = "api.risaboss.com"
     ): Result<PasskeyRegistration>
-    
+
     /**
      * Authenticate using an existing passkey
      * @param challenge Server-provided challenge bytes
@@ -54,17 +49,6 @@ interface PasskeyService {
         sessionId: String? = null,
         allowedCredentialTransports: Map<String, List<String>>? = null
     ): Result<PasskeyAssertion>
-    
-    /**
-     * Get list of available passkeys for the current user
-     */
-    suspend fun getAvailablePasskeys(): Result<List<PasskeyInfo>>
-    
-    /**
-     * Delete a specific passkey
-     * @param credentialId The credential ID to delete
-     */
-    suspend fun deletePasskey(credentialId: String): Result<Unit>
     
     /**
      * Check if user gesture is available (user presence)

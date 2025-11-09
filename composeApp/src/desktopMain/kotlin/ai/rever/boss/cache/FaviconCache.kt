@@ -1,4 +1,4 @@
-package com.risa.boss.cache
+package ai.rever.boss.cache
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.Painter

@@ -43,17 +43,16 @@ internal object UserExistenceService {
                 } else {
                     val errorMessage = challengeResult.exceptionOrNull()?.message ?: ""
                     println("Authentication challenge failed: $errorMessage")
-                    
+
                     // Check if the error indicates user doesn't exist
                     if (errorMessage.contains("User not found") || errorMessage.contains("404")) {
                         println("User does not exist on server")
                         userExists = false
                     }
-                    
-                    // If server check fails, fallback to local check as backup
-                    val localPasskeys = passkeyService?.getAvailablePasskeys()?.getOrNull() ?: emptyList()
-                    println("Fallback to local check - Found ${localPasskeys.size} local passkey credentials")
-                    localPasskeys.isNotEmpty()
+
+                    // No local fallback - authentication requires server connection
+                    println("Cannot check passkeys availability (server error)")
+                    false
                 }
             } catch (e: Exception) {
                 println("Could not check passkeys availability: ${e.message}")

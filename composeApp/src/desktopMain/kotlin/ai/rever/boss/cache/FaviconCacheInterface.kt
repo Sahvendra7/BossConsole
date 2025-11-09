@@ -1,4 +1,4 @@
-package com.risa.boss.cache
+package ai.rever.boss.cache
 
 import ai.rever.boss.components.registery.TabIcon
 

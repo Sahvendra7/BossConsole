@@ -1,5 +1,6 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
@@ -151,7 +152,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
     return when (tabConfig.type) {
         "browser" -> {
             // Load favicon from cache if available (Issue #160)
-            val cachedFavicon = com.risa.boss.cache.loadFaviconFromCache(tabConfig.faviconCacheKey)
+            val cachedFavicon = loadFaviconFromCache(tabConfig.faviconCacheKey)
 
             FluckTabInfo(
                 id = "browser-${Random.nextLong()}",

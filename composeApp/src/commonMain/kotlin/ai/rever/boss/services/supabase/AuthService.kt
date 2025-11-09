@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.StateFlow
 import ai.rever.boss.services.passkey.PasskeyService
 import ai.rever.boss.services.supabase.models.*
 import ai.rever.boss.services.auth.*
+import ai.rever.boss.services.passkey.PasskeyInfo
 import kotlin.time.ExperimentalTime
 
 // Exception for cross-device authentication flow
@@ -107,7 +108,7 @@ object AuthService {
     /**
      * Get user's registered passkeys (from both local storage and Supabase backend)
      */
-    suspend fun getUserPasskeys(): Result<List<ai.rever.boss.services.passkey.PasskeyInfo>> {
+    suspend fun getUserPasskeys(): Result<List<PasskeyInfo>> {
         return PasskeyAuthService.getUserPasskeys()
     }
     
