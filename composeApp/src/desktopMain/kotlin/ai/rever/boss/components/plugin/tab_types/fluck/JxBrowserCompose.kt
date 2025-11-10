@@ -927,12 +927,8 @@ fun JxBrowserCompose(
                                                 // Use selected dropdown item
                                                 dropdownSuggestions[selectedDropdownIndex].url
                                             }
-                                            autocompleteSuggestion != null &&
-                                            urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length) -> {
-                                                // Use the full autocomplete suggestion
-                                                processUrlInput(autocompleteSuggestion!!)
-                                            }
                                             else -> {
+                                                // Use what the user actually typed
                                                 val input = urlInput.text.trim()
                                                 processUrlInput(input)
                                             }
