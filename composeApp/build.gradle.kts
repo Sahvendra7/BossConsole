@@ -597,14 +597,14 @@ tasks.register("signPty4jBinaries") {
 
     doLast {
         println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
-        
+
         // Get developer identity from environment or use default
-        val developerId = System.getenv("MACOS_DEVELOPER_ID") 
+        val developerId = System.getenv("MACOS_DEVELOPER_ID")
             ?: System.getenv("DEVELOPER_ID")
             ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
-        
+
         // Find the built app in the standard Compose Desktop location
-        val appDir = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val appDir = project.layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
         val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
         
         if (appFile?.exists() == true) {
@@ -761,7 +761,7 @@ tasks.register("extractCLIToAppResources") {
             ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
 
         // Find the built app in the standard Compose Desktop location
-        val appDir = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val appDir = project.layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
         val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
 
         if (appFile?.exists() == true) {
@@ -772,7 +772,7 @@ tasks.register("extractCLIToAppResources") {
             resourcesDir.mkdirs()
 
             // Source: generated CLI script from build/generated/resources/cli/boss
-            val generatedCLIDir = layout.buildDirectory.dir("generated/resources/cli").get().asFile
+            val generatedCLIDir = project.layout.buildDirectory.dir("generated/resources/cli").get().asFile
             val cliScript = File(generatedCLIDir, "boss")
 
             if (cliScript.exists()) {
