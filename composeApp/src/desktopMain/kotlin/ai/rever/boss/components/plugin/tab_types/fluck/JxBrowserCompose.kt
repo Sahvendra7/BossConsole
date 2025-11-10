@@ -209,6 +209,8 @@ fun JxBrowserCompose(
     var showDropdown by remember { mutableStateOf(false) }
     var dropdownSuggestions by remember { mutableStateOf<List<UrlHistoryEntry>>(emptyList()) }
     var selectedDropdownIndex by remember { mutableStateOf(-1) }
+    var isUserEditingUrl by remember { mutableStateOf(false) }
+    var lastUserEditTime by remember { mutableStateOf(0L) }
     val dropdownListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -341,8 +343,15 @@ fun JxBrowserCompose(
                 if (!isBrowserEnvironmentValid()) return@launch
 
                 isLoading = true
-                val newUrl = browser.url()
-                urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+
+                // Only update URL bar if user isn't actively editing
+                // AND sufficient time has passed since last input (300ms buffer for Tab completion)
+                val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
+                if (!isUserEditingUrl && timeSinceEdit > 300) {
+                    val newUrl = browser.url()
+                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                }
+
                 canGoBack = browser.navigation().canGoBack()
                 canGoForward = browser.navigation().canGoForward()
             }
@@ -358,9 +367,12 @@ fun JxBrowserCompose(
                     // Double-check before UI update
                     if (!isBrowserEnvironmentValid()) return@launch
 
-                    // Update URL bar
+                    // Update URL bar only if user isn't actively editing
                     val newUrl = event.url()
-                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                    val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
+                    if (!isUserEditingUrl && timeSinceEdit > 300) {
+                        urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                    }
 
                     // Update title immediately when navigation finishes
                     if (isBrowserEnvironmentValid()) {
@@ -808,25 +820,34 @@ fun JxBrowserCompose(
                         )
                     }
 
-                    // Refresh button
+                    // Refresh/Stop button - changes based on loading state
                     IconButton(
                         onClick = {
-                            val urlToLoad = if (autocompleteSuggestion != null &&
-                                urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
-                                processUrlInput(autocompleteSuggestion!!)
+                            if (isLoading) {
+                                // Stop the current navigation
+                                if (isBrowserEnvironmentValid()) browser.navigation().stop()
                             } else {
-                                val input = urlInput.text.trim()
-                                processUrlInput(input)
+                                // Reload/navigate to URL
+                                val urlToLoad = if (autocompleteSuggestion != null &&
+                                    urlInput.text == autocompleteSuggestion!!.take(urlInput.text.length)) {
+                                    processUrlInput(autocompleteSuggestion!!)
+                                } else {
+                                    val input = urlInput.text.trim()
+                                    processUrlInput(input)
+                                }
+                                // Clear editing state to allow URL bar updates during navigation
+                                isUserEditingUrl = false
+                                lastUserEditTime = 0L
+                                if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
+                                autocompleteSuggestion = null
+                                showDropdown = false
                             }
-                            if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
-                            autocompleteSuggestion = null
-                            showDropdown = false
                         },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Refresh",
+                            if (isLoading) Icons.Default.Close else Icons.Default.Refresh,
+                            contentDescription = if (isLoading) "Stop" else "Refresh",
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -835,9 +856,11 @@ fun JxBrowserCompose(
                     BasicTextField(
                         value = urlInput,
                         onValueChange = { newValue ->
+                            isUserEditingUrl = true
+                            lastUserEditTime = System.currentTimeMillis()
                             urlInput = newValue
                             selectedDropdownIndex = -1
-                            
+
                             // Get autocomplete suggestion and dropdown items
                             if (newValue.text.isNotEmpty() && newValue.selection.collapsed) {
                                 val suggestions = UrlHistoryManager.getSuggestions(newValue.text, limit = 10)
@@ -879,6 +902,7 @@ fun JxBrowserCompose(
                                     coroutineScope.launch {
                                         kotlinx.coroutines.delay(200) // Give time for click events
                                         showDropdown = false
+                                        isUserEditingUrl = false
                                     }
                                 }
                             }
@@ -913,6 +937,9 @@ fun JxBrowserCompose(
                                                 processUrlInput(input)
                                             }
                                         }
+                                        // Clear editing state to allow URL bar updates during navigation
+                                        isUserEditingUrl = false
+                                        lastUserEditTime = 0L
                                         if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
                                         autocompleteSuggestion = null
                                         showDropdown = false

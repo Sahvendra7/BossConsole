@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlin.io.path.createTempFile
 
 /**
  * macOS-specific handler for default browser functionality
@@ -125,7 +126,7 @@ object MacOSDefaultBrowserHandler {
                 }
             """.trimIndent()
 
-            val scriptFile = createTempFile("set_default_browser", ".swift")
+            val scriptFile = createTempFile("set_default_browser", ".swift").toFile()
             scriptFile.deleteOnExit()
             scriptFile.writeText(swiftScript)
 

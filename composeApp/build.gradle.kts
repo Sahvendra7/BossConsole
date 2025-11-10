@@ -5,6 +5,10 @@ import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import java.util.Properties
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -12,19 +16,38 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
-    id("com.teamdev.jxbrowser") version "2.0.0"
+    alias(libs.plugins.jxbrowser)
 }
 
-// Load version from properties file
-val versionPropsFile = file("../version.properties")
-val versionProps = Properties()
-if (versionPropsFile.exists()) {
-    versionPropsFile.inputStream().use { 
-        versionProps.load(it)
+// Interface for injecting ExecOperations into tasks
+// Replaces deprecated project.exec() calls for Gradle 9.0 compatibility
+interface InjectedExecOps {
+    @get:Inject val execOps: ExecOperations
+}
+
+// Configuration-cache-compatible ValueSource for reading version properties
+abstract class VersionPropertiesValueSource : ValueSource<Properties, VersionPropertiesValueSource.Parameters> {
+    interface Parameters : ValueSourceParameters {
+        val propertiesFile: RegularFileProperty
+    }
+
+    override fun obtain(): Properties {
+        val props = Properties()
+        val file = parameters.propertiesFile.get().asFile
+        if (file.exists()) {
+            file.inputStream().use { props.load(it) }
+        }
+        return props
     }
 }
-val appVersion = versionProps.getProperty("app.version", "8.8.0")
-val bundleVersion = versionProps.getProperty("app.bundle.version", "8.8.0")
+
+// Load version from properties file using configuration-cache-compatible providers
+val versionPropsFile = layout.projectDirectory.file("../version.properties")
+val versionPropsProvider = providers.of(VersionPropertiesValueSource::class.java) {
+    parameters.propertiesFile.set(versionPropsFile)
+}
+val appVersion = versionPropsProvider.map { it.getProperty("app.version", "8.8.0") }.get()
+val bundleVersion = versionPropsProvider.map { it.getProperty("app.bundle.version", "8.8.0") }.get()
 
 println("📦 Building BOSS Version: $appVersion")
 
@@ -32,6 +55,12 @@ println("📦 Building BOSS Version: $appVersion")
 val generateVersionConstants = tasks.register("generateVersionConstants") {
     val outputDir = layout.buildDirectory.dir("generated/source/version")
     val outputFile = outputDir.map { it.file("ai/rever/boss/utils/VersionConstants.kt") }
+
+    // Use providers for configuration cache compatibility
+    val propsProvider = versionPropsProvider
+    val majorProvider = propsProvider.map { it.getProperty("app.version.major", "8") }
+    val minorProvider = propsProvider.map { it.getProperty("app.version.minor", "8") }
+    val patchProvider = propsProvider.map { it.getProperty("app.version.patch", "0") }
 
     inputs.file(versionPropsFile)
     outputs.file(outputFile)
@@ -41,9 +70,9 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
     outputs.upToDateWhen { false }
 
     doLast {
-        val major = versionProps.getProperty("app.version.major", "8")
-        val minor = versionProps.getProperty("app.version.minor", "8")
-        val patch = versionProps.getProperty("app.version.patch", "0")
+        val major = majorProvider.get()
+        val minor = minorProvider.get()
+        val patch = patchProvider.get()
 
         outputFile.get().asFile.apply {
             parentFile.mkdirs()
@@ -67,8 +96,11 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
 
 // Task to generate versioned CLI scripts from templates
 val generateVersionedCLIScripts = tasks.register("generateVersionedCLIScripts") {
-    val sourceDir = file("../scripts")
+    val sourceDir = layout.projectDirectory.dir("../scripts")
     val outputDir = layout.buildDirectory.dir("generated/resources/cli")
+
+    // Use providers for configuration cache compatibility
+    val versionProvider = versionPropsProvider.map { it.getProperty("app.version", "8.8.0") }
 
     inputs.dir(sourceDir)
     inputs.file(versionPropsFile)
@@ -78,14 +110,14 @@ val generateVersionedCLIScripts = tasks.register("generateVersionedCLIScripts") 
     outputs.upToDateWhen { false }
 
     doLast {
-        val version = appVersion
+        val version = versionProvider.get()
         val buildDate = LocalDateTime.now().format(
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         )
 
         outputDir.get().asFile.mkdirs()
 
-        sourceDir.listFiles()?.forEach { scriptFile ->
+        sourceDir.asFile.listFiles()?.forEach { scriptFile ->
             if (scriptFile.isFile && (scriptFile.name == "boss" || scriptFile.name.startsWith("boss."))) {
                 val content = scriptFile.readText()
                 val versioned = content
@@ -113,7 +145,8 @@ repositories {
 }
 
 jxbrowser {
-    version = "8.8.0" // JxBrowser version, not app version
+    // JxBrowser version - keep in sync with gradle/libs.versions.toml
+    version = "8.13.0"
 }
 
 kotlin {
@@ -551,14 +584,17 @@ tasks.register("extractPty4jNative") {
 tasks.register("signPty4jBinaries") {
     description = "Signs PTY4J native binaries with hardened runtime for Apple notarization"
     group = "build"
-    
+
     // Only run on macOS and when signing is enabled
     onlyIf {
         val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
         val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
         isMacOS && !signingDisabled
     }
-    
+
+    // Inject ExecOperations for exec calls (replaces deprecated project.exec)
+    val injected = project.objects.newInstance<InjectedExecOps>()
+
     doLast {
         println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
         
@@ -589,7 +625,7 @@ tasks.register("signPty4jBinaries") {
                 
                 try {
                     // Extract the entire jar
-                    project.exec {
+                    injected.execOps.exec {
                         workingDir = tempDir
                         commandLine("jar", "xf", pty4jJar.absolutePath)
                     }
@@ -610,7 +646,7 @@ tasks.register("signPty4jBinaries") {
                             
                             // Sign with hardened runtime
                             try {
-                                project.exec {
+                                injected.execOps.exec {
                                     commandLine(
                                         "codesign",
                                         "--force",
@@ -622,7 +658,7 @@ tasks.register("signPty4jBinaries") {
                                 }
 
                                 // Verify signature
-                                project.exec {
+                                injected.execOps.exec {
                                     commandLine("codesign", "-vv", nativeFile.absolutePath)
                                 }
                                 
@@ -634,7 +670,7 @@ tasks.register("signPty4jBinaries") {
                         
                         // Recreate the jar with signed native libraries
                         val signedJar = File(pty4jJar.parentFile, "${pty4jJar.nameWithoutExtension}-signed.jar")
-                        project.exec {
+                        injected.execOps.exec {
                             workingDir = tempDir
                             commandLine("jar", "cf", signedJar.absolutePath, ".")
                         }
@@ -657,7 +693,7 @@ tasks.register("signPty4jBinaries") {
                 // CRITICAL: Re-sign the entire app bundle after modifying the JAR
                 println("🔒 Re-signing app bundle after PTY4J modifications...")
                 try {
-                    project.exec {
+                    injected.execOps.exec {
                         commandLine(
                             "codesign",
                             "--force",
@@ -671,7 +707,7 @@ tasks.register("signPty4jBinaries") {
                     }
 
                     // Verify the re-signed app
-                    project.exec {
+                    injected.execOps.exec {
                         commandLine("codesign", "-vvv", "--deep", "--strict", appFile.absolutePath)
                     }
 
@@ -711,6 +747,9 @@ tasks.register("extractCLIToAppResources") {
     onlyIf {
         System.getProperty("os.name").lowercase().contains("mac")
     }
+
+    // Inject ExecOperations for exec calls (replaces deprecated project.exec)
+    val injected = project.objects.newInstance<InjectedExecOps>()
 
     doLast {
         println("📦 Extracting CLI script to app bundle Resources...")
@@ -753,7 +792,7 @@ tasks.register("extractCLIToAppResources") {
                 if (!signingDisabled) {
                     println("🔒 Re-signing app bundle after CLI script installation...")
                     try {
-                        project.exec {
+                        injected.execOps.exec {
                             commandLine(
                                 "codesign",
                                 "--force",
@@ -767,7 +806,7 @@ tasks.register("extractCLIToAppResources") {
                         }
 
                         // Verify the re-signed app
-                        project.exec {
+                        injected.execOps.exec {
                             commandLine("codesign", "-vvv", "--deep", "--strict", appFile.absolutePath)
                         }
 
@@ -910,6 +949,13 @@ tasks.register<Zip>("packageJarWithNatives") {
 // Ensure version constants are generated before Kotlin compilation
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     dependsOn(generateVersionConstants)
+}
+
+// Configure Test tasks to not fail when no tests are discovered (Gradle 9+ compatibility)
+tasks.withType<Test> {
+    // Disable failure when test sources exist but no tests are discovered
+    // This handles misconfigured test sources or test classes without test methods
+    failOnNoDiscoveredTests = false
 }
 
 // Wrapper tasks that auto-increment build number before packaging
