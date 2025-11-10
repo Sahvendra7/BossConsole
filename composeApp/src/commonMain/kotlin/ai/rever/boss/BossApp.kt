@@ -1302,7 +1302,8 @@ fun ComponentContext.BossApp(
                 NewTabDialog(
                     onDismiss = {
                         showNewTabDialog = false
-                        newTabDialogInitialType = null  // Reset initial type
+                        newTabDialogInitialType = null
+                        focusRequester.requestFocus()
                     },
                     onCreateTab = { type, path ->
                         // Get the active panel component first, fallback to last interacted, then original
@@ -1345,13 +1346,16 @@ fun ComponentContext.BossApp(
                     initialTabType = newTabDialogInitialType
                 )
             }
-            
+
             // Top of mind quick switcher dialog
             if (showTopOfMindDialog) {
                 TopOfMindDialog(
                     splitViewState = splitViewState,
                     workspaceManager = workspaceManager,
-                    onDismiss = { showTopOfMindDialog = false },
+                    onDismiss = {
+                        showTopOfMindDialog = false
+                        focusRequester.requestFocus()
+                    },
                     onTabSelect = { activeTab ->
                         showTopOfMindDialog = false
                         coroutineScope.launch {
@@ -1376,6 +1380,8 @@ fun ComponentContext.BossApp(
                                 splitViewState.selectTabInPanel(activeTab.tabInfo.id, activeTab.panelId)
                             }
                         }
+
+                        focusRequester.requestFocus()
                     }
                 )
             }

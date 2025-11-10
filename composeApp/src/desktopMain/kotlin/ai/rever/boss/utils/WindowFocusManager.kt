@@ -4,6 +4,9 @@ import java.awt.Window
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * WindowFocusManager - Handles multi-window focus tracking
@@ -16,6 +19,10 @@ actual object WindowFocusManager {
     private val windowListeners = mutableMapOf<String, WindowAdapter>()
     private var focusedWindowId: String? = null
     private var mainWindow: Window? = null  // Kept for backward compatibility
+
+    // StateFlow to observe focus changes (for elegant focus restoration)
+    private val _focusedWindowFlow = MutableStateFlow<String?>(null)
+    actual val focusedWindowFlow: StateFlow<String?> = _focusedWindowFlow.asStateFlow()
 
     /**
      * Register an application window with focus tracking
@@ -36,6 +43,7 @@ actual object WindowFocusManager {
         val listener = object : WindowAdapter() {
             override fun windowGainedFocus(e: WindowEvent?) {
                 focusedWindowId = windowId
+                _focusedWindowFlow.value = windowId  // Emit to Flow for observers
                 println("WindowFocusManager: Window $windowId gained focus")
             }
 

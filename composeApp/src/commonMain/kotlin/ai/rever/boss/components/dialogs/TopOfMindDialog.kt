@@ -1,12 +1,15 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.components.common.rememberFaviconLoader
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.utils.WindowFocusManager
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +19,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,22 +48,11 @@ fun TopOfMindDialog(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Helper function to handle tab selection with window focusing
+    // Helper function to handle tab selection
     fun handleTabSelect(activeTab: ActiveTab) {
         println("[TopOfMindDialog] Selecting tab '${activeTab.tabInfo.title}' from window '${activeTab.windowId}'")
-
-        // Focus the window that contains the tab
-        val focused = WindowFocusManager.focusWindow(activeTab.windowId)
-
-        if (focused) {
-            println("[TopOfMindDialog] Successfully focused window '${activeTab.windowId}'")
-            // Call the original callback which will handle tab selection
-            onTabSelect(activeTab)
-        } else {
-            println("[TopOfMindDialog] Warning: Failed to focus window '${activeTab.windowId}'")
-            // Still try to select the tab even if window focusing failed
-            onTabSelect(activeTab)
-        }
+        // Don't try to focus here - let BossApp handle focus restoration after dialog closes
+        onTabSelect(activeTab)
     }
 
     // Update active tabs when dialog opens and refresh periodically
@@ -285,6 +278,9 @@ private fun ActiveTabDialogItem(
     isSelected: Boolean,
     onTabClick: () -> Unit
 ) {
+    // Load favicon using shared composable (with error handling and caching)
+    val loadedFavicon = rememberFaviconLoader(activeTab.tabInfo)
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -299,12 +295,27 @@ private fun ActiveTabDialogItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Outlined.Language,
-                contentDescription = "Browser tab",
-                tint = if (isSelected) Color.White else Color.Gray,
-                modifier = Modifier.size(16.dp)
-            )
+            // Display favicon if available, otherwise fallback icon
+            loadedFavicon?.let { favicon ->
+                // Display actual favicon (safe call, no !!)
+                Image(
+                    painter = favicon.asPainter(),
+                    contentDescription = "Tab icon",
+                    modifier = Modifier.size(16.dp)
+                )
+            } ?: run {
+                // Fallback to appropriate vector icon based on tab type
+                val fallbackIcon = when (activeTab.tabInfo) {
+                    is FluckTabInfo -> Icons.Outlined.Language // Browser tabs
+                    else -> Icons.Outlined.Tab // Other tab types
+                }
+                Icon(
+                    fallbackIcon,
+                    contentDescription = "Tab icon",
+                    tint = if (isSelected) Color.White else Color.Gray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
             
             Spacer(modifier = Modifier.width(12.dp))
             

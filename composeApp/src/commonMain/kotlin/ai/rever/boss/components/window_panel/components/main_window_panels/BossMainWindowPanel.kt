@@ -8,8 +8,10 @@ import ai.rever.boss.components.bars.horizontal.HorizontalBar
 import ai.rever.boss.components.bars.horizontal.HorizontalBarRow
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.buttons.BossTabButton
+import ai.rever.boss.components.common.rememberFaviconLoader
 import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
 import ai.rever.boss.components.bookmarks.Bookmark
@@ -66,6 +68,37 @@ import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kotlin.time.Clock
+
+/**
+ * Wrapper for BossTabButton that loads and displays favicons from cache
+ * Uses shared rememberFaviconLoader composable for DRY and error handling
+ */
+@Composable
+private fun BossTabButtonWithFavicon(
+    config: TabInfo,
+    isSelected: Boolean,
+    isFocused: Boolean,
+    onClick: () -> Unit,
+    onClose: () -> Unit,
+    contextMenuItems: List<ContextMenuItem>
+) {
+    // Load favicon using shared composable (with error handling and caching)
+    val loadedFavicon = rememberFaviconLoader(config)
+
+    // Determine which icon to use: loaded favicon > config.tabIcon > fallback to config.icon
+    val effectiveTabIcon = loadedFavicon ?: config.tabIcon
+
+    BossTabButton(
+        fileName = config.title,
+        icon = config.icon,
+        tabIcon = effectiveTabIcon,
+        isSelected = isSelected,
+        isFocused = isFocused,
+        onClick = onClick,
+        onClose = onClose,
+        contextMenuItems = contextMenuItems
+    )
+}
 
 @Composable
 fun BossTabsComponent.BossMainTabBar(
@@ -135,11 +168,10 @@ fun BossTabsComponent.BossMainTabBar(
                     val isSelected = index == tabsState.value.activeIndex
                     val totalTabs = tabsState.value.tabs.size
 
-                    BossTabButton(
-                        fileName = config.title,
-                        icon = config.icon,
-                        tabIcon = config.tabIcon,
+                    BossTabButtonWithFavicon(
+                        config = config,
                         isSelected = isSelected,
+                        isFocused = true, // Tab bars are always considered focused when window is active
                         onClick = {
                             selectTab(index)
                             // Track this tab interaction for Cmd+R/Cmd+N

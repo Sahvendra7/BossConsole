@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import kotlinx.coroutines.flow.StateFlow
+
 /**
  * WindowFocusManager - Platform-specific window focus management
  *
@@ -27,4 +29,12 @@ expect object WindowFocusManager {
      * @return true if the window is focused, false otherwise
      */
     fun isWindowFocused(windowId: String): Boolean
+
+    /**
+     * StateFlow that emits the ID of the currently focused window.
+     * Emits null if no window is focused.
+     *
+     * Used by FocusRestorationManager for event-driven focus restoration.
+     */
+    val focusedWindowFlow: StateFlow<String?>
 }
