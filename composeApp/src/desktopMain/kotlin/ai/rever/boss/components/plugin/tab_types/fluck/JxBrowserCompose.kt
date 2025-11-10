@@ -50,6 +50,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
@@ -937,15 +938,26 @@ fun JxBrowserCompose(
 
                                 // If URL bar didn't consume the event, emit to KeyboardEventBus
                                 // This allows global shortcuts (like Cmd+N) to work when URL bar has focus
+                                // Fix for Issue #223: Filter modifier-only keys (Caps Lock, Shift, etc.) to prevent
+                                // unnecessary recompositions that cause text overlap
                                 if (!consumed && keyEvent.type == KeyEventType.KeyDown) {
-                                    coroutineScope.launch {
-                                        KeyboardEventBus.emit(
-                                            BossKeyboardEvent(
-                                                keyEvent = keyEvent,
-                                                source = KeyEventSource.COMPONENT_BROWSER,
-                                                context = ShortcutContext.BROWSER
+                                    // Don't emit events for modifier-only keys
+                                    val isModifierKey = keyEvent.key in setOf(
+                                        Key.CapsLock, Key.ShiftLeft, Key.ShiftRight,
+                                        Key.CtrlLeft, Key.CtrlRight, Key.AltLeft, Key.AltRight,
+                                        Key.MetaLeft, Key.MetaRight, Key.NumLock, Key.ScrollLock
+                                    )
+
+                                    if (!isModifierKey) {
+                                        coroutineScope.launch {
+                                            KeyboardEventBus.emit(
+                                                BossKeyboardEvent(
+                                                    keyEvent = keyEvent,
+                                                    source = KeyEventSource.COMPONENT_BROWSER,
+                                                    context = ShortcutContext.BROWSER
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
 
@@ -970,7 +982,15 @@ fun JxBrowserCompose(
                                     .padding(horizontal = 12.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    // Fix for Issue #223: Use AnnotatedString to prevent text overlap
+                                    // Single text rendering path eliminates layering issues during recomposition
+
                                     // Show placeholder when empty
                                     if (urlInput.text.isEmpty()) {
                                         Text(
@@ -979,17 +999,33 @@ fun JxBrowserCompose(
                                             color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                                         )
                                     }
-                                    // Show autocomplete suggestion when available
+
+                                    // Show autocomplete using AnnotatedString approach
                                     if (autocompleteSuggestion != null &&
                                         urlInput.text.isNotEmpty() &&
                                         autocompleteSuggestion!!.lowercase().startsWith(urlInput.text.lowercase())) {
+
+                                        // Build styled text: user's input (transparent) + autocomplete suffix (gray)
+                                        val autocompleteDisplay = buildAnnotatedString {
+                                            // User's typed text in nearly transparent color
+                                            // (innerTextField will render actual text on top)
+                                            withStyle(SpanStyle(color = Color.Transparent)) {
+                                                append(urlInput.text)
+                                            }
+                                            // Autocomplete suffix in gray
+                                            withStyle(SpanStyle(color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f))) {
+                                                append(autocompleteSuggestion!!.substring(urlInput.text.length))
+                                            }
+                                        }
+
                                         Text(
-                                            text = autocompleteSuggestion!!,
+                                            text = autocompleteDisplay,
                                             style = MaterialTheme.typography.body2,
-                                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                                            maxLines = 1
                                         )
                                     }
-                                    // ALWAYS render the text field (including cursor)
+
+                                    // User's actual input field (always rendered for cursor)
                                     innerTextField()
                                 }
 
