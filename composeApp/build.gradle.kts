@@ -851,6 +851,9 @@ afterEvaluate {
     // CRITICAL: Make createDistributable finalize with signPty4jBinaries
     // This ensures PTY4J natives are signed before Compose Desktop signs the whole app
     tasks.findByName("createDistributable")?.apply {
+        // Ensure CLI scripts are generated before distribution tasks run
+        dependsOn("generateVersionedCLIScripts")
+
         if (isMacOS && !signingDisabled) {
             finalizedBy("signPty4jBinaries")
             println("📝 createDistributable will be finalized by signPty4jBinaries")
@@ -870,6 +873,12 @@ afterEvaluate {
             tasks.findByName("signUberJarProvisionedRuntime")?.let { mustRunAfter(it) }
             println("📝 packageDmg will run after PTY4J signing and app signing")
         }
+    }
+
+    // Ensure extractCLIToAppResources depends on CLI script generation
+    tasks.findByName("extractCLIToAppResources")?.apply {
+        dependsOn("generateVersionedCLIScripts")
+        println("📝 extractCLIToAppResources will depend on generateVersionedCLIScripts")
     }
 }
 
