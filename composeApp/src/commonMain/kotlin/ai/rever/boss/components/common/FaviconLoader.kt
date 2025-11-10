@@ -31,7 +31,7 @@ fun rememberFaviconLoader(tabInfo: TabInfo): TabIcon.Image? {
         if (faviconCacheKey != null) {
             loadedFavicon = withContext(Dispatchers.IO) {
                 try {
-                    com.risa.boss.cache.loadFaviconFromCache(faviconCacheKey)
+                    ai.rever.boss.cache.loadFaviconFromCache(faviconCacheKey)
                 } catch (e: Exception) {
                     println("Error loading favicon for key '$faviconCacheKey': ${e.message}")
                     null

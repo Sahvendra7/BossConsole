@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.event.Subscription
+import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.ui.Rect
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
@@ -96,12 +97,13 @@ private fun configureBrowserPopupHandler(
                 // No dimensions = regular link (mail app, target="_blank")
                 // Open as tab in BOSS instead of OS window
                 if (targetUrl.isEmpty() || targetUrl == "about:blank") {
-                    // Wait for URL to load with timeout protection
+                    // Use LoadStarted instead of NavigationFinished for immediate response
+                    // This fires as soon as navigation begins, not when page fully loads
                     val cleanedUp = AtomicBoolean(false)
                     var subscription: Subscription? = null
                     val scope = CoroutineScope(Dispatchers.Default + Job())
 
-                    subscription = popupBrowser.navigation().on(NavigationFinished::class.java) {
+                    subscription = popupBrowser.navigation().on(LoadStarted::class.java) {
                         val loadedUrl = popupBrowser.url()
                         if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
                             // Only cleanup if we're the first handler to run
@@ -116,16 +118,16 @@ private fun configureBrowserPopupHandler(
                         }
                     }
 
-                    // Timeout fallback: cleanup after 10 seconds
+                    // Timeout fallback: cleanup after 3 seconds (reduced from 10s)
                     scope.launch {
-                        delay(10_000)
+                        delay(3_000)
                         // Only cleanup if we're the first handler to run
                         if (cleanedUp.compareAndSet(false, true)) {
                             subscription?.unsubscribe()
                             if (!popupBrowser.isClosed) {
                                 popupBrowser.close()
                             }
-                            println("Warning: Popup navigation timed out after 10s, closing browser")
+                            println("Warning: Popup navigation timed out after 3s, closing browser")
                         }
                     }
                 } else {
