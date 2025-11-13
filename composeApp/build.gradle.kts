@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import java.util.Properties
+import java.util.zip.ZipFile
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -532,49 +533,71 @@ gradle.taskGraph.whenReady {
 
 // Manually extract pty4j native libraries
 tasks.register("extractPty4jNative") {
+    // Declare providers at configuration time for configuration cache compatibility
+    val pty4jNativeDirProvider = layout.buildDirectory.dir("pty4j-native")
+    val tmpDirProvider = layout.buildDirectory.dir("tmp")
+
+    // Declare classpath files as input at configuration time
+    val classpathFiles = configurations.getByName("desktopRuntimeClasspath").incoming.artifactView {
+        attributes {
+            attribute(Attribute.of("artifactType", String::class.java), "jar")
+        }
+    }.files
+
+    // Declare inputs and outputs for up-to-date checking
+    inputs.files(classpathFiles)
+    outputs.dir(pty4jNativeDirProvider)
+    outputs.cacheIf { true }
+
     doLast {
-        val pty4jNativeDir = layout.buildDirectory.dir("pty4j-native").get().asFile
-        val tmpDir = layout.buildDirectory.dir("tmp").get().asFile
-        
+        // Access provider values at execution time
+        val pty4jNativeDir = pty4jNativeDirProvider.get().asFile
+        val tmpDir = tmpDirProvider.get().asFile
+
         // Create directories
         pty4jNativeDir.mkdirs()
         tmpDir.mkdirs()
-        
-        // Find PTY4J jar in classpath
-        val pty4jJar = project.configurations.getByName("desktopRuntimeClasspath").files.find { 
+
+        // Find PTY4J jar in classpath files
+        val pty4jJar = classpathFiles.find {
             it.name.startsWith("pty4j-") && it.name.endsWith(".jar")
         }
-        
+
         if (pty4jJar != null) {
             println("Extracting from ${pty4jJar.name}")
-            
-            // Extract using built-in copy function
-            copy {
-                from(zipTree(pty4jJar)) {
-                    include("**/native/**")
-                }
-                into(pty4jNativeDir)
-                includeEmptyDirs = false
-                
-                eachFile {
-                    // Remove the path prefix before 'native'
-                    val nativeIndex = path.indexOf("native/")
-                    if (nativeIndex >= 0) {
-                        path = path.substring(nativeIndex + "native/".length)
+
+            // Extract native libraries from JAR manually
+            ZipFile(pty4jJar).use { zip ->
+                zip.entries().asSequence()
+                    .filter { it.name.contains("/native/") && !it.isDirectory }
+                    .forEach { entry ->
+                        // Extract the path after "native/"
+                        val nativeIndex = entry.name.indexOf("native/")
+                        if (nativeIndex >= 0) {
+                            val relativePath = entry.name.substring(nativeIndex + "native/".length)
+                            val targetFile = File(pty4jNativeDir, relativePath)
+
+                            // Create parent directories
+                            targetFile.parentFile?.mkdirs()
+
+                            // Extract file
+                            zip.getInputStream(entry).use { input ->
+                                targetFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+
+                            // Make libraries executable
+                            if (targetFile.name.endsWith(".so") || targetFile.name.endsWith(".dylib")) {
+                                targetFile.setExecutable(true)
+                            }
+                        }
                     }
-                }
-            }
-            
-            // Make native libraries executable
-            pty4jNativeDir.walkTopDown().forEach { file ->
-                if (file.isFile && (file.name.endsWith(".so") || file.name.endsWith(".dylib"))) {
-                    file.setExecutable(true)
-                }
             }
         } else {
             println("Warning: PTY4J jar not found in classpath")
         }
-        
+
         // Print the extracted files for debugging
         println("Extracted PTY4J native libraries to: ${pty4jNativeDir.absolutePath}")
     }
@@ -728,8 +751,16 @@ tasks.register("signPty4jBinaries") {
 
 // Extract JCEF natives
 tasks.register("extractJcefNatives") {
+    // Declare provider at configuration time for configuration cache compatibility
+    val jcefNativeDirProvider = layout.buildDirectory.dir("jcef-natives")
+
+    // Declare outputs for up-to-date checking
+    outputs.dir(jcefNativeDirProvider)
+    outputs.cacheIf { true }
+
     doLast {
-        val jcefNativeDir = layout.buildDirectory.dir("jcef-natives").get().asFile
+        // Access provider value at execution time
+        val jcefNativeDir = jcefNativeDirProvider.get().asFile
         jcefNativeDir.mkdirs()
 
         // The jcefmaven library will download natives automatically
