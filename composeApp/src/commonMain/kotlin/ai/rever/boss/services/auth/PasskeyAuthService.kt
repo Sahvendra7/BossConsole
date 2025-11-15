@@ -175,7 +175,8 @@ internal object PasskeyAuthService {
                 return if (exception is CrossDeviceAuthenticationRequired) {
                     val result = CrossDeviceAuthService.handleCrossDeviceAuthentication(exception) { authData ->
                         // Add email to authData if missing (cross-device flow doesn't always return it)
-                        val enrichedAuthData = if (authData.email == null && email != null) {
+                        // Note: email is guaranteed non-null here due to check at line 166
+                        val enrichedAuthData = if (authData.email == null) {
                             authData.copy(email = email)
                         } else {
                             authData

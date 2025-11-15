@@ -39,15 +39,8 @@ actual fun PasskeyBrowserView(
         try {
             println("DesktopPasskeyBrowserView: Initializing JxBrowser for URL: $url")
 
-            // Get browser instance from FluckEngine
+            // Get browser instance from FluckEngine (throws exception if initialization fails)
             val engine = FluckEngine.engine
-            if (engine == null) {
-                val error = "JxBrowser engine not available"
-                println("DesktopPasskeyBrowserView: $error")
-                initError = error
-                onError(error)
-                return@DisposableEffect onDispose { }
-            }
 
             // Create new browser instance for WebAuthn
             val newBrowser = engine.newBrowser()

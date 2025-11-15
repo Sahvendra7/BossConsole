@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
+import ai.rever.boss.utils.createTextClipEntry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,8 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,13 +29,15 @@ import compose.icons.feathericons.*
  * Displays website:username pairs with ownership badges.
  * No password display, no edit/delete/share actions.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun UserSecretCard(
     secret: SecretEntryWithSharing,
     isMetadataExpanded: Boolean,
     onToggleMetadata: () -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -127,8 +133,10 @@ fun UserSecretCard(
             // Action button: Copy Username only
             Button(
                 onClick = {
-                    clipboardManager.setText(AnnotatedString(secret.username))
-                    println("✅ Copied username to clipboard: ${secret.username}")
+                    scope.launch {
+                        clipboard.setClipEntry(createTextClipEntry(secret.username))
+                        println("✅ Copied username to clipboard: ${secret.username}")
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = Color(0xFF2B2D30),

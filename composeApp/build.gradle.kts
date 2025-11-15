@@ -182,11 +182,13 @@ kotlin {
 
     jvm("desktop")
 
-    // Enable experimental time API
+    // Enable experimental APIs
     sourceSets.all {
         languageSettings.optIn("kotlin.time.ExperimentalTime")
+        languageSettings.optIn("kotlin.ExperimentalMultiplatform")
+        languageSettings.optIn("kotlin.ExperimentalMultiplatformApi")
     }
-    
+
     // WASM targets disabled for desktop-focused development
     /*
     @OptIn(ExperimentalWasmDsl::class)

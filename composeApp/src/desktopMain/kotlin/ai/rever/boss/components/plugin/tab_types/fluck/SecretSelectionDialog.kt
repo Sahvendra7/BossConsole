@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -431,7 +432,7 @@ private fun SecretListItem(
             // Fill button
             IconButton(onClick = onClick) {
                 Icon(
-                    Icons.Default.Input,
+                    Icons.AutoMirrored.Filled.Input,
                     contentDescription = "Fill credentials",
                     tint = MaterialTheme.colors.primary
                 )

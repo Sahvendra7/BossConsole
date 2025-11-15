@@ -16,7 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
+import boss_kotlin.composeapp.generated.resources.Res
+import boss_kotlin.composeapp.generated.resources.boss_icon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,7 +43,7 @@ fun BossLogo(
     modifier: Modifier = Modifier
 ) {
     Image(
-        painter = painterResource("boss_icon.png"),
+        painter = painterResource(Res.drawable.boss_icon),
         contentDescription = "BOSS Logo",
         modifier = modifier.size(64.dp)
     )

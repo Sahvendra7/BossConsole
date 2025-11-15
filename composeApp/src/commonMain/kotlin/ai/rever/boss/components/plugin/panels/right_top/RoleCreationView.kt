@@ -640,7 +640,7 @@ private fun SelectedRolePermissionsSection(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(rolePermissions?.permissions ?: emptyList()) { permission ->
+                    items(rolePermissions.permissions) { permission ->
                         PermissionItem(
                             permission = permission,
                             allPermissions = allPermissions,

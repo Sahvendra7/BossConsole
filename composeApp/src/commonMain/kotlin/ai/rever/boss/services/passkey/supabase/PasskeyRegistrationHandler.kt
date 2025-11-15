@@ -147,7 +147,15 @@ internal object PasskeyRegistrationHandler {
     }
     
     /**
-     * Check if authenticator selection is valid
+     * Validate authenticator selection criteria
+     *
+     * Note: AuthenticatorSelectionCriteria properties are non-nullable with default values.
+     * When the object exists (not null), all properties have values from either:
+     * 1. Server JSON response
+     * 2. Default values during deserialization
+     *
+     * Validation checks enum values directly (no null checks needed).
+     * Example: "platform" !in ["platform", "cross-platform"] = FALSE = passes validation
      */
     fun validateAuthenticatorSelection(
         authenticatorSelection: AuthenticatorSelectionCriteria?
@@ -155,33 +163,28 @@ internal object PasskeyRegistrationHandler {
         if (authenticatorSelection == null) {
             return Result.success(Unit)
         }
-        
+
         return when {
-            authenticatorSelection.authenticatorAttachment != null && 
+            // Validate authenticatorAttachment enum
             authenticatorSelection.authenticatorAttachment !in listOf("platform", "cross-platform") -> {
                 Result.failure(
                     IllegalArgumentException("Invalid authenticator attachment: ${authenticatorSelection.authenticatorAttachment}")
                 )
             }
-            authenticatorSelection.userVerification != null &&
+            // Validate userVerification enum
             authenticatorSelection.userVerification !in listOf("required", "preferred", "discouraged") -> {
                 Result.failure(
                     IllegalArgumentException("Invalid user verification requirement: ${authenticatorSelection.userVerification}")
                 )
             }
-            authenticatorSelection.requireResidentKey != null &&
-            authenticatorSelection.residentKey != null -> {
-                // Both cannot be specified simultaneously
-                Result.failure(
-                    IllegalArgumentException("Cannot specify both requireResidentKey and residentKey")
-                )
-            }
-            authenticatorSelection.residentKey != null &&
+            // Validate residentKey enum
             authenticatorSelection.residentKey !in listOf("required", "preferred", "discouraged") -> {
                 Result.failure(
                     IllegalArgumentException("Invalid resident key requirement: ${authenticatorSelection.residentKey}")
                 )
             }
+            // Note: requireResidentKey validation removed - was non-functional with non-nullable defaults
+            // Server-side validation in TypeScript handles this case
             else -> Result.success(Unit)
         }
     }

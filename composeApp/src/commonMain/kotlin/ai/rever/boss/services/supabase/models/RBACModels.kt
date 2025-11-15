@@ -2,7 +2,7 @@ package ai.rever.boss.services.supabase.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 
 /**
  * User role assignment from the user_roles table

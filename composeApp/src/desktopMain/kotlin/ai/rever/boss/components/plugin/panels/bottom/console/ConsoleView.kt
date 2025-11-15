@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.bottom.console
 
+import ai.rever.boss.utils.createTextClipEntry
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,8 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +35,7 @@ import kotlinx.coroutines.launch
  *
  * @param viewModel The console view model managing log state
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ConsoleView(viewModel: ConsoleViewModel) {
     val logs by viewModel.logs.collectAsState()
@@ -40,7 +45,7 @@ fun ConsoleView(viewModel: ConsoleViewModel) {
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
 
     // Auto-scroll to bottom when new logs arrive
     LaunchedEffect(logs.size, autoScroll) {
@@ -66,7 +71,9 @@ fun ConsoleView(viewModel: ConsoleViewModel) {
             onToggleAutoScroll = { viewModel.toggleAutoScroll() },
             onClear = { viewModel.clearLogs() },
             onCopyAll = {
-                clipboardManager.setText(AnnotatedString(viewModel.getAllLogsAsText()))
+                coroutineScope.launch {
+                    clipboard.setClipEntry(createTextClipEntry(viewModel.getAllLogsAsText()))
+                }
             }
         )
 

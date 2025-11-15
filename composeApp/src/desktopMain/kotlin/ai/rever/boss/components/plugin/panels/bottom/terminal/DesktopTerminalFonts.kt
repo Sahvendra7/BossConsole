@@ -6,7 +6,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import java.awt.Font as AwtFont
-import androidx.compose.ui.text.platform.FontLoader
 import boss_kotlin.composeapp.generated.resources.Res
 import boss_kotlin.composeapp.generated.resources.meslolgs_nf_bold
 import boss_kotlin.composeapp.generated.resources.meslolgs_nf_bold_italic

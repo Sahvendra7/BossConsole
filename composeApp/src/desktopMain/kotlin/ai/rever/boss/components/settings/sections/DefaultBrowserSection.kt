@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -229,7 +230,7 @@ fun DefaultBrowserSection() {
                                 Text("Setting...")
                             } else {
                                 Icon(
-                                    Icons.Outlined.OpenInNew,
+                                    Icons.AutoMirrored.Outlined.OpenInNew,
                                     contentDescription = "Set",
                                     modifier = Modifier.size(16.dp)
                                 )

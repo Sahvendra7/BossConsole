@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState

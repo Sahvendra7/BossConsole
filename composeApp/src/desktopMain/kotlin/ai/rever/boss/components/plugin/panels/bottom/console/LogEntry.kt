@@ -29,7 +29,7 @@ data class LogEntry(
      * Format timestamp as HH:mm:ss.SSS
      */
     fun formatTimestamp(): String {
-        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(timestamp)
+        val instant = kotlin.time.Instant.fromEpochMilliseconds(timestamp)
         val dateTime = instant.toString() // ISO 8601 format
 
         // Extract time portion (HH:mm:ss.SSS)

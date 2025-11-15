@@ -4,6 +4,8 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.WebsiteMatchingUtil
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.teamdev.jxbrowser.browser.Browser
@@ -124,7 +126,7 @@ object SecretContextMenuBuilder {
         menuItems.add(
             ContextMenuItem(
                 text = "Show All Secrets...",
-                icon = Icons.Default.List,
+                icon = Icons.AutoMirrored.Filled.List,
                 onClick = {
                     onShowAllSecrets()
                     onDismiss()
@@ -163,7 +165,7 @@ object SecretContextMenuBuilder {
             ContextMenuItem(isDivider = true),
             ContextMenuItem(
                 text = "Show All Secrets...",
-                icon = Icons.Default.List,
+                icon = Icons.AutoMirrored.Filled.List,
                 onClick = onShowAllSecrets
             ),
             ContextMenuItem(
@@ -232,7 +234,7 @@ object SecretContextMenuBuilder {
             lowerWebsite.contains("google") -> Icons.Default.Email  // Gmail-like
             lowerWebsite.contains("github") -> Icons.Default.Code
             lowerWebsite.contains("facebook") -> Icons.Default.AccountCircle
-            lowerWebsite.contains("twitter") || lowerWebsite.contains("x.com") -> Icons.Default.Send
+            lowerWebsite.contains("twitter") || lowerWebsite.contains("x.com") -> Icons.AutoMirrored.Filled.Send
             lowerWebsite.contains("linkedin") -> Icons.Default.Work
             lowerWebsite.contains("microsoft") || lowerWebsite.contains("office") -> Icons.Default.Business
             lowerWebsite.contains("apple") -> Icons.Default.PhoneIphone

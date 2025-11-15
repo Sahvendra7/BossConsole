@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
@@ -472,15 +473,8 @@ class BookmarksPanel(
             bookmarkManager.markBookmarkAsAccessed(collection.id, bookmark.id)
         }
 
-        // Get target workspaces (new way or backwards compatible with deprecated fields)
-        val targets = if (bookmark.targetWorkspaces.isNotEmpty()) {
-            bookmark.targetWorkspaces
-        } else if (bookmark.targetWorkspaceName != null) {
-            // Backwards compatibility with deprecated fields
-            listOf(WorkspacePanelTarget(bookmark.targetWorkspaceName, bookmark.targetPanelId))
-        } else {
-            emptyList()
-        }
+        // Get target workspaces
+        val targets = bookmark.targetWorkspaces
 
         // Handle multiple target workspaces
         if (targets.isNotEmpty() && splitViewState != null && workspaceManagerLocal != null) {
@@ -843,7 +837,7 @@ private fun BookmarkItem(
                     })
 
                     // Move to collection
-                    add(ContextMenuItem("Move to Collection", Icons.Outlined.DriveFileMove) {
+                    add(ContextMenuItem("Move to Collection", Icons.AutoMirrored.Outlined.DriveFileMove) {
                         showMoveDialog = true
                     })
 

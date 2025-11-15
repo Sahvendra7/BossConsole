@@ -1,8 +1,9 @@
+@file:OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
-import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelInfo
@@ -16,7 +17,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*

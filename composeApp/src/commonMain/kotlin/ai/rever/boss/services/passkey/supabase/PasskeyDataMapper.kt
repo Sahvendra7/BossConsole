@@ -145,9 +145,9 @@ internal object PasskeyDataMapper {
     fun parseRegistrationResponse(responseText: String): Result<PasskeyCredential> {
         return try {
             val credentialResponse = json.decodeFromString<PasskeyCredentialResponse>(responseText)
-            
+
             if (credentialResponse.success && credentialResponse.credential != null) {
-                Result.success(credentialResponse.credential!!)
+                Result.success(credentialResponse.credential)
             } else {
                 Result.failure(Exception(credentialResponse.error ?: "Registration failed"))
             }

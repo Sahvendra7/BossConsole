@@ -638,6 +638,7 @@ fun ComponentContext.BossApp(
 
     // Combined LaunchedEffect for URL handling and auto-show dialog (Issue #168)
     // Uses reactive state observation with processing state tracking to eliminate race conditions
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     LaunchedEffect(splitViewState, windowId) {
         // Set up URL listener for incoming URLs
         // Note: We DON'T call markAppReady() here - that happens AFTER Last Session loads

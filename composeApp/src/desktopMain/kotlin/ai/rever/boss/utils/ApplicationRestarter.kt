@@ -97,6 +97,7 @@ object ApplicationRestarter {
         }
     }
     
+    @OptIn(DelicateCoroutinesApi::class)
     fun scheduleRestart(delayMillis: Long = 1000) {
         GlobalScope.launch {
             delay(delayMillis)
