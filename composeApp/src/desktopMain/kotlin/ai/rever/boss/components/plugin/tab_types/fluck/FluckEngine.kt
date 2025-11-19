@@ -1,24 +1,149 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.platform.FileNameSanitizer
+import ai.rever.boss.platform.FileSystemUtils
+import ai.rever.boss.platform.pickSaveFile
+import com.teamdev.jxbrowser.browser.callback.StartDownloadCallback
+import com.teamdev.jxbrowser.download.Download
+import com.teamdev.jxbrowser.download.event.*
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.engine.UserDataDirectoryAlreadyInUseException
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
-import java.nio.file.Paths
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.awt.Toolkit
 import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.*
 
 // Singleton engine for all browser tabs
 object FluckEngine {
     private var _engine: Engine? = null
     private var initializationError: Throwable? = null
     private var attemptCount = 0
-    
+
+    // Track URLs that are being downloaded to prevent popup handler from opening tabs
+    private val activeDownloadUrls = Collections.synchronizedSet(mutableSetOf<String>())
+
+    // Track recently opened tabs that might be download redirects
+    // Store tab IDs opened in the last few seconds
+    private val recentlyOpenedTabIds = Collections.synchronizedList(mutableListOf<Pair<Long, String>>())
+
+    // Callback to close most recent tab
+    private var onCloseMostRecentTab: (() -> Unit)? = null
+
+    // Download manager for tracking all downloads
+    val downloadManager = DownloadManager()
+
+    // Download settings (can be persisted later)
+    private var downloadSettings = DownloadSettings()
+
+    // Track active downloads for pause/resume operations
+    private val activeDownloads = Collections.synchronizedMap(mutableMapOf<String, Download>())
+
     // Expose current engine instance for shutdown purposes
-    val currentEngine: Engine? 
+    val currentEngine: Engine?
         get() = _engine
-    
+
+    /**
+     * Check if a URL is currently being downloaded.
+     * Used by popup handler to prevent opening new tabs for download links.
+     */
+    fun isActiveDownload(url: String): Boolean {
+        return activeDownloadUrls.contains(url)
+    }
+
+    /**
+     * Notify that a tab was just opened via popup handler.
+     * This tab might be a download redirect and should be auto-closed if download starts soon.
+     */
+    fun notifyTabOpened() {
+        val now = System.currentTimeMillis()
+        recentlyOpenedTabIds.add(now to "")
+        println("FluckEngine: Notified that a tab was just opened (timestamp: $now)")
+
+        // Clean up old entries (older than 5 seconds)
+        val cutoff = now - 5_000
+        recentlyOpenedTabIds.removeIf { it.first < cutoff }
+    }
+
+    /**
+     * Set callback to close the most recently opened tab.
+     * Called by BossApp or tab management system.
+     */
+    fun setCloseMostRecentTabCallback(callback: () -> Unit) {
+        onCloseMostRecentTab = callback
+    }
+
+    /**
+     * Auto-close the most recently opened tab if it was opened within the last 3 seconds.
+     * Called when a download starts.
+     */
+    private fun autoCloseDownloadTab() {
+        val now = System.currentTimeMillis()
+        val recentCutoff = now - 3_000 // Tabs opened in last 3 seconds
+
+        // Find tabs opened in the last 3 seconds
+        val recentTabs = recentlyOpenedTabIds.filter { it.first >= recentCutoff }
+
+        if (recentTabs.isNotEmpty()) {
+            println("FluckEngine: Auto-closing most recently opened tab (opened ${now - recentTabs.last().first}ms ago)")
+            onCloseMostRecentTab?.invoke()
+            // Clear the entries
+            recentlyOpenedTabIds.removeIf { it.first >= recentCutoff }
+        }
+    }
+
+    /**
+     * Pause an active download.
+     * @param downloadId The unique ID of the download to pause
+     */
+    fun pauseDownload(downloadId: String) {
+        activeDownloads[downloadId]?.let { download ->
+            try {
+                download.pause()
+                println("FluckEngine: Paused download: $downloadId")
+            } catch (e: Exception) {
+                println("FluckEngine: Error pausing download $downloadId: ${e.message}")
+            }
+        } ?: println("FluckEngine: Cannot pause download $downloadId - not found in active downloads")
+    }
+
+    /**
+     * Resume a paused download.
+     * @param downloadId The unique ID of the download to resume
+     */
+    fun resumeDownload(downloadId: String) {
+        activeDownloads[downloadId]?.let { download ->
+            try {
+                download.resume()
+                println("FluckEngine: Resumed download: $downloadId")
+            } catch (e: Exception) {
+                println("FluckEngine: Error resuming download $downloadId: ${e.message}")
+            }
+        } ?: println("FluckEngine: Cannot resume download $downloadId - not found in active downloads")
+    }
+
+    /**
+     * Cancel an active or paused download.
+     * @param downloadId The unique ID of the download to cancel
+     */
+    fun cancelDownload(downloadId: String) {
+        activeDownloads[downloadId]?.let { download ->
+            try {
+                download.cancel()
+                println("FluckEngine: Cancelled download: $downloadId")
+            } catch (e: Exception) {
+                println("FluckEngine: Error cancelling download $downloadId: ${e.message}")
+            }
+        } ?: println("FluckEngine: Cannot cancel download $downloadId - not found in active downloads")
+    }
+
     val engine: Engine
         get() {
             // Return cached engine if available
@@ -111,14 +236,14 @@ object FluckEngine {
         }
         
         val newEngine = Engine.newInstance(optionsBuilder.build())
-        
+
         // Set up permission handlers for the engine
         setupPermissionHandlers(newEngine)
-        
+
         _engine = newEngine
-        
+
         println("JxBrowser initialized with profile: $profileName")
-        
+
         return newEngine
     }
 
@@ -126,7 +251,7 @@ object FluckEngine {
         // Set up permission handler for all browsers created from this engine
         val profile = engine.profiles().defaultProfile()
         val permissions = profile.permissions()
-        
+
         permissions.set(RequestPermissionCallback::class.java, object : RequestPermissionCallback {
             override fun on(params: RequestPermissionCallback.Params, action: RequestPermissionCallback.Action) {
                 val permissionType = params.permissionType()
@@ -150,4 +275,215 @@ object FluckEngine {
             }
         })
     }
+
+    fun setupBrowserDownloadHandler(browser: com.teamdev.jxbrowser.browser.Browser) {
+        // Set up download handler for this browser
+        browser.set(
+            StartDownloadCallback::class.java,
+            StartDownloadCallback { params, action ->
+                val download = params.download()
+                val target = download.target()
+
+                // Mark this URL as an active download IMMEDIATELY to prevent popup handler from opening a new tab
+                // This must happen before any other logic because popup handler may execute concurrently
+                val downloadUrl = target.url()
+                activeDownloadUrls.add(downloadUrl)
+                println("FluckEngine: Marked URL as active download: $downloadUrl")
+
+                // Auto-close any tabs that were recently opened (likely download redirects)
+                autoCloseDownloadTab()
+
+                val suggestedFileName = target.suggestedFileName()
+                val sanitizedFileName = FileNameSanitizer.sanitize(suggestedFileName)
+
+                // Check if Shift key is pressed (force save dialog)
+                val forceDialog = isShiftPressed()
+
+                // Determine save location based on settings
+                val savePath = when {
+                    downloadSettings.alwaysAskWhereToSave || forceDialog -> {
+                        // Show save dialog
+                        pickSaveFile(
+                            suggestedFileName = sanitizedFileName,
+                            initialDirectory = downloadSettings.lastUsedDirectory
+                                ?: downloadSettings.defaultDownloadDirectory
+                        )
+                    }
+                    else -> {
+                        // Auto-save to default/last directory
+                        val directory = downloadSettings.lastUsedDirectory
+                            ?: downloadSettings.defaultDownloadDirectory
+                        FileSystemUtils.generateUniqueFilePath(directory, sanitizedFileName)
+                    }
+                }
+
+                if (savePath != null) {
+                    // Ensure parent directory exists
+                    if (!FileSystemUtils.ensureParentDirectoryExists(savePath)) {
+                        println("Failed to create download directory for: $savePath")
+                        action.cancel()
+                        return@StartDownloadCallback
+                    }
+
+                    // Warn for executable files
+                    if (downloadSettings.warnForExecutables &&
+                        FileNameSanitizer.isExecutableFile(sanitizedFileName)) {
+                        println("Warning: Downloading executable file: $sanitizedFileName")
+                        // TODO: Show user warning dialog (for now, just proceed)
+                    }
+
+                    // Start the download
+                    val downloadPath = Paths.get(savePath)
+
+                    // Update last used directory
+                    val parentDir = downloadPath.parent?.toString()
+                    if (parentDir != null) {
+                        downloadSettings = downloadSettings.copy(lastUsedDirectory = parentDir)
+                    }
+
+                    println("Download starting: $sanitizedFileName -> $savePath")
+
+                    // Generate unique download ID
+                    val downloadId = UUID.randomUUID().toString()
+
+                    // Add download to manager immediately and open Downloads panel
+                    CoroutineScope(Dispatchers.Default).launch {
+                        downloadManager.addDownload(
+                            DownloadItem(
+                                id = downloadId,
+                                fileName = sanitizedFileName,
+                                destinationPath = savePath,
+                                url = target.url(),
+                                mimeType = target.mimeType().toString(),
+                                status = DownloadStatus.DOWNLOADING,
+                                receivedBytes = 0,
+                                totalBytes = null,
+                                speed = 0.0,
+                                startedAt = System.currentTimeMillis(),
+                                finishedAt = null,
+                                canPause = false,
+                                canResume = false,
+                                errorReason = null
+                            )
+                        )
+
+                        // Open the Downloads sidebar panel
+                        ai.rever.boss.components.events.PanelEventBus.openPanel(
+                            ai.rever.boss.components.plugin.panels.left_top.DownloadInfo.id
+                        )
+                    }
+
+                    // Register event listeners on the download object
+                    val downloadObj = download
+                    setupDownloadEventListeners(downloadObj, downloadId, sanitizedFileName, savePath, target.url())
+
+                    // Initiate the download
+                    action.download(downloadPath)
+                } else {
+                    // User cancelled save dialog
+                    println("Download cancelled by user: $sanitizedFileName")
+                    action.cancel()
+                }
+            }
+        )
+    }
+
+    private fun setupDownloadEventListeners(
+        download: Download,
+        downloadId: String,
+        fileName: String,
+        destinationPath: String,
+        url: String
+    ) {
+        val scope = CoroutineScope(Dispatchers.Default)
+
+        // Track this download for pause/resume operations
+        activeDownloads[downloadId] = download
+
+        // Download progress updated
+        download.on(DownloadUpdated::class.java) { event ->
+            scope.launch {
+                val receivedBytes = event.receivedBytes()
+                val totalBytes = event.totalBytes()
+                val speed = event.currentSpeed().toDouble()
+
+                // Update capabilities based on server support
+                // JxBrowser automatically supports pause/resume if the server supports HTTP range requests
+                val canPause = !download.isPaused
+                val canResume = download.isPaused
+                downloadManager.updateCapabilities(downloadId, canPause, canResume)
+
+                // Check if download was resumed (was PAUSED, now actively downloading)
+                val currentItem = downloadManager.getDownload(downloadId)
+                if (currentItem?.status == DownloadStatus.PAUSED && !download.isPaused && speed > 0) {
+                    downloadManager.updateStatus(downloadId, DownloadStatus.DOWNLOADING)
+                    println("Download resumed: $fileName")
+                }
+
+                downloadManager.updateProgress(downloadId, receivedBytes, totalBytes, speed)
+            }
+        }
+
+        // Download paused
+        download.on(DownloadPaused::class.java) { event ->
+            scope.launch {
+                downloadManager.updateStatus(downloadId, DownloadStatus.PAUSED)
+                println("Download paused: $fileName")
+            }
+        }
+
+        // Download finished
+        download.on(DownloadFinished::class.java) { event ->
+            scope.launch {
+                downloadManager.updateStatus(downloadId, DownloadStatus.COMPLETED)
+                println("Download completed: $fileName")
+                // Remove from tracking maps
+                activeDownloadUrls.remove(url)
+                activeDownloads.remove(downloadId)
+            }
+        }
+
+        // Download interrupted (failed)
+        download.on(DownloadInterrupted::class.java) { event ->
+            scope.launch {
+                val reason = event.reason()?.toString() ?: "Unknown error"
+                downloadManager.updateStatus(
+                    downloadId,
+                    DownloadStatus.FAILED,
+                    errorReason = "Download failed: $reason"
+                )
+                FileSystemUtils.cleanupPartialFile(destinationPath)
+                println("Download failed: $fileName - $reason")
+                // Remove from tracking maps
+                activeDownloadUrls.remove(url)
+                activeDownloads.remove(downloadId)
+            }
+        }
+
+        // Download cancelled
+        download.on(DownloadCanceled::class.java) { event ->
+            scope.launch {
+                downloadManager.updateStatus(downloadId, DownloadStatus.CANCELLED)
+                FileSystemUtils.cleanupPartialFile(destinationPath)
+                println("Download cancelled: $fileName")
+                // Remove from tracking maps
+                activeDownloadUrls.remove(url)
+                activeDownloads.remove(downloadId)
+            }
+        }
+    }
+
+    /**
+     * Checks if Shift key is currently pressed.
+     * Used to force save dialog even when auto-save is enabled.
+     *
+     * Note: This is a placeholder implementation. Detecting modifier keys
+     * outside of event handlers is not reliably supported in AWT.
+     * For now, always returns false (user can enable "always ask" in settings).
+     */
+    private fun isShiftPressed(): Boolean {
+        return false // TODO: Implement if needed
+    }
 }
+
+

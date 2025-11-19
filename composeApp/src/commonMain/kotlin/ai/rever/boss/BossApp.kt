@@ -120,7 +120,10 @@ import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.components.events.KeyboardEventResult
 import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.components.window_panel.SplitViewState
 
+// Platform-specific download tab close callback setup
+expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -147,6 +150,11 @@ fun ComponentContext.BossApp(
     // Register this window's state in the global registry for multi-window features
     LaunchedEffect(splitViewState, windowId) {
         SplitViewStateRegistry.register(windowId, splitViewState)
+    }
+
+    // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
+    LaunchedEffect(splitViewState) {
+        setupDownloadTabCloseCallback(splitViewState)
     }
 
     // Workspace manager - use global singleton to ensure Bookmarks panel sees updates
@@ -608,9 +616,30 @@ fun ComponentContext.BossApp(
                         val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
 
                         if (targetItem != null) {
-                            // Invoke onClick to show the panel
-                            draggablePanelComponent.onClick.invoke(targetItem)
-                            println("BossApp: Opened panel: ${event.panelId.panelId}")
+                            // Check if panel is already open before toggling
+                            // If already visible and showing this panel, don't toggle (keep it open)
+                            val targetPanel = when (panelSlot) {
+                                left.bottom -> bottom
+                                left.top.top -> left.top
+                                right.top.top -> right.top
+                                left.top.bottom -> left.bottom
+                                right.top.bottom -> right.bottom
+                                else -> null
+                            }
+
+                            if (targetPanel != null) {
+                                val isAlreadyVisible = draggablePanelComponent.isVisible(targetPanel)
+                                val currentPanelId = draggablePanelComponent.getPanelContentId(targetPanel)
+                                val isSamePanel = currentPanelId?.panelId == event.panelId.panelId
+
+                                // Only invoke onClick if panel is not already visible showing this content
+                                if (!isAlreadyVisible || !isSamePanel) {
+                                    draggablePanelComponent.onClick.invoke(targetItem)
+                                }
+                                println("BossApp: Opened panel: ${event.panelId.panelId}")
+                            } else {
+                                println("BossApp: Could not determine target panel for slot: $panelSlot")
+                            }
                         } else {
                             println("BossApp: Panel item not found: ${event.panelId.panelId}")
                         }

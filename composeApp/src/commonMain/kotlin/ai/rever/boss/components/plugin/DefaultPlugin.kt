@@ -5,6 +5,7 @@ import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
 import ai.rever.boss.components.plugin.panels.left_top.registerBookmarks
 import ai.rever.boss.components.plugin.panels.left_top.registerCodeBase
+import ai.rever.boss.components.plugin.panels.left_top.registerDownloads
 import ai.rever.boss.components.plugin.panels.right_top.registerAdminRoleManagement
 import ai.rever.boss.components.plugin.panels.right_top.registerFluckPanel
 import ai.rever.boss.components.plugin.panels.right_top.registerLLMRpa
@@ -33,6 +34,7 @@ class DefaultPlugin(
     init {
         // Panels
         registerBookmarks()  // Priority 1 - First position
+        registerDownloads()  // Priority 2 - Below bookmarks
         registerCodeBase()
         registerTerminal()
         registerConsole()

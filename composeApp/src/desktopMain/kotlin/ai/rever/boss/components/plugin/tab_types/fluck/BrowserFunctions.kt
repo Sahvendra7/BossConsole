@@ -108,7 +108,16 @@ private fun configureBrowserPopupHandler(
                         if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
                             // Only cleanup if we're the first handler to run
                             if (cleanedUp.compareAndSet(false, true)) {
-                                onOpenInNewTab(loadedUrl)
+                                // Check if this URL is a download - if so, skip opening in new tab
+                                val isDownload = FluckEngine.isActiveDownload(loadedUrl)
+                                println("BrowserFunctions: Popup LoadStarted - URL: $loadedUrl, isDownload: $isDownload")
+                                if (!isDownload) {
+                                    // Notify that a tab is being opened (might be download redirect)
+                                    FluckEngine.notifyTabOpened()
+                                    onOpenInNewTab(loadedUrl)
+                                } else {
+                                    println("BrowserFunctions: Skipping new tab for download URL")
+                                }
                                 subscription?.unsubscribe()
                                 scope.cancel()
                                 if (!popupBrowser.isClosed) {
@@ -131,7 +140,16 @@ private fun configureBrowserPopupHandler(
                         }
                     }
                 } else {
-                    onOpenInNewTab(targetUrl)
+                    // Check if this URL is a download - if so, skip opening in new tab
+                    val isDownload = FluckEngine.isActiveDownload(targetUrl)
+                    println("BrowserFunctions: Popup with immediate URL - URL: $targetUrl, isDownload: $isDownload")
+                    if (!isDownload) {
+                        // Notify that a tab is being opened (might be download redirect)
+                        FluckEngine.notifyTabOpened()
+                        onOpenInNewTab(targetUrl)
+                    } else {
+                        println("BrowserFunctions: Skipping new tab for download URL")
+                    }
                     popupBrowser.close()
                 }
             } else {
@@ -206,7 +224,10 @@ private fun configureBrowserPopupHandler(
 }
 
 actual fun createBrowser(): Any {
-    return FluckEngine.engine.newBrowser()
+    val browser = FluckEngine.engine.newBrowser()
+    // Register download callback on this browser
+    FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
+    return browser
 }
 
 actual fun disposeBrowser(browser: Any) {

@@ -806,6 +806,47 @@ class BossTabsComponent(
             removeTab(i)
         }
     }
+
+    // Close tab by URL (used for auto-closing download redirects)
+    fun closeTabByUrl(url: String) {
+        val tabs = tabsState.value.tabs
+
+        // Find all tabs with matching URL (might be multiple)
+        val indicesToRemove = mutableListOf<Int>()
+        for (i in tabs.indices) {
+            val tab = tabs[i]
+            val tabUrl = when (tab) {
+                is FluckTabInfo -> tab.currentUrl
+                else -> null
+            }
+
+            if (tabUrl == url) {
+                indicesToRemove.add(i)
+                println("TabsComponent: Found tab to close at index $i with URL: $url")
+            }
+        }
+
+        // Remove tabs in reverse order to avoid index issues
+        for (i in indicesToRemove.sortedDescending()) {
+            removeTab(i)
+        }
+
+        if (indicesToRemove.isNotEmpty()) {
+            println("TabsComponent: Closed ${indicesToRemove.size} tab(s) with URL: $url")
+        }
+    }
+
+    // Close the most recently opened tab (used for auto-closing download redirects)
+    fun closeMostRecentTab() {
+        val tabs = tabsState.value.tabs
+        if (tabs.isNotEmpty()) {
+            val lastIndex = tabs.size - 1
+            println("TabsComponent: Closing most recent tab at index $lastIndex")
+            removeTab(lastIndex)
+        } else {
+            println("TabsComponent: No tabs to close")
+        }
+    }
 }
 
 /**

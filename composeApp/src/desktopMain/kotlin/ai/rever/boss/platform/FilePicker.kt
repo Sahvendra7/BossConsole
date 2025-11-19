@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
+import javax.swing.SwingUtilities
 
 @Composable
 actual fun rememberFilePicker(
@@ -46,4 +47,55 @@ class DesktopFilePicker(
             onFileSelected(null, null)
         }
     }
+}
+
+/**
+ * Desktop implementation of pickSaveFile using AWT FileDialog.
+ * Runs synchronously on the EDT (Event Dispatch Thread) as required by JxBrowser callbacks.
+ */
+actual fun pickSaveFile(
+    suggestedFileName: String,
+    initialDirectory: String?,
+    allowedExtensions: List<String>
+): String? {
+    // Sanitize the suggested file name for security
+    val sanitizedFileName = FileNameSanitizer.sanitize(suggestedFileName)
+
+    var result: String? = null
+
+    try {
+        // Must run on EDT to avoid AWT threading issues
+        SwingUtilities.invokeAndWait {
+            val fileDialog = FileDialog(null as Frame?, "Save File", FileDialog.SAVE).apply {
+                // Set suggested file name
+                file = sanitizedFileName
+
+                // Set initial directory if provided
+                initialDirectory?.let { directory = it }
+
+                // Set file filter if extensions specified
+                if (allowedExtensions.isNotEmpty()) {
+                    setFilenameFilter { _, name ->
+                        allowedExtensions.any { ext ->
+                            name.endsWith(".$ext", ignoreCase = true)
+                        } || allowedExtensions.contains("*")
+                    }
+                }
+
+                isVisible = true
+            }
+
+            val selectedFile = fileDialog.file
+            val selectedDir = fileDialog.directory
+
+            if (selectedFile != null && selectedDir != null) {
+                result = File(selectedDir, selectedFile).absolutePath
+            }
+        }
+    } catch (e: Exception) {
+        println("Error showing save file dialog: ${e.message}")
+        result = null
+    }
+
+    return result
 }
