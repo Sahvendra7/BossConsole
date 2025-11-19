@@ -42,7 +42,6 @@ fun BossResizablePanel(modifier: Modifier,
                        mainContent: (@Composable BoxScope.() -> Unit)? = null) {
 
     val defaultPanelSize = run { if (panel.isHorizontal) 250.dp else 200.dp }
-    val minPanelSize = 0.dp // No minimum size restriction
     val resizeAreaSize = 16.dp
     val dividerHeight = 1.dp
 
@@ -58,6 +57,10 @@ fun BossResizablePanel(modifier: Modifier,
         }
 
         val maxSize = run { if (panel.isHorizontal)  maxWidth else maxHeight }
+
+        // Minimum size prevents panels from completely disappearing (Issue #248)
+        // Scales with screen size: 2% of available space with 20dp floor for small screens
+        val minPanelSize = (maxSize * 0.02f).coerceAtLeast(20.dp)
 
         var size by remember {
             mutableStateOf(
