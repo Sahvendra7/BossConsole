@@ -23,16 +23,26 @@ fun LLMRpaContent(
             // Store split view state for browser accessor
             storeSplitViewState(splitViewState)
             while (true) {
-                // Get all active Fluck tabs
-                val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
-                
-                val tabs = activeFluckTabs.mapNotNull { activeTab ->
-                    // Create FluckTabInfo from ActiveTab
-                    createFluckTabInfo(activeTab)
+                try {
+                    // Get all active Fluck tabs
+                    val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
+                    
+                    val tabs = activeFluckTabs.mapNotNull { activeTab ->
+                        try {
+                            // Create FluckTabInfo from ActiveTab
+                            createFluckTabInfo(activeTab)
+                        } catch (e: Exception) {
+                            // Tab might be disposing
+                            null
+                        }
+                    }
+                    
+                    availableTabs.value = tabs
+                    component.updateAvailableTabs(tabs)
+                } catch (e: Exception) {
+                    // Handle any errors during tab collection
+                    println("Error collecting tabs: ${e.message}")
                 }
-                
-                availableTabs.value = tabs
-                component.updateAvailableTabs(tabs)
                 
                 delay(1000) // Update every second
             }

@@ -74,8 +74,15 @@ fun rememberBrowserConnectionForTab(
                         // Set the selected tab for the accessor to use
                         BrowserAccessor.selectedTabId = tab.id
                         val integration = accessor.getActiveBrowserIntegration()
-                        browserState.value = integration
+                        
+                        // Verify the browser is actually available before setting
+                        if (integration?.isBrowserAvailable() == true) {
+                            browserState.value = integration
+                        } else {
+                            browserState.value = null
+                        }
                     } catch (e: Exception) {
+                        // Browser might be disposed or inaccessible
                         browserState.value = null
                     }
                     delay(500)
@@ -89,6 +96,7 @@ fun rememberBrowserConnectionForTab(
         onDispose {
             job?.cancel()
             BrowserAccessor.selectedTabId = null
+            browserState.value = null
         }
     }
     
@@ -113,16 +121,26 @@ fun RpaRecorderContent(
             // Store split view state for browser accessor
             storeSplitViewState(splitViewState)
             while (true) {
-                // Get all active Fluck tabs
-                val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
-                
-                val tabs = activeFluckTabs.mapNotNull { activeTab ->
-                    // Create FluckTabInfo from ActiveTab
-                    createFluckTabInfo(activeTab)
+                try {
+                    // Get all active Fluck tabs
+                    val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
+                    
+                    val tabs = activeFluckTabs.mapNotNull { activeTab ->
+                        try {
+                            // Create FluckTabInfo from ActiveTab
+                            createFluckTabInfo(activeTab)
+                        } catch (e: Exception) {
+                            // Tab might be disposing
+                            null
+                        }
+                    }
+                    
+                    availableTabs.value = tabs
+                    component.updateAvailableTabs(tabs)
+                } catch (e: Exception) {
+                    // Handle any errors during tab collection
+                    println("Error collecting tabs: ${e.message}")
                 }
-                
-                availableTabs.value = tabs
-                component.updateAvailableTabs(tabs)
                 
                 delay(1000) // Update every second
             }
@@ -132,7 +150,11 @@ fun RpaRecorderContent(
     // Get browser connection for selected tab
     val selectedTab by component.selectedTab.collectAsState()
     val browserConnection by rememberBrowserConnectionForTab(selectedTab)
-    val isConnected = browserConnection?.isBrowserAvailable() == true
+    val isConnected = try {
+        browserConnection?.isBrowserAvailable() == true
+    } catch (e: Exception) {
+        false
+    }
     
     // Update recording state based on browser connection
     val recordingState by component.isRecording.collectAsState()
@@ -210,20 +232,32 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
     pollingJob = kotlinx.coroutines.GlobalScope.launch {
         var pollCount = 0
         var lastUrl = ""
-        
+
         while (isRecording.value) {
             try {
+                // Check if browser is still available before accessing
+                if (!browser.isBrowserAvailable()) {
+                    println("RPA Recorder: Browser no longer available, stopping polling")
+                    break
+                }
+
                 // Check if URL has changed (navigation occurred)
                 val currentUrl = browser.getCurrentUrl() ?: ""
                 if (currentUrl != lastUrl && currentUrl.isNotEmpty()) {
                     lastUrl = currentUrl
                     _currentUrl.value = currentUrl
-                    
+
                     // Re-inject event capture script after navigation
                     if (pollCount > 0) { // Skip first iteration
                         println("RPA Recorder: Page navigated to $currentUrl, re-injecting event capture")
                         delay(500) // Wait for page to stabilize
-                        
+
+                        // Check browser availability before re-injecting scripts
+                        if (!browser.isBrowserAvailable()) {
+                            println("RPA Recorder: Browser disposed during navigation, stopping polling")
+                            break
+                        }
+
                         // Re-inject scripts
                         browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
                         browser.executeJavaScript("""
@@ -236,7 +270,13 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                         """.trimIndent())
                     }
                 }
-                
+
+                // Check browser availability before retrieving actions
+                if (!browser.isBrowserAvailable()) {
+                    println("RPA Recorder: Browser disposed, stopping polling")
+                    break
+                }
+
                 // Retrieve recorded actions from browser
                 val actions = browser.executeJavaScript("""
                     (function() {
@@ -245,7 +285,7 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                         return JSON.stringify(actions);
                     })();
                 """.trimIndent()) as? String
-                
+
                 if (!actions.isNullOrEmpty() && actions != "[]") {
                     println("RPA Recorder Polling: Found actions: $actions")
                     // Parse and process actions
@@ -260,16 +300,16 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                         }
                     }
                 }
-                
+
                 pollCount++
-                
+
             } catch (e: Exception) {
-                // Log error for debugging
-                if (pollCount % 50 == 0) { // Log every 5 seconds
-                    println("RPA Recorder Polling: Error - ${e.message}")
-                }
+                // Log error and break the loop to prevent freeze
+                println("RPA Recorder Polling: Error - ${e.message}")
+                println("RPA Recorder: Stopping polling due to error")
+                break
             }
-            
+
             delay(100) // Poll every 100ms
         }
     }

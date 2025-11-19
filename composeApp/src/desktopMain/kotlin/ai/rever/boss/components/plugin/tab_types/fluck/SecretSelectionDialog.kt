@@ -23,7 +23,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -41,7 +40,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun SecretSelectionDialog(
-    browser: Browser,
+    browser: LockedBrowser,
     currentUrl: String,
     secrets: List<SecretEntry>,
     coroutineScope: CoroutineScope,

@@ -1,6 +1,5 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.js.JsAccessible
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
@@ -53,9 +52,9 @@ object FormFieldDetector {
      * This script runs in the page context and sets up event listeners
      * to track focused fields and provide field information on demand.
      *
-     * @param browser The JxBrowser instance
+     * @param browser The LockedBrowser instance (thread-safe wrapper)
      */
-    fun injectFormDetectionScript(browser: Browser) {
+    fun injectFormDetectionScript(browser: LockedBrowser) {
         try {
             val script = """
                 (function() {
@@ -122,10 +121,10 @@ object FormFieldDetector {
     /**
      * Get information about the currently focused form field.
      *
-     * @param browser The JxBrowser instance
+     * @param browser The LockedBrowser instance (thread-safe wrapper)
      * @return FormFieldInfo if a field is focused, null otherwise
      */
-    suspend fun getCurrentFocusedField(browser: Browser): FormFieldInfo? {
+    suspend fun getCurrentFocusedField(browser: LockedBrowser): FormFieldInfo? {
         return try {
             val result = CompletableDeferred<FormFieldInfo?>()
 
@@ -350,10 +349,10 @@ object FormFieldDetector {
      *
      * Useful for finding username field when only password field is focused.
      *
-     * @param browser The JxBrowser instance
+     * @param browser The LockedBrowser instance (thread-safe wrapper)
      * @return List of all form fields found
      */
-    suspend fun findAllFormFields(browser: Browser): List<FormFieldInfo> {
+    suspend fun findAllFormFields(browser: LockedBrowser): List<FormFieldInfo> {
         return try {
             val fields = mutableListOf<FormFieldInfo>()
             val result = CompletableDeferred<List<FormFieldInfo>>()

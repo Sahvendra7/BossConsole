@@ -8,7 +8,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -28,7 +27,7 @@ object SecretContextMenuBuilder {
     /**
      * Build secret context menu for a focused form field.
      *
-     * @param browser JxBrowser instance for field injection
+     * @param browser LockedBrowser instance (thread-safe wrapper) for field injection
      * @param fieldInfo Information about the focused field
      * @param currentUrl Current page URL
      * @param allSecrets All available secrets for matching
@@ -39,7 +38,7 @@ object SecretContextMenuBuilder {
      * @return List of context menu items
      */
     fun buildSecretMenu(
-        browser: Browser,
+        browser: LockedBrowser,
         fieldInfo: FormFieldDetector.FormFieldInfo,
         currentUrl: String,
         allSecrets: List<SecretEntry>,
@@ -179,13 +178,13 @@ object SecretContextMenuBuilder {
     /**
      * Fill credentials using FormFieldInjector.
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param secret Secret to fill
      * @param mode Fill mode (both, username only, password only)
      * @param onDismiss Callback to dismiss menu after filling
      */
     private suspend fun fillCredentials(
-        browser: Browser,
+        browser: LockedBrowser,
         secret: SecretEntry,
         mode: FormFieldInjector.FillMode,
         onDismiss: () -> Unit
@@ -260,7 +259,7 @@ object SecretContextMenuBuilder {
      * Currently not implemented as ContextMenuItem doesn't support submenus yet.
      */
     private fun buildSecretSubmenu(
-        browser: Browser,
+        browser: LockedBrowser,
         secret: SecretEntry,
         coroutineScope: CoroutineScope,
         onDismiss: () -> Unit

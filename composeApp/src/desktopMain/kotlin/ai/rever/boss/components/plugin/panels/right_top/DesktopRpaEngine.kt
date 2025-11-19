@@ -1,12 +1,14 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
 import com.arkivanov.decompose.ComponentContext
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 /**
  * Desktop implementation of RPA Engine Factory
@@ -158,7 +160,7 @@ class DesktopRpaEngineComponent(
     /**
      * Get the browser instance from the most recently created tab
      */
-    private fun getRpaBrowser(): Browser? {
+    private fun getRpaBrowser(): LockedBrowser? {
         return try {
             // Get the most recently created browser from FluckEngine
             // The tab creation in RpaEngine.startExecution creates a new browser
@@ -166,6 +168,9 @@ class DesktopRpaEngineComponent(
             val browser = browsers.lastOrNull { !it.isClosed }
             
             if (browser != null) {
+                // Create a new lock for RPA-created browsers
+                val lock = ReentrantReadWriteLock()
+                
                 // Add navigation listeners for logging
                 browser.navigation().on(com.teamdev.jxbrowser.navigation.event.NavigationStarted::class.java) { event ->
                     println("RPA Engine: Navigating to ${event.url()}")
@@ -184,9 +189,12 @@ class DesktopRpaEngineComponent(
                 // }
                 
                 println("RPA Engine: Using browser instance from created tab")
+                
+                // Wrap with LockedBrowser for thread-safety
+                LockedBrowser(browser, lock)
+            } else {
+                null
             }
-            
-            browser
         } catch (e: Exception) {
             println("Error getting browser for RPA: ${e.message}")
             null
@@ -196,11 +204,11 @@ class DesktopRpaEngineComponent(
 }
 
 /**
- * JxBrowser implementation of RPA Action Executor
+ * JxBrowser implementation of RPA Action Executor with thread-safe LockedBrowser
  * Made internal so it can be used by both RPA Engine and LLM RPA
  */
 internal class JxBrowserActionExecutor(
-    private val browser: Browser
+    private val browser: LockedBrowser
 ) : BaseActionExecutor() {
     
     init {
@@ -217,7 +225,7 @@ internal class JxBrowserActionExecutor(
      */
     private suspend fun waitForPageLoad(timeoutMs: Long = 30000) {
         val loaded = CompletableDeferred<Boolean>()
-        val subscription = browser.navigation().on(LoadFinished::class.java) {
+        val subscription = browser.unsafe().navigation().on(LoadFinished::class.java) {
             loaded.complete(true)
         }
         

@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 @Composable
 actual fun FluckView(
@@ -13,6 +14,7 @@ actual fun FluckView(
     content: String,
     browser: Any?,
     browserViewState: Any?,
+    browserLock: Any?,
     onContentChange: (String) -> Unit,
     onTitleChange: (String) -> Unit,
     onIconChange: (ImageVector) -> Unit,
@@ -22,14 +24,21 @@ actual fun FluckView(
     onNavigationStateChange: ((isBack: Boolean) -> Unit)?,
     onFaviconCached: ((String?) -> Unit)?
 ) {
-    // Cast browser and view state to the proper types
+    // Cast browser, view state, and lock to the proper types
     val jxBrowser = browser as? Browser
     val jxBrowserViewState = browserViewState as? BrowserViewState
+    val jxBrowserLock = browserLock as? ReentrantReadWriteLock
 
     if (jxBrowser != null && jxBrowserViewState != null && !jxBrowser.isClosed) {
+        // Create lock if not provided (for standalone panels like FluckPanel)
+        val lock = jxBrowserLock ?: ReentrantReadWriteLock()
+        
+        // Create thread-safe wrapper that handles locking internally
+        val lockedBrowser = LockedBrowser(jxBrowser, lock)
+
         JxBrowserCompose(
             modifier = Modifier,
-            browser = jxBrowser,
+            browser = lockedBrowser,
             browserViewState = jxBrowserViewState,
             initialUrl = content.ifBlank { "https://www.risalabs.ai" },
             onTitleChange = onTitleChange,

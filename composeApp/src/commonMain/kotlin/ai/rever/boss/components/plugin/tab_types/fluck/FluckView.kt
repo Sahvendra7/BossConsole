@@ -11,6 +11,7 @@ expect fun FluckView(
     content: String,
     browser: Any? = null, // Browser instance (platform-specific type)
     browserViewState: Any? = null, // Browser view state (platform-specific type)
+    browserLock: Any? = null, // ReentrantReadWriteLock for thread-safe browser access
     onContentChange: (String) -> Unit,
     onTitleChange: (String) -> Unit = {},
     onIconChange: (ImageVector) -> Unit = {},

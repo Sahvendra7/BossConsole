@@ -740,6 +740,12 @@ open class LLMRpaComponent(
         if (_selectedTab.value != null && tabs.none { it.id == _selectedTab.value?.id }) {
             _selectedTab.value = null
         }
+        
+        // Auto-select first tab if no tab is selected and tabs are available
+        if (_selectedTab.value == null && tabs.isNotEmpty()) {
+            _selectedTab.value = tabs.first()
+            println("LLM RPA: Auto-selected tab: ${tabs.first().id}")
+        }
     }
     
     /**

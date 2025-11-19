@@ -49,10 +49,11 @@ class DesktopFluckTabComponent(
 ) {
     
     override fun reload() {
-        // Cast browser to JxBrowser type and reload
+        // Cast browser to JxBrowser type and wrap with LockedBrowser for thread-safe access
         val jxBrowser = browser as? Browser
         if (jxBrowser != null && !jxBrowser.isClosed) {
-            jxBrowser.navigation().reload()
+            val lockedBrowser = LockedBrowser(jxBrowser, browserLock)
+            lockedBrowser.navigation().reload()
         }
     }
 
@@ -60,9 +61,10 @@ class DesktopFluckTabComponent(
         val jxBrowser = browser as? Browser
         if (jxBrowser != null && !jxBrowser.isClosed) {
             try {
-                val currentLevel = jxBrowser.zoom().level().value()
+                val lockedBrowser = LockedBrowser(jxBrowser, browserLock)
+                val currentLevel = lockedBrowser.zoom().level().value()
                 val newLevel = getNextZoomLevel(currentLevel, isZoomIn = true)
-                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
+                lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
                 println("🔍 Zoom In: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
             } catch (e: Exception) {
                 println("Error zooming in: ${e.message}")
@@ -74,9 +76,10 @@ class DesktopFluckTabComponent(
         val jxBrowser = browser as? Browser
         if (jxBrowser != null && !jxBrowser.isClosed) {
             try {
-                val currentLevel = jxBrowser.zoom().level().value()
+                val lockedBrowser = LockedBrowser(jxBrowser, browserLock)
+                val currentLevel = lockedBrowser.zoom().level().value()
                 val newLevel = getNextZoomLevel(currentLevel, isZoomIn = false)
-                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
+                lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
                 println("🔍 Zoom Out: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
             } catch (e: Exception) {
                 println("Error zooming out: ${e.message}")
@@ -88,7 +91,8 @@ class DesktopFluckTabComponent(
         val jxBrowser = browser as? Browser
         if (jxBrowser != null && !jxBrowser.isClosed) {
             try {
-                jxBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.P_100)
+                val lockedBrowser = LockedBrowser(jxBrowser, browserLock)
+                lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.P_100)
                 println("🔍 Actual Size: Reset to 100%")
             } catch (e: Exception) {
                 println("Error resetting zoom: ${e.message}")

@@ -1,6 +1,5 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
 import kotlin.time.Duration.Companion.seconds
@@ -42,13 +41,13 @@ object FormFieldInjector {
      * Debug logger for form field operations.
      * Logs field state, attributes, and context for troubleshooting autofill issues.
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param phase Debug phase (e.g., "BEFORE_FILL", "AFTER_FILL", "ON_SUBMIT")
      * @param fieldIdentifier Identifier for the field (default: activeElement)
      * @return JSON string with field debug information
      */
     private suspend fun logFieldDebugInfo(
-        browser: Browser,
+        browser: LockedBrowser,
         phase: String,
         fieldIdentifier: String = "activeElement"
     ): String {
@@ -105,13 +104,13 @@ object FormFieldInjector {
      * Enhanced with comprehensive debugging and improved event sequence to
      * properly trigger modern framework (React/Vue/Angular) change detection.
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param fieldInfo Information about the field to fill
      * @param value Value to inject into the field
      * @return FillResult indicating success or failure
      */
     suspend fun fillField(
-        browser: Browser,
+        browser: LockedBrowser,
         fieldInfo: FormFieldDetector.FormFieldInfo,
         value: String
     ): FillResult {
@@ -259,14 +258,14 @@ object FormFieldInjector {
      * Automatically finds username and password fields on the page
      * and fills them with provided values.
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param username Username/email to fill
      * @param password Password to fill
      * @param mode Fill mode (both, username only, or password only)
      * @return FillResult indicating success or failure
      */
     suspend fun fillCredentials(
-        browser: Browser,
+        browser: LockedBrowser,
         username: String,
         password: String,
         mode: FillMode = FillMode.BOTH
@@ -309,11 +308,11 @@ object FormFieldInjector {
      * 4. Find by field name/id containing "user", "login", "email"
      * 5. Find first text input in form
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param username Username to fill
      * @return FillResult indicating success or failure
      */
-    suspend fun findAndFillUsername(browser: Browser, username: String): FillResult {
+    suspend fun findAndFillUsername(browser: LockedBrowser, username: String): FillResult {
         return try {
             val result = CompletableDeferred<FillResult>()
 
@@ -470,11 +469,11 @@ object FormFieldInjector {
      * 3. Find by input type="password"
      * 4. Find by field name/id containing "pass"
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      * @param password Password to fill
      * @return FillResult indicating success or failure
      */
-    suspend fun findAndFillPassword(browser: Browser, password: String): FillResult {
+    suspend fun findAndFillPassword(browser: LockedBrowser, password: String): FillResult {
         return try {
             val result = CompletableDeferred<FillResult>()
 
@@ -629,9 +628,9 @@ object FormFieldInjector {
      * - Enter key presses in form fields
      * - Value changes after Enter press
      *
-     * @param browser JxBrowser instance
+     * @param browser LockedBrowser instance (thread-safe wrapper)
      */
-    suspend fun installFormSubmissionMonitor(browser: Browser) {
+    suspend fun installFormSubmissionMonitor(browser: LockedBrowser) {
         browser.mainFrame().ifPresent { frame ->
             frame.executeJavaScript<Unit>("""
                 (function() {

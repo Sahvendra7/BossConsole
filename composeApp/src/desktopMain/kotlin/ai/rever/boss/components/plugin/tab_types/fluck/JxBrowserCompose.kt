@@ -186,7 +186,7 @@ private fun truncateTitle(title: String, url: String): String {
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
-    browser: Browser,
+    browser: LockedBrowser,
     browserViewState: BrowserViewState,
     initialUrl: String = JxBrowserConfig.defaultUrl,
     onTitleChange: (String) -> Unit = {},
@@ -327,14 +327,16 @@ fun JxBrowserCompose(
                 // Initial state
                 canGoBack = browser.navigation().canGoBack()
                 canGoForward = browser.navigation().canGoForward()
-                urlInput = TextFieldValue(browser.url(), TextRange(browser.url().length))
+                val url = browser.url()
+                urlInput = TextFieldValue(url, TextRange(url.length))
             } catch (e: Exception) {
                 // Browser might be disposed
                 return@LaunchedEffect
             }
 
             // Set up navigation listeners (store subscriptions for cleanup)
-            subscriptions += browser.navigation().on(LoadStarted::class.java) {
+            // Note: Event registration uses unsafe() since it's done once during setup
+            subscriptions += browser.unsafe().navigation().on(LoadStarted::class.java) {
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -342,23 +344,31 @@ fun JxBrowserCompose(
                 // Double-check before UI update
                 if (!isBrowserEnvironmentValid()) return@launch
 
-                isLoading = true
+                try {
+                    isLoading = true
 
-                // Only update URL bar if user isn't actively editing
-                // AND sufficient time has passed since last input (300ms buffer for Tab completion)
-                val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
-                if (!isUserEditingUrl && timeSinceEdit > 300) {
-                    val newUrl = browser.url()
-                    urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                    // Only update URL bar if user isn't actively editing
+                    // AND sufficient time has passed since last input (300ms buffer for Tab completion)
+                    val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
+                    if (!isUserEditingUrl && timeSinceEdit > 300) {
+                        val newUrl = browser.url()
+                        urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
+                    }
+
+                    canGoBack = browser.navigation().canGoBack()
+                    canGoForward = browser.navigation().canGoForward()
+                } catch (e: Exception) {
+                    // Browser was closed during operation - this is expected during disposal
+                    // Issue #255: Gracefully handle "closed object" exceptions
+                    if (e.message?.contains("closed object") == true) {
+                        isComposableDisposed.value = true
+                    }
                 }
-
-                canGoBack = browser.navigation().canGoBack()
-                canGoForward = browser.navigation().canGoForward()
             }
         }
 
         // Listen for NavigationFinished to update title even if LoadFinished doesn't fire
-        subscriptions += browser.navigation().on(NavigationFinished::class.java) { event ->
+        subscriptions += browser.unsafe().navigation().on(NavigationFinished::class.java) { event ->
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -367,50 +377,69 @@ fun JxBrowserCompose(
                     // Double-check before UI update
                     if (!isBrowserEnvironmentValid()) return@launch
 
-                    // Update URL bar only if user isn't actively editing
-                    val newUrl = event.url()
-                    val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
-                    if (!isUserEditingUrl && timeSinceEdit > 300) {
-                        urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
-                    }
-
-                    // Update title immediately when navigation finishes
-                    if (isBrowserEnvironmentValid()) {
-                        val title = browser.title()
-                        val displayTitle = if (title.isNotEmpty()) {
-                            truncateTitle(title, newUrl)
-                        } else {
-                            // Fallback to domain name if no title
-                            try {
-                                val host = java.net.URL(newUrl).host.removePrefix("www.")
-                                host
-                            } catch (e: Exception) {
-                                "Loading..."
-                            }
+                    try {
+                        // Update URL bar only if user isn't actively editing
+                        val newUrl = event.url()
+                        val timeSinceEdit = System.currentTimeMillis() - lastUserEditTime
+                        if (!isUserEditingUrl && timeSinceEdit > 300) {
+                            urlInput = TextFieldValue(newUrl, TextRange(newUrl.length))
                         }
-                        wrappedOnTitleChange(displayTitle)
-                        
-                        // Also update navigation state
-                        onNavigationUpdate?.invoke(displayTitle, newUrl)
-                        
-                        // Schedule a delayed title check for SPAs that update title dynamically
-                        launch {
-                            delay(1000) // Wait 1 second
-                            if (!browser.isClosed) {
-                                val delayedTitle = browser.title()
-                                if (delayedTitle.isNotEmpty() && delayedTitle != title) {
-                                    val delayedDisplayTitle = truncateTitle(delayedTitle, newUrl)
-                                    wrappedOnTitleChange(delayedDisplayTitle)
-                                    onNavigationUpdate?.invoke(delayedDisplayTitle, newUrl)
+
+                        // Update title immediately when navigation finishes
+                        if (isBrowserEnvironmentValid()) {
+                            val t = browser.title()
+                            val dt = if (t.isNotEmpty()) {
+                                truncateTitle(t, newUrl)
+                            } else {
+                                // Fallback to domain name if no title
+                                try {
+                                    val host = java.net.URL(newUrl).host.removePrefix("www.")
+                                    host
+                                } catch (e: Exception) {
+                                    "Loading..."
                                 }
                             }
+                            val title = t
+                            val displayTitle = dt
+
+                            wrappedOnTitleChange(displayTitle)
+
+                            // Also update navigation state
+                            onNavigationUpdate?.invoke(displayTitle, newUrl)
+
+                            // Schedule a delayed title check for SPAs that update title dynamically
+                            launch {
+                                try {
+                                    delay(1000) // Wait 1 second
+                                    if (!browser.isClosed) {
+                                        val delayedTitle = browser.title()
+                                        if (delayedTitle.isNotEmpty() && delayedTitle != title) {
+                                            val delayedDisplayTitle = truncateTitle(delayedTitle, newUrl)
+                                            wrappedOnTitleChange(delayedDisplayTitle)
+                                            onNavigationUpdate?.invoke(delayedDisplayTitle, newUrl)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // Browser was closed during delayed title check - this is expected
+                                    // Issue #255: Gracefully handle "closed object" exceptions
+                                    if (e.message?.contains("closed object") == true) {
+                                        isComposableDisposed.value = true
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Browser was closed during operation - this is expected during disposal
+                        // Issue #255: Gracefully handle "closed object" exceptions
+                        if (e.message?.contains("closed object") == true) {
+                            isComposableDisposed.value = true
                         }
                     }
                 }
             }
         }
 
-        subscriptions += browser.navigation().on(LoadFinished::class.java) {
+        subscriptions += browser.unsafe().navigation().on(LoadFinished::class.java) {
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -418,116 +447,129 @@ fun JxBrowserCompose(
                 // Double-check before UI update
                 if (!isBrowserEnvironmentValid()) return@launch
 
-                isLoading = false
-                canGoBack = browser.navigation().canGoBack()
-                canGoForward = browser.navigation().canGoForward()
+                try {
+                    isLoading = false
+                    canGoBack = browser.navigation().canGoBack()
+                    canGoForward = browser.navigation().canGoForward()
 
-                // Update secret ViewModel with current URL
-                val currentUrl = browser.url()
-                secretViewModel.onUrlChanged(currentUrl)
+                    // Update secret ViewModel with current URL
+                    val currentUrl = browser.url()
+                    secretViewModel.onUrlChanged(currentUrl)
 
-                // Inject form field detection script for secret auto-fill (Issue #56)
-                FormFieldDetector.injectFormDetectionScript(browser)
+                    // Inject form field detection script for secret auto-fill (Issue #56)
+                    FormFieldDetector.injectFormDetectionScript(browser)
 
-                // Install form submission monitor for debugging autofill issues
-                coroutineScope.launch {
-                    FormFieldInjector.installFormSubmissionMonitor(browser)
-                }
+                    // Install form submission monitor for debugging autofill issues
+                    coroutineScope.launch {
+                        FormFieldInjector.installFormSubmissionMonitor(browser)
+                    }
 
-                // Inject JavaScript to handle cmd+click on links
-                browser.mainFrame().ifPresent { frame ->
-                    frame.executeJavaScript<Unit>("""
-                        // Override link click behavior
-                        if (!window.linkClickHandlerAdded) {
-                            document.addEventListener('click', function(event) {
-                                // Check if it's a link click
-                                const link = event.target.closest('a');
-                                if (link && link.href) {
-                                    // Check for cmd (Mac) or ctrl (Windows/Linux)
-                                    if (event.metaKey || event.ctrlKey) {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        // Store the URL to open in new tab
-                                        window._newTabUrl = link.href;
-                                        // Trigger custom event
-                                        window.dispatchEvent(new CustomEvent('openInNewTab', { detail: link.href }));
-                                        return false;
+                    // Inject JavaScript to handle cmd+click on links
+                    browser.mainFrame().ifPresent { frame ->
+                        try {
+                            frame.executeJavaScript<Unit>("""
+                                // Override link click behavior
+                                if (!window.linkClickHandlerAdded) {
+                                    document.addEventListener('click', function(event) {
+                                        // Check if it's a link click
+                                        const link = event.target.closest('a');
+                                        if (link && link.href) {
+                                            // Check for cmd (Mac) or ctrl (Windows/Linux)
+                                            if (event.metaKey || event.ctrlKey) {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                // Store the URL to open in new tab
+                                                window._newTabUrl = link.href;
+                                                // Trigger custom event
+                                                window.dispatchEvent(new CustomEvent('openInNewTab', { detail: link.href }));
+                                                return false;
+                                            }
+                                        }
+                                    }, true);
+                                    window.linkClickHandlerAdded = true;
+                                }
+
+                                // Also handle right clicks to store link URL
+                                if (!window.rightClickHandlerAdded) {
+                                    document.addEventListener('contextmenu', function(event) {
+                                        const link = event.target.closest('a');
+                                        if (link && link.href) {
+                                            window._rightClickedLinkUrl = link.href;
+                                        } else {
+                                            window._rightClickedLinkUrl = null;
+                                        }
+                                    }, true);
+                                    window.rightClickHandlerAdded = true;
+                                }
+                            """)
+
+                            // Set up listener for the custom event
+                            frame.executeJavaScript<String?>("""
+                                (function() {
+                                    if (window._newTabUrl) {
+                                        const url = window._newTabUrl;
+                                        window._newTabUrl = null;
+                                        return url;
+                                    }
+                                    return null;
+                                })();
+                            """)?.let { newTabUrl ->
+                                if (newTabUrl.isNotEmpty()) {
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        onOpenInNewTab(newTabUrl)
                                     }
                                 }
-                            }, true);
-                            window.linkClickHandlerAdded = true;
-                        }
-                        
-                        // Also handle right clicks to store link URL
-                        if (!window.rightClickHandlerAdded) {
-                            document.addEventListener('contextmenu', function(event) {
-                                const link = event.target.closest('a');
-                                if (link && link.href) {
-                                    window._rightClickedLinkUrl = link.href;
-                                } else {
-                                    window._rightClickedLinkUrl = null;
-                                }
-                            }, true);
-                            window.rightClickHandlerAdded = true;
-                        }
-                    """)
-                    
-                    // Set up listener for the custom event
-                    frame.executeJavaScript<String?>("""
-                        (function() {
-                            if (window._newTabUrl) {
-                                const url = window._newTabUrl;
-                                window._newTabUrl = null;
-                                return url;
                             }
-                            return null;
-                        })();
-                    """)?.let { newTabUrl ->
-                        if (newTabUrl.isNotEmpty()) {
-                            coroutineScope.launch(Dispatchers.Main) {
-                                onOpenInNewTab(newTabUrl)
-                            }
+                        } catch (e: Exception) {
+                            // JavaScript execution failed - browser might be closing
+                            // Issue #255: Gracefully handle frame access exceptions
                         }
                     }
-                }
 
-                // Update title when page finishes loading
-                if (!isBrowserEnvironmentValid()) return@launch
-                val title = browser.title()
-                val url = browser.url()
-                
-                // println("Page loaded - URL: $url, Title: $title") // Debug log
-                
-                val displayTitle = if (title.isNotEmpty()) {
-                    truncateTitle(title, url)
-                } else {
-                    // Fallback to domain name if no title
-                    try {
-                        val host = java.net.URL(url).host.removePrefix("www.")
-                        host
-                    } catch (e: Exception) {
-                        "New Tab"
+                    // Update title when page finishes loading
+                    if (!isBrowserEnvironmentValid()) return@launch
+                    val title = browser.title()
+                    val url = browser.url()
+
+                    // println("Page loaded - URL: $url, Title: $title") // Debug log
+
+                    val displayTitle = if (title.isNotEmpty()) {
+                        truncateTitle(title, url)
+                    } else {
+                        // Fallback to domain name if no title
+                        try {
+                            val host = java.net.URL(url).host.removePrefix("www.")
+                            host
+                        } catch (e: Exception) {
+                            "New Tab"
+                        }
+                    }
+
+                    onTitleChange(displayTitle)
+
+                    // Notify navigation update with title and URL
+                    onNavigationUpdate?.invoke(displayTitle, url)
+
+                    // Add to history
+                    UrlHistoryManager.addUrl(url, displayTitle)
+                    coroutineScope.launch {
+                        UrlHistoryManager.saveHistory()
+                    }
+
+                    // Note: Favicon is now handled by FaviconChanged event listener below
+                    // No longer calling onIconChange here to avoid overriding the favicon
+                } catch (e: Exception) {
+                    // Browser was closed during operation - this is expected during disposal
+                    // Issue #255: Gracefully handle "closed object" exceptions
+                    if (e.message?.contains("closed object") == true) {
+                        isComposableDisposed.value = true
                     }
                 }
-                
-                onTitleChange(displayTitle)
-                
-                // Notify navigation update with title and URL
-                onNavigationUpdate?.invoke(displayTitle, url)
-                
-                // Add to history
-                UrlHistoryManager.addUrl(url, displayTitle)
-                coroutineScope.launch {
-                    UrlHistoryManager.saveHistory()
-                }
-
-                // Note: Favicon is now handled by FaviconChanged event listener below
-                // No longer calling onIconChange here to avoid overriding the favicon
             }
         }
 
         // Listen for favicon changes (using JxBrowser's native API)
-        subscriptions += browser.on(FaviconChanged::class.java) { event ->
+        subscriptions += browser.unsafe().on(FaviconChanged::class.java) { event ->
             // Check if browser environment is still valid before accessing
             if (!isBrowserEnvironmentValid()) return@on
 
@@ -557,9 +599,15 @@ fun JxBrowserCompose(
                         onTabIconUpdate(tabIcon)
                     }
                 } catch (e: Exception) {
-                    println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
-                    // Set default Language icon on error
-                    onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
+                    // Issue #255: Handle both favicon conversion errors and "closed object" exceptions
+                    if (e.message?.contains("closed object") == true) {
+                        // Browser was closed during favicon processing
+                        isComposableDisposed.value = true
+                    } else {
+                        println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
+                        // Set default Language icon on error
+                        onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
+                    }
                 }
             }
         }
@@ -645,22 +693,38 @@ fun JxBrowserCompose(
     val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, selectedText, focusedFieldInfo, secretViewModel.state) {
         // Issue #56: If form field is focused, show secret context menu
         if (focusedFieldInfo != null) {
-            SecretContextMenuBuilder.buildSecretMenu(
-                browser = browser,
-                fieldInfo = focusedFieldInfo!!,
-                currentUrl = browser.url(),
-                allSecrets = secretViewModel.state.allSecrets,
-                coroutineScope = coroutineScope,
-                onShowAllSecrets = {
-                    secretViewModel.showAllSecretsDialog()
-                },
-                onAddNewSecret = { websitePrefill ->
-                    secretViewModel.showQuickCreateDialog(websitePrefill)
-                },
-                onDismiss = {
-                    focusedFieldInfo = null
+            try {
+                // Issue #255: Protect browser.url() call from "closed object" exception
+                val currentUrl = if (isBrowserEnvironmentValid()) {
+                    try {
+                        browser.url()
+                    } catch (e: Exception) {
+                        ""
+                    }
+                } else {
+                    ""
                 }
-            )
+
+                SecretContextMenuBuilder.buildSecretMenu(
+                    browser = browser,
+                    fieldInfo = focusedFieldInfo!!,
+                    currentUrl = currentUrl,
+                    allSecrets = secretViewModel.state.allSecrets,
+                    coroutineScope = coroutineScope,
+                    onShowAllSecrets = {
+                        secretViewModel.showAllSecretsDialog()
+                    },
+                    onAddNewSecret = { websitePrefill ->
+                        secretViewModel.showQuickCreateDialog(websitePrefill)
+                    },
+                    onDismiss = {
+                        focusedFieldInfo = null
+                    }
+                )
+            } catch (e: Exception) {
+                // If secret menu building fails, fall back to default menu
+                emptyList()
+            }
         } else {
             // Default context menu
             buildList {
@@ -671,8 +735,12 @@ fun JxBrowserCompose(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         onClick = {
                             if (isBrowserEnvironmentValid()) {
-                                browser.navigation().goBack()
-                                onNavigationStateChange?.invoke(true)
+                                try {
+                                    browser.navigation().goBack()
+                                    onNavigationStateChange?.invoke(true)
+                                } catch (e: Exception) {
+                                    // Issue #255: Browser closed during navigation
+                                }
                             }
                         }
                     ))
@@ -684,8 +752,12 @@ fun JxBrowserCompose(
                         icon = Icons.AutoMirrored.Filled.ArrowForward,
                         onClick = {
                             if (isBrowserEnvironmentValid()) {
-                                browser.navigation().goForward()
-                                onNavigationStateChange?.invoke(false)
+                                try {
+                                    browser.navigation().goForward()
+                                    onNavigationStateChange?.invoke(false)
+                                } catch (e: Exception) {
+                                    // Issue #255: Browser closed during navigation
+                                }
                             }
                         }
                     ))
@@ -695,7 +767,15 @@ fun JxBrowserCompose(
             add(ContextMenuItem(
                 text = "Reload",
                 icon = Icons.Default.Refresh,
-                onClick = { if (isBrowserEnvironmentValid()) browser.navigation().reload() }
+                onClick = {
+                    if (isBrowserEnvironmentValid()) {
+                        try {
+                            browser.navigation().reload()
+                        } catch (e: Exception) {
+                            // Issue #255: Browser closed during reload
+                        }
+                    }
+                }
             ))
             
             add(ContextMenuItem(isDivider = true))
@@ -707,14 +787,18 @@ fun JxBrowserCompose(
                     icon = Icons.Outlined.PictureInPictureAlt,
                     onClick = {
                         if (isBrowserEnvironmentValid()) {
-                            browser.mainFrame().ifPresent { frame ->
-                                // Use centralized JavaScript for PiP
-                                frame.executeJavaScript<Unit>(BrowserJavaScripts.enablePictureInPicture)
+                            try {
+                                browser.mainFrame().ifPresent { frame ->
+                                    // Use centralized JavaScript for PiP
+                                    frame.executeJavaScript<Unit>(BrowserJavaScripts.enablePictureInPicture)
+                                }
+                            } catch (e: Exception) {
+                                // Issue #255: Browser closed during PiP activation
                             }
                         }
                     }
                 ))
-                
+
                 add(ContextMenuItem(isDivider = true))
             }
 
@@ -725,8 +809,12 @@ fun JxBrowserCompose(
                     icon = Icons.Default.ContentCopy,
                     onClick = {
                         if (isBrowserEnvironmentValid()) {
-                            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-                            clipboard.setContents(StringSelection(selectedText), null)
+                            try {
+                                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                clipboard.setContents(StringSelection(selectedText), null)
+                            } catch (e: Exception) {
+                                // Issue #255: Copy operation failed
+                            }
                         }
                     }
                 ))
@@ -738,8 +826,12 @@ fun JxBrowserCompose(
                 icon = Icons.Outlined.ContentCopy,
                 onClick = {
                     if (isBrowserEnvironmentValid()) {
-                        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-                        clipboard.setContents(StringSelection(browser.url()), null)
+                        try {
+                            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                            clipboard.setContents(StringSelection(browser.url()), null)
+                        } catch (e: Exception) {
+                            // Issue #255: Browser closed during URL copy
+                        }
                     }
                 }
             ))

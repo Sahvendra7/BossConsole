@@ -24,6 +24,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 object Fluck: TabTypeInfo {
     override val typeId = TabTypeId("fluck")
@@ -158,7 +162,18 @@ open class FluckTabComponent(
     val browser: Any? get() = browserState?.first
     val browserViewState: Any? get() = browserState?.second
 
-    private var isDisposed = false
+    // Thread-safe disposal flag using AtomicBoolean to prevent race conditions
+    // between UI thread checks and IO thread disposal
+    private val isDisposedAtomic = AtomicBoolean(false)
+
+    // Read-write lock for thread-safe browser access
+    // Read lock: Multiple threads can check browser state simultaneously
+    // Write lock: Exclusive access during disposal
+    // Internal visibility allows JxBrowserCompose to acquire read locks
+    internal val browserLock = ReentrantReadWriteLock()
+
+    // Convenience property for backward compatibility
+    private val isDisposed: Boolean get() = isDisposedAtomic.get()
 
     // Retry mechanism for browser initialization (Issue #162)
     private var retryCount = 0
@@ -297,6 +312,7 @@ open class FluckTabComponent(
                             content = initialUrl,
                             browser = browser,
                             browserViewState = browserViewState,
+                            browserLock = browserLock,
                             onContentChange = { }, // Not used for browser
                             onTitleChange = onTitleUpdate,
                             onIconChange = onIconUpdate,
@@ -334,21 +350,27 @@ open class FluckTabComponent(
     }
     
     fun dispose() {
-        if (!isDisposed) {
-            isDisposed = true
+        // Use compareAndSet for atomic thread-safe disposal flag update
+        if (isDisposedAtomic.compareAndSet(false, true)) {
             // Dispose the browser and view state on background thread to avoid blocking UI
             // The composable's DisposableEffect and disposal guards will handle cleanup coordination
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    browserViewState?.let { disposeBrowserViewState(it) }
+                    // First: Dispose view state with write lock (quick operation)
+                    browserLock.write {
+                        browserViewState?.let { disposeBrowserViewState(it) }
+                    }
 
-                    // Add small delay to allow JxBrowser's internal RPC queue to drain
-                    // This prevents a race condition where browser.close() tears down RPC connections
-                    // while pending messages are still being processed, which causes NPE in
-                    // com.teamdev.jxbrowser.internal.rpc.transport.SharedMemoryTransport.onDataAvailable
-                    delay(50)
+                    // Delay OUTSIDE the lock to prevent blocking read lock acquisitions
+                    // During this delay, event handlers and RPA polling can still acquire read locks
+                    // This allows JxBrowser's internal RPC queue to drain without freezing other operations
+                    // Issue #255: 150ms delay prevents race condition in SharedMemoryTransport
+                    delay(150)
 
-                    browser?.let { disposeBrowser(it) }
+                    // Finally: Dispose browser with write lock (ensures exclusive access for closure)
+                    browserLock.write {
+                        browser?.let { disposeBrowser(it) }
+                    }
                 } catch (e: Exception) {
                     println("Error disposing browser: ${e.message}")
                 }

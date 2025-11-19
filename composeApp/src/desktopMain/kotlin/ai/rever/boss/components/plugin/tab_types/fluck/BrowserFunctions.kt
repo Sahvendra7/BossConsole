@@ -104,25 +104,35 @@ private fun configureBrowserPopupHandler(
                     val scope = CoroutineScope(Dispatchers.Default + Job())
 
                     subscription = popupBrowser.navigation().on(LoadStarted::class.java) {
-                        val loadedUrl = popupBrowser.url()
-                        if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
-                            // Only cleanup if we're the first handler to run
-                            if (cleanedUp.compareAndSet(false, true)) {
-                                // Check if this URL is a download - if so, skip opening in new tab
-                                val isDownload = FluckEngine.isActiveDownload(loadedUrl)
-                                println("BrowserFunctions: Popup LoadStarted - URL: $loadedUrl, isDownload: $isDownload")
-                                if (!isDownload) {
-                                    // Notify that a tab is being opened (might be download redirect)
-                                    FluckEngine.notifyTabOpened()
-                                    onOpenInNewTab(loadedUrl)
-                                } else {
-                                    println("BrowserFunctions: Skipping new tab for download URL")
+                        try {
+                            // Issue #255: Protect popup browser URL access from "closed object" exception
+                            val loadedUrl = popupBrowser.url()
+                            if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
+                                // Only cleanup if we're the first handler to run
+                                if (cleanedUp.compareAndSet(false, true)) {
+                                    // Check if this URL is a download - if so, skip opening in new tab
+                                    val isDownload = FluckEngine.isActiveDownload(loadedUrl)
+                                    println("BrowserFunctions: Popup LoadStarted - URL: $loadedUrl, isDownload: $isDownload")
+                                    if (!isDownload) {
+                                        // Notify that a tab is being opened (might be download redirect)
+                                        FluckEngine.notifyTabOpened()
+                                        onOpenInNewTab(loadedUrl)
+                                    } else {
+                                        println("BrowserFunctions: Skipping new tab for download URL")
+                                    }
+                                    subscription?.unsubscribe()
+                                    scope.cancel()
+                                    if (!popupBrowser.isClosed) {
+                                        popupBrowser.close()
+                                    }
                                 }
+                            }
+                        } catch (e: Exception) {
+                            // Popup browser was closed - cleanup and exit
+                            // Issue #255: Gracefully handle "closed object" exceptions
+                            if (cleanedUp.compareAndSet(false, true)) {
                                 subscription?.unsubscribe()
                                 scope.cancel()
-                                if (!popupBrowser.isClosed) {
-                                    popupBrowser.close()
-                                }
                             }
                         }
                     }

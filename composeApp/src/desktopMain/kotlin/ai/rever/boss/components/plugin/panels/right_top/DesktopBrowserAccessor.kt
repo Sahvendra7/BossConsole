@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
+import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
 import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -40,12 +41,12 @@ actual class BrowserAccessor {
 }
 
 /**
- * Desktop browser integration using JxBrowser
+ * Desktop browser integration using JxBrowser with thread-safe LockedBrowser wrapper
  */
 class DesktopBrowserIntegration(
-    internal val browser: Browser
+    internal val browser: LockedBrowser
 ) : BrowserIntegration {
-    
+
     override suspend fun executeJavaScript(script: String): Any? = withContext(Dispatchers.Main) {
         try {
             val mainFrame = browser.mainFrame().orElse(null)
@@ -58,11 +59,16 @@ class DesktopBrowserIntegration(
             null
         }
     }
-    
+
     override fun isBrowserAvailable(): Boolean {
-        return !browser.isClosed
+        return try {
+            !browser.isClosed
+        } catch (e: Exception) {
+            // Browser was disposed or became inaccessible
+            false
+        }
     }
-    
+
     override suspend fun getCurrentUrl(): String? = withContext(Dispatchers.Main) {
         try {
             browser.url()
@@ -73,42 +79,72 @@ class DesktopBrowserIntegration(
 }
 
 /**
- * Direct browser lookup function
+ * Direct browser lookup function - returns thread-safe LockedBrowser wrapper
  */
 private fun findBrowserForTab(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
     tabId: String
-): Browser? {
-    // Get all active Fluck tabs
-    val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
-    
-    // Find the selected tab
-    val selectedTab = activeFluckTabs.find { activeTab ->
-        val tabInfo = activeTab.tabInfo
-        when (tabInfo) {
-            is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> tabInfo.id == tabId
-            is FluckTabComponent -> tabInfo.config.id == tabId
-            else -> false
-        }
-    }
-    
-    if (selectedTab != null) {
-        val tabInfo = selectedTab.tabInfo
-        
-        // Get browser based on tab info type
-        return when (tabInfo) {
-            is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> {
-                val component = findFluckTabComponentById(splitViewState, tabInfo.id)
-                component?.browser as? Browser
+): LockedBrowser? {
+    return try {
+        // Get all active Fluck tabs
+        val activeFluckTabs = splitViewState.collectAllActiveFluckTabs()
+
+        // Find the selected tab
+        val selectedTab = activeFluckTabs.find { activeTab ->
+            val tabInfo = activeTab.tabInfo
+            when (tabInfo) {
+                is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> tabInfo.id == tabId
+                is FluckTabComponent -> tabInfo.config.id == tabId
+                else -> false
             }
-            is FluckTabComponent -> {
-                tabInfo.browser as? Browser
-            }
-            else -> null
         }
+
+        if (selectedTab != null) {
+            val tabInfo = selectedTab.tabInfo
+
+            // Get browser based on tab info type
+            return when (tabInfo) {
+                is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> {
+                    val component = findFluckTabComponentById(splitViewState, tabInfo.id)
+                    if (component != null) {
+                        try {
+                            val rawBrowser = component.browser as? Browser
+                            if (rawBrowser != null && !rawBrowser.isClosed) {
+                                LockedBrowser(rawBrowser, component.browserLock)
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            // Component might be disposing
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                }
+                is FluckTabComponent -> {
+                    try {
+                        val rawBrowser = tabInfo.browser as? Browser
+                        if (rawBrowser != null && !rawBrowser.isClosed) {
+                            LockedBrowser(rawBrowser, tabInfo.browserLock)
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        // Component might be disposing
+                        null
+                    }
+                }
+                else -> null
+            }
+        }
+
+        null
+    } catch (e: Exception) {
+        // Handle any exceptions during browser lookup
+        println("Error finding browser for tab $tabId: ${e.message}")
+        null
     }
-    
-    return null
 }
 
 /**
