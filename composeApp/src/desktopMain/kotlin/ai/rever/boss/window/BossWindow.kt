@@ -57,6 +57,10 @@ fun ApplicationScope.BossWindow(
         size = windowSize
     )
 
+    // Track full screen state for reactive menu text
+    var isMaximized by remember { mutableStateOf(false) }
+    val isFullScreen = composeWindowState.placement == WindowPlacement.Fullscreen
+
     Window(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
@@ -91,6 +95,22 @@ fun ApplicationScope.BossWindow(
         DisposableEffect(keymapSettings) {
             globalInterceptor.updateSettings(keymapSettings)
             onDispose { }
+        }
+
+        // Sync isMaximized state with actual window state (handles OS maximize controls)
+        DisposableEffect(window) {
+            // Initialize state from current window state
+            isMaximized = window.extendedState == Frame.MAXIMIZED_BOTH
+
+            val listener = object : java.awt.event.WindowAdapter() {
+                override fun windowStateChanged(e: java.awt.event.WindowEvent) {
+                    isMaximized = window.extendedState == Frame.MAXIMIZED_BOTH
+                }
+            }
+            window.addWindowStateListener(listener)
+            onDispose {
+                window.removeWindowStateListener(listener)
+            }
         }
 
         // Get focus mode state for menu item text
@@ -275,12 +295,13 @@ fun ApplicationScope.BossWindow(
                 Separator()
 
                 Item(
-                    "Enter Full Screen",
+                    if (isFullScreen) "Exit Full Screen" else "Enter Full Screen",
                     onClick = {
-                        window.extendedState = if (window.extendedState == Frame.MAXIMIZED_BOTH) {
-                            Frame.NORMAL
+                        // Toggle between Fullscreen and Floating window placements
+                        composeWindowState.placement = if (composeWindowState.placement == WindowPlacement.Fullscreen) {
+                            WindowPlacement.Floating
                         } else {
-                            Frame.MAXIMIZED_BOTH
+                            WindowPlacement.Fullscreen
                         }
                     }
                 )
@@ -408,7 +429,15 @@ fun ApplicationScope.BossWindow(
             BossAppWithAuth(
                 windowId = windowState.id,
                 isFirstWindow = isFirstWindow,
-                panelRegistry = panelRegistry
+                panelRegistry = panelRegistry,
+                onToggleMaximize = {
+                    // Capture state before EDT dispatch to avoid race condition with rapid double-clicks
+                    val shouldMaximize = window.extendedState != Frame.MAXIMIZED_BOTH
+                    java.awt.EventQueue.invokeLater {
+                        window.extendedState = if (shouldMaximize) Frame.MAXIMIZED_BOTH else Frame.NORMAL
+                        // isMaximized will be updated by WindowStateListener
+                    }
+                }
             )
         }
 

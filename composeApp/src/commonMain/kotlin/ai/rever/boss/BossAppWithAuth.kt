@@ -24,7 +24,8 @@ import kotlinx.coroutines.launch
 fun ComponentContext.BossAppWithAuth(
     windowId: String,
     isFirstWindow: Boolean = false,
-    panelRegistry: ai.rever.boss.components.registery.PanelRegistry
+    panelRegistry: ai.rever.boss.components.registery.PanelRegistry,
+    onToggleMaximize: (() -> Unit)? = null
 ) {
     val authState by AuthService.authState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -155,7 +156,8 @@ fun ComponentContext.BossAppWithAuth(
             BossApp(
                 windowId = windowId,
                 isFirstWindow = isFirstWindow,
-                panelRegistry = panelRegistry
+                panelRegistry = panelRegistry,
+                onToggleMaximize = onToggleMaximize
             )
         }
     }

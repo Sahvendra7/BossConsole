@@ -130,7 +130,8 @@ expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
 fun ComponentContext.BossApp(
     windowId: String,
     isFirstWindow: Boolean = false,
-    panelRegistry: PanelRegistry
+    panelRegistry: PanelRegistry,
+    onToggleMaximize: (() -> Unit)? = null
 ) {
 
     // Use the passed panelRegistry instance (created in BossWindow for menu access)
@@ -1102,7 +1103,9 @@ fun ComponentContext.BossApp(
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Title bar always visible (OS-level window chrome)
-                    BossTitleBar()
+                    BossTitleBar(
+                        onToggleMaximize = onToggleMaximize
+                    )
 
                     // Update banner - hidden in focus mode
                     if (!isFocusModeEnabled) {

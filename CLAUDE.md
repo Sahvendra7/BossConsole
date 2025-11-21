@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BOSS (Business Operating System Service) is a desktop application built with Kotlin Multiplatform and Compose Multiplatform, featuring sophisticated WebAuthn/passkey authentication. The project uses a centralized version management system and targets desktop platforms (macOS, Windows, Linux).
+BOSS (Business Operating System Service) is a desktop application built with Kotlin Multiplatform and Compose Multiplatform. It features:
+- Sophisticated WebAuthn/passkey authentication
+- Integrated browser (JxBrowser) with default browser support
+- Terminal integration (PTY4J)
+- Customizable keyboard shortcuts
+- Workspace management
+- Role-based access control (RBAC)
+
+**Target Platforms**: Desktop only (macOS, Windows, Linux). Mobile targets disabled.
 
 ## Essential Commands
 
@@ -29,7 +37,6 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 ./gradlew incrementVersion      # Increment patch version
 ./gradlew incrementMinor        # Increment minor version
 ./gradlew incrementMajor        # Increment major version
-./gradlew generateVersionConstants  # Generate version constants
 ```
 
 ## Architecture Overview
@@ -47,805 +54,268 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 - **Supabase** as Backend-as-a-Service with Edge Functions
 - **PTY4J** for terminal integration
 
-### Target Platforms
-Currently focused on **desktop only**: macOS, Windows, Linux. Mobile targets (Android, iOS) are disabled.
-
-## Authentication System Architecture
-
-### WebAuthn/Passkey Implementation
-The app implements a sophisticated WebAuthn system with cross-device support:
-
-**Core Services:**
-- **`PasskeyService`** - Cross-platform interface
-- **`DesktopPasskeyService`** - Desktop implementation with biometric integration
-- **`SupabasePasskeyService`** - Server-side passkey management
-
-**Authentication Flows:**
-1. **Local Biometric**: Touch ID (macOS), Windows Hello (Windows)
-2. **Cross-device**: QR code generation for mobile/browser authentication
-3. **Session Coordination**: `sessionId` tracking across devices
-
-**Session Generation** (Fixed in PR #78):
-- Uses **Supabase Admin API** (`admin.generateLink()` + `verifyOtp()`)
-- Generates proper sessions with unique string refresh tokens
-- Tokens stored in `auth.sessions` table for automatic rotation
-- Auth hooks inject RBAC claims during token generation
-- **No manual JWT generation** - Supabase handles all token signing
-
-**Database Schema** (Supabase):
-- `user_passkeys` table with RLS policies
-- `passkey_challenges` table for temporary challenge storage
-- `auth.sessions` table for refresh token tracking
-- Edge Functions at `/functions/v1/passkey`
-
-### Platform-Specific Integration
-- **macOS**: Swift scripts for Touch ID, Keychain Services integration
-- **Windows**: PowerShell scripts for Windows Hello, Credential Manager
-- **Cryptography**: ECDSA P-256 signatures, proper WebAuthn client data handling
-
 ## Configuration Management
 
 ### Development Setup
+
 Create `local.properties` file:
 ```properties
 # JxBrowser license
 jxbrowser.license.key=<your-license-key>
 
-# Supabase configuration (using Supabase Cloud)
+# Supabase configuration
 SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1
 
-# GitHub API token (optional, recommended for development)
-# Without token: 60 requests/hour (unauthenticated)
-# With token: 5,000 requests/hour (authenticated)
-# Option 1: Run `gh auth login` (auto-detected, no config needed)
+# GitHub API token (optional, for development)
+# Without: 60 req/hour | With: 5,000 req/hour
+# Option 1: `gh auth login` (auto-detected)
 # Option 2: Manual token from https://github.com/settings/tokens
 GITHUB_TOKEN=ghp_your_token_here
 ```
 
-### GitHub API Rate Limits
-The update checker uses GitHub API to fetch release information. Rate limits apply:
-
-**Unauthenticated (no token):**
-- 60 requests per hour per IP address
-- Suitable for production use
-- May hit limits during rapid development/testing
-
-**Authenticated (with token):**
-- 5,000 requests per hour
-- Recommended for development
-- Prevents rate limit issues when frequently restarting app
-
-**Setting up GitHub Authentication:**
-
-**Option 1 (Easiest) - GitHub CLI:**
-```bash
-gh auth login
-```
-The app will automatically use `gh auth token` to get your token. No manual configuration needed!
-
-**Option 2 - Manual Token:**
-1. Go to https://github.com/settings/tokens
-2. Click "Generate new token (classic)"
-3. Give it a descriptive name (e.g., "BOSS Update Checker")
-4. **No scopes needed** - public repo access only
-5. Copy token and add to `local.properties`: `GITHUB_TOKEN=ghp_...`
-6. Restart app to apply
-
-**Priority Order:**
-1. Environment variable: `GITHUB_TOKEN`
-2. System property: `GITHUB_TOKEN`
+**Configuration Priority**:
+1. Environment variables (production/CI)
+2. System properties
 3. `local.properties` file
-4. GitHub CLI (`gh auth token`)
-5. Unauthenticated (fallback)
+4. Fallback values
+
+**Important**: The `local.properties` file is gitignored and contains sensitive keys.
 
 ### Supabase Deployment
-The project uses **Supabase CLI** for all function deployments and database migrations:
 
 ```bash
 # Deploy Edge Functions
 supabase functions deploy <function-name> --project-ref pcnwqamqdnsadranufjv --no-verify-jwt
 
-# Deploy all functions
-supabase functions deploy --project-ref pcnwqamqdnsadranufjv --no-verify-jwt
-
 # Link to remote project (first time)
 supabase link --project-ref pcnwqamqdnsadranufjv
 ```
 
-**Available Edge Functions:**
+**Available Edge Functions**:
 - `passkey` - WebAuthn/Passkey authentication endpoints
-- `redirect` - HTTP to boss:// deep link conversion for magic links
+- `redirect` - HTTP to boss:// deep link conversion
 
-### Supabase Cloud Configuration
-The project uses **Supabase Cloud** (not self-hosted). Important dashboard configurations:
+**Supabase Cloud Configuration**:
+- Site URL: `boss://auth/verify`
+- Redirect URLs: Must include `boss://auth/verify`
+- Email Template: Use `supabase/templates/email/magic-link.html`
 
-**Authentication → URL Configuration:**
-- **Site URL**: `boss://auth/verify` (enables direct deep link magic links)
-- **Redirect URLs**: Must include `boss://auth/verify`
-
-**Authentication → Email Templates:**
-- **Magic Link Template**: Use `supabase/templates/email/magic-link.html`
-- Ensures magic links use proper deep link format instead of HTTPS redirects
-
-### Configuration Priority
-1. Environment variables (production/CI)
-2. System properties
-3. `local.properties` file
-4. Fallback values (temporary - see Issue #33)
-
-**Important**: The `local.properties` file is gitignored and contains sensitive keys.
-
-### Migration Development Best Practices
+### Database Migrations
 
 **Golden Rule**: Only commit migrations that work correctly. Test locally first!
 
-#### Development Workflow
-
-1. **Create migration**:
-   ```bash
-   supabase db diff -f my_feature_name
-   ```
-
-2. **Test locally**:
-   ```bash
-   supabase db reset --linked
-   # Verify the migration works
-   ```
-
-3. **If migration has bugs**:
-   - ❌ DON'T create a fix migration
-   - ✅ DELETE the migration file
-   - ✅ Fix the SQL
-   - ✅ Run `supabase db reset --linked` again
-   - Repeat until it works
-
-4. **Only commit when working**:
-   - One feature = one clean migration file
-   - No iterative fix files during development
-
-#### After Production Deployment
-
-- Migrations become **immutable**
-- Never delete deployed migrations
-- Add new migration to fix issues
-- Periodically consolidate with `supabase db pull`
-
-#### Periodic Consolidation
-
-Every few months, consolidate migrations:
 ```bash
-# Pull current production schema
-supabase db pull --linked
+# Create migration
+supabase db diff -f my_feature_name
 
-# Delete old migrations
-rm supabase/migrations/202510*.sql
+# Test locally
+supabase db reset --linked
 
-# Rename new file to baseline
-mv supabase/migrations/[new-file].sql supabase/migrations/[date]_baseline_schema.sql
-
-# Commit
-git add supabase/migrations/
-git commit -m "chore: Consolidate migrations into baseline"
+# If migration has bugs: DELETE the file, fix SQL, test again
+# One feature = one clean migration file
 ```
 
-This keeps the migration history clean and manageable.
+**Schema Source of Truth**: `supabase/migrations/` directory
 
-### Database Schema Structure
+**Database Structure**:
+- 13 core tables (auth, RBAC, secrets management)
+- 42 database functions (RBAC, secrets, encryption, passkeys)
+- 50 RLS policies for access control
+- All sensitive data encrypted with AES + base64
 
-The BOSS database schema consists of **13 core tables** organized into functional areas:
+## Key Subsystems
 
-#### Authentication & Passkeys
-- `user_passkeys` - WebAuthn credential storage
-- `passkey_challenges` - Temporary authentication challenges
-- `completed_authentications` - Cross-device auth coordination
+### Authentication System
 
-#### RBAC (Role-Based Access Control)
-- `roles` - System and custom roles
-- `permissions` - Granular permissions (format: `resource.action`)
-- `role_permissions` - Many-to-many role-permission mapping
-- `user_roles` - User role assignments
-- `users` - User profile data synced with `auth.users`
+**WebAuthn/Passkey Implementation**:
+- Local biometric: Touch ID (macOS), Windows Hello (Windows)
+- Cross-device: QR code generation for mobile/browser authentication
+- Session management via Supabase Admin API
 
-#### Secrets Management
-- `secrets` - Encrypted credential storage (website, username, password)
-- `secret_metadata` - 2FA configuration (TOTP, recovery codes)
-- `secret_tags` - Tags for organizing secrets
-- `secret_shares` - User/role-based secret sharing
-- `secret_access_log` - Audit trail for secret operations
+**Key Files**:
+- `AuthService.kt` - Core authentication orchestration
+- `SessionManager.kt` - Session establishment and persistence
+- `DesktopPasskeyService.kt` - Desktop WebAuthn implementation
+- `SupabasePasskeyService.kt` - Server-side passkey management
+- `supabase/functions/passkey/` - Edge Functions for auth
 
-#### Key Database Functions (42 total)
+**Platform-Specific**:
+- macOS: Swift scripts for Touch ID, Keychain Services
+- Windows: PowerShell scripts for Windows Hello, Credential Manager
 
-**RBAC Functions** (11):
-- `assign_role_to_user`, `remove_role_from_user`
-- `create_new_role`, `delete_role`, `get_all_roles`
-- `create_new_permission`, `delete_permission`, `get_all_permissions`
-- `assign_permission_to_role`, `remove_permission_from_role`
-- `authorize` - Permission check for RLS policies
+### UI Architecture
 
-**Secret Functions** (9):
-- `create_secret`, `update_secret`, `delete_secret`
-- `get_user_secrets` - User's owned secrets
-- `get_user_secrets_with_shared` - Owned + shared secrets (handles duplicates with DISTINCT ON)
-- `search_user_secrets` - Search by website/username
-- `share_secret`, `unshare_secret`, `get_secret_shares`
-
-**Encryption Helpers** (4):
-- `encrypt_text`, `decrypt_text` - AES encryption with base64 encoding
-- `get_encryption_key` - Retrieves key from Supabase Vault
-- `safe_decrypt_recovery_codes` - Safe decryption with error handling
-
-**Passkey Functions** (4):
-- `create_mobile_registration_session`, `get_session_status`
-- `clean_expired_passkey_challenges`, `cleanup_expired_completed_authentications`
-
-**Schema Notes**:
-- All sensitive data encrypted with **AES + base64** (NOT PGP)
-- 50 RLS policies enforce access control
-- 35 indexes for query optimization
-- 5 PostgreSQL extensions enabled (pgcrypto, uuid-ossp, supabase_vault, etc.)
-- Recovery codes stored as encrypted JSON arrays in `secret_metadata.recovery_codes_encrypted`
-
-## Version Management System
-
-The project uses **centralized version management**:
-- **Source**: `version.properties` file (currently v8.11.4)
-- **Generation**: `gradle/version.gradle` generates `VersionConstants.kt`
-- **CI Integration**: GitHub Actions automatically increment versions
-- **Consistency**: All platforms use same version from single source
-
-## Build and Deployment
-
-### Running Workflows
-- **`build.yml`** - Multi-platform testing (Ubuntu, macOS, Windows)
-- **`release.yml`** - Production builds with code signing
-
-### Code Signing
-- **macOS**: P12 certificates, notarization via Apple Developer ID
-- **Windows**: DigiCert KeyLocker integration
-- **Artifacts**: DMG, MSI, DEB, RPM, JAR packages
-
-### GitHub Secrets Required
-- `JXBROWSER_LICENSE_KEY` - JxBrowser license for production builds
-- `SUPABASE_ANON_KEY` - Supabase backend access
-- Code signing certificates for macOS/Windows
-
-## UI Architecture
-
-### Compose Multiplatform Structure
+**Compose Multiplatform Structure**:
 - **BossAppWithAuth** - Main authentication wrapper
+- **BossApp** - Main application composable
 - **LoginScreen** - Handles login with passkey integration
 - **Component-based UI** using Decompose navigation
 - **Dark theme** with Material Design components
 
-### Navigation
-Uses **Decompose** for component lifecycle and navigation management rather than traditional Android Navigation.
-
-### Top Bar Components
-The application's top bar (`BossTopBar.kt`) provides core UI navigation and controls.
-
-**Currently Implemented:**
-- **Project Selector** - Switch between projects with recent project history
-- **Workspace Management** - Save/load UI workspace layouts (if configured)
-- **User Display** - Shows logged-in user's email
-- **Sign Out** - Logout with confirmation dialog
-- **Settings** - Access application settings
+**Top Bar Features** (`BossTopBar.kt`):
+- Project Selector with recent history
+- Workspace Management (save/load layouts)
+- User Display (email)
+- Sign Out, Settings
 
 **Disabled Features** (commented out with tracking issues):
-- **Git Integration** (#90) - Branch selector and git operations
-- **Run/Debug Controls** (#91) - Lanager controls, Run, Debug, Stop buttons
-- **Global Search** (#92) - Search for files, commands, or actions
-- **Lanager Plugin** (#93) - AI agent swarm management (under discussion)
-
-These features are commented out in the code with TODO references and will be implemented according to their respective GitHub issues.
+- Git Integration (#90)
+- Run/Debug Controls (#91)
+- Global Search (#92)
+- Lanager Plugin (#93)
 
 ### Keyboard Shortcuts System
 
-The application features a comprehensive, customizable keyboard shortcuts system (Issue #201) with:
+**Overview**: Comprehensive, customizable shortcuts with context-aware bindings, preset keymaps, and conflict detection.
 
-**Core Features:**
-- **Context-aware shortcuts** - Different key bindings for GLOBAL, BROWSER, TERMINAL, EDITOR, and WORKSPACE contexts
-- **Priority-based event handling** - Component → Workspace → Global priority chain
-- **Conflict detection** - Visual warnings when multiple shortcuts use the same key combination
-- **Preset keymaps** - Pre-configured schemes: BOSS Default, VS Code, IntelliJ IDEA, Emacs
-- **Import/Export** - Backup and share keymap configurations via JSON
-- **UI Editor** - Visual interface for capturing and editing shortcuts
-- **JSON Editing** - Direct file editing at `~/.boss/keymap-settings.json`
-- **Focus mode support** - All shortcuts work in both normal and focus mode
+**Key Components**:
+- `KeymapSettingsManager.kt` - Settings persistence (`~/.boss/keymap-settings.json`)
+- `GlobalKeyboardInterceptor.kt` - AWT-level interception
+- `KeyboardEventBus` - Priority-based event distribution
+- `BossActionHandler` - Action execution
 
-**Architecture:**
+**Contexts**: GLOBAL, BROWSER, TERMINAL, EDITOR, WORKSPACE
 
-*Event Flow:*
-1. **GlobalKeyboardInterceptor** (desktop AWT level) - Intercepts GLOBAL context shortcuts before Compose
-2. **KeyboardEventBus** - Central event distribution with priority-based handling:
-   - **COMPONENT** (priority 0) - Terminal, browser, editor handle their own shortcuts first
-   - **WORKSPACE** (priority 1) - Workspace-level shortcuts (panel navigation, workspace save)
-   - **GLOBAL** (priority 2) - App-wide shortcuts (window management, settings, focus mode)
-3. **BossActionHandler** - Executes the actual action for each shortcut
+**Presets**: BOSS Default, VS Code, IntelliJ IDEA, Emacs
 
-*Data Models* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/model/):
-- **`ShortcutContext.kt`** - Enum defining where shortcuts are active (GLOBAL, BROWSER, TERMINAL, EDITOR, WORKSPACE)
-- **`KeyBinding.kt`** - Individual shortcut with key, modifiers, context, category, description
-- **`KeymapSettings.kt`** - Container for all shortcuts with preset tracking
-- **`KeymapActions.kt`** - Registry of 18 action IDs across 8 categories
+**For detailed documentation**: See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md)
 
-*Handler System* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/handler/):
-- **`GlobalKeyboardInterceptor.kt`** - AWT-level interception for GLOBAL shortcuts (desktop only)
-- **`KeymapMatcher.kt`** - Matches keyboard events to configured bindings
-- **`KeymapValidator.kt`** - Detects conflicts and validates shortcuts
-- **`KeymapHandler.kt`** - Context-aware event dispatcher (used in BossApp.kt)
+### Threading and Coroutines
 
-*Lifecycle System* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/lifecycle/):
-- **`ShortcutLifecycleManager.kt`** - Enables/disables shortcuts based on runtime conditions
-- **`conditions/`** - Conditions like SplitNavigationCondition (panel navigation only works with multiple panels)
+**CRITICAL RULES**:
+1. Never block the UI thread - No `Thread.sleep()`, blocking I/O, or long computations
+2. Use appropriate dispatchers:
+   - `Dispatchers.Main` for UI updates
+   - `Dispatchers.IO` for file/network/database/browser cleanup
+   - `Dispatchers.Default` for CPU-bound work
+3. Use `delay()` not `Thread.sleep()`
+4. Always dispose resources on background threads
 
-*Presets* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/presets/):
-- **`KeymapPresets.kt`** - BOSS Default, VS Code, IntelliJ IDEA presets
-- **`PresetDefinitions.kt`** - Emacs preset with Ctrl-based shortcuts
-
-*UI Components* (composeApp/src/commonMain/kotlin/ai/rever/boss/components/settings/keymap/):
-- **`EditableKeymapSettings.kt`** - Main settings UI with search/filter
-- **`KeyCaptureDialog.kt`** - Modal for capturing key presses
-- **`ConflictWarningBadge.kt`** - Visual conflict indicators
-- **`PresetSelector.kt`** - Preset switcher with customization badges
-- **`KeymapImportExport.kt`** - JSON import/export dialogs
-
-*Settings Manager* (composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/):
-- **`KeymapSettingsManager.kt`** - Expect/actual pattern for platform-specific persistence
-- Desktop implementation saves to `~/.boss/keymap-settings.json`
-- Reactive StateFlow for settings updates
-- Automatically creates settings file from preset if missing
-
-**Available Actions (18 total):**
-
-*Window Management (2):*
-- `window.new` - Create new window
-- `window.close` - Close current window
-
-*Tab Management (2):*
-- `tab.new` - Open new tab dialog
-- `tab.close` - Close current tab (or window if last tab)
-
-*Browser Controls (4):*
-- `browser.reload` - Reload browser tab (BROWSER context only)
-- `browser.zoom_reset` - Reset zoom to 100% (BROWSER context only)
-- `browser.zoom_in` - Increase zoom (BROWSER context only)
-- `browser.zoom_out` - Decrease zoom (BROWSER context only)
-
-*Navigation (5):*
-- `panel.navigate_left` - Switch to left panel
-- `panel.navigate_right` - Switch to right panel
-- `panel.navigate_up` - Switch to previous panel
-- `panel.navigate_down` - Switch to next panel
-- `quick_switcher.open` - Open Top of Mind quick switcher
-
-*Workspace (1):*
-- `workspace.save` - Save current workspace layout (WORKSPACE context)
-
-*Tools (1):*
-- `codebase.open` - Open CodeBase panel
-
-*View/UI (2):*
-- `view.focus_mode_toggle` - Toggle focus mode (hide/show UI bars)
-- `view.settings_open` - Open application settings (works in focus mode)
-
-*Debug (1):*
-- `test.external_link` - Test external link handling (debug only)
-
-**BOSS Default Preset (macOS-style):**
-
-```
-Window Management:
-  Cmd+N               - New window
-  Cmd+Shift+W         - Close window
-
-Tab Management:
-  Cmd+T               - New tab
-  Cmd+W               - Close tab
-
-Browser Controls (in browser tabs only):
-  Cmd+R               - Reload
-  Cmd+0               - Reset zoom
-  Cmd+=               - Zoom in
-  Cmd+-               - Zoom out
-
-Navigation:
-  Cmd+Arrow Keys      - Navigate between panels
-  Ctrl+Space          - Quick switcher (Top of Mind)
-
-Workspace:
-  Cmd+Shift+S         - Save workspace
-
-Tools:
-  Cmd+O               - Open CodeBase panel
-
-View/UI:
-  Cmd+Shift+F         - Toggle focus mode
-  Cmd+,               - Open settings
-
-Debug:
-  Cmd+Shift+G         - Test external link
-```
-
-**Other Preset Keymaps:**
-
-1. **VS Code** - Visual Studio Code inspired
-   - Cmd+P: Quick switcher, Cmd+Shift+E: CodeBase, Cmd+Alt+Arrow: Panel navigation
-
-2. **IntelliJ IDEA** - JetBrains IDE inspired
-   - Cmd+E: Quick switcher, Cmd+1: CodeBase, Cmd+Alt+Arrow: Panel navigation
-
-3. **Emacs** - Ctrl-based shortcuts
-   - Alt+X: Quick switcher, Ctrl+B: CodeBase, Ctrl+Arrow: Panel navigation
-
-**Integration with Focus Mode:**
-
-Focus mode (Cmd+Shift+F) hides UI bars (top bar, sidebars, bottom bar) while keeping tabs visible. All keyboard shortcuts continue to work in focus mode:
-- **Settings window** (Cmd+,) renders at app top level, not inside hidden top bar
-- **Quick switcher** (Ctrl+Space) works from anywhere
-- **All shortcuts** remain functional regardless of focus mode state
-
-**Settings Access:**
-- Via keyboard: Press **Cmd+,** (or configured shortcut)
-- Via UI: Click **Settings** button in top bar (when not in focus mode)
-- Via menu: **Settings > Keyboard Shortcuts** to customize shortcuts
-
-**Context Detection:**
-Shortcuts automatically detect the active context based on the focused tab:
-- **GLOBAL** - Always active (window, tab, settings, focus mode)
-- **BROWSER** - Active when browser tab is focused (reload, zoom)
-- **TERMINAL** - Active when terminal tab is focused (reserved for future terminal shortcuts)
-- **EDITOR** - Active when editor tab is focused (reserved for future editor shortcuts)
-- **WORKSPACE** - Active at workspace level (workspace save, panel navigation)
-
-**Platform Support:**
-- **macOS**: Cmd-based shortcuts with native key interception via AWT
-- **Windows/Linux**: Ctrl replaces Cmd, same event flow
-- **Display**: ⌘ symbol on macOS, "Ctrl" text on Windows/Linux
-
-**JSON Format:**
-```json
-{
-  "shortcuts": {
-    "window.new": {
-      "actionId": "window.new",
-      "key": "N",
-      "modifiers": ["Cmd"],
-      "context": "GLOBAL",
-      "category": "Window Management",
-      "description": "Create a new application window",
-      "enabled": true
+**Common Pattern** (Browser/Resource Disposal):
+```kotlin
+CoroutineScope(Dispatchers.IO).launch {
+    try {
+        // Dispose resources
+        delay(50)  // Allow queues to drain
+        // Final cleanup
+    } catch (e: Exception) {
+        println("Error: ${e.message}")
     }
-  },
-  "presetName": "BOSS Default",
-  "customized": false,
-  "version": 1
 }
 ```
 
-**Troubleshooting:**
+**For detailed patterns and examples**: See [docs/THREADING.md](docs/THREADING.md)
 
-If shortcuts stop working:
-1. Check `~/.boss/keymap-settings.json` exists
-2. Delete the file to force recreation from preset defaults
-3. Check Settings > Keyboard Shortcuts for conflicts
-4. Verify the correct preset is selected
+### Version Management
 
-Common issues:
-- **Stale settings file**: If new shortcuts aren't available, delete `~/.boss/keymap-settings.json` and restart
-- **Conflicts**: Settings UI shows visual warnings for conflicting shortcuts
-- **Focus mode**: Settings window and shortcuts work in focus mode (fixed in Issue #74)
+**Centralized version management**:
+- Source: `version.properties` file (currently v8.11.4)
+- Generation: `gradle/version.gradle` generates `VersionConstants.kt`
+- CI Integration: GitHub Actions automatically increment versions
+- All platforms use same version from single source
+
+### Default Browser Support
+
+**Overview**: BOSS can be set as the default system browser to handle http:// and https:// URLs.
+
+**Key Files**:
+- `DefaultBrowserManager.kt` (common/desktop) - Cross-platform interface
+- `MacOSDefaultBrowserHandler.kt` - macOS implementation
+- `WindowsDefaultBrowserHandler.kt` - Windows implementation
+- `LinuxDefaultBrowserHandler.kt` - Linux implementation
+- `URLHandlerService.kt` - Handles incoming http/https URLs
+- `DefaultBrowserSection.kt` - Settings UI
+
+**Platform Behavior**:
+- macOS: Automatic registration via Info.plist, Swift scripts
+- Windows: Registry keys, user must manually select in Settings
+- Linux: .desktop file with xdg-settings/xdg-mime
+
+**URL Handling Flow**:
+1. OS passes URL to BOSS via protocol handler
+2. `DeepLinkHandler` checks protocol
+3. If http/https: forwards to `URLHandlerService`
+4. If boss://: processes as authentication deep link
+5. Creates new browser tab in active window
 
 ## Code Quality
 
 ### Static Analysis
-The project uses **detekt** (CLI version) for Kotlin static code analysis:
 
 ```bash
-# Run detekt analysis
 detekt --input composeApp/src --report txt:detekt-report.txt --report html:detekt-report.html
-
-# Note: detekt is not integrated into Gradle - use CLI directly
 ```
 
-**Common Acceptable Patterns:**
-- **WildcardImport**: Acceptable for Compose UI imports (`androidx.compose.material.*`)
-- **MagicNumber**: Acceptable for UI dimensions (`8.dp`, `16.sp`) and common values (0, 1, 2)
-- **SwallowedException**: Acceptable when returning fallback values (parsing, file ops)
+**Common Acceptable Patterns**:
+- WildcardImport for Compose UI imports
+- MagicNumber for UI dimensions (8.dp, 16.sp) and common values
+- SwallowedException when returning fallback values
 
 ### Resource Management
-Uses **Compose Multiplatform Resource API** (not Android resources):
 
-- **Resources location**: `composeApp/src/commonMain/composeResources/`
-- **Generated package**: `boss_kotlin.composeapp.generated.resources`
-- **Import pattern**:
-  ```kotlin
-  import org.jetbrains.compose.resources.painterResource
-  import boss_kotlin.composeapp.generated.resources.Res
-  import boss_kotlin.composeapp.generated.resources.your_resource
-  ```
-- **Do NOT use**: `androidx.compose.ui.res.painterResource` (deprecated)
+**Compose Multiplatform Resource API** (NOT Android resources):
+- Location: `composeApp/src/commonMain/composeResources/`
+- Generated package: `boss_kotlin.composeapp.generated.resources`
+- Do NOT use: `androidx.compose.ui.res.painterResource` (deprecated)
 
 ### Code Style
+
 - All Kotlin files must end with a newline
 - Remove `printStackTrace()` calls - use `println()` for error logging
 - Prefer explicit imports over wildcards (except for Compose UI)
 
-### Threading and Coroutines
+## Build and Deployment
 
-**CRITICAL**: Proper threading is essential for responsive UI and preventing freezes. This section documents threading best practices learned from production issues.
+### GitHub Actions Workflows
+- **`build.yml`** - Multi-platform testing (Ubuntu, macOS, Windows)
+- **`release.yml`** - Production builds with code signing
 
-#### UI Thread Rules
+### Code Signing
+- macOS: P12 certificates, notarization via Apple Developer ID
+- Windows: DigiCert KeyLocker integration
+- Artifacts: DMG, MSI, DEB, RPM, JAR
 
-**NEVER do these on the UI thread:**
-- ❌ `Thread.sleep()` - Blocks UI thread, causes freezes
-- ❌ Blocking I/O operations (file read/write, network calls)
-- ❌ Long computations (>16ms drops frames, >100ms feels laggy)
-- ❌ Resource cleanup that takes time (browser disposal, database cleanup)
-
-**ONLY do these on the UI thread:**
-- ✅ Quick UI updates and state changes
-- ✅ Composable recomposition
-- ✅ Layout and drawing operations
-- ✅ Fast synchronous operations (<16ms)
-
-#### Dispatcher Usage Guide
-
-**`Dispatchers.Main`** - UI operations only:
-- UI state updates
-- Composable recomposition
-- Quick operations (<16ms)
-- Launching coroutines that switch to background threads
-
-**`Dispatchers.IO`** - I/O-bound operations:
-- File operations (read/write)
-- Network calls and HTTP requests
-- Database queries
-- **Browser cleanup and disposal**
-- Resource cleanup with delays
-
-**`Dispatchers.Default`** - CPU-bound operations:
-- Heavy computations
-- Data processing and transformations
-- Parsing large data structures
-- Image processing
-
-#### Common Patterns
-
-**✅ CORRECT - Background Disposal:**
-```kotlin
-fun dispose() {
-    if (!isDisposed) {
-        isDisposed = true
-        // Dispose on background thread to avoid blocking UI
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                browserViewState?.let { disposeBrowserViewState(it) }
-
-                // Non-blocking coroutine delay
-                delay(50)  // Allow RPC queue to drain
-
-                browser?.let { disposeBrowser(it) }
-            } catch (e: Exception) {
-                println("Error disposing browser: ${e.message}")
-            }
-        }
-    }
-}
-```
-
-**❌ INCORRECT - Blocking UI Thread:**
-```kotlin
-fun dispose() {
-    if (!isDisposed) {
-        isDisposed = true
-        try {
-            browserViewState?.let { disposeBrowserViewState(it) }
-
-            // ❌ BLOCKS UI THREAD - causes 50ms freeze!
-            Thread.sleep(50)
-
-            browser?.let { disposeBrowser(it) }
-        } catch (e: Exception) {
-            println("Error disposing browser: ${e.message}")
-        }
-    }
-}
-```
-
-#### Disposal and Cleanup Best Practices
-
-1. **Use coroutines for resource cleanup:**
-   ```kotlin
-   CoroutineScope(Dispatchers.IO).launch {
-       // Heavy cleanup work here
-   }
-   ```
-
-2. **Use `delay()` instead of `Thread.sleep()`:**
-   ```kotlin
-   delay(50)              // ✅ Non-blocking
-   Thread.sleep(50)       // ❌ Blocks thread
-   ```
-
-3. **Handle exceptions in cleanup:**
-   ```kotlin
-   try {
-       cleanup()
-   } catch (e: Exception) {
-       println("Cleanup error: ${e.message}")
-   }
-   ```
-
-4. **Document why delays are needed:**
-   ```kotlin
-   // Wait 50ms for JxBrowser's RPC queue to drain
-   // This prevents race condition in SharedMemoryTransport
-   delay(50)
-   ```
-
-5. **Don't wait for async cleanup to complete:**
-   - `dispose()` should return immediately
-   - Let cleanup happen in background
-   - UI stays responsive
-
-#### JxBrowser-Specific Patterns
-
-JxBrowser requires careful threading due to internal RPC (Remote Procedure Call) architecture:
-
-**Browser Disposal Pattern:**
-```kotlin
-CoroutineScope(Dispatchers.IO).launch {
-    // Dispose BrowserViewState first
-    browserViewState?.let { disposeBrowserViewState(it) }
-
-    // Wait for RPC message queue to drain
-    // Without this, browser.close() tears down RPC while messages are pending
-    delay(50)
-
-    // Now safe to close browser
-    browser?.let { disposeBrowser(it) }
-}
-```
-
-**Why the delay?**
-- `browser.close()` immediately tears down RPC connections
-- JxBrowser's `SharedMemoryTransport` may have queued RPC messages
-- If RPC observer becomes null before messages process → NullPointerException
-- 50ms delay allows queue to drain gracefully
-
-**Reference:** See `Fluck.kt:336-357` for complete implementation
-
-#### Real-World Case Study: Fluck.kt Browser Disposal
-
-**Problem (commit 31c6ea3):**
-```kotlin
-fun dispose() {
-    browserViewState?.let { disposeBrowserViewState(it) }
-    Thread.sleep(50)  // ❌ BLOCKED UI THREAD
-    browser?.let { disposeBrowser(it) }
-}
-```
-
-**Impact:**
-- 50ms UI freeze every time a tab closed
-- Multiple rapid tab closures = multiple 50ms freezes
-- Poor user experience, especially on slower systems
-- User perception: "App feels sluggish"
-
-**Solution (commit 40bf0b2):**
-```kotlin
-fun dispose() {
-    if (!isDisposed) {
-        isDisposed = true
-        CoroutineScope(Dispatchers.IO).launch {  // ✅ Background thread
-            try {
-                browserViewState?.let { disposeBrowserViewState(it) }
-                delay(50)  // ✅ Non-blocking coroutine delay
-                browser?.let { disposeBrowser(it) }
-            } catch (e: Exception) {
-                println("Error disposing browser: ${e.message}")
-            }
-        }
-    }
-}
-```
-
-**Results:**
-- ✅ UI thread never blocks during tab closure
-- ✅ `dispose()` returns immediately (microseconds)
-- ✅ Browser cleanup happens asynchronously
-- ✅ Smooth, responsive UI even when closing many tabs
-
-**Lesson:** Always profile UI responsiveness when adding cleanup code.
-
-#### Testing for Threading Issues
-
-**Manual Testing:**
-1. Close multiple tabs rapidly - should be instantaneous, no lag
-2. Monitor UI responsiveness during heavy operations
-3. Watch for frame drops or stuttering
-4. Test on slower hardware if possible
-
-**Code Review Checklist:**
-- [ ] No `Thread.sleep()` calls in UI-accessible code
-- [ ] No blocking I/O on main thread
-- [ ] Resource cleanup uses `Dispatchers.IO`
-- [ ] Delays use `delay()` not `Thread.sleep()`
-- [ ] Long operations happen in background coroutines
-
-**Search Patterns:**
-```bash
-# Find potential threading issues
-git grep "Thread.sleep"        # Should be rare/zero
-git grep "\.sleep("            # Catch variations
-git grep "blockingGet"         # Blocking calls
-```
-
-#### IntelliJ IDEA Inspections
-
-Enable these inspections to catch threading issues:
-
-1. **"Inappropriate blocking method call"**
-   - Detects blocking calls on coroutine dispatchers
-   - Catches `Thread.sleep()` in suspend functions
-
-2. **"Possibly blocking call in non-blocking context"**
-   - Warns about blocking I/O in coroutines
-   - Suggests `Dispatchers.IO` for I/O operations
-
-3. **"Slow operations on UI thread"** (Android)
-   - While this is for Android, the principle applies
-   - Watch for file I/O, network, and long computations
-
-#### Quick Reference
-
-| Operation | Dispatcher | Pattern |
-|-----------|-----------|---------|
-| UI update | `Dispatchers.Main` | Direct call or `withContext` |
-| File I/O | `Dispatchers.IO` | `CoroutineScope(Dispatchers.IO).launch {}` |
-| Network | `Dispatchers.IO` | `CoroutineScope(Dispatchers.IO).launch {}` |
-| Database | `Dispatchers.IO` | `CoroutineScope(Dispatchers.IO).launch {}` |
-| Browser cleanup | `Dispatchers.IO` | `CoroutineScope(Dispatchers.IO).launch {}` |
-| Heavy compute | `Dispatchers.Default` | `CoroutineScope(Dispatchers.Default).launch {}` |
-| Delay | Any | `delay(ms)` never `Thread.sleep(ms)` |
-
-**Remember:** When in doubt, move work off the UI thread. It's easier to optimize later than to debug UI freezes.
+### GitHub Secrets Required
+- `JXBROWSER_LICENSE_KEY` - JxBrowser license
+- `SUPABASE_ANON_KEY` - Supabase backend access
+- Code signing certificates for macOS/Windows
 
 ## Development Notes
 
 ### Current Focus Areas
-- **RBAC (Role-Based Access Control)** - Dynamic role and permission management
-- **Cross-device authentication flows**
-- **GitHub Actions CI/CD improvements**
+- RBAC (Role-Based Access Control) - Dynamic role and permission management
+- Cross-device authentication flows
+- GitHub Actions CI/CD improvements
 
 ### Resolved Issues
-- ✅ Issue #75: Passkey refresh token bug - Users were logged out after 1 hour (Fixed in PR #78)
+- ✅ Issue #75: Passkey refresh token bug (Fixed in PR #78)
 
 ### Known Issues
 - Issue #33: Remove hardcoded credential fallbacks after testing
 - Issue #34: Use JxBrowser for login instead of system browser
 
 ### Testing Status
+
 **Limited test coverage** - focus on build verification rather than unit/integration tests. Future development should prioritize comprehensive testing of authentication flows.
 
 ### Key Files to Understand
 
-**Client-side (Kotlin):**
+**Client-side (Kotlin)**:
 - `AuthService.kt` - Core authentication orchestration
 - `SessionManager.kt` - Session establishment and persistence
 - `DesktopPasskeyService.kt` - Desktop WebAuthn implementation
-- `SupabaseConfig.kt` - Backend configuration and client management
+- `SupabaseConfig.kt` - Backend configuration
 - `RoleService.kt` - RBAC role management
-- `LoadingScreen.kt` - Centralized loading screen component (uses new resource API)
+- `LoadingScreen.kt` - Centralized loading screen
 
-**Server-side (Edge Functions):**
+**Server-side (Edge Functions)**:
 - `supabase/functions/passkey/services/auth.ts` - Passkey authentication flow
-- `supabase/functions/passkey/utils/jwt.ts` - Session token generation (Admin API)
+- `supabase/functions/passkey/utils/jwt.ts` - Session token generation
 - `supabase/functions/passkey/utils/crypto.ts` - WebAuthn signature verification
 
-**Build & Config:**
+**Build & Config**:
 - `version.properties` - Single source of truth for versioning
 - `build.gradle.kts` files - Kotlin Multiplatform configuration
 
@@ -853,108 +323,7 @@ Enable these inspections to catch threading issues:
 
 The app registers `boss://` protocol for deep link handling, primarily for authentication callback flows from external browsers or mobile devices.
 
-## Default Browser Support
+## Additional Documentation
 
-BOSS Console can be set as the default system browser to handle http:// and https:// URLs. When set as default, clicking web links in other applications will open them in BOSS's Fluck browser.
-
-### Platform Behavior
-
-**macOS:**
-- Automatic registration via Info.plist CFBundleURLTypes (http, https schemes)
-- Programmatic setting via Swift scripts using LSSetDefaultHandlerForURLScheme
-- Falls back to opening System Preferences if programmatic setting fails
-- User can verify/change in System Preferences > General > Default web browser
-
-**Windows:**
-- Registry keys created in `HKEY_CURRENT_USER\SOFTWARE\Clients\StartMenuInternet\BOSS`
-- Includes Capabilities, URLAssociations for http/https, and file type associations
-- Windows 10+ requires user to manually select default in Settings (Microsoft security restriction)
-- App automatically opens Windows Settings (ms-settings:defaultapps) for user selection
-- Cannot be set programmatically due to hash algorithm protection
-
-**Linux:**
-- Creates `~/.local/share/applications/boss.desktop` file with proper MIME types
-- Uses xdg-settings and xdg-mime for registration
-- Supports x-scheme-handler/http, x-scheme-handler/https, and text/html MIME types
-- May require desktop session restart for changes to take effect
-- Compatible with GNOME, KDE, XFCE, and other XDG-compliant desktop environments
-
-### Implementation
-
-**Key Files:**
-- `DefaultBrowserManager.kt` (common) - Cross-platform interface (80 lines)
-- `DefaultBrowserManager.kt` (desktop) - Desktop platform dispatcher (100 lines)
-- `MacOSDefaultBrowserHandler.kt` - macOS implementation (200 lines)
-- `WindowsDefaultBrowserHandler.kt` - Windows implementation (250 lines)
-- `LinuxDefaultBrowserHandler.kt` - Linux implementation (220 lines)
-- `URLHandlerService.kt` - Handles incoming http/https URLs (120 lines)
-- `DefaultBrowserSection.kt` - Settings UI component (220 lines)
-- `ProfileManagementSection.kt` - Extracted profile management (190 lines)
-- `boss.desktop.template` - Linux .desktop file template (30 lines)
-
-**URL Handling Flow:**
-1. User clicks http/https link in external application
-2. OS passes URL to BOSS via registered protocol handler
-3. `DeepLinkHandler` receives URL and checks protocol
-4. If http/https: forwards to `URLHandlerService`
-5. If boss://: processes as authentication deep link
-6. `URLHandlerService` validates URL and extracts domain
-7. Creates new Fluck browser tab with URL
-8. Tab displayed in active window (or creates new window if none exist)
-
-**File Size Management:**
-All implementation files kept under 300 lines for maintainability:
-- `FluckBrowserSettings.kt` reduced from 420 to 229 lines
-- Profile management extracted to separate component
-- Platform handlers separated by OS
-
-### Settings UI
-
-**Location:** Settings > Fluck Browser > Default Browser
-
-**Features:**
-- Real-time status indicator (✓ Default / × Not Default)
-- "Set as Default Browser" button with loading states
-- Automatic status refresh
-- Platform-specific instructions and messaging
-- Error handling with user-friendly messages
-- Success/instructions dialogs based on platform
-
-**Status Display:**
-- Green checkmark if BOSS is default
-- Gray X if BOSS is not default
-- Loading spinner while checking/setting
-- Error icon with message if operation fails
-
-**Platform-Specific Behavior:**
-- macOS: Shows "Set as Default Browser" button, attempts automatic setting
-- Windows: Shows warning that Settings will open, guides user through manual selection
-- Linux: Shows XDG information, sets automatically via xdg-settings
-
-### URL Validation
-
-`URLHandlerService` validates incoming URLs for security:
-- Only accepts http:// and https:// protocols
-- Rejects malformed URLs (missing domain, invalid format)
-- Extracts domain name for tab title display
-- Removes "www." prefix for cleaner titles
-- Example: "https://www.github.com/user/repo" → tab title "github.com"
-
-### Integration Points
-
-**Deep Link Handler:**
-- Extended to handle http/https URLs alongside boss:// deep links
-- Routes http/https to URLHandlerService
-- Routes boss:// to authentication flow
-- Works across all platforms (macOS, Windows, Linux)
-
-**Window Management:**
-- URLHandlerService integrates with WindowManager
-- Adds tabs to first available window
-- Creates new window if no windows exist
-- Maintains multi-window support
-
-**Browser Profiles:**
-- Default browser setting works independently of browser profiles
-- Profile selection affects cookie/cache storage
-- Profile changes require application restart
+- [Keyboard Shortcuts Reference](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts system documentation
+- [Threading Best Practices](docs/THREADING.md) - Threading patterns and common pitfalls
