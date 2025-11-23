@@ -11,6 +11,7 @@ import ai.rever.boss.components.plugin.panels.bottom.console.GlobalLogCapture
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.application
+import com.github.ajalt.clikt.core.main
 import java.io.File
 import kotlin.system.exitProcess
 

@@ -304,12 +304,12 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
 
             // CLI argument parsing
-            implementation("com.github.ajalt.clikt:clikt:4.2.1")
+            implementation("com.github.ajalt.clikt:clikt:5.0.3")
         }
 
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
-            implementation("org.junit.jupiter:junit-jupiter:5.10.0")
+            implementation("org.junit.jupiter:junit-jupiter:6.0.1")
         }
     }
 }

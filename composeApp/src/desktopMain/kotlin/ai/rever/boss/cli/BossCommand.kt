@@ -1,6 +1,7 @@
 package ai.rever.boss.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.NoOpCliktCommand
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
@@ -20,19 +21,16 @@ import java.net.URLEncoder
  *   boss terminal                   # Opens terminal
  *   boss terminal -c <command>      # Opens terminal with command
  */
-class BossCommand : NoOpCliktCommand(
-    name = "boss",
-    help = "BOSS Console - Business Operating System Service"
-)
+class BossCommand : NoOpCliktCommand(name = "boss") {
+    override fun help(context: Context) = "BOSS Console - Business Operating System Service"
+}
 
 /**
  * Opens URL in Fluck browser tab.
  * Usage: boss url https://example.com
  */
-class BossUrlCommand : CliktCommand(
-    name = "url",
-    help = "Opens a URL in Fluck browser"
-) {
+class BossUrlCommand : CliktCommand(name = "url") {
+    override fun help(context: Context) = "Opens a URL in Fluck browser"
     val url by argument(help = "URL to open")
 
     override fun run() {
@@ -47,10 +45,8 @@ class BossUrlCommand : CliktCommand(
  * Loads workspace configuration.
  * Usage: boss workspace myworkspace.json
  */
-class BossWorkspaceCommand : CliktCommand(
-    name = "workspace",
-    help = "Loads a workspace configuration"
-) {
+class BossWorkspaceCommand : CliktCommand(name = "workspace") {
+    override fun help(context: Context) = "Loads a workspace configuration"
     val configPath by argument(help = "Path to workspace config file")
 
     override fun run() {
@@ -65,10 +61,8 @@ class BossWorkspaceCommand : CliktCommand(
  * Opens file in editor tab.
  * Usage: boss file /path/to/file.kt
  */
-class BossFileCommand : CliktCommand(
-    name = "file",
-    help = "Opens a file in the editor"
-) {
+class BossFileCommand : CliktCommand(name = "file") {
+    override fun help(context: Context) = "Opens a file in the editor"
     val filePath by argument(help = "Path to file")
 
     override fun run() {
@@ -83,10 +77,8 @@ class BossFileCommand : CliktCommand(
  * Opens folder in codebase plugin.
  * Usage: boss folder /path/to/project
  */
-class BossFolderCommand : CliktCommand(
-    name = "folder",
-    help = "Opens a folder in the codebase plugin"
-) {
+class BossFolderCommand : CliktCommand(name = "folder") {
+    override fun help(context: Context) = "Opens a folder in the codebase plugin"
     val folderPath by argument(help = "Path to folder")
 
     override fun run() {
@@ -103,10 +95,8 @@ class BossFolderCommand : CliktCommand(
  *   boss terminal
  *   boss terminal -c "ls -la"
  */
-class BossTerminalCommand : CliktCommand(
-    name = "terminal",
-    help = "Opens a terminal tab"
-) {
+class BossTerminalCommand : CliktCommand(name = "terminal") {
+    override fun help(context: Context) = "Opens a terminal tab"
     val command by option("-c", "--command", help = "Command to run in terminal")
 
     override fun run() {
