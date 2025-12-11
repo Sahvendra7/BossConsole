@@ -39,7 +39,7 @@ jobs:
       should-create-tag: ${{ steps.commit-version.outputs.should-create-tag }}
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
@@ -151,7 +151,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -363,7 +363,7 @@ jobs:
           fi
 
       - name: 📤 Upload macOS DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: boss-macos-${{ needs.prepare-version.outputs.version }}
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
@@ -376,7 +376,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -476,7 +476,7 @@ jobs:
           fi
 
       - name: 📤 Upload Linux Packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: boss-linux-${{ needs.prepare-version.outputs.version }}
           path: |
@@ -492,7 +492,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -695,7 +695,7 @@ jobs:
         shell: powershell
 
       - name: 📤 Upload Windows MSI
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: boss-windows-${{ needs.prepare-version.outputs.version }}
           path: composeApp/build/compose/binaries/main/msi/
@@ -708,7 +708,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
