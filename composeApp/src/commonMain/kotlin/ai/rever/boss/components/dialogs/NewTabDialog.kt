@@ -70,16 +70,18 @@ fun NewTabDialog(
     var selectedType by remember { mutableStateOf(initialTabType ?: TabType.URL) }
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf(SystemUtils.getDefaultProjectPath() + "/README.md") }
-    var inputText by remember { 
+    var terminalCommand by remember { mutableStateOf("") }
+    var inputText by remember {
         mutableStateOf(
             when (selectedType) {
                 TabType.URL -> urlText
                 TabType.FILE -> fileText
-                TabType.TERMINAL -> "Terminal"
+                TabType.TERMINAL -> ""
             }
         )
     }
     val focusRequester = remember { FocusRequester() }
+    val terminalFocusRequester = remember { FocusRequester() }
     
     // URL autocomplete state
     var urlSuggestions by remember { mutableStateOf<List<UrlSuggestion>>(emptyList()) }
@@ -187,7 +189,7 @@ fun NewTabDialog(
                         icon = Icons.Outlined.Terminal,
                         label = "Terminal",
                         isSelected = selectedType == TabType.TERMINAL,
-                        onClick = { 
+                        onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
@@ -195,7 +197,7 @@ fun NewTabDialog(
                                 else -> {}
                             }
                             selectedType = TabType.TERMINAL
-                            inputText = "Terminal"
+                            inputText = terminalCommand
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -203,9 +205,60 @@ fun NewTabDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Input field (hide for Terminal type)
-                if (selectedType != TabType.TERMINAL) {
-                    Column {
+                // Input field
+                Column {
+                    // Show terminal command input or URL/File input
+                    if (selectedType == TabType.TERMINAL) {
+                        // Terminal command input
+                        LaunchedEffect(selectedType) {
+                            if (selectedType == TabType.TERMINAL) {
+                                terminalFocusRequester.requestFocus()
+                            }
+                        }
+                        OutlinedTextField(
+                            value = terminalCommand,
+                            onValueChange = { newValue ->
+                                terminalCommand = newValue
+                                inputText = newValue
+                            },
+                            label = {
+                                Text(
+                                    "Initial command (optional)",
+                                    color = Color(0xFF999999)
+                                )
+                            },
+                            placeholder = {
+                                Text(
+                                    "e.g., npm run dev",
+                                    color = Color(0xFF666666)
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(terminalFocusRequester)
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                        handleCreateTab(selectedType, terminalCommand, onCreateTab, onDismiss)
+                                        true
+                                    } else false
+                                },
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = Color.White,
+                                cursorColor = Color.White,
+                                focusedBorderColor = Color(0xFF4A9EFF),
+                                unfocusedBorderColor = Color(0xFF555555),
+                                backgroundColor = Color(0xFF1E1F22)
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    handleCreateTab(selectedType, terminalCommand, onCreateTab, onDismiss)
+                                }
+                            )
+                        )
+                    } else {
+                        // URL/File input
                         OutlinedTextField(
                             value = inputText,
                             onValueChange = { newValue ->
@@ -217,12 +270,12 @@ fun NewTabDialog(
                                     else -> {}
                                 }
                             },
-                            label = { 
+                            label = {
                                 Text(
                                     when (selectedType) {
                                         TabType.URL -> "Enter URL (e.g., https://example.com)"
                                         TabType.FILE -> "Enter file path"
-                                        else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                        else -> ""
                                     },
                                     color = Color(0xFF999999)
                                 )
@@ -232,7 +285,7 @@ fun NewTabDialog(
                                     when (selectedType) {
                                         TabType.URL -> "https://"
                                         TabType.FILE -> "README.md"
-                                        else -> "" // This should never happen since we check selectedType != TERMINAL above
+                                        else -> ""
                                     },
                                     color = Color(0xFF666666)
                                 )
@@ -398,7 +451,8 @@ fun NewTabDialog(
                     
                     Button(
                         onClick = {
-                            handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                            val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
+                            handleCreateTab(selectedType, input, onCreateTab, onDismiss)
                         },
                         enabled = selectedType == TabType.TERMINAL || inputText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
@@ -468,7 +522,7 @@ private fun handleCreateTab(
     onDismiss: () -> Unit
 ) {
     if (type != TabType.TERMINAL && input.isBlank()) return
-    
+
     val processedInput = when (type) {
         TabType.URL -> {
             processUrlInput(input)
@@ -477,10 +531,11 @@ private fun handleCreateTab(
             input.trim()
         }
         TabType.TERMINAL -> {
-            "Terminal" // Terminal doesn't need input
+            // Pass the command (or empty string if none)
+            input.trim()
         }
     }
-    
+
     onCreateTab(type, processedInput)
     onDismiss()
 }

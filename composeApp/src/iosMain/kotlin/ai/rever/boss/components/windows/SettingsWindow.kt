@@ -9,7 +9,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun SettingsWindow(onClose: () -> Unit) {
+actual fun SettingsWindow(
+    onClose: () -> Unit,
+    initialSection: String?
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center

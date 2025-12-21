@@ -37,16 +37,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
@@ -446,7 +443,8 @@ fun BossTabsComponent.BossMainTabBar(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
                             title = "Terminal",
-                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon
+                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                            initialCommand = path.ifBlank { null }
                         )
                         val tabIndex = addTab(terminalTab)
                         if (tabIndex >= 0) {
@@ -542,13 +540,8 @@ fun BossTabsComponent.BossMainPanel(
                 }
             }
             .focusable()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                // Set focus when clicked
-                focusRequester.requestFocus()
-                if (currentPanelId != null) {
-                    splitViewState?.setActivePanel(currentPanelId)
-                }
-            }
+            // Removed .clickable() - it was stealing focus from child components (terminals)
+            // Panel activation is handled by .onFocusChanged() above
             .then(
                 if (isActivePanel) {
                     Modifier.border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.5f))
@@ -587,58 +580,52 @@ fun BossTabsComponent.BossMainPanelContent(
     var showNewTabDialog by remember { mutableStateOf(false) }
     var selectedTabType by remember { mutableStateOf<TabType?>(null) }
 
-    Box(
-        modifier = modifier
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                // Set panel as active when content area is clicked
-                if (currentPanelId != null) {
-                    splitViewState?.setActivePanel(currentPanelId)
-                    // Also track tab interaction if there's an active tab
-                    val activeTab = tabsState.value.activeTab
-                    if (activeTab != null) {
-                        splitViewState?.trackTabInteraction(currentPanelId, activeTab.id)
-                    }
-                }
-            }
-    ) {
-        // Force recomposition when tab changes by reading the state
-        tabsState.value.activeIndex
+    Box(modifier = modifier) {
+        val activeTab = tabsState.value.activeTab
         val activeComponent = getActiveComponent()
 
-        activeComponent?.Content() ?: EmptyContent(
-            onOpenFile = {
-                selectedTabType = TabType.FILE
-                showNewTabDialog = true
-            },
-            onNewTab = {
-                selectedTabType = null
-                showNewTabDialog = true
-            },
-            onSplitPanel = if (splitViewState != null && currentPanelId != null && tabsState.value.tabs.isNotEmpty()) {
-                {
-                    splitViewState.splitPanel(
-                        panelId = currentPanelId,
-                        orientation = SplitOrientation.HORIZONTAL,
-                        tabToMove = null
-                    )
-                }
-            } else null,
-            onSwitchPanel = if (splitViewState != null) {
-                val allPanels = splitViewState.getAllPanels()
-                if (allPanels.size > 1) {
-                    {
-                        val currentIndex = allPanels.indexOfFirst { it.id == currentPanelId }
-                        if (currentIndex >= 0) {
-                            val nextIndex = (currentIndex + 1) % allPanels.size
-                            splitViewState.setActivePanel(allPanels[nextIndex].id)
-                        }
-                    }
-                } else null
-            } else null,
-            onNewWindow = {
-                WindowOperations.createNewWindow()
+        // Only render the active tab - hidden tabs would still receive input
+        // Terminal state is preserved by TerminalStateRegistry (keyed by tab ID)
+        if (activeTab != null && activeComponent != null) {
+            key(activeTab.id) {
+                activeComponent.Content()
             }
-        )
+        } else {
+            EmptyContent(
+                onOpenFile = {
+                    selectedTabType = TabType.FILE
+                    showNewTabDialog = true
+                },
+                onNewTab = {
+                    selectedTabType = null
+                    showNewTabDialog = true
+                },
+                onSplitPanel = if (splitViewState != null && currentPanelId != null && tabsState.value.tabs.isNotEmpty()) {
+                    {
+                        splitViewState.splitPanel(
+                            panelId = currentPanelId,
+                            orientation = SplitOrientation.HORIZONTAL,
+                            tabToMove = null
+                        )
+                    }
+                } else null,
+                onSwitchPanel = if (splitViewState != null) {
+                    val allPanels = splitViewState.getAllPanels()
+                    if (allPanels.size > 1) {
+                        {
+                            val currentIndex = allPanels.indexOfFirst { it.id == currentPanelId }
+                            if (currentIndex >= 0) {
+                                val nextIndex = (currentIndex + 1) % allPanels.size
+                                splitViewState.setActivePanel(allPanels[nextIndex].id)
+                            }
+                        }
+                    } else null
+                } else null,
+                onNewWindow = {
+                    WindowOperations.createNewWindow()
+                }
+            )
+        }
     }
 
     // New Tab Dialog (for EmptyContent interactions)
@@ -685,7 +672,8 @@ fun BossTabsComponent.BossMainPanelContent(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
                             title = "Terminal",
-                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon
+                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                            initialCommand = path.ifBlank { null }
                         )
                         val tabIndex = addTab(terminalTab)
                         if (tabIndex >= 0) {

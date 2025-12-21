@@ -25,10 +25,11 @@ import androidx.compose.ui.window.rememberWindowState
 
 @Composable
 actual fun SettingsWindow(
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    initialSection: String?
 ) {
     var isOpen by remember { mutableStateOf(true) }
-    
+
     if (isOpen) {
         Window(
             onCloseRequest = {
@@ -41,14 +42,20 @@ actual fun SettingsWindow(
                 position = WindowPosition.Aligned(Alignment.Center)
             )
         ) {
-            SettingsContent()
+            SettingsContent(initialSection = initialSection)
         }
     }
 }
 
 @Composable
-private fun SettingsContent() {
-    var selectedSection by remember { mutableStateOf(SettingsSection.FLUCK) }
+private fun SettingsContent(initialSection: String? = null) {
+    // Convert initial section string to enum, defaulting to FLUCK
+    val startSection = remember(initialSection) {
+        initialSection?.let { name ->
+            SettingsSection.entries.find { it.name.equals(name, ignoreCase = true) }
+        } ?: SettingsSection.FLUCK
+    }
+    var selectedSection by remember { mutableStateOf(startSection) }
     
     Surface(
         modifier = Modifier.fillMaxSize(),

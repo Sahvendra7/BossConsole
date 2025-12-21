@@ -272,15 +272,10 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
             implementation(compose.components.resources)
-            
-            // PTY4J with all required dependencies
-            implementation(libs.pty4j)
-            implementation(libs.purejavacomm) // Explicitly add this dependency
-            implementation(libs.jna.platform) // JNA platform specific
-            
-            // For ANSI terminal emulation
-            implementation(libs.lanterna)
-            
+
+            // BossTerm - Terminal emulation library
+            implementation(libs.bossterm.compose)
+
             // Logging
             implementation(libs.slf4j.api)
             implementation(libs.slf4j.simple)
@@ -329,9 +324,6 @@ compose.desktop {
         
         // JVM arguments optimized for Apple Silicon and hardened runtime
         jvmArgs(
-            "-Djna.nosys=true",
-            // These will be set at runtime, not build time
-            "-Dpty4j.tmpdir=\${java.io.tmpdir}/boss-pty4j",
             // JCEF arguments
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
@@ -529,228 +521,6 @@ gradle.taskGraph.whenReady {
     }
 }
 
-// ============================================================================
-// Native Library Extraction Tasks
-// ============================================================================
-
-// Manually extract pty4j native libraries
-tasks.register("extractPty4jNative") {
-    // Declare providers at configuration time for configuration cache compatibility
-    val pty4jNativeDirProvider = layout.buildDirectory.dir("pty4j-native")
-    val tmpDirProvider = layout.buildDirectory.dir("tmp")
-
-    // Declare classpath files as input at configuration time
-    val classpathFiles = configurations.getByName("desktopRuntimeClasspath").incoming.artifactView {
-        attributes {
-            attribute(Attribute.of("artifactType", String::class.java), "jar")
-        }
-    }.files
-
-    // Declare inputs and outputs for up-to-date checking
-    inputs.files(classpathFiles)
-    outputs.dir(pty4jNativeDirProvider)
-    outputs.cacheIf { true }
-
-    doLast {
-        // Access provider values at execution time
-        val pty4jNativeDir = pty4jNativeDirProvider.get().asFile
-        val tmpDir = tmpDirProvider.get().asFile
-
-        // Create directories
-        pty4jNativeDir.mkdirs()
-        tmpDir.mkdirs()
-
-        // Find PTY4J jar in classpath files
-        val pty4jJar = classpathFiles.find {
-            it.name.startsWith("pty4j-") && it.name.endsWith(".jar")
-        }
-
-        if (pty4jJar != null) {
-            println("Extracting from ${pty4jJar.name}")
-
-            // Extract native libraries from JAR manually
-            ZipFile(pty4jJar).use { zip ->
-                zip.entries().asSequence()
-                    .filter { it.name.contains("/native/") && !it.isDirectory }
-                    .forEach { entry ->
-                        // Extract the path after "native/"
-                        val nativeIndex = entry.name.indexOf("native/")
-                        if (nativeIndex >= 0) {
-                            val relativePath = entry.name.substring(nativeIndex + "native/".length)
-                            val targetFile = File(pty4jNativeDir, relativePath)
-
-                            // Create parent directories
-                            targetFile.parentFile?.mkdirs()
-
-                            // Extract file
-                            zip.getInputStream(entry).use { input ->
-                                targetFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-
-                            // Make libraries executable
-                            if (targetFile.name.endsWith(".so") || targetFile.name.endsWith(".dylib")) {
-                                targetFile.setExecutable(true)
-                            }
-                        }
-                    }
-            }
-        } else {
-            println("Warning: PTY4J jar not found in classpath")
-        }
-
-        // Print the extracted files for debugging
-        println("Extracted PTY4J native libraries to: ${pty4jNativeDir.absolutePath}")
-    }
-}
-
-// Sign PTY4J native binaries with hardened runtime for macOS notarization
-tasks.register("signPty4jBinaries") {
-    description = "Signs PTY4J native binaries with hardened runtime for Apple notarization"
-    group = "build"
-
-    // Only run on macOS and when signing is enabled
-    onlyIf {
-        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-        val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
-        isMacOS && !signingDisabled
-    }
-
-    // Inject ExecOperations for exec calls (replaces deprecated project.exec)
-    val injected = project.objects.newInstance<InjectedExecOps>()
-
-    doLast {
-        println("🔧 Signing PTY4J native binaries with hardened runtime for notarization...")
-
-        // Get developer identity from environment or use default
-        val developerId = System.getenv("MACOS_DEVELOPER_ID")
-            ?: System.getenv("DEVELOPER_ID")
-            ?: "Developer ID Application: Fnu Shivang (7X4CJM22GN)"
-
-        // Find the built app in the standard Compose Desktop location
-        val appDir = project.layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
-        val appFile = appDir.listFiles()?.find { it.name.endsWith(".app") }
-        
-        if (appFile?.exists() == true) {
-            println("Found app: ${appFile.name}")
-            
-            // Find PTY4J jar inside the app
-            val appContents = File(appFile, "Contents/app")
-            val pty4jJar = appContents.listFiles()?.find { 
-                it.name.startsWith("pty4j-") && it.name.endsWith(".jar")
-            }
-            
-            if (pty4jJar?.exists() == true) {
-                println("Processing PTY4J jar: ${pty4jJar.name}")
-                
-                // Create temporary directory for jar manipulation
-                val tempDir = File(System.getProperty("java.io.tmpdir"), "pty4j-sign-${System.currentTimeMillis()}")
-                tempDir.mkdirs()
-                
-                try {
-                    // Extract the entire jar
-                    injected.execOps.exec {
-                        workingDir = tempDir
-                        commandLine("jar", "xf", pty4jJar.absolutePath)
-                    }
-                    
-                    // Sign PTY4J native libraries with hardened runtime
-                    val nativeFiles = tempDir.walkTopDown().filter { 
-                        it.isFile && (it.name.endsWith(".dylib") || it.name.contains("spawn-helper"))
-                    }.toList()
-                    
-                    if (nativeFiles.isNotEmpty()) {
-                        println("Found ${nativeFiles.size} PTY4J native binary(ies) to sign:")
-                        
-                        for (nativeFile in nativeFiles) {
-                            println("  Signing: ${nativeFile.relativeTo(tempDir)}")
-                            
-                            // Make executable
-                            nativeFile.setExecutable(true)
-                            
-                            // Sign with hardened runtime
-                            try {
-                                injected.execOps.exec {
-                                    commandLine(
-                                        "codesign",
-                                        "--force",
-                                        "--options", "runtime",
-                                        "--sign", developerId,
-                                        "--timestamp",
-                                        nativeFile.absolutePath
-                                    )
-                                }
-
-                                // Verify signature
-                                injected.execOps.exec {
-                                    commandLine("codesign", "-vv", nativeFile.absolutePath)
-                                }
-                                
-                                println("    ✅ Successfully signed ${nativeFile.name}")
-                            } catch (e: Exception) {
-                                println("    ⚠️ Warning: Failed to sign ${nativeFile.name}: ${e.message}")
-                            }
-                        }
-                        
-                        // Recreate the jar with signed native libraries
-                        val signedJar = File(pty4jJar.parentFile, "${pty4jJar.nameWithoutExtension}-signed.jar")
-                        injected.execOps.exec {
-                            workingDir = tempDir
-                            commandLine("jar", "cf", signedJar.absolutePath, ".")
-                        }
-
-                        // Replace original jar with signed version
-                        pty4jJar.delete()
-                        signedJar.renameTo(pty4jJar)
-
-                        println("✅ PTY4J jar updated with signed native libraries")
-
-                    } else {
-                        println("⚠️ Warning: No PTY4J native binaries found in jar")
-                    }
-
-                } finally {
-                    // Clean up temp directory
-                    tempDir.deleteRecursively()
-                }
-
-                // CRITICAL: Re-sign the entire app bundle after modifying the JAR
-                println("🔒 Re-signing app bundle after PTY4J modifications...")
-                try {
-                    injected.execOps.exec {
-                        commandLine(
-                            "codesign",
-                            "--force",
-                            "--deep",
-                            "--options", "runtime",
-                            "--sign", developerId,
-                            "--timestamp",
-                            "--entitlements", project.file("src/desktopMain/resources/BOSS.entitlements").absolutePath,
-                            appFile.absolutePath
-                        )
-                    }
-
-                    // Verify the re-signed app
-                    injected.execOps.exec {
-                        commandLine("codesign", "-vvv", "--deep", "--strict", appFile.absolutePath)
-                    }
-
-                    println("✅ App bundle re-signed successfully")
-                } catch (e: Exception) {
-                    println("❌ Failed to re-sign app bundle: ${e.message}")
-                    throw e
-                }
-
-            } else {
-                println("⚠️ Warning: PTY4J jar not found in app bundle")
-            }
-        } else {
-            println("⚠️ Warning: Built app not found at expected location")
-        }
-    }
-}
-
 // Extract JCEF natives
 tasks.register("extractJcefNatives") {
     // Declare provider at configuration time for configuration cache compatibility
@@ -862,49 +632,24 @@ tasks.register("extractCLIToAppResources") {
     }
 }
 
-// Configure task dependencies for PTY4J signing and DMG packaging
+// Configure task dependencies for DMG packaging
 afterEvaluate {
     // Make run tasks depend on the extraction tasks
     tasks.findByName("run")?.apply {
-        dependsOn("extractPty4jNative")
         dependsOn("extractJcefNatives")
     }
 
     val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
-    val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
 
-    // Make signPty4jBinaries run AFTER createDistributable and BEFORE any signing/packaging
-    tasks.findByName("signPty4jBinaries")?.apply {
-        mustRunAfter("createDistributable")
-        // Must run before the Compose Desktop signing tasks
-        tasks.findByName("signApp")?.mustRunAfter(this)
-        tasks.findByName("signUberJarProvisionedRuntime")?.mustRunAfter(this)
-    }
-
-    // CRITICAL: Make createDistributable finalize with signPty4jBinaries
-    // This ensures PTY4J natives are signed before Compose Desktop signs the whole app
+    // Configure createDistributable
     tasks.findByName("createDistributable")?.apply {
         // Ensure CLI scripts are generated before distribution tasks run
         dependsOn("generateVersionedCLIScripts")
 
-        if (isMacOS && !signingDisabled) {
-            finalizedBy("signPty4jBinaries")
-            println("📝 createDistributable will be finalized by signPty4jBinaries")
-        }
         // Always extract CLI script to app Resources on macOS (for Homebrew installation)
         if (isMacOS) {
             finalizedBy("extractCLIToAppResources")
             println("📝 createDistributable will be finalized by extractCLIToAppResources")
-        }
-    }
-
-    // Make sure signing happens before packaging
-    tasks.findByName("packageDmg")?.apply {
-        if (isMacOS && !signingDisabled) {
-            mustRunAfter("signPty4jBinaries")
-            tasks.findByName("signApp")?.let { mustRunAfter(it) }
-            tasks.findByName("signUberJarProvisionedRuntime")?.let { mustRunAfter(it) }
-            println("📝 packageDmg will run after PTY4J signing and app signing")
         }
     }
 
@@ -958,27 +703,24 @@ tasks.register<Jar>("createExecutableJar") {
 
 // Task to package JAR with native libraries
 tasks.register<Zip>("packageJarWithNatives") {
-    dependsOn("createExecutableJar", "extractJcefNatives", "extractPty4jNative")
+    dependsOn("createExecutableJar", "extractJcefNatives")
     group = "build"
     description = "Creates a distributable package with JAR and native libraries"
-    
+
     archiveBaseName.set("BOSS-package")
     archiveVersion.set(appVersion as String)
     archiveExtension.set("zip")
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
-    
+
     // Include the executable JAR
     from(layout.buildDirectory.dir("libs")) {
         include("BOSS-$appVersion-all.jar")
         into("")
     }
-    
+
     // Include native libraries
     from(layout.buildDirectory.dir("jcef-natives")) {
         into("jcef-natives")
-    }
-    from(layout.buildDirectory.dir("pty4j-native")) {
-        into("pty4j-native")
     }
     
     // Include launch scripts

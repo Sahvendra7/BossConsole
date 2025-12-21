@@ -45,6 +45,10 @@ object MenuActionsHandler {
     private val _openSettingsEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val openSettingsEvents: SharedFlow<String> = _openSettingsEvents.asSharedFlow()
 
+    // Global settings event (opens settings in any active window, optionally to a specific section)
+    private val _globalOpenSettingsEvents = MutableSharedFlow<String?>(extraBufferCapacity = 10)
+    val globalOpenSettingsEvents: SharedFlow<String?> = _globalOpenSettingsEvents.asSharedFlow()
+
     private val _toggleFocusModeEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val toggleFocusModeEvents: SharedFlow<String> = _toggleFocusModeEvents.asSharedFlow()
 
@@ -145,6 +149,16 @@ object MenuActionsHandler {
      */
     fun triggerOpenSettings(windowId: String) {
         _openSettingsEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a global "Open Settings" action.
+     * This opens settings in any active window (used by terminal panels, etc.)
+     *
+     * @param section Optional section name to navigate to (e.g., "TERMINAL", "FLUCK")
+     */
+    fun triggerGlobalOpenSettings(section: String? = null) {
+        _globalOpenSettingsEvents.tryEmit(section)
     }
 
     /**

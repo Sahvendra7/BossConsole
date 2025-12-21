@@ -1054,40 +1054,40 @@ private fun RenderSplitNode(
 ) {
     when (node) {
         is SplitNode.Panel -> {
-            // Note: Panel activation is now handled by user interactions (tab clicks, etc.)
-            // rather than automatic activation on render
-
-            // Monitor this specific panel's tab count
-            val tabsState = node.tabsComponent.tabsState.subscribeAsState()
-            LaunchedEffect(node.id, tabsState.value.tabs.size) {
-                if (tabsState.value.tabs.isEmpty()) {
-                    // Small delay to ensure state is fully updated
-                    delay(50)
-                    splitViewState.checkAndCloseEmptyPanels()
-                }
-            }
-
-            // Capture panel position for spatial navigation
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { coordinates ->
-                        val bounds = coordinates.boundsInRoot()
-                        splitViewState.updatePanelBounds(
-                            panelId = node.id,
-                            bounds = PanelBounds(
-                                x = bounds.left,
-                                y = bounds.top,
-                                width = bounds.width,
-                                height = bounds.height
-                            )
-                        )
+            // key() preserves panel composition identity when split tree restructures
+            key(node.id) {
+                // Monitor this specific panel's tab count
+                val tabsState = node.tabsComponent.tabsState.subscribeAsState()
+                LaunchedEffect(node.id, tabsState.value.tabs.size) {
+                    if (tabsState.value.tabs.isEmpty()) {
+                        // Small delay to ensure state is fully updated
+                        delay(50)
+                        splitViewState.checkAndCloseEmptyPanels()
                     }
-            ) {
-                node.tabsComponent.BossMainPanel(
-                    splitViewState = splitViewState,
-                    currentPanelId = node.id
-                )
+                }
+
+                // Capture panel position for spatial navigation
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { coordinates ->
+                            val bounds = coordinates.boundsInRoot()
+                            splitViewState.updatePanelBounds(
+                                panelId = node.id,
+                                bounds = PanelBounds(
+                                    x = bounds.left,
+                                    y = bounds.top,
+                                    width = bounds.width,
+                                    height = bounds.height
+                                )
+                            )
+                        }
+                ) {
+                    node.tabsComponent.BossMainPanel(
+                        splitViewState = splitViewState,
+                        currentPanelId = node.id
+                    )
+                }
             }
         }
         is SplitNode.VerticalSplit -> {

@@ -111,21 +111,21 @@ object DisplayUtils {
     /**
      * Calculate adaptive size for settings window.
      *
-     * Uses 55% of screen dimensions with constraints:
-     * - Min: 700x550 (minimum for settings content)
-     * - Max: 1200x800 (prevent excessive size, optimal for settings panels)
+     * Uses 60% of screen dimensions with constraints:
+     * - Min: 900x700 (minimum for settings content including BossTerm's full settings panel)
+     * - Max: 1400x900 (prevent excessive size, optimal for settings panels)
      *
      * @return DpSize for settings window
      */
     @Composable
     fun calculateSettingsWindowSize(): DpSize {
         return calculateAdaptiveSize(
-            widthPercentage = 0.55f,  // 55% for settings
-            heightPercentage = 0.55f,
-            minWidth = 700,
-            minHeight = 550,
-            maxWidth = 1200,
-            maxHeight = 800,
+            widthPercentage = 0.60f,  // 60% for settings (larger for BossTerm panel)
+            heightPercentage = 0.60f,
+            minWidth = 900,
+            minHeight = 700,
+            maxWidth = 1400,
+            maxHeight = 900,
             taskbarOffset = 100,
             windowType = "Settings"
         )

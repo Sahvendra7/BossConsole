@@ -52,7 +52,7 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 - **JxBrowser 8.8.0** for WebAuthn integration and browser functionality
 - **Decompose** for component-based navigation
 - **Supabase** as Backend-as-a-Service with Edge Functions
-- **PTY4J** for terminal integration
+- **BossTerm** for terminal integration
 
 ## Configuration Management
 
@@ -322,6 +322,17 @@ detekt --input composeApp/src --report txt:detekt-report.txt --report html:detek
 ## Deep Link Support
 
 The app registers `boss://` protocol for deep link handling, primarily for authentication callback flows from external browsers or mobile devices.
+
+## External Dependencies
+
+### BossTerm Library
+BOSS uses [BossTerm](https://github.com/kshivang/BossTerm) for terminal integration.
+
+**IMPORTANT**: Do NOT modify the BossTerm repository directly. Instead:
+1. Create a GitHub issue using `gh issue create --repo kshivang/BossTerm`
+2. Or create a PR for the issue using `gh pr create --repo kshivang/BossTerm`
+
+This ensures proper tracking and review of changes to the shared library.
 
 ## Additional Documentation
 

@@ -287,6 +287,7 @@ fun ComponentContext.BossApp(
 
     // State for showing settings dialog
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var settingsInitialSection by remember { mutableStateOf<String?>(null) }
 
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
@@ -1007,6 +1008,16 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Handle global settings events (from terminal panels, etc.)
+    LaunchedEffect(Unit) {
+        ai.rever.boss.window.MenuActionsHandler.globalOpenSettingsEvents
+            .onEach { section ->
+                settingsInitialSection = section
+                showSettingsDialog = true
+            }
+            .launchIn(this)
+    }
+
     // Handle View menu events
     LaunchedEffect(windowId) {
         ai.rever.boss.window.MenuActionsHandler.toggleFocusModeEvents
@@ -1422,7 +1433,11 @@ fun ComponentContext.BossApp(
             // Settings Window - always available, even in focus mode
             if (showSettingsDialog) {
                 SettingsWindow(
-                    onClose = { showSettingsDialog = false }
+                    onClose = {
+                        showSettingsDialog = false
+                        settingsInitialSection = null
+                    },
+                    initialSection = settingsInitialSection
                 )
             }
 

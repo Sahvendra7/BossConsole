@@ -1,22 +1,17 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalView
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalViewModel
+import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalContent
 import ai.rever.boss.components.registery.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.essenty.lifecycle.Lifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 
 object TerminalTab : TabTypeInfo {
     override val typeId = TabTypeId("terminal")
@@ -33,83 +28,49 @@ data class TerminalTabInfo(
     val initialCommand: String? = null
 ) : TabInfo
 
+/**
+ * Terminal tab component using BossTerm library for terminal emulation.
+ */
 class TerminalTabComponent(
     override val config: TabInfo,
     private val componentContext: ComponentContext,
     private val onClose: () -> Unit
 ) : TabComponentWithUI, ComponentContext by componentContext {
-    
+
     override val tabTypeInfo = TerminalTab
-    private val terminalViewModel = TerminalViewModel()
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
+
     init {
-        
-        // Dispose terminal when component is destroyed
         lifecycle.subscribe(
             callbacks = object : Lifecycle.Callbacks {
                 override fun onDestroy() {
-                    terminalViewModel.dispose()
                     coroutineScope.cancel()
                 }
             }
         )
-        
-        // Monitor terminal running state
-        coroutineScope.launch {
-            // Wait for terminal to fully initialize
-            
-            // First wait for terminal to start
-            var hasStarted = false
-            while (!hasStarted && isActive) {
-                if (terminalViewModel.wasStarted) {
-                    hasStarted = true
-                } else {
-                    delay(100)
-                }
-            }
-            
-            // Now monitor for when it stops
-            terminalViewModel.isRunning.collect { isRunning ->
-                if (hasStarted && !isRunning) {
-                    // Terminal was running but now stopped
-                    // Give a small delay to ensure clean shutdown
-                    delay(500)
-                    onClose()
-                }
-            }
-        }
     }
-    
+
     @Composable
     override fun Content() {
-        TerminalView(terminalViewModel)
+        val terminalConfig = config as? TerminalTabInfo
 
-        // Ensure terminal is started and send initial command if provided
-        LaunchedEffect(terminalViewModel) {
-            terminalViewModel.ensureStarted()
-
-            // Send initial command if provided
-            val terminalConfig = config as? TerminalTabInfo
-            val initialCommand = terminalConfig?.initialCommand
-            if (initialCommand != null) {
-                // Wait for terminal to initialize
-                delay(500)
-                terminalViewModel.sendInput(initialCommand + "\n")
-            }
-        }
+        TerminalContent(
+            terminalId = config.id,  // Use tab ID to persist state across composition changes
+            initialCommand = terminalConfig?.initialCommand,
+            onExit = { onClose() }
+        )
     }
 }
 
 fun DefaultPlugin.registerTerminalTab() = tabRegistry.registerTabType(TerminalTab) { config, context ->
     // Get the parent tab component through the component tree
     var parentTabsComponent: ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent? = null
-    
+
     // The context passed here is the BossTabsComponent itself
     if (context is ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent) {
         parentTabsComponent = context
     }
-    
+
     TerminalTabComponent(
         config = config,
         componentContext = context,
@@ -123,4 +84,4 @@ fun DefaultPlugin.registerTerminalTab() = tabRegistry.registerTabType(TerminalTa
             }
         }
     )
-} 
+}
