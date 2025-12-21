@@ -147,7 +147,7 @@ repositories {
 
 jxbrowser {
     // JxBrowser version - keep in sync with gradle/libs.versions.toml
-    version = "8.13.0"
+    version = "8.15.0"
 }
 
 kotlin {
