@@ -820,7 +820,13 @@ jobs:
 
   create-release:
     needs: [prepare-version, build-macos, build-linux-amd64, build-linux-arm64, build-windows]
-    if: needs.prepare-version.outputs.should-build == 'true'
+    # Run if required builds succeed, even if ARM64 fails/is cancelled (ARM64 is optional)
+    if: |
+      always() &&
+      needs.prepare-version.outputs.should-build == 'true' &&
+      needs.build-macos.result == 'success' &&
+      needs.build-linux-amd64.result == 'success' &&
+      needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
