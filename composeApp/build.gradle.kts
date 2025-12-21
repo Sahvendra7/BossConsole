@@ -695,6 +695,7 @@ tasks.register("signPty4jBinaries") {
 
                     if (nativeFiles.isNotEmpty()) {
                         println("Found ${nativeFiles.size} PTY4J native binary(ies) to sign:")
+                        var signingFailures = 0
 
                         for (nativeFile in nativeFiles) {
                             println("  Signing: ${nativeFile.relativeTo(tempDir)}")
@@ -722,8 +723,17 @@ tasks.register("signPty4jBinaries") {
 
                                 println("    ✅ Successfully signed ${nativeFile.name}")
                             } catch (e: Exception) {
-                                println("    ⚠️ Warning: Failed to sign ${nativeFile.name}: ${e.message}")
+                                signingFailures++
+                                println("    ❌ Failed to sign ${nativeFile.name}: ${e.message}")
                             }
+                        }
+
+                        // Fail the build if any native binary failed to sign
+                        if (signingFailures > 0) {
+                            throw GradleException(
+                                "❌ PTY4J signing failed: $signingFailures of ${nativeFiles.size} native binary(ies) could not be signed. " +
+                                "This will cause notarization to fail."
+                            )
                         }
 
                         // Recreate the jar with signed native libraries
