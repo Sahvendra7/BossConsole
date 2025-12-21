@@ -338,11 +338,24 @@ actual class UpdateService {
         return UpdateInstaller.getCurrentPlatform()
     }
 
+    /**
+     * Get the Linux architecture suffix based on the current system.
+     * Returns "arm64" for ARM64/aarch64 systems, "amd64" for x86_64 systems.
+     */
+    private fun getLinuxArchSuffix(): String {
+        val arch = System.getProperty("os.arch")
+        return when {
+            arch == "aarch64" || arch == "arm64" -> "arm64"
+            else -> "amd64"
+        }
+    }
+
     actual fun getExpectedAssetName(version: Version): String {
         return when (getCurrentPlatform()) {
             "macOS" -> "BOSS-${version}-Universal.dmg"
             "Windows" -> "BOSS-${version}.msi"
-            else -> "BOSS-${version}-all.jar"
+            "Linux" -> "BOSS-${version}-${getLinuxArchSuffix()}.deb"
+            else -> "BOSS-${version}-${getLinuxArchSuffix()}.jar"  // JAR with arch for native deps
         }
     }
 

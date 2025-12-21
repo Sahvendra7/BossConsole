@@ -63,12 +63,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -1148,15 +1147,15 @@ fun ComponentContext.BossApp(
                         )
                     }
 
-                    // Top bar - hidden in focus mode with smooth slide animation
+                    // Top bar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(
                         visible = showTopBar,
-                        enter = slideInVertically(
-                            initialOffsetY = { -it },
+                        enter = expandVertically(
+                            expandFrom = Alignment.Top,
                             animationSpec = tween(durationMillis = 250)
                         ),
-                        exit = slideOutVertically(
-                            targetOffsetY = { -it },
+                        exit = shrinkVertically(
+                            shrinkTowards = Alignment.Top,
                             animationSpec = tween(durationMillis = 250)
                         )
                     ) {
@@ -1193,19 +1192,17 @@ fun ComponentContext.BossApp(
                     }
 
                     Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .animateContentSize(animationSpec = tween(durationMillis = 250))
+                        modifier = Modifier.weight(1f)
                     ) {
-                        // Left sidebar - hidden in focus mode with smooth slide animation
+                        // Left sidebar - hidden in focus mode with smooth expand/shrink animation
                         AnimatedVisibility(
                             visible = showLeftSidebar,
-                            enter = slideInHorizontally(
-                                initialOffsetX = { -it },
+                            enter = expandHorizontally(
+                                expandFrom = Alignment.Start,
                                 animationSpec = tween(durationMillis = 250)
                             ),
-                            exit = slideOutHorizontally(
-                                targetOffsetX = { -it },
+                            exit = shrinkHorizontally(
+                                shrinkTowards = Alignment.Start,
                                 animationSpec = tween(durationMillis = 250)
                             )
                         ) {
@@ -1224,15 +1221,15 @@ fun ComponentContext.BossApp(
                             splitViewState = splitViewState
                         )
 
-                        // Right sidebar - hidden in focus mode with smooth slide animation
+                        // Right sidebar - hidden in focus mode with smooth expand/shrink animation
                         AnimatedVisibility(
                             visible = showRightSidebar,
-                            enter = slideInHorizontally(
-                                initialOffsetX = { it },
+                            enter = expandHorizontally(
+                                expandFrom = Alignment.End,
                                 animationSpec = tween(durationMillis = 250)
                             ),
-                            exit = slideOutHorizontally(
-                                targetOffsetX = { it },
+                            exit = shrinkHorizontally(
+                                shrinkTowards = Alignment.End,
                                 animationSpec = tween(durationMillis = 250)
                             )
                         ) {
@@ -1244,15 +1241,15 @@ fun ComponentContext.BossApp(
                         }
                     }
 
-                    // Bottom bar - hidden in focus mode with smooth slide animation
+                    // Bottom bar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(
                         visible = showBottomBar,
-                        enter = slideInVertically(
-                            initialOffsetY = { it },
+                        enter = expandVertically(
+                            expandFrom = Alignment.Bottom,
                             animationSpec = tween(durationMillis = 250)
                         ),
-                        exit = slideOutVertically(
-                            targetOffsetY = { it },
+                        exit = shrinkVertically(
+                            shrinkTowards = Alignment.Bottom,
                             animationSpec = tween(durationMillis = 250)
                         )
                     ) {

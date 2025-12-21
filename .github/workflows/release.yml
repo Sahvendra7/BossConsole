@@ -369,7 +369,7 @@ jobs:
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
           retention-days: 30
 
-  build-linux:
+  build-linux-amd64:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: ubuntu-latest
@@ -393,15 +393,15 @@ jobs:
 
       - name: 🔧 Setup Build Environment
         run: |
-          echo "🔧 Setting up build environment for Linux"
+          echo "🔧 Setting up build environment for Linux AMD64"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-          
+
           # Verify version consistency
           ./gradlew showVersion
 
-      - name: 🏗️ Build Linux Packages
+      - name: 🏗️ Build Linux Packages (AMD64)
         run: |
-          echo "🏗️ Building Linux packages..."
+          echo "🏗️ Building Linux AMD64 packages..."
 
           # Create DEB and RPM packages
           ./gradlew :composeApp:packageDistributionForCurrentOS
@@ -411,7 +411,7 @@ jobs:
           ./gradlew :composeApp:createExecutableJar
           echo "✅ Executable JAR created successfully"
 
-      - name: 🔍 Verify Built Version (Linux)
+      - name: 🔍 Verify Built Version (Linux AMD64)
         run: |
           echo "🔍 Verifying version inside built artifacts..."
 
@@ -447,10 +447,10 @@ jobs:
             exit 1
           fi
 
-      - name: 📊 Verify Linux Build Artifacts
+      - name: 📊 Verify Linux Build Artifacts (AMD64)
         run: |
-          echo "📊 Verifying Linux packages..."
-          
+          echo "📊 Verifying Linux AMD64 packages..."
+
           # Check for DEB files
           if ls composeApp/build/compose/binaries/main/deb/*.deb 1> /dev/null 2>&1; then
             echo "✅ DEB package found!"
@@ -458,7 +458,7 @@ jobs:
           else
             echo "⚠️ DEB package not found"
           fi
-          
+
           # Check for RPM files
           if ls composeApp/build/compose/binaries/main/rpm/*.rpm 1> /dev/null 2>&1; then
             echo "✅ RPM package found!"
@@ -466,7 +466,7 @@ jobs:
           else
             echo "⚠️ RPM package not found"
           fi
-          
+
           # Check for JAR files
           if ls composeApp/build/libs/*-all.jar 1> /dev/null 2>&1; then
             echo "✅ Executable JAR found!"
@@ -475,10 +475,127 @@ jobs:
             echo "⚠️ Executable JAR not found"
           fi
 
-      - name: 📤 Upload Linux Packages
+      - name: 📤 Upload Linux Packages (AMD64)
         uses: actions/upload-artifact@v5
         with:
-          name: boss-linux-${{ needs.prepare-version.outputs.version }}
+          name: boss-linux-amd64-${{ needs.prepare-version.outputs.version }}
+          path: |
+            composeApp/build/compose/binaries/main/deb/
+            composeApp/build/compose/binaries/main/rpm/
+            composeApp/build/libs/*-all.jar
+          retention-days: 30
+
+  build-linux-arm64:
+    needs: prepare-version
+    if: needs.prepare-version.outputs.should-build == 'true'
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true  # Graceful failure if ARM runners unavailable
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
+
+      - name: 🔧 Setup Build Environment
+        run: |
+          echo "🔧 Setting up build environment for Linux ARM64"
+          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+
+          # Verify version consistency
+          ./gradlew showVersion
+
+      - name: 🏗️ Build Linux Packages (ARM64)
+        run: |
+          echo "🏗️ Building Linux ARM64 packages..."
+
+          # Create DEB and RPM packages
+          ./gradlew :composeApp:packageDistributionForCurrentOS
+          echo "✅ Linux native packages (DEB, RPM) created successfully"
+
+          # Create executable JAR for ARM64 Linux distribution
+          ./gradlew :composeApp:createExecutableJar
+          echo "✅ Executable JAR created successfully"
+
+      - name: 🔍 Verify Built Version (Linux ARM64)
+        run: |
+          echo "🔍 Verifying version inside built artifacts..."
+
+          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check generated VersionConstants.kt
+          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if [[ -f "$GENERATED_FILE" ]]; then
+            echo "Checking generated VersionConstants.kt..."
+
+            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+
+            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+
+            if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "❌ VERSION MISMATCH DETECTED!"
+              echo "   Expected: $EXPECTED_VERSION"
+              echo "   Built: $BUILT_VERSION"
+              echo "   This is the root cause of Issue #111"
+              echo ""
+              echo "VersionConstants.kt contents:"
+              cat "$GENERATED_FILE"
+              exit 1
+            else
+              echo "✅ Version verification passed: $BUILT_VERSION"
+            fi
+          else
+            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            exit 1
+          fi
+
+      - name: 📊 Verify Linux Build Artifacts (ARM64)
+        run: |
+          echo "📊 Verifying Linux ARM64 packages..."
+
+          # Check for DEB files
+          if ls composeApp/build/compose/binaries/main/deb/*.deb 1> /dev/null 2>&1; then
+            echo "✅ DEB package found!"
+            ls -la composeApp/build/compose/binaries/main/deb/
+          else
+            echo "⚠️ DEB package not found"
+          fi
+
+          # Check for RPM files
+          if ls composeApp/build/compose/binaries/main/rpm/*.rpm 1> /dev/null 2>&1; then
+            echo "✅ RPM package found!"
+            ls -la composeApp/build/compose/binaries/main/rpm/
+          else
+            echo "⚠️ RPM package not found"
+          fi
+
+          # Check for JAR files
+          if ls composeApp/build/libs/*-all.jar 1> /dev/null 2>&1; then
+            echo "✅ Executable JAR found!"
+            ls -la composeApp/build/libs/*-all.jar
+          else
+            echo "⚠️ Executable JAR not found"
+          fi
+
+      - name: 📤 Upload Linux Packages (ARM64)
+        uses: actions/upload-artifact@v5
+        with:
+          name: boss-linux-arm64-${{ needs.prepare-version.outputs.version }}
           path: |
             composeApp/build/compose/binaries/main/deb/
             composeApp/build/compose/binaries/main/rpm/
@@ -702,7 +819,7 @@ jobs:
           retention-days: 30
 
   create-release:
-    needs: [prepare-version, build-macos, build-linux, build-windows]
+    needs: [prepare-version, build-macos, build-linux-amd64, build-linux-arm64, build-windows]
     if: needs.prepare-version.outputs.should-build == 'true'
     runs-on: ubuntu-latest
 
@@ -721,17 +838,26 @@ jobs:
         run: |
           echo "📋 Preparing release assets..."
           mkdir -p ./release-assets
-          
+
           # Copy and rename artifacts with consistent naming
           VERSION="${{ needs.prepare-version.outputs.version }}"
-          
-          # Find and copy artifacts
-          find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
-          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \;
-          find ./artifacts -name "*.deb" -exec cp {} ./release-assets/BOSS-${VERSION}.deb \;
-          find ./artifacts -name "*.rpm" -exec cp {} ./release-assets/BOSS-${VERSION}.rpm \;
-          find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}.jar \;
-          
+
+          # macOS Universal
+          find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \; 2>/dev/null || true
+
+          # Windows
+          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \; 2>/dev/null || true
+
+          # Linux AMD64 artifacts (use path matching)
+          find ./artifacts -name "*.deb" -path "*amd64*" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.deb \; 2>/dev/null || true
+          find ./artifacts -name "*.rpm" -path "*amd64*" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.rpm \; 2>/dev/null || true
+          find ./artifacts -name "*-all.jar" -path "*amd64*" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.jar \; 2>/dev/null || true
+
+          # Linux ARM64 artifacts (tolerate missing - ARM64 build may fail)
+          find ./artifacts -name "*.deb" -path "*arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-arm64.deb \; 2>/dev/null || true
+          find ./artifacts -name "*.rpm" -path "*arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-arm64.rpm \; 2>/dev/null || true
+          find ./artifacts -name "*-all.jar" -path "*arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-arm64.jar \; 2>/dev/null || true
+
           # List final artifacts
           echo "📦 Release assets:"
           ls -la ./release-assets/
@@ -740,74 +866,96 @@ jobs:
         id: release-notes
         run: |
           VERSION="${{ needs.prepare-version.outputs.version }}"
-          
+
           # Generate release notes
           cat > release-notes.md << EOF
           # 🚀 BOSS $VERSION
-          
+
           ## 📦 Downloads
-          
-          - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
-          - **Windows**: \`BOSS-${VERSION}.msi\` (x64)
-          - **Linux DEB**: \`BOSS-${VERSION}.deb\` (Ubuntu/Debian)
-          - **Linux RPM**: \`BOSS-${VERSION}.rpm\` (RHEL/Fedora/openSUSE)
-          - **Linux JAR**: \`BOSS-${VERSION}.jar\` (Universal Linux)
-          
+
+          | Platform | Architecture | Package |
+          |----------|--------------|---------|
+          | **macOS** | Universal (Apple Silicon & Intel) | \`BOSS-${VERSION}-Universal.dmg\` |
+          | **Windows** | x64 | \`BOSS-${VERSION}.msi\` |
+          | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.deb\` |
+          | **Linux DEB** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.deb\` |
+          | **Linux RPM** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.rpm\` |
+          | **Linux RPM** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.rpm\` |
+          | **Linux JAR** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.jar\` |
+          | **Linux JAR** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.jar\` |
+
           ## ✨ What's New
-          
+
           - Auto-generated release for version $VERSION
           - Built with centralized version management system
           - All platforms synchronized and tested
-          - Full Linux support with native packages
-          
+          - Full Linux support with native packages (AMD64 and ARM64)
+
           ## 🔧 System Requirements
-          
+
           - **macOS**: macOS 11.0+ (Big Sur)
           - **Windows**: Windows 10+ (64-bit)
-          - **Linux**: Any modern distribution (64-bit)
-          
+          - **Linux**: Any modern distribution (AMD64 or ARM64)
+
           ## 🛠️ Installation
-          
+
           ### macOS
           1. Download \`BOSS-${VERSION}-Universal.dmg\`
           2. Open the DMG and drag BOSS to Applications
           3. Launch from Applications folder
-          
-          ### Windows
+
+          ### Windows (64-bit)
           1. Download \`BOSS-${VERSION}.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
-          
-          ### Linux
-          
+
+          ### Linux (AMD64 / x86_64)
+
           **Ubuntu/Debian:**
           \`\`\`bash
-          # Download and install DEB package
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.deb
-          sudo dpkg -i BOSS-${VERSION}.deb
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.deb
+          sudo dpkg -i BOSS-${VERSION}-amd64.deb
           sudo apt-get install -f  # Fix any missing dependencies
           \`\`\`
-          
+
           **RHEL/Fedora/openSUSE:**
           \`\`\`bash
-          # Download and install RPM package
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.rpm
-          sudo rpm -i BOSS-${VERSION}.rpm
-          # OR for Fedora: sudo dnf install BOSS-${VERSION}.rpm
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.rpm
+          sudo rpm -i BOSS-${VERSION}-amd64.rpm
           \`\`\`
-          
-          **Universal (Any Linux):**
+
+          **JAR (requires Java 17+):**
           \`\`\`bash
-          # Download and run JAR (requires Java 17+)
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.jar
-          java -jar BOSS-${VERSION}.jar
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.jar
+          java -jar BOSS-${VERSION}-amd64.jar
           \`\`\`
-          
+
+          ### Linux (ARM64 / aarch64)
+
+          **Ubuntu/Debian:**
+          \`\`\`bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.deb
+          sudo dpkg -i BOSS-${VERSION}-arm64.deb
+          sudo apt-get install -f  # Fix any missing dependencies
+          \`\`\`
+
+          **RHEL/Fedora/openSUSE:**
+          \`\`\`bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.rpm
+          sudo rpm -i BOSS-${VERSION}-arm64.rpm
+          \`\`\`
+
+          **JAR (requires Java 17+):**
+          \`\`\`bash
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.jar
+          java -jar BOSS-${VERSION}-arm64.jar
+          \`\`\`
+
           ---
-          
+
           🤖 *This release was automatically built and published by GitHub Actions*
           EOF
-          
+
           # Set output for release creation
           echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
 
@@ -831,12 +979,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Platforms Built**: macOS, Linux, Windows" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Platforms Built**: macOS, Linux (AMD64 + ARM64), Windows" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux DEB (Ubuntu/Debian)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux RPM (RHEL/Fedora)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux JAR (Universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🍎 macOS DMG (Universal - Apple Silicon & Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux DEB (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux RPM (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux JAR (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY

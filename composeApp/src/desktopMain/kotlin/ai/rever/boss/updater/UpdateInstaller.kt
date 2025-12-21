@@ -82,7 +82,9 @@ object UpdateInstaller {
      * Expected formats:
      * - macOS: BOSS-8.12.18-Universal.dmg
      * - Windows: BOSS-8.12.18.msi
-     * - Linux: BOSS-8.12.18.jar
+     * - Linux DEB: BOSS-8.12.18-amd64.deb or BOSS-8.12.18-arm64.deb
+     * - Linux RPM: BOSS-8.12.18-amd64.rpm or BOSS-8.12.18-arm64.rpm
+     * - Linux JAR: BOSS-8.12.18-amd64.jar or BOSS-8.12.18-arm64.jar
      *
      * @param file The update file
      * @return Parsed version, or null if version cannot be extracted
@@ -92,10 +94,16 @@ object UpdateInstaller {
             val filename = file.name
             println("Extracting version from filename: $filename")
 
-            // Remove BOSS- prefix and file extension
+            // Remove BOSS- prefix and file extension (with architecture suffixes)
             val versionStr = filename
                 .removePrefix("BOSS-")
                 .removeSuffix("-Universal.dmg")
+                .removeSuffix("-amd64.deb")
+                .removeSuffix("-arm64.deb")
+                .removeSuffix("-amd64.rpm")
+                .removeSuffix("-arm64.rpm")
+                .removeSuffix("-amd64.jar")
+                .removeSuffix("-arm64.jar")
                 .removeSuffix(".dmg")
                 .removeSuffix(".msi")
                 .removeSuffix(".jar")
