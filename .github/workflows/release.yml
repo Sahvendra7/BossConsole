@@ -478,7 +478,7 @@ jobs:
       - name: 📤 Upload Linux Packages
         uses: actions/upload-artifact@v5
         with:
-          name: boss-linux-${{ needs.prepare-version.outputs.version }}
+          name: boss-linux-amd64-${{ needs.prepare-version.outputs.version }}
           path: |
             composeApp/build/compose/binaries/main/deb/
             composeApp/build/compose/binaries/main/rpm/
@@ -727,9 +727,9 @@ jobs:
           
           # Find and copy artifacts
           find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
-          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \;
-          find ./artifacts -name "*.deb" -exec cp {} ./release-assets/BOSS-${VERSION}.deb \;
-          find ./artifacts -name "*.rpm" -exec cp {} ./release-assets/BOSS-${VERSION}.rpm \;
+          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}-x64.msi \;
+          find ./artifacts -name "*.deb" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.deb \;
+          find ./artifacts -name "*.rpm" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.rpm \;
           find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}.jar \;
           
           # List final artifacts
@@ -744,14 +744,14 @@ jobs:
           # Generate release notes
           cat > release-notes.md << EOF
           # 🚀 BOSS $VERSION
-          
+
           ## 📦 Downloads
-          
+
           - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
-          - **Windows**: \`BOSS-${VERSION}.msi\` (x64)
-          - **Linux DEB**: \`BOSS-${VERSION}.deb\` (Ubuntu/Debian)
-          - **Linux RPM**: \`BOSS-${VERSION}.rpm\` (RHEL/Fedora/openSUSE)
-          - **Linux JAR**: \`BOSS-${VERSION}.jar\` (Universal Linux)
+          - **Windows**: \`BOSS-${VERSION}-x64.msi\` (64-bit)
+          - **Linux DEB**: \`BOSS-${VERSION}-amd64.deb\` (Ubuntu/Debian x86_64)
+          - **Linux RPM**: \`BOSS-${VERSION}-amd64.rpm\` (RHEL/Fedora/openSUSE x86_64)
+          - **Linux JAR**: \`BOSS-${VERSION}.jar\` (Universal - requires Java 17+)
           
           ## ✨ What's New
           
@@ -773,27 +773,27 @@ jobs:
           2. Open the DMG and drag BOSS to Applications
           3. Launch from Applications folder
           
-          ### Windows
-          1. Download \`BOSS-${VERSION}.msi\`
+          ### Windows (64-bit)
+          1. Download \`BOSS-${VERSION}-x64.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
           
-          ### Linux
-          
+          ### Linux (x86_64/amd64)
+
           **Ubuntu/Debian:**
           \`\`\`bash
           # Download and install DEB package
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.deb
-          sudo dpkg -i BOSS-${VERSION}.deb
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.deb
+          sudo dpkg -i BOSS-${VERSION}-amd64.deb
           sudo apt-get install -f  # Fix any missing dependencies
           \`\`\`
-          
+
           **RHEL/Fedora/openSUSE:**
           \`\`\`bash
           # Download and install RPM package
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}.rpm
-          sudo rpm -i BOSS-${VERSION}.rpm
-          # OR for Fedora: sudo dnf install BOSS-${VERSION}.rpm
+          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.rpm
+          sudo rpm -i BOSS-${VERSION}-amd64.rpm
+          # OR for Fedora: sudo dnf install BOSS-${VERSION}-amd64.rpm
           \`\`\`
           
           **Universal (Any Linux):**
@@ -835,8 +835,8 @@ jobs:
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- 🍎 macOS DMG (Universal)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux DEB (Ubuntu/Debian)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux RPM (RHEL/Fedora)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐧 Linux JAR (Universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🍎 macOS DMG (Universal - Apple Silicon & Intel)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux DEB (amd64/x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux RPM (amd64/x86_64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐧 Linux JAR (Universal - requires Java 17+)" >> $GITHUB_STEP_SUMMARY
           echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
