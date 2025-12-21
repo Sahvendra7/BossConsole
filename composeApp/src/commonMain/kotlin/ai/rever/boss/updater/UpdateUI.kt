@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -14,14 +14,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.rever.boss.utils.Version
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
+// Banner colors matching BossTerm's dark theme
+private val BannerBackground = Color(0xFF1E1E1E)
+private val AccentBlue = Color(0xFF4A90E2)
+private val AccentGreen = Color(0xFF4CAF50)
+private val AccentOrange = Color(0xFFFF9800)
+private val AccentRed = Color(0xFFF44336)
+private val TextGray = Color(0xFF808080)
+private val ProgressBackground = Color(0xFF404040)
+
 /**
- * Update notification banner that appears at the top of the application
+ * Update notification banner that appears at the top of the application.
+ * Uses a sleek, compact dark theme matching BossTerm's design.
  */
 @Composable
 fun UpdateBanner(
@@ -67,58 +78,57 @@ private fun UpdateAvailableBanner(
     onDownload: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        backgroundColor = Color(0xFF2196F3),
-        shape = RoundedCornerShape(8.dp),
-        elevation = 4.dp
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BannerBackground
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
                 Icon(
-                    Icons.Default.CloudDownload,
+                    Icons.Default.KeyboardArrowDown,
                     contentDescription = "Update Available",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    tint = AccentBlue,
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        "Update Available: v${updateInfo.latestVersion}",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "Current version: v${updateInfo.currentVersion}",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp
-                    )
-                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Update v${updateInfo.latestVersion} available",
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    "(current: v${updateInfo.currentVersion})",
+                    color = TextGray,
+                    fontSize = 12.sp
+                )
             }
-            
+
             Row {
                 TextButton(
                     onClick = onDownload,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    colors = ButtonDefaults.textButtonColors(contentColor = AccentBlue),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Text("Download")
+                    Text("Download", fontSize = 11.sp)
                 }
                 TextButton(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.7f))
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextGray),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Text("Dismiss")
+                    Text("Dismiss", fontSize = 11.sp)
                 }
             }
         }
@@ -127,44 +137,36 @@ private fun UpdateAvailableBanner(
 
 @Composable
 private fun DownloadProgressBanner(progress: Float) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        backgroundColor = Color(0xFF4CAF50),
-        shape = RoundedCornerShape(8.dp),
-        elevation = 4.dp
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BannerBackground
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.CloudDownload,
-                    contentDescription = "Downloading",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    "Downloading update... ${(progress * 100).toInt()}%",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
+            Icon(
+                Icons.Default.KeyboardArrowDown,
+                contentDescription = "Downloading",
+                tint = AccentGreen,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Downloading... ${(progress * 100).toInt()}%",
+                color = Color.White,
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.width(12.dp))
             LinearProgressIndicator(
                 progress = progress,
-                modifier = Modifier.fillMaxWidth(),
-                color = Color.White,
-                backgroundColor = Color.White.copy(alpha = 0.3f)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(4.dp),
+                color = AccentGreen,
+                backgroundColor = ProgressBackground
             )
         }
     }
@@ -174,18 +176,14 @@ private fun DownloadProgressBanner(progress: Float) {
 private fun ReadyToInstallBanner(
     onInstall: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        backgroundColor = Color(0xFFFF9800),
-        shape = RoundedCornerShape(8.dp),
-        elevation = 4.dp
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BannerBackground
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -195,26 +193,24 @@ private fun ReadyToInstallBanner(
                 Icon(
                     Icons.Default.Info,
                     contentDescription = "Ready to Install",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    tint = AccentOrange,
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     "Update ready to install",
                     color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 12.sp
                 )
             }
-            
-            Button(
+
+            TextButton(
                 onClick = onInstall,
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color.White,
-                    contentColor = Color(0xFFFF9800)
-                )
+                colors = ButtonDefaults.textButtonColors(contentColor = AccentOrange),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                modifier = Modifier.height(28.dp)
             ) {
-                Text("Install Now")
+                Text("Install Now", fontSize = 11.sp)
             }
         }
     }
@@ -222,32 +218,27 @@ private fun ReadyToInstallBanner(
 
 @Composable
 private fun RestartRequiredBanner() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        backgroundColor = Color(0xFF9C27B0),
-        shape = RoundedCornerShape(8.dp),
-        elevation = 4.dp
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BannerBackground
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Default.Refresh,
-                contentDescription = "Restart Required",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+                contentDescription = "Installing",
+                tint = AccentBlue,
+                modifier = Modifier.size(16.dp)
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                "Update installed successfully. Please restart the application.",
+                "Installing update... Please wait.",
                 color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                fontSize = 12.sp
             )
         }
     }
@@ -259,58 +250,53 @@ private fun ErrorBanner(
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        backgroundColor = Color(0xFFF44336),
-        shape = RoundedCornerShape(8.dp),
-        elevation = 4.dp
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = BannerBackground
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = "Error",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    tint = AccentRed,
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        "Update Error",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        message,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp
-                    )
-                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Update error: $message",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            
+
             Row {
                 TextButton(
                     onClick = onRetry,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    colors = ButtonDefaults.textButtonColors(contentColor = AccentBlue),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Text("Retry")
+                    Text("Retry", fontSize = 11.sp)
                 }
                 TextButton(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.7f))
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextGray),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Text("Dismiss")
+                    Text("Dismiss", fontSize = 11.sp)
                 }
             }
         }
