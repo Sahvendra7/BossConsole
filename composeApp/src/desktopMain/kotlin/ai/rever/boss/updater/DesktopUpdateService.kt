@@ -341,8 +341,9 @@ actual class UpdateService {
     actual fun getExpectedAssetName(version: Version): String {
         return when (getCurrentPlatform()) {
             "macOS" -> "BOSS-${version}-Universal.dmg"
-            "Windows" -> "BOSS-${version}.msi"
-            else -> "BOSS-${version}-all.jar"
+            "Windows" -> "BOSS-${version}-x64.msi"
+            "Linux" -> "BOSS-${version}-amd64.deb"  // Primary Linux format
+            else -> "BOSS-${version}.jar"  // Universal JAR fallback
         }
     }
 
