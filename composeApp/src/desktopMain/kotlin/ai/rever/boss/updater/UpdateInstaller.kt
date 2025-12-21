@@ -81,7 +81,7 @@ object UpdateInstaller {
      *
      * Expected formats:
      * - macOS: BOSS-8.12.18-Universal.dmg
-     * - Windows: BOSS-8.12.18-x64.msi
+     * - Windows: BOSS-8.12.18.msi
      * - Linux DEB: BOSS-8.12.18-amd64.deb
      * - Linux RPM: BOSS-8.12.18-amd64.rpm
      * - Universal: BOSS-8.12.18.jar
@@ -98,7 +98,6 @@ object UpdateInstaller {
             val versionStr = filename
                 .removePrefix("BOSS-")
                 .removeSuffix("-Universal.dmg")
-                .removeSuffix("-x64.msi")
                 .removeSuffix("-amd64.deb")
                 .removeSuffix("-amd64.rpm")
                 .removeSuffix(".dmg")

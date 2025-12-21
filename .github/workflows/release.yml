@@ -727,7 +727,7 @@ jobs:
           
           # Find and copy artifacts
           find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \;
-          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}-x64.msi \;
+          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \;
           find ./artifacts -name "*.deb" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.deb \;
           find ./artifacts -name "*.rpm" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.rpm \;
           find ./artifacts -name "*-all.jar" -exec cp {} ./release-assets/BOSS-${VERSION}.jar \;
@@ -748,7 +748,7 @@ jobs:
           ## 📦 Downloads
 
           - **macOS**: \`BOSS-${VERSION}-Universal.dmg\` (Apple Silicon & Intel)
-          - **Windows**: \`BOSS-${VERSION}-x64.msi\` (64-bit)
+          - **Windows**: \`BOSS-${VERSION}.msi\` (64-bit)
           - **Linux DEB**: \`BOSS-${VERSION}-amd64.deb\` (Ubuntu/Debian x86_64)
           - **Linux RPM**: \`BOSS-${VERSION}-amd64.rpm\` (RHEL/Fedora/openSUSE x86_64)
           - **Linux JAR**: \`BOSS-${VERSION}.jar\` (Universal - requires Java 17+)
@@ -774,7 +774,7 @@ jobs:
           3. Launch from Applications folder
           
           ### Windows (64-bit)
-          1. Download \`BOSS-${VERSION}-x64.msi\`
+          1. Download \`BOSS-${VERSION}.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
           
