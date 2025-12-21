@@ -52,9 +52,11 @@ fun ApplicationScope.BossWindow(
     }
 
     // Remember window state for Compose Window
+    // Main window starts maximized, other windows use calculated size
     val composeWindowState = rememberWindowState(
         position = windowState.position ?: WindowPosition.Aligned(Alignment.Center),
-        size = windowSize
+        size = windowSize,
+        placement = if (windowState.windowType == WindowType.MAIN) WindowPlacement.Maximized else WindowPlacement.Floating
     )
 
     // Track full screen state for reactive menu text
