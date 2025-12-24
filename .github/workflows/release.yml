@@ -488,7 +488,7 @@ jobs:
   build-linux-arm64:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: linux_arm64
     continue-on-error: true  # Graceful failure if ARM runners unavailable
 
     steps:
