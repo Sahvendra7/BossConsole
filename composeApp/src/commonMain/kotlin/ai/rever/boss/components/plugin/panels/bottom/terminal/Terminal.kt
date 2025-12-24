@@ -104,6 +104,25 @@ expect fun TerminalContent(
     onExit: () -> Unit = {}
 )
 
+/**
+ * Platform-specific tabbed terminal with persistent state.
+ * Desktop: Uses BossTerm's TabbedTerminal with TabbedTerminalStateRegistry
+ * Other platforms: Shows placeholder (terminal not supported)
+ *
+ * This provides full-featured terminal (splits, multiple tabs) with state
+ * persistence across composition changes (e.g., when switching parent tabs).
+ *
+ * @param terminalId Unique ID for this terminal instance, used as key in state registry
+ * @param onExit Called when the last terminal tab is closed
+ * @param onShowSettings Called when user requests settings
+ */
+@Composable
+expect fun PersistentTabbedTerminalContent(
+    terminalId: String,
+    onExit: () -> Unit = {},
+    onShowSettings: () -> Unit = {}
+)
+
 fun DefaultPlugin.registerTerminal() = panelRegistry.registerPanel(TerminalInfo) {
     ctx, panelInfo -> TerminalComponent(ctx, panelInfo)
 }

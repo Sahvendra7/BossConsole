@@ -51,3 +51,25 @@ actual fun TerminalContent(
         )
     }
 }
+
+/**
+ * WASM stub implementation - persistent tabbed terminal not supported in browser.
+ */
+@Composable
+actual fun PersistentTabbedTerminalContent(
+    terminalId: String,
+    onExit: () -> Unit,
+    onShowSettings: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E1E1E)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Terminal is not supported in browser",
+            color = Color.Gray
+        )
+    }
+}

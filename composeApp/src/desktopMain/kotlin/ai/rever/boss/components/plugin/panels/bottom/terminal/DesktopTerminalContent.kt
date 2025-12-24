@@ -3,10 +3,15 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
+import ai.rever.bossterm.compose.TabbedTerminalState
 import ai.rever.bossterm.compose.rememberEmbeddableTerminalState
+import ai.rever.bossterm.compose.settings.SettingsManager
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
@@ -24,11 +29,75 @@ actual fun TabbedTerminalContent(
     onExit: () -> Unit,
     onShowSettings: () -> Unit
 ) {
-    TabbedTerminal(
-        onExit = onExit,
-        onShowSettings = onShowSettings,
-        modifier = Modifier.fillMaxSize()
-    )
+    val settings by SettingsManager.instance.settings.collectAsState()
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = settings.defaultBackgroundColor
+    ) {
+        TabbedTerminal(
+            onExit = onExit,
+            onShowSettings = onShowSettings,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/**
+ * TabbedTerminal with persistent state across composition changes.
+ * Uses TabbedTerminalStateRegistry to preserve terminal sessions when switching tabs.
+ *
+ * @param terminalId Unique ID for this terminal instance, used as key in state registry
+ * @param onExit Called when the last terminal tab is closed
+ * @param onShowSettings Called when user requests settings
+ */
+@Composable
+actual fun PersistentTabbedTerminalContent(
+    terminalId: String,
+    onExit: () -> Unit,
+    onShowSettings: () -> Unit
+) {
+    val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
+    val settings by SettingsManager.instance.settings.collectAsState()
+
+    DisposableEffect(terminalId) {
+        onDispose {
+            // Don't remove from registry here - cleanup happens when tab is closed
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = settings.defaultBackgroundColor
+    ) {
+        TabbedTerminal(
+            state = state,
+            onExit = {
+                TabbedTerminalStateRegistry.remove(terminalId)
+                onExit()
+            },
+            onShowSettings = onShowSettings,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/**
+ * Registry to store TabbedTerminal states by ID, allowing them to persist across
+ * composition tree changes (e.g., when switching tabs).
+ */
+object TabbedTerminalStateRegistry {
+    private val states = mutableMapOf<String, TabbedTerminalState>()
+
+    fun getOrCreate(terminalId: String): TabbedTerminalState {
+        return states.getOrPut(terminalId) { TabbedTerminalState() }
+    }
+
+    fun remove(terminalId: String) {
+        states.remove(terminalId)?.dispose()
+    }
+
+    fun contains(terminalId: String): Boolean = terminalId in states
 }
 
 /**
@@ -85,22 +154,22 @@ actual fun TerminalContent(
     }
 
     val (state, shouldSendInitialCommand) = terminalState
+    val settings by SettingsManager.instance.settings.collectAsState()
 
-    EmbeddableTerminal(
-        state = state,
-        onExit = { _ ->
-            // Clean up registry when terminal exits
-            terminalId?.let { TerminalStateRegistry.remove(it) }
-            onExit()
-        },
-        onReady = {
-            // Send initial command only for new terminals
-            if (shouldSendInitialCommand) {
-                initialCommand?.let { cmd ->
-                    state.write(cmd + "\n")
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = settings.defaultBackgroundColor
+    ) {
+        EmbeddableTerminal(
+            state = state,
+            // Only send initial command for newly created terminals
+            initialCommand = if (shouldSendInitialCommand) initialCommand else null,
+            onExit = { _ ->
+                // Clean up registry when terminal exits
+                terminalId?.let { TerminalStateRegistry.remove(it) }
+                onExit()
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
