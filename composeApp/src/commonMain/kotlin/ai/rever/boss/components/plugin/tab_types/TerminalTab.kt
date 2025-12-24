@@ -1,8 +1,9 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalContent
+import ai.rever.boss.components.plugin.panels.bottom.terminal.PersistentTabbedTerminalContent
 import ai.rever.boss.components.registery.*
+import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.Composable
@@ -52,12 +53,12 @@ class TerminalTabComponent(
 
     @Composable
     override fun Content() {
-        val terminalConfig = config as? TerminalTabInfo
-
-        TerminalContent(
-            terminalId = config.id,  // Use tab ID to persist state across composition changes
-            initialCommand = terminalConfig?.initialCommand,
-            onExit = { onClose() }
+        PersistentTabbedTerminalContent(
+            terminalId = config.id,
+            onExit = { onClose() },
+            onShowSettings = {
+                MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")
+            }
         )
     }
 }

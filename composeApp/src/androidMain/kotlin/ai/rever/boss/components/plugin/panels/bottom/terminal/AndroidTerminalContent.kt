@@ -51,3 +51,25 @@ actual fun TerminalContent(
         )
     }
 }
+
+/**
+ * Android stub implementation - persistent tabbed terminal not supported on mobile.
+ */
+@Composable
+actual fun PersistentTabbedTerminalContent(
+    terminalId: String,
+    onExit: () -> Unit,
+    onShowSettings: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E1E1E)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Terminal is not supported on Android",
+            color = Color.Gray
+        )
+    }
+}
