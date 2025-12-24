@@ -4,9 +4,13 @@ import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
 import ai.rever.bossterm.compose.rememberEmbeddableTerminalState
+import ai.rever.bossterm.compose.settings.SettingsManager
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
@@ -24,11 +28,18 @@ actual fun TabbedTerminalContent(
     onExit: () -> Unit,
     onShowSettings: () -> Unit
 ) {
-    TabbedTerminal(
-        onExit = onExit,
-        onShowSettings = onShowSettings,
-        modifier = Modifier.fillMaxSize()
-    )
+    val settings by SettingsManager.instance.settings.collectAsState()
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = settings.defaultBackgroundColor
+    ) {
+        TabbedTerminal(
+            onExit = onExit,
+            onShowSettings = onShowSettings,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
 
 /**
@@ -85,22 +96,22 @@ actual fun TerminalContent(
     }
 
     val (state, shouldSendInitialCommand) = terminalState
+    val settings by SettingsManager.instance.settings.collectAsState()
 
-    EmbeddableTerminal(
-        state = state,
-        onExit = { _ ->
-            // Clean up registry when terminal exits
-            terminalId?.let { TerminalStateRegistry.remove(it) }
-            onExit()
-        },
-        onReady = {
-            // Send initial command only for new terminals
-            if (shouldSendInitialCommand) {
-                initialCommand?.let { cmd ->
-                    state.write(cmd + "\n")
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = settings.defaultBackgroundColor
+    ) {
+        EmbeddableTerminal(
+            state = state,
+            // Only send initial command for newly created terminals
+            initialCommand = if (shouldSendInitialCommand) initialCommand else null,
+            onExit = { _ ->
+                // Clean up registry when terminal exits
+                terminalId?.let { TerminalStateRegistry.remove(it) }
+                onExit()
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
