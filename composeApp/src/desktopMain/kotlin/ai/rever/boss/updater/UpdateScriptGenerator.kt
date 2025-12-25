@@ -369,12 +369,22 @@ object UpdateScriptGenerator {
                 echo "Installation failed, trying to fix dependencies..."
                 if command -v pkexec &> /dev/null; then
                     pkexec apt-get install -f -y
+                    echo "Retrying installation..."
+                    pkexec dpkg -i $escapedDebPath
+                    INSTALL_RESULT=${'$'}?
                 else
                     sudo apt-get install -f -y
+                    echo "Retrying installation..."
+                    sudo dpkg -i $escapedDebPath
+                    INSTALL_RESULT=${'$'}?
                 fi
             fi
 
-            echo "Installation complete!"
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "Installation failed with exit code ${'$'}INSTALL_RESULT"
+            else
+                echo "Installation complete!"
+            fi
 
             # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
             DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
@@ -398,6 +408,10 @@ object UpdateScriptGenerator {
                 nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
             elif [ -x /usr/bin/boss ]; then
                 nohup /usr/bin/boss > /dev/null 2>&1 &
+            elif command -v boss &> /dev/null; then
+                nohup boss > /dev/null 2>&1 &
+            else
+                echo "Warning: Could not find BOSS executable to launch"
             fi
 
             # Give the app time to start
@@ -482,6 +496,28 @@ object UpdateScriptGenerator {
             fi
 
             if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "RPM installation failed, trying to resolve dependencies..."
+                # Try dnf first (Fedora/RHEL 8+), then yum (older RHEL/CentOS)
+                if command -v dnf &> /dev/null; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec dnf install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    else
+                        sudo dnf install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    fi
+                elif command -v yum &> /dev/null; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec yum install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    else
+                        sudo yum install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    fi
+                fi
+            fi
+
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
                 echo "RPM installation failed with exit code ${'$'}INSTALL_RESULT"
             else
                 echo "Installation complete!"
@@ -509,6 +545,10 @@ object UpdateScriptGenerator {
                 nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
             elif [ -x /usr/bin/boss ]; then
                 nohup /usr/bin/boss > /dev/null 2>&1 &
+            elif command -v boss &> /dev/null; then
+                nohup boss > /dev/null 2>&1 &
+            else
+                echo "Warning: Could not find BOSS executable to launch"
             fi
 
             # Give the app time to start
