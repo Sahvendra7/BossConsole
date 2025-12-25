@@ -95,12 +95,19 @@ jobs:
         
         # Save release body to file safely
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "$RELEASE_INFO" | jq -r '.body' > release-assets/release-body.txt
+          echo "$RELEASE_INFO" | jq -r '.body' > release-assets/release-body-raw.txt
         else
-          cat << 'EOF' > release-assets/release-body.txt
+          cat << 'EOF' > release-assets/release-body-raw.txt
         ${{ github.event.release.body }}
         EOF
         fi
+
+        # Fix download URLs: replace private repo with public repo
+        # This fixes the 404 errors when users follow the installation guide
+        sed 's|risa-labs-inc/BossConsole|risa-labs-inc/BOSS-Releases|g' release-assets/release-body-raw.txt > release-assets/release-body.txt
+        rm release-assets/release-body-raw.txt
+
+        echo "📝 Updated download URLs to point to public repository"
         
         # List downloaded assets
         echo "📦 Contents of release-assets directory:"
