@@ -516,6 +516,18 @@ jobs:
           # Verify version consistency
           ./gradlew showVersion
 
+      - name: 📦 Install Linux Packaging Dependencies
+        run: |
+          echo "📦 Installing dependencies required for jpackage..."
+          sudo apt-get update
+          sudo apt-get install -y fakeroot dpkg rpm
+
+          # Verify installations
+          echo "✅ Installed packages:"
+          dpkg-deb --version || echo "dpkg-deb not found"
+          fakeroot --version || echo "fakeroot not found"
+          rpm --version || echo "rpm not found"
+
       - name: 🏗️ Build Linux Packages (ARM64)
         run: |
           echo "🏗️ Building Linux ARM64 packages..."
