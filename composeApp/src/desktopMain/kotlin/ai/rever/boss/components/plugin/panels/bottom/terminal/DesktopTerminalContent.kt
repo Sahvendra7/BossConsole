@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
@@ -13,7 +14,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 
 /**
  * Desktop implementation of TabbedTerminalContent using BossTerm's TabbedTerminal.
@@ -30,6 +33,7 @@ actual fun TabbedTerminalContent(
     onShowSettings: () -> Unit
 ) {
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -38,6 +42,17 @@ actual fun TabbedTerminalContent(
         TabbedTerminal(
             onExit = onExit,
             onShowSettings = onShowSettings,
+            onLinkClick = { url ->
+                // Open HTTP/HTTPS links in BOSS browser instead of system browser
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    scope.launch {
+                        URLEventBus.openURL(url)
+                    }
+                } else {
+                    // For other protocols (file://, mailto:, etc.), open in system
+                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -61,6 +76,7 @@ actual fun PersistentTabbedTerminalContent(
 ) {
     val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     DisposableEffect(terminalId) {
         onDispose {
@@ -80,6 +96,17 @@ actual fun PersistentTabbedTerminalContent(
             },
             onShowSettings = onShowSettings,
             onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
+            onLinkClick = { url ->
+                // Open HTTP/HTTPS links in BOSS browser instead of system browser
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    scope.launch {
+                        URLEventBus.openURL(url)
+                    }
+                } else {
+                    // For other protocols (file://, mailto:, etc.), open in system
+                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+                }
+            },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -158,6 +185,7 @@ actual fun TerminalContent(
 
     val (state, shouldSendInitialCommand) = terminalState
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -171,6 +199,17 @@ actual fun TerminalContent(
                 // Clean up registry when terminal exits
                 terminalId?.let { TerminalStateRegistry.remove(it) }
                 onExit()
+            },
+            onLinkClick = { url ->
+                // Open HTTP/HTTPS links in BOSS browser instead of system browser
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    scope.launch {
+                        URLEventBus.openURL(url)
+                    }
+                } else {
+                    // For other protocols (file://, mailto:, etc.), open in system
+                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+                }
             },
             modifier = Modifier.fillMaxSize()
         )
