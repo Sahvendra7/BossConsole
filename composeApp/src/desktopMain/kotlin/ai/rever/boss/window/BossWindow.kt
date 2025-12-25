@@ -75,7 +75,12 @@ fun ApplicationScope.BossWindow(
         window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
 
         // Register window for focus management (deep links, etc.)
-        WindowFocusManager.registerWindow(windowState.id, window)
+        DisposableEffect(windowState.id, window) {
+            WindowFocusManager.registerWindow(windowState.id, window)
+            onDispose {
+                WindowFocusManager.unregisterWindow(windowState.id)
+            }
+        }
 
         // Attach GlobalKeyboardInterceptor for AWT-level keyboard interception
         val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
@@ -138,7 +143,9 @@ fun ApplicationScope.BossWindow(
                 Unit
             }
             panelRegistry.addChangeListener(listener)
-            onDispose { }
+            onDispose {
+                panelRegistry.removeChangeListener(listener)
+            }
         }
 
         // macOS MenuBar - provides native menu integration

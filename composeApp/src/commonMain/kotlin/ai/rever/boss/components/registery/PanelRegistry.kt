@@ -35,6 +35,10 @@ class PanelRegistry {
         changeListeners.add(listener)
     }
 
+    fun removeChangeListener(listener: () -> Unit) {
+        changeListeners.remove(listener)
+    }
+
     private fun notifyChange() {
         changeListeners.forEach { it() }
     }
