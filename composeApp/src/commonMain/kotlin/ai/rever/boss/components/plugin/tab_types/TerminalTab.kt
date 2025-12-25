@@ -28,12 +28,23 @@ data class TerminalTabInfo(
     override val tabIcon: TabIcon = TabIcon.Vector(icon),
     val initialCommand: String? = null
 ) : TabInfo {
+    companion object {
+        /** Maximum length for terminal tab titles to prevent memory issues from malicious escape sequences */
+        const val MAX_TITLE_LENGTH = 128
+    }
+
     /**
      * Returns a copy of this tab info with an updated title.
      * Used when terminal window title changes via escape sequences (OSC 0/1/2).
+     * Title is truncated to [MAX_TITLE_LENGTH] characters.
      */
     fun updateTitle(newTitle: String): TerminalTabInfo {
-        return copy(title = newTitle)
+        val truncatedTitle = if (newTitle.length > MAX_TITLE_LENGTH) {
+            newTitle.take(MAX_TITLE_LENGTH)
+        } else {
+            newTitle
+        }
+        return copy(title = truncatedTitle)
     }
 }
 
