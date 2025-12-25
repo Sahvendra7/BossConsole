@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -42,17 +44,7 @@ actual fun TabbedTerminalContent(
         TabbedTerminal(
             onExit = onExit,
             onShowSettings = onShowSettings,
-            onLinkClick = { url ->
-                // Open HTTP/HTTPS links in BOSS browser instead of system browser
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    scope.launch {
-                        URLEventBus.openURL(url)
-                    }
-                } else {
-                    // For other protocols (file://, mailto:, etc.), open in system
-                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
-                }
-            },
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -96,17 +88,7 @@ actual fun PersistentTabbedTerminalContent(
             },
             onShowSettings = onShowSettings,
             onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-            onLinkClick = { url ->
-                // Open HTTP/HTTPS links in BOSS browser instead of system browser
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    scope.launch {
-                        URLEventBus.openURL(url)
-                    }
-                } else {
-                    // For other protocols (file://, mailto:, etc.), open in system
-                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
-                }
-            },
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -146,6 +128,46 @@ private object TerminalStateRegistry {
     }
 
     fun contains(terminalId: String): Boolean = terminalId in states
+}
+
+/**
+ * Handles terminal link clicks by opening HTTP/HTTPS links in BOSS browser
+ * and other protocols (file://, mailto:, etc.) in the system default handler.
+ *
+ * @param url The URL to open
+ * @param scope CoroutineScope to launch async operations
+ */
+private fun handleTerminalLinkClick(url: String, scope: CoroutineScope) {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+        // Open HTTP/HTTPS links in BOSS browser
+        scope.launch {
+            URLEventBus.openURL(url)
+        }
+    } else {
+        // For other protocols, open in system browser on IO dispatcher
+        // to avoid blocking the UI thread
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Validate URI format first
+                val uri = java.net.URI(url)
+
+                if (java.awt.Desktop.isDesktopSupported()) {
+                    val desktop = java.awt.Desktop.getDesktop()
+                    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                        desktop.browse(uri)
+                    } else {
+                        println("Desktop browse action not supported on this system")
+                    }
+                } else {
+                    println("Desktop API not supported on this system")
+                }
+            } catch (e: java.net.URISyntaxException) {
+                println("Invalid URI format: $url - ${e.message}")
+            } catch (e: Exception) {
+                println("Error opening URL in system browser: ${e.message}")
+            }
+        }
+    }
 }
 
 /**
@@ -200,17 +222,7 @@ actual fun TerminalContent(
                 terminalId?.let { TerminalStateRegistry.remove(it) }
                 onExit()
             },
-            onLinkClick = { url ->
-                // Open HTTP/HTTPS links in BOSS browser instead of system browser
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    scope.launch {
-                        URLEventBus.openURL(url)
-                    }
-                } else {
-                    // For other protocols (file://, mailto:, etc.), open in system
-                    java.awt.Desktop.getDesktop().browse(java.net.URI(url))
-                }
-            },
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
