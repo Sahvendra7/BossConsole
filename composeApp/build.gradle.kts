@@ -10,6 +10,11 @@ import javax.inject.Inject
 import org.gradle.process.ExecOperations
 import org.gradle.api.provider.ValueSource
 import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.TaskAction
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -319,8 +324,9 @@ compose.desktop {
             isEnabled.set(false)
         }
         
-        // Specify JDK for native distributions - use OpenJDK 21 for better Apple Silicon support
-        javaHome = System.getenv("JAVA_HOME") ?: "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+        // Specify JDK for native distributions - use JAVA_HOME from environment
+        // Falls back to current JVM's home directory
+        javaHome = System.getenv("JAVA_HOME") ?: System.getProperty("java.home")
         
         // JVM arguments optimized for Apple Silicon and hardened runtime
         jvmArgs(
@@ -381,7 +387,12 @@ compose.desktop {
                 packageName = "boss"
                 debMaintainer = "support@risalabs.ai"
                 menuGroup = "Development"
+                appCategory = "Utility"
+                shortcut = true
                 iconFile.set(project.file("src/desktopMain/resources/boss_icon.png"))
+                // RPM-specific options
+                rpmLicenseType = "LGPL-3.0"
+                appRelease = "1"
             }
             
             macOS {
@@ -794,6 +805,85 @@ tasks.register("signPty4jBinaries") {
     }
 }
 
+// Fix Linux .desktop file to add StartupWMClass for proper desktop integration
+// This task post-processes the .deb file after jpackage creates it
+abstract class FixLinuxDesktopFileTask : DefaultTask() {
+    @get:Inject
+    abstract val execOps: ExecOperations
+
+    @get:InputDirectory
+    @get:Optional
+    abstract val debDir: DirectoryProperty
+
+    @TaskAction
+    fun fixDesktopFile() {
+        println("🔧 Fixing Linux .desktop file for proper dock integration...")
+
+        val debDirectory = debDir.orNull?.asFile
+        if (debDirectory == null || !debDirectory.exists()) {
+            println("⚠️ No .deb directory found")
+            return
+        }
+
+        val debFile = debDirectory.listFiles()?.find { it.name.endsWith(".deb") }
+        if (debFile == null) {
+            println("⚠️ No .deb file found in $debDirectory")
+            return
+        }
+
+        println("📦 Fixing .desktop file in ${debFile.name}...")
+        val workDir = File(debDirectory, "fix-temp-${System.currentTimeMillis()}")
+        workDir.mkdirs()
+
+        try {
+            // Extract deb contents
+            execOps.exec {
+                commandLine("dpkg-deb", "-R", debFile.absolutePath, workDir.absolutePath)
+            }
+
+            // Find and modify .desktop file
+            var modified = false
+            workDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".desktop") }
+                .forEach { desktopFile ->
+                    var content = desktopFile.readText()
+                    if (!content.contains("StartupWMClass")) {
+                        // Add StartupWMClass=boss for proper dock integration
+                        content = content.trimEnd() + "\nStartupWMClass=boss\n"
+                        desktopFile.writeText(content)
+                        println("✅ Added StartupWMClass=boss to ${desktopFile.name}")
+                        modified = true
+                    } else {
+                        println("ℹ️ StartupWMClass already present in ${desktopFile.name}")
+                    }
+                }
+
+            if (modified) {
+                // Repack deb using dpkg-deb --build
+                execOps.exec {
+                    commandLine("dpkg-deb", "--build", "--root-owner-group", workDir.absolutePath, debFile.absolutePath)
+                }
+                println("✅ Repacked ${debFile.name} with StartupWMClass")
+            }
+        } catch (e: Exception) {
+            println("❌ Failed to fix .desktop file: ${e.message}")
+            throw e
+        } finally {
+            workDir.deleteRecursively()
+        }
+    }
+}
+
+tasks.register<FixLinuxDesktopFileTask>("fixLinuxDesktopFile") {
+    description = "Adds StartupWMClass to Linux .desktop file for proper taskbar/dock integration"
+    group = "build"
+
+    val isLinux = System.getProperty("os.name").lowercase().contains("linux")
+    onlyIf { isLinux }
+
+    debDir.set(layout.buildDirectory.dir("compose/binaries/main/deb"))
+}
+
 // Configure task dependencies for DMG packaging
 afterEvaluate {
     // Make run tasks depend on the extraction tasks
@@ -844,6 +934,22 @@ afterEvaluate {
         if (isMacOS && !signingDisabled) {
             mustRunAfter("signPty4jBinaries", "extractCLIToAppResources")
             println("📝 packageDmg will run after PTY4J signing and CLI extraction")
+        }
+    }
+
+    // Linux: Fix .desktop file after packaging to add StartupWMClass
+    val isLinux = System.getProperty("os.name").lowercase().contains("linux")
+    if (isLinux) {
+        tasks.findByName("fixLinuxDesktopFile")?.apply {
+            mustRunAfter("packageDeb", "packageRpm")
+        }
+        tasks.findByName("packageDeb")?.apply {
+            finalizedBy("fixLinuxDesktopFile")
+            println("📝 packageDeb will be finalized by fixLinuxDesktopFile")
+        }
+        tasks.findByName("packageRpm")?.apply {
+            finalizedBy("fixLinuxDesktopFile")
+            println("📝 packageRpm will be finalized by fixLinuxDesktopFile")
         }
     }
 }
