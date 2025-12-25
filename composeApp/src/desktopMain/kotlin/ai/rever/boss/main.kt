@@ -84,8 +84,18 @@ fun main(args: Array<String>) {
         }
     }
 
-    // Register shutdown hook to release the single-instance lock
+    // Register shutdown hook to release the single-instance lock AND close browser engine
     Runtime.getRuntime().addShutdownHook(Thread {
+        try {
+            // Close browser engine first to release lock files
+            val engine = ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.currentEngine
+            if (engine != null && !engine.isClosed) {
+                println("Closing browser engine...")
+                engine.close()
+            }
+        } catch (e: Exception) {
+            println("Error closing browser engine: ${e.message}")
+        }
         SingleInstanceManager.release()
     })
 

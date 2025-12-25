@@ -160,32 +160,111 @@ object FluckEngine {
     
     private fun initializeEngine(): Engine {
         attemptCount++
-        
+
         // Get user's home directory dynamically
         val userHome = System.getProperty("user.home")
         val chromiumDir = Paths.get(userHome, ".boss", "jxbrowser-chromium")
-        
+
         // Create directories if they don't exist
         chromiumDir.toFile().mkdirs()
-        
+
+        // Clean up old temporary profiles on startup (older than 24 hours)
+        cleanupOldTemporaryProfiles(userHome)
+
         // Try to create engine with profile handling
         return createEngineWithProfile(chromiumDir, userHome)
     }
     
+    /**
+     * Clean up stale lock files from a previous BOSS session that didn't close properly.
+     * On Linux, Chromium creates SingletonLock as a symlink to "spark-<hostname>-<pid>".
+     * If the PID is no longer running, the lock is stale and can be safely removed.
+     */
+    private fun cleanupStaleLockFiles(profileDir: java.nio.file.Path): Boolean {
+        val lockFile = profileDir.resolve("SingletonLock").toFile()
+        val socketFile = profileDir.resolve("SingletonSocket").toFile()
+        val cookieFile = profileDir.resolve("SingletonCookie").toFile()
+
+        if (!lockFile.exists()) return false // No lock to clean
+
+        // On Linux, SingletonLock is a symlink to "spark-<hostname>-<pid>"
+        // Check if the PID is still running
+        try {
+            if (Files.isSymbolicLink(lockFile.toPath())) {
+                val target = Files.readSymbolicLink(lockFile.toPath()).toString()
+                // Parse PID from "spark-hostname-12345"
+                val pid = target.substringAfterLast("-").toLongOrNull()
+
+                if (pid != null) {
+                    // Check if process is still running
+                    val isRunning = try {
+                        ProcessHandle.of(pid).isPresent
+                    } catch (e: Exception) {
+                        false
+                    }
+
+                    if (!isRunning) {
+                        println("Cleaning up stale lock files (PID $pid no longer running)")
+                        lockFile.delete()
+                        socketFile.delete()
+                        cookieFile.delete()
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("Failed to check lock file: ${e.message}")
+        }
+        return false
+    }
+
+    /**
+     * Clean up old temporary profiles to prevent disk space accumulation.
+     * Deletes browser-profile-* directories older than 24 hours.
+     */
+    private fun cleanupOldTemporaryProfiles(userHome: String) {
+        try {
+            val bossDir = java.io.File(userHome, ".boss")
+            val oneDayAgo = System.currentTimeMillis() - (24 * 60 * 60 * 1000)
+
+            bossDir.listFiles()?.filter {
+                it.isDirectory &&
+                it.name.startsWith("browser-profile-") &&
+                it.name != "browser-profile" &&
+                it.lastModified() < oneDayAgo
+            }?.forEach { dir ->
+                println("Cleaning up old temporary profile: ${dir.name}")
+                dir.deleteRecursively()
+            }
+        } catch (e: Exception) {
+            println("Failed to clean up old profiles: ${e.message}")
+        }
+    }
+
     private fun createEngineWithProfile(chromiumDir: java.nio.file.Path, userHome: String): Engine {
         val selectedProfile = BrowserSettings.currentProfile
         val profileDirPath = Paths.get(userHome, ".boss", selectedProfile)
         profileDirPath.toFile().mkdirs()
-        
+
         return try {
             createEngineInstance(chromiumDir, profileDirPath, selectedProfile)
         } catch (e: UserDataDirectoryAlreadyInUseException) {
-            // Profile is locked, try with a temporary profile
+            // Try to clean up stale lock files first
+            if (cleanupStaleLockFiles(profileDirPath)) {
+                println("Retrying with cleaned profile '$selectedProfile'...")
+                try {
+                    return createEngineInstance(chromiumDir, profileDirPath, selectedProfile)
+                } catch (e2: Exception) {
+                    println("Still failed after cleanup: ${e2.message}")
+                }
+            }
+
+            // Profile is genuinely in use by another process, use temporary
             println("Profile '$selectedProfile' is already in use, trying with temporary profile...")
             val tempProfile = "browser-profile-${System.currentTimeMillis()}"
             val tempProfilePath = Paths.get(userHome, ".boss", tempProfile)
             tempProfilePath.toFile().mkdirs()
-            
+
             try {
                 createEngineInstance(chromiumDir, tempProfilePath, tempProfile)
             } catch (e2: Exception) {
