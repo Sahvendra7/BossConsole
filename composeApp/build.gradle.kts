@@ -807,6 +807,7 @@ tasks.register("signPty4jBinaries") {
 
 // Fix Linux .desktop file to add StartupWMClass for proper desktop integration
 // This task post-processes the .deb file after jpackage creates it
+// Note: RPM packages require rpmbuild for repacking, which is not handled here
 abstract class FixLinuxDesktopFileTask : DefaultTask() {
     @get:Inject
     abstract val execOps: ExecOperations
@@ -841,10 +842,15 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 commandLine("dpkg-deb", "-R", debFile.absolutePath, workDir.absolutePath)
             }
 
-            // Find and modify .desktop file
+            // Find and modify .desktop file in the applications directory
             var modified = false
             workDir.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".desktop") }
+                .filter { file ->
+                    file.isFile &&
+                    file.name.endsWith(".desktop") &&
+                    // Verify it's in a valid location (lib/ or applications/)
+                    (file.path.contains("/lib/") || file.path.contains("/applications/"))
+                }
                 .forEach { desktopFile ->
                     var content = desktopFile.readText()
                     if (!content.contains("StartupWMClass")) {
@@ -875,7 +881,7 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
 }
 
 tasks.register<FixLinuxDesktopFileTask>("fixLinuxDesktopFile") {
-    description = "Adds StartupWMClass to Linux .desktop file for proper taskbar/dock integration"
+    description = "Adds StartupWMClass to .deb package .desktop file for proper Ubuntu/Debian dock integration"
     group = "build"
 
     val isLinux = System.getProperty("os.name").lowercase().contains("linux")
@@ -937,19 +943,17 @@ afterEvaluate {
         }
     }
 
-    // Linux: Fix .desktop file after packaging to add StartupWMClass
+    // Linux: Fix .desktop file after DEB packaging to add StartupWMClass
+    // Note: RPM repacking requires rpmbuild toolchain which is complex;
+    // RPM packages will need manual StartupWMClass addition or a separate script
     val isLinux = System.getProperty("os.name").lowercase().contains("linux")
     if (isLinux) {
         tasks.findByName("fixLinuxDesktopFile")?.apply {
-            mustRunAfter("packageDeb", "packageRpm")
+            mustRunAfter("packageDeb")
         }
         tasks.findByName("packageDeb")?.apply {
             finalizedBy("fixLinuxDesktopFile")
             println("📝 packageDeb will be finalized by fixLinuxDesktopFile")
-        }
-        tasks.findByName("packageRpm")?.apply {
-            finalizedBy("fixLinuxDesktopFile")
-            println("📝 packageRpm will be finalized by fixLinuxDesktopFile")
         }
     }
 }
