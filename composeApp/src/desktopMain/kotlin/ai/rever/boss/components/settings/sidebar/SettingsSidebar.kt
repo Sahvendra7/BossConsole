@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE
 }
 
 @Composable
@@ -115,6 +115,16 @@ fun SettingsSidebar(
             subtitle = "Hide UI, minimize distractions",
             isSelected = selectedSection == SettingsSection.FOCUS_MODE,
             onClick = { onSectionChange(SettingsSection.FOCUS_MODE) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.DesktopWindows,
+            title = "Window Appearance",
+            subtitle = "Title bar, decorations",
+            isSelected = selectedSection == SettingsSection.WINDOW_APPEARANCE,
+            onClick = { onSectionChange(SettingsSection.WINDOW_APPEARANCE) }
         )
 
     }

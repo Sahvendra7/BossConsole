@@ -120,6 +120,7 @@ import ai.rever.boss.components.events.KeyboardEventResult
 import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.window.WindowAppearanceSettingsManager
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -173,6 +174,10 @@ fun ComponentContext.BossApp(
     // Focus mode settings
     val focusModeSettings by FocusModeSettingsManager.currentSettings.collectAsState()
     val isFocusModeEnabled = focusModeSettings.enabled
+
+    // Window appearance settings
+    val windowAppearanceSettings by WindowAppearanceSettingsManager.currentSettings.collectAsState()
+    val showTitleBarSetting = windowAppearanceSettings.showTitleBar
     val isAutoRevealEnabled = focusModeSettings.autoRevealEnabled
     val revealOffsetDp = with(LocalDensity.current) { focusModeSettings.revealOffsetPx.toDp() }
 
@@ -1112,10 +1117,13 @@ fun ComponentContext.BossApp(
                 }
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Title bar always visible (OS-level window chrome)
-                    BossTitleBar(
-                        onToggleMaximize = onToggleMaximize
-                    )
+                    // Title bar - conditionally shown based on settings
+                    // Default: hidden on Linux/Windows, shown on macOS
+                    if (showTitleBarSetting) {
+                        BossTitleBar(
+                            onToggleMaximize = onToggleMaximize
+                        )
+                    }
 
                     // Update banner - hidden in focus mode
                     if (!isFocusModeEnabled) {
