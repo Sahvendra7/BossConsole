@@ -101,6 +101,7 @@ private fun SettingsContent(initialSection: String? = null) {
                         SettingsSection.SECURITY -> SecuritySettings()
                         SettingsSection.KEYMAP -> EditableKeymapSettings()
                         SettingsSection.FOCUS_MODE -> FocusModeSettings()
+                        SettingsSection.WINDOW_APPEARANCE -> WindowAppearanceSettings()
                     }
                 }
             }
