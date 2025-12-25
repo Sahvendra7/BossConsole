@@ -854,10 +854,10 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 .forEach { desktopFile ->
                     var content = desktopFile.readText()
                     if (!content.contains("StartupWMClass")) {
-                        // Add StartupWMClass=boss for proper dock integration
-                        content = content.trimEnd() + "\nStartupWMClass=boss\n"
+                        // Add StartupWMClass=BOSS for proper dock integration (case-sensitive match)
+                        content = content.trimEnd() + "\nStartupWMClass=BOSS\n"
                         desktopFile.writeText(content)
-                        println("✅ Added StartupWMClass=boss to ${desktopFile.name}")
+                        println("✅ Added StartupWMClass=BOSS to ${desktopFile.name}")
                         modified = true
                     } else {
                         println("ℹ️ StartupWMClass already present in ${desktopFile.name}")

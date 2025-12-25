@@ -390,9 +390,9 @@ object UpdateScriptGenerator {
             DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
             if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
                 if command -v pkexec &> /dev/null; then
-                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                    echo "StartupWMClass=BOSS" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
                 elif command -v sudo &> /dev/null; then
-                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                    echo "StartupWMClass=BOSS" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
                 fi
                 echo "Added StartupWMClass to desktop file"
             fi
@@ -527,9 +527,9 @@ object UpdateScriptGenerator {
             DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
             if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
                 if command -v pkexec &> /dev/null; then
-                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                    echo "StartupWMClass=BOSS" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
                 elif command -v sudo &> /dev/null; then
-                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                    echo "StartupWMClass=BOSS" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
                 fi
                 echo "Added StartupWMClass to desktop file"
             fi
