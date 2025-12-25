@@ -29,8 +29,8 @@ data class TerminalTabInfo(
     val initialCommand: String? = null
 ) : TabInfo {
     companion object {
-        /** Maximum length for terminal tab titles to prevent memory issues from malicious escape sequences */
-        const val MAX_TITLE_LENGTH = 128
+        /** Maximum length for terminal tab titles - fits typical "user@hostname:/path" patterns */
+        const val MAX_TITLE_LENGTH = 64
     }
 
     /**
