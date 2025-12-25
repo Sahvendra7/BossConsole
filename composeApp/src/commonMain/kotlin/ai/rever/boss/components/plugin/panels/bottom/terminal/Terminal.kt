@@ -115,12 +115,14 @@ expect fun TerminalContent(
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
+ * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
  */
 @Composable
 expect fun PersistentTabbedTerminalContent(
     terminalId: String,
     onExit: () -> Unit = {},
-    onShowSettings: () -> Unit = {}
+    onShowSettings: () -> Unit = {},
+    onTitleChange: ((String) -> Unit)? = null
 )
 
 fun DefaultPlugin.registerTerminal() = panelRegistry.registerPanel(TerminalInfo) {
