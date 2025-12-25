@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.*
 import java.awt.Color
 import java.awt.Frame
@@ -66,7 +67,8 @@ fun ApplicationScope.BossWindow(
     Window(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
-        state = composeWindowState
+        state = composeWindowState,
+        icon = painterResource("boss_icon.png")
     ) {
         // Set window appearance properties
         window.background = Color(BossDarkSurface.value.toInt())
