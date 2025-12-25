@@ -302,6 +302,273 @@ object UpdateScriptGenerator {
     }
 
     /**
+     * Generate Linux DEB update script
+     *
+     * @param debPath Path to the downloaded DEB file
+     * @param appPid Process ID of the running app to wait for
+     * @return File object pointing to the generated script
+     */
+    fun generateLinuxDebUpdateScript(
+        debPath: String,
+        appPid: Long
+    ): File {
+        // Validate input for security
+        validatePath(debPath, "DEB path")
+
+        // Escape path for safe shell interpolation
+        val escapedDebPath = escapeShellArg(debPath)
+
+        println("🔒 Security: Validated and escaped Linux DEB update script parameters")
+
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
+        tempDir.mkdirs()
+
+        val scriptFile = File(tempDir, "update_boss_${System.currentTimeMillis()}.sh")
+
+        val script = """
+            #!/bin/bash
+
+            # BOSS Update Helper Script (Debian/Ubuntu)
+
+            echo "BOSS Update Helper started"
+            echo "Waiting for BOSS to quit (PID: $appPid)..."
+
+            # Wait for the app process to terminate (max 30 seconds)
+            WAIT_COUNT=0
+            MAX_WAIT=30
+            while kill -0 $appPid 2>/dev/null; do
+                sleep 1
+                WAIT_COUNT=${'$'}((WAIT_COUNT + 1))
+                if [ ${'$'}WAIT_COUNT -ge ${'$'}MAX_WAIT ]; then
+                    echo "Timeout waiting for app to quit"
+                    exit 1
+                fi
+            done
+
+            echo "BOSS has quit. Starting installation..."
+
+            # Give extra time for file locks to release
+            sleep 2
+
+            echo "Installing DEB package: $escapedDebPath"
+
+            # Try pkexec first (graphical sudo prompt)
+            if command -v pkexec &> /dev/null; then
+                pkexec dpkg -i $escapedDebPath
+                INSTALL_RESULT=${'$'}?
+            # Fall back to sudo if available
+            elif command -v sudo &> /dev/null; then
+                sudo dpkg -i $escapedDebPath
+                INSTALL_RESULT=${'$'}?
+            else
+                echo "Error: Neither pkexec nor sudo available for installation"
+                exit 1
+            fi
+
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "Installation failed, trying to fix dependencies..."
+                if command -v pkexec &> /dev/null; then
+                    pkexec apt-get install -f -y
+                    echo "Retrying installation..."
+                    pkexec dpkg -i $escapedDebPath
+                    INSTALL_RESULT=${'$'}?
+                else
+                    sudo apt-get install -f -y
+                    echo "Retrying installation..."
+                    sudo dpkg -i $escapedDebPath
+                    INSTALL_RESULT=${'$'}?
+                fi
+            fi
+
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "Installation failed with exit code ${'$'}INSTALL_RESULT"
+            else
+                echo "Installation complete!"
+            fi
+
+            # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
+            DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
+            if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
+                if command -v pkexec &> /dev/null; then
+                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                elif command -v sudo &> /dev/null; then
+                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                fi
+                echo "Added StartupWMClass to desktop file"
+            fi
+
+            # Refresh desktop database to pick up changes immediately
+            if command -v update-desktop-database &> /dev/null; then
+                update-desktop-database /usr/share/applications 2>/dev/null || true
+            fi
+
+            # Launch the updated app
+            echo "Launching BOSS..."
+            if [ -x /opt/boss/bin/BOSS ]; then
+                nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
+            elif [ -x /usr/bin/boss ]; then
+                nohup /usr/bin/boss > /dev/null 2>&1 &
+            elif command -v boss &> /dev/null; then
+                nohup boss > /dev/null 2>&1 &
+            else
+                echo "Warning: Could not find BOSS executable to launch"
+            fi
+
+            # Give the app time to start
+            sleep 2
+
+            # Self-destruct - remove this script
+            echo "Update complete. Cleaning up script..."
+            rm -f "${'$'}0"
+
+            exit 0
+        """.trimIndent()
+
+        scriptFile.writeText(script)
+        makeExecutable(scriptFile)
+
+        println("Generated Linux DEB update script: ${scriptFile.absolutePath}")
+        return scriptFile
+    }
+
+    /**
+     * Generate Linux RPM update script
+     *
+     * @param rpmPath Path to the downloaded RPM file
+     * @param appPid Process ID of the running app to wait for
+     * @return File object pointing to the generated script
+     */
+    fun generateLinuxRpmUpdateScript(
+        rpmPath: String,
+        appPid: Long
+    ): File {
+        // Validate input for security
+        validatePath(rpmPath, "RPM path")
+
+        // Escape path for safe shell interpolation
+        val escapedRpmPath = escapeShellArg(rpmPath)
+
+        println("🔒 Security: Validated and escaped Linux RPM update script parameters")
+
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
+        tempDir.mkdirs()
+
+        val scriptFile = File(tempDir, "update_boss_${System.currentTimeMillis()}.sh")
+
+        val script = """
+            #!/bin/bash
+
+            # BOSS Update Helper Script (Fedora/RHEL)
+
+            echo "BOSS Update Helper started"
+            echo "Waiting for BOSS to quit (PID: $appPid)..."
+
+            # Wait for the app process to terminate (max 30 seconds)
+            WAIT_COUNT=0
+            MAX_WAIT=30
+            while kill -0 $appPid 2>/dev/null; do
+                sleep 1
+                WAIT_COUNT=${'$'}((WAIT_COUNT + 1))
+                if [ ${'$'}WAIT_COUNT -ge ${'$'}MAX_WAIT ]; then
+                    echo "Timeout waiting for app to quit"
+                    exit 1
+                fi
+            done
+
+            echo "BOSS has quit. Starting installation..."
+
+            # Give extra time for file locks to release
+            sleep 2
+
+            echo "Installing RPM package: $escapedRpmPath"
+
+            # Try pkexec first (graphical sudo prompt)
+            if command -v pkexec &> /dev/null; then
+                pkexec rpm -U $escapedRpmPath
+                INSTALL_RESULT=${'$'}?
+            # Fall back to sudo if available
+            elif command -v sudo &> /dev/null; then
+                sudo rpm -U $escapedRpmPath
+                INSTALL_RESULT=${'$'}?
+            else
+                echo "Error: Neither pkexec nor sudo available for installation"
+                exit 1
+            fi
+
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "RPM installation failed, trying to resolve dependencies..."
+                # Try dnf first (Fedora/RHEL 8+), then yum (older RHEL/CentOS)
+                if command -v dnf &> /dev/null; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec dnf install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    else
+                        sudo dnf install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    fi
+                elif command -v yum &> /dev/null; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec yum install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    else
+                        sudo yum install -y $escapedRpmPath
+                        INSTALL_RESULT=${'$'}?
+                    fi
+                fi
+            fi
+
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                echo "RPM installation failed with exit code ${'$'}INSTALL_RESULT"
+            else
+                echo "Installation complete!"
+            fi
+
+            # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
+            DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
+            if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
+                if command -v pkexec &> /dev/null; then
+                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                elif command -v sudo &> /dev/null; then
+                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+                fi
+                echo "Added StartupWMClass to desktop file"
+            fi
+
+            # Refresh desktop database to pick up changes immediately
+            if command -v update-desktop-database &> /dev/null; then
+                update-desktop-database /usr/share/applications 2>/dev/null || true
+            fi
+
+            # Launch the updated app
+            echo "Launching BOSS..."
+            if [ -x /opt/boss/bin/BOSS ]; then
+                nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
+            elif [ -x /usr/bin/boss ]; then
+                nohup /usr/bin/boss > /dev/null 2>&1 &
+            elif command -v boss &> /dev/null; then
+                nohup boss > /dev/null 2>&1 &
+            else
+                echo "Warning: Could not find BOSS executable to launch"
+            fi
+
+            # Give the app time to start
+            sleep 2
+
+            # Self-destruct - remove this script
+            echo "Update complete. Cleaning up script..."
+            rm -f "${'$'}0"
+
+            exit 0
+        """.trimIndent()
+
+        scriptFile.writeText(script)
+        makeExecutable(scriptFile)
+
+        println("Generated Linux RPM update script: ${scriptFile.absolutePath}")
+        return scriptFile
+    }
+
+    /**
      * Launch the update script in the background
      *
      * @param scriptFile The script file to execute
