@@ -388,16 +388,48 @@ object UpdateScriptGenerator {
 
             # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
             DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
-            if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
-                if command -v pkexec &> /dev/null; then
-                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
-                elif command -v sudo &> /dev/null; then
-                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+            if [ -f "${'$'}DESKTOP_FILE" ]; then
+                NEEDS_UPDATE=false
+
+                # Check if StartupWMClass is missing
+                if ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
+                    NEEDS_UPDATE=true
                 fi
-                echo "Added StartupWMClass to desktop file"
+
+                # Check if Icon uses full path instead of icon name
+                if grep -q "Icon=/opt/boss/lib/BOSS.png" "${'$'}DESKTOP_FILE"; then
+                    NEEDS_UPDATE=true
+                fi
+
+                if [ "${'$'}NEEDS_UPDATE" = true ]; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec sh -c "
+                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
+                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
+                        "
+                    elif command -v sudo &> /dev/null; then
+                        sudo sh -c "
+                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
+                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
+                        "
+                    fi
+                    echo "Fixed desktop file"
+                fi
             fi
 
-            # Refresh desktop database to pick up changes immediately
+            # Copy icon to hicolor theme for proper dock integration
+            if [ -f /opt/boss/lib/BOSS.png ]; then
+                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
+                if command -v pkexec &> /dev/null; then
+                    pkexec sh -c "mkdir -p '${'$'}ICON_DIR' && cp /opt/boss/lib/BOSS.png '${'$'}ICON_DIR/boss.png'"
+                elif command -v sudo &> /dev/null; then
+                    sudo mkdir -p "${'$'}ICON_DIR" && sudo cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
+                fi
+                echo "Installed icon to hicolor theme"
+            fi
+
+            # Refresh icon cache and desktop database
+            gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
             if command -v update-desktop-database &> /dev/null; then
                 update-desktop-database /usr/share/applications 2>/dev/null || true
             fi
@@ -525,16 +557,48 @@ object UpdateScriptGenerator {
 
             # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
             DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
-            if [ -f "${'$'}DESKTOP_FILE" ] && ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
-                if command -v pkexec &> /dev/null; then
-                    echo "StartupWMClass=boss" | pkexec tee -a "${'$'}DESKTOP_FILE" > /dev/null
-                elif command -v sudo &> /dev/null; then
-                    echo "StartupWMClass=boss" | sudo tee -a "${'$'}DESKTOP_FILE" > /dev/null
+            if [ -f "${'$'}DESKTOP_FILE" ]; then
+                NEEDS_UPDATE=false
+
+                # Check if StartupWMClass is missing
+                if ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
+                    NEEDS_UPDATE=true
                 fi
-                echo "Added StartupWMClass to desktop file"
+
+                # Check if Icon uses full path instead of icon name
+                if grep -q "Icon=/opt/boss/lib/BOSS.png" "${'$'}DESKTOP_FILE"; then
+                    NEEDS_UPDATE=true
+                fi
+
+                if [ "${'$'}NEEDS_UPDATE" = true ]; then
+                    if command -v pkexec &> /dev/null; then
+                        pkexec sh -c "
+                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
+                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
+                        "
+                    elif command -v sudo &> /dev/null; then
+                        sudo sh -c "
+                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
+                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
+                        "
+                    fi
+                    echo "Fixed desktop file"
+                fi
             fi
 
-            # Refresh desktop database to pick up changes immediately
+            # Copy icon to hicolor theme for proper dock integration
+            if [ -f /opt/boss/lib/BOSS.png ]; then
+                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
+                if command -v pkexec &> /dev/null; then
+                    pkexec sh -c "mkdir -p '${'$'}ICON_DIR' && cp /opt/boss/lib/BOSS.png '${'$'}ICON_DIR/boss.png'"
+                elif command -v sudo &> /dev/null; then
+                    sudo mkdir -p "${'$'}ICON_DIR" && sudo cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
+                fi
+                echo "Installed icon to hicolor theme"
+            fi
+
+            # Refresh icon cache and desktop database
+            gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
             if command -v update-desktop-database &> /dev/null; then
                 update-desktop-database /usr/share/applications 2>/dev/null || true
             fi

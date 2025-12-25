@@ -25,37 +25,38 @@ brew install --cask boss
 
 ### Debian/Ubuntu (DEB)
 ```bash
-# Download the latest DEB package
-wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-amd64.deb
-# Or for ARM64:
-# wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-arm64.deb
+# Download and install the latest DEB package (amd64)
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4) -o boss.deb
+sudo dpkg -i boss.deb
+sudo apt-get install -f  # Fix dependencies if needed
 
-# Install
-sudo dpkg -i BOSS-*.deb
-
-# Fix dependencies if needed
+# For ARM64:
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*arm64.deb" | cut -d '"' -f 4) -o boss.deb
+sudo dpkg -i boss.deb
 sudo apt-get install -f
 ```
 
+Or download manually from the [Releases page](https://github.com/risa-labs-inc/BOSS-Releases/releases/latest).
+
 ### Fedora/RHEL (RPM)
 ```bash
-# Download the latest RPM package
-wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-x86_64.rpm
-# Or for ARM64:
-# wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-aarch64.rpm
+# Download and install the latest RPM package (x86_64)
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*x86_64.rpm" | cut -d '"' -f 4) -o boss.rpm
+sudo dnf install -y ./boss.rpm  # Or: sudo rpm -i boss.rpm
 
-# Install
-sudo rpm -i BOSS-*.rpm
+# For ARM64 (aarch64):
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*aarch64.rpm" | cut -d '"' -f 4) -o boss.rpm
+sudo dnf install -y ./boss.rpm
 ```
+
+Or download manually from the [Releases page](https://github.com/risa-labs-inc/BOSS-Releases/releases/latest).
 
 ### JAR (Universal)
 For distributions without DEB/RPM support or custom installations:
 ```bash
 # Requires Java 17+
-wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-amd64.jar
-
-# Run
-java -jar BOSS-*.jar
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*\.jar" | head -1 | cut -d '"' -f 4) -o boss.jar
+java -jar boss.jar
 ```
 
 ## Auto-Updates

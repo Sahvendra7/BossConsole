@@ -334,6 +334,8 @@ compose.desktop {
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            // Linux X11 WM_CLASS access for desktop integration
+            "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED",
             "-Dapple.awt.application.appearance=system",
             // Apple Silicon JIT compatibility flags
             "-XX:+IgnoreUnrecognizedVMOptions"
@@ -853,16 +855,40 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 }
                 .forEach { desktopFile ->
                     var content = desktopFile.readText()
+                    var fileModified = false
+
+                    // Add StartupWMClass if missing
                     if (!content.contains("StartupWMClass")) {
-                        // Add StartupWMClass=boss for proper dock integration
-                        content = content.trimEnd() + "\nStartupWMClass=boss\n"
+                        content = content.trimEnd() + "\nStartupWMClass=BOSS\n"
+                        println("✅ Added StartupWMClass=BOSS to ${desktopFile.name}")
+                        fileModified = true
+                    }
+
+                    // Change Icon path to use standard icon name for better desktop integration
+                    if (content.contains("Icon=/opt/boss/lib/BOSS.png")) {
+                        content = content.replace("Icon=/opt/boss/lib/BOSS.png", "Icon=boss")
+                        println("✅ Changed Icon to use standard name in ${desktopFile.name}")
+                        fileModified = true
+                    }
+
+                    if (fileModified) {
                         desktopFile.writeText(content)
-                        println("✅ Added StartupWMClass=boss to ${desktopFile.name}")
                         modified = true
                     } else {
-                        println("ℹ️ StartupWMClass already present in ${desktopFile.name}")
+                        println("ℹ️ No changes needed for ${desktopFile.name}")
                     }
                 }
+
+            // Copy icon to hicolor theme directory for proper desktop integration
+            val iconSource = workDir.walkTopDown().find { it.name == "BOSS.png" && it.path.contains("/lib/") }
+            if (iconSource != null) {
+                val hicolorDir = File(workDir, "usr/share/icons/hicolor/256x256/apps")
+                hicolorDir.mkdirs()
+                val iconDest = File(hicolorDir, "boss.png")
+                iconSource.copyTo(iconDest, overwrite = true)
+                println("✅ Copied icon to hicolor theme: ${iconDest.path}")
+                modified = true
+            }
 
             if (modified) {
                 // Repack deb using dpkg-deb --build
