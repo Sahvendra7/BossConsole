@@ -36,7 +36,7 @@ fun WindowAppearanceSettings() {
         // Show Title Bar Setting
         SettingSection(
             title = "Show Title Bar",
-            description = "Show the \"Boss Console\" title bar at the top of the window. Changes take effect on restart."
+            description = "Show the \"Boss Console\" title bar at the top of the window"
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
