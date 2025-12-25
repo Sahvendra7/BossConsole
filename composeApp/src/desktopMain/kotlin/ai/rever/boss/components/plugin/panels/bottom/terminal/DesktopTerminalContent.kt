@@ -50,12 +50,14 @@ actual fun TabbedTerminalContent(
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
+ * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
  */
 @Composable
 actual fun PersistentTabbedTerminalContent(
     terminalId: String,
     onExit: () -> Unit,
-    onShowSettings: () -> Unit
+    onShowSettings: () -> Unit,
+    onTitleChange: ((String) -> Unit)?
 ) {
     val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
@@ -77,6 +79,7 @@ actual fun PersistentTabbedTerminalContent(
                 onExit()
             },
             onShowSettings = onShowSettings,
+            onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
             modifier = Modifier.fillMaxSize()
         )
     }

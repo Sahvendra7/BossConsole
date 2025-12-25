@@ -27,7 +27,15 @@ data class TerminalTabInfo(
     override val icon: androidx.compose.ui.graphics.vector.ImageVector = TerminalTab.icon,
     override val tabIcon: TabIcon = TabIcon.Vector(icon),
     val initialCommand: String? = null
-) : TabInfo
+) : TabInfo {
+    /**
+     * Returns a copy of this tab info with an updated title.
+     * Used when terminal window title changes via escape sequences (OSC 0/1/2).
+     */
+    fun updateTitle(newTitle: String): TerminalTabInfo {
+        return copy(title = newTitle)
+    }
+}
 
 /**
  * Terminal tab component using BossTerm library for terminal emulation.
@@ -35,7 +43,8 @@ data class TerminalTabInfo(
 class TerminalTabComponent(
     override val config: TabInfo,
     private val componentContext: ComponentContext,
-    private val onClose: () -> Unit
+    private val onClose: () -> Unit,
+    private val onTitleUpdate: (String) -> Unit
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     override val tabTypeInfo = TerminalTab
@@ -58,6 +67,9 @@ class TerminalTabComponent(
             onExit = { onClose() },
             onShowSettings = {
                 MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")
+            },
+            onTitleChange = { newTitle ->
+                onTitleUpdate(newTitle)
             }
         )
     }
@@ -65,12 +77,7 @@ class TerminalTabComponent(
 
 fun DefaultPlugin.registerTerminalTab() = tabRegistry.registerTabType(TerminalTab) { config, context ->
     // Get the parent tab component through the component tree
-    var parentTabsComponent: ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent? = null
-
-    // The context passed here is the BossTabsComponent itself
-    if (context is ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent) {
-        parentTabsComponent = context
-    }
+    val parentTabsComponent = context as? ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 
     TerminalTabComponent(
         config = config,
@@ -81,6 +88,20 @@ fun DefaultPlugin.registerTerminalTab() = tabRegistry.registerTabType(TerminalTa
                 val index = tabs.tabsState.value.tabs.indexOfFirst { it.id == config.id }
                 if (index >= 0) {
                     tabs.removeTab(index)
+                }
+            }
+        },
+        onTitleUpdate = { newTitle ->
+            // Update the tab title when terminal window title changes
+            parentTabsComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == config.id }
+
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is TerminalTabInfo) {
+                        parent.updateTab(tabIndex, currentTab.updateTitle(newTitle))
+                    }
                 }
             }
         }
