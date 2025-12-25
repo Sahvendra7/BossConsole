@@ -1,5 +1,76 @@
 This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop, Server.
 
+# Installation
+
+## macOS
+
+### Homebrew (Recommended)
+```bash
+brew install --cask boss
+```
+
+### Manual Installation
+1. Download the latest `BOSS-x.x.x-Universal.dmg` from [Releases](https://github.com/risa-labs-inc/BOSS-Releases/releases)
+2. Open the DMG and drag BOSS to Applications
+3. Launch BOSS from Applications
+
+## Windows
+
+### MSI Installer
+1. Download the latest `BOSS-x.x.x.msi` from [Releases](https://github.com/risa-labs-inc/BOSS-Releases/releases)
+2. Run the installer and follow the prompts
+3. Launch BOSS from the Start Menu
+
+## Linux
+
+### Debian/Ubuntu (DEB)
+```bash
+# Download the latest DEB package
+wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-amd64.deb
+# Or for ARM64:
+# wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-arm64.deb
+
+# Install
+sudo dpkg -i BOSS-*.deb
+
+# Fix dependencies if needed
+sudo apt-get install -f
+```
+
+### Fedora/RHEL (RPM)
+```bash
+# Download the latest RPM package
+wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-x86_64.rpm
+# Or for ARM64:
+# wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-aarch64.rpm
+
+# Install
+sudo rpm -i BOSS-*.rpm
+```
+
+### JAR (Universal)
+For distributions without DEB/RPM support or custom installations:
+```bash
+# Requires Java 17+
+wget https://github.com/risa-labs-inc/BOSS-Releases/releases/latest/download/BOSS-x.x.x-amd64.jar
+
+# Run
+java -jar BOSS-*.jar
+```
+
+## Auto-Updates
+
+BOSS includes automatic update support for all platforms:
+- **macOS**: DMG downloads and installs automatically
+- **Windows**: MSI installs silently after app quit
+- **Linux**: DEB/RPM packages install with graphical sudo prompt (pkexec)
+
+Updates are checked periodically (default: every 6 hours) and can be configured in Settings.
+
+---
+
+# Project Structure
+
 * `/composeApp` is for code that will be shared across your Compose Multiplatform applications.
   It contains several subfolders:
   - `commonMain` is for code that's common for all targets.
@@ -164,7 +235,9 @@ Automatically builds and publishes releases for all platforms.
 **Outputs:**
 - 🍎 **macOS DMG** (Universal: Apple Silicon + Intel)
 - 🪟 **Windows MSI** (x64)
-- 🐧 **Linux JAR** (Cross-platform)
+- 🐧 **Linux DEB** (amd64, arm64)
+- 🐧 **Linux RPM** (x86_64, aarch64)
+- 🐧 **Linux JAR** (Cross-platform fallback)
 - 📦 **GitHub Release** with all artifacts
 
 **Manual Release:**
