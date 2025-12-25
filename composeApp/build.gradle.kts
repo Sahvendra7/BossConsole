@@ -334,6 +334,8 @@ compose.desktop {
             "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            // Linux X11 WM_CLASS access for desktop integration
+            "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED",
             "-Dapple.awt.application.appearance=system",
             // Apple Silicon JIT compatibility flags
             "-XX:+IgnoreUnrecognizedVMOptions"

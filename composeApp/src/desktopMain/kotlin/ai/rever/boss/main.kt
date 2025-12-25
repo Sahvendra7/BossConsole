@@ -16,6 +16,9 @@ import java.io.File
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
+    // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
+    setLinuxWMClass()
+
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
 
@@ -284,5 +287,26 @@ private fun extractPty4jNatives(targetDir: File) {
         }
     } catch (e: Exception) {
         println("Error extracting PTY4J natives: ${e.message}")
+    }
+}
+
+/**
+ * Set WM_CLASS for proper Linux desktop integration.
+ * Must be called before any windows are created.
+ * Requires JVM arg: --add-opens java.desktop/sun.awt.X11=ALL-UNNAMED
+ */
+private fun setLinuxWMClass() {
+    if (!System.getProperty("os.name").lowercase().contains("linux")) return
+
+    try {
+        // Get toolkit instance (creates it if needed)
+        val toolkit = java.awt.Toolkit.getDefaultToolkit()
+        if (toolkit.javaClass.name == "sun.awt.X11.XToolkit") {
+            val field = toolkit.javaClass.getDeclaredField("awtAppClassName")
+            field.isAccessible = true
+            field.set(toolkit, "BOSS")
+        }
+    } catch (e: Exception) {
+        System.err.println("Could not set WM_CLASS: ${e.message}")
     }
 }
