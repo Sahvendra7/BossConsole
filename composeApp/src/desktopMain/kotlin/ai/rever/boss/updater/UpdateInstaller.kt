@@ -187,6 +187,8 @@ object UpdateInstaller {
             when (getCurrentPlatform()) {
                 "macOS" -> installMacOSUpdate(downloadFile)
                 "Windows" -> installWindowsUpdate(downloadFile)
+                "Linux-deb" -> installLinuxDebUpdate(downloadFile)
+                "Linux-rpm" -> installLinuxRpmUpdate(downloadFile)
                 else -> installJarUpdate(downloadFile)
             }
         } catch (e: Exception) {
@@ -365,6 +367,80 @@ object UpdateInstaller {
     }
 
     /**
+     * Install Linux DEB update using helper script pattern
+     * Uses pkexec (graphical sudo) or sudo for privilege escalation
+     */
+    private suspend fun installLinuxDebUpdate(downloadFile: File): InstallResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                println("Starting Linux DEB update installation...")
+
+                // Validate download file for security (early check)
+                validateDownloadFile(downloadFile, ".deb")
+
+                // Generate update script with current process PID
+                val currentPid = ProcessHandle.current().pid()
+                println("📝 Generating DEB update script (PID: $currentPid)")
+
+                val scriptFile = UpdateScriptGenerator.generateLinuxDebUpdateScript(
+                    debPath = downloadFile.absolutePath,
+                    appPid = currentPid
+                )
+
+                // Launch the script in the background
+                println("🚀 Launching DEB update script")
+                UpdateScriptGenerator.launchScript(scriptFile)
+
+                // Return RequiresRestart
+                InstallResult.RequiresRestart(
+                    "Update is ready to install. The app will quit and install the update."
+                )
+
+            } catch (e: Exception) {
+                println("❌ Error during DEB update preparation: ${e.message}")
+                InstallResult.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    /**
+     * Install Linux RPM update using helper script pattern
+     * Uses pkexec (graphical sudo) or sudo for privilege escalation
+     */
+    private suspend fun installLinuxRpmUpdate(downloadFile: File): InstallResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                println("Starting Linux RPM update installation...")
+
+                // Validate download file for security (early check)
+                validateDownloadFile(downloadFile, ".rpm")
+
+                // Generate update script with current process PID
+                val currentPid = ProcessHandle.current().pid()
+                println("📝 Generating RPM update script (PID: $currentPid)")
+
+                val scriptFile = UpdateScriptGenerator.generateLinuxRpmUpdateScript(
+                    rpmPath = downloadFile.absolutePath,
+                    appPid = currentPid
+                )
+
+                // Launch the script in the background
+                println("🚀 Launching RPM update script")
+                UpdateScriptGenerator.launchScript(scriptFile)
+
+                // Return RequiresRestart
+                InstallResult.RequiresRestart(
+                    "Update is ready to install. The app will quit and install the update."
+                )
+
+            } catch (e: Exception) {
+                println("❌ Error during RPM update preparation: ${e.message}")
+                InstallResult.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    /**
      * Get current application path for macOS .app bundle
      * Returns null if running in development mode or path cannot be determined
      */
@@ -493,6 +569,46 @@ object UpdateInstaller {
     }
 
     /**
+     * Detect Linux distribution type (deb-based or rpm-based)
+     */
+    private fun detectLinuxDistroType(): String {
+        return try {
+            // Check for dpkg (Debian/Ubuntu)
+            val dpkgCheck = ProcessBuilder("which", "dpkg").start()
+            dpkgCheck.waitFor()
+            if (dpkgCheck.exitValue() == 0) {
+                return "Linux-deb"
+            }
+
+            // Check for rpm (Fedora/RHEL/CentOS)
+            val rpmCheck = ProcessBuilder("which", "rpm").start()
+            rpmCheck.waitFor()
+            if (rpmCheck.exitValue() == 0) {
+                return "Linux-rpm"
+            }
+
+            // Check /etc/os-release for more info
+            val osRelease = File("/etc/os-release")
+            if (osRelease.exists()) {
+                val content = osRelease.readText().lowercase()
+                return when {
+                    content.contains("debian") || content.contains("ubuntu") ||
+                    content.contains("mint") || content.contains("pop") -> "Linux-deb"
+                    content.contains("fedora") || content.contains("rhel") ||
+                    content.contains("centos") || content.contains("rocky") ||
+                    content.contains("alma") -> "Linux-rpm"
+                    else -> "Linux"
+                }
+            }
+
+            "Linux"
+        } catch (e: Exception) {
+            println("Could not detect Linux distro type: ${e.message}")
+            "Linux"
+        }
+    }
+
+    /**
      * Get the current operating system platform
      */
     fun getCurrentPlatform(): String {
@@ -500,7 +616,7 @@ object UpdateInstaller {
         return when {
             osName.contains("mac") || osName.contains("darwin") -> "macOS"
             osName.contains("win") -> "Windows"
-            osName.contains("linux") -> "Linux"
+            osName.contains("linux") -> detectLinuxDistroType()
             else -> "Unknown"
         }
     }
