@@ -1,8 +1,10 @@
 package ai.rever.boss.window
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -12,7 +14,7 @@ import java.io.File
  * Follows the BOSS settings management pattern with:
  * - JSON persistence in ~/.boss/window-appearance-settings.json
  * - Automatic directory creation
- * - Synchronous load on init
+ * - Synchronous load on init, asynchronous save
  * - Graceful error handling with fallback to defaults
  */
 actual object WindowAppearanceSettingsManager {
@@ -48,8 +50,15 @@ actual object WindowAppearanceSettingsManager {
                 // First run - create default settings file with platform-specific defaults
                 val defaults = getDefaultSettings()
                 _currentSettings.value = defaults
-                saveSettings(defaults)
-                println("[WindowAppearance] Created default settings at ${settingsFile.absolutePath}")
+
+                // Save default settings to file
+                try {
+                    val content = json.encodeToString(WindowAppearanceSettings.serializer(), defaults)
+                    settingsFile.writeText(content)
+                    println("[WindowAppearance] Created default settings at ${settingsFile.absolutePath}")
+                } catch (e: Exception) {
+                    println("[WindowAppearance] Warning: Could not write default settings file: ${e.message}")
+                }
             }
         } catch (e: Exception) {
             println("[WindowAppearance] Failed to load settings: ${e.message}")
@@ -57,9 +66,25 @@ actual object WindowAppearanceSettingsManager {
         }
     }
 
-    actual fun updateSettings(settings: WindowAppearanceSettings) {
+    /**
+     * Save current settings to disk asynchronously.
+     */
+    private suspend fun saveSettings() = withContext(Dispatchers.IO) {
+        try {
+            val content = json.encodeToString(WindowAppearanceSettings.serializer(), _currentSettings.value)
+            settingsFile.writeText(content)
+            println("[WindowAppearance] Settings saved to ${settingsFile.absolutePath}")
+        } catch (e: Exception) {
+            println("[WindowAppearance] Failed to save settings: ${e.message}")
+        }
+    }
+
+    /**
+     * Update the current settings and save to disk asynchronously.
+     */
+    actual suspend fun updateSettings(settings: WindowAppearanceSettings) {
         _currentSettings.value = settings
-        saveSettings(settings)
+        saveSettings()
     }
 
     actual fun getDefaultSettings(): WindowAppearanceSettings {
@@ -67,14 +92,5 @@ actual object WindowAppearanceSettingsManager {
         val isMacOS = os.contains("mac")
         // Show title bar on macOS, hide on Linux/Windows
         return WindowAppearanceSettings(showTitleBar = isMacOS)
-    }
-
-    private fun saveSettings(settings: WindowAppearanceSettings) {
-        try {
-            settingsFile.parentFile?.mkdirs()
-            settingsFile.writeText(json.encodeToString(WindowAppearanceSettings.serializer(), settings))
-        } catch (e: Exception) {
-            println("[WindowAppearance] Failed to save settings: ${e.message}")
-        }
     }
 }

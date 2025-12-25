@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun WindowAppearanceSettings() {
     val settings by WindowAppearanceSettingsManager.currentSettings.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -53,9 +55,11 @@ fun WindowAppearanceSettings() {
                 Switch(
                     checked = settings.showTitleBar,
                     onCheckedChange = { enabled ->
-                        WindowAppearanceSettingsManager.updateSettings(
-                            settings.copy(showTitleBar = enabled)
-                        )
+                        coroutineScope.launch {
+                            WindowAppearanceSettingsManager.updateSettings(
+                                settings.copy(showTitleBar = enabled)
+                            )
+                        }
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = BossDarkAccent,

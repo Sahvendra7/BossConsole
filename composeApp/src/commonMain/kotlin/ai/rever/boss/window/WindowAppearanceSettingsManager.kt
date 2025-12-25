@@ -13,9 +13,9 @@ expect object WindowAppearanceSettingsManager {
     val currentSettings: StateFlow<WindowAppearanceSettings>
 
     /**
-     * Update window appearance settings
+     * Update window appearance settings and save to disk asynchronously.
      */
-    fun updateSettings(settings: WindowAppearanceSettings)
+    suspend fun updateSettings(settings: WindowAppearanceSettings)
 
     /**
      * Get default settings for the current platform
