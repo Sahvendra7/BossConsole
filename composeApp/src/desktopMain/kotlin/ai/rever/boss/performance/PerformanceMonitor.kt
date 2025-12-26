@@ -76,6 +76,8 @@ object PerformanceMonitor {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var lastGcTime: Long = 0
+    private var lastHistoryUpdate: Long = 0
+    private const val HISTORY_UPDATE_INTERVAL_MS = 10_000L // Update history StateFlow every 10 seconds
 
     private val json = Json {
         prettyPrint = true
@@ -150,11 +152,11 @@ object PerformanceMonitor {
                     _currentHealth.value = PerformanceHealth.fromSnapshot(snapshot, settings)
                 }
 
-                // Update history using circular buffer (efficient, no GC pressure)
-                // Only add to history when there's a significant change (same as currentSnapshot update)
-                val shouldUpdateHistory = current == null || hasSignificantChange(current, snapshot)
+                // Update history buffer (cheap - just pointer manipulation)
+                // Only add to buffer when there's a significant change
+                val shouldAddToHistory = current == null || hasSignificantChange(current, snapshot)
 
-                if (shouldUpdateHistory) {
+                if (shouldAddToHistory) {
                     val cutoff = now - (settings.historyRetentionMinutes * 60 * 1000)
 
                     // Remove old entries from front
@@ -169,9 +171,13 @@ object PerformanceMonitor {
                     while (historyBuffer.size > MAX_HISTORY_SIZE) {
                         historyBuffer.removeFirst()
                     }
+                }
 
-                    // Update StateFlow (creates immutable snapshot for UI)
+                // Update StateFlow less frequently (expensive - creates full list copy)
+                // Charts don't need sub-second updates, so 10 second interval is sufficient
+                if (now - lastHistoryUpdate > HISTORY_UPDATE_INTERVAL_MS) {
                     _history.value = historyBuffer.toList()
+                    lastHistoryUpdate = now
                 }
 
                 delay(
