@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.performance
 
+import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.performance.PerformanceMonitor
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSettingsManager
@@ -46,6 +47,10 @@ class PerformanceViewModel {
         scope.launch {
             val result = PerformanceMonitor.exportMetrics()
             _exportResult.value = result
+            // Open the exported file in a new editor tab
+            if (result != null) {
+                FileEventBus.openFile(result)
+            }
         }
     }
 
