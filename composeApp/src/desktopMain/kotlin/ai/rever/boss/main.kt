@@ -138,6 +138,9 @@ fun main(args: Array<String>) {
     // Start global log capture from app startup
     GlobalLogCapture.start()
 
+    // Start performance monitoring from app startup
+    ai.rever.boss.performance.PerformanceMonitor.start()
+
     // Debug: Check environment variables
     println("=== Checking LLM API Keys in Environment ===")
     println("Current working directory: ${System.getProperty("user.dir")}")

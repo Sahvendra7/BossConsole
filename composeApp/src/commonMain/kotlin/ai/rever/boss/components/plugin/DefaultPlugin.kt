@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.components.plugin.panels.bottom.console.registerConsole
+import ai.rever.boss.components.plugin.panels.bottom.performance.registerPerformance
 import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
 import ai.rever.boss.components.plugin.panels.left_top.registerBookmarks
@@ -38,6 +39,7 @@ class DefaultPlugin(
         registerCodeBase()
         registerTerminal()
         registerConsole()
+        registerPerformance()
         registerTopOfMind()
 
         registerFluckPanel()
