@@ -87,3 +87,4 @@ hs_err_pid*.log
 # Reference repositories (not tracked)
 homebrew-boss/
 boss-releases/
+firebase-debug.log

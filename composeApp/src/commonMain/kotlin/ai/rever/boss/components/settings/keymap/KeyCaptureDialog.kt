@@ -127,10 +127,20 @@ fun KeyCaptureDialog(
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown) {
                                 // Capture the key and modifiers
+                                // Platform-aware modifier capture:
+                                // - macOS: Meta (Command) → "Cmd", Ctrl → "Ctrl"
+                                // - Linux/Windows: Ctrl → "Cmd" (primary modifier), Meta → "Ctrl"
                                 capturedKey = event.key
                                 val mods = mutableListOf<String>()
-                                if (event.isMetaPressed) mods.add("Cmd")
-                                if (event.isCtrlPressed) mods.add("Ctrl")
+                                val isMacOS = System.getProperty("os.name").contains("mac", ignoreCase = true)
+                                if (isMacOS) {
+                                    if (event.isMetaPressed) mods.add("Cmd")
+                                    if (event.isCtrlPressed) mods.add("Ctrl")
+                                } else {
+                                    // On Linux/Windows: Ctrl is the primary modifier (equivalent to Cmd)
+                                    if (event.isCtrlPressed) mods.add("Cmd")
+                                    if (event.isMetaPressed) mods.add("Ctrl")
+                                }
                                 if (event.isShiftPressed) mods.add("Shift")
                                 if (event.isAltPressed) mods.add("Alt")
                                 capturedModifiers = mods
