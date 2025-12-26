@@ -57,8 +57,15 @@ class PerformanceViewModel {
 
             PerformanceMonitor.exportMetrics()
                 .onSuccess { filePath ->
-                    _exportResult.value = filePath
-                    // Open the exported file in a new editor tab
+                    // Show relative path to avoid exposing full directory structure
+                    val homeDir = System.getProperty("user.home")
+                    val displayPath = if (filePath.startsWith(homeDir)) {
+                        "~" + filePath.removePrefix(homeDir)
+                    } else {
+                        filePath.substringAfterLast("/")
+                    }
+                    _exportResult.value = displayPath
+                    // Open the exported file in a new editor tab (use full path)
                     FileEventBus.openFile(filePath)
                 }
                 .onFailure { error ->

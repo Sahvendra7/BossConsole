@@ -128,8 +128,12 @@ object PerformanceMonitor {
                     resources = resources
                 )
 
-                _currentSnapshot.value = snapshot
-                _currentHealth.value = PerformanceHealth.fromSnapshot(snapshot, settings)
+                // Only update if values changed to avoid unnecessary recomposition
+                val current = _currentSnapshot.value
+                if (current == null || hasSignificantChange(current, snapshot)) {
+                    _currentSnapshot.value = snapshot
+                    _currentHealth.value = PerformanceHealth.fromSnapshot(snapshot, settings)
+                }
 
                 // Update history (keep last N minutes)
                 val cutoff = now - (settings.historyRetentionMinutes * 60 * 1000)
@@ -240,6 +244,28 @@ object PerformanceMonitor {
             panelCount = panelCountProvider?.invoke() ?: 0,
             windowCount = windowCountProvider?.invoke() ?: 0
         )
+    }
+
+    /**
+     * Check if there's a significant change between snapshots to avoid unnecessary updates.
+     * Thresholds: memory 1MB, CPU 1%, GC count change, resource count change
+     */
+    private fun hasSignificantChange(old: PerformanceSnapshot, new: PerformanceSnapshot): Boolean {
+        // Memory: 1MB threshold
+        val memoryDelta = kotlin.math.abs(old.memory.heapUsedBytes - new.memory.heapUsedBytes)
+        if (memoryDelta > 1024 * 1024) return true
+
+        // CPU: 1% threshold
+        val cpuDelta = kotlin.math.abs(old.cpu.processLoadPercent - new.cpu.processLoadPercent)
+        if (cpuDelta > 1.0f) return true
+
+        // GC count changed
+        if (old.gc.collectionCount != new.gc.collectionCount) return true
+
+        // Resource counts changed
+        if (old.resources != new.resources) return true
+
+        return false
     }
 
     /**
