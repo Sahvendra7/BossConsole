@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -677,6 +678,239 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         color = Color(0xFF00BCD4)
                     )
                 }
+            }
+        }
+
+        // Browser Tabs Details
+        if (snapshot.resources.browserTabs.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = BossDarkSurface,
+                    elevation = 0.dp,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Web,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = BossDarkAccent
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Browser Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        snapshot.resources.browserTabs.forEach { tab ->
+                            BrowserTabRow(tab)
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Terminal Sessions Details
+        if (snapshot.resources.terminals.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = BossDarkSurface,
+                    elevation = 0.dp,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Terminal,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = BossDarkSuccess
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Terminal Sessions", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        snapshot.resources.terminals.forEach { terminal ->
+                            TerminalRow(terminal)
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Editor Tabs Details
+        if (snapshot.resources.editorTabs.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = BossDarkSurface,
+                    elevation = 0.dp,
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = BossDarkWarning
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Editor Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        snapshot.resources.editorTabs.forEach { editor ->
+                            EditorTabRow(editor)
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserTabRow(tab: ai.rever.boss.performance.BrowserTabInfo) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (tab.isActive) BossDarkAccent.copy(alpha = 0.1f) else Color.Transparent,
+                RoundedCornerShape(4.dp)
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Active indicator
+        if (tab.isActive) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(BossDarkAccent, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = tab.title.ifEmpty { "Untitled" },
+                fontSize = 11.sp,
+                fontWeight = if (tab.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                color = BossDarkTextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = tab.url.ifEmpty { "about:blank" },
+                fontSize = 10.sp,
+                color = BossDarkTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun TerminalRow(terminal: ai.rever.boss.performance.TerminalInfo) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (terminal.isActive) BossDarkSuccess.copy(alpha = 0.1f) else Color.Transparent,
+                RoundedCornerShape(4.dp)
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Active indicator
+        if (terminal.isActive) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(BossDarkSuccess, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = terminal.title.ifEmpty { "Terminal" },
+                fontSize = 11.sp,
+                fontWeight = if (terminal.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                color = BossDarkTextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (terminal.workingDirectory.isNotEmpty()) {
+                Text(
+                    text = terminal.workingDirectory,
+                    fontSize = 10.sp,
+                    color = BossDarkTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditorTabRow(editor: ai.rever.boss.performance.EditorTabResourceInfo) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (editor.isActive) BossDarkWarning.copy(alpha = 0.1f) else Color.Transparent,
+                RoundedCornerShape(4.dp)
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Active indicator
+        if (editor.isActive) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(BossDarkWarning, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // Modified indicator
+        if (editor.isModified) {
+            Text(
+                text = "●",
+                fontSize = 10.sp,
+                color = BossDarkWarning,
+                modifier = Modifier.padding(end = 4.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = editor.fileName.ifEmpty { "Untitled" },
+                fontSize = 11.sp,
+                fontWeight = if (editor.isActive) FontWeight.SemiBold else FontWeight.Normal,
+                color = BossDarkTextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (editor.filePath.isNotEmpty()) {
+                Text(
+                    text = editor.filePath,
+                    fontSize = 10.sp,
+                    color = BossDarkTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

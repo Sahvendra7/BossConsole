@@ -122,6 +122,9 @@ import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.window.WindowAppearanceSettingsManager
 import ai.rever.boss.performance.PerformanceState
+import ai.rever.boss.performance.BrowserTabInfo
+import ai.rever.boss.performance.TerminalInfo
+import ai.rever.boss.performance.EditorTabResourceInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -192,6 +195,52 @@ fun ComponentContext.BossApp(
                 SplitViewStateRegistry.states.value.size
             }
         )
+
+        // Register detailed resource providers for the Resources tab
+        PerformanceState.registerDetailedResourceProviders(
+            browserTabs = {
+                splitViewState.getAllPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<FluckTabInfo>().map { tab ->
+                        BrowserTabInfo(
+                            id = tab.id,
+                            title = tab.title,
+                            url = tab.currentUrl,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            },
+            terminals = {
+                splitViewState.getAllPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<TerminalTabInfo>().map { tab ->
+                        TerminalInfo(
+                            id = tab.id,
+                            title = tab.title,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            },
+            editorTabs = {
+                splitViewState.getAllPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<EditorTabInfo>().map { tab ->
+                        EditorTabResourceInfo(
+                            id = tab.id,
+                            fileName = tab.title,
+                            filePath = tab.filePath,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            }
+        )
+
         onDispose {
             PerformanceState.clearResourceProviders()
         }

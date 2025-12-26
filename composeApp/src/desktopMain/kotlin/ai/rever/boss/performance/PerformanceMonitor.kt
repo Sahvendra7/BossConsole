@@ -61,6 +61,11 @@ object PerformanceMonitor {
     private var panelCountProvider: (() -> Int)? = null
     private var windowCountProvider: (() -> Int)? = null
 
+    // Detailed resource providers (registered by BossApp)
+    private var browserTabsProvider: (() -> List<BrowserTabInfo>)? = null
+    private var terminalsProvider: (() -> List<TerminalInfo>)? = null
+    private var editorTabsProvider: (() -> List<EditorTabResourceInfo>)? = null
+
     private var monitoringJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -181,6 +186,20 @@ object PerformanceMonitor {
     }
 
     /**
+     * Register detailed resource providers from BossApp.
+     * These provide detailed information about each resource for the Resources tab.
+     */
+    fun registerDetailedResourceProviders(
+        browserTabs: () -> List<BrowserTabInfo>,
+        terminals: () -> List<TerminalInfo>,
+        editorTabs: () -> List<EditorTabResourceInfo>
+    ) {
+        browserTabsProvider = browserTabs
+        terminalsProvider = terminals
+        editorTabsProvider = editorTabs
+    }
+
+    /**
      * Clear resource providers to prevent memory leaks.
      * Should be called when BossApp is disposed.
      */
@@ -190,6 +209,9 @@ object PerformanceMonitor {
         editorTabCountProvider = null
         panelCountProvider = null
         windowCountProvider = null
+        browserTabsProvider = null
+        terminalsProvider = null
+        editorTabsProvider = null
     }
 
     private fun collectMemoryMetrics(): MemoryMetrics {
@@ -306,7 +328,10 @@ object PerformanceMonitor {
             terminalCount = terminalCountProvider?.invoke() ?: 0,
             editorTabCount = editorTabCountProvider?.invoke() ?: 0,
             panelCount = panelCountProvider?.invoke() ?: 0,
-            windowCount = windowCountProvider?.invoke() ?: 0
+            windowCount = windowCountProvider?.invoke() ?: 0,
+            browserTabs = browserTabsProvider?.invoke() ?: emptyList(),
+            terminals = terminalsProvider?.invoke() ?: emptyList(),
+            editorTabs = editorTabsProvider?.invoke() ?: emptyList()
         )
     }
 

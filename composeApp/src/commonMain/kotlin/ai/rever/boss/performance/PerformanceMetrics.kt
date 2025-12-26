@@ -189,7 +189,44 @@ data class ResourceMetrics(
     val terminalCount: Int,
     val editorTabCount: Int,
     val panelCount: Int,
-    val windowCount: Int
+    val windowCount: Int,
+    val browserTabs: List<BrowserTabInfo> = emptyList(),
+    val terminals: List<TerminalInfo> = emptyList(),
+    val editorTabs: List<EditorTabResourceInfo> = emptyList()
+)
+
+/**
+ * Information about an open browser tab.
+ */
+@Serializable
+data class BrowserTabInfo(
+    val id: String,
+    val title: String,
+    val url: String,
+    val isActive: Boolean = false
+)
+
+/**
+ * Information about an open terminal session.
+ */
+@Serializable
+data class TerminalInfo(
+    val id: String,
+    val title: String,
+    val workingDirectory: String = "",
+    val isActive: Boolean = false
+)
+
+/**
+ * Information about an open editor tab.
+ */
+@Serializable
+data class EditorTabResourceInfo(
+    val id: String,
+    val fileName: String,
+    val filePath: String,
+    val isModified: Boolean = false,
+    val isActive: Boolean = false
 )
 
 /**
