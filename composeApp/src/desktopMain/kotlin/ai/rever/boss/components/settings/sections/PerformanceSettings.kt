@@ -246,14 +246,15 @@ fun PerformanceSettings() {
             title = "Reset Settings",
             description = "Restore all performance settings to defaults"
         ) {
-            OutlinedButton(
+            Button(
                 onClick = {
                     coroutineScope.launch {
                         PerformanceSettingsManager.resetToDefault()
                     }
                 },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = BossDarkAccent,
+                    contentColor = androidx.compose.ui.graphics.Color.White
                 )
             ) {
                 Text("Reset to Defaults")
