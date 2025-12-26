@@ -32,7 +32,9 @@ data class PerformanceSettings(
         cpuSampleIntervalMs = cpuSampleIntervalMs.coerceAtLeast(100),
         resourceSampleIntervalMs = resourceSampleIntervalMs.coerceAtLeast(100),
         gcSampleIntervalMs = gcSampleIntervalMs.coerceAtLeast(100),
-        historyRetentionMinutes = historyRetentionMinutes.coerceIn(1, 1440)
+        // Cap retention at 180 minutes (3 hours) to fit within history buffer limits
+        // At 1s intervals: 180 min * 60 = 10,800 entries (buffer size is 10,000)
+        historyRetentionMinutes = historyRetentionMinutes.coerceIn(1, 180)
     )
 }
 

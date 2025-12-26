@@ -88,7 +88,7 @@ class PerformanceMonitorTest {
 
         val settingsHigh = PerformanceSettings(historyRetentionMinutes = 10000)
         val validatedHigh = settingsHigh.validated()
-        assertEquals(1440, validatedHigh.historyRetentionMinutes, "Should clamp to 1440 minutes (24h) max")
+        assertEquals(180, validatedHigh.historyRetentionMinutes, "Should clamp to 180 minutes (3h) max")
     }
 
     @Test

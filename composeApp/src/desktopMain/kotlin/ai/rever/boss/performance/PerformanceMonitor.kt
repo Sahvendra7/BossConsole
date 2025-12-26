@@ -51,9 +51,11 @@ object PerformanceMonitor {
     )
     val currentHealth: StateFlow<PerformanceHealth> = _currentHealth.asStateFlow()
 
-    // Max history entries: 30 min retention with 1s intervals = 1800 entries
-    // Add buffer for slightly longer retention
-    private const val MAX_HISTORY_SIZE = 2000
+    // Max history entries based on retention and sample interval
+    // At 1s intervals: 10,000 entries = ~167 minutes (~2.8 hours)
+    // At 5s intervals: 10,000 entries = ~833 minutes (~14 hours)
+    // This provides a reasonable balance between memory usage and practical retention
+    private const val MAX_HISTORY_SIZE = 10_000
 
     // Use ArrayDeque as a circular buffer for efficient history management
     private val historyBuffer = ArrayDeque<PerformanceSnapshot>(MAX_HISTORY_SIZE)
@@ -77,6 +79,7 @@ object PerformanceMonitor {
 
     private var lastGcTime: Long = 0
     private var lastHistoryUpdate: Long = 0
+    private var historyModified: Boolean = false // Track if buffer changed since last StateFlow update
     private const val HISTORY_UPDATE_INTERVAL_MS = 10_000L // Update history StateFlow every 10 seconds
 
     private val json = Json {
@@ -167,22 +170,26 @@ object PerformanceMonitor {
                     // Remove old entries from front
                     while (historyBuffer.isNotEmpty() && historyBuffer.first().timestamp < cutoff) {
                         historyBuffer.removeFirst()
+                        historyModified = true
                     }
 
                     // Add new snapshot
                     historyBuffer.addLast(snapshot)
+                    historyModified = true
 
                     // Enforce max size (shouldn't happen often with proper retention)
                     while (historyBuffer.size > MAX_HISTORY_SIZE) {
                         historyBuffer.removeFirst()
+                        historyModified = true
                     }
                 }
 
                 // Update StateFlow less frequently (expensive - creates full list copy)
-                // Charts don't need sub-second updates, so 10 second interval is sufficient
-                if (now - lastHistoryUpdate > HISTORY_UPDATE_INTERVAL_MS) {
+                // Only update if: (1) enough time passed AND (2) history actually changed
+                if (now - lastHistoryUpdate > HISTORY_UPDATE_INTERVAL_MS && historyModified) {
                     _history.value = historyBuffer.toList()
                     lastHistoryUpdate = now
+                    historyModified = false
                 }
 
                 delay(
