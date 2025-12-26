@@ -121,6 +121,7 @@ import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.window.WindowAppearanceSettingsManager
+import ai.rever.boss.performance.PerformanceState
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -156,6 +157,40 @@ fun ComponentContext.BossApp(
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
     LaunchedEffect(splitViewState) {
         setupDownloadTabCloseCallback(splitViewState)
+    }
+
+    // Register resource count providers for performance monitoring
+    LaunchedEffect(splitViewState, draggablePanelComponent) {
+        PerformanceState.registerResourceProviders(
+            browserTabs = {
+                splitViewState.getAllPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is FluckTabInfo }
+                }
+            },
+            terminals = {
+                splitViewState.getAllPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is TerminalTabInfo }
+                }
+            },
+            editorTabs = {
+                splitViewState.getAllPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is EditorTabInfo }
+                }
+            },
+            panels = {
+                // Count visible panels from the draggable panel component
+                listOf(
+                    bottom,
+                    left.top,
+                    left.bottom,
+                    right.top,
+                    right.bottom
+                ).count { panel -> draggablePanelComponent.isVisible(panel) }
+            },
+            windows = {
+                SplitViewStateRegistry.states.value.size
+            }
+        )
     }
 
     // Workspace manager - use global singleton to ensure Bookmarks panel sees updates

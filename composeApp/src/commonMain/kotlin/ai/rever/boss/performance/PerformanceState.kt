@@ -1,7 +1,6 @@
 package ai.rever.boss.performance
 
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Platform-specific performance state access.
@@ -31,4 +30,16 @@ expect object PerformanceState {
      * Open the performance panel.
      */
     fun openPerformancePanel()
+
+    /**
+     * Register resource count providers.
+     * Should be called once from BossApp with functions that return current counts.
+     */
+    fun registerResourceProviders(
+        browserTabs: () -> Int,
+        terminals: () -> Int,
+        editorTabs: () -> Int,
+        panels: () -> Int,
+        windows: () -> Int
+    )
 }

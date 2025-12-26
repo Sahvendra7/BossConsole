@@ -39,4 +39,20 @@ actual object PerformanceState {
             PanelEventBus.openPanel(PanelId("performance", 15))
         }
     }
+
+    actual fun registerResourceProviders(
+        browserTabs: () -> Int,
+        terminals: () -> Int,
+        editorTabs: () -> Int,
+        panels: () -> Int,
+        windows: () -> Int
+    ) {
+        PerformanceMonitor.registerResourceProviders(
+            browserTabs = browserTabs,
+            terminals = terminals,
+            editorTabs = editorTabs,
+            panels = panels,
+            windows = windows
+        )
+    }
 }
