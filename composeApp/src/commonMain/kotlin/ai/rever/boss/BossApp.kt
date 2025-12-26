@@ -21,6 +21,7 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.rememberSplitViewState
+import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -165,19 +166,34 @@ fun ComponentContext.BossApp(
     // Register resource count providers for performance monitoring
     // Use DisposableEffect to clean up on disposal and prevent memory leaks
     DisposableEffect(splitViewState, draggablePanelComponent) {
+        // Cache for getAllPanels() to avoid repeated tree traversals
+        // All 6 providers are called within milliseconds of each other every 5 seconds
+        var cachedPanels: List<SplitNode.Panel>? = null
+        var cacheTimestamp = 0L
+        val cacheTtlMs = 500L // Cache valid for 500ms (well within 5s collection interval)
+
+        fun getCachedPanels(): List<SplitNode.Panel> {
+            val now = System.currentTimeMillis()
+            if (cachedPanels == null || now - cacheTimestamp > cacheTtlMs) {
+                cachedPanels = splitViewState.getAllPanels()
+                cacheTimestamp = now
+            }
+            return cachedPanels!!
+        }
+
         PerformanceState.registerResourceProviders(
             browserTabs = {
-                splitViewState.getAllPanels().sumOf { panel ->
+                getCachedPanels().sumOf { panel ->
                     panel.tabsComponent.tabsState.value.tabs.count { it is FluckTabInfo }
                 }
             },
             terminals = {
-                splitViewState.getAllPanels().sumOf { panel ->
+                getCachedPanels().sumOf { panel ->
                     panel.tabsComponent.tabsState.value.tabs.count { it is TerminalTabInfo }
                 }
             },
             editorTabs = {
-                splitViewState.getAllPanels().sumOf { panel ->
+                getCachedPanels().sumOf { panel ->
                     panel.tabsComponent.tabsState.value.tabs.count { it is EditorTabInfo }
                 }
             },
@@ -199,7 +215,7 @@ fun ComponentContext.BossApp(
         // Register detailed resource providers for the Resources tab
         PerformanceState.registerDetailedResourceProviders(
             browserTabs = {
-                splitViewState.getAllPanels().flatMap { panel ->
+                getCachedPanels().flatMap { panel ->
                     val tabsState = panel.tabsComponent.tabsState.value
                     val activeTabId = tabsState.activeTab?.id
                     tabsState.tabs.filterIsInstance<FluckTabInfo>().map { tab ->
@@ -213,7 +229,7 @@ fun ComponentContext.BossApp(
                 }
             },
             terminals = {
-                splitViewState.getAllPanels().flatMap { panel ->
+                getCachedPanels().flatMap { panel ->
                     val tabsState = panel.tabsComponent.tabsState.value
                     val activeTabId = tabsState.activeTab?.id
                     tabsState.tabs.filterIsInstance<TerminalTabInfo>().map { tab ->
@@ -226,7 +242,7 @@ fun ComponentContext.BossApp(
                 }
             },
             editorTabs = {
-                splitViewState.getAllPanels().flatMap { panel ->
+                getCachedPanels().flatMap { panel ->
                     val tabsState = panel.tabsComponent.tabsState.value
                     val activeTabId = tabsState.activeTab?.id
                     tabsState.tabs.filterIsInstance<EditorTabInfo>().map { tab ->
