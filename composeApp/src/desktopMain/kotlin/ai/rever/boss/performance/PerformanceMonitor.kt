@@ -151,23 +151,28 @@ object PerformanceMonitor {
                 }
 
                 // Update history using circular buffer (efficient, no GC pressure)
-                val cutoff = now - (settings.historyRetentionMinutes * 60 * 1000)
+                // Only add to history when there's a significant change (same as currentSnapshot update)
+                val shouldUpdateHistory = current == null || hasSignificantChange(current, snapshot)
 
-                // Remove old entries from front
-                while (historyBuffer.isNotEmpty() && historyBuffer.first().timestamp < cutoff) {
-                    historyBuffer.removeFirst()
+                if (shouldUpdateHistory) {
+                    val cutoff = now - (settings.historyRetentionMinutes * 60 * 1000)
+
+                    // Remove old entries from front
+                    while (historyBuffer.isNotEmpty() && historyBuffer.first().timestamp < cutoff) {
+                        historyBuffer.removeFirst()
+                    }
+
+                    // Add new snapshot
+                    historyBuffer.addLast(snapshot)
+
+                    // Enforce max size (shouldn't happen often with proper retention)
+                    while (historyBuffer.size > MAX_HISTORY_SIZE) {
+                        historyBuffer.removeFirst()
+                    }
+
+                    // Update StateFlow (creates immutable snapshot for UI)
+                    _history.value = historyBuffer.toList()
                 }
-
-                // Add new snapshot
-                historyBuffer.addLast(snapshot)
-
-                // Enforce max size (shouldn't happen often with proper retention)
-                while (historyBuffer.size > MAX_HISTORY_SIZE) {
-                    historyBuffer.removeFirst()
-                }
-
-                // Update StateFlow only if needed (creates immutable snapshot)
-                _history.value = historyBuffer.toList()
 
                 delay(
                     minOf(
@@ -181,10 +186,12 @@ object PerformanceMonitor {
 
     /**
      * Stop performance monitoring.
+     * Also clears resource providers to prevent memory leaks during abnormal termination.
      */
     fun stop() {
         monitoringJob?.cancel()
         monitoringJob = null
+        clearResourceProviders()
         println("[Performance] Stopped performance monitor")
     }
 
@@ -345,15 +352,28 @@ object PerformanceMonitor {
 
     private fun collectResourceMetrics(): ResourceMetrics {
         return ResourceMetrics(
-            browserTabCount = browserTabCountProvider?.invoke() ?: 0,
-            terminalCount = terminalCountProvider?.invoke() ?: 0,
-            editorTabCount = editorTabCountProvider?.invoke() ?: 0,
-            panelCount = panelCountProvider?.invoke() ?: 0,
-            windowCount = windowCountProvider?.invoke() ?: 0,
-            browserTabs = browserTabsProvider?.invoke() ?: emptyList(),
-            terminals = terminalsProvider?.invoke() ?: emptyList(),
-            editorTabs = editorTabsProvider?.invoke() ?: emptyList()
+            browserTabCount = safeInvoke(browserTabCountProvider) { 0 },
+            terminalCount = safeInvoke(terminalCountProvider) { 0 },
+            editorTabCount = safeInvoke(editorTabCountProvider) { 0 },
+            panelCount = safeInvoke(panelCountProvider) { 0 },
+            windowCount = safeInvoke(windowCountProvider) { 0 },
+            browserTabs = safeInvoke(browserTabsProvider) { emptyList() },
+            terminals = safeInvoke(terminalsProvider) { emptyList() },
+            editorTabs = safeInvoke(editorTabsProvider) { emptyList() }
         )
+    }
+
+    /**
+     * Safely invoke a provider function, catching any exceptions.
+     * This prevents concurrent modification or other errors from crashing the monitoring loop.
+     */
+    private inline fun <T> safeInvoke(noinline provider: (() -> T)?, default: () -> T): T {
+        return try {
+            provider?.invoke() ?: default()
+        } catch (e: Exception) {
+            println("[Performance] Provider error: ${e.message}")
+            default()
+        }
     }
 
     /**
