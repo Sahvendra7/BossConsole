@@ -136,8 +136,9 @@ actual class UpdateService {
             val isUpdateAvailable = latestVersion.isNewerThan(Version.CURRENT)
             
             // Find the appropriate asset for the current platform
+            val platform = getCurrentPlatform()
             val expectedAssetName = getExpectedAssetName(latestVersion)
-            println("Looking for asset: $expectedAssetName")
+            println("Looking for asset: $expectedAssetName (platform: $platform)")
             println("Available assets: ${latestRelease.assets.map { it.name }}")
             
             val asset = latestRelease.assets.find { 
@@ -354,7 +355,8 @@ actual class UpdateService {
         return when (getCurrentPlatform()) {
             "macOS" -> "BOSS-${version}-Universal.dmg"
             "Windows" -> "BOSS-${version}.msi"
-            "Linux" -> "BOSS-${version}-${getLinuxArchSuffix()}.deb"
+            "Linux", "Linux-deb" -> "BOSS-${version}-${getLinuxArchSuffix()}.deb"
+            "Linux-rpm" -> "BOSS-${version}-${getLinuxArchSuffix()}.rpm"
             else -> "BOSS-${version}-${getLinuxArchSuffix()}.jar"  // JAR with arch for native deps
         }
     }
