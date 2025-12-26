@@ -998,8 +998,8 @@ private fun CircularGauge(
         }
     }
 
-    val gaugeSize = 80.dp
-    val strokeWidth = 7.dp
+    val gaugeSize = 100.dp
+    val strokeWidth = 8.dp
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1047,16 +1047,16 @@ private fun CircularGauge(
             Text(
                 text = valueText,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 color = BossDarkTextPrimary
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = label,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = BossDarkTextSecondary
         )
     }
