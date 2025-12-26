@@ -57,7 +57,8 @@ data class MemoryMetrics(
     val heapMaxBytes: Long,
     val heapCommittedBytes: Long,
     val nonHeapUsedBytes: Long,
-    val nonHeapCommittedBytes: Long
+    val nonHeapCommittedBytes: Long,
+    val memoryPools: List<MemoryPoolInfo> = emptyList()
 ) {
     val heapUsagePercent: Float
         get() = if (heapMaxBytes > 0) (heapUsedBytes.toFloat() / heapMaxBytes) * 100f else 0f
@@ -76,6 +77,29 @@ data class MemoryMetrics(
 
     val nonHeapCommittedMB: Float
         get() = nonHeapCommittedBytes / (1024f * 1024f)
+}
+
+/**
+ * Information about a single memory pool (Eden, Survivor, Old Gen, Metaspace, etc.)
+ */
+@Serializable
+data class MemoryPoolInfo(
+    val name: String,
+    val type: String,           // HEAP or NON_HEAP
+    val usedBytes: Long,
+    val maxBytes: Long,
+    val committedBytes: Long
+) {
+    val usedMB: Float
+        get() = usedBytes / (1024f * 1024f)
+
+    val maxMB: Float
+        get() = if (maxBytes > 0) maxBytes / (1024f * 1024f) else committedBytes / (1024f * 1024f)
+
+    val usagePercent: Float
+        get() = if (maxBytes > 0) (usedBytes.toFloat() / maxBytes) * 100f
+                else if (committedBytes > 0) (usedBytes.toFloat() / committedBytes) * 100f
+                else 0f
 }
 
 /**
@@ -129,8 +153,32 @@ data class GcMetrics(
 data class GcCollectorInfo(
     val name: String,
     val collectionCount: Long,
-    val collectionTimeMs: Long
+    val collectionTimeMs: Long,
+    val lastGcInfo: LastGcInfo? = null
 )
+
+/**
+ * Information about the last GC event for a collector.
+ */
+@Serializable
+data class LastGcInfo(
+    val startTime: Long,        // Timestamp when GC started
+    val durationMs: Long,       // Duration of the GC
+    val memoryBeforeBytes: Long,
+    val memoryAfterBytes: Long
+) {
+    val memoryReclaimedBytes: Long
+        get() = memoryBeforeBytes - memoryAfterBytes
+
+    val memoryReclaimedMB: Float
+        get() = memoryReclaimedBytes / (1024f * 1024f)
+
+    val memoryBeforeMB: Float
+        get() = memoryBeforeBytes / (1024f * 1024f)
+
+    val memoryAfterMB: Float
+        get() = memoryAfterBytes / (1024f * 1024f)
+}
 
 /**
  * Resource counts (browser tabs, terminals, etc.).

@@ -16,6 +16,7 @@ import java.io.File
 import java.lang.management.GarbageCollectorMXBean
 import java.lang.management.ManagementFactory
 import java.lang.management.MemoryMXBean
+import java.lang.management.MemoryPoolMXBean
 import java.lang.management.OperatingSystemMXBean
 import java.lang.management.ThreadMXBean
 import java.text.SimpleDateFormat
@@ -31,13 +32,16 @@ import java.util.Date
  */
 object PerformanceMonitor {
     private val memoryMXBean: MemoryMXBean = ManagementFactory.getMemoryMXBean()
+    private val memoryPoolMXBeans: List<MemoryPoolMXBean> = ManagementFactory.getMemoryPoolMXBeans()
     private val osMXBean: OperatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean()
     private val threadMXBean: ThreadMXBean = ManagementFactory.getThreadMXBean()
     private val gcMXBeans: List<GarbageCollectorMXBean> = ManagementFactory.getGarbageCollectorMXBeans()
 
-    // Sun/Oracle specific for process CPU load
+    // Sun/Oracle specific for process CPU load and GC info
     private val sunOSBean: com.sun.management.OperatingSystemMXBean? =
         osMXBean as? com.sun.management.OperatingSystemMXBean
+    private val sunGcBeans: List<com.sun.management.GarbageCollectorMXBean> =
+        gcMXBeans.mapNotNull { it as? com.sun.management.GarbageCollectorMXBean }
 
     private val _currentSnapshot = MutableStateFlow<PerformanceSnapshot?>(null)
     val currentSnapshot: StateFlow<PerformanceSnapshot?> = _currentSnapshot.asStateFlow()
@@ -192,12 +196,25 @@ object PerformanceMonitor {
         val heapUsage = memoryMXBean.heapMemoryUsage
         val nonHeapUsage = memoryMXBean.nonHeapMemoryUsage
 
+        // Collect memory pool details
+        val memoryPools = memoryPoolMXBeans.map { pool ->
+            val usage = pool.usage
+            MemoryPoolInfo(
+                name = pool.name,
+                type = pool.type.name,
+                usedBytes = usage?.used ?: 0L,
+                maxBytes = usage?.max ?: -1L,
+                committedBytes = usage?.committed ?: 0L
+            )
+        }
+
         return MemoryMetrics(
             heapUsedBytes = heapUsage.used,
             heapMaxBytes = heapUsage.max,
             heapCommittedBytes = heapUsage.committed,
             nonHeapUsedBytes = nonHeapUsage.used,
-            nonHeapCommittedBytes = nonHeapUsage.committed
+            nonHeapCommittedBytes = nonHeapUsage.committed,
+            memoryPools = memoryPools
         )
     }
 
@@ -245,11 +262,27 @@ object PerformanceMonitor {
     }
 
     private fun collectGcMetrics(): GcMetrics {
+        // Create a map of last GC info by collector name
+        val lastGcInfoMap = sunGcBeans.associate { gc ->
+            val gcInfo = gc.lastGcInfo
+            gc.name to gcInfo?.let { info ->
+                val memoryBefore = info.memoryUsageBeforeGc.values.sumOf { it.used }
+                val memoryAfter = info.memoryUsageAfterGc.values.sumOf { it.used }
+                LastGcInfo(
+                    startTime = info.startTime,
+                    durationMs = info.duration,
+                    memoryBeforeBytes = memoryBefore,
+                    memoryAfterBytes = memoryAfter
+                )
+            }
+        }
+
         val collectors = gcMXBeans.map { gc ->
             GcCollectorInfo(
                 name = gc.name,
                 collectionCount = gc.collectionCount,
-                collectionTimeMs = gc.collectionTime
+                collectionTimeMs = gc.collectionTime,
+                lastGcInfo = lastGcInfoMap[gc.name]
             )
         }
 

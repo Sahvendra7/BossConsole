@@ -9,7 +9,9 @@ import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.bars.horizontal.BossDarkWarning
+import ai.rever.boss.performance.GcCollectorInfo
 import ai.rever.boss.performance.HealthStatus
+import ai.rever.boss.performance.MemoryPoolInfo
 import ai.rever.boss.performance.PerformanceHealth
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSnapshot
@@ -344,7 +346,7 @@ private fun MemoryTab(snapshot: PerformanceSnapshot?) {
         }
 
         item {
-            // Non-heap memory
+            // Memory Pools
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
@@ -352,19 +354,54 @@ private fun MemoryTab(snapshot: PerformanceSnapshot?) {
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Non-Heap Memory", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Text("Memory Pools", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Pool", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.weight(2f))
+                        Text("Type", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.weight(1f))
+                        Text("Usage", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.width(100.dp))
+                    }
+
+                    Divider(color = BossDarkBorder, thickness = 1.dp)
+
+                    // Memory pool rows
+                    snapshot.memory.memoryPools.forEach { pool ->
+                        MemoryPoolRow(pool)
+                    }
+
+                    if (snapshot.memory.memoryPools.isEmpty()) {
+                        Text(
+                            "No memory pool data available",
+                            fontSize = 10.sp,
+                            color = BossDarkTextSecondary,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            // Non-heap memory summary
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = BossDarkSurface,
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Non-Heap Summary", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Text(
-                        "Used: ${snapshot.memory.nonHeapUsedMB.toInt()}MB",
-                        color = BossDarkTextPrimary,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        "Committed: ${snapshot.memory.nonHeapCommittedMB.toInt()}MB",
-                        color = BossDarkTextSecondary,
-                        fontSize = 10.sp
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        MetricItem("Used", "${snapshot.memory.nonHeapUsedMB.toInt()}MB", HealthStatus.GOOD)
+                        MetricItem("Committed", "${snapshot.memory.nonHeapCommittedMB.toInt()}MB", HealthStatus.GOOD)
+                    }
                 }
             }
         }
@@ -478,8 +515,11 @@ private fun TimingsTab(snapshot: PerformanceSnapshot?) {
         return
     }
 
+    val currentTime = System.currentTimeMillis()
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
+            // Summary card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
@@ -487,29 +527,43 @@ private fun TimingsTab(snapshot: PerformanceSnapshot?) {
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Garbage Collection", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Text("Garbage Collection Summary", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         MetricItem("Total Collections", "${snapshot.gc.collectionCount}", HealthStatus.GOOD)
                         MetricItem("Total Time", "${snapshot.gc.collectionTimeMs}ms", HealthStatus.GOOD)
                     }
+                }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+        item {
+            // Collectors with last GC info
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = BossDarkSurface,
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Collectors", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    Text("Collectors:", color = BossDarkTextSecondary, fontSize = 10.sp)
                     snapshot.gc.gcCollectors.forEach { collector ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(collector.name, color = BossDarkTextPrimary, fontSize = 10.sp)
-                            Text(
-                                "${collector.collectionCount} (${collector.collectionTimeMs}ms)",
-                                color = BossDarkTextSecondary,
-                                fontSize = 10.sp
-                            )
+                        GcCollectorRow(collector, currentTime)
+                        if (collector != snapshot.gc.gcCollectors.last()) {
+                            Divider(color = BossDarkBorder.copy(alpha = 0.5f), thickness = 1.dp)
                         }
+                    }
+
+                    if (snapshot.gc.gcCollectors.isEmpty()) {
+                        Text(
+                            "No GC collector data available",
+                            fontSize = 10.sp,
+                            color = BossDarkTextSecondary,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
                     }
                 }
             }
@@ -712,6 +766,144 @@ private fun formatCpuTime(ms: Long): String {
     return when {
         ms >= 60000 -> "${ms / 60000}m ${(ms % 60000) / 1000}s"
         ms >= 1000 -> "${ms / 1000}.${(ms % 1000) / 100}s"
+        else -> "${ms}ms"
+    }
+}
+
+@Composable
+private fun MemoryPoolRow(pool: MemoryPoolInfo) {
+    val typeColor = if (pool.type == "HEAP") BossDarkAccent else Color(0xFF9C27B0)
+    val progress = pool.usagePercent / 100f
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Pool name
+        Text(
+            text = pool.name.take(20) + if (pool.name.length > 20) "..." else "",
+            fontSize = 10.sp,
+            color = BossDarkTextPrimary,
+            modifier = Modifier.weight(2f)
+        )
+
+        // Type badge
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(2.dp),
+            color = typeColor.copy(alpha = 0.2f)
+        ) {
+            Text(
+                text = pool.type,
+                fontSize = 9.sp,
+                color = typeColor,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+            )
+        }
+
+        // Usage bar with percentage
+        Row(
+            modifier = Modifier.width(100.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(BossDarkBorder)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(
+                            when {
+                                progress >= 0.9f -> BossDarkError
+                                progress >= 0.75f -> BossDarkWarning
+                                else -> BossDarkSuccess
+                            }
+                        )
+                )
+            }
+            Text(
+                text = "${pool.usagePercent.toInt()}%",
+                fontSize = 9.sp,
+                color = BossDarkTextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun GcCollectorRow(collector: GcCollectorInfo, currentTime: Long) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        // Collector name and stats
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = collector.name,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = BossDarkTextPrimary
+            )
+            Text(
+                text = "${collector.collectionCount} collections, ${collector.collectionTimeMs}ms",
+                fontSize = 10.sp,
+                color = BossDarkTextSecondary
+            )
+        }
+
+        // Last GC info if available
+        collector.lastGcInfo?.let { lastGc ->
+            val timeAgo = currentTime - lastGc.startTime
+            val timeAgoText = formatTimeAgo(timeAgo)
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Last GC: $timeAgoText ago",
+                    fontSize = 9.sp,
+                    color = BossDarkTextSecondary
+                )
+                Text(
+                    text = "${lastGc.durationMs}ms",
+                    fontSize = 9.sp,
+                    color = BossDarkWarning
+                )
+                if (lastGc.memoryReclaimedBytes > 0) {
+                    Text(
+                        text = "reclaimed ${lastGc.memoryReclaimedMB.toInt()}MB",
+                        fontSize = 9.sp,
+                        color = BossDarkSuccess
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatTimeAgo(ms: Long): String {
+    return when {
+        ms >= 3600000 -> "${ms / 3600000}h ${(ms % 3600000) / 60000}m"
+        ms >= 60000 -> "${ms / 60000}m ${(ms % 60000) / 1000}s"
+        ms >= 1000 -> "${ms / 1000}s"
         else -> "${ms}ms"
     }
 }
