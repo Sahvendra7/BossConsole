@@ -136,8 +136,9 @@ actual class UpdateService {
             val isUpdateAvailable = latestVersion.isNewerThan(Version.CURRENT)
             
             // Find the appropriate asset for the current platform
+            val platform = getCurrentPlatform()
             val expectedAssetName = getExpectedAssetName(latestVersion)
-            println("Looking for asset: $expectedAssetName")
+            println("Looking for asset: $expectedAssetName (platform: $platform)")
             println("Available assets: ${latestRelease.assets.map { it.name }}")
             
             val asset = latestRelease.assets.find { 
