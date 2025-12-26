@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
@@ -13,7 +14,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Desktop implementation of TabbedTerminalContent using BossTerm's TabbedTerminal.
@@ -30,6 +35,7 @@ actual fun TabbedTerminalContent(
     onShowSettings: () -> Unit
 ) {
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -38,6 +44,7 @@ actual fun TabbedTerminalContent(
         TabbedTerminal(
             onExit = onExit,
             onShowSettings = onShowSettings,
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -61,6 +68,7 @@ actual fun PersistentTabbedTerminalContent(
 ) {
     val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     DisposableEffect(terminalId) {
         onDispose {
@@ -80,6 +88,7 @@ actual fun PersistentTabbedTerminalContent(
             },
             onShowSettings = onShowSettings,
             onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -122,6 +131,46 @@ private object TerminalStateRegistry {
 }
 
 /**
+ * Handles terminal link clicks by opening HTTP/HTTPS links in BOSS browser
+ * and other protocols (file://, mailto:, etc.) in the system default handler.
+ *
+ * @param url The URL to open
+ * @param scope CoroutineScope to launch async operations
+ */
+private fun handleTerminalLinkClick(url: String, scope: CoroutineScope) {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+        // Open HTTP/HTTPS links in BOSS browser
+        scope.launch {
+            URLEventBus.openURL(url)
+        }
+    } else {
+        // For other protocols, open in system browser on IO dispatcher
+        // to avoid blocking the UI thread
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Validate URI format first
+                val uri = java.net.URI(url)
+
+                if (java.awt.Desktop.isDesktopSupported()) {
+                    val desktop = java.awt.Desktop.getDesktop()
+                    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                        desktop.browse(uri)
+                    } else {
+                        println("Desktop browse action not supported on this system")
+                    }
+                } else {
+                    println("Desktop API not supported on this system")
+                }
+            } catch (e: java.net.URISyntaxException) {
+                println("Invalid URI format: $url - ${e.message}")
+            } catch (e: Exception) {
+                println("Error opening URL in system browser: ${e.message}")
+            }
+        }
+    }
+}
+
+/**
  * Desktop implementation of TerminalContent using BossTerm's EmbeddableTerminal.
  */
 @Composable
@@ -158,6 +207,7 @@ actual fun TerminalContent(
 
     val (state, shouldSendInitialCommand) = terminalState
     val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -172,6 +222,7 @@ actual fun TerminalContent(
                 terminalId?.let { TerminalStateRegistry.remove(it) }
                 onExit()
             },
+            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
     }
