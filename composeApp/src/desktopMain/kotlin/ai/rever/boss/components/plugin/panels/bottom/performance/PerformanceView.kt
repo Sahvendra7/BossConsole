@@ -21,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,7 +104,7 @@ fun PerformanceView(viewModel: PerformanceViewModel) {
                     modifier = Modifier.height(32.dp),
                     text = {
                         Text(
-                            text = tab.name.lowercase().replaceFirstChar { it.uppercase() },
+                            text = tab.displayName,
                             color = if (selectedTab == tab) BossDarkTextPrimary else BossDarkTextSecondary,
                             fontSize = 11.sp
                         )
@@ -188,7 +189,7 @@ private fun OverviewTab(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Circular gauges row
+                    // Circular gauges row - clickable to navigate to respective tabs
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -197,27 +198,31 @@ private fun OverviewTab(
                             value = snapshot.memory.heapUsagePercent / 100f,
                             label = "Memory",
                             valueText = "${snapshot.memory.heapUsagePercent.toInt()}%",
-                            status = health.memoryStatus
+                            status = health.memoryStatus,
+                            onClick = { viewModel.selectTab(PerformanceViewModel.Tab.MEMORY) }
                         )
                         CircularGauge(
                             value = snapshot.cpu.processLoadPercent / 100f,
                             label = "CPU",
                             valueText = "${snapshot.cpu.processLoadPercent.toInt()}%",
-                            status = health.cpuStatus
+                            status = health.cpuStatus,
+                            onClick = { viewModel.selectTab(PerformanceViewModel.Tab.CPU) }
                         )
                         CircularGauge(
                             value = (snapshot.cpu.activeThreadCount.toFloat() / 100f).coerceAtMost(1f),
                             label = "Threads",
                             valueText = "${snapshot.cpu.activeThreadCount}",
                             status = HealthStatus.GOOD,
-                            showAsCount = true
+                            showAsCount = true,
+                            onClick = { viewModel.selectTab(PerformanceViewModel.Tab.CPU) }
                         )
                         CircularGauge(
                             value = (snapshot.gc.collectionCount.toFloat() / 50f).coerceAtMost(1f),
                             label = "GC",
                             valueText = "${snapshot.gc.collectionCount}",
                             status = HealthStatus.GOOD,
-                            showAsCount = true
+                            showAsCount = true,
+                            onClick = { viewModel.selectTab(PerformanceViewModel.Tab.TIMINGS) }
                         )
                     }
                 }
@@ -252,9 +257,11 @@ private fun OverviewTab(
         }
 
         item {
-            // Resources summary with visual cards
+            // Resources summary with visual cards - clickable to navigate to Resources tab
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.selectTab(PerformanceViewModel.Tab.RESOURCES) },
                 backgroundColor = BossDarkSurface,
                 elevation = 0.dp,
                 shape = RoundedCornerShape(4.dp)
@@ -973,7 +980,8 @@ private fun CircularGauge(
     label: String,
     valueText: String,
     status: HealthStatus,
-    showAsCount: Boolean = false
+    showAsCount: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
     val animatedValue by animateFloatAsState(
         targetValue = value.coerceIn(0f, 1f),
@@ -990,7 +998,14 @@ private fun CircularGauge(
         }
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = if (onClick != null) {
+            Modifier.clickable { onClick() }
+        } else {
+            Modifier
+        }
+    ) {
         Box(
             modifier = Modifier.size(56.dp),
             contentAlignment = Alignment.Center

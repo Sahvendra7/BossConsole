@@ -25,8 +25,12 @@ class PerformanceViewModel {
     val settings: StateFlow<PerformanceSettings> = PerformanceSettingsManager.currentSettings
 
     // Selected tab in panel
-    enum class Tab {
-        OVERVIEW, MEMORY, CPU, TIMINGS, RESOURCES
+    enum class Tab(val displayName: String) {
+        OVERVIEW("Overview"),
+        MEMORY("Heap & Pools"),
+        CPU("CPU & Threads"),
+        TIMINGS("GC Timings"),
+        RESOURCES("Resources")
     }
 
     private val _selectedTab = MutableStateFlow(Tab.OVERVIEW)
