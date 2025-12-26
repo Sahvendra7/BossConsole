@@ -55,4 +55,8 @@ actual object PerformanceState {
             windows = windows
         )
     }
+
+    actual fun clearResourceProviders() {
+        PerformanceMonitor.clearResourceProviders()
+    }
 }

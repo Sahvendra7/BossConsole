@@ -160,7 +160,8 @@ fun ComponentContext.BossApp(
     }
 
     // Register resource count providers for performance monitoring
-    LaunchedEffect(splitViewState, draggablePanelComponent) {
+    // Use DisposableEffect to clean up on disposal and prevent memory leaks
+    DisposableEffect(splitViewState, draggablePanelComponent) {
         PerformanceState.registerResourceProviders(
             browserTabs = {
                 splitViewState.getAllPanels().sumOf { panel ->
@@ -191,6 +192,9 @@ fun ComponentContext.BossApp(
                 SplitViewStateRegistry.states.value.size
             }
         )
+        onDispose {
+            PerformanceState.clearResourceProviders()
+        }
     }
 
     // Workspace manager - use global singleton to ensure Bookmarks panel sees updates

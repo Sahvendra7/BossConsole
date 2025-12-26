@@ -42,4 +42,10 @@ expect object PerformanceState {
         panels: () -> Int,
         windows: () -> Int
     )
+
+    /**
+     * Clear resource providers to prevent memory leaks.
+     * Should be called when BossApp is disposed.
+     */
+    fun clearResourceProviders()
 }

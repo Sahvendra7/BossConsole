@@ -36,14 +36,12 @@ actual object PerformanceSettingsManager {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<PerformanceSettings>(content)
-                _currentSettings.value = settings
-                println("[Performance] Loaded settings from ${settingsFile.absolutePath}")
+                // Validate loaded settings to handle potentially corrupted files
+                _currentSettings.value = settings.validated()
             } else {
-                println("[Performance] No settings file found, using defaults")
                 _currentSettings.value = PerformanceSettings()
             }
         } catch (e: Exception) {
-            println("[Performance] Failed to load settings: ${e.message}")
             _currentSettings.value = PerformanceSettings()
         }
     }
@@ -52,14 +50,14 @@ actual object PerformanceSettingsManager {
         try {
             val content = json.encodeToString(PerformanceSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[Performance] Settings saved")
         } catch (e: Exception) {
-            println("[Performance] Failed to save settings: ${e.message}")
+            // Settings save failed - not critical, will use in-memory settings
         }
     }
 
     actual suspend fun updateSettings(settings: PerformanceSettings) {
-        _currentSettings.value = settings
+        // Validate settings to ensure values are within valid ranges
+        _currentSettings.value = settings.validated()
         saveSettings()
     }
 

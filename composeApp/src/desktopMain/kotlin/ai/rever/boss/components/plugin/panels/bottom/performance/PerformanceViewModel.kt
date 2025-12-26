@@ -32,8 +32,15 @@ class PerformanceViewModel {
     private val _selectedTab = MutableStateFlow(Tab.OVERVIEW)
     val selectedTab: StateFlow<Tab> = _selectedTab.asStateFlow()
 
+    // Export state: Success path (contains file path), Error (contains message), or null (idle)
     private val _exportResult = MutableStateFlow<String?>(null)
     val exportResult: StateFlow<String?> = _exportResult.asStateFlow()
+
+    private val _exportError = MutableStateFlow<String?>(null)
+    val exportError: StateFlow<String?> = _exportError.asStateFlow()
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
 
     fun selectTab(tab: Tab) {
         _selectedTab.value = tab
@@ -45,17 +52,29 @@ class PerformanceViewModel {
 
     fun exportMetrics() {
         scope.launch {
-            val result = PerformanceMonitor.exportMetrics()
-            _exportResult.value = result
-            // Open the exported file in a new editor tab
-            if (result != null) {
-                FileEventBus.openFile(result)
-            }
+            _isExporting.value = true
+            _exportError.value = null
+
+            PerformanceMonitor.exportMetrics()
+                .onSuccess { filePath ->
+                    _exportResult.value = filePath
+                    // Open the exported file in a new editor tab
+                    FileEventBus.openFile(filePath)
+                }
+                .onFailure { error ->
+                    _exportError.value = error.message ?: "Failed to export metrics"
+                }
+
+            _isExporting.value = false
         }
     }
 
     fun clearExportResult() {
         _exportResult.value = null
+    }
+
+    fun clearExportError() {
+        _exportError.value = null
     }
 
     fun updateSettings(newSettings: PerformanceSettings) {

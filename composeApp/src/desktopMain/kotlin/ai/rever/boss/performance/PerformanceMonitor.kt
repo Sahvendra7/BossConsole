@@ -156,6 +156,7 @@ object PerformanceMonitor {
 
     /**
      * Register resource count providers from BossApp.
+     * Call clearResourceProviders() on disposal to prevent memory leaks.
      */
     fun registerResourceProviders(
         browserTabs: () -> Int,
@@ -169,6 +170,18 @@ object PerformanceMonitor {
         editorTabCountProvider = editorTabs
         panelCountProvider = panels
         windowCountProvider = windows
+    }
+
+    /**
+     * Clear resource providers to prevent memory leaks.
+     * Should be called when BossApp is disposed.
+     */
+    fun clearResourceProviders() {
+        browserTabCountProvider = null
+        terminalCountProvider = null
+        editorTabCountProvider = null
+        panelCountProvider = null
+        windowCountProvider = null
     }
 
     private fun collectMemoryMetrics(): MemoryMetrics {
@@ -207,14 +220,14 @@ object PerformanceMonitor {
 
         val totalCount = collectors.sumOf { it.collectionCount }
         val totalTime = collectors.sumOf { it.collectionTimeMs }
-        val lastGcDuration = totalTime - lastGcTime
+        val gcTimeSinceLastSample = totalTime - lastGcTime
 
         lastGcTime = totalTime
 
         return GcMetrics(
             collectionCount = totalCount,
             collectionTimeMs = totalTime,
-            lastGcDurationMs = lastGcDuration,
+            gcTimeSinceLastSampleMs = gcTimeSinceLastSample,
             gcCollectors = collectors
         )
     }
@@ -239,26 +252,28 @@ object PerformanceMonitor {
 
     /**
      * Export metrics history to a JSON file.
-     * Returns the file path on success, null on failure.
+     * Returns Result with file path on success, or error on failure.
      */
-    suspend fun exportMetrics(): String? = withContext(Dispatchers.IO) {
+    suspend fun exportMetrics(): Result<String> = withContext(Dispatchers.IO) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss").format(Date())
             val exportFile = File(System.getProperty("user.home"), ".boss/performance-export-$timestamp.json")
             exportFile.parentFile?.mkdirs()
 
             val historyData = _history.value
+            if (historyData.isEmpty()) {
+                return@withContext Result.failure(IllegalStateException("No metrics data to export"))
+            }
+
             val content = json.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(PerformanceSnapshot.serializer()),
                 historyData
             )
             exportFile.writeText(content)
 
-            println("[Performance] Exported ${historyData.size} snapshots to ${exportFile.absolutePath}")
-            exportFile.absolutePath
+            Result.success(exportFile.absolutePath)
         } catch (e: Exception) {
-            println("[Performance] Failed to export metrics: ${e.message}")
-            null
+            Result.failure(e)
         }
     }
 }

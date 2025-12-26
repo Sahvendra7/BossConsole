@@ -19,7 +19,22 @@ data class PerformanceSettings(
     val resourceSampleIntervalMs: Long = 5000,
     val gcSampleIntervalMs: Long = 10000,
     val historyRetentionMinutes: Int = 30
-)
+) {
+    /**
+     * Returns a validated copy of settings with values clamped to valid ranges.
+     */
+    fun validated(): PerformanceSettings = copy(
+        memoryWarningThresholdPercent = memoryWarningThresholdPercent.coerceIn(1, 100),
+        memoryCriticalThresholdPercent = memoryCriticalThresholdPercent.coerceIn(1, 100),
+        cpuWarningThresholdPercent = cpuWarningThresholdPercent.coerceIn(1, 100),
+        cpuCriticalThresholdPercent = cpuCriticalThresholdPercent.coerceIn(1, 100),
+        memorySampleIntervalMs = memorySampleIntervalMs.coerceAtLeast(100),
+        cpuSampleIntervalMs = cpuSampleIntervalMs.coerceAtLeast(100),
+        resourceSampleIntervalMs = resourceSampleIntervalMs.coerceAtLeast(100),
+        gcSampleIntervalMs = gcSampleIntervalMs.coerceAtLeast(100),
+        historyRetentionMinutes = historyRetentionMinutes.coerceIn(1, 1440)
+    )
+}
 
 /**
  * Current snapshot of performance metrics.
@@ -87,7 +102,8 @@ data class CpuMetrics(
 data class GcMetrics(
     val collectionCount: Long,
     val collectionTimeMs: Long,
-    val lastGcDurationMs: Long,
+    /** Time spent in GC since last sample (not individual GC event duration) */
+    val gcTimeSinceLastSampleMs: Long,
     val gcCollectors: List<GcCollectorInfo>
 )
 
