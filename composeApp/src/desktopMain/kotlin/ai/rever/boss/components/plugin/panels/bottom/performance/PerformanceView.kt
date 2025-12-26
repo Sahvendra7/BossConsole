@@ -86,27 +86,30 @@ fun PerformanceView(viewModel: PerformanceViewModel) {
             .fillMaxSize()
             .background(BossDarkBackground)
     ) {
-        // Tab bar
+        // Tab bar - compact
         TabRow(
             selectedTabIndex = selectedTab.ordinal,
             backgroundColor = BossDarkBackground,
-            contentColor = BossDarkAccent
+            contentColor = BossDarkAccent,
+            modifier = Modifier.height(32.dp)
         ) {
             PerformanceViewModel.Tab.entries.forEach { tab ->
                 Tab(
                     selected = selectedTab == tab,
                     onClick = { viewModel.selectTab(tab) },
+                    modifier = Modifier.height(32.dp),
                     text = {
                         Text(
                             text = tab.name.lowercase().replaceFirstChar { it.uppercase() },
-                            color = if (selectedTab == tab) BossDarkTextPrimary else BossDarkTextSecondary
+                            color = if (selectedTab == tab) BossDarkTextPrimary else BossDarkTextSecondary,
+                            fontSize = 11.sp
                         )
                     }
                 )
             }
         }
 
-        Divider(color = BossDarkBorder)
+        Divider(color = BossDarkBorder, thickness = 1.dp)
 
         // Export result notification
         exportResult?.let { path ->
@@ -662,13 +665,13 @@ private fun ProgressBar(progress: Float, label: String) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, color = BossDarkTextPrimary, fontSize = 10.sp)
-            Text("${(progress * 100).toInt()}%", color = BossDarkTextSecondary, fontSize = 10.sp)
+            Text(label, color = BossDarkTextPrimary, fontSize = 11.sp)
+            Text("${(progress * 100).toInt()}%", color = BossDarkTextSecondary, fontSize = 11.sp)
         }
-        Spacer(modifier = Modifier.height(3.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = progress.coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
             backgroundColor = BossDarkBorder,
             color = when {
                 progress >= 0.9f -> BossDarkError
@@ -681,7 +684,6 @@ private fun ProgressBar(progress: Float, label: String) {
 
 /**
  * Circular gauge showing a percentage or count value with animated arc.
- * Compact design matching UpdateBanner style.
  */
 @Composable
 private fun CircularGauge(
@@ -708,12 +710,12 @@ private fun CircularGauge(
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(56.dp),
             contentAlignment = Alignment.Center
         ) {
             // Background arc
-            Canvas(modifier = Modifier.size(48.dp)) {
-                val strokeWidth = 4.dp.toPx()
+            Canvas(modifier = Modifier.size(56.dp)) {
+                val strokeWidth = 5.dp.toPx()
                 val arcSize = size.minDimension - strokeWidth
                 drawArc(
                     color = BossDarkBorder,
@@ -727,8 +729,8 @@ private fun CircularGauge(
             }
 
             // Foreground arc (animated)
-            Canvas(modifier = Modifier.size(48.dp)) {
-                val strokeWidth = 4.dp.toPx()
+            Canvas(modifier = Modifier.size(56.dp)) {
+                val strokeWidth = 5.dp.toPx()
                 val arcSize = size.minDimension - strokeWidth
                 drawArc(
                     color = color,
@@ -745,7 +747,7 @@ private fun CircularGauge(
             Text(
                 text = valueText,
                 fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 color = BossDarkTextPrimary
             )
         }
@@ -761,8 +763,7 @@ private fun CircularGauge(
 }
 
 /**
- * Compact resource card with icon, count, and colored accent.
- * Compact design matching UpdateBanner style.
+ * Resource card with icon, count, and colored accent.
  */
 @Composable
 private fun ResourceCard(
@@ -780,35 +781,35 @@ private fun ResourceCard(
         Column(
             modifier = Modifier
                 .border(1.dp, BossDarkBorder, RoundedCornerShape(4.dp))
-                .padding(8.dp),
+                .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(24.dp)
                     .background(color.copy(alpha = 0.2f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     icon,
                     contentDescription = label,
-                    modifier = Modifier.size(12.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = color
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Text(
                 text = "$count",
                 fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 color = BossDarkTextPrimary
             )
 
             Text(
                 text = label,
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 color = BossDarkTextSecondary
             )
         }
@@ -817,7 +818,6 @@ private fun ResourceCard(
 
 /**
  * Resource row with icon, label, count, and animated bar.
- * Compact design matching UpdateBanner style.
  */
 @Composable
 private fun ResourceBarRow(
@@ -842,26 +842,26 @@ private fun ResourceBarRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
-                        .background(color.copy(alpha = 0.2f), RoundedCornerShape(3.dp)),
+                        .size(20.dp)
+                        .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         icon,
                         contentDescription = label,
-                        modifier = Modifier.size(11.dp),
+                        modifier = Modifier.size(12.dp),
                         tint = color
                     )
                 }
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(label, color = BossDarkTextPrimary, fontSize = 11.sp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(label, color = BossDarkTextPrimary, fontSize = 12.sp)
             }
 
             Text(
                 "$count",
                 fontWeight = FontWeight.Bold,
                 color = color,
-                fontSize = 11.sp
+                fontSize = 12.sp
             )
         }
 
@@ -871,7 +871,7 @@ private fun ResourceBarRow(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp)
+                .height(5.dp)
                 .clip(RoundedCornerShape(2.dp))
                 .background(BossDarkBorder)
         ) {
