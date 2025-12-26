@@ -13,12 +13,17 @@ import ai.rever.boss.performance.HealthStatus
 import ai.rever.boss.performance.PerformanceHealth
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSnapshot
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
@@ -53,7 +59,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -152,7 +162,7 @@ private fun OverviewTab(
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            // Health summary card
+            // Health summary card with gauges
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
@@ -168,13 +178,39 @@ private fun OverviewTab(
                         HealthBadge(health.overall)
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        MetricItem("Memory", "${snapshot.memory.heapUsagePercent.toInt()}%", health.memoryStatus)
-                        MetricItem("CPU", "${snapshot.cpu.processLoadPercent.toInt()}%", health.cpuStatus)
-                        MetricItem("Threads", "${snapshot.cpu.activeThreadCount}", HealthStatus.GOOD)
-                        MetricItem("GC Count", "${snapshot.gc.collectionCount}", HealthStatus.GOOD)
+                    // Circular gauges row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        CircularGauge(
+                            value = snapshot.memory.heapUsagePercent / 100f,
+                            label = "Memory",
+                            valueText = "${snapshot.memory.heapUsagePercent.toInt()}%",
+                            status = health.memoryStatus
+                        )
+                        CircularGauge(
+                            value = snapshot.cpu.processLoadPercent / 100f,
+                            label = "CPU",
+                            valueText = "${snapshot.cpu.processLoadPercent.toInt()}%",
+                            status = health.cpuStatus
+                        )
+                        CircularGauge(
+                            value = (snapshot.cpu.activeThreadCount.toFloat() / 100f).coerceAtMost(1f),
+                            label = "Threads",
+                            valueText = "${snapshot.cpu.activeThreadCount}",
+                            status = HealthStatus.GOOD,
+                            showAsCount = true
+                        )
+                        CircularGauge(
+                            value = (snapshot.gc.collectionCount.toFloat() / 50f).coerceAtMost(1f),
+                            label = "GC",
+                            valueText = "${snapshot.gc.collectionCount}",
+                            status = HealthStatus.GOOD,
+                            showAsCount = true
+                        )
                     }
                 }
             }
@@ -204,7 +240,7 @@ private fun OverviewTab(
         }
 
         item {
-            // Resources summary
+            // Resources summary with visual cards
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
@@ -212,14 +248,47 @@ private fun OverviewTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Resources", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        ResourceItem("Browser Tabs", snapshot.resources.browserTabCount)
-                        ResourceItem("Terminals", snapshot.resources.terminalCount)
-                        ResourceItem("Editor Tabs", snapshot.resources.editorTabCount)
-                        ResourceItem("Panels", snapshot.resources.panelCount)
-                        ResourceItem("Windows", snapshot.resources.windowCount)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ResourceCard(
+                            modifier = Modifier.weight(1f),
+                            label = "Browser",
+                            count = snapshot.resources.browserTabCount,
+                            icon = Icons.Outlined.Web,
+                            color = BossDarkAccent
+                        )
+                        ResourceCard(
+                            modifier = Modifier.weight(1f),
+                            label = "Terminal",
+                            count = snapshot.resources.terminalCount,
+                            icon = Icons.Outlined.Terminal,
+                            color = BossDarkSuccess
+                        )
+                        ResourceCard(
+                            modifier = Modifier.weight(1f),
+                            label = "Editor",
+                            count = snapshot.resources.editorTabCount,
+                            icon = Icons.Default.Edit,
+                            color = BossDarkWarning
+                        )
+                        ResourceCard(
+                            modifier = Modifier.weight(1f),
+                            label = "Panels",
+                            count = snapshot.resources.panelCount,
+                            icon = Icons.Outlined.ViewSidebar,
+                            color = Color(0xFF9C27B0)
+                        )
+                        ResourceCard(
+                            modifier = Modifier.weight(1f),
+                            label = "Windows",
+                            count = snapshot.resources.windowCount,
+                            icon = Icons.Outlined.Window,
+                            color = Color(0xFF00BCD4)
+                        )
                     }
                 }
             }
@@ -404,7 +473,46 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
         return
     }
 
+    val totalResources = snapshot.resources.browserTabCount +
+                         snapshot.resources.terminalCount +
+                         snapshot.resources.editorTabCount +
+                         snapshot.resources.panelCount +
+                         snapshot.resources.windowCount
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            // Total resources summary
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = BossDarkSurface,
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Total Resources", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
+                        Text("Active application components", color = BossDarkTextSecondary, fontSize = 12.sp)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(BossDarkAccent.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "$totalResources",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = BossDarkAccent
+                        )
+                    }
+                }
+            }
+        }
+
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -412,14 +520,48 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                 elevation = 0.dp
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Application Resources", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Resource Breakdown", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    ResourceRow("Browser Tabs", snapshot.resources.browserTabCount, Icons.Outlined.Web)
-                    ResourceRow("Terminal Sessions", snapshot.resources.terminalCount, Icons.Outlined.Terminal)
-                    ResourceRow("Editor Tabs", snapshot.resources.editorTabCount, Icons.Default.Edit)
-                    ResourceRow("Open Panels", snapshot.resources.panelCount, Icons.Outlined.ViewSidebar)
-                    ResourceRow("Windows", snapshot.resources.windowCount, Icons.Outlined.Window)
+                    ResourceBarRow(
+                        label = "Browser Tabs",
+                        count = snapshot.resources.browserTabCount,
+                        maxCount = maxOf(10, totalResources),
+                        icon = Icons.Outlined.Web,
+                        color = BossDarkAccent
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ResourceBarRow(
+                        label = "Terminal Sessions",
+                        count = snapshot.resources.terminalCount,
+                        maxCount = maxOf(10, totalResources),
+                        icon = Icons.Outlined.Terminal,
+                        color = BossDarkSuccess
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ResourceBarRow(
+                        label = "Editor Tabs",
+                        count = snapshot.resources.editorTabCount,
+                        maxCount = maxOf(10, totalResources),
+                        icon = Icons.Default.Edit,
+                        color = BossDarkWarning
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ResourceBarRow(
+                        label = "Open Panels",
+                        count = snapshot.resources.panelCount,
+                        maxCount = maxOf(10, totalResources),
+                        icon = Icons.Outlined.ViewSidebar,
+                        color = Color(0xFF9C27B0)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ResourceBarRow(
+                        label = "Windows",
+                        count = snapshot.resources.windowCount,
+                        maxCount = maxOf(10, totalResources),
+                        icon = Icons.Outlined.Window,
+                        color = Color(0xFF00BCD4)
+                    )
                 }
             }
         }
@@ -518,5 +660,209 @@ private fun ProgressBar(progress: Float, label: String) {
                 else -> BossDarkSuccess
             }
         )
+    }
+}
+
+/**
+ * Circular gauge showing a percentage or count value with animated arc.
+ */
+@Composable
+private fun CircularGauge(
+    value: Float,
+    label: String,
+    valueText: String,
+    status: HealthStatus,
+    showAsCount: Boolean = false
+) {
+    val animatedValue by animateFloatAsState(
+        targetValue = value.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 500)
+    )
+
+    val color = if (showAsCount) {
+        BossDarkAccent
+    } else {
+        when (status) {
+            HealthStatus.GOOD -> BossDarkSuccess
+            HealthStatus.WARNING -> BossDarkWarning
+            HealthStatus.CRITICAL -> BossDarkError
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(72.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Background arc
+            Canvas(modifier = Modifier.size(72.dp)) {
+                val strokeWidth = 8.dp.toPx()
+                val arcSize = size.minDimension - strokeWidth
+                drawArc(
+                    color = BossDarkBorder,
+                    startAngle = 135f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                    size = Size(arcSize, arcSize),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+
+            // Foreground arc (animated)
+            Canvas(modifier = Modifier.size(72.dp)) {
+                val strokeWidth = 8.dp.toPx()
+                val arcSize = size.minDimension - strokeWidth
+                drawArc(
+                    color = color,
+                    startAngle = 135f,
+                    sweepAngle = 270f * animatedValue,
+                    useCenter = false,
+                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                    size = Size(arcSize, arcSize),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+
+            // Center text
+            Text(
+                text = valueText,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = BossDarkTextPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = BossDarkTextSecondary
+        )
+    }
+}
+
+/**
+ * Compact resource card with icon, count, and colored accent.
+ */
+@Composable
+private fun ResourceCard(
+    modifier: Modifier = Modifier,
+    label: String,
+    count: Int,
+    icon: ImageVector,
+    color: Color
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = BossDarkBackground
+    ) {
+        Column(
+            modifier = Modifier
+                .border(1.dp, BossDarkBorder, RoundedCornerShape(8.dp))
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(color.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(16.dp),
+                    tint = color
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "$count",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = BossDarkTextPrimary
+            )
+
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                color = BossDarkTextSecondary
+            )
+        }
+    }
+}
+
+/**
+ * Resource row with icon, label, count, and animated bar.
+ */
+@Composable
+private fun ResourceBarRow(
+    label: String,
+    count: Int,
+    maxCount: Int,
+    icon: ImageVector,
+    color: Color
+) {
+    val progress = if (maxCount > 0) count.toFloat() / maxCount else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 500)
+    )
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = label,
+                        modifier = Modifier.size(14.dp),
+                        tint = color
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(label, color = BossDarkTextPrimary, fontSize = 13.sp)
+            }
+
+            Text(
+                "$count",
+                fontWeight = FontWeight.Bold,
+                color = color,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Animated bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(BossDarkBorder)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(animatedProgress)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(color)
+            )
+        }
     }
 }
