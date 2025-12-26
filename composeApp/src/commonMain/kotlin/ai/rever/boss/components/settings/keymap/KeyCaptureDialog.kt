@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.utils.SystemUtils
 
 /**
  * Dialog for capturing keyboard shortcuts.
@@ -132,7 +133,7 @@ fun KeyCaptureDialog(
                                 // - Linux/Windows: Ctrl → "Cmd" (primary modifier), Meta → "Ctrl"
                                 capturedKey = event.key
                                 val mods = mutableListOf<String>()
-                                val isMacOS = System.getProperty("os.name").contains("mac", ignoreCase = true)
+                                val isMacOS = SystemUtils.isMacOS
                                 if (isMacOS) {
                                     if (event.isMetaPressed) mods.add("Cmd")
                                     if (event.isCtrlPressed) mods.add("Ctrl")

@@ -3,6 +3,7 @@ package ai.rever.boss.keymap.handler
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.utils.SystemUtils
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.isMetaPressed
@@ -113,7 +114,7 @@ class KeymapMatcher(
         // - macOS: Cmd key sets isMetaPressed, Ctrl key sets isCtrlPressed
         // - Linux/Windows: Ctrl key sets isCtrlPressed (NOT isMetaPressed)
         // So "Cmd" in binding should match isMetaPressed on macOS, isCtrlPressed on Linux/Windows
-        val isMacOS = System.getProperty("os.name").contains("mac", ignoreCase = true)
+        val isMacOS = SystemUtils.isMacOS
 
         val eventShift = event.isShiftPressed
         val eventAlt = event.isAltPressed

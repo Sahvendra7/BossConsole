@@ -51,6 +51,12 @@ object PerformanceMonitor {
     )
     val currentHealth: StateFlow<PerformanceHealth> = _currentHealth.asStateFlow()
 
+    // Max history entries: 30 min retention with 1s intervals = 1800 entries
+    // Add buffer for slightly longer retention
+    private const val MAX_HISTORY_SIZE = 2000
+
+    // Use ArrayDeque as a circular buffer for efficient history management
+    private val historyBuffer = ArrayDeque<PerformanceSnapshot>(MAX_HISTORY_SIZE)
     private val _history = MutableStateFlow<List<PerformanceSnapshot>>(emptyList())
     val history: StateFlow<List<PerformanceSnapshot>> = _history.asStateFlow()
 
@@ -144,9 +150,24 @@ object PerformanceMonitor {
                     _currentHealth.value = PerformanceHealth.fromSnapshot(snapshot, settings)
                 }
 
-                // Update history (keep last N minutes)
+                // Update history using circular buffer (efficient, no GC pressure)
                 val cutoff = now - (settings.historyRetentionMinutes * 60 * 1000)
-                _history.value = (_history.value + snapshot).filter { it.timestamp > cutoff }
+
+                // Remove old entries from front
+                while (historyBuffer.isNotEmpty() && historyBuffer.first().timestamp < cutoff) {
+                    historyBuffer.removeFirst()
+                }
+
+                // Add new snapshot
+                historyBuffer.addLast(snapshot)
+
+                // Enforce max size (shouldn't happen often with proper retention)
+                while (historyBuffer.size > MAX_HISTORY_SIZE) {
+                    historyBuffer.removeFirst()
+                }
+
+                // Update StateFlow only if needed (creates immutable snapshot)
+                _history.value = historyBuffer.toList()
 
                 delay(
                     minOf(

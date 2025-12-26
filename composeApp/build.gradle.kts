@@ -1061,6 +1061,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
 
 // Configure Test tasks to not fail when no tests are discovered (Gradle 9+ compatibility)
 tasks.withType<Test> {
+    // Use JUnit Platform for test discovery
+    useJUnitPlatform()
     // Disable failure when test sources exist but no tests are discovered
     // This handles misconfigured test sources or test classes without test methods
     failOnNoDiscoveredTests = false
