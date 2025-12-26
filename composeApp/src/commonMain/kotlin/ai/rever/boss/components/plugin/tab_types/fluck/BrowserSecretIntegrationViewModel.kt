@@ -53,7 +53,6 @@ class BrowserSecretIntegrationViewModel {
         // Observe secret change events for automatic synchronization
         coroutineScope.launch {
             SecretChangeNotifier.secretChangeEvents.collect { event ->
-                println("🔔 [BrowserSecretIntegrationVM] Received event: $event")
                 // Reload secrets whenever they change in other components
                 loadAllSecrets()
             }
@@ -66,7 +65,6 @@ class BrowserSecretIntegrationViewModel {
      */
     fun dispose() {
         coroutineScope.cancel()
-        println("🧹 [BrowserSecretIntegrationVM] Disposed and cancelled all coroutines")
     }
 
     /**
@@ -86,8 +84,6 @@ class BrowserSecretIntegrationViewModel {
                         error = null
                     )
 
-                    println("✅ [BrowserSecretIntegrationVM] Loaded ${paginatedSecrets.data.size} secrets")
-
                     // Re-match if we have a current URL
                     if (state.currentDomain != null) {
                         updateMatchedSecrets(state.currentDomain!!)
@@ -98,7 +94,6 @@ class BrowserSecretIntegrationViewModel {
                         isLoadingSecrets = false,
                         error = "Failed to load secrets: ${error.message}"
                     )
-                    println("❌ [BrowserSecretIntegrationVM] Failed to load secrets: ${error.message}")
                 }
             )
         } catch (e: Exception) {
@@ -106,7 +101,6 @@ class BrowserSecretIntegrationViewModel {
                 isLoadingSecrets = false,
                 error = "Exception loading secrets: ${e.message}"
             )
-            println("❌ [BrowserSecretIntegrationVM] Exception: ${e.message}")
         }
     }
 
@@ -146,8 +140,6 @@ class BrowserSecretIntegrationViewModel {
         state = state.copy(
             matchingSecrets = matched.map { it.secret }
         )
-
-        println("🔍 [BrowserSecretIntegrationVM] Matched ${matched.size} secrets for: $domain")
     }
 
     /**
@@ -214,9 +206,7 @@ class BrowserSecretIntegrationViewModel {
      * Reload secrets after a new secret is created or modified.
      */
     suspend fun reloadSecrets() {
-        println("🔄 [BrowserSecretIntegrationVM] Reloading secrets...")
         loadAllSecrets()
-        println("✅ [BrowserSecretIntegrationVM] Reload complete, now have ${state.allSecrets.size} secrets")
     }
 
     /**
