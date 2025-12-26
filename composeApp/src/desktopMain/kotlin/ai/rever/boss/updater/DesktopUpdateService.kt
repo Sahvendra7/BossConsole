@@ -354,7 +354,8 @@ actual class UpdateService {
         return when (getCurrentPlatform()) {
             "macOS" -> "BOSS-${version}-Universal.dmg"
             "Windows" -> "BOSS-${version}.msi"
-            "Linux" -> "BOSS-${version}-${getLinuxArchSuffix()}.deb"
+            "Linux", "Linux-deb" -> "BOSS-${version}-${getLinuxArchSuffix()}.deb"
+            "Linux-rpm" -> "BOSS-${version}-${getLinuxArchSuffix()}.rpm"
             else -> "BOSS-${version}-${getLinuxArchSuffix()}.jar"  // JAR with arch for native deps
         }
     }
