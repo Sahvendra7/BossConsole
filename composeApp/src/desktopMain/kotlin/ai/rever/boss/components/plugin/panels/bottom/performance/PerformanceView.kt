@@ -21,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -135,7 +136,7 @@ fun PerformanceView(viewModel: PerformanceViewModel) {
         }
 
         // Tab content
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
             when (selectedTab) {
                 PerformanceViewModel.Tab.OVERVIEW -> OverviewTab(snapshot, settings, viewModel)
                 PerformanceViewModel.Tab.MEMORY -> MemoryTab(snapshot)
@@ -160,25 +161,26 @@ private fun OverviewTab(
 
     val health = PerformanceHealth.fromSnapshot(snapshot, settings)
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             // Health summary card with gauges
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("System Health", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
+                        Text("System Health", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
                         HealthBadge(health.overall)
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Circular gauges row
                     Row(
@@ -217,24 +219,28 @@ private fun OverviewTab(
         }
 
         item {
-            // Quick actions
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Quick actions - compact buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { viewModel.requestGC() },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = BossDarkAccent)
+                    colors = ButtonDefaults.buttonColors(backgroundColor = BossDarkAccent),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Icon(Icons.Default.Delete, "GC", modifier = Modifier.size(16.dp), tint = Color.White)
+                    Icon(Icons.Default.Delete, "GC", modifier = Modifier.size(14.dp), tint = Color.White)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Request GC", color = Color.White)
+                    Text("Request GC", color = Color.White, fontSize = 11.sp)
                 }
 
                 Button(
                     onClick = { viewModel.exportMetrics() },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = BossDarkSurface)
+                    colors = ButtonDefaults.buttonColors(backgroundColor = BossDarkSurface),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Icon(Icons.Default.SaveAlt, "Export", modifier = Modifier.size(16.dp), tint = BossDarkTextPrimary)
+                    Icon(Icons.Default.SaveAlt, "Export", modifier = Modifier.size(14.dp), tint = BossDarkTextPrimary)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Export Metrics", color = BossDarkTextPrimary)
+                    Text("Export Metrics", color = BossDarkTextPrimary, fontSize = 11.sp)
                 }
             }
         }
@@ -244,15 +250,16 @@ private fun OverviewTab(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Resources", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(12.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Resources", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         ResourceCard(
                             modifier = Modifier.weight(1f),
@@ -303,29 +310,30 @@ private fun MemoryTab(snapshot: PerformanceSnapshot?) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             // Heap usage bar
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Heap Memory", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Heap Memory", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     ProgressBar(
                         progress = snapshot.memory.heapUsagePercent / 100f,
                         label = "${snapshot.memory.heapUsedMB.toInt()}MB / ${snapshot.memory.heapMaxMB.toInt()}MB"
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
                         "Committed: ${snapshot.memory.heapCommittedMB.toInt()}MB",
                         color = BossDarkTextSecondary,
-                        fontSize = 12.sp
+                        fontSize = 10.sp
                     )
                 }
             }
@@ -336,20 +344,22 @@ private fun MemoryTab(snapshot: PerformanceSnapshot?) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Non-Heap Memory", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Non-Heap Memory", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
                         "Used: ${snapshot.memory.nonHeapUsedMB.toInt()}MB",
-                        color = BossDarkTextPrimary
+                        color = BossDarkTextPrimary,
+                        fontSize = 11.sp
                     )
                     Text(
                         "Committed: ${snapshot.memory.nonHeapCommittedMB.toInt()}MB",
                         color = BossDarkTextSecondary,
-                        fontSize = 12.sp
+                        fontSize = 10.sp
                     )
                 }
             }
@@ -364,16 +374,17 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Process CPU", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Process CPU", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     ProgressBar(
                         progress = snapshot.cpu.processLoadPercent / 100f,
@@ -387,11 +398,12 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("System CPU", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("System CPU", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     ProgressBar(
                         progress = snapshot.cpu.systemLoadPercent / 100f,
@@ -405,13 +417,14 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Threads", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Threads", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         MetricItem("Active", "${snapshot.cpu.activeThreadCount}", HealthStatus.GOOD)
                         MetricItem("Processors", "${snapshot.cpu.availableProcessors}", HealthStatus.GOOD)
                     }
@@ -428,35 +441,36 @@ private fun TimingsTab(snapshot: PerformanceSnapshot?) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Garbage Collection", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Garbage Collection", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         MetricItem("Total Collections", "${snapshot.gc.collectionCount}", HealthStatus.GOOD)
                         MetricItem("Total Time", "${snapshot.gc.collectionTimeMs}ms", HealthStatus.GOOD)
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("Collectors:", color = BossDarkTextSecondary, fontSize = 12.sp)
+                    Text("Collectors:", color = BossDarkTextSecondary, fontSize = 10.sp)
                     snapshot.gc.gcCollectors.forEach { collector ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(collector.name, color = BossDarkTextPrimary, fontSize = 12.sp)
+                            Text(collector.name, color = BossDarkTextPrimary, fontSize = 10.sp)
                             Text(
                                 "${collector.collectionCount} (${collector.collectionTimeMs}ms)",
                                 color = BossDarkTextSecondary,
-                                fontSize = 12.sp
+                                fontSize = 10.sp
                             )
                         }
                     }
@@ -479,33 +493,34 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                          snapshot.resources.panelCount +
                          snapshot.resources.windowCount
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            // Total resources summary
+            // Total resources summary - compact
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Total Resources", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                        Text("Active application components", color = BossDarkTextSecondary, fontSize = 12.sp)
+                        Text("Total Resources", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                        Text("Active components", color = BossDarkTextSecondary, fontSize = 10.sp)
                     }
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(36.dp)
                             .background(BossDarkAccent.copy(alpha = 0.2f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             "$totalResources",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                            fontSize = 14.sp,
                             color = BossDarkAccent
                         )
                     }
@@ -517,11 +532,12 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = BossDarkSurface,
-                elevation = 0.dp
+                elevation = 0.dp,
+                shape = RoundedCornerShape(4.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Resource Breakdown", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(16.dp))
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Resource Breakdown", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     ResourceBarRow(
                         label = "Browser Tabs",
@@ -530,7 +546,7 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         icon = Icons.Outlined.Web,
                         color = BossDarkAccent
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     ResourceBarRow(
                         label = "Terminal Sessions",
                         count = snapshot.resources.terminalCount,
@@ -538,7 +554,7 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         icon = Icons.Outlined.Terminal,
                         color = BossDarkSuccess
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     ResourceBarRow(
                         label = "Editor Tabs",
                         count = snapshot.resources.editorTabCount,
@@ -546,7 +562,7 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         icon = Icons.Default.Edit,
                         color = BossDarkWarning
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     ResourceBarRow(
                         label = "Open Panels",
                         count = snapshot.resources.panelCount,
@@ -554,7 +570,7 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         icon = Icons.Outlined.ViewSidebar,
                         color = Color(0xFF9C27B0)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     ResourceBarRow(
                         label = "Windows",
                         count = snapshot.resources.windowCount,
@@ -595,14 +611,14 @@ private fun HealthBadge(status: HealthStatus) {
     }
 
     Surface(
-        shape = RoundedCornerShape(4.dp),
+        shape = RoundedCornerShape(3.dp),
         color = color.copy(alpha = 0.2f)
     ) {
         Text(
             text = status.name,
             color = color,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+            fontSize = 10.sp,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
         )
     }
 }
@@ -610,16 +626,16 @@ private fun HealthBadge(status: HealthStatus) {
 @Composable
 private fun MetricItem(label: String, value: String, status: HealthStatus) {
     Column {
-        Text(value, fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-        Text(label, color = BossDarkTextSecondary, fontSize = 12.sp)
+        Text(value, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+        Text(label, color = BossDarkTextSecondary, fontSize = 10.sp)
     }
 }
 
 @Composable
 private fun ResourceItem(label: String, count: Int) {
     Column {
-        Text("$count", fontWeight = FontWeight.Bold, color = BossDarkTextPrimary)
-        Text(label, color = BossDarkTextSecondary, fontSize = 12.sp)
+        Text("$count", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+        Text(label, color = BossDarkTextSecondary, fontSize = 10.sp)
     }
 }
 
@@ -646,13 +662,13 @@ private fun ProgressBar(progress: Float, label: String) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(label, color = BossDarkTextPrimary, fontSize = 12.sp)
-            Text("${(progress * 100).toInt()}%", color = BossDarkTextSecondary, fontSize = 12.sp)
+            Text(label, color = BossDarkTextPrimary, fontSize = 10.sp)
+            Text("${(progress * 100).toInt()}%", color = BossDarkTextSecondary, fontSize = 10.sp)
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         LinearProgressIndicator(
             progress = progress.coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
             backgroundColor = BossDarkBorder,
             color = when {
                 progress >= 0.9f -> BossDarkError
@@ -665,6 +681,7 @@ private fun ProgressBar(progress: Float, label: String) {
 
 /**
  * Circular gauge showing a percentage or count value with animated arc.
+ * Compact design matching UpdateBanner style.
  */
 @Composable
 private fun CircularGauge(
@@ -691,12 +708,12 @@ private fun CircularGauge(
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier.size(48.dp),
             contentAlignment = Alignment.Center
         ) {
             // Background arc
-            Canvas(modifier = Modifier.size(72.dp)) {
-                val strokeWidth = 8.dp.toPx()
+            Canvas(modifier = Modifier.size(48.dp)) {
+                val strokeWidth = 4.dp.toPx()
                 val arcSize = size.minDimension - strokeWidth
                 drawArc(
                     color = BossDarkBorder,
@@ -710,8 +727,8 @@ private fun CircularGauge(
             }
 
             // Foreground arc (animated)
-            Canvas(modifier = Modifier.size(72.dp)) {
-                val strokeWidth = 8.dp.toPx()
+            Canvas(modifier = Modifier.size(48.dp)) {
+                val strokeWidth = 4.dp.toPx()
                 val arcSize = size.minDimension - strokeWidth
                 drawArc(
                     color = color,
@@ -728,16 +745,16 @@ private fun CircularGauge(
             Text(
                 text = valueText,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = 11.sp,
                 color = BossDarkTextPrimary
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 10.sp,
             color = BossDarkTextSecondary
         )
     }
@@ -745,6 +762,7 @@ private fun CircularGauge(
 
 /**
  * Compact resource card with icon, count, and colored accent.
+ * Compact design matching UpdateBanner style.
  */
 @Composable
 private fun ResourceCard(
@@ -756,41 +774,41 @@ private fun ResourceCard(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(4.dp),
         color = BossDarkBackground
     ) {
         Column(
             modifier = Modifier
-                .border(1.dp, BossDarkBorder, RoundedCornerShape(8.dp))
-                .padding(12.dp),
+                .border(1.dp, BossDarkBorder, RoundedCornerShape(4.dp))
+                .padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(20.dp)
                     .background(color.copy(alpha = 0.2f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     icon,
                     contentDescription = label,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(12.dp),
                     tint = color
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
                 text = "$count",
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 13.sp,
                 color = BossDarkTextPrimary
             )
 
             Text(
                 text = label,
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 color = BossDarkTextSecondary
             )
         }
@@ -799,6 +817,7 @@ private fun ResourceCard(
 
 /**
  * Resource row with icon, label, count, and animated bar.
+ * Compact design matching UpdateBanner style.
  */
 @Composable
 private fun ResourceBarRow(
@@ -823,44 +842,44 @@ private fun ResourceBarRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
-                        .background(color.copy(alpha = 0.2f), RoundedCornerShape(4.dp)),
+                        .size(18.dp)
+                        .background(color.copy(alpha = 0.2f), RoundedCornerShape(3.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         icon,
                         contentDescription = label,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(11.dp),
                         tint = color
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(label, color = BossDarkTextPrimary, fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(label, color = BossDarkTextPrimary, fontSize = 11.sp)
             }
 
             Text(
                 "$count",
                 fontWeight = FontWeight.Bold,
                 color = color,
-                fontSize = 14.sp
+                fontSize = 11.sp
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Animated bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
                 .background(BossDarkBorder)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(animatedProgress)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(3.dp))
+                    .clip(RoundedCornerShape(2.dp))
                     .background(color)
             )
         }
