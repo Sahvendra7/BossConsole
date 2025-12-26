@@ -998,6 +998,9 @@ private fun CircularGauge(
         }
     }
 
+    val gaugeSize = 80.dp
+    val strokeWidth = 7.dp
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = if (onClick != null) {
@@ -1007,36 +1010,36 @@ private fun CircularGauge(
         }
     ) {
         Box(
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(gaugeSize),
             contentAlignment = Alignment.Center
         ) {
             // Background arc
-            Canvas(modifier = Modifier.size(56.dp)) {
-                val strokeWidth = 5.dp.toPx()
-                val arcSize = size.minDimension - strokeWidth
+            Canvas(modifier = Modifier.size(gaugeSize)) {
+                val stroke = strokeWidth.toPx()
+                val arcSize = size.minDimension - stroke
                 drawArc(
                     color = BossDarkBorder,
                     startAngle = 135f,
                     sweepAngle = 270f,
                     useCenter = false,
-                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                    topLeft = Offset(stroke / 2, stroke / 2),
                     size = Size(arcSize, arcSize),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
                 )
             }
 
             // Foreground arc (animated)
-            Canvas(modifier = Modifier.size(56.dp)) {
-                val strokeWidth = 5.dp.toPx()
-                val arcSize = size.minDimension - strokeWidth
+            Canvas(modifier = Modifier.size(gaugeSize)) {
+                val stroke = strokeWidth.toPx()
+                val arcSize = size.minDimension - stroke
                 drawArc(
                     color = color,
                     startAngle = 135f,
                     sweepAngle = 270f * animatedValue,
                     useCenter = false,
-                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
+                    topLeft = Offset(stroke / 2, stroke / 2),
                     size = Size(arcSize, arcSize),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
                 )
             }
 
@@ -1044,16 +1047,16 @@ private fun CircularGauge(
             Text(
                 text = valueText,
                 fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
+                fontSize = 16.sp,
                 color = BossDarkTextPrimary
             )
         }
 
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
             text = label,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = BossDarkTextSecondary
         )
     }
