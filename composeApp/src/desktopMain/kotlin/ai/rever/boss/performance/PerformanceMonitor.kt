@@ -103,6 +103,11 @@ object PerformanceMonitor {
                 val settings = PerformanceSettingsManager.currentSettings.value
 
                 if (!settings.enabled) {
+                    // Clear stale history when monitoring is disabled
+                    if (historyBuffer.isNotEmpty()) {
+                        historyBuffer.clear()
+                        _history.value = emptyList()
+                    }
                     delay(1000)
                     continue
                 }

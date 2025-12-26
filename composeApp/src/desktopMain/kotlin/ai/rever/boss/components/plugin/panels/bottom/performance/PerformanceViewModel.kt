@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.bottom.performance
 
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.performance.PerformanceMonitor
+import java.io.File
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSettingsManager
 import ai.rever.boss.performance.PerformanceSnapshot
@@ -66,7 +67,8 @@ class PerformanceViewModel {
                     val displayPath = if (filePath.startsWith(homeDir)) {
                         "~" + filePath.removePrefix(homeDir)
                     } else {
-                        filePath.substringAfterLast("/")
+                        // Use File.separator for cross-platform compatibility (Windows uses backslash)
+                        filePath.substringAfterLast(File.separator)
                     }
                     _exportResult.value = displayPath
                     // Open the exported file in a new editor tab (use full path)

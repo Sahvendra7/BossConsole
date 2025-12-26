@@ -168,17 +168,21 @@ fun ComponentContext.BossApp(
     DisposableEffect(splitViewState, draggablePanelComponent) {
         // Cache for getAllPanels() to avoid repeated tree traversals
         // All 6 providers are called within milliseconds of each other every 5 seconds
+        // Using synchronized block for thread-safe access from provider lambdas
+        val cacheLock = Any()
         var cachedPanels: List<SplitNode.Panel>? = null
         var cacheTimestamp = 0L
         val cacheTtlMs = 500L // Cache valid for 500ms (well within 5s collection interval)
 
         fun getCachedPanels(): List<SplitNode.Panel> {
-            val now = System.currentTimeMillis()
-            if (cachedPanels == null || now - cacheTimestamp > cacheTtlMs) {
-                cachedPanels = splitViewState.getAllPanels()
-                cacheTimestamp = now
+            synchronized(cacheLock) {
+                val now = System.currentTimeMillis()
+                if (cachedPanels == null || now - cacheTimestamp > cacheTtlMs) {
+                    cachedPanels = splitViewState.getAllPanels()
+                    cacheTimestamp = now
+                }
+                return cachedPanels!!
             }
-            return cachedPanels!!
         }
 
         PerformanceState.registerResourceProviders(
