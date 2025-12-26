@@ -246,15 +246,14 @@ fun PerformanceSettings() {
             title = "Reset Settings",
             description = "Restore all performance settings to defaults"
         ) {
-            Button(
+            OutlinedButton(
                 onClick = {
                     coroutineScope.launch {
                         PerformanceSettingsManager.resetToDefault()
                     }
                 },
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = MaterialTheme.colors.error.copy(alpha = 0.1f),
-                    contentColor = MaterialTheme.colors.error
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
                 )
             ) {
                 Text("Reset to Defaults")
