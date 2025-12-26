@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
@@ -462,14 +464,14 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
             }
         }
 
+        // Threads section header
         item {
-            Card(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = BossDarkSurface,
-                elevation = 0.dp,
-                shape = RoundedCornerShape(4.dp)
+                color = BossDarkSurface,
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -496,20 +498,41 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
                     }
 
                     Divider(color = BossDarkBorder, thickness = 1.dp)
+                }
+            }
+        }
 
-                    // Thread list
-                    snapshot.cpu.threads.forEach { thread ->
+        // Thread rows - using items() for lazy rendering
+        if (snapshot.cpu.threads.isNotEmpty()) {
+            itemsIndexed(
+                items = snapshot.cpu.threads,
+                key = { _, thread -> thread.id }
+            ) { index, thread ->
+                val isLast = index == snapshot.cpu.threads.lastIndex
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BossDarkSurface,
+                    shape = if (isLast) RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp) else RoundedCornerShape(0.dp)
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = if (isLast) 8.dp else 0.dp)) {
                         ThreadRow(thread)
                     }
-
-                    if (snapshot.cpu.threads.isEmpty()) {
-                        Text(
-                            "No thread data available",
-                            fontSize = 10.sp,
-                            color = BossDarkTextSecondary,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    }
+                }
+            }
+        } else {
+            // Empty state with bottom rounded corners
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BossDarkSurface,
+                    shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
+                ) {
+                    Text(
+                        "No thread data available",
+                        fontSize = 10.sp,
+                        color = BossDarkTextSecondary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
                 }
             }
         }
@@ -681,94 +704,124 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
             }
         }
 
-        // Browser Tabs Details
+        // Browser Tabs Details - using items() for lazy rendering
         if (snapshot.resources.browserTabs.isNotEmpty()) {
             item {
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = BossDarkSurface,
-                    elevation = 0.dp,
-                    shape = RoundedCornerShape(4.dp)
+                    color = BossDarkSurface,
+                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Web,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = BossDarkAccent
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Browser Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Outlined.Web,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BossDarkAccent
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Browser Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    }
+                }
+            }
 
-                        snapshot.resources.browserTabs.forEach { tab ->
-                            BrowserTabRow(tab)
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+            itemsIndexed(
+                items = snapshot.resources.browserTabs,
+                key = { _, tab -> "browser-${tab.id}" }
+            ) { index, tab ->
+                val isLast = index == snapshot.resources.browserTabs.lastIndex
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BossDarkSurface,
+                    shape = if (isLast) RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp) else RoundedCornerShape(0.dp)
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = if (isLast) 12.dp else 6.dp)) {
+                        BrowserTabRow(tab)
                     }
                 }
             }
         }
 
-        // Terminal Sessions Details
+        // Terminal Sessions Details - using items() for lazy rendering
         if (snapshot.resources.terminals.isNotEmpty()) {
             item {
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = BossDarkSurface,
-                    elevation = 0.dp,
-                    shape = RoundedCornerShape(4.dp)
+                    color = BossDarkSurface,
+                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Terminal,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = BossDarkSuccess
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Terminal Sessions", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Outlined.Terminal,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BossDarkSuccess
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Terminal Sessions", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    }
+                }
+            }
 
-                        snapshot.resources.terminals.forEach { terminal ->
-                            TerminalRow(terminal)
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+            itemsIndexed(
+                items = snapshot.resources.terminals,
+                key = { _, terminal -> "terminal-${terminal.id}" }
+            ) { index, terminal ->
+                val isLast = index == snapshot.resources.terminals.lastIndex
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BossDarkSurface,
+                    shape = if (isLast) RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp) else RoundedCornerShape(0.dp)
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = if (isLast) 12.dp else 6.dp)) {
+                        TerminalRow(terminal)
                     }
                 }
             }
         }
 
-        // Editor Tabs Details
+        // Editor Tabs Details - using items() for lazy rendering
         if (snapshot.resources.editorTabs.isNotEmpty()) {
             item {
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = BossDarkSurface,
-                    elevation = 0.dp,
-                    shape = RoundedCornerShape(4.dp)
+                    color = BossDarkSurface,
+                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = BossDarkWarning
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Editor Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = BossDarkWarning
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Editor Tabs", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
+                    }
+                }
+            }
 
-                        snapshot.resources.editorTabs.forEach { editor ->
-                            EditorTabRow(editor)
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+            itemsIndexed(
+                items = snapshot.resources.editorTabs,
+                key = { _, editor -> "editor-${editor.id}" }
+            ) { index, editor ->
+                val isLast = index == snapshot.resources.editorTabs.lastIndex
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BossDarkSurface,
+                    shape = if (isLast) RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp) else RoundedCornerShape(0.dp)
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = if (isLast) 12.dp else 6.dp)) {
+                        EditorTabRow(editor)
                     }
                 }
             }
