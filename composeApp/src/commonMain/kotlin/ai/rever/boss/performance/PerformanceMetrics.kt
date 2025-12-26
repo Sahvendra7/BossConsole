@@ -86,7 +86,8 @@ data class CpuMetrics(
     val processLoad: Double,      // 0.0-1.0, JVM process CPU usage
     val systemLoad: Double,       // 0.0-1.0, overall system CPU usage
     val availableProcessors: Int,
-    val activeThreadCount: Int
+    val activeThreadCount: Int,
+    val threads: List<ThreadInfo> = emptyList()
 ) {
     val processLoadPercent: Float
         get() = (processLoad * 100).toFloat()
@@ -94,6 +95,20 @@ data class CpuMetrics(
     val systemLoadPercent: Float
         get() = (systemLoad * 100).toFloat()
 }
+
+/**
+ * Information about a single JVM thread.
+ */
+@Serializable
+data class ThreadInfo(
+    val id: Long,
+    val name: String,
+    val state: String,           // RUNNABLE, WAITING, BLOCKED, etc.
+    val cpuTimeMs: Long,         // CPU time in milliseconds
+    val userTimeMs: Long,        // User time in milliseconds
+    val blockedCount: Long,      // Times blocked
+    val waitedCount: Long        // Times waited
+)
 
 /**
  * Garbage collection metrics.

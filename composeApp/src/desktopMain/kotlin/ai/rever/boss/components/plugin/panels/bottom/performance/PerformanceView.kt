@@ -13,6 +13,7 @@ import ai.rever.boss.performance.HealthStatus
 import ai.rever.boss.performance.PerformanceHealth
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSnapshot
+import ai.rever.boss.performance.ThreadInfo
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -424,12 +425,45 @@ private fun CpuTab(snapshot: PerformanceSnapshot?) {
                 shape = RoundedCornerShape(4.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Threads", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = BossDarkTextPrimary)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Threads (${snapshot.cpu.activeThreadCount} active, ${snapshot.cpu.availableProcessors} processors)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = BossDarkTextPrimary
+                        )
+                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        MetricItem("Active", "${snapshot.cpu.activeThreadCount}", HealthStatus.GOOD)
-                        MetricItem("Processors", "${snapshot.cpu.availableProcessors}", HealthStatus.GOOD)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Thread list header
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Name", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.weight(2f))
+                        Text("State", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.weight(1f))
+                        Text("CPU", fontSize = 10.sp, color = BossDarkTextSecondary, modifier = Modifier.width(60.dp))
+                    }
+
+                    Divider(color = BossDarkBorder, thickness = 1.dp)
+
+                    // Thread list
+                    snapshot.cpu.threads.forEach { thread ->
+                        ThreadRow(thread)
+                    }
+
+                    if (snapshot.cpu.threads.isEmpty()) {
+                        Text(
+                            "No thread data available",
+                            fontSize = 10.sp,
+                            color = BossDarkTextSecondary,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
                     }
                 }
             }
@@ -623,6 +657,62 @@ private fun HealthBadge(status: HealthStatus) {
             fontSize = 10.sp,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
         )
+    }
+}
+
+@Composable
+private fun ThreadRow(thread: ThreadInfo) {
+    val stateColor = when (thread.state) {
+        "RUNNABLE" -> BossDarkSuccess
+        "BLOCKED" -> BossDarkError
+        "WAITING", "TIMED_WAITING" -> BossDarkWarning
+        else -> BossDarkTextSecondary
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Thread name (truncated if too long)
+        Text(
+            text = thread.name.take(30) + if (thread.name.length > 30) "..." else "",
+            fontSize = 10.sp,
+            color = BossDarkTextPrimary,
+            modifier = Modifier.weight(2f)
+        )
+
+        // State badge
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(2.dp),
+            color = stateColor.copy(alpha = 0.2f)
+        ) {
+            Text(
+                text = thread.state,
+                fontSize = 9.sp,
+                color = stateColor,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+            )
+        }
+
+        // CPU time
+        Text(
+            text = formatCpuTime(thread.cpuTimeMs),
+            fontSize = 10.sp,
+            color = BossDarkTextSecondary,
+            modifier = Modifier.width(60.dp)
+        )
+    }
+}
+
+private fun formatCpuTime(ms: Long): String {
+    return when {
+        ms >= 60000 -> "${ms / 60000}m ${(ms % 60000) / 1000}s"
+        ms >= 1000 -> "${ms / 1000}.${(ms % 1000) / 100}s"
+        else -> "${ms}ms"
     }
 }
 

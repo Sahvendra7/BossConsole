@@ -205,11 +205,42 @@ object PerformanceMonitor {
         val processLoad = sunOSBean?.processCpuLoad ?: -1.0
         val systemLoad = sunOSBean?.systemCpuLoad ?: osMXBean.systemLoadAverage
 
+        // Collect thread details - top 20 by CPU time
+        val threadIds = threadMXBean.allThreadIds
+        val threadInfos = threadMXBean.getThreadInfo(threadIds)
+
+        val threads = threadIds.zip(threadInfos.toList())
+            .filter { it.second != null }
+            .map { (id, info) ->
+                val cpuTime = if (threadMXBean.isThreadCpuTimeSupported) {
+                    threadMXBean.getThreadCpuTime(id) / 1_000_000 // nanoseconds to milliseconds
+                } else {
+                    0L
+                }
+                val userTime = if (threadMXBean.isThreadCpuTimeSupported) {
+                    threadMXBean.getThreadUserTime(id) / 1_000_000
+                } else {
+                    0L
+                }
+                ThreadInfo(
+                    id = id,
+                    name = info!!.threadName,
+                    state = info.threadState.name,
+                    cpuTimeMs = cpuTime,
+                    userTimeMs = userTime,
+                    blockedCount = info.blockedCount,
+                    waitedCount = info.waitedCount
+                )
+            }
+            .sortedByDescending { it.cpuTimeMs }
+            .take(20)
+
         return CpuMetrics(
             processLoad = if (processLoad >= 0) processLoad else 0.0,
             systemLoad = if (systemLoad >= 0) systemLoad else 0.0,
             availableProcessors = osMXBean.availableProcessors,
-            activeThreadCount = threadMXBean.threadCount
+            activeThreadCount = threadMXBean.threadCount,
+            threads = threads
         )
     }
 
