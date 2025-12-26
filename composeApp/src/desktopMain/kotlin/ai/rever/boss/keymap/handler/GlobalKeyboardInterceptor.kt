@@ -29,10 +29,10 @@ actual class GlobalKeyboardInterceptor actual constructor(
     /**
      * AWT KeyListener that intercepts events at the window level.
      */
+    private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+
     private val keyListener = object : KeyAdapter() {
         override fun keyPressed(e: AwtKeyEvent) {
-            // 🔍 DIAGNOSTIC: Log EVERY key press that reaches AWT interceptor
-            println("⌨️  [GlobalKeyboardInterceptor.keyPressed] AWT Key detected: keyCode=${e.keyCode}, keyChar=${e.keyChar}, modifiers: Cmd=${e.isMetaDown}, Ctrl=${e.isControlDown}, Shift=${e.isShiftDown}, Alt=${e.isAltDown}")
 
             // Convert AWT KeyEvent to Compose KeyEvent (may be null, that's OK)
             val composeEvent = convertAwtToCompose(e)
@@ -40,14 +40,10 @@ actual class GlobalKeyboardInterceptor actual constructor(
             // Check if this is a global-priority shortcut
             val binding = findGlobalPriorityBinding(composeEvent, e)
             if (binding != null) {
-                println("🌐 [GlobalKeyboardInterceptor] Found GLOBAL priority shortcut: ${binding.actionId}")
-
                 // Check lifecycle condition asynchronously
                 scope.launch {
                     val enabled = ShortcutLifecycleManager.isEnabled(binding.actionId)
                     if (enabled) {
-                        println("   ✓ [GlobalKeyboardInterceptor] Lifecycle enabled, emitting to bus")
-
                         // Emit to KeyboardEventBus only if we have a Compose event
                         if (composeEvent != null) {
                             KeyboardEventBus.emit(
@@ -61,8 +57,6 @@ actual class GlobalKeyboardInterceptor actual constructor(
 
                         // Consume the AWT event to prevent further processing
                         e.consume()
-                    } else {
-                        println("   🚫 [GlobalKeyboardInterceptor] Lifecycle disabled, skipping")
                     }
                 }
             }
@@ -79,35 +73,21 @@ actual class GlobalKeyboardInterceptor actual constructor(
      * Attaches the keyboard interceptor to a ComposeWindow.
      */
     actual fun attach(window: Any) {
-        if (window !is ComposeWindow) {
-            println("[GlobalKeyboardInterceptor] Warning: Expected ComposeWindow but got ${window::class.simpleName}")
-            return
-        }
-
-        if (attachedWindows.contains(window)) {
-            println("[GlobalKeyboardInterceptor] Warning: Already attached to window")
-            return
-        }
+        if (window !is ComposeWindow) return
+        if (attachedWindows.contains(window)) return
 
         window.addKeyListener(keyListener)
         attachedWindows.add(window)
-
-        println("[GlobalKeyboardInterceptor] Attached to window")
     }
 
     /**
      * Detaches the keyboard interceptor from a ComposeWindow.
      */
     actual fun detach(window: Any) {
-        if (window !is ComposeWindow) {
-            println("[GlobalKeyboardInterceptor] Warning: Expected ComposeWindow but got ${window::class.simpleName}")
-            return
-        }
+        if (window !is ComposeWindow) return
 
         window.removeKeyListener(keyListener)
         attachedWindows.remove(window)
-
-        println("[GlobalKeyboardInterceptor] Detached from window")
     }
 
     /**
@@ -115,7 +95,6 @@ actual class GlobalKeyboardInterceptor actual constructor(
      */
     actual fun updateSettings(newSettings: KeymapSettings) {
         settings = newSettings
-        println("[GlobalKeyboardInterceptor] Updated settings")
     }
 
     /**
@@ -135,7 +114,6 @@ actual class GlobalKeyboardInterceptor actual constructor(
             return null // TODO: Proper Compose KeyEvent creation
             // For now, we'll rely on matching against the raw AWT event data
         } catch (e: Exception) {
-            println("[GlobalKeyboardInterceptor] Error converting AWT event: ${e.message}")
             return null
         }
     }
@@ -146,9 +124,20 @@ actual class GlobalKeyboardInterceptor actual constructor(
      */
     private fun findGlobalPriorityBinding(composeEvent: ComposeKeyEvent?, awtEvent: AwtKeyEvent): KeyBinding? {
         // Extract modifiers from AWT event
+        // Platform-aware modifier mapping:
+        // - macOS: Meta (Command) key maps to "Cmd"
+        // - Linux/Windows: Ctrl key maps to "Cmd" (since shortcuts use "Cmd" as the primary modifier)
         val modifiers = mutableListOf<String>()
-        if (awtEvent.isMetaDown) modifiers.add("Cmd")
-        if (awtEvent.isControlDown) modifiers.add("Ctrl")
+
+        if (isMacOS) {
+            // On macOS, Meta (Command) is the primary modifier
+            if (awtEvent.isMetaDown) modifiers.add("Cmd")
+            if (awtEvent.isControlDown) modifiers.add("Ctrl")
+        } else {
+            // On Linux/Windows, Ctrl is the primary modifier (equivalent to Cmd)
+            if (awtEvent.isControlDown) modifiers.add("Cmd")
+            if (awtEvent.isMetaDown) modifiers.add("Ctrl")  // Meta/Super key acts as Ctrl
+        }
         if (awtEvent.isShiftDown) modifiers.add("Shift")
         if (awtEvent.isAltDown) modifiers.add("Alt")
 

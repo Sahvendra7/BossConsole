@@ -21,6 +21,7 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.rememberSplitViewState
+import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -121,6 +122,10 @@ import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.window.WindowAppearanceSettingsManager
+import ai.rever.boss.performance.PerformanceState
+import ai.rever.boss.performance.BrowserTabInfo
+import ai.rever.boss.performance.TerminalInfo
+import ai.rever.boss.performance.EditorTabResourceInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -156,6 +161,109 @@ fun ComponentContext.BossApp(
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
     LaunchedEffect(splitViewState) {
         setupDownloadTabCloseCallback(splitViewState)
+    }
+
+    // Register resource count providers for performance monitoring
+    // Use DisposableEffect to clean up on disposal and prevent memory leaks
+    DisposableEffect(splitViewState, draggablePanelComponent) {
+        // Cache for getAllPanels() to avoid repeated tree traversals
+        // All 6 providers are called within milliseconds of each other every 5 seconds
+        // Using synchronized block for thread-safe access from provider lambdas
+        val cacheLock = Any()
+        var cachedPanels: List<SplitNode.Panel>? = null
+        var cacheTimestamp = 0L
+        val cacheTtlMs = 500L // Cache valid for 500ms (well within 5s collection interval)
+
+        fun getCachedPanels(): List<SplitNode.Panel> {
+            synchronized(cacheLock) {
+                val now = System.currentTimeMillis()
+                if (cachedPanels == null || now - cacheTimestamp > cacheTtlMs) {
+                    cachedPanels = splitViewState.getAllPanels()
+                    cacheTimestamp = now
+                }
+                return cachedPanels!!
+            }
+        }
+
+        PerformanceState.registerResourceProviders(
+            browserTabs = {
+                getCachedPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is FluckTabInfo }
+                }
+            },
+            terminals = {
+                getCachedPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is TerminalTabInfo }
+                }
+            },
+            editorTabs = {
+                getCachedPanels().sumOf { panel ->
+                    panel.tabsComponent.tabsState.value.tabs.count { it is EditorTabInfo }
+                }
+            },
+            panels = {
+                // Count visible panels from the draggable panel component
+                listOf(
+                    bottom,
+                    left.top,
+                    left.bottom,
+                    right.top,
+                    right.bottom
+                ).count { panel -> draggablePanelComponent.isVisible(panel) }
+            },
+            windows = {
+                SplitViewStateRegistry.states.value.size
+            }
+        )
+
+        // Register detailed resource providers for the Resources tab
+        PerformanceState.registerDetailedResourceProviders(
+            browserTabs = {
+                getCachedPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<FluckTabInfo>().map { tab ->
+                        BrowserTabInfo(
+                            id = tab.id,
+                            title = tab.title,
+                            url = tab.currentUrl,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            },
+            terminals = {
+                getCachedPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<TerminalTabInfo>().map { tab ->
+                        TerminalInfo(
+                            id = tab.id,
+                            title = tab.title,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            },
+            editorTabs = {
+                getCachedPanels().flatMap { panel ->
+                    val tabsState = panel.tabsComponent.tabsState.value
+                    val activeTabId = tabsState.activeTab?.id
+                    tabsState.tabs.filterIsInstance<EditorTabInfo>().map { tab ->
+                        EditorTabResourceInfo(
+                            id = tab.id,
+                            fileName = tab.title,
+                            filePath = tab.filePath,
+                            isActive = tab.id == activeTabId
+                        )
+                    }
+                }
+            }
+        )
+
+        onDispose {
+            PerformanceState.clearResourceProviders()
+        }
     }
 
     // Workspace manager - use global singleton to ensure Bookmarks panel sees updates

@@ -90,6 +90,12 @@ fun main(args: Array<String>) {
     // Register shutdown hook to release the single-instance lock AND close browser engine
     Runtime.getRuntime().addShutdownHook(Thread {
         try {
+            // Stop performance monitoring to cancel background coroutines
+            ai.rever.boss.performance.PerformanceMonitor.stop()
+        } catch (e: Exception) {
+            println("Error stopping performance monitor: ${e.message}")
+        }
+        try {
             // Close browser engine first to release lock files
             val engine = ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.currentEngine
             if (engine != null && !engine.isClosed) {
@@ -137,6 +143,9 @@ fun main(args: Array<String>) {
 
     // Start global log capture from app startup
     GlobalLogCapture.start()
+
+    // Start performance monitoring from app startup
+    ai.rever.boss.performance.PerformanceMonitor.start()
 
     // Debug: Check environment variables
     println("=== Checking LLM API Keys in Environment ===")

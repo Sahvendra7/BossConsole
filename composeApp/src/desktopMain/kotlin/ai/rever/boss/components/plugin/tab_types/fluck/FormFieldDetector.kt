@@ -111,10 +111,9 @@ object FormFieldDetector {
 
             browser.mainFrame().ifPresent { frame ->
                 frame.executeJavaScript<Any>(script)
-                println("✅ [FormFieldDetector] Detection script injected successfully")
             }
         } catch (e: Exception) {
-            println("❌ [FormFieldDetector] Failed to inject detection script: ${e.message}")
+            // Detection script injection failed
         }
     }
 
@@ -145,7 +144,6 @@ object FormFieldDetector {
                         }
                     } ?: result.complete(null)
                 } catch (e: Exception) {
-                    println("❌ [FormFieldDetector] Error executing JS: ${e.message}")
                     result.complete(null)
                 }
             }
@@ -155,7 +153,6 @@ object FormFieldDetector {
                 result.await()
             }
         } catch (e: Exception) {
-            println("❌ [FormFieldDetector] Failed to get focused field: ${e.message}")
             null
         }
     }
@@ -168,8 +165,6 @@ object FormFieldDetector {
      */
     private fun parseFieldInfoJson(jsonString: String): FormFieldInfo? {
         return try {
-            println("🔍 [FormFieldDetector] Parsing JSON: $jsonString")
-
             // Simple JSON parsing - extract values between quotes
             val extractValue = { key: String ->
                 val pattern = "\"$key\":\"([^\"]*)\""
@@ -186,8 +181,6 @@ object FormFieldDetector {
             val autocomplete = extractValue("autocomplete")
             val className = extractValue("className")
             val ariaLabel = extractValue("ariaLabel")
-
-            println("🔍 [FormFieldDetector] Parsed: type=$inputType, name=$fieldName, id=$fieldId, autocomplete=$autocomplete")
 
             // Determine field type using heuristics
             val fieldType = determineFieldType(
@@ -211,7 +204,6 @@ object FormFieldDetector {
                 autocomplete = autocomplete
             )
         } catch (e: Exception) {
-            println("❌ [FormFieldDetector] Failed to parse JSON: ${e.message}")
             null
         }
     }
@@ -224,8 +216,6 @@ object FormFieldDetector {
      */
     private fun parseFieldInfo(jsObjectString: String): FormFieldInfo? {
         return try {
-            println("🔍 [FormFieldDetector] Parsing field info: $jsObjectString")
-
             // Simple parsing of JavaScript object string
             // Format: {key: value, key: value, ...}
             val cleanStr = jsObjectString.trim().removeSurrounding("{", "}")
@@ -273,7 +263,6 @@ object FormFieldDetector {
                 autocomplete = autocomplete
             )
         } catch (e: Exception) {
-            println("❌ [FormFieldDetector] Failed to parse field info: ${e.message}")
             null
         }
     }
@@ -376,7 +365,6 @@ object FormFieldDetector {
                     // Parse result array (simplified)
                     result.complete(fields)
                 } catch (e: Exception) {
-                    println("❌ [FormFieldDetector] Error finding all fields: ${e.message}")
                     result.complete(emptyList())
                 }
             }
@@ -385,7 +373,6 @@ object FormFieldDetector {
                 result.await()
             }
         } catch (e: Exception) {
-            println("❌ [FormFieldDetector] Failed to find all form fields: ${e.message}")
             emptyList()
         }
     }

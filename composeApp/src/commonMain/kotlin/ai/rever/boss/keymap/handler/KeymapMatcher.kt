@@ -3,6 +3,7 @@ package ai.rever.boss.keymap.handler
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.utils.SystemUtils
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.isMetaPressed
@@ -109,25 +110,29 @@ class KeymapMatcher(
         val hasShift = binding.modifiers.any { it.equals("Shift", true) }
         val hasAlt = binding.modifiers.any { it.equals("Alt", true) || it.equals("Option", true) }
 
-        // On macOS, Cmd key sets isMetaPressed
-        // On Windows/Linux, Ctrl key sets isMetaPressed
-        // So "Cmd" in binding should match isMetaPressed
-        val eventMeta = event.isMetaPressed
-        val eventCtrl = event.isCtrlPressed
+        // Platform-aware modifier matching:
+        // - macOS: Cmd key sets isMetaPressed, Ctrl key sets isCtrlPressed
+        // - Linux/Windows: Ctrl key sets isCtrlPressed (NOT isMetaPressed)
+        // So "Cmd" in binding should match isMetaPressed on macOS, isCtrlPressed on Linux/Windows
+        val isMacOS = SystemUtils.isMacOS
+
         val eventShift = event.isShiftPressed
         val eventAlt = event.isAltPressed
 
-        // Match logic: Handle platform-agnostic Cmd/Ctrl matching
-        // Fix: Previous logic (hasCmd == eventMeta || hasCtrl == eventCtrl) incorrectly matched
-        // when neither was required/pressed because (false == false) evaluates to true
+        // Match logic: Handle platform-aware Cmd/Ctrl matching
         val primaryModifierMatch = if (hasCmd || hasCtrl) {
-            // Binding requires a primary modifier (Cmd or Ctrl)
-            // Event must have the corresponding platform modifier pressed
-            (hasCmd && eventMeta) || (hasCtrl && eventCtrl)
+            if (isMacOS) {
+                // macOS: Cmd matches Meta, Ctrl matches Ctrl
+                (hasCmd && event.isMetaPressed) || (hasCtrl && event.isCtrlPressed)
+            } else {
+                // Linux/Windows: Cmd matches Ctrl (since Ctrl is the primary modifier)
+                // Meta/Super key is rarely used for shortcuts
+                (hasCmd && event.isCtrlPressed) || (hasCtrl && event.isMetaPressed)
+            }
         } else {
             // Binding doesn't require primary modifier
             // Event must not have any primary modifier pressed
-            !eventMeta && !eventCtrl
+            !event.isMetaPressed && !event.isCtrlPressed
         }
 
         val modifierMatch = primaryModifierMatch &&

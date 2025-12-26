@@ -3,6 +3,7 @@ package ai.rever.boss.components.bars.horizontal
 import BossDarkTextSecondary
 import BossDarkBorder
 import ai.rever.boss.components.buttons.BossActionButton
+import ai.rever.boss.performance.PerformanceState
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
@@ -150,6 +151,18 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
 
 @Composable
 fun BossRightBottomBar() {
+    // Performance indicator (shows memory/CPU usage)
+    val showIndicator = PerformanceState.shouldShowIndicator()
+    if (showIndicator) {
+        val snapshot = PerformanceState.currentSnapshot()
+        val health = PerformanceState.currentHealth()
+        PerformanceIndicator(
+            snapshot = snapshot,
+            health = health,
+            onClick = { PerformanceState.openPerformancePanel() }
+        )
+    }
+
     BossActionButton(text = "UTF-8", color = BossDarkTextSecondary, onClick = {})
     BossActionButton(imageVector = Icons.Outlined.Info, text = "Info", color = BossDarkTextSecondary, onClick = {})
 }

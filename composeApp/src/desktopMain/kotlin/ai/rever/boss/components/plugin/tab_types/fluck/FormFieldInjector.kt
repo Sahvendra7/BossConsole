@@ -115,12 +115,6 @@ object FormFieldInjector {
         value: String
     ): FillResult {
         return try {
-            // === PHASE 1: PRE-FILL DEBUG ===
-            println("🔍 [FormFieldInjector] ===== FILL OPERATION START =====")
-            val preDebug = logFieldDebugInfo(browser, "BEFORE_FILL")
-            println("🔍 [FormFieldInjector] PRE-FILL STATE:")
-            println(preDebug)
-
             val result = CompletableDeferred<FillResult>()
 
             browser.mainFrame().ifPresent { frame ->
@@ -227,7 +221,6 @@ object FormFieldInjector {
                         }
                     )
                 } catch (e: Exception) {
-                    println("❌ [FormFieldInjector] Exception during fill: ${e.message}")
                     result.complete(FillResult.Error("Exception: ${e.message}"))
                 }
             }
@@ -239,15 +232,8 @@ object FormFieldInjector {
             // Wait for async operations to complete (frameworks may update state asynchronously)
             kotlinx.coroutines.delay(200)
 
-            // === PHASE 2: POST-FILL DEBUG ===
-            val postDebug = logFieldDebugInfo(browser, "AFTER_FILL")
-            println("🔍 [FormFieldInjector] POST-FILL STATE:")
-            println(postDebug)
-            println("🔍 [FormFieldInjector] ===== FILL OPERATION END =====")
-
             fillResult
         } catch (e: Exception) {
-            println("❌ [FormFieldInjector] Failed to fill field: ${e.message}")
             FillResult.Error("Timeout or exception: ${e.message}")
         }
     }
@@ -611,9 +597,8 @@ object FormFieldInjector {
             val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
             val stringSelection = java.awt.datatransfer.StringSelection(text)
             clipboard.setContents(stringSelection, null)
-            println("✅ [FormFieldInjector] Copied to clipboard")
         } catch (e: Exception) {
-            println("❌ [FormFieldInjector] Failed to copy to clipboard: ${e.message}")
+            // Clipboard copy failed
         }
     }
 
@@ -781,6 +766,5 @@ object FormFieldInjector {
                 })();
             """.trimIndent())
         }
-        println("✅ [FormFieldInjector] Form submission monitor installed")
     }
 }

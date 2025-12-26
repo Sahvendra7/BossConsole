@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE
+    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE
 }
 
 @Composable
@@ -125,6 +125,16 @@ fun SettingsSidebar(
             subtitle = "Title bar, decorations",
             isSelected = selectedSection == SettingsSection.WINDOW_APPEARANCE,
             onClick = { onSectionChange(SettingsSection.WINDOW_APPEARANCE) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.Speed,
+            title = "Performance",
+            subtitle = "Memory, CPU monitoring",
+            isSelected = selectedSection == SettingsSection.PERFORMANCE,
+            onClick = { onSectionChange(SettingsSection.PERFORMANCE) }
         )
 
     }
