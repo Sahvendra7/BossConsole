@@ -37,7 +37,6 @@ import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.runtime.Composable
@@ -431,7 +430,7 @@ private fun RunConfigurationItem(
 
             // Run button
             Icon(
-                Icons.Outlined.PlayArrow,
+                FeatherIcons.Zap,
                 contentDescription = "Run",
                 modifier = Modifier
                     .size(18.dp)
@@ -472,7 +471,7 @@ private fun getLanguageColor(language: Language): Color {
 
 private fun getConfigTypeIcon(type: RunConfigurationType): ImageVector {
     return when (type) {
-        RunConfigurationType.MAIN_FUNCTION -> Icons.Outlined.PlayArrow
+        RunConfigurationType.MAIN_FUNCTION -> FeatherIcons.Zap
         RunConfigurationType.SCRIPT -> FeatherIcons.Terminal
         RunConfigurationType.TEST -> Icons.Outlined.Science
         RunConfigurationType.CUSTOM -> Icons.Outlined.Code
