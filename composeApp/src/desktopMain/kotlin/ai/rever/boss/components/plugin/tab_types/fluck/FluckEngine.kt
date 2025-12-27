@@ -62,8 +62,11 @@ object FluckEngine {
         println("Checking for stale Chromium processes...")
         var killedAny = false
         try {
+            // Use explicit paths for more precise matching (security: avoid killing unrelated processes)
             val bossChromiumDir = "$userHome/.boss/jxbrowser-chromium"
+            val bossProfileDir = "$userHome/.boss/browser-profile"
             val currentPid = ProcessHandle.current().pid()
+            val currentTimeMs = System.currentTimeMillis()
 
             // Find all processes that match JxBrowser's Chromium
             val staleProcesses = ProcessHandle.allProcesses()
@@ -72,18 +75,24 @@ object FluckEngine {
                         val command = process.info().command().orElse("")
                         val commandLine = process.info().commandLine().orElse("")
 
-                        // Check if this is a Chromium process from our JxBrowser installation
+                        // Security: Check if this is specifically a Chromium process from our JxBrowser
+                        // Use explicit full paths to avoid false positives with other .boss directories
                         val isJxBrowserChromium = command.contains(bossChromiumDir) ||
                                 commandLine.contains(bossChromiumDir) ||
-                                commandLine.contains(".boss/browser-profile") ||
-                                (command.contains("chromium", ignoreCase = true) &&
-                                 commandLine.contains(".boss", ignoreCase = true))
+                                commandLine.contains(bossProfileDir)
 
                         // Don't kill processes that belong to current BOSS instance
                         val parentPid = process.parent().map { it.pid() }.orElse(-1L)
                         val isOurChild = parentPid == currentPid
 
-                        isJxBrowserChromium && !isOurChild
+                        // Security: Don't kill processes started less than 5 seconds ago
+                        // This prevents killing newly spawned legitimate processes
+                        val startTimeMs = process.info().startInstant()
+                            .map { it.toEpochMilli() }.orElse(currentTimeMs)
+                        val processAgeMs = currentTimeMs - startTimeMs
+                        val isTooRecent = processAgeMs < 5000
+
+                        isJxBrowserChromium && !isOurChild && !isTooRecent
                     } catch (e: Exception) {
                         false
                     }
@@ -94,19 +103,28 @@ object FluckEngine {
                 try {
                     val pid = process.pid()
                     val command = process.info().command().orElse("unknown")
-                    println("  Found stale Chromium process: PID=$pid, command=$command")
+                    val commandLine = process.info().commandLine().orElse("unknown")
 
-                    // Try graceful termination first
+                    // Log full command line for debugging before killing
+                    println("  Found stale Chromium process:")
+                    println("    PID=$pid")
+                    println("    Command=$command")
+                    println("    CommandLine=$commandLine")
+
+                    // Try graceful termination first with proper timeout handling
                     process.destroy()
                     killedAny = true
 
-                    // Wait a bit for graceful shutdown (using coroutine delay per THREADING.md)
-                    kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(100) }
-
-                    // Force kill if still alive
-                    if (process.isAlive) {
-                        println("  Force killing process $pid...")
+                    // Wait for graceful shutdown using ProcessHandle.onExit() with timeout
+                    // This is more reliable than Thread.sleep() and doesn't block unnecessarily
+                    try {
+                        process.onExit().get(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    } catch (e: java.util.concurrent.TimeoutException) {
+                        // Process didn't exit in time - force kill
+                        println("  Process $pid didn't exit gracefully, force killing...")
                         process.destroyForcibly()
+                    } catch (e: Exception) {
+                        // Process already exited or other error
                     }
                     println("  Killed stale process: $pid")
                 } catch (e: Exception) {
@@ -118,10 +136,12 @@ object FluckEngine {
                 println("  No stale Chromium processes found")
             }
 
-            // If we killed any processes, wait for them to fully terminate (using coroutine delay per THREADING.md)
+            // If we killed any processes, wait for them to fully terminate
+            // Using Thread.sleep() is acceptable here since this runs during startup
+            // before UI initialization (per code review recommendation)
             if (killedAny) {
                 println("  Waiting for processes to fully terminate...")
-                kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(500) }
+                Thread.sleep(500)
             }
         } catch (e: Exception) {
             println("Error checking for stale processes: ${e.message}")
@@ -396,8 +416,8 @@ object FluckEngine {
                 }
             }
         } catch (e: Exception) {
+            // Log error without printStackTrace per CLAUDE.md guidelines
             println("  Error checking lock file: ${e.message}")
-            e.printStackTrace()
 
             // If we can't check, try to clean up anyway
             println("  Attempting cleanup despite error...")

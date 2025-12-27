@@ -244,6 +244,12 @@ class CodeBaseComponent(
     }
     
     private suspend fun loadFileTree(rootPath: String) {
+        // Validate path before attempting to load
+        if (rootPath.isEmpty()) {
+            _fileTree.value = null
+            return
+        }
+
         // Use cached file scanner
         _fileTree.value = fileCache.getNode(rootPath) ?: createMockFileTree(rootPath)
     }
@@ -434,6 +440,23 @@ class CodeBaseComponent(
      * @param currentDepth Current recursion depth to prevent excessive I/O
      * @param maxDepth Maximum depth to recurse (default 10 levels)
      */
+    /**
+     * Directories that should not be compactly loaded due to deep hierarchies
+     * or being uninteresting for code browsing.
+     */
+    private val excludedDirectories = setOf(
+        "node_modules",
+        ".git",
+        ".gradle",
+        ".idea",
+        "__pycache__",
+        "target",       // Rust/Maven target directories
+        "build",        // Gradle build directories
+        ".next",        // Next.js build output
+        "dist",         // Common build output
+        "vendor"        // PHP/Go vendor directories
+    )
+
     private suspend fun compactLoadIfNeeded(
         children: List<FileNode>,
         currentDepth: Int,
@@ -448,6 +471,13 @@ class CodeBaseComponent(
         // Check if we should continue loading: exactly one child and it's a directory
         if (children.size == 1 && children[0].isDirectory) {
             val singleChild = children[0]
+
+            // Skip excluded directories (node_modules, .git, etc.) - they have deep hierarchies
+            // that would cause excessive I/O and are not useful for compact display
+            if (excludedDirectories.contains(singleChild.name)) {
+                println("Skipping compact load for excluded directory: ${singleChild.name}")
+                return
+            }
 
             // Don't add to expanded paths - just load for compact display calculation
             // Load this child's children (which will recursively compact-load if needed)
