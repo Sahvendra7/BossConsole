@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 actual fun TabbedTerminalContent(
+    workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit
 ) {
@@ -42,6 +43,7 @@ actual fun TabbedTerminalContent(
         color = settings.defaultBackgroundColor
     ) {
         TabbedTerminal(
+            workingDirectory = workingDirectory,
             onExit = onExit,
             onShowSettings = onShowSettings,
             onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
@@ -186,6 +188,7 @@ private fun handleTerminalLinkClick(url: String, scope: CoroutineScope) {
 actual fun TerminalContent(
     terminalId: String?,
     initialCommand: String?,
+    workingDirectory: String?,
     onExit: () -> Unit
 ) {
     // If terminalId is provided, use the registry for persistent state
@@ -203,18 +206,14 @@ actual fun TerminalContent(
             }
         }
 
-        // Only send initial command for newly created terminals
-        if (isNew && initialCommand != null) {
-            state to true
-        } else {
-            state to false
-        }
+        // Only send initial command and working directory for newly created terminals
+        isNew to state
     } else {
         // Fallback to ephemeral state for sidebar terminals without ID
-        rememberEmbeddableTerminalState() to (initialCommand != null)
+        true to rememberEmbeddableTerminalState()
     }
 
-    val (state, shouldSendInitialCommand) = terminalState
+    val (isNew, state) = terminalState
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -224,8 +223,9 @@ actual fun TerminalContent(
     ) {
         EmbeddableTerminal(
             state = state,
-            // Only send initial command for newly created terminals
-            initialCommand = if (shouldSendInitialCommand) initialCommand else null,
+            // Only send initial command and working directory for newly created terminals
+            initialCommand = if (isNew) initialCommand else null,
+            workingDirectory = if (isNew) workingDirectory else null,
             onExit = { _ ->
                 // Clean up registry when terminal exits
                 terminalId?.let { TerminalStateRegistry.remove(it) }

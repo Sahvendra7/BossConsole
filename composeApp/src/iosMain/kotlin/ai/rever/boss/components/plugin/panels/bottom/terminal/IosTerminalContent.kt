@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
  */
 @Composable
 actual fun TabbedTerminalContent(
+    workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit
 ) {
@@ -37,6 +38,7 @@ actual fun TabbedTerminalContent(
 actual fun TerminalContent(
     terminalId: String?,
     initialCommand: String?,
+    workingDirectory: String?,
     onExit: () -> Unit
 ) {
     Box(
