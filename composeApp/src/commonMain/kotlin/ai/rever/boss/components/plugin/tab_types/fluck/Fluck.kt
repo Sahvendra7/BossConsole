@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -114,7 +115,8 @@ data class FluckTabInfo(
 expect fun createBrowser(): Any
 
 // Platform-specific browser reset (clears profile, cache, cookies)
-expect fun resetBrowserProfile(): Boolean
+// This is a suspend function to avoid blocking the UI thread during I/O operations
+expect suspend fun resetBrowserProfile(): Boolean
 
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
@@ -208,6 +210,9 @@ open class FluckTabComponent(
 
     @Composable
     override fun Content() {
+        // Coroutine scope for async operations (like browser reset)
+        val scope = rememberCoroutineScope()
+
         // Local Compose state to trigger recomposition when browser is ready
         // Initialized from class-level browserState which persists across tab switches
         var localBrowserState by remember(config.id) {
@@ -304,13 +309,16 @@ open class FluckTabComponent(
                         },
                         onResetBrowser = {
                             // Reset browser profile to fix persistent issues (Issue #340)
-                            val success = resetBrowserProfile()
-                            if (success) {
-                                // Clear error and retry after browser reset
-                                browserError = null
-                                retryCount = 0
-                                this@FluckTabComponent.browserState = null
-                                retryTrigger++
+                            // Use coroutine scope to avoid blocking UI thread
+                            scope.launch {
+                                val success = resetBrowserProfile()
+                                if (success) {
+                                    // Clear error and retry after browser reset
+                                    browserError = null
+                                    retryCount = 0
+                                    this@FluckTabComponent.browserState = null
+                                    retryTrigger++
+                                }
                             }
                         }
                     )

@@ -240,8 +240,8 @@ actual fun createBrowser(): Any {
     return browser
 }
 
-actual fun resetBrowserProfile(): Boolean {
-    return FluckEngine.resetBrowserProfile()
+actual suspend fun resetBrowserProfile(): Boolean {
+    return FluckEngine.resetBrowserProfile().success
 }
 
 actual fun disposeBrowser(browser: Any) {

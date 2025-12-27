@@ -506,18 +506,27 @@ fun ApplicationScope.BossWindow(
 
         // Reset Browser Confirmation Dialog
         if (showResetBrowserDialog) {
+            var isResetting by remember { mutableStateOf(false) }
+
             AlertDialog(
                 onDismissRequest = {
-                    showResetBrowserDialog = false
-                    resetBrowserResult = null
+                    if (!isResetting) {
+                        showResetBrowserDialog = false
+                        resetBrowserResult = null
+                    }
                 },
                 title = {
                     Text("Reset Browser")
                 },
                 text = {
                     Column {
-                        when (resetBrowserResult) {
-                            null -> {
+                        when {
+                            isResetting -> {
+                                Text("Resetting browser profile...")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please wait, this may take a moment.")
+                            }
+                            resetBrowserResult == null -> {
                                 Text("This will reset the browser to fix persistent issues.")
                                 Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
                                 Text("The following will be cleared:")
@@ -527,12 +536,12 @@ fun ApplicationScope.BossWindow(
                                 Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
                                 Text("All browser tabs will be closed. Continue?")
                             }
-                            true -> {
+                            resetBrowserResult == true -> {
                                 Text("✅ Browser reset successful!")
                                 Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
                                 Text("Please close any browser tabs and reopen them.")
                             }
-                            false -> {
+                            else -> {
                                 Text("❌ Browser reset failed.")
                                 Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
                                 Text("Please try restarting BOSS manually.")
@@ -541,30 +550,41 @@ fun ApplicationScope.BossWindow(
                     }
                 },
                 confirmButton = {
-                    if (resetBrowserResult == null) {
-                        Button(
-                            onClick = {
-                                resetBrowserResult = FluckEngine.resetBrowserProfile()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                backgroundColor = androidx.compose.ui.graphics.Color(0xFFE05555)
-                            )
-                        ) {
-                            Text("Reset Browser", color = androidx.compose.ui.graphics.Color.White)
+                    when {
+                        isResetting -> {
+                            // No button while resetting
                         }
-                    } else {
-                        Button(
-                            onClick = {
-                                showResetBrowserDialog = false
-                                resetBrowserResult = null
+                        resetBrowserResult == null -> {
+                            Button(
+                                onClick = {
+                                    isResetting = true
+                                    menuScope.launch {
+                                        val result = FluckEngine.resetBrowserProfile()
+                                        resetBrowserResult = result.success
+                                        isResetting = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = androidx.compose.ui.graphics.Color(0xFFE05555)
+                                )
+                            ) {
+                                Text("Reset Browser", color = androidx.compose.ui.graphics.Color.White)
                             }
-                        ) {
-                            Text("Close")
+                        }
+                        else -> {
+                            Button(
+                                onClick = {
+                                    showResetBrowserDialog = false
+                                    resetBrowserResult = null
+                                }
+                            ) {
+                                Text("Close")
+                            }
                         }
                     }
                 },
                 dismissButton = {
-                    if (resetBrowserResult == null) {
+                    if (resetBrowserResult == null && !isResetting) {
                         TextButton(
                             onClick = {
                                 showResetBrowserDialog = false
