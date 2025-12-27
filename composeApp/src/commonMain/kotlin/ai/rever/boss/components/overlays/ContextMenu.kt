@@ -27,17 +27,17 @@ import androidx.compose.ui.window.PopupProperties
  * @param text The text to display for this item
  * @param icon The icon to display for this item (optional)
  * @param isDivider Whether this item is a divider
- * @param onClick The action to perform when this item is clicked
  * @param trailingIcon Optional trailing icon (e.g., delete button)
  * @param onTrailingClick Action when trailing icon is clicked
+ * @param onClick The action to perform when this item is clicked (last param for trailing lambda)
  */
 data class ContextMenuItem(
     val text: String = "",
     val icon: ImageVector? = null,
     val isDivider: Boolean = false,
-    val onClick: () -> Unit = {},
     val trailingIcon: ImageVector? = null,
-    val onTrailingClick: (() -> Unit)? = null
+    val onTrailingClick: (() -> Unit)? = null,
+    val onClick: () -> Unit = {}
 )
 
 /**

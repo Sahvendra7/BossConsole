@@ -191,20 +191,20 @@ fun BossTabsComponent.BossMainTabBar(
 
                             // Split operations (if split state is available)
                             if (splitViewState != null && currentPanelId != null) {
-                                add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn) {
+                                add(ContextMenuItem("Split Right", Icons.Outlined.ViewColumn, onClick = {
                                     splitViewState.splitPanel(
                                         panelId = currentPanelId,
                                         orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
                                         tabToMove = config
                                     )
-                                })
-                                add(ContextMenuItem("Split Down", Icons.Outlined.Splitscreen) {
+                                }))
+                                add(ContextMenuItem("Split Down", Icons.Outlined.Splitscreen, onClick = {
                                     splitViewState.splitPanel(
                                         panelId = currentPanelId,
                                         orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
                                         tabToMove = config
                                     )
-                                })
+                                }))
                                 add(ContextMenuItem(isDivider = true))
                             }
 
@@ -218,16 +218,16 @@ fun BossTabsComponent.BossMainTabBar(
                             if (existingBookmark != null) {
                                 // Tab is already bookmarked - show remove option WITH CONFIRMATION
                                 val (collectionId, bookmarkId) = existingBookmark
-                                add(ContextMenuItem("Remove from Bookmarks", Icons.Filled.Star) {
+                                add(ContextMenuItem("Remove from Bookmarks", Icons.Filled.Star, onClick = {
                                     bookmarkToRemove = Triple(collectionId, bookmarkId, config.title)
                                     showRemoveBookmarkDialog = true
-                                })
+                                }))
                             } else {
                                 // Tab is not bookmarked - show add option
-                                add(ContextMenuItem("Add to Bookmarks", Icons.Outlined.Star) {
+                                add(ContextMenuItem("Add to Bookmarks", Icons.Outlined.Star, onClick = {
                                     tabToBookmark = config
                                     showBookmarkDialog = true
-                                })
+                                }))
                             }
 
                             // Favorite current workspace
@@ -236,62 +236,63 @@ fun BossTabsComponent.BossMainTabBar(
                                 val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
                                 add(ContextMenuItem(
                                     if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
-                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder
-                                ) {
-                                    if (isFavorited) {
-                                        bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
-                                    } else {
-                                        bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                    onClick = {
+                                        if (isFavorited) {
+                                            bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                        } else {
+                                            bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                        }
                                     }
-                                })
+                                ))
                             }
 
                             add(ContextMenuItem(isDivider = true))
 
                             // Open in New Window (if multi-window is supported)
                             if (ai.rever.boss.window.WindowOperations.isMultiWindowSupported()) {
-                                add(ContextMenuItem("Open in New Window", Icons.AutoMirrored.Outlined.OpenInNew) {
+                                add(ContextMenuItem("Open in New Window", Icons.AutoMirrored.Outlined.OpenInNew, onClick = {
                                     ai.rever.boss.window.WindowOperations.openTabInNewWindow(config)
                                     // Remove tab from current window after opening in new window
                                     removeTab(index)
                                     // Request focus back to the main panel
                                     focusRequester?.requestFocus()
-                                })
+                                }))
                                 add(ContextMenuItem(isDivider = true))
                             }
 
                             // Close current tab
-                            add(ContextMenuItem("Close Tab", Icons.Outlined.Close) {
+                            add(ContextMenuItem("Close Tab", Icons.Outlined.Close, onClick = {
                                 removeTab(index)
                                 // Request focus back to the main panel
                                 focusRequester?.requestFocus()
-                            })
+                            }))
 
                             // Close other tabs (only show if there are other tabs)
                             if (totalTabs > 1) {
-                                add(ContextMenuItem("Close Other Tabs", Icons.Outlined.Clear) {
+                                add(ContextMenuItem("Close Other Tabs", Icons.Outlined.Clear, onClick = {
                                     closeOtherTabs(index)
                                     // Request focus back to the main panel
                                     focusRequester?.requestFocus()
-                                })
+                                }))
                             }
 
                             // Close tabs to the right (only show if there are tabs to the right)
                             if (index < totalTabs - 1) {
-                                add(ContextMenuItem("Close Tabs to the Right", Icons.Outlined.ChevronRight) {
+                                add(ContextMenuItem("Close Tabs to the Right", Icons.Outlined.ChevronRight, onClick = {
                                     closeTabsToRight(index)
                                     // Request focus back to the main panel
                                     focusRequester?.requestFocus()
-                                })
+                                }))
                             }
 
                             // Close tabs to the left (only show if there are tabs to the left)
                             if (index > 0) {
-                                add(ContextMenuItem("Close Tabs to the Left", Icons.Outlined.ChevronLeft) {
+                                add(ContextMenuItem("Close Tabs to the Left", Icons.Outlined.ChevronLeft, onClick = {
                                     closeTabsToLeft(index)
                                     // Request focus back to the main panel
                                     focusRequester?.requestFocus()
-                                })
+                                }))
                             }
                         }
                     )
@@ -368,13 +369,13 @@ fun BossTabsComponent.BossMainTabBar(
                     .fillMaxHeight()
                     .contextMenu(
                         items = buildList {
-                            add(ContextMenuItem("New Tab", Icons.Default.Add) {
+                            add(ContextMenuItem("New Tab", Icons.Default.Add, onClick = {
                                 showNewTabDialog = true
                                 // Track panel interaction when context menu is used
                                 if (splitViewState != null && currentPanelId != null) {
                                     splitViewState.setActivePanel(currentPanelId)
                                 }
-                            })
+                            }))
 
                             add(ContextMenuItem(isDivider = true))
 
@@ -384,14 +385,15 @@ fun BossTabsComponent.BossMainTabBar(
                                 val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
                                 add(ContextMenuItem(
                                     if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
-                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder
-                                ) {
-                                    if (isFavorited) {
-                                        bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
-                                    } else {
-                                        bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                    if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                    onClick = {
+                                        if (isFavorited) {
+                                            bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                        } else {
+                                            bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                        }
                                     }
-                                })
+                                ))
                             }
                         }
                     )
@@ -727,7 +729,7 @@ class BossTabsComponent(
     // Remove a tab
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
-        config?.let { 
+        config?.let {
             // Dispose the component if it has a dispose method
             val component = tabComponents.remove(it.id)
             if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
