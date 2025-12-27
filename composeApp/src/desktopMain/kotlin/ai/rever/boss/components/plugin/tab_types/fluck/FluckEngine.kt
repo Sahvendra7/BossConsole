@@ -308,12 +308,15 @@ object FluckEngine {
         } ?: println("FluckEngine: Cannot cancel download $downloadId - not found in active downloads")
     }
 
+    // Lock object for thread-safe engine access
+    private val engineLock = Any()
+
     val engine: Engine
-        get() {
+        get() = synchronized(engineLock) {
             // Return cached engine if available AND not closed
             _engine?.let { cachedEngine ->
                 if (!cachedEngine.isClosed) {
-                    return cachedEngine
+                    return@synchronized cachedEngine
                 }
                 // Engine was closed (e.g., during app restart/update flow)
                 // Clear cache and reinitialize
@@ -329,7 +332,7 @@ object FluckEngine {
             }
 
             // Try to initialize
-            return initializeEngine()
+            initializeEngine()
         }
     
     private fun initializeEngine(): Engine {
