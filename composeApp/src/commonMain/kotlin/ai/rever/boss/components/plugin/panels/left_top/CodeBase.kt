@@ -364,38 +364,56 @@ class CodeBaseComponent(
             existingNode.copy(loadingState = NodeLoadingState.CHECKING)
         }
 
-        // Step 2: Load children on IO dispatcher (IntelliJ pattern - background thread)
-        val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            scanDirectoryWithDepth(targetPath, maxDepth = 1, startDepth = 0)
-        }
+        try {
+            // Step 2: Load children on IO dispatcher (IntelliJ pattern - background thread)
+            val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                scanDirectoryWithDepth(targetPath, maxDepth = 1, startDepth = 0)
+            }
 
-        // Step 3: Update tree with loaded children
-        val latestTree = _fileTree.value ?: return
-        if (scannedNode != null) {
-            val loadedChildren = scannedNode.children.map { child ->
-                // For each child directory, do a quick hasChildren check
-                if (child.isDirectory) {
-                    val hasKids = directoryHasChildren(child.path)
-                    child.copy(hasChildren = hasKids)
-                } else {
-                    child
+            // Step 3: Update tree with loaded children
+            val latestTree = _fileTree.value ?: return
+            if (scannedNode != null) {
+                val loadedChildren = scannedNode.children.map { child ->
+                    // For each child directory, do a quick hasChildren check
+                    if (child.isDirectory) {
+                        val hasKids = try {
+                            directoryHasChildren(child.path)
+                        } catch (e: Exception) {
+                            false // Assume no children on error
+                        }
+                        child.copy(hasChildren = hasKids)
+                    } else {
+                        child
+                    }
+                }
+
+                _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
+                    existingNode.copy(
+                        children = loadedChildren,
+                        hasChildren = loadedChildren.isNotEmpty(),
+                        loadingState = NodeLoadingState.LOADED,
+                        loadDepth = 1
+                    )
+                }
+
+                // Compact middle packages: if only one child directory, keep loading deeper
+                // This ensures the compact chain is fully loaded for display
+                // Limit depth to prevent excessive I/O on deep hierarchies
+                compactLoadIfNeeded(loadedChildren, currentDepth = 0)
+            } else {
+                // No children found - mark as loaded with empty
+                _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
+                    existingNode.copy(
+                        children = emptyList(),
+                        hasChildren = false,
+                        loadingState = NodeLoadingState.LOADED
+                    )
                 }
             }
-
-            _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
-                existingNode.copy(
-                    children = loadedChildren,
-                    hasChildren = loadedChildren.isNotEmpty(),
-                    loadingState = NodeLoadingState.LOADED,
-                    loadDepth = 1
-                )
-            }
-
-            // Compact middle packages: if only one child directory, keep loading deeper
-            // This ensures the compact chain is fully loaded for display
-            compactLoadIfNeeded(loadedChildren)
-        } else {
-            // No children found - mark as loaded with empty
+        } catch (e: Exception) {
+            // Handle I/O errors gracefully - mark as loaded with error state
+            println("Error loading children for $targetPath: ${e.message}")
+            val latestTree = _fileTree.value ?: return
             _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
                 existingNode.copy(
                     children = emptyList(),
@@ -411,57 +429,96 @@ class CodeBaseComponent(
      * If a directory has exactly one child that is also a directory,
      * automatically load that child's contents (recursively) so the
      * compact display name can be calculated properly.
+     *
+     * @param children The children to check for compact loading
+     * @param currentDepth Current recursion depth to prevent excessive I/O
+     * @param maxDepth Maximum depth to recurse (default 10 levels)
      */
-    private suspend fun compactLoadIfNeeded(children: List<FileNode>) {
+    private suspend fun compactLoadIfNeeded(
+        children: List<FileNode>,
+        currentDepth: Int,
+        maxDepth: Int = 10
+    ) {
+        // Prevent excessive recursion on deep hierarchies (e.g., node_modules)
+        if (currentDepth >= maxDepth) {
+            println("Compact load depth limit reached ($maxDepth levels)")
+            return
+        }
+
         // Check if we should continue loading: exactly one child and it's a directory
         if (children.size == 1 && children[0].isDirectory) {
             val singleChild = children[0]
 
             // Don't add to expanded paths - just load for compact display calculation
             // Load this child's children (which will recursively compact-load if needed)
-            loadNodeChildrenForCompact(singleChild.path)
+            loadNodeChildrenForCompact(singleChild.path, currentDepth + 1, maxDepth)
         }
     }
 
     /**
      * Load children specifically for compact path calculation.
      * Does not modify expanded paths.
+     *
+     * @param path Path to load children for
+     * @param currentDepth Current recursion depth
+     * @param maxDepth Maximum depth to recurse
      */
-    private suspend fun loadNodeChildrenForCompact(path: String) {
+    private suspend fun loadNodeChildrenForCompact(
+        path: String,
+        currentDepth: Int = 0,
+        maxDepth: Int = 10
+    ) {
         val currentTree = _fileTree.value ?: return
         val node = findNodeByPath(currentTree, path)
 
         if (node?.isDirectory != true) return
         if (node.isLoaded) return
 
-        // Load children on IO dispatcher
-        val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
-        }
+        try {
+            // Load children on IO dispatcher
+            val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
+            }
 
-        val latestTree = _fileTree.value ?: return
-        if (scannedNode != null) {
-            val loadedChildren = scannedNode.children.map { child ->
-                if (child.isDirectory) {
-                    val hasKids = directoryHasChildren(child.path)
-                    child.copy(hasChildren = hasKids)
-                } else {
-                    child
+            val latestTree = _fileTree.value ?: return
+            if (scannedNode != null) {
+                val loadedChildren = scannedNode.children.map { child ->
+                    if (child.isDirectory) {
+                        val hasKids = try {
+                            directoryHasChildren(child.path)
+                        } catch (e: Exception) {
+                            false // Assume no children on error
+                        }
+                        child.copy(hasChildren = hasKids)
+                    } else {
+                        child
+                    }
+                }
+
+                _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
+                    existingNode.copy(
+                        children = loadedChildren,
+                        hasChildren = loadedChildren.isNotEmpty(),
+                        loadingState = NodeLoadingState.LOADED,
+                        loadDepth = 1
+                    )
+                }
+
+                // Continue loading for compact calculation if single directory child
+                compactLoadIfNeeded(loadedChildren, currentDepth, maxDepth)
+            } else {
+                _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
+                    existingNode.copy(
+                        children = emptyList(),
+                        hasChildren = false,
+                        loadingState = NodeLoadingState.LOADED
+                    )
                 }
             }
-
-            _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
-                existingNode.copy(
-                    children = loadedChildren,
-                    hasChildren = loadedChildren.isNotEmpty(),
-                    loadingState = NodeLoadingState.LOADED,
-                    loadDepth = 1
-                )
-            }
-
-            // Continue loading for compact calculation if single directory child
-            compactLoadIfNeeded(loadedChildren)
-        } else {
+        } catch (e: Exception) {
+            // Handle I/O errors gracefully
+            println("Error loading children for compact path $path: ${e.message}")
+            val latestTree = _fileTree.value ?: return
             _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
                 existingNode.copy(
                     children = emptyList(),

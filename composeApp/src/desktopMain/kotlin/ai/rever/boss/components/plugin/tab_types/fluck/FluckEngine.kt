@@ -100,8 +100,8 @@ object FluckEngine {
                     process.destroy()
                     killedAny = true
 
-                    // Wait a bit for graceful shutdown
-                    Thread.sleep(100)
+                    // Wait a bit for graceful shutdown (using coroutine delay per THREADING.md)
+                    kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(100) }
 
                     // Force kill if still alive
                     if (process.isAlive) {
@@ -118,10 +118,10 @@ object FluckEngine {
                 println("  No stale Chromium processes found")
             }
 
-            // If we killed any processes, wait for them to fully terminate
+            // If we killed any processes, wait for them to fully terminate (using coroutine delay per THREADING.md)
             if (killedAny) {
                 println("  Waiting for processes to fully terminate...")
-                Thread.sleep(500)
+                kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(500) }
             }
         } catch (e: Exception) {
             println("Error checking for stale processes: ${e.message}")
