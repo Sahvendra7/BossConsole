@@ -46,9 +46,9 @@ fun GutterRunIcon(
     var showContextMenu by remember { mutableStateOf(false) }
 
     val iconColor = if (isHovered) {
-        Color(0xFF4CAF50) // Bright green when hovered
+        Color(0xFF6BBF78) // Brighter green when hovered
     } else {
-        Color(0xFF66BB6A) // Green normally
+        Color(0xFF59A869) // IntelliJ's run icon green
     }
 
     Icon(
