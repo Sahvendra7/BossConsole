@@ -40,21 +40,31 @@ actual object RunConfigurationManager {
 
     /**
      * Load settings synchronously on startup.
+     * Note: Does NOT auto-select any configuration - user must explicitly select one.
+     * Existing configs are deduplicated and names made unique.
      */
     private fun loadSettingsSync() {
         try {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<RunConfigurationSettings>(content)
-                _currentSettings.value = settings
 
-                // Restore selected configuration
-                settings.lastUsedConfigId?.let { lastId ->
-                    val config = settings.configurations.find { it.id == lastId }
-                    _selectedConfiguration.value = config
+                // Deduplicate by filePath and make names unique
+                val deduplicated = settings.configurations
+                    .distinctBy { it.filePath }
+                val withUniqueNames = makeStoredNamesUnique(deduplicated)
+
+                val cleanedSettings = settings.copy(configurations = withUniqueNames)
+                _currentSettings.value = cleanedSettings
+
+                // Don't auto-select - leave selectedConfiguration as null
+                println("[Run] Loaded ${cleanedSettings.configurations.size} configurations from ${settingsFile.absolutePath}")
+
+                // Save cleaned settings if we deduplicated anything
+                if (deduplicated.size != settings.configurations.size) {
+                    settingsFile.writeText(json.encodeToString(RunConfigurationSettings.serializer(), cleanedSettings))
+                    println("[Run] Cleaned up ${settings.configurations.size - deduplicated.size} duplicate configurations")
                 }
-
-                println("[Run] Loaded ${settings.configurations.size} configurations from ${settingsFile.absolutePath}")
             } else {
                 println("[Run] No settings file found, starting with empty configurations")
             }
@@ -65,34 +75,123 @@ actual object RunConfigurationManager {
     }
 
     /**
+     * Make stored configuration names unique using parent directory context.
+     */
+    private fun makeStoredNamesUnique(configs: List<RunConfiguration>): List<RunConfiguration> {
+        val nameGroups = configs.groupBy { it.name }
+
+        return configs.map { config ->
+            val group = nameGroups[config.name] ?: return@map config
+            if (group.size <= 1) {
+                config
+            } else {
+                // Add parent directory to make unique
+                val parts = config.filePath.split("/")
+                val uniqueName = if (parts.size >= 2) {
+                    val parentAndFile = parts.takeLast(2).joinToString("/")
+                    config.name.replace(Regex("\\([^)]+\\)$")) { "($parentAndFile)" }
+                } else {
+                    config.name
+                }
+                config.copy(name = uniqueName)
+            }
+        }
+    }
+
+    /**
      * Scan a project directory for runnable entry points.
+     * Note: Does NOT auto-select any configuration - user must explicitly select one.
+     * Names are made unique by adding path context when duplicates exist.
      */
     actual suspend fun scanProject(projectPath: String) = withContext(Dispatchers.IO) {
         try {
             println("[Run] Scanning project: $projectPath")
             val detected = detector.scanProject(projectPath)
-            _detectedConfigurations.value = detected
-            println("[Run] Found ${detected.size} runnable configurations")
-
-            // Auto-select first configuration if none selected
-            if (_selectedConfiguration.value == null && detected.isNotEmpty()) {
-                _selectedConfiguration.value = detected.first()
-            }
+            val detectedWithUniqueNames = makeNamesUnique(detected, projectPath)
+            _detectedConfigurations.value = detectedWithUniqueNames
+            println("[Run] Found ${detectedWithUniqueNames.size} runnable configurations")
+            // Don't auto-select - user must choose from dropdown
         } catch (e: Exception) {
             println("[Run] Failed to scan project: ${e.message}")
         }
     }
 
     /**
+     * Make configuration names unique by adding parent directory context for duplicates.
+     * E.g., two "main (Main.kt)" become "main (app/Main.kt)" and "main (lib/Main.kt)"
+     */
+    private fun makeNamesUnique(configs: List<RunConfiguration>, projectPath: String): List<RunConfiguration> {
+        // Group by name to find duplicates
+        val nameGroups = configs.groupBy { it.name }
+
+        return configs.map { config ->
+            val group = nameGroups[config.name] ?: return@map config
+            if (group.size <= 1) {
+                config
+            } else {
+                // Add parent directory to make unique
+                val relativePath = config.filePath.removePrefix(projectPath).removePrefix("/")
+                val parts = relativePath.split("/")
+                val uniqueName = if (parts.size >= 2) {
+                    // Include parent directory: "main (parent/Main.kt)"
+                    val parentAndFile = parts.takeLast(2).joinToString("/")
+                    config.name.replace(Regex("\\([^)]+\\)$")) { "($parentAndFile)" }
+                } else {
+                    config.name
+                }
+                config.copy(name = uniqueName)
+            }
+        }
+    }
+
+    /**
      * Add a new run configuration.
+     * - Checks for duplicates by filePath (same file = same config)
+     * - Generates unique name with number suffix if name already exists
      */
     actual suspend fun addConfiguration(config: RunConfiguration) {
         val current = _currentSettings.value
+
+        // Check if configuration with same filePath already exists
+        val existingByPath = current.configurations.find { it.filePath == config.filePath }
+        if (existingByPath != null) {
+            println("[Run] Configuration for '${config.filePath}' already exists, skipping")
+            return
+        }
+
+        // Generate unique name if needed
+        val uniqueName = generateUniqueName(config.name, current.configurations.map { it.name })
+        val configWithUniqueName = if (uniqueName != config.name) {
+            config.copy(name = uniqueName)
+        } else {
+            config
+        }
+
         val updated = current.copy(
-            configurations = current.configurations + config
+            configurations = current.configurations + configWithUniqueName
         )
         _currentSettings.value = updated
         saveSettings()
+        println("[Run] Added configuration: ${configWithUniqueName.name}")
+    }
+
+    /**
+     * Generate a unique name by appending a number suffix if needed.
+     * E.g., "Main" -> "Main", "Main" (if exists) -> "Main (2)", etc.
+     */
+    private fun generateUniqueName(baseName: String, existingNames: List<String>): String {
+        if (baseName !in existingNames) {
+            return baseName
+        }
+
+        var counter = 2
+        while (true) {
+            val candidateName = "$baseName ($counter)"
+            if (candidateName !in existingNames) {
+                return candidateName
+            }
+            counter++
+        }
     }
 
     /**
