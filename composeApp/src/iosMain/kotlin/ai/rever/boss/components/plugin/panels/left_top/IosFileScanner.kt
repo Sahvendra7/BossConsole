@@ -8,27 +8,33 @@ actual fun scanDirectory(path: String): FileNode? {
         name = path.substringAfterLast('/'),
         path = path,
         isDirectory = true,
-        children = mutableListOf(
+        children = listOf(
             FileNode(
                 name = "README.md",
                 path = "$path/README.md",
-                isDirectory = false
+                isDirectory = false,
+                hasChildren = false,
+                loadingState = NodeLoadingState.LOADED
             ),
             FileNode(
                 name = "src",
                 path = "$path/src",
                 isDirectory = true,
-                children = mutableListOf(
+                children = listOf(
                     FileNode(
                         name = "main.kt",
                         path = "$path/src/main.kt",
-                        isDirectory = false
+                        isDirectory = false,
+                        hasChildren = false,
+                        loadingState = NodeLoadingState.LOADED
                     )
                 ),
-                isLoaded = true
+                hasChildren = true,
+                loadingState = NodeLoadingState.LOADED
             )
         ),
-        isLoaded = true
+        hasChildren = true,
+        loadingState = NodeLoadingState.LOADED
     )
 }
 
@@ -36,4 +42,12 @@ actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDept
     // iOS has restricted file system access
     // Return the same mock data
     return scanDirectory(path)
+}
+
+/**
+ * iOS mock implementation - always returns true for directories
+ */
+actual fun directoryHasChildren(path: String): Boolean {
+    // Mock - assume directories have children
+    return true
 }

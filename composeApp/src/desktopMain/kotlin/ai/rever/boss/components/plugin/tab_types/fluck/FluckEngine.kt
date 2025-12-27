@@ -26,6 +26,143 @@ object FluckEngine {
     private var _engine: Engine? = null
     private var initializationError: Throwable? = null
     private var attemptCount = 0
+    private var proactiveCleanupDone = false
+
+    /**
+     * Proactively clean up stale lock files and zombie processes on app startup.
+     * Call this early in app initialization to ensure session reuse works.
+     */
+    fun proactiveCleanupOnStartup() {
+        if (proactiveCleanupDone) return
+        proactiveCleanupDone = true
+
+        println("=== Proactive JxBrowser lock cleanup ===")
+        val userHome = System.getProperty("user.home")
+        val selectedProfile = BrowserSettings.currentProfile
+        val profileDirPath = Paths.get(userHome, ".boss", selectedProfile)
+
+        // First, kill any stale Chromium processes from previous sessions
+        killStaleChromiumProcesses(userHome)
+
+        if (profileDirPath.toFile().exists()) {
+            cleanupStaleLockFiles(profileDirPath)
+            // Also clean up any other lock-related files
+            cleanupAllLockRelatedFiles(profileDirPath)
+        } else {
+            println("Profile directory does not exist yet: $profileDirPath")
+        }
+        println("=== End proactive cleanup ===")
+    }
+
+    /**
+     * Kill stale Chromium processes that were spawned by previous BOSS sessions.
+     * These zombie processes can prevent profile reuse even without lock files.
+     */
+    private fun killStaleChromiumProcesses(userHome: String) {
+        println("Checking for stale Chromium processes...")
+        var killedAny = false
+        try {
+            val bossChromiumDir = "$userHome/.boss/jxbrowser-chromium"
+            val currentPid = ProcessHandle.current().pid()
+
+            // Find all processes that match JxBrowser's Chromium
+            val staleProcesses = ProcessHandle.allProcesses()
+                .filter { process ->
+                    try {
+                        val command = process.info().command().orElse("")
+                        val commandLine = process.info().commandLine().orElse("")
+
+                        // Check if this is a Chromium process from our JxBrowser installation
+                        val isJxBrowserChromium = command.contains(bossChromiumDir) ||
+                                commandLine.contains(bossChromiumDir) ||
+                                commandLine.contains(".boss/browser-profile") ||
+                                (command.contains("chromium", ignoreCase = true) &&
+                                 commandLine.contains(".boss", ignoreCase = true))
+
+                        // Don't kill processes that belong to current BOSS instance
+                        val parentPid = process.parent().map { it.pid() }.orElse(-1L)
+                        val isOurChild = parentPid == currentPid
+
+                        isJxBrowserChromium && !isOurChild
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                .toList()
+
+            staleProcesses.forEach { process ->
+                try {
+                    val pid = process.pid()
+                    val command = process.info().command().orElse("unknown")
+                    println("  Found stale Chromium process: PID=$pid, command=$command")
+
+                    // Try graceful termination first
+                    process.destroy()
+                    killedAny = true
+
+                    // Wait a bit for graceful shutdown
+                    Thread.sleep(100)
+
+                    // Force kill if still alive
+                    if (process.isAlive) {
+                        println("  Force killing process $pid...")
+                        process.destroyForcibly()
+                    }
+                    println("  Killed stale process: $pid")
+                } catch (e: Exception) {
+                    println("  Failed to kill process: ${e.message}")
+                }
+            }
+
+            if (staleProcesses.isEmpty()) {
+                println("  No stale Chromium processes found")
+            }
+
+            // If we killed any processes, wait for them to fully terminate
+            if (killedAny) {
+                println("  Waiting for processes to fully terminate...")
+                Thread.sleep(500)
+            }
+        } catch (e: Exception) {
+            println("Error checking for stale processes: ${e.message}")
+        }
+    }
+
+    /**
+     * Clean up ALL lock-related files in the profile directory.
+     * JxBrowser/Chromium uses multiple files for locking.
+     */
+    private fun cleanupAllLockRelatedFiles(profileDir: java.nio.file.Path) {
+        println("Cleaning up all lock-related files in: $profileDir")
+
+        val lockFiles = listOf(
+            "SingletonLock",
+            "SingletonSocket",
+            "SingletonCookie",
+            "lockfile",
+            ".org.chromium.Chromium.lock"  // Some versions use this
+        )
+
+        lockFiles.forEach { fileName ->
+            val file = profileDir.resolve(fileName).toFile()
+            if (file.exists()) {
+                val deleted = file.delete()
+                println("  $fileName: deleted=$deleted")
+            }
+        }
+
+        // Also check for lock files in Default subdirectory
+        val defaultDir = profileDir.resolve("Default")
+        if (defaultDir.toFile().exists()) {
+            lockFiles.forEach { fileName ->
+                val file = defaultDir.resolve(fileName).toFile()
+                if (file.exists()) {
+                    val deleted = file.delete()
+                    println("  Default/$fileName: deleted=$deleted")
+                }
+            }
+        }
+    }
 
     // Track URLs that are being downloaded to prevent popup handler from opening tabs
     private val activeDownloadUrls = Collections.synchronizedSet(mutableSetOf<String>())
@@ -185,37 +322,111 @@ object FluckEngine {
         val socketFile = profileDir.resolve("SingletonSocket").toFile()
         val cookieFile = profileDir.resolve("SingletonCookie").toFile()
 
-        if (!lockFile.exists()) return false // No lock to clean
+        println("Checking for stale lock files in: $profileDir")
+        println("  SingletonLock exists: ${lockFile.exists()}")
+
+        if (!lockFile.exists()) {
+            println("  No lock file found - profile is available")
+            return false // No lock to clean
+        }
 
         // On Linux, SingletonLock is a symlink to "spark-<hostname>-<pid>"
         // Check if the PID is still running
         try {
-            if (Files.isSymbolicLink(lockFile.toPath())) {
+            val isSymlink = Files.isSymbolicLink(lockFile.toPath())
+            println("  SingletonLock is symlink: $isSymlink")
+
+            if (isSymlink) {
                 val target = Files.readSymbolicLink(lockFile.toPath()).toString()
-                // Parse PID from "spark-hostname-12345"
+                println("  Symlink target: $target")
+
+                // Parse PID from "spark-hostname-12345" or similar format
                 val pid = target.substringAfterLast("-").toLongOrNull()
+                println("  Extracted PID: $pid")
 
                 if (pid != null) {
                     // Check if process is still running
-                    val isRunning = try {
-                        ProcessHandle.of(pid).isPresent
-                    } catch (e: Exception) {
-                        false
-                    }
+                    val processHandle = ProcessHandle.of(pid)
+                    val isRunning = processHandle.isPresent
+                    println("  Process $pid is running: $isRunning")
 
-                    if (!isRunning) {
-                        println("Cleaning up stale lock files (PID $pid no longer running)")
-                        lockFile.delete()
-                        socketFile.delete()
-                        cookieFile.delete()
+                    if (isRunning) {
+                        // Additional check: verify it's actually a BOSS/JxBrowser process
+                        // not just a reused PID from another application
+                        val processInfo = processHandle.orElse(null)
+                        val command = processInfo?.info()?.command()?.orElse(null)
+                        println("  Process command: $command")
+
+                        // If it's not a Java process, it's likely a reused PID
+                        val isJavaProcess = command?.contains("java", ignoreCase = true) == true
+                        if (!isJavaProcess) {
+                            println("  PID $pid is not a Java process - lock is stale (PID reused)")
+                            deleteLockFiles(lockFile, socketFile, cookieFile)
+                            return true
+                        }
+                    } else {
+                        println("  PID $pid no longer running - cleaning up stale lock files")
+                        deleteLockFiles(lockFile, socketFile, cookieFile)
+                        return true
+                    }
+                } else {
+                    // Couldn't parse PID - try to clean up anyway if lock file is old
+                    val lastModified = lockFile.lastModified()
+                    val ageMinutes = (System.currentTimeMillis() - lastModified) / (1000 * 60)
+                    println("  Could not parse PID from symlink. Lock file age: $ageMinutes minutes")
+
+                    // If lock is older than 5 minutes, assume it's stale
+                    if (ageMinutes > 5) {
+                        println("  Lock file is old - assuming stale and cleaning up")
+                        deleteLockFiles(lockFile, socketFile, cookieFile)
                         return true
                     }
                 }
+            } else {
+                // Not a symlink (Windows or other OS) - check file age
+                val lastModified = lockFile.lastModified()
+                val ageMinutes = (System.currentTimeMillis() - lastModified) / (1000 * 60)
+                println("  Lock file (not symlink) age: $ageMinutes minutes")
+
+                // On non-Linux, if lock is older than 5 minutes and we're starting fresh, clean it
+                if (ageMinutes > 5) {
+                    println("  Lock file is old - assuming stale and cleaning up")
+                    deleteLockFiles(lockFile, socketFile, cookieFile)
+                    return true
+                }
             }
         } catch (e: Exception) {
-            println("Failed to check lock file: ${e.message}")
+            println("  Error checking lock file: ${e.message}")
+            e.printStackTrace()
+
+            // If we can't check, try to clean up anyway
+            println("  Attempting cleanup despite error...")
+            try {
+                deleteLockFiles(lockFile, socketFile, cookieFile)
+                return true
+            } catch (e2: Exception) {
+                println("  Cleanup failed: ${e2.message}")
+            }
         }
+
+        println("  Lock appears to be held by active process - cannot clean up")
         return false
+    }
+
+    private fun deleteLockFiles(lockFile: java.io.File, socketFile: java.io.File, cookieFile: java.io.File) {
+        println("  Deleting lock files...")
+        if (lockFile.exists()) {
+            val deleted = lockFile.delete()
+            println("    SingletonLock deleted: $deleted")
+        }
+        if (socketFile.exists()) {
+            val deleted = socketFile.delete()
+            println("    SingletonSocket deleted: $deleted")
+        }
+        if (cookieFile.exists()) {
+            val deleted = cookieFile.delete()
+            println("    SingletonCookie deleted: $deleted")
+        }
     }
 
     /**
