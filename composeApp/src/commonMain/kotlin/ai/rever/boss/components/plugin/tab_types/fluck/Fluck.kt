@@ -349,8 +349,20 @@ open class FluckTabComponent(
                     }
                 }
             } else if (this@FluckTabComponent.browserState != null) {
-                // Browser already exists (tab switch), use it
-                localBrowserState = this@FluckTabComponent.browserState
+                // Browser already exists (tab switch), verify it's still valid before using
+                val existingBrowser = this@FluckTabComponent.browserState?.first
+                if (existingBrowser != null && isBrowserValid(existingBrowser)) {
+                    localBrowserState = this@FluckTabComponent.browserState
+                } else {
+                    // Browser became invalid while tab was inactive - trigger recovery
+                    println("⚠️ [FluckTabComponent] Browser invalid on tab switch for ${config.id}, triggering recovery")
+                    this@FluckTabComponent.browserState = null
+                    localBrowserState = null
+                    browserError = null
+                    retryCount = 0
+                    browserEngineGeneration = -1L
+                    retryTrigger++
+                }
             }
         }
 
@@ -439,21 +451,26 @@ open class FluckTabComponent(
                         browserEngineGeneration = -1L
                         retryTrigger++
                     }
-                    // Show loading while recovering
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
+                    // Show recovery message
+                    BrowserRecoveryView(url = initialUrl)
                 }
                 else -> {
-                    // Loading state
+                    // Loading state - initial browser initialization
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Loading browser...",
+                                fontSize = 14.sp,
+                                color = Color(0xFFCCCCCC)
+                            )
+                        }
                     }
                 }
             }
@@ -645,6 +662,63 @@ fun BrowserErrorView(
                         color = Color(0xFFCCCCCC)
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * View shown when browser becomes invalid and is being recovered.
+ * Shows a friendly message while the browser reinitializes.
+ */
+@Composable
+fun BrowserRecoveryView(url: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = 4.dp,
+            backgroundColor = Color(0xFF2B2D30)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color(0xFF4A90E2)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Reconnecting Browser",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "The browser connection was lost. Reinitializing...",
+                    fontSize = 14.sp,
+                    color = Color(0xFFCCCCCC),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = url,
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
