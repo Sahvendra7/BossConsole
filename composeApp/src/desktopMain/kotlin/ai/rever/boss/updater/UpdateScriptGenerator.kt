@@ -352,32 +352,51 @@ object UpdateScriptGenerator {
 
             echo "Installing DEB package: $escapedDebPath"
 
-            # Try pkexec first (graphical sudo prompt)
+            # Batch all privileged operations into a single pkexec/sudo call
+            # This ensures only ONE password prompt for the entire update
+            PRIVILEGED_SCRIPT='
+                set -e
+                DEB_PATH='"$escapedDebPath"'
+                DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
+                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
+
+                echo "=== Installing DEB package ==="
+                dpkg -i "${'$'}DEB_PATH" || {
+                    echo "Initial install failed, fixing dependencies..."
+                    apt-get install -f -y 2>/dev/null || true
+                    echo "Retrying installation..."
+                    dpkg -i "${'$'}DEB_PATH"
+                }
+
+                echo "=== Fixing desktop file ==="
+                if [ -f "${'$'}DESKTOP_FILE" ]; then
+                    grep -q "StartupWMClass" "${'$'}DESKTOP_FILE" || echo "StartupWMClass=BOSS" >> "${'$'}DESKTOP_FILE"
+                    sed -i "s|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g" "${'$'}DESKTOP_FILE"
+                    echo "Desktop file updated"
+                fi
+
+                echo "=== Installing icon ==="
+                if [ -f /opt/boss/lib/BOSS.png ]; then
+                    mkdir -p "${'$'}ICON_DIR"
+                    cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
+                    echo "Icon installed to hicolor theme"
+                fi
+
+                echo "=== All privileged operations complete ==="
+            '
+
+            # Try pkexec first (graphical sudo prompt), fall back to sudo
             if command -v pkexec &> /dev/null; then
-                pkexec dpkg -i $escapedDebPath
+                echo "Using pkexec for privileged operations..."
+                pkexec sh -c "${'$'}PRIVILEGED_SCRIPT"
                 INSTALL_RESULT=${'$'}?
-            # Fall back to sudo if available
             elif command -v sudo &> /dev/null; then
-                sudo dpkg -i $escapedDebPath
+                echo "Using sudo for privileged operations..."
+                sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
                 INSTALL_RESULT=${'$'}?
             else
                 echo "Error: Neither pkexec nor sudo available for installation"
                 exit 1
-            fi
-
-            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                echo "Installation failed, trying to fix dependencies..."
-                if command -v pkexec &> /dev/null; then
-                    pkexec apt-get install -f -y
-                    echo "Retrying installation..."
-                    pkexec dpkg -i $escapedDebPath
-                    INSTALL_RESULT=${'$'}?
-                else
-                    sudo apt-get install -f -y
-                    echo "Retrying installation..."
-                    sudo dpkg -i $escapedDebPath
-                    INSTALL_RESULT=${'$'}?
-                fi
             fi
 
             if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
@@ -386,49 +405,7 @@ object UpdateScriptGenerator {
                 echo "Installation complete!"
             fi
 
-            # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
-            DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
-            if [ -f "${'$'}DESKTOP_FILE" ]; then
-                NEEDS_UPDATE=false
-
-                # Check if StartupWMClass is missing
-                if ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
-                    NEEDS_UPDATE=true
-                fi
-
-                # Check if Icon uses full path instead of icon name
-                if grep -q "Icon=/opt/boss/lib/BOSS.png" "${'$'}DESKTOP_FILE"; then
-                    NEEDS_UPDATE=true
-                fi
-
-                if [ "${'$'}NEEDS_UPDATE" = true ]; then
-                    if command -v pkexec &> /dev/null; then
-                        pkexec sh -c "
-                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
-                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
-                        "
-                    elif command -v sudo &> /dev/null; then
-                        sudo sh -c "
-                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
-                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
-                        "
-                    fi
-                    echo "Fixed desktop file"
-                fi
-            fi
-
-            # Copy icon to hicolor theme for proper dock integration
-            if [ -f /opt/boss/lib/BOSS.png ]; then
-                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
-                if command -v pkexec &> /dev/null; then
-                    pkexec sh -c "mkdir -p '${'$'}ICON_DIR' && cp /opt/boss/lib/BOSS.png '${'$'}ICON_DIR/boss.png'"
-                elif command -v sudo &> /dev/null; then
-                    sudo mkdir -p "${'$'}ICON_DIR" && sudo cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
-                fi
-                echo "Installed icon to hicolor theme"
-            fi
-
-            # Refresh icon cache and desktop database
+            # Refresh icon cache and desktop database (non-privileged, may fail silently)
             gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
             if command -v update-desktop-database &> /dev/null; then
                 update-desktop-database /usr/share/applications 2>/dev/null || true
@@ -514,13 +491,52 @@ object UpdateScriptGenerator {
 
             echo "Installing RPM package: $escapedRpmPath"
 
-            # Try pkexec first (graphical sudo prompt)
+            # Batch all privileged operations into a single pkexec/sudo call
+            # This ensures only ONE password prompt for the entire update
+            PRIVILEGED_SCRIPT='
+                set -e
+                RPM_PATH='"$escapedRpmPath"'
+                DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
+                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
+
+                echo "=== Installing RPM package ==="
+                rpm -U "${'$'}RPM_PATH" || {
+                    echo "Direct rpm install failed, trying package manager..."
+                    if command -v dnf &> /dev/null; then
+                        dnf install -y "${'$'}RPM_PATH"
+                    elif command -v yum &> /dev/null; then
+                        yum install -y "${'$'}RPM_PATH"
+                    else
+                        echo "No package manager found for dependency resolution"
+                        exit 1
+                    fi
+                }
+
+                echo "=== Fixing desktop file ==="
+                if [ -f "${'$'}DESKTOP_FILE" ]; then
+                    grep -q "StartupWMClass" "${'$'}DESKTOP_FILE" || echo "StartupWMClass=BOSS" >> "${'$'}DESKTOP_FILE"
+                    sed -i "s|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g" "${'$'}DESKTOP_FILE"
+                    echo "Desktop file updated"
+                fi
+
+                echo "=== Installing icon ==="
+                if [ -f /opt/boss/lib/BOSS.png ]; then
+                    mkdir -p "${'$'}ICON_DIR"
+                    cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
+                    echo "Icon installed to hicolor theme"
+                fi
+
+                echo "=== All privileged operations complete ==="
+            '
+
+            # Try pkexec first (graphical sudo prompt), fall back to sudo
             if command -v pkexec &> /dev/null; then
-                pkexec rpm -U $escapedRpmPath
+                echo "Using pkexec for privileged operations..."
+                pkexec sh -c "${'$'}PRIVILEGED_SCRIPT"
                 INSTALL_RESULT=${'$'}?
-            # Fall back to sudo if available
             elif command -v sudo &> /dev/null; then
-                sudo rpm -U $escapedRpmPath
+                echo "Using sudo for privileged operations..."
+                sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
                 INSTALL_RESULT=${'$'}?
             else
                 echo "Error: Neither pkexec nor sudo available for installation"
@@ -528,76 +544,12 @@ object UpdateScriptGenerator {
             fi
 
             if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                echo "RPM installation failed, trying to resolve dependencies..."
-                # Try dnf first (Fedora/RHEL 8+), then yum (older RHEL/CentOS)
-                if command -v dnf &> /dev/null; then
-                    if command -v pkexec &> /dev/null; then
-                        pkexec dnf install -y $escapedRpmPath
-                        INSTALL_RESULT=${'$'}?
-                    else
-                        sudo dnf install -y $escapedRpmPath
-                        INSTALL_RESULT=${'$'}?
-                    fi
-                elif command -v yum &> /dev/null; then
-                    if command -v pkexec &> /dev/null; then
-                        pkexec yum install -y $escapedRpmPath
-                        INSTALL_RESULT=${'$'}?
-                    else
-                        sudo yum install -y $escapedRpmPath
-                        INSTALL_RESULT=${'$'}?
-                    fi
-                fi
-            fi
-
-            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                echo "RPM installation failed with exit code ${'$'}INSTALL_RESULT"
+                echo "Installation failed with exit code ${'$'}INSTALL_RESULT"
             else
                 echo "Installation complete!"
             fi
 
-            # Fix StartupWMClass in .desktop file for proper icon/taskbar integration
-            DESKTOP_FILE="/usr/share/applications/boss-BOSS.desktop"
-            if [ -f "${'$'}DESKTOP_FILE" ]; then
-                NEEDS_UPDATE=false
-
-                # Check if StartupWMClass is missing
-                if ! grep -q "StartupWMClass" "${'$'}DESKTOP_FILE"; then
-                    NEEDS_UPDATE=true
-                fi
-
-                # Check if Icon uses full path instead of icon name
-                if grep -q "Icon=/opt/boss/lib/BOSS.png" "${'$'}DESKTOP_FILE"; then
-                    NEEDS_UPDATE=true
-                fi
-
-                if [ "${'$'}NEEDS_UPDATE" = true ]; then
-                    if command -v pkexec &> /dev/null; then
-                        pkexec sh -c "
-                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
-                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
-                        "
-                    elif command -v sudo &> /dev/null; then
-                        sudo sh -c "
-                            grep -q 'StartupWMClass' '${'$'}DESKTOP_FILE' || echo 'StartupWMClass=BOSS' >> '${'$'}DESKTOP_FILE'
-                            sed -i 's|Icon=/opt/boss/lib/BOSS.png|Icon=boss|g' '${'$'}DESKTOP_FILE'
-                        "
-                    fi
-                    echo "Fixed desktop file"
-                fi
-            fi
-
-            # Copy icon to hicolor theme for proper dock integration
-            if [ -f /opt/boss/lib/BOSS.png ]; then
-                ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
-                if command -v pkexec &> /dev/null; then
-                    pkexec sh -c "mkdir -p '${'$'}ICON_DIR' && cp /opt/boss/lib/BOSS.png '${'$'}ICON_DIR/boss.png'"
-                elif command -v sudo &> /dev/null; then
-                    sudo mkdir -p "${'$'}ICON_DIR" && sudo cp /opt/boss/lib/BOSS.png "${'$'}ICON_DIR/boss.png"
-                fi
-                echo "Installed icon to hicolor theme"
-            fi
-
-            # Refresh icon cache and desktop database
+            # Refresh icon cache and desktop database (non-privileged, may fail silently)
             gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
             if command -v update-desktop-database &> /dev/null; then
                 update-desktop-database /usr/share/applications 2>/dev/null || true

@@ -184,12 +184,37 @@ object UpdateInstaller {
                 )
             }
 
-            when (getCurrentPlatform()) {
-                "macOS" -> installMacOSUpdate(downloadFile)
-                "Windows" -> installWindowsUpdate(downloadFile)
-                "Linux-deb" -> installLinuxDebUpdate(downloadFile)
-                "Linux-rpm" -> installLinuxRpmUpdate(downloadFile)
-                else -> installJarUpdate(downloadFile)
+            // Validate downloaded file type matches expected types for current platform
+            // This prevents installing wrong package type (e.g., .msi on Linux)
+            val fileName = downloadFile.name.lowercase()
+            val validExtensions = when (getCurrentPlatform()) {
+                "macOS" -> listOf(".dmg")
+                "Windows" -> listOf(".msi")
+                "Linux-deb" -> listOf(".deb", ".jar")  // JAR fallback allowed
+                "Linux-rpm" -> listOf(".rpm", ".jar")  // JAR fallback allowed
+                else -> listOf(".jar")
+            }
+            if (!validExtensions.any { fileName.endsWith(it) }) {
+                println("❌ File type mismatch: $fileName not valid for platform ${getCurrentPlatform()}")
+                println("   Expected one of: $validExtensions")
+                return InstallResult.Error(
+                    "Downloaded file type '$fileName' is not valid for this platform. Expected: ${validExtensions.joinToString()}"
+                )
+            }
+            println("✅ File type validated: $fileName is valid for ${getCurrentPlatform()}")
+
+            // Route based on actual file extension (not platform) to handle fallback cases
+            // e.g., when .deb isn't available but .jar is for Linux ARM64
+            when {
+                fileName.endsWith(".dmg") -> installMacOSUpdate(downloadFile)
+                fileName.endsWith(".msi") -> installWindowsUpdate(downloadFile)
+                fileName.endsWith(".deb") -> installLinuxDebUpdate(downloadFile)
+                fileName.endsWith(".rpm") -> installLinuxRpmUpdate(downloadFile)
+                fileName.endsWith(".jar") -> installJarUpdate(downloadFile)
+                else -> {
+                    println("Unknown update file type: ${downloadFile.name}")
+                    InstallResult.Error("Unknown update file type: ${downloadFile.extension}")
+                }
             }
         } catch (e: Exception) {
             println("Error installing update: ${e.message}")
