@@ -61,8 +61,8 @@ fun GutterRunIcon(
 
     Box(
         modifier = modifier
-            .size(20.dp)
-            .background(backgroundColor, RoundedCornerShape(3.dp))
+            .size(24.dp)
+            .background(backgroundColor, RoundedCornerShape(4.dp))
             .hoverable(interactionSource)
             .clickable { onRun(detected) }
             .onPointerEvent(PointerEventType.Press) { event ->
@@ -77,7 +77,7 @@ fun GutterRunIcon(
             imageVector = Icons.Outlined.PlayArrow,
             contentDescription = "Run ${detected.functionName}",
             tint = iconColor,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(22.dp)
         )
     }
 
@@ -143,5 +143,5 @@ private fun GutterRunContextMenu(
  */
 @Composable
 fun GutterRunIconSpacer(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(20.dp))
+    Box(modifier = modifier.size(24.dp))
 }
