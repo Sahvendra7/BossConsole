@@ -310,14 +310,24 @@ object FluckEngine {
 
     val engine: Engine
         get() {
-            // Return cached engine if available
-            _engine?.let { return it }
-            
+            // Return cached engine if available AND not closed
+            _engine?.let { cachedEngine ->
+                if (!cachedEngine.isClosed) {
+                    return cachedEngine
+                }
+                // Engine was closed (e.g., during app restart/update flow)
+                // Clear cache and reinitialize
+                println("⚠️ FluckEngine: Cached engine was closed, reinitializing...")
+                _engine = null
+                initializationError = null
+                attemptCount = 0
+            }
+
             // Throw cached error if initialization failed before and we've tried too many times
             if (attemptCount > 3) {
                 initializationError?.let { throw it }
             }
-            
+
             // Try to initialize
             return initializeEngine()
         }
