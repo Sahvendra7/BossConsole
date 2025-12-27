@@ -134,6 +134,10 @@ expect fun getEngineInitError(): String?
 // Clears initialization error state to allow retry after fixing network issues
 expect fun resetEngineInitialization()
 
+// Platform-specific settings for browser retry/recovery limits (configurable via Settings)
+expect fun getMaxInitRetries(): Int
+expect fun getMaxRecoveryAttempts(): Int
+
 // Platform-specific composable to observe engine generation changes
 @Composable
 expect fun collectEngineGeneration(): Long
@@ -209,12 +213,12 @@ open class FluckTabComponent(
 
     // Retry mechanism for browser initialization (Issue #162)
     private var retryCount = 0
-    private val maxRetries = 3
+    private val maxRetries: Int get() = getMaxInitRetries()  // Configurable via Settings
     private var retryTrigger by mutableStateOf(0)
 
     // Recovery loop prevention - track consecutive recovery attempts
     private var recoveryAttempts = 0
-    private val maxRecoveryAttempts = 3
+    private val maxRecoveryAttempts: Int get() = getMaxRecoveryAttempts()  // Configurable via Settings
 
     /**
      * Resets browser state to trigger recovery/reinitialization.

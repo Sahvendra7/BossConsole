@@ -57,6 +57,10 @@ actual fun resetEngineInitialization() {
     // No-op for iOS
 }
 
+actual fun getMaxInitRetries(): Int = 3  // Default value
+
+actual fun getMaxRecoveryAttempts(): Int = 3  // Default value
+
 @Composable
 actual fun collectEngineGeneration(): Long {
     // iOS doesn't use JxBrowser - always return 0

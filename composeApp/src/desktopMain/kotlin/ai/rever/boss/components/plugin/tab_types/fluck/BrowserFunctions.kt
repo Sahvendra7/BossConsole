@@ -29,6 +29,10 @@ object BrowserSettings {
     var customUserAgent: String? = null
     var currentProfile: String = "browser-profile"
     val availableProfiles = mutableListOf("browser-profile")
+
+    // Browser initialization retry settings (configurable via Settings)
+    var maxInitRetries: Int = 3
+    var maxRecoveryAttempts: Int = 3
 }
 
 /**
@@ -393,6 +397,18 @@ actual fun getEngineInitError(): String? {
 actual fun resetEngineInitialization() {
     FluckEngine.resetInitializationState()
 }
+
+/**
+ * Get max initialization retries from settings.
+ * Configurable via Settings > Browser > Advanced.
+ */
+actual fun getMaxInitRetries(): Int = BrowserSettings.maxInitRetries
+
+/**
+ * Get max recovery attempts from settings.
+ * Configurable via Settings > Browser > Advanced.
+ */
+actual fun getMaxRecoveryAttempts(): Int = BrowserSettings.maxRecoveryAttempts
 
 /**
  * Composable function to observe engine generation changes.
