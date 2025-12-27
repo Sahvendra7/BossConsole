@@ -319,32 +319,23 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
             Language.JAVASCRIPT -> generateJavaScriptCommand(detected)
             Language.TYPESCRIPT -> generateTypeScriptCommand(detected)
             Language.GO -> generateGoCommand(detected)
-            Language.RUST -> generateRustCommand(projectDir)
+            Language.RUST -> generateRustCommand(detected, projectDir)
             Language.UNKNOWN -> "echo 'Unknown language'"
         }
     }
 
     private fun generateKotlinCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Check for Gradle project
-        if (hasGradleWrapper(projectDir)) {
-            return "./gradlew run"
-        }
-        // Fallback to kotlin command
-        return "kotlin ${detected.filePath}"
+        // Use kotlin command to run the specific file directly
+        // This works for .kt files with main functions and .kts scripts
+        // Note: Won't work for files with project dependencies - use Gradle for that
+        return "kotlin \"${detected.filePath}\""
     }
 
     private fun generateJavaCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Check for Gradle project
-        if (hasGradleWrapper(projectDir)) {
-            return "./gradlew run"
-        }
-        // Fallback to javac + java
-        val className = if (detected.packageName != null && detected.className != null) {
-            "${detected.packageName}.${detected.className}"
-        } else {
-            detected.className ?: "Main"
-        }
-        return "javac ${detected.filePath} && java $className"
+        // Java 11+ supports single-file source-code execution
+        // This runs the file directly without explicit compilation
+        // Note: Won't work for files with project dependencies - use Gradle for that
+        return "java \"${detected.filePath}\""
     }
 
     private fun generatePythonCommand(detected: DetectedMainFunction): String {
@@ -363,16 +354,12 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
         return "go run ${detected.filePath}"
     }
 
-    private fun generateRustCommand(projectDir: File): String {
-        // Check for Cargo project
-        if (File(projectDir, "Cargo.toml").exists()) {
-            return "cargo run"
-        }
-        return "rustc main.rs && ./main"
+    private fun generateRustCommand(detected: DetectedMainFunction, projectDir: File): String {
+        // Compile and run the specific Rust file
+        // Note: Won't work for files with crate dependencies - use Cargo for that
+        val filePath = detected.filePath
+        val outputName = File(filePath).nameWithoutExtension
+        return "rustc \"$filePath\" -o \"$outputName\" && ./\"$outputName\""
     }
 
-    private fun hasGradleWrapper(projectDir: File): Boolean {
-        return File(projectDir, "gradlew").exists() ||
-               File(projectDir, "gradlew.bat").exists()
-    }
 }
