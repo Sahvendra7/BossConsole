@@ -116,31 +116,32 @@ object PerformanceMonitor {
                 }
 
                 val now = System.currentTimeMillis()
-                var memory = _currentSnapshot.value?.memory
-                var cpu = _currentSnapshot.value?.cpu
-                var gc = _currentSnapshot.value?.gc
-                var resources = _currentSnapshot.value?.resources
+                // Initialize with actual metrics on first run to avoid NPE
+                var memory = _currentSnapshot.value?.memory ?: collectMemoryMetrics()
+                var cpu = _currentSnapshot.value?.cpu ?: collectCpuMetrics()
+                var gc = _currentSnapshot.value?.gc ?: collectGcMetrics()
+                var resources = _currentSnapshot.value?.resources ?: collectResourceMetrics()
 
                 // Sample memory
-                if (now - memoryTick >= settings.memorySampleIntervalMs || memory == null) {
+                if (now - memoryTick >= settings.memorySampleIntervalMs) {
                     memory = collectMemoryMetrics()
                     memoryTick = now
                 }
 
                 // Sample CPU
-                if (now - cpuTick >= settings.cpuSampleIntervalMs || cpu == null) {
+                if (now - cpuTick >= settings.cpuSampleIntervalMs) {
                     cpu = collectCpuMetrics()
                     cpuTick = now
                 }
 
                 // Sample GC
-                if (now - gcTick >= settings.gcSampleIntervalMs || gc == null) {
+                if (now - gcTick >= settings.gcSampleIntervalMs) {
                     gc = collectGcMetrics()
                     gcTick = now
                 }
 
                 // Sample resources
-                if (now - resourceTick >= settings.resourceSampleIntervalMs || resources == null) {
+                if (now - resourceTick >= settings.resourceSampleIntervalMs) {
                     resources = collectResourceMetrics()
                     resourceTick = now
                 }
@@ -209,6 +210,8 @@ object PerformanceMonitor {
     fun stop() {
         monitoringJob?.cancel()
         monitoringJob = null
+        // Cancel scope to release all coroutines and prevent memory leaks during hot reloads
+        scope.coroutineContext[Job]?.cancel()
         clearResourceProviders()
         println("[Performance] Stopped performance monitor")
     }

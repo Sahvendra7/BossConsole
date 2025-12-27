@@ -193,9 +193,13 @@ object ProjectState {
     private val _recentProjects = MutableStateFlow<List<Project>>(emptyList())
     val recentProjects: StateFlow<List<Project>> = _recentProjects.asStateFlow()
 
+    private val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+
     init {
-        // Load recent projects from disk on startup
-        loadRecentProjects()
+        // Load recent projects from disk on startup (async to avoid blocking main thread)
+        ioScope.launch {
+            loadRecentProjects()
+        }
     }
 
     fun selectProject(project: Project) {
@@ -217,8 +221,10 @@ object ProjectState {
 
         _recentProjects.value = updated
 
-        // Save to disk
-        saveRecentProjects()
+        // Save to disk (async)
+        ioScope.launch {
+            saveRecentProjects()
+        }
     }
 
     private fun getRecentProjectsFile(): java.io.File {
@@ -228,7 +234,7 @@ object ProjectState {
         return java.io.File(bossDir, RECENT_PROJECTS_FILE)
     }
 
-    private fun loadRecentProjects() {
+    private suspend fun loadRecentProjects() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
             val file = getRecentProjectsFile()
             if (file.exists()) {
@@ -242,7 +248,7 @@ object ProjectState {
         }
     }
 
-    private fun saveRecentProjects() {
+    private suspend fun saveRecentProjects() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
             val file = getRecentProjectsFile()
             val json = kotlinx.serialization.json.Json.encodeToString(_recentProjects.value)
@@ -668,11 +674,15 @@ class CodeBaseComponent(
             }
         }
 
-        // Reload tree when project changes (only if path is not empty)
+        // Reload tree when project changes
         LaunchedEffect(selectedProject) {
             if (selectedProject.path.isNotEmpty()) {
                 fileCache.clearCache()
                 loadFileTree(selectedProject.path)
+            } else {
+                // Clear stale tree when project is deselected
+                _fileTree.value = null
+                _expandedPaths.value = emptySet()
             }
         }
 

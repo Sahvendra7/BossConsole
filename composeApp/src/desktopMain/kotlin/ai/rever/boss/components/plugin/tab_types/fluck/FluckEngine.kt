@@ -444,15 +444,27 @@ object FluckEngine {
         println("  Deleting lock files...")
         if (lockFile.exists()) {
             val deleted = lockFile.delete()
-            println("    SingletonLock deleted: $deleted")
+            if (!deleted) {
+                println("    WARNING: Failed to delete SingletonLock - may cause browser initialization issues")
+            } else {
+                println("    SingletonLock deleted: $deleted")
+            }
         }
         if (socketFile.exists()) {
             val deleted = socketFile.delete()
-            println("    SingletonSocket deleted: $deleted")
+            if (!deleted) {
+                println("    WARNING: Failed to delete SingletonSocket - may cause browser initialization issues")
+            } else {
+                println("    SingletonSocket deleted: $deleted")
+            }
         }
         if (cookieFile.exists()) {
             val deleted = cookieFile.delete()
-            println("    SingletonCookie deleted: $deleted")
+            if (!deleted) {
+                println("    WARNING: Failed to delete SingletonCookie - may cause browser initialization issues")
+            } else {
+                println("    SingletonCookie deleted: $deleted")
+            }
         }
     }
 

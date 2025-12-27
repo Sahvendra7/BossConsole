@@ -1,11 +1,17 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabTypeInfo
 import ai.rever.boss.components.registery.TabTypeId
 import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.run.DetectedMainFunction
+import ai.rever.boss.run.Language
+import ai.rever.boss.run.MainFunctionDetectorProvider
+import ai.rever.boss.run.RunConfiguration
+import ai.rever.boss.run.RunConfigurationType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -16,6 +22,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -28,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 // Simple syntax highlighting for common keywords
 private val kotlinKeywords = setOf(
@@ -52,8 +61,12 @@ fun CodeEditorUI(
     content: String,
     onContentChange: (String) -> Unit,
     language: String = "kotlin",
+    filePath: String = "",
+    projectPath: String = "",
     modifier: Modifier = Modifier
 ) {
+    val scope = rememberCoroutineScope()
+
     // Get settings from platform-specific implementation
     val fontSize = getCodeEditorFontSize()
     val fontFamily = getCodeEditorFontFamily()
@@ -61,26 +74,46 @@ fun CodeEditorUI(
     val textColor = getCodeEditorTextColor()
     val lineNumberColor = getCodeEditorLineNumberColor()
     val lineNumberBgColor = getCodeEditorLineNumberBgColor()
-    
+
     val textStyle = LocalTextStyle.current.copy(
         fontFamily = fontFamily,
         fontSize = fontSize.sp,
         lineHeight = (fontSize * 1.4f).sp
     )
-    
+
     // Use TextFieldValue to maintain cursor position
     var textFieldValue by remember { mutableStateOf(TextFieldValue(content)) }
-    
+
+    // State for detected main functions (runnable lines)
+    var detectedMainFunctions by remember { mutableStateOf<List<DetectedMainFunction>>(emptyList()) }
+    val runnableLineNumbers = remember(detectedMainFunctions) {
+        detectedMainFunctions.map { it.lineNumber }.toSet()
+    }
+
     // Update TextFieldValue when content changes externally
     LaunchedEffect(content) {
         if (content != textFieldValue.text) {
             textFieldValue = TextFieldValue(content)
         }
     }
-    
+
+    // Detect main functions when content or language changes
+    LaunchedEffect(content, language, filePath) {
+        if (filePath.isNotEmpty()) {
+            try {
+                val detector = MainFunctionDetectorProvider.get()
+                val langEnum = Language.fromFileName(filePath)
+                detectedMainFunctions = detector.detectInFile(filePath, content, langEnum)
+            } catch (e: Exception) {
+                println("[CodeEditor] Error detecting main functions: ${e.message}")
+                detectedMainFunctions = emptyList()
+            }
+        }
+    }
+
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
-    
+
     Surface(
         modifier = modifier,
         color = backgroundColor
@@ -88,23 +121,47 @@ fun CodeEditorUI(
         Row(
             modifier = Modifier.fillMaxSize()
         ) {
-            // Line numbers
+            // Line numbers with run icons
             val lines = textFieldValue.text.lines()
             Column(
                 modifier = Modifier
                     .background(lineNumberBgColor)
-                    .padding(horizontal = 8.dp)
+                    .padding(start = 4.dp, end = 8.dp)
                     .verticalScroll(verticalScrollState)
             ) {
                 lines.forEachIndexed { index, _ ->
-                    Text(
-                        text = "${index + 1}",
-                        style = textStyle.copy(color = lineNumberColor),
-                        modifier = Modifier.height((fontSize * 1.4f).dp)
-                    )
+                    Row(
+                        modifier = Modifier.height((fontSize * 1.4f).dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Run icon (if line has main function)
+                        if (runnableLineNumbers.contains(index)) {
+                            val detected = detectedMainFunctions.find { it.lineNumber == index }
+                            if (detected != null) {
+                                GutterRunIcon(
+                                    detected = detected,
+                                    onRun = { detectedFunc ->
+                                        scope.launch {
+                                            executeDetectedMainFunction(detectedFunc, projectPath)
+                                        }
+                                    }
+                                )
+                            }
+                        } else {
+                            GutterRunIconSpacer()
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Line number
+                        Text(
+                            text = "${index + 1}",
+                            style = textStyle.copy(color = lineNumberColor),
+                        )
+                    }
                 }
             }
-            
+
             // Editor content
             Box(
                 modifier = Modifier
@@ -130,6 +187,32 @@ fun CodeEditorUI(
                 )
             }
         }
+    }
+}
+
+/**
+ * Execute a detected main function by creating a run configuration and sending it to the event bus.
+ */
+private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
+    try {
+        val detector = MainFunctionDetectorProvider.get()
+        val command = detector.generateCommand(detected, projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') })
+
+        val config = RunConfiguration(
+            id = UUID.randomUUID().toString(),
+            name = detected.toShortName(),
+            type = RunConfigurationType.MAIN_FUNCTION,
+            filePath = detected.filePath,
+            lineNumber = detected.lineNumber,
+            language = detected.language,
+            command = command,
+            workingDirectory = projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') },
+            isAutoDetected = true
+        )
+
+        RunEventBus.execute(config)
+    } catch (e: Exception) {
+        println("[CodeEditor] Error executing main function: ${e.message}")
     }
 }
 
@@ -357,11 +440,15 @@ class CodeEditorTabComponent(
     override fun Content() {
         val currentContent by content.collectAsState()
         val currentLanguage by language.collectAsState()
-        
+        val currentFilePath = (config as? EditorTabInfo)?.filePath ?: ""
+        val projectPath = currentFilePath.substringBeforeLast('/')
+
         CodeEditorUI(
             content = currentContent,
             onContentChange = { _content.value = it },
             language = currentLanguage,
+            filePath = currentFilePath,
+            projectPath = projectPath,
             modifier = Modifier.fillMaxSize()
         )
     }

@@ -49,6 +49,9 @@ import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.run.RunConfigurationManager
+import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
@@ -684,6 +687,44 @@ fun ComponentContext.BossApp(
 
         // Note: We DON'T call markReady() here - that happens AFTER Last Session loads
         // just like URL handler, to prevent terminals from being destroyed by clearAllPanels()
+    }
+
+    // Listen for run execute events (Issue #321 - Run functionality)
+    LaunchedEffect(splitViewState) {
+        RunEventBus.executeEvents
+            .onEach { event ->
+                println("[BossApp] Run event received: ${event.configuration.name}")
+                RunExecutionService.execute(event.configuration, event.debug)
+            }
+            .launchIn(this)
+
+        RunEventBus.stopEvents
+            .onEach { event ->
+                if (event.configId != null) {
+                    RunExecutionService.stop(event.configId)
+                } else {
+                    RunExecutionService.stopAll()
+                }
+            }
+            .launchIn(this)
+
+        RunEventBus.scanEvents
+            .onEach { event ->
+                RunConfigurationManager.scanProject(event.projectPath)
+            }
+            .launchIn(this)
+    }
+
+    // Scan for run configurations when project changes
+    LaunchedEffect(Unit) {
+        ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject
+            .onEach { project ->
+                if (project.path.isNotEmpty()) {
+                    println("[BossApp] Project changed, scanning for run configurations: ${project.path}")
+                    RunConfigurationManager.scanProject(project.path)
+                }
+            }
+            .launchIn(this)
     }
 
     // Listen for workspace load events from CLI
