@@ -178,11 +178,16 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
                 faviconCacheKey = tabConfig.faviconCacheKey
             )
         }
-        "terminal" -> TerminalTabInfo(
-            id = "terminal-${Random.nextLong()}",
-            typeId = TerminalTab.typeId,
-            title = tabConfig.title
-        )
+        "terminal" -> {
+            // Get current project path for terminal working directory
+            val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+            TerminalTabInfo(
+                id = "terminal-${Random.nextLong()}",
+                typeId = TerminalTab.typeId,
+                title = tabConfig.title,
+                workingDirectory = projectPath.ifEmpty { null }
+            )
+        }
         "editor" -> EditorTabInfo(
             id = "editor-${Random.nextLong()}",
             typeId = CodeEditor.typeId,

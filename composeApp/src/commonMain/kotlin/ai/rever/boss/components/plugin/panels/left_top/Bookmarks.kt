@@ -534,10 +534,13 @@ class BookmarksPanel(
                 // Get active tabs component and add terminal tab
                 val activeComponent = splitViewState.getActiveTabsComponent()
                 if (activeComponent != null) {
+                    // Get current project path for terminal working directory
+                    val projectPath = ProjectState.selectedProject.value.path
                     val terminalTab = TerminalTabInfo(
                         id = "terminal-${Random.nextLong()}",
                         typeId = TerminalTab.typeId,
-                        title = bookmark.tabConfig.title
+                        title = bookmark.tabConfig.title,
+                        workingDirectory = projectPath.ifEmpty { null }
                     )
                     activeComponent.addTab(terminalTab)
                 }
@@ -633,10 +636,13 @@ class BookmarksPanel(
                     // Get active tabs component and add terminal tab
                     val activeComponent = splitViewState.getActiveTabsComponent()
                     if (activeComponent != null) {
+                        // Get current project path for terminal working directory
+                        val projectPath = ProjectState.selectedProject.value.path
                         val terminalTab = TerminalTabInfo(
                             id = "terminal-${Random.nextLong()}",
                             typeId = TerminalTab.typeId,
-                            title = tabConfig.title
+                            title = tabConfig.title,
+                            workingDirectory = projectPath.ifEmpty { null }
                         )
                         activeComponent.addTab(terminalTab)
                     }

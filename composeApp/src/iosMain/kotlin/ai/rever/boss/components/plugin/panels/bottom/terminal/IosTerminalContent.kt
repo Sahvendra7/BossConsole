@@ -59,6 +59,7 @@ actual fun TerminalContent(
 actual fun PersistentTabbedTerminalContent(
     terminalId: String,
     initialCommand: String?,
+    workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit,
     onTitleChange: ((String) -> Unit)?

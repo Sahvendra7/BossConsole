@@ -56,6 +56,7 @@ actual fun TabbedTerminalContent(
  *
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
  * @param initialCommand Optional command to run after terminal starts (only for new terminals)
+ * @param workingDirectory Optional working directory for the terminal (defaults to home directory)
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
@@ -64,6 +65,7 @@ actual fun TabbedTerminalContent(
 actual fun PersistentTabbedTerminalContent(
     terminalId: String,
     initialCommand: String?,
+    workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit,
     onTitleChange: ((String) -> Unit)?
@@ -73,6 +75,12 @@ actual fun PersistentTabbedTerminalContent(
     val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
+
+    // Build effective initial command with working directory
+    // For new terminals, prepend 'cd' to the working directory if specified
+    val effectiveInitialCommand = if (isNew) {
+        buildInitialCommand(workingDirectory, initialCommand)
+    } else null
 
     DisposableEffect(terminalId) {
         onDispose {
@@ -87,7 +95,7 @@ actual fun PersistentTabbedTerminalContent(
         TabbedTerminal(
             state = state,
             // Only send initial command for newly created terminals
-            initialCommand = if (isNew) initialCommand else null,
+            initialCommand = effectiveInitialCommand,
             onExit = {
                 TabbedTerminalStateRegistry.remove(terminalId)
                 onExit()
@@ -97,6 +105,28 @@ actual fun PersistentTabbedTerminalContent(
             onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
+    }
+}
+
+/**
+ * Builds the initial command to run in the terminal.
+ * If workingDirectory is specified, prepends 'cd' command to change to that directory.
+ *
+ * @param workingDirectory Directory to start the terminal in
+ * @param initialCommand Optional command to run after changing directory
+ * @return Combined command string, or null if both are null
+ */
+private fun buildInitialCommand(workingDirectory: String?, initialCommand: String?): String? {
+    return when {
+        workingDirectory != null && initialCommand != null -> {
+            // Change to directory and then run the command
+            "cd \"$workingDirectory\" && $initialCommand"
+        }
+        workingDirectory != null -> {
+            // Just change to the directory
+            "cd \"$workingDirectory\""
+        }
+        else -> initialCommand
     }
 }
 

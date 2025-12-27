@@ -439,12 +439,15 @@ fun BossTabsComponent.BossMainTabBar(
                     }
                     TabType.TERMINAL -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
+                        // Get current project path for terminal working directory
+                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
                             title = "Terminal",
                             icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
-                            initialCommand = path.ifBlank { null }
+                            initialCommand = path.ifBlank { null },
+                            workingDirectory = projectPath.ifEmpty { null }
                         )
                         val tabIndex = addTab(terminalTab)
                         if (tabIndex >= 0) {
@@ -668,12 +671,15 @@ fun BossTabsComponent.BossMainPanelContent(
                     }
                     TabType.TERMINAL -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
+                        // Get current project path for terminal working directory
+                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
                             title = "Terminal",
                             icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
-                            initialCommand = path.ifBlank { null }
+                            initialCommand = path.ifBlank { null },
+                            workingDirectory = projectPath.ifEmpty { null }
                         )
                         val tabIndex = addTab(terminalTab)
                         if (tabIndex >= 0) {

@@ -290,12 +290,16 @@ class SplitViewState(
 
             val component = firstPanel.tabsComponent
 
+            // Get current project path for terminal working directory
+            val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+
             // Create terminal tab in first available panel
             val terminalTab = TerminalTabInfo(
                 id = "terminal-${System.currentTimeMillis()}",
                 typeId = TabTypeId("terminal"),
                 title = if (command != null) "Terminal: $command" else "Terminal",
-                initialCommand = command
+                initialCommand = command,
+                workingDirectory = projectPath.ifEmpty { null }
             )
 
             val tabIndex = component.addTab(terminalTab)
@@ -309,12 +313,16 @@ class SplitViewState(
             return
         }
 
+        // Get current project path for terminal working directory
+        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+
         // Create new terminal tab in active panel
         val terminalTab = TerminalTabInfo(
             id = "terminal-${System.currentTimeMillis()}",
             typeId = TabTypeId("terminal"),
             title = if (command != null) "Terminal: $command" else "Terminal",
-            initialCommand = command
+            initialCommand = command,
+            workingDirectory = projectPath.ifEmpty { null }
         )
 
         val tabIndex = activeComponent.addTab(terminalTab)
