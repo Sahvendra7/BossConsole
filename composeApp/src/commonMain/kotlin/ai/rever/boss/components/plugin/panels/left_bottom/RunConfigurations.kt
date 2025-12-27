@@ -37,6 +37,7 @@ import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.runtime.Composable
@@ -430,7 +431,7 @@ private fun RunConfigurationItem(
 
             // Run button
             Icon(
-                FeatherIcons.Zap,
+                Icons.Outlined.PlayArrow,
                 contentDescription = "Run",
                 modifier = Modifier
                     .size(18.dp)
