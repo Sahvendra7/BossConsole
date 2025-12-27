@@ -122,6 +122,10 @@ expect suspend fun resetBrowserProfile(): Boolean
 // Browser tabs can use this to detect when their browser instance is stale
 expect fun getEngineGeneration(): Long
 
+// Platform-specific browser validity check - returns true if browser is still open and usable
+// Used to detect when underlying browser instance has been closed (e.g., engine shutdown)
+expect fun isBrowserValid(browser: Any?): Boolean
+
 // Platform-specific composable to observe engine generation changes
 @Composable
 expect fun collectEngineGeneration(): Long
@@ -253,6 +257,33 @@ open class FluckTabComponent(
             }
         }
 
+        // Periodic browser validity check (Issue #351)
+        // Detects when browser becomes invalid (e.g., engine closed without triggering generation change)
+        LaunchedEffect(localBrowserState, retryTrigger) {
+            if (localBrowserState != null) {
+                while (true) {
+                    // Check every 2 seconds while browser exists
+                    delay(2000)
+
+                    val currentBrowser = this@FluckTabComponent.browserState?.first
+                    if (currentBrowser != null && !isBrowserValid(currentBrowser)) {
+                        // Browser became invalid - invalidate and trigger reload
+                        println("⚠️ [FluckTabComponent] Browser became invalid for tab ${config.id}, triggering reload")
+
+                        this@FluckTabComponent.browserState = null
+                        localBrowserState = null
+                        browserError = null
+                        retryCount = 0
+                        browserEngineGeneration = -1L
+
+                        // Trigger reinitialization
+                        retryTrigger++
+                        break
+                    }
+                }
+            }
+        }
+
         // Initialize browser only once - check class-level browserState
         // Retry mechanism: LaunchedEffect re-runs when retryTrigger changes (Issue #162)
         LaunchedEffect(config.id, retryTrigger) {
@@ -360,9 +391,10 @@ open class FluckTabComponent(
                         }
                     )
                 }
-                localBrowserState != null -> {
+                localBrowserState != null && isBrowserValid(localBrowserState!!.first) -> {
                     val browser = localBrowserState!!.first
                     val browserViewState = localBrowserState!!.second
+
                     // Wrap FluckView in key() to ensure proper state isolation per browser instance
                     // This prevents URL bar state from being shared across tabs (fixes #151)
                     key(browser) {
@@ -395,6 +427,26 @@ open class FluckTabComponent(
                         )
                     }
                 }
+                localBrowserState != null && !isBrowserValid(localBrowserState!!.first) -> {
+                    // Browser exists but is invalid (Issue #351)
+                    // Trigger immediate recovery
+                    LaunchedEffect(Unit) {
+                        println("⚠️ [FluckTabComponent] Browser invalid at render, triggering immediate recovery for tab ${config.id}")
+                        this@FluckTabComponent.browserState = null
+                        localBrowserState = null
+                        browserError = null
+                        retryCount = 0
+                        browserEngineGeneration = -1L
+                        retryTrigger++
+                    }
+                    // Show loading while recovering
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
                 else -> {
                     // Loading state
                     Box(
@@ -407,7 +459,7 @@ open class FluckTabComponent(
             }
         }
     }
-    
+
     fun dispose() {
         // Use compareAndSet for atomic thread-safe disposal flag update
         if (isDisposedAtomic.compareAndSet(false, true)) {

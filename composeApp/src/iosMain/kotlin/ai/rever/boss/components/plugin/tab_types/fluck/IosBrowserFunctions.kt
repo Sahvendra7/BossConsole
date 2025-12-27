@@ -42,6 +42,11 @@ actual fun getEngineGeneration(): Long {
     return 0L
 }
 
+actual fun isBrowserValid(browser: Any?): Boolean {
+    // iOS doesn't use JxBrowser - always return true for non-null
+    return browser != null
+}
+
 @Composable
 actual fun collectEngineGeneration(): Long {
     // iOS doesn't use JxBrowser - always return 0

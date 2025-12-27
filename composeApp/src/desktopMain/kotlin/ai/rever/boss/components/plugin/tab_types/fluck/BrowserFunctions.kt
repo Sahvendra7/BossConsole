@@ -347,6 +347,23 @@ actual fun getBrowserState(
 actual fun getEngineGeneration(): Long = FluckEngine.currentEngineGeneration
 
 /**
+ * Checks if a browser instance is still valid and usable.
+ * Returns false if browser is null, closed, or its engine is closed.
+ */
+actual fun isBrowserValid(browser: Any?): Boolean {
+    if (browser == null) return false
+    val jxBrowser = browser as? Browser ?: return false
+    return try {
+        // Check if browser is closed
+        !jxBrowser.isClosed
+    } catch (e: Exception) {
+        // Any exception means browser is in bad state
+        println("⚠️ isBrowserValid: Exception checking browser state: ${e.message}")
+        false
+    }
+}
+
+/**
  * Composable function to observe engine generation changes.
  * Returns the current generation and triggers recomposition when it changes.
  */
