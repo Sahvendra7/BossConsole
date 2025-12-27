@@ -89,7 +89,8 @@ data class LayoutWorkspace(
     val description: String,
     val layout: SplitConfig,
     val breadcrumbConfig: BreadcrumbConfig = BreadcrumbConfig(),
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    val projectPath: String? = null  // Project path associated with this workspace
 ) {
     companion object {
         fun generateId(): String = "workspace-${Clock.System.now().toEpochMilliseconds()}"
