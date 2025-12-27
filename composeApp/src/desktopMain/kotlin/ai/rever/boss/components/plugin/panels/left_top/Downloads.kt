@@ -188,7 +188,6 @@ private fun SidebarDownloadItem(
                                 }
                             } catch (e: Exception) {
                                 println("Error deleting file: ${e.message}")
-                                e.printStackTrace()
                             }
                         }
                     }

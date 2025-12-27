@@ -1372,13 +1372,11 @@ fun JxBrowserCompose(
                                 },
                                 onFailure = { error ->
                                     println("❌ [JxBrowserCompose] Failed to create secret: ${error.message}")
-                                    error.printStackTrace()
                                     isCreating = false
                                 }
                             )
                         } catch (e: Exception) {
                             println("❌ [JxBrowserCompose] Exception creating secret: ${e.message}")
-                            e.printStackTrace()
                             isCreating = false
                         }
                     }

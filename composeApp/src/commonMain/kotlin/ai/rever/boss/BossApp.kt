@@ -690,10 +690,18 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for run execute events (Issue #321 - Run functionality)
+    // IntelliJ-style: Adds config to run history when executed
     LaunchedEffect(splitViewState) {
         RunEventBus.executeEvents
             .onEach { event ->
                 println("[BossApp] Run event received: ${event.configuration.name}")
+
+                // Add to run history (IntelliJ-style)
+                // Note: addConfiguration() already handles deduplication by filePath,
+                // so we don't need an external check (avoids TOCTOU race condition)
+                val historyConfig = event.configuration.copy(isAutoDetected = false)
+                RunConfigurationManager.addConfiguration(historyConfig)
+
                 RunExecutionService.execute(event.configuration, event.debug)
             }
             .launchIn(this)
@@ -708,6 +716,7 @@ fun ComponentContext.BossApp(
             }
             .launchIn(this)
 
+        // Scan events are still handled for explicit scan requests (e.g., from Run Configurations plugin)
         RunEventBus.scanEvents
             .onEach { event ->
                 RunConfigurationManager.scanProject(event.projectPath)
@@ -715,17 +724,9 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
-    // Scan for run configurations when project changes
-    LaunchedEffect(Unit) {
-        ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject
-            .onEach { project ->
-                if (project.path.isNotEmpty()) {
-                    println("[BossApp] Project changed, scanning for run configurations: ${project.path}")
-                    RunConfigurationManager.scanProject(project.path)
-                }
-            }
-            .launchIn(this)
-    }
+    // NOTE: Removed auto-scan on project change (IntelliJ-style behavior)
+    // Run configuration detection should be done via a dedicated plugin,
+    // not automatically when project changes.
 
     // Listen for workspace load events from CLI
     LaunchedEffect(splitViewState, workspaceManager) {
@@ -747,7 +748,6 @@ fun ComponentContext.BossApp(
                     }
                 } catch (e: Exception) {
                     println("BossApp: Error loading workspace: ${e.message}")
-                    e.printStackTrace()
                 }
             }
             .launchIn(this)
@@ -803,7 +803,6 @@ fun ComponentContext.BossApp(
                     }
                 } catch (e: Exception) {
                     println("BossApp: Error opening panel: ${e.message}")
-                    e.printStackTrace()
                 }
             }
             .launchIn(this)

@@ -28,12 +28,16 @@ import androidx.compose.ui.window.PopupProperties
  * @param icon The icon to display for this item (optional)
  * @param isDivider Whether this item is a divider
  * @param onClick The action to perform when this item is clicked
+ * @param trailingIcon Optional trailing icon (e.g., delete button)
+ * @param onTrailingClick Action when trailing icon is clicked
  */
 data class ContextMenuItem(
     val text: String = "",
     val icon: ImageVector? = null,
     val isDivider: Boolean = false,
-    val onClick: () -> Unit = {}
+    val onClick: () -> Unit = {},
+    val trailingIcon: ImageVector? = null,
+    val onTrailingClick: (() -> Unit)? = null
 )
 
 /**
@@ -97,9 +101,24 @@ fun ContextMenu(
                             text = item.text,
                             color = Color.White,
                             fontSize = 14.sp,
-                            modifier = Modifier.align(Alignment.CenterVertically)
+                            modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
                                 .padding(bottom = 4.dp)
                         )
+                        // Trailing icon (e.g., delete button)
+                        if (item.trailingIcon != null && item.onTrailingClick != null) {
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Icon(
+                                imageVector = item.trailingIcon,
+                                contentDescription = "Delete",
+                                tint = Color(0xFF888888),
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable {
+                                        item.onTrailingClick.invoke()
+                                        onDismissRequest()
+                                    }
+                            )
+                        }
                     }
                 }
             }

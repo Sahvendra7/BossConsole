@@ -73,8 +73,12 @@ class TerminalTabComponent(
 
     @Composable
     override fun Content() {
+        // Get initial command from config if it's a TerminalTabInfo
+        val initialCommand = (config as? TerminalTabInfo)?.initialCommand
+
         PersistentTabbedTerminalContent(
             terminalId = config.id,
+            initialCommand = initialCommand,
             onExit = { onClose() },
             onShowSettings = {
                 MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")

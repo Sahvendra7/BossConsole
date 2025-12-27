@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.input.*
@@ -66,6 +67,7 @@ fun CodeEditorUI(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
     // Get settings from platform-specific implementation
     val fontSize = getCodeEditorFontSize()
@@ -75,10 +77,14 @@ fun CodeEditorUI(
     val lineNumberColor = getCodeEditorLineNumberColor()
     val lineNumberBgColor = getCodeEditorLineNumberBgColor()
 
+    // Calculate consistent line height in dp
+    val lineHeightSp = (fontSize * 1.5f).sp
+    val lineHeightDp = with(density) { lineHeightSp.toDp() }
+
     val textStyle = LocalTextStyle.current.copy(
         fontFamily = fontFamily,
         fontSize = fontSize.sp,
-        lineHeight = (fontSize * 1.4f).sp
+        lineHeight = lineHeightSp
     )
 
     // Use TextFieldValue to maintain cursor position
@@ -121,17 +127,18 @@ fun CodeEditorUI(
         Row(
             modifier = Modifier.fillMaxSize()
         ) {
-            // Line numbers with run icons
+            // Line numbers with run icons - synchronized with content
             val lines = textFieldValue.text.lines()
             Column(
                 modifier = Modifier
                     .background(lineNumberBgColor)
-                    .padding(start = 4.dp, end = 8.dp)
+                    .padding(start = 4.dp, end = 4.dp)
                     .verticalScroll(verticalScrollState)
+                    .padding(top = 8.dp) // Match content padding
             ) {
                 lines.forEachIndexed { index, _ ->
                     Row(
-                        modifier = Modifier.height((fontSize * 1.4f).dp),
+                        modifier = Modifier.height(lineHeightDp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Run icon (if line has main function)
@@ -153,14 +160,28 @@ fun CodeEditorUI(
 
                         Spacer(modifier = Modifier.width(4.dp))
 
-                        // Line number
-                        Text(
-                            text = "${index + 1}",
-                            style = textStyle.copy(color = lineNumberColor),
-                        )
+                        // Line number - right aligned with fixed width
+                        val lineNumWidth = (lines.size.toString().length * 10).dp
+                        Box(
+                            modifier = Modifier.width(lineNumWidth),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = textStyle.copy(color = lineNumberColor),
+                            )
+                        }
                     }
                 }
             }
+
+            // Divider between line numbers and content
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(1.dp)
+                    .background(Color(0xFF3C3C3C))
+            )
 
             // Editor content
             Box(
@@ -196,7 +217,9 @@ fun CodeEditorUI(
 private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
     try {
         val detector = MainFunctionDetectorProvider.get()
-        val command = detector.generateCommand(detected, projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') })
+        // Find the actual project root for the working directory
+        val actualProjectRoot = detector.findProjectRoot(detected.filePath)
+        val command = detector.generateCommand(detected, actualProjectRoot)
 
         val config = RunConfiguration(
             id = UUID.randomUUID().toString(),
@@ -206,7 +229,7 @@ private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, 
             lineNumber = detected.lineNumber,
             language = detected.language,
             command = command,
-            workingDirectory = projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') },
+            workingDirectory = actualProjectRoot,
             isAutoDetected = true
         )
 

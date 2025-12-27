@@ -67,7 +67,6 @@ actual object CLIInstaller {
             }
         } catch (e: Exception) {
             println("CLI installation error: ${e.message}")
-            e.printStackTrace()
             CLIInstallResult(
                 success = false,
                 message = "Installation failed: ${e.message ?: "Unknown error"}",

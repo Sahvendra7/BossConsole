@@ -310,7 +310,9 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     }
 
     override fun generateCommand(detected: DetectedMainFunction, projectPath: String): String {
-        val projectDir = File(projectPath)
+        // Find the actual project root by walking up from the file's directory
+        val fileDir = File(detected.filePath).parentFile
+        val projectDir = findProjectRootInternal(fileDir) ?: File(projectPath)
 
         return when (detected.language) {
             Language.KOTLIN -> generateKotlinCommand(detected, projectDir)
@@ -319,60 +321,211 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
             Language.JAVASCRIPT -> generateJavaScriptCommand(detected)
             Language.TYPESCRIPT -> generateTypeScriptCommand(detected)
             Language.GO -> generateGoCommand(detected)
-            Language.RUST -> generateRustCommand(projectDir)
+            Language.RUST -> generateRustCommand(detected, projectDir)
             Language.UNKNOWN -> "echo 'Unknown language'"
         }
     }
 
+    /**
+     * Public interface implementation - finds project root from a file path.
+     */
+    override fun findProjectRoot(filePath: String): String {
+        val fileDir = File(filePath).parentFile
+        return findProjectRootInternal(fileDir)?.absolutePath ?: fileDir?.absolutePath ?: filePath
+    }
+
+    /**
+     * Find the project root by walking up the directory tree looking for project markers.
+     * Markers: gradlew, build.gradle.kts, pom.xml, Cargo.toml, package.json, .git
+     */
+    private fun findProjectRootInternal(startDir: File?): File? {
+        var current = startDir
+        while (current != null && current.exists()) {
+            // Check for Gradle project (prioritize this)
+            if (File(current, "gradlew").exists() || File(current, "gradlew.bat").exists()) {
+                return current
+            }
+            // Check for standalone Gradle build file
+            if (File(current, "build.gradle.kts").exists() || File(current, "build.gradle").exists()) {
+                // Only use this if no gradlew found above - might be a submodule
+                if (current.parentFile?.let { findProjectRootInternal(it) } == null) {
+                    return current
+                }
+            }
+            // Check for Maven project
+            if (File(current, "pom.xml").exists()) {
+                return current
+            }
+            // Check for Cargo project
+            if (File(current, "Cargo.toml").exists()) {
+                return current
+            }
+            // Check for Node.js project
+            if (File(current, "package.json").exists()) {
+                return current
+            }
+            // Check for Git root (last resort)
+            if (File(current, ".git").exists()) {
+                return current
+            }
+            current = current.parentFile
+        }
+        return null
+    }
+
     private fun generateKotlinCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Check for Gradle project
+        val filePath = detected.filePath
+
+        // For .kts scripts, use kotlinc -script
+        if (filePath.endsWith(".kts")) {
+            return "kotlinc -script ${shellEscape(filePath)}"
+        }
+
+        // For Gradle projects, use ./gradlew :moduleName:run
         if (hasGradleWrapper(projectDir)) {
+            val moduleName = detectModuleName(filePath, projectDir)
+            if (moduleName != null) {
+                return "./gradlew :$moduleName:run"
+            }
+            // Root project run task as fallback
             return "./gradlew run"
         }
-        // Fallback to kotlin command
-        return "kotlin ${detected.filePath}"
+
+        // Fallback: compile and run with kotlinc (for simple standalone files)
+        val jarName = File(filePath).nameWithoutExtension.replace("'", "_")
+        return "kotlinc ${shellEscape(filePath)} -include-runtime -d ${shellEscape("/tmp/$jarName.jar")} && java -jar ${shellEscape("/tmp/$jarName.jar")}"
     }
 
     private fun generateJavaCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Check for Gradle project
+        val filePath = detected.filePath
+
+        // For Gradle projects, use ./gradlew :moduleName:run
         if (hasGradleWrapper(projectDir)) {
+            val moduleName = detectModuleName(filePath, projectDir)
+            if (moduleName != null) {
+                return "./gradlew :$moduleName:run"
+            }
+            // Root project run task as fallback
             return "./gradlew run"
         }
-        // Fallback to javac + java
-        val className = if (detected.packageName != null && detected.className != null) {
-            "${detected.packageName}.${detected.className}"
-        } else {
-            detected.className ?: "Main"
+
+        // For Maven projects, use mvn exec:java
+        if (File(projectDir, "pom.xml").exists()) {
+            val className = buildClassName(detected)
+            // Class names are validated by compiler, so they should be safe
+            return "mvn exec:java -Dexec.mainClass=${shellEscape(className)}"
         }
-        return "javac ${detected.filePath} && java $className"
+
+        // Fallback: Java 11+ single-file source-code execution
+        return "java ${shellEscape(filePath)}"
     }
 
-    private fun generatePythonCommand(detected: DetectedMainFunction): String {
-        return "python3 ${detected.filePath}"
-    }
+    /**
+     * Detect the Gradle module name from the file path.
+     * Looks for common patterns like /moduleName/src/main/... or /moduleName/src/...Main/...
+     */
+    private fun detectModuleName(filePath: String, projectDir: File): String? {
+        val projectPath = projectDir.absolutePath
+        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
 
-    private fun generateJavaScriptCommand(detected: DetectedMainFunction): String {
-        return "node ${detected.filePath}"
-    }
-
-    private fun generateTypeScriptCommand(detected: DetectedMainFunction): String {
-        return "npx ts-node ${detected.filePath}"
-    }
-
-    private fun generateGoCommand(detected: DetectedMainFunction): String {
-        return "go run ${detected.filePath}"
-    }
-
-    private fun generateRustCommand(projectDir: File): String {
-        // Check for Cargo project
-        if (File(projectDir, "Cargo.toml").exists()) {
-            return "cargo run"
+        // Pattern: moduleName/src/...
+        val parts = relativePath.split("/")
+        if (parts.size >= 2 && parts[1] == "src") {
+            val potentialModule = parts[0]
+            // Verify it's a valid module by checking for build.gradle(.kts)
+            val moduleDir = File(projectDir, potentialModule)
+            if (moduleDir.isDirectory &&
+                (File(moduleDir, "build.gradle.kts").exists() || File(moduleDir, "build.gradle").exists())) {
+                return potentialModule
+            }
         }
-        return "rustc main.rs && ./main"
+
+        return null
+    }
+
+    /**
+     * Build the fully qualified class name from detected function info.
+     */
+    private fun buildClassName(detected: DetectedMainFunction): String {
+        return when {
+            detected.packageName != null && detected.className != null ->
+                "${detected.packageName}.${detected.className}"
+            detected.className != null -> detected.className
+            else -> "Main"
+        }
     }
 
     private fun hasGradleWrapper(projectDir: File): Boolean {
         return File(projectDir, "gradlew").exists() ||
                File(projectDir, "gradlew.bat").exists()
     }
+
+    /**
+     * Escape a string for safe use in shell commands.
+     * Uses single quotes and escapes embedded single quotes with '\''
+     * This prevents command injection attacks from malicious file paths.
+     */
+    private fun shellEscape(str: String): String {
+        // Single quotes prevent all shell expansion except for single quotes themselves
+        // To include a single quote: end the string, add escaped quote, start new string
+        // e.g., "it's" becomes 'it'\''s'
+        return "'" + str.replace("'", "'\\''") + "'"
+    }
+
+    private fun generatePythonCommand(detected: DetectedMainFunction): String {
+        return "python3 ${shellEscape(detected.filePath)}"
+    }
+
+    private fun generateJavaScriptCommand(detected: DetectedMainFunction): String {
+        return "node ${shellEscape(detected.filePath)}"
+    }
+
+    private fun generateTypeScriptCommand(detected: DetectedMainFunction): String {
+        return "npx ts-node ${shellEscape(detected.filePath)}"
+    }
+
+    private fun generateGoCommand(detected: DetectedMainFunction): String {
+        return "go run ${shellEscape(detected.filePath)}"
+    }
+
+    private fun generateRustCommand(detected: DetectedMainFunction, projectDir: File): String {
+        val filePath = detected.filePath
+
+        // For Cargo projects, use cargo run
+        if (File(projectDir, "Cargo.toml").exists()) {
+            // Check if it's in a workspace member
+            val moduleName = detectCargoModule(filePath, projectDir)
+            if (moduleName != null) {
+                // Module names are validated by Cargo, but escape for safety
+                return "cargo run -p ${shellEscape(moduleName)}"
+            }
+            return "cargo run"
+        }
+
+        // Fallback: Compile and run the specific Rust file directly
+        val outputName = File(filePath).nameWithoutExtension.replace("'", "_")
+        return "rustc ${shellEscape(filePath)} -o ${shellEscape("/tmp/$outputName")} && ${shellEscape("/tmp/$outputName")}"
+    }
+
+    /**
+     * Detect Cargo workspace member name from file path.
+     */
+    private fun detectCargoModule(filePath: String, projectDir: File): String? {
+        val projectPath = projectDir.absolutePath
+        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
+
+        // Pattern: crate-name/src/...
+        val parts = relativePath.split("/")
+        if (parts.size >= 2 && parts[1] == "src") {
+            val potentialCrate = parts[0]
+            // Verify it's a valid crate by checking for Cargo.toml
+            val crateDir = File(projectDir, potentialCrate)
+            if (crateDir.isDirectory && File(crateDir, "Cargo.toml").exists()) {
+                return potentialCrate
+            }
+        }
+
+        return null
+    }
+
 }

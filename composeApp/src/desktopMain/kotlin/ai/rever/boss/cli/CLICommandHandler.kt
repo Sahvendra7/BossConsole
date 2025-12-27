@@ -214,7 +214,6 @@ class CLICommandHandler private constructor() {
             }
         } catch (e: Exception) {
             println("CLI: Error executing command: ${e.message}")
-            e.printStackTrace()
         }
     }
 

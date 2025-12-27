@@ -113,6 +113,7 @@ expect fun TerminalContent(
  * persistence across composition changes (e.g., when switching parent tabs).
  *
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
+ * @param initialCommand Optional command to run after terminal starts (only for new terminals)
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
@@ -120,6 +121,7 @@ expect fun TerminalContent(
 @Composable
 expect fun PersistentTabbedTerminalContent(
     terminalId: String,
+    initialCommand: String? = null,
     onExit: () -> Unit = {},
     onShowSettings: () -> Unit = {},
     onTitleChange: ((String) -> Unit)? = null

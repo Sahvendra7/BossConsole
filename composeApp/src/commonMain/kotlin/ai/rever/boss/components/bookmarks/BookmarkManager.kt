@@ -64,7 +64,7 @@ class BookmarkManager {
                 // Load favorite workspaces
                 _favoriteWorkspaces.value = fileManager.loadFavoriteWorkspaces()
             } catch (e: Exception) {
-                e.printStackTrace()
+                println("Error loading bookmarks: ${e.message}")
                 // Initialize with default "Favorites" collection on error
                 _collections.value = listOf(
                     BookmarkCollection(

@@ -1,22 +1,20 @@
 package ai.rever.boss.components.plugin.tab_types
 
-import BossDarkAccent
-import BossDarkBorder
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.run.DetectedMainFunction
 import ai.rever.boss.run.Language
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.PlayArrow
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Play
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,22 +45,18 @@ fun GutterRunIcon(
     val isHovered by interactionSource.collectIsHoveredAsState()
     var showContextMenu by remember { mutableStateOf(false) }
 
-    val backgroundColor = if (isHovered) {
-        BossDarkAccent.copy(alpha = 0.3f)
-    } else {
-        Color.Transparent
-    }
-
     val iconColor = if (isHovered) {
-        Color(0xFF4CAF50) // Green when hovered
+        Color(0xFF6BBF78) // Brighter green when hovered
     } else {
-        Color(0xFF81C784) // Light green normally
+        Color(0xFF59A869) // IntelliJ's run icon green
     }
 
-    Box(
+    Icon(
+        imageVector = FeatherIcons.Play,
+        contentDescription = "Run ${detected.functionName}",
+        tint = iconColor,
         modifier = modifier
-            .size(16.dp)
-            .background(backgroundColor, RoundedCornerShape(2.dp))
+            .size(20.dp)
             .hoverable(interactionSource)
             .clickable { onRun(detected) }
             .onPointerEvent(PointerEventType.Press) { event ->
@@ -70,16 +64,8 @@ fun GutterRunIcon(
                 if (event.button == PointerButton.Secondary) {
                     showContextMenu = true
                 }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = "Run ${detected.functionName}",
-            tint = iconColor,
-            modifier = Modifier.size(14.dp)
-        )
-    }
+            }
+    )
 
     // Context menu for additional options
     if (showContextMenu) {
@@ -105,7 +91,7 @@ private fun GutterRunContextMenu(
     val menuItems = buildList {
         add(ContextMenuItem(
             text = "Run '${detected.toShortName()}'",
-            icon = Icons.Filled.PlayArrow,
+            icon = Icons.Outlined.PlayArrow,
             onClick = {
                 onRun()
                 onDismissRequest()
@@ -143,5 +129,5 @@ private fun GutterRunContextMenu(
  */
 @Composable
 fun GutterRunIconSpacer(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(16.dp))
+    Box(modifier = modifier.size(20.dp))
 }

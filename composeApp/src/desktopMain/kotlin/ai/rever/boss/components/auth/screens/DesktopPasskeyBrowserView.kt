@@ -67,7 +67,6 @@ actual fun PasskeyBrowserView(
         } catch (e: Exception) {
             val errorMessage = "Failed to initialize browser: ${e.message}"
             println("DesktopPasskeyBrowserView: $errorMessage")
-            e.printStackTrace()
             initError = errorMessage
             onError(errorMessage)
         }

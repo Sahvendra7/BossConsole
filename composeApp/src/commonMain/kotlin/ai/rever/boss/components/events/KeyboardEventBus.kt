@@ -132,7 +132,6 @@ object KeyboardEventBus {
                     }
                 } catch (e: Exception) {
                     println("Error in keyboard handler '$handlerName': ${e.message}")
-                    e.printStackTrace()
                 }
             }
         }

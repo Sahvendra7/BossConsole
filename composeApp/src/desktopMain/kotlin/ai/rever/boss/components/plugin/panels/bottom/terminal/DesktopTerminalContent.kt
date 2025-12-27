@@ -55,6 +55,7 @@ actual fun TabbedTerminalContent(
  * Uses TabbedTerminalStateRegistry to preserve terminal sessions when switching tabs.
  *
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
+ * @param initialCommand Optional command to run after terminal starts (only for new terminals)
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
@@ -62,10 +63,13 @@ actual fun TabbedTerminalContent(
 @Composable
 actual fun PersistentTabbedTerminalContent(
     terminalId: String,
+    initialCommand: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit,
     onTitleChange: ((String) -> Unit)?
 ) {
+    // Check if this is a new terminal (not already in registry)
+    val isNew = !TabbedTerminalStateRegistry.contains(terminalId)
     val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
@@ -82,6 +86,8 @@ actual fun PersistentTabbedTerminalContent(
     ) {
         TabbedTerminal(
             state = state,
+            // Only send initial command for newly created terminals
+            initialCommand = if (isNew) initialCommand else null,
             onExit = {
                 TabbedTerminalStateRegistry.remove(terminalId)
                 onExit()
