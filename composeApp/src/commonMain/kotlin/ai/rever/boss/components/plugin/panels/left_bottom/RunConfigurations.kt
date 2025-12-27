@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Terminal
+import compose.icons.feathericons.Zap
 import kotlinx.coroutines.launch
 
 /**
@@ -75,7 +76,7 @@ import kotlinx.coroutines.launch
 object RunConfigurationsInfo : PanelInfo {
     override val id = PanelId("run-configurations", 6)
     override val displayName = "Run Configurations"
-    override val icon = Icons.Outlined.PlayArrow
+    override val icon = FeatherIcons.Zap
     override val defaultSlotPosition = left.top.bottom
 }
 
