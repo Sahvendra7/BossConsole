@@ -4,6 +4,7 @@ import ai.rever.boss.components.plugin.panels.bottom.console.registerConsole
 import ai.rever.boss.components.plugin.panels.bottom.performance.registerPerformance
 import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
+import ai.rever.boss.components.plugin.panels.left_bottom.registerRunConfigurations
 import ai.rever.boss.components.plugin.panels.left_top.registerBookmarks
 import ai.rever.boss.components.plugin.panels.left_top.registerCodeBase
 import ai.rever.boss.components.plugin.panels.left_top.registerDownloads
@@ -41,6 +42,7 @@ class DefaultPlugin(
         registerConsole()
         registerPerformance()
         registerTopOfMind()
+        registerRunConfigurations()
 
         registerFluckPanel()
         registerLLMRpa()
