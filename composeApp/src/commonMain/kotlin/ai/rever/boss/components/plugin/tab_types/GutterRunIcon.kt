@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +74,7 @@ fun GutterRunIcon(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Filled.PlayArrow,
+            imageVector = Icons.Outlined.PlayArrow,
             contentDescription = "Run ${detected.functionName}",
             tint = iconColor,
             modifier = Modifier.size(18.dp)
@@ -105,7 +105,7 @@ private fun GutterRunContextMenu(
     val menuItems = buildList {
         add(ContextMenuItem(
             text = "Run '${detected.toShortName()}'",
-            icon = Icons.Filled.PlayArrow,
+            icon = Icons.Outlined.PlayArrow,
             onClick = {
                 onRun()
                 onDismissRequest()
