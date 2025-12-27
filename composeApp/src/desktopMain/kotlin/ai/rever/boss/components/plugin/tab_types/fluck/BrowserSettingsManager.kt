@@ -42,8 +42,9 @@ object BrowserSettingsManager {
                 BrowserSettings.userAgent = settings.userAgent
                 BrowserSettings.customUserAgent = settings.customUserAgent
                 BrowserSettings.currentProfile = settings.currentProfile
-                BrowserSettings.maxInitRetries = settings.maxInitRetries
-                BrowserSettings.maxRecoveryAttempts = settings.maxRecoveryAttempts
+                // Validate retry/recovery settings to prevent invalid values from manual file editing
+                BrowserSettings.maxInitRetries = settings.maxInitRetries.coerceIn(1, 10)
+                BrowserSettings.maxRecoveryAttempts = settings.maxRecoveryAttempts.coerceIn(1, 10)
 
                 // Update available profiles if we have more
                 if (settings.availableProfiles.isNotEmpty()) {

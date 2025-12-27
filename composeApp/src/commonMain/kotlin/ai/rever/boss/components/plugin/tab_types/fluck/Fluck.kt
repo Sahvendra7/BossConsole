@@ -419,6 +419,10 @@ open class FluckTabComponent(
         }
 
         if (!isDisposed) {
+            // Capture localBrowserState in a local val to prevent race conditions
+            // This ensures thread-safe access - the value won't change during the when block
+            val currentBrowserState = localBrowserState
+
             when {
                 browserError != null -> {
                     // Show error message instead of browser with retry/reset options (Issue #162)
@@ -464,9 +468,9 @@ open class FluckTabComponent(
                         }
                     )
                 }
-                localBrowserState != null && isBrowserValid(localBrowserState!!.first) -> {
-                    val browser = localBrowserState!!.first
-                    val browserViewState = localBrowserState!!.second
+                currentBrowserState != null && isBrowserValid(currentBrowserState.first) -> {
+                    val browser = currentBrowserState.first
+                    val browserViewState = currentBrowserState.second
 
                     // Wrap FluckView in key() to ensure proper state isolation per browser instance
                     // This prevents URL bar state from being shared across tabs (fixes #151)
@@ -500,7 +504,7 @@ open class FluckTabComponent(
                         )
                     }
                 }
-                localBrowserState != null && !isBrowserValid(localBrowserState!!.first) -> {
+                currentBrowserState != null && !isBrowserValid(currentBrowserState.first) -> {
                     // Browser exists but is invalid (Issue #351)
                     // Trigger immediate recovery
                     LaunchedEffect(Unit) {
