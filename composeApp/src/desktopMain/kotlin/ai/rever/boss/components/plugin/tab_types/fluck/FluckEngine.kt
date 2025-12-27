@@ -823,6 +823,76 @@ object FluckEngine {
     private fun isShiftPressed(): Boolean {
         return false // TODO: Implement if needed
     }
+
+    /**
+     * Reset browser profile to fix persistent browser issues.
+     * This will:
+     * 1. Close the current engine (if running)
+     * 2. Delete the browser profile directory
+     * 3. Clear cached state so engine reinitializes on next use
+     *
+     * @return true if reset was successful, false otherwise
+     */
+    fun resetBrowserProfile(): Boolean {
+        println("🔄 [FluckEngine] Resetting browser profile...")
+
+        try {
+            // Step 1: Close current engine if it exists
+            _engine?.let { engine ->
+                if (!engine.isClosed) {
+                    println("   Closing current engine...")
+                    try {
+                        engine.close()
+                    } catch (e: Exception) {
+                        println("   Warning: Error closing engine: ${e.message}")
+                    }
+                }
+            }
+
+            // Step 2: Clear cached state
+            _engine = null
+            initializationError = null
+            attemptCount = 0
+
+            // Step 3: Kill any stale Chromium processes
+            val userHome = System.getProperty("user.home")
+            killStaleChromiumProcesses(userHome)
+
+            // Step 4: Delete browser profile directory
+            val selectedProfile = BrowserSettings.currentProfile
+            val profileDir = java.io.File(userHome, ".boss/$selectedProfile")
+
+            if (profileDir.exists()) {
+                println("   Deleting profile directory: ${profileDir.absolutePath}")
+                val deleted = profileDir.deleteRecursively()
+                if (deleted) {
+                    println("   ✅ Profile directory deleted successfully")
+                } else {
+                    println("   ⚠️ Could not delete all files in profile directory")
+                }
+            } else {
+                println("   Profile directory does not exist, nothing to delete")
+            }
+
+            // Step 5: Also clean up temporary profiles
+            cleanupOldTemporaryProfiles(userHome)
+
+            println("✅ [FluckEngine] Browser profile reset complete")
+            return true
+
+        } catch (e: Exception) {
+            println("❌ [FluckEngine] Error resetting browser profile: ${e.message}")
+            return false
+        }
+    }
+
+    /**
+     * Check if browser engine is in a healthy state.
+     * Used to determine if reset might be needed.
+     */
+    fun isEngineHealthy(): Boolean {
+        return _engine?.let { !it.isClosed } ?: true // null engine is "healthy" (will initialize on demand)
+    }
 }
 
 

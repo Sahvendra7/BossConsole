@@ -240,6 +240,10 @@ actual fun createBrowser(): Any {
     return browser
 }
 
+actual fun resetBrowserProfile(): Boolean {
+    return FluckEngine.resetBrowserProfile()
+}
+
 actual fun disposeBrowser(browser: Any) {
     try {
         val jxBrowser = browser as? Browser

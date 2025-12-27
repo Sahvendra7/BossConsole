@@ -113,6 +113,9 @@ data class FluckTabInfo(
 // Platform-specific browser creation
 expect fun createBrowser(): Any
 
+// Platform-specific browser reset (clears profile, cache, cookies)
+expect fun resetBrowserProfile(): Boolean
+
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
 expect fun createBrowserViewState(browser: Any): Any?
@@ -298,6 +301,17 @@ open class FluckTabComponent(
                             retryCount = 0
                             this@FluckTabComponent.browserState = null
                             retryTrigger++
+                        },
+                        onResetBrowser = {
+                            // Reset browser profile to fix persistent issues (Issue #340)
+                            val success = resetBrowserProfile()
+                            if (success) {
+                                // Clear error and retry after browser reset
+                                browserError = null
+                                retryCount = 0
+                                this@FluckTabComponent.browserState = null
+                                retryTrigger++
+                            }
                         }
                     )
                 }
@@ -386,7 +400,8 @@ fun BrowserErrorView(
     retryCount: Int = 0,
     maxRetries: Int = 3,
     onRetry: (() -> Unit)? = null,
-    onReset: (() -> Unit)? = null
+    onReset: (() -> Unit)? = null,
+    onResetBrowser: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -473,7 +488,7 @@ fun BrowserErrorView(
                         Text("Retry Loading (Attempt ${retryCount + 1}/$maxRetries)")
                     }
                 } else if (retryCount >= maxRetries && onReset != null) {
-                    // Max retries exhausted - show Reset button
+                    // Max retries exhausted - show Reset Tab button
                     Button(
                         onClick = onReset,
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE2724A))
@@ -495,6 +510,36 @@ fun BrowserErrorView(
                         color = Color(0xFF888888),
                         textAlign = TextAlign.Center
                     )
+
+                    // Show Reset Browser option for persistent issues
+                    if (onResetBrowser != null) {
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "If the issue persists, try resetting the browser:",
+                            fontSize = 12.sp,
+                            color = Color(0xFFAAAAAA),
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = onResetBrowser,
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE05555))
+                        ) {
+                            Text("Reset Browser", color = Color.White)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "This clears browser cache, cookies, and sessions",
+                            fontSize = 10.sp,
+                            color = Color(0xFF777777),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 } else {
                     // No callbacks provided - show fallback message
                     Text(

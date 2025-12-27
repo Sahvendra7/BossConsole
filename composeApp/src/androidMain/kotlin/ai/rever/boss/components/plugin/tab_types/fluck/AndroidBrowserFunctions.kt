@@ -29,3 +29,8 @@ actual fun getBrowserState(
 actual fun releaseBrowserState(url: String) {
     // No-op for Android
 }
+
+actual fun resetBrowserProfile(): Boolean {
+    // No-op for Android - return true as no reset needed
+    return true
+}

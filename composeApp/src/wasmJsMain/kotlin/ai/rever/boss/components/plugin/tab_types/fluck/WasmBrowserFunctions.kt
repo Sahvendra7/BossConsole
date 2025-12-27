@@ -29,3 +29,8 @@ actual fun getBrowserState(
 actual fun releaseBrowserState(url: String) {
     // No-op for WASM
 }
+
+actual fun resetBrowserProfile(): Boolean {
+    // No-op for WASM - return true as no reset needed
+    return true
+}
