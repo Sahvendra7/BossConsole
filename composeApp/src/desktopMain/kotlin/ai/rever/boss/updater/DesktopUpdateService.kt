@@ -140,11 +140,20 @@ actual class UpdateService {
             val expectedAssetName = getExpectedAssetName(latestVersion)
             println("Looking for asset: $expectedAssetName (platform: $platform)")
             println("Available assets: ${latestRelease.assets.map { it.name }}")
-            
-            val asset = latestRelease.assets.find { 
-                it.name.equals(expectedAssetName, ignoreCase = true) 
+
+            var asset = latestRelease.assets.find {
+                it.name.equals(expectedAssetName, ignoreCase = true)
             }
-            
+
+            // Fallback: If platform-specific package (.deb/.rpm) not found, try JAR
+            if (asset == null && (platform == "Linux-deb" || platform == "Linux-rpm")) {
+                val jarAssetName = "BOSS-${latestVersion}-${getLinuxArchSuffix()}.jar"
+                println("Platform package not found, trying JAR fallback: $jarAssetName")
+                asset = latestRelease.assets.find {
+                    it.name.equals(jarAssetName, ignoreCase = true)
+                }
+            }
+
             if (asset == null) {
                 println("Warning: Expected asset '$expectedAssetName' not found in release")
             } else {

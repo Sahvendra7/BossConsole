@@ -184,12 +184,19 @@ object UpdateInstaller {
                 )
             }
 
-            when (getCurrentPlatform()) {
-                "macOS" -> installMacOSUpdate(downloadFile)
-                "Windows" -> installWindowsUpdate(downloadFile)
-                "Linux-deb" -> installLinuxDebUpdate(downloadFile)
-                "Linux-rpm" -> installLinuxRpmUpdate(downloadFile)
-                else -> installJarUpdate(downloadFile)
+            // Route based on actual file extension (not platform) to handle fallback cases
+            // e.g., when .deb isn't available but .jar is for Linux ARM64
+            val fileName = downloadFile.name.lowercase()
+            when {
+                fileName.endsWith(".dmg") -> installMacOSUpdate(downloadFile)
+                fileName.endsWith(".msi") -> installWindowsUpdate(downloadFile)
+                fileName.endsWith(".deb") -> installLinuxDebUpdate(downloadFile)
+                fileName.endsWith(".rpm") -> installLinuxRpmUpdate(downloadFile)
+                fileName.endsWith(".jar") -> installJarUpdate(downloadFile)
+                else -> {
+                    println("Unknown update file type: ${downloadFile.name}")
+                    InstallResult.Error("Unknown update file type: ${downloadFile.extension}")
+                }
             }
         } catch (e: Exception) {
             println("Error installing update: ${e.message}")
