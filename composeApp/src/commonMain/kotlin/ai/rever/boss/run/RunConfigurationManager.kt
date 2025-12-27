@@ -24,9 +24,26 @@ expect object RunConfigurationManager {
     val selectedConfiguration: StateFlow<RunConfiguration?>
 
     /**
+     * Whether a project scan is currently in progress.
+     */
+    val isScanning: StateFlow<Boolean>
+
+    /**
+     * Last error that occurred during scanning or configuration operations.
+     * Null if no error. UI should observe this to display errors to users.
+     */
+    val lastError: StateFlow<String?>
+
+    /**
      * Scan a project directory for runnable entry points.
+     * Clears previous detected configs before scanning.
      */
     suspend fun scanProject(projectPath: String)
+
+    /**
+     * Clear the last error.
+     */
+    suspend fun clearError()
 
     /**
      * Add a new run configuration.

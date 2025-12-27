@@ -30,6 +30,12 @@ actual object RunConfigurationManager {
     private val _selectedConfiguration = MutableStateFlow<RunConfiguration?>(null)
     actual val selectedConfiguration: StateFlow<RunConfiguration?> = _selectedConfiguration.asStateFlow()
 
+    private val _isScanning = MutableStateFlow(false)
+    actual val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _lastError = MutableStateFlow<String?>(null)
+    actual val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
     init {
         // Ensure directory exists
         settingsFile.parentFile?.mkdirs()
@@ -102,8 +108,13 @@ actual object RunConfigurationManager {
      * Scan a project directory for runnable entry points.
      * Note: Does NOT auto-select any configuration - user must explicitly select one.
      * Names are made unique by adding path context when duplicates exist.
+     * Clears previous detected configs before scanning to prevent unbounded growth.
      */
     actual suspend fun scanProject(projectPath: String) = withContext(Dispatchers.IO) {
+        _isScanning.value = true
+        _lastError.value = null // Clear previous error
+        // Clear previous detections to prevent memory leak on project switches
+        _detectedConfigurations.value = emptyList()
         try {
             println("[Run] Scanning project: $projectPath")
             val detected = detector.scanProject(projectPath)
@@ -112,8 +123,19 @@ actual object RunConfigurationManager {
             println("[Run] Found ${detectedWithUniqueNames.size} runnable configurations")
             // Don't auto-select - user must choose from dropdown
         } catch (e: Exception) {
-            println("[Run] Failed to scan project: ${e.message}")
+            val errorMsg = "Failed to scan project: ${e.message}"
+            println("[Run] $errorMsg")
+            _lastError.value = errorMsg
+        } finally {
+            _isScanning.value = false
         }
+    }
+
+    /**
+     * Clear the last error.
+     */
+    actual suspend fun clearError() {
+        _lastError.value = null
     }
 
     /**

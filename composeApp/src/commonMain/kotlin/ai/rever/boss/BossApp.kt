@@ -696,15 +696,11 @@ fun ComponentContext.BossApp(
             .onEach { event ->
                 println("[BossApp] Run event received: ${event.configuration.name}")
 
-                // Add to run history if not already present (IntelliJ-style)
-                val existingConfigs = RunConfigurationManager.currentSettings.value.configurations
-                val configExists = existingConfigs.any { it.id == event.configuration.id }
-                if (!configExists) {
-                    // Mark as user-added (not auto-detected) and add to history
-                    val historyConfig = event.configuration.copy(isAutoDetected = false)
-                    RunConfigurationManager.addConfiguration(historyConfig)
-                    println("[BossApp] Added '${event.configuration.name}' to run history")
-                }
+                // Add to run history (IntelliJ-style)
+                // Note: addConfiguration() already handles deduplication by filePath,
+                // so we don't need an external check (avoids TOCTOU race condition)
+                val historyConfig = event.configuration.copy(isAutoDetected = false)
+                RunConfigurationManager.addConfiguration(historyConfig)
 
                 RunExecutionService.execute(event.configuration, event.debug)
             }

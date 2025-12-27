@@ -378,7 +378,7 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
 
         // For .kts scripts, use kotlinc -script
         if (filePath.endsWith(".kts")) {
-            return "kotlinc -script \"$filePath\""
+            return "kotlinc -script ${shellEscape(filePath)}"
         }
 
         // For Gradle projects, use ./gradlew :moduleName:run
@@ -392,8 +392,8 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
         }
 
         // Fallback: compile and run with kotlinc (for simple standalone files)
-        val jarName = File(filePath).nameWithoutExtension
-        return "kotlinc \"$filePath\" -include-runtime -d \"/tmp/$jarName.jar\" && java -jar \"/tmp/$jarName.jar\""
+        val jarName = File(filePath).nameWithoutExtension.replace("'", "_")
+        return "kotlinc ${shellEscape(filePath)} -include-runtime -d ${shellEscape("/tmp/$jarName.jar")} && java -jar ${shellEscape("/tmp/$jarName.jar")}"
     }
 
     private fun generateJavaCommand(detected: DetectedMainFunction, projectDir: File): String {
@@ -412,11 +412,12 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
         // For Maven projects, use mvn exec:java
         if (File(projectDir, "pom.xml").exists()) {
             val className = buildClassName(detected)
-            return "mvn exec:java -Dexec.mainClass=\"$className\""
+            // Class names are validated by compiler, so they should be safe
+            return "mvn exec:java -Dexec.mainClass=${shellEscape(className)}"
         }
 
         // Fallback: Java 11+ single-file source-code execution
-        return "java \"$filePath\""
+        return "java ${shellEscape(filePath)}"
     }
 
     /**
@@ -459,20 +460,32 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
                File(projectDir, "gradlew.bat").exists()
     }
 
+    /**
+     * Escape a string for safe use in shell commands.
+     * Uses single quotes and escapes embedded single quotes with '\''
+     * This prevents command injection attacks from malicious file paths.
+     */
+    private fun shellEscape(str: String): String {
+        // Single quotes prevent all shell expansion except for single quotes themselves
+        // To include a single quote: end the string, add escaped quote, start new string
+        // e.g., "it's" becomes 'it'\''s'
+        return "'" + str.replace("'", "'\\''") + "'"
+    }
+
     private fun generatePythonCommand(detected: DetectedMainFunction): String {
-        return "python3 ${detected.filePath}"
+        return "python3 ${shellEscape(detected.filePath)}"
     }
 
     private fun generateJavaScriptCommand(detected: DetectedMainFunction): String {
-        return "node ${detected.filePath}"
+        return "node ${shellEscape(detected.filePath)}"
     }
 
     private fun generateTypeScriptCommand(detected: DetectedMainFunction): String {
-        return "npx ts-node ${detected.filePath}"
+        return "npx ts-node ${shellEscape(detected.filePath)}"
     }
 
     private fun generateGoCommand(detected: DetectedMainFunction): String {
-        return "go run ${detected.filePath}"
+        return "go run ${shellEscape(detected.filePath)}"
     }
 
     private fun generateRustCommand(detected: DetectedMainFunction, projectDir: File): String {
@@ -483,14 +496,15 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
             // Check if it's in a workspace member
             val moduleName = detectCargoModule(filePath, projectDir)
             if (moduleName != null) {
-                return "cargo run -p $moduleName"
+                // Module names are validated by Cargo, but escape for safety
+                return "cargo run -p ${shellEscape(moduleName)}"
             }
             return "cargo run"
         }
 
         // Fallback: Compile and run the specific Rust file directly
-        val outputName = File(filePath).nameWithoutExtension
-        return "rustc \"$filePath\" -o \"/tmp/$outputName\" && /tmp/\"$outputName\""
+        val outputName = File(filePath).nameWithoutExtension.replace("'", "_")
+        return "rustc ${shellEscape(filePath)} -o ${shellEscape("/tmp/$outputName")} && ${shellEscape("/tmp/$outputName")}"
     }
 
     /**

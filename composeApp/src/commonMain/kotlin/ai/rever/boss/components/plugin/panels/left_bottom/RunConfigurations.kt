@@ -96,16 +96,15 @@ fun RunConfigurationsContent() {
     val scope = rememberCoroutineScope()
     val selectedProject by ProjectState.selectedProject.collectAsState()
     val detectedConfigs by RunConfigurationManager.detectedConfigurations.collectAsState()
+    val isScanning by RunConfigurationManager.isScanning.collectAsState()
+    val lastError by RunConfigurationManager.lastError.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
-    var isScanning by remember { mutableStateOf(false) }
 
     // Auto-scan when project changes (if a project is selected)
     LaunchedEffect(selectedProject.path) {
         if (selectedProject.path.isNotEmpty()) {
-            isScanning = true
             RunEventBus.scanProject(selectedProject.path)
-            isScanning = false
         }
     }
 
@@ -115,6 +114,41 @@ fun RunConfigurationsContent() {
             .background(Color(0xFF2B2D30))
             .padding(12.dp)
     ) {
+        // Error banner (if any)
+        if (lastError != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                color = Color(0xFF5C2020),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = lastError ?: "",
+                        fontSize = 10.sp,
+                        color = Color(0xFFFF8080),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "✕",
+                        fontSize = 12.sp,
+                        color = Color(0xFFFF8080),
+                        modifier = Modifier
+                            .clickable {
+                                scope.launch {
+                                    RunConfigurationManager.clearError()
+                                }
+                            }
+                            .padding(4.dp)
+                    )
+                }
+            }
+        }
+
         // Header with scan button
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -135,9 +169,7 @@ fun RunConfigurationsContent() {
                         .clickable {
                             if (!isScanning) {
                                 scope.launch {
-                                    isScanning = true
                                     RunEventBus.scanProject(selectedProject.path)
-                                    isScanning = false
                                 }
                             }
                         }
