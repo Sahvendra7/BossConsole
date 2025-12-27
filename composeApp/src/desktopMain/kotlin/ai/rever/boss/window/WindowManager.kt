@@ -56,7 +56,7 @@ object WindowManager {
 
         val windowState = BossWindowState(
             id = windowId,
-            title = "BOSS - Business Operating System Service",
+            title = "BOSS - Business Operating System + Simulation",
             position = windowPosition,
             windowType = windowType
         )

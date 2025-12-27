@@ -137,7 +137,7 @@ object WindowsDefaultBrowserHandler {
                 // Capabilities
                 """reg add "$START_MENU_KEY\Capabilities" /v ApplicationName /d "BOSS Console" /f""",
                 """reg add "$START_MENU_KEY\Capabilities" /v ApplicationIcon /d "$appPath,0" /f""",
-                """reg add "$START_MENU_KEY\Capabilities" /v ApplicationDescription /d "Business Operating System Service - Intelligent service automation platform" /f""",
+                """reg add "$START_MENU_KEY\Capabilities" /v ApplicationDescription /d "Business Operating System + Simulation - Intelligent service automation platform" /f""",
 
                 // URL Associations
                 """reg add "$START_MENU_KEY\Capabilities\URLAssociations" /v http /d "BOSS" /f""",

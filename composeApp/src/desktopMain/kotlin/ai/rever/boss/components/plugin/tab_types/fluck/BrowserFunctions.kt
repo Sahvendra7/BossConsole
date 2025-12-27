@@ -240,6 +240,10 @@ actual fun createBrowser(): Any {
     return browser
 }
 
+actual suspend fun resetBrowserProfile(): Boolean {
+    return FluckEngine.resetBrowserProfile().success
+}
+
 actual fun disposeBrowser(browser: Any) {
     try {
         val jxBrowser = browser as? Browser
@@ -277,8 +281,21 @@ actual fun getBrowserState(
     onOpenInNewTab: ((String) -> Unit)?
 ): Pair<Any, Any>? {
     return try {
+        // Verify engine is available before creating browser
+        val engine = FluckEngine.engine
+        if (engine.isClosed) {
+            println("⚠️ getBrowserState: Engine is closed, cannot create browser")
+            return null
+        }
+
         // Create a new browser - each tab has its own independent browser
         val browser = createBrowser() as Browser
+
+        // Verify browser was created successfully
+        if (browser.isClosed) {
+            println("⚠️ getBrowserState: Browser was closed immediately after creation")
+            return null
+        }
 
         // Configure popup handler BEFORE creating view state
         // This intercepts target="_blank" and window.open() intelligently:
@@ -292,19 +309,30 @@ actual fun getBrowserState(
 
         // If browserViewState creation failed (no valid window), clean up and return null
         if (browserViewState == null) {
-            println("Warning: Could not create BrowserViewState - no valid window available")
-            browser.close()
+            println("⚠️ getBrowserState: Could not create BrowserViewState - no valid window available")
+            if (!browser.isClosed) {
+                browser.close()
+            }
             return null
         }
 
-        // Load the URL
-        if (url != "about:blank" && url.isNotEmpty()) {
+        // Load the URL (verify browser is still valid first)
+        if (!browser.isClosed && url != "about:blank" && url.isNotEmpty()) {
             browser.navigation().loadUrl(url)
         }
 
         Pair(browser, browserViewState)
     } catch (e: Exception) {
-        println("Error getting browser state: ${e.message}")
+        // Provide detailed error info for debugging
+        val errorType = when {
+            e.message?.contains("closed object", ignoreCase = true) == true ->
+                "JxBrowser closed object error (engine or browser was disposed)"
+            e.message?.contains("SharedMemory", ignoreCase = true) == true ->
+                "JxBrowser IPC error (Chromium process may have crashed)"
+            else -> "Unknown error"
+        }
+        println("❌ getBrowserState failed: $errorType")
+        println("   Details: ${e.message}")
         null
     }
 }

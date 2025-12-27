@@ -308,18 +308,31 @@ object FluckEngine {
         } ?: println("FluckEngine: Cannot cancel download $downloadId - not found in active downloads")
     }
 
+    // Lock object for thread-safe engine access
+    private val engineLock = Any()
+
     val engine: Engine
-        get() {
-            // Return cached engine if available
-            _engine?.let { return it }
-            
+        get() = synchronized(engineLock) {
+            // Return cached engine if available AND not closed
+            _engine?.let { cachedEngine ->
+                if (!cachedEngine.isClosed) {
+                    return@synchronized cachedEngine
+                }
+                // Engine was closed (e.g., during app restart/update flow)
+                // Clear cache and reinitialize
+                println("⚠️ FluckEngine: Cached engine was closed, reinitializing...")
+                _engine = null
+                initializationError = null
+                attemptCount = 0
+            }
+
             // Throw cached error if initialization failed before and we've tried too many times
             if (attemptCount > 3) {
                 initializationError?.let { throw it }
             }
-            
+
             // Try to initialize
-            return initializeEngine()
+            initializeEngine()
         }
     
     private fun initializeEngine(): Engine {
@@ -812,6 +825,148 @@ object FluckEngine {
      */
     private fun isShiftPressed(): Boolean {
         return false // TODO: Implement if needed
+    }
+
+    /**
+     * Result of browser profile reset operation with detailed step status.
+     */
+    data class ResetResult(
+        val success: Boolean,
+        val engineClosed: Boolean = false,
+        val profileDeleted: Boolean = false,
+        val tempProfilesCleaned: Boolean = false,
+        val errorMessage: String? = null,
+        val failedStep: String? = null
+    )
+
+    /**
+     * Reset browser profile to fix persistent browser issues.
+     * This will:
+     * 1. Close the current engine (if running)
+     * 2. Delete the browser profile directory
+     * 3. Clear cached state so engine reinitializes on next use
+     *
+     * IMPORTANT: This is a suspend function that runs blocking I/O on Dispatchers.IO
+     * to avoid freezing the UI thread.
+     *
+     * @return ResetResult with detailed status of each step
+     */
+    suspend fun resetBrowserProfile(): ResetResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        println("🔄 [FluckEngine] Resetting browser profile...")
+
+        var engineClosed = false
+        var profileDeleted = false
+        var tempProfilesCleaned = false
+
+        try {
+            // Step 1: Close current engine if it exists
+            _engine?.let { engine ->
+                if (!engine.isClosed) {
+                    println("   Closing current engine...")
+                    try {
+                        engine.close()
+                        engineClosed = true
+                    } catch (e: Exception) {
+                        println("   Warning: Error closing engine: ${e.message}")
+                        // Continue anyway - engine may be in bad state
+                        engineClosed = true // Mark as closed since we tried
+                    }
+                } else {
+                    engineClosed = true // Already closed
+                }
+            } ?: run {
+                engineClosed = true // No engine to close
+            }
+
+            // Step 2: Clear cached state (must happen even if engine close had issues)
+            _engine = null
+            initializationError = null
+            attemptCount = 0
+
+            // Step 3: Kill any stale Chromium processes
+            val userHome = System.getProperty("user.home")
+            try {
+                killStaleChromiumProcesses(userHome)
+            } catch (e: Exception) {
+                println("   Warning: Error killing stale processes: ${e.message}")
+                // Continue - not critical
+            }
+
+            // Step 4: Delete browser profile directory
+            val selectedProfile = BrowserSettings.currentProfile
+            val profileDir = java.io.File(userHome, ".boss/$selectedProfile")
+
+            if (profileDir.exists()) {
+                println("   Deleting profile directory: ${profileDir.absolutePath}")
+                profileDeleted = profileDir.deleteRecursively()
+                if (profileDeleted) {
+                    println("   ✅ Profile directory deleted successfully")
+                } else {
+                    println("   ⚠️ Could not delete all files in profile directory")
+                    // This is a partial failure - return with details
+                    return@withContext ResetResult(
+                        success = false,
+                        engineClosed = engineClosed,
+                        profileDeleted = false,
+                        tempProfilesCleaned = false,
+                        errorMessage = "Could not delete all files in profile directory. Some files may be locked.",
+                        failedStep = "Delete profile directory"
+                    )
+                }
+            } else {
+                println("   Profile directory does not exist, nothing to delete")
+                profileDeleted = true // Nothing to delete is success
+            }
+
+            // Step 5: Also clean up temporary profiles
+            try {
+                cleanupOldTemporaryProfiles(userHome)
+                tempProfilesCleaned = true
+            } catch (e: Exception) {
+                println("   Warning: Error cleaning temp profiles: ${e.message}")
+                // Not critical - continue
+                tempProfilesCleaned = false
+            }
+
+            println("✅ [FluckEngine] Browser profile reset complete")
+            ResetResult(
+                success = true,
+                engineClosed = engineClosed,
+                profileDeleted = profileDeleted,
+                tempProfilesCleaned = tempProfilesCleaned
+            )
+
+        } catch (e: Exception) {
+            println("❌ [FluckEngine] Error resetting browser profile: ${e.message}")
+            ResetResult(
+                success = false,
+                engineClosed = engineClosed,
+                profileDeleted = profileDeleted,
+                tempProfilesCleaned = tempProfilesCleaned,
+                errorMessage = e.message,
+                failedStep = "Unknown"
+            )
+        }
+    }
+
+    /**
+     * Synchronous wrapper for resetBrowserProfile for simple use cases.
+     * Runs the reset on a background thread and blocks until complete.
+     *
+     * @return true if reset was successful, false otherwise
+     */
+    fun resetBrowserProfileBlocking(): Boolean {
+        return kotlinx.coroutines.runBlocking {
+            resetBrowserProfile().success
+        }
+    }
+
+    /**
+     * Check if browser engine is in a healthy state.
+     * Used to determine if reset might be needed.
+     */
+    fun isEngineHealthy(): Boolean {
+        return _engine?.let { !it.isClosed } ?: true // null engine is "healthy" (will initialize on demand)
     }
 }
 

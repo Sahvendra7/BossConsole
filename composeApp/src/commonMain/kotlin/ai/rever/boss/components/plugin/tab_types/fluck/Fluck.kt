@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -113,6 +114,10 @@ data class FluckTabInfo(
 // Platform-specific browser creation
 expect fun createBrowser(): Any
 
+// Platform-specific browser reset (clears profile, cache, cookies)
+// This is a suspend function to avoid blocking the UI thread during I/O operations
+expect suspend fun resetBrowserProfile(): Boolean
+
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
 expect fun createBrowserViewState(browser: Any): Any?
@@ -205,6 +210,9 @@ open class FluckTabComponent(
 
     @Composable
     override fun Content() {
+        // Coroutine scope for async operations (like browser reset)
+        val scope = rememberCoroutineScope()
+
         // Local Compose state to trigger recomposition when browser is ready
         // Initialized from class-level browserState which persists across tab switches
         var localBrowserState by remember(config.id) {
@@ -298,6 +306,20 @@ open class FluckTabComponent(
                             retryCount = 0
                             this@FluckTabComponent.browserState = null
                             retryTrigger++
+                        },
+                        onResetBrowser = {
+                            // Reset browser profile to fix persistent issues (Issue #340)
+                            // Use coroutine scope to avoid blocking UI thread
+                            scope.launch {
+                                val success = resetBrowserProfile()
+                                if (success) {
+                                    // Clear error and retry after browser reset
+                                    browserError = null
+                                    retryCount = 0
+                                    this@FluckTabComponent.browserState = null
+                                    retryTrigger++
+                                }
+                            }
                         }
                     )
                 }
@@ -386,7 +408,8 @@ fun BrowserErrorView(
     retryCount: Int = 0,
     maxRetries: Int = 3,
     onRetry: (() -> Unit)? = null,
-    onReset: (() -> Unit)? = null
+    onReset: (() -> Unit)? = null,
+    onResetBrowser: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -473,7 +496,7 @@ fun BrowserErrorView(
                         Text("Retry Loading (Attempt ${retryCount + 1}/$maxRetries)")
                     }
                 } else if (retryCount >= maxRetries && onReset != null) {
-                    // Max retries exhausted - show Reset button
+                    // Max retries exhausted - show Reset Tab button
                     Button(
                         onClick = onReset,
                         colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE2724A))
@@ -495,6 +518,36 @@ fun BrowserErrorView(
                         color = Color(0xFF888888),
                         textAlign = TextAlign.Center
                     )
+
+                    // Show Reset Browser option for persistent issues
+                    if (onResetBrowser != null) {
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "If the issue persists, try resetting the browser:",
+                            fontSize = 12.sp,
+                            color = Color(0xFFAAAAAA),
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = onResetBrowser,
+                            colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFE05555))
+                        ) {
+                            Text("Reset Browser", color = Color.White)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "This clears browser cache, cookies, and sessions",
+                            fontSize = 10.sp,
+                            color = Color(0xFF777777),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 } else {
                     // No callbacks provided - show fallback message
                     Text(

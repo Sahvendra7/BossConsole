@@ -129,7 +129,7 @@ object LinuxDefaultBrowserHandler {
                 Version=1.0
                 Type=Application
                 Name=BOSS Console
-                Comment=Business Operating System Service - Intelligent service automation platform
+                Comment=Business Operating System + Simulation - Intelligent service automation platform
                 Exec=$appPath %u
                 Icon=$iconPath
                 Terminal=false

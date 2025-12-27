@@ -29,3 +29,8 @@ actual fun getBrowserState(
 actual fun releaseBrowserState(url: String) {
     // No-op for iOS
 }
+
+actual suspend fun resetBrowserProfile(): Boolean {
+    // No-op for iOS - return true as no reset needed
+    return true
+}

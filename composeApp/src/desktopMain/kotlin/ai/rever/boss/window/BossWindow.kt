@@ -13,7 +13,17 @@ import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
+import androidx.compose.material.Text
+import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -94,6 +104,10 @@ fun ApplicationScope.BossWindow(
         // State for CLI installation dialog
         var showCLIInstallDialog by remember { mutableStateOf(false) }
         var isCliInstalled by remember { mutableStateOf<Boolean>(CLIInstaller.isInstalled()) }
+
+        // State for Reset Browser dialog
+        var showResetBrowserDialog by remember { mutableStateOf(false) }
+        var resetBrowserResult by remember { mutableStateOf<Boolean?>(null) }
 
         DisposableEffect(window, globalInterceptor) {
             globalInterceptor.attach(window)
@@ -443,6 +457,15 @@ fun ApplicationScope.BossWindow(
                         }
                     }
                 )
+
+                Separator()
+
+                Item(
+                    "Reset Browser...",
+                    onClick = {
+                        showResetBrowserDialog = true
+                    }
+                )
             }
         }
 
@@ -477,6 +500,99 @@ fun ApplicationScope.BossWindow(
                     showCLIInstallDialog = false
                     // Refresh CLI installation status after dialog closes
                     isCliInstalled = CLIInstaller.isInstalled()
+                }
+            )
+        }
+
+        // Reset Browser Confirmation Dialog
+        if (showResetBrowserDialog) {
+            var isResetting by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isResetting) {
+                        showResetBrowserDialog = false
+                        resetBrowserResult = null
+                    }
+                },
+                title = {
+                    Text("Reset Browser")
+                },
+                text = {
+                    Column {
+                        when {
+                            isResetting -> {
+                                Text("Resetting browser profile...")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please wait, this may take a moment.")
+                            }
+                            resetBrowserResult == null -> {
+                                Text("This will reset the browser to fix persistent issues.")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("The following will be cleared:")
+                                Text("• Browser cache and cookies")
+                                Text("• Saved login sessions")
+                                Text("• Browser history")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("All browser tabs will be closed. Continue?")
+                            }
+                            resetBrowserResult == true -> {
+                                Text("✅ Browser reset successful!")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please close any browser tabs and reopen them.")
+                            }
+                            else -> {
+                                Text("❌ Browser reset failed.")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please try restarting BOSS manually.")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    when {
+                        isResetting -> {
+                            // No button while resetting
+                        }
+                        resetBrowserResult == null -> {
+                            Button(
+                                onClick = {
+                                    isResetting = true
+                                    menuScope.launch {
+                                        val result = FluckEngine.resetBrowserProfile()
+                                        resetBrowserResult = result.success
+                                        isResetting = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = androidx.compose.ui.graphics.Color(0xFFE05555)
+                                )
+                            ) {
+                                Text("Reset Browser", color = androidx.compose.ui.graphics.Color.White)
+                            }
+                        }
+                        else -> {
+                            Button(
+                                onClick = {
+                                    showResetBrowserDialog = false
+                                    resetBrowserResult = null
+                                }
+                            ) {
+                                Text("Close")
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    if (resetBrowserResult == null && !isResetting) {
+                        TextButton(
+                            onClick = {
+                                showResetBrowserDialog = false
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
                 }
             )
         }
