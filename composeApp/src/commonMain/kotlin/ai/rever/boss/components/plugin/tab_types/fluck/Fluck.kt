@@ -288,14 +288,19 @@ open class FluckTabComponent(
                         url = initialUrl,
                         onOpenInNewTab = onOpenInNewTab,
                         onBrowserClosed = {
-                            // Browser was closed - trigger recovery (Issue #351)
-                            println("🔔 [FluckTabComponent] Browser closed event received for tab ${config.id}")
-                            this@FluckTabComponent.browserState = null
-                            localBrowserState = null
-                            browserError = null
-                            retryCount = 0
-                            browserEngineGeneration = -1L
-                            retryTrigger++
+                            // Browser was closed - trigger recovery only if tab is not being disposed
+                            // This prevents recovery when user intentionally closes the tab
+                            if (!isDisposed) {
+                                println("🔔 [FluckTabComponent] Browser closed unexpectedly for tab ${config.id}, triggering recovery")
+                                this@FluckTabComponent.browserState = null
+                                localBrowserState = null
+                                browserError = null
+                                retryCount = 0
+                                browserEngineGeneration = -1L
+                                retryTrigger++
+                            } else {
+                                println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
+                            }
                         }
                     )
 
