@@ -212,6 +212,19 @@ open class FluckTabComponent(
     private val maxRetries = 3
     private var retryTrigger by mutableStateOf(0)
 
+    /**
+     * Resets browser state to trigger recovery/reinitialization.
+     * Call sites must also set localBrowserState = null separately since it's a local Compose state.
+     */
+    private fun resetForRecovery(reason: String) {
+        println("🔄 [FluckTabComponent] $reason for tab ${config.id}, triggering recovery")
+        browserState = null
+        browserError = null
+        retryCount = 0
+        browserEngineGeneration = -1L
+        retryTrigger++
+    }
+
     // Method to be overridden by platform-specific classes
     open fun reload() {
         // Default implementation does nothing
@@ -254,17 +267,8 @@ open class FluckTabComponent(
         LaunchedEffect(currentEngineGeneration) {
             if (browserEngineGeneration >= 0 && currentEngineGeneration > browserEngineGeneration) {
                 // Engine was reinitialized - our browser is stale
-                println("🔄 [FluckTabComponent] Engine generation changed from $browserEngineGeneration to $currentEngineGeneration, invalidating browser for tab ${config.id}")
-
-                // Invalidate browser state to trigger reload
-                this@FluckTabComponent.browserState = null
+                resetForRecovery("Engine generation changed from $browserEngineGeneration to $currentEngineGeneration")
                 localBrowserState = null
-                browserError = null
-                retryCount = 0
-                browserEngineGeneration = -1L
-
-                // Trigger reinitialization
-                retryTrigger++
             }
         }
 
@@ -299,13 +303,8 @@ open class FluckTabComponent(
                             // Browser was closed - trigger recovery only if tab is not being disposed
                             // This prevents recovery when user intentionally closes the tab
                             if (!isDisposed) {
-                                println("🔔 [FluckTabComponent] Browser closed unexpectedly for tab ${config.id}, triggering recovery")
-                                this@FluckTabComponent.browserState = null
+                                resetForRecovery("Browser closed unexpectedly")
                                 localBrowserState = null
-                                browserError = null
-                                retryCount = 0
-                                browserEngineGeneration = -1L
-                                retryTrigger++
                             } else {
                                 println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
                             }
@@ -374,13 +373,8 @@ open class FluckTabComponent(
                     localBrowserState = this@FluckTabComponent.browserState
                 } else {
                     // Browser became invalid while tab was inactive - trigger recovery
-                    println("⚠️ [FluckTabComponent] Browser invalid on tab switch for ${config.id}, triggering recovery")
-                    this@FluckTabComponent.browserState = null
+                    resetForRecovery("Browser invalid on tab switch")
                     localBrowserState = null
-                    browserError = null
-                    retryCount = 0
-                    browserEngineGeneration = -1L
-                    retryTrigger++
                 }
             }
         }
@@ -471,13 +465,8 @@ open class FluckTabComponent(
                     // Browser exists but is invalid (Issue #351)
                     // Trigger immediate recovery
                     LaunchedEffect(Unit) {
-                        println("⚠️ [FluckTabComponent] Browser invalid at render, triggering immediate recovery for tab ${config.id}")
-                        this@FluckTabComponent.browserState = null
+                        resetForRecovery("Browser invalid at render")
                         localBrowserState = null
-                        browserError = null
-                        retryCount = 0
-                        browserEngineGeneration = -1L
-                        retryTrigger++
                     }
                     // Show recovery message
                     BrowserRecoveryView(url = initialUrl)
