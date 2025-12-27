@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Stop
@@ -54,6 +55,11 @@ fun BossTopRunBar() {
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
                 }
+            },
+            onDelete = { config ->
+                scope.launch {
+                    RunConfigurationManager.removeConfiguration(config.id)
+                }
             }
         )
 
@@ -96,22 +102,26 @@ fun BossTopRunBar() {
 /**
  * Dropdown selector for run configurations.
  * IntelliJ-style: Only shows run history (previously executed configurations).
+ * Each item has a delete button to remove from history.
  */
 @Composable
 private fun RunConfigurationSelector(
     selectedConfig: RunConfiguration?,
     runHistory: List<RunConfiguration>,
-    onSelect: (RunConfiguration) -> Unit
+    onSelect: (RunConfiguration) -> Unit,
+    onDelete: (RunConfiguration) -> Unit
 ) {
     // Build context menu items from run history only
     val contextMenuItems = buildList {
         if (runHistory.isNotEmpty()) {
-            // Show run history
+            // Show run history with delete buttons
             runHistory.forEach { config ->
                 add(ContextMenuItem(
                     text = config.name,
                     icon = getLanguageIcon(config.language),
-                    onClick = { onSelect(config) }
+                    onClick = { onSelect(config) },
+                    trailingIcon = Icons.Outlined.Close,
+                    onTrailingClick = { onDelete(config) }
                 ))
             }
         } else {
