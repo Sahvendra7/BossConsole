@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
@@ -65,10 +66,12 @@ fun BossTopRunBar() {
 
         Spacer(modifier = Modifier.width(4.dp))
 
-        // Run button
+        // Run button (IntelliJ-style green)
         BossActionButton(
             imageVector = Icons.Outlined.PlayArrow,
             text = "Run",
+            iconColor = Color(0xFF59A869), // IntelliJ's run icon green
+            iconSize = 24.dp,
             hintText = if (selectedConfig != null) {
                 "Run ${selectedConfig?.name}"
             } else {
@@ -84,10 +87,12 @@ fun BossTopRunBar() {
 
         Spacer(modifier = Modifier.width(2.dp))
 
-        // Stop button
+        // Stop button (red)
         BossActionButton(
             imageVector = Icons.Outlined.Stop,
             text = "Stop",
+            iconColor = Color(0xFFE05555), // Red stop color
+            iconSize = 24.dp,
             hintText = if (isRunning) "Stop running processes" else "No processes running"
         ) {
             if (isRunning) {

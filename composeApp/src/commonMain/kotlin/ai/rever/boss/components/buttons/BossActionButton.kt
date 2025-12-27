@@ -61,6 +61,8 @@ fun BossActionButton(
     text: String,
     fontSize: TextUnit = 13.sp,
     color: Color = BossDarkTextPrimary,
+    iconColor: Color? = null, // Optional separate icon color (defaults to color if null)
+    iconSize: Dp = 20.dp, // Icon size for imageVector mode
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(2.dp),
     isSelected: Boolean = false,
@@ -71,6 +73,8 @@ fun BossActionButton(
     hintDirection:  Panel = bottom,
     onClick: () -> Unit = {}
 ) {
+    // Resolved icon color - use iconColor if provided, otherwise fall back to color
+    val resolvedIconColor = iconColor ?: color
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
     var buttonPosition by remember { mutableStateOf(Offset.Zero) }
@@ -199,7 +203,7 @@ fun BossActionButton(
             imageVector = icon,
             contentDescription = text,
             modifier = Modifier.size(size),
-            tint = if (isActive) color else color.copy(alpha = 0.8f)
+            tint = if (isActive) resolvedIconColor else resolvedIconColor.copy(alpha = 0.8f)
         )
     }
 
@@ -264,7 +268,7 @@ fun BossActionButton(
             MainText()
             MainIcon()
         } else if (imageVector != null) {
-            MainIcon(imageVector, 20.dp)
+            MainIcon(imageVector, iconSize)
         } else {
             MainText()
         }
