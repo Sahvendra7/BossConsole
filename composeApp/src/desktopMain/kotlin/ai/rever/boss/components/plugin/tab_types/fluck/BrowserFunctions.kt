@@ -281,7 +281,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 
 actual fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)?
+    onOpenInNewTab: ((String) -> Unit)?,
+    onBrowserClosed: (() -> Unit)?
 ): Pair<Any, Any>? {
     return try {
         // Verify engine is available before creating browser
@@ -298,6 +299,15 @@ actual fun getBrowserState(
         if (browser.isClosed) {
             println("⚠️ getBrowserState: Browser was closed immediately after creation")
             return null
+        }
+
+        // Subscribe to BrowserClosed event for event-driven recovery (Issue #351)
+        // This replaces polling - we get notified immediately when browser closes
+        if (onBrowserClosed != null) {
+            browser.on(BrowserClosed::class.java) {
+                println("🔔 [BrowserFunctions] BrowserClosed event fired")
+                onBrowserClosed()
+            }
         }
 
         // Configure popup handler BEFORE creating view state

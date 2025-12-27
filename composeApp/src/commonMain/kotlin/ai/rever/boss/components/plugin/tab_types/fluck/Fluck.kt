@@ -141,9 +141,12 @@ expect fun disposeBrowser(browser: Any)
 expect fun disposeBrowserViewState(browserViewState: Any)
 
 // Platform-specific browser state retrieval
+// onBrowserClosed is called when the browser is closed (e.g., engine shutdown)
+// This enables event-driven recovery instead of polling
 expect fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)? = null
+    onOpenInNewTab: ((String) -> Unit)? = null,
+    onBrowserClosed: (() -> Unit)? = null
 ): Pair<Any, Any>?
 
 // Platform-specific FluckTabComponent creation
@@ -257,33 +260,6 @@ open class FluckTabComponent(
             }
         }
 
-        // Periodic browser validity check (Issue #351)
-        // Detects when browser becomes invalid (e.g., engine closed without triggering generation change)
-        LaunchedEffect(localBrowserState, retryTrigger) {
-            if (localBrowserState != null) {
-                while (true) {
-                    // Check every 2 seconds while browser exists
-                    delay(2000)
-
-                    val currentBrowser = this@FluckTabComponent.browserState?.first
-                    if (currentBrowser != null && !isBrowserValid(currentBrowser)) {
-                        // Browser became invalid - invalidate and trigger reload
-                        println("⚠️ [FluckTabComponent] Browser became invalid for tab ${config.id}, triggering reload")
-
-                        this@FluckTabComponent.browserState = null
-                        localBrowserState = null
-                        browserError = null
-                        retryCount = 0
-                        browserEngineGeneration = -1L
-
-                        // Trigger reinitialization
-                        retryTrigger++
-                        break
-                    }
-                }
-            }
-        }
-
         // Initialize browser only once - check class-level browserState
         // Retry mechanism: LaunchedEffect re-runs when retryTrigger changes (Issue #162)
         LaunchedEffect(config.id, retryTrigger) {
@@ -305,9 +281,23 @@ open class FluckTabComponent(
 
                     kotlinx.coroutines.delay(delayMs)
 
-                    // Pass callback to configure popup handler
+                    // Pass callbacks to configure popup handler and browser close detection
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
-                    val state = getBrowserState(initialUrl, onOpenInNewTab)
+                    // onBrowserClosed triggers recovery when browser is closed (event-driven, no polling)
+                    val state = getBrowserState(
+                        url = initialUrl,
+                        onOpenInNewTab = onOpenInNewTab,
+                        onBrowserClosed = {
+                            // Browser was closed - trigger recovery (Issue #351)
+                            println("🔔 [FluckTabComponent] Browser closed event received for tab ${config.id}")
+                            this@FluckTabComponent.browserState = null
+                            localBrowserState = null
+                            browserError = null
+                            retryCount = 0
+                            browserEngineGeneration = -1L
+                            retryTrigger++
+                        }
+                    )
 
                     if (state != null) {
                         this@FluckTabComponent.browserState = state

@@ -22,7 +22,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 
 actual fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)?
+    onOpenInNewTab: ((String) -> Unit)?,
+    onBrowserClosed: (() -> Unit)?
 ): Pair<Any, Any>? {
     // iOS doesn't support browser state preservation yet
     return null
