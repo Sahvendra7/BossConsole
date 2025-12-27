@@ -187,9 +187,9 @@ class BookmarksPanel(
                             icon = Icons.Outlined.Star,
                             contextMenuItems = buildList {
                                 if (favoritesCollection.bookmarks.isNotEmpty()) {
-                                    add(ContextMenuItem("Clear All Favorites", Icons.Outlined.DeleteSweep) {
+                                    add(ContextMenuItem("Clear All Favorites", Icons.Outlined.DeleteSweep, onClick = {
                                         showClearFavoritesDialog = true
-                                    })
+                                    }))
                                 }
                             }
                         )
@@ -238,13 +238,13 @@ class BookmarksPanel(
                             }
                         },
                         contextMenuItems = buildList {
-                            add(ContextMenuItem("New Collection", Icons.Outlined.CreateNewFolder) {
+                            add(ContextMenuItem("New Collection", Icons.Outlined.CreateNewFolder, onClick = {
                                 showNewCollectionDialog = true
-                            })
-                            add(ContextMenuItem("Import Collection", Icons.Outlined.FileUpload) {
+                            }))
+                            add(ContextMenuItem("Import Collection", Icons.Outlined.FileUpload, onClick = {
                                 // TODO: Implement import functionality
                                 println("Import collection requested")
-                            })
+                            }))
                         }
                     )
                 }
@@ -283,9 +283,9 @@ class BookmarksPanel(
                         icon = Icons.Outlined.Star,
                         contextMenuItems = buildList {
                             if (favoriteWorkspaces.isNotEmpty()) {
-                                add(ContextMenuItem("Unfavorite All", Icons.Outlined.DeleteSweep) {
+                                add(ContextMenuItem("Unfavorite All", Icons.Outlined.DeleteSweep, onClick = {
                                     showUnfavoriteAllWorkspacesDialog = true
-                                })
+                                }))
                             }
                         }
                     )
@@ -336,14 +336,14 @@ class BookmarksPanel(
                             }
                         },
                         contextMenuItems = buildList {
-                            add(ContextMenuItem("New Workspace", Icons.Outlined.CreateNewFolder) {
+                            add(ContextMenuItem("New Workspace", Icons.Outlined.CreateNewFolder, onClick = {
                                 showNewWorkspaceDialog = true
-                            })
+                            }))
                             // TODO: Import Workspace (needs file picker to select JSON file)
-                            // add(ContextMenuItem("Import Workspace", Icons.Outlined.FileUpload) {
+                            // add(ContextMenuItem("Import Workspace", Icons.Outlined.FileUpload, onClick = {
                             //     // Would need: val json = selectFile(); workspaceManager.importWorkspace(json)
                             //     println("Import workspace requested")
-                            // })
+                            // }))
                         }
                     )
                 }
@@ -831,33 +831,33 @@ private fun BookmarkItem(
             .contextMenu(
                 items = buildList {
                     // Remove from collection
-                    add(ContextMenuItem("Remove from Collection", Icons.Outlined.Delete) {
+                    add(ContextMenuItem("Remove from Collection", Icons.Outlined.Delete, onClick = {
                         showRemoveDialog = true
-                    })
+                    }))
 
                     add(ContextMenuItem(isDivider = true))
 
                     // Copy to collection
-                    add(ContextMenuItem("Copy to Collection", Icons.Outlined.ContentCopy) {
+                    add(ContextMenuItem("Copy to Collection", Icons.Outlined.ContentCopy, onClick = {
                         showCopyDialog = true
-                    })
+                    }))
 
                     // Move to collection
-                    add(ContextMenuItem("Move to Collection", Icons.AutoMirrored.Outlined.DriveFileMove) {
+                    add(ContextMenuItem("Move to Collection", Icons.AutoMirrored.Outlined.DriveFileMove, onClick = {
                         showMoveDialog = true
-                    })
+                    }))
 
                     add(ContextMenuItem(isDivider = true))
 
                     // Add to workspace
-                    add(ContextMenuItem("Add to Workspace", Icons.Outlined.AddCircleOutline) {
+                    add(ContextMenuItem("Add to Workspace", Icons.Outlined.AddCircleOutline, onClick = {
                         showWorkspaceDialog = true
-                    })
+                    }))
 
                     // Edit target workspaces
-                    add(ContextMenuItem("Edit Target Workspaces", Icons.Outlined.Edit) {
+                    add(ContextMenuItem("Edit Target Workspaces", Icons.Outlined.Edit, onClick = {
                         showEditTargetsDialog = true
-                    })
+                    }))
                 }
             )
             .padding(horizontal = 24.dp, vertical = 6.dp),
@@ -1024,23 +1024,23 @@ private fun CollectionItem(
                         items = buildList {
                             // Rename Collection (if not favorites)
                             if (!collection.isFavorite) {
-                                add(ContextMenuItem("Rename Collection", Icons.Outlined.Edit) {
+                                add(ContextMenuItem("Rename Collection", Icons.Outlined.Edit, onClick = {
                                     showRenameDialog = true
-                                })
+                                }))
                             }
 
                             // Export Collection
-                            add(ContextMenuItem("Export Collection", Icons.Outlined.FileDownload) {
+                            add(ContextMenuItem("Export Collection", Icons.Outlined.FileDownload, onClick = {
                                 // TODO: Implement export functionality
                                 println("Export collection: ${collection.name}")
-                            })
+                            }))
 
                             // Delete Collection (if not favorites)
                             if (!collection.isFavorite) {
                                 add(ContextMenuItem(isDivider = true))
-                                add(ContextMenuItem("Delete Collection", Icons.Outlined.Delete) {
+                                add(ContextMenuItem("Delete Collection", Icons.Outlined.Delete, onClick = {
                                     showDeleteConfirmation = true
-                                })
+                                }))
                             }
                         }
                     ),
@@ -1177,9 +1177,9 @@ private fun WorkspaceItem(
                     .contextMenu(
                         items = buildList {
                             // Load Workspace
-                            add(ContextMenuItem("Load Workspace", Icons.Outlined.FolderOpen) {
+                            add(ContextMenuItem("Load Workspace", Icons.Outlined.FolderOpen, onClick = {
                                 onWorkspaceClick()
-                            })
+                            }))
 
                             add(ContextMenuItem(isDivider = true))
 
@@ -1187,45 +1187,46 @@ private fun WorkspaceItem(
                             val isFav = bookmarkManager.isFavorite(workspace.id)
                             add(ContextMenuItem(
                                 if (isFav) "Unfavorite Workspace" else "Favorite Workspace",
-                                if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder
-                            ) {
-                                if (isFav) {
-                                    bookmarkManager.removeFavoriteWorkspace(workspace.id)
-                                } else {
-                                    bookmarkManager.addFavoriteWorkspace(workspace.id, workspace.name)
+                                if (isFav) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                onClick = {
+                                    if (isFav) {
+                                        bookmarkManager.removeFavoriteWorkspace(workspace.id)
+                                    } else {
+                                        bookmarkManager.addFavoriteWorkspace(workspace.id, workspace.name)
+                                    }
                                 }
-                            })
+                            ))
 
                             add(ContextMenuItem(isDivider = true))
 
                             // Rename Workspace (if not "Last Session")
                             if (workspace.name != "Last Session") {
-                                add(ContextMenuItem("Rename Workspace", Icons.Outlined.Edit) {
+                                add(ContextMenuItem("Rename Workspace", Icons.Outlined.Edit, onClick = {
                                     showRenameDialog = true
-                                })
+                                }))
                             }
 
                             // Export Workspace
-                            add(ContextMenuItem("Export Workspace", Icons.Outlined.FileDownload) {
+                            add(ContextMenuItem("Export Workspace", Icons.Outlined.FileDownload, onClick = {
                                 val json = workspaceManager.exportWorkspace(workspace)
                                 // TODO: Save json to file or show dialog
                                 println("Exported workspace: $json")
-                            })
+                            }))
 
                             // TODO: Duplicate Workspace (API not yet available)
-                            // add(ContextMenuItem("Duplicate Workspace", Icons.Outlined.ContentCopy) {
+                            // add(ContextMenuItem("Duplicate Workspace", Icons.Outlined.ContentCopy, onClick = {
                             //     // Would need duplicateWorkspace(workspace: LayoutWorkspace): LayoutWorkspace
                             //     println("Duplicate workspace: ${workspace.name}")
-                            // })
+                            // }))
 
                             add(ContextMenuItem(isDivider = true))
 
                             // Delete Workspace (if not current and not predefined)
                             if (workspace.id != workspaceManager.currentWorkspace.value?.id &&
                                 workspace.name != "Last Session") {
-                                add(ContextMenuItem("Delete Workspace", Icons.Outlined.Delete) {
+                                add(ContextMenuItem("Delete Workspace", Icons.Outlined.Delete, onClick = {
                                     showDeleteConfirmation = true
-                                })
+                                }))
                             }
                         }
                     ),
