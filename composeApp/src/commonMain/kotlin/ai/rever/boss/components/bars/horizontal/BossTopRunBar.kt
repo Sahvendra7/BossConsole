@@ -29,23 +29,27 @@ import kotlinx.coroutines.launch
 /**
  * Run bar component for the top bar.
  * Shows run configuration selector, run button, and stop button.
+ *
+ * IntelliJ-style behavior: Only shows previously run configurations (run history),
+ * not auto-detected configurations. Auto-detection is handled by a separate plugin.
  */
 @Composable
 fun BossTopRunBar() {
     val scope = rememberCoroutineScope()
-    val detectedConfigs by RunConfigurationManager.detectedConfigurations.collectAsState()
-    val userConfigs by RunConfigurationManager.currentSettings.collectAsState()
+    val settings by RunConfigurationManager.currentSettings.collectAsState()
     val selectedConfig by RunConfigurationManager.selectedConfiguration.collectAsState()
     val isRunning by RunExecutionService.isRunning.collectAsState()
+
+    // Get run history - configurations that have been explicitly run
+    val runHistory = settings.configurations
 
     Row(
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Configuration selector dropdown
+        // Configuration selector dropdown - shows only run history (IntelliJ style)
         RunConfigurationSelector(
             selectedConfig = selectedConfig,
-            detectedConfigs = detectedConfigs,
-            userConfigs = userConfigs.configurations,
+            runHistory = runHistory,
             onSelect = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
@@ -91,63 +95,34 @@ fun BossTopRunBar() {
 
 /**
  * Dropdown selector for run configurations.
+ * IntelliJ-style: Only shows run history (previously executed configurations).
  */
 @Composable
 private fun RunConfigurationSelector(
     selectedConfig: RunConfiguration?,
-    detectedConfigs: List<RunConfiguration>,
-    userConfigs: List<RunConfiguration>,
+    runHistory: List<RunConfiguration>,
     onSelect: (RunConfiguration) -> Unit
 ) {
-    // Build context menu items
+    // Build context menu items from run history only
     val contextMenuItems = buildList {
-        // Detected configurations section
-        if (detectedConfigs.isNotEmpty()) {
-            add(ContextMenuItem(
-                text = "Detected",
-                icon = null,
-                onClick = {}
-            ))
-
-            detectedConfigs.forEach { config ->
+        if (runHistory.isNotEmpty()) {
+            // Show run history
+            runHistory.forEach { config ->
                 add(ContextMenuItem(
                     text = config.name,
                     icon = getLanguageIcon(config.language),
                     onClick = { onSelect(config) }
                 ))
             }
-        }
-
-        // User configurations section
-        if (userConfigs.isNotEmpty()) {
-            if (detectedConfigs.isNotEmpty()) {
-                add(ContextMenuItem(isDivider = true))
-            }
-
+        } else {
+            // No run history yet
             add(ContextMenuItem(
-                text = "Custom",
-                icon = null,
-                onClick = {}
-            ))
-
-            userConfigs.forEach { config ->
-                add(ContextMenuItem(
-                    text = config.name,
-                    icon = getLanguageIcon(config.language),
-                    onClick = { onSelect(config) }
-                ))
-            }
-        }
-
-        // No configurations message
-        if (detectedConfigs.isEmpty() && userConfigs.isEmpty()) {
-            add(ContextMenuItem(
-                text = "No configurations found",
+                text = "No run history",
                 icon = null,
                 onClick = {}
             ))
             add(ContextMenuItem(
-                text = "Open a project to scan",
+                text = "Run a file to add it here",
                 icon = null,
                 onClick = {}
             ))
@@ -156,9 +131,9 @@ private fun RunConfigurationSelector(
 
     BossActionButton(
         leftIcon = selectedConfig?.let { getLanguageIcon(it.language) } ?: Icons.Outlined.Code,
-        text = selectedConfig?.name ?: "Select Configuration",
+        text = selectedConfig?.name ?: "Run History",
         contextMenuItems = contextMenuItems,
-        hintText = selectedConfig?.let { "Configuration: ${it.filePath}" } ?: "Select a run configuration"
+        hintText = selectedConfig?.let { "Configuration: ${it.filePath}" } ?: "Select from run history"
     )
 }
 
