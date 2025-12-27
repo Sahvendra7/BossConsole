@@ -212,17 +212,44 @@ open class FluckTabComponent(
     private val maxRetries = 3
     private var retryTrigger by mutableStateOf(0)
 
+    // Recovery loop prevention - track consecutive recovery attempts
+    private var recoveryAttempts = 0
+    private val maxRecoveryAttempts = 3
+
     /**
      * Resets browser state to trigger recovery/reinitialization.
      * Call sites must also set localBrowserState = null separately since it's a local Compose state.
+     *
+     * @return true if recovery was triggered, false if max recovery attempts reached
      */
-    private fun resetForRecovery(reason: String) {
-        println("🔄 [FluckTabComponent] $reason for tab ${config.id}, triggering recovery")
+    private fun resetForRecovery(reason: String): Boolean {
+        recoveryAttempts++
+
+        // Prevent infinite recovery loops
+        if (recoveryAttempts > maxRecoveryAttempts) {
+            println("❌ [FluckTabComponent] Max recovery attempts ($maxRecoveryAttempts) reached for tab ${config.id}, giving up")
+            browserError = Exception("Browser recovery failed after $maxRecoveryAttempts attempts. Please close and reopen this tab.")
+            return false
+        }
+
+        println("🔄 [FluckTabComponent] $reason for tab ${config.id}, triggering recovery (attempt $recoveryAttempts/$maxRecoveryAttempts)")
         browserState = null
         browserError = null
         retryCount = 0
         browserEngineGeneration = -1L
         retryTrigger++
+        return true
+    }
+
+    /**
+     * Reset recovery counter on successful browser initialization.
+     * Called when browser is successfully created.
+     */
+    private fun resetRecoveryCounter() {
+        if (recoveryAttempts > 0) {
+            println("✅ [FluckTabComponent] Browser recovered successfully for tab ${config.id}, resetting recovery counter")
+            recoveryAttempts = 0
+        }
     }
 
     // Method to be overridden by platform-specific classes
@@ -267,8 +294,9 @@ open class FluckTabComponent(
         LaunchedEffect(currentEngineGeneration) {
             if (browserEngineGeneration >= 0 && currentEngineGeneration > browserEngineGeneration) {
                 // Engine was reinitialized - our browser is stale
-                resetForRecovery("Engine generation changed from $browserEngineGeneration to $currentEngineGeneration")
-                localBrowserState = null
+                if (resetForRecovery("Engine generation changed from $browserEngineGeneration to $currentEngineGeneration")) {
+                    localBrowserState = null
+                }
             }
         }
 
@@ -302,9 +330,14 @@ open class FluckTabComponent(
                         onBrowserClosed = {
                             // Browser was closed - trigger recovery only if tab is not being disposed
                             // This prevents recovery when user intentionally closes the tab
+                            // Note: This callback runs on JxBrowser's thread, so we dispatch to Main
+                            // for thread-safe Compose state updates
                             if (!isDisposed) {
-                                resetForRecovery("Browser closed unexpectedly")
-                                localBrowserState = null
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    if (resetForRecovery("Browser closed unexpectedly")) {
+                                        localBrowserState = null
+                                    }
+                                }
                             } else {
                                 println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
                             }
@@ -322,8 +355,9 @@ open class FluckTabComponent(
                             println("✅ [BrowserRetry] Success on attempt ${retryCount + 1}/$maxRetries for tab ${config.id}")
                         }
 
-                        // Reset retry count on success
+                        // Reset retry count and recovery counter on success
                         retryCount = 0
+                        resetRecoveryCounter()
                     } else {
                         // State creation failed, increment retry and try again
                         retryCount++
@@ -373,8 +407,9 @@ open class FluckTabComponent(
                     localBrowserState = this@FluckTabComponent.browserState
                 } else {
                     // Browser became invalid while tab was inactive - trigger recovery
-                    resetForRecovery("Browser invalid on tab switch")
-                    localBrowserState = null
+                    if (resetForRecovery("Browser invalid on tab switch")) {
+                        localBrowserState = null
+                    }
                 }
             }
         }
@@ -465,11 +500,28 @@ open class FluckTabComponent(
                     // Browser exists but is invalid (Issue #351)
                     // Trigger immediate recovery
                     LaunchedEffect(Unit) {
-                        resetForRecovery("Browser invalid at render")
-                        localBrowserState = null
+                        if (resetForRecovery("Browser invalid at render")) {
+                            localBrowserState = null
+                        }
                     }
-                    // Show recovery message
-                    BrowserRecoveryView(url = initialUrl)
+                    // Show recovery message (or error if max attempts reached)
+                    if (browserError != null) {
+                        BrowserErrorView(
+                            error = browserError!!,
+                            url = initialUrl,
+                            retryCount = maxRecoveryAttempts,
+                            maxRetries = maxRecoveryAttempts,
+                            onReset = {
+                                // Allow user to reset and try again
+                                browserError = null
+                                recoveryAttempts = 0
+                                retryCount = 0
+                                retryTrigger++
+                            }
+                        )
+                    } else {
+                        BrowserRecoveryView(url = initialUrl)
+                    }
                 }
                 else -> {
                     // Loading state - initial browser initialization
