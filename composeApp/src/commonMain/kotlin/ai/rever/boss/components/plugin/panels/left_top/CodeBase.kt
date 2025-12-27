@@ -167,20 +167,17 @@ data class FileNode(
     )
 }
 
+@kotlinx.serialization.Serializable
 data class Project(
     val name: String,
     val path: String,
     val lastOpened: Long = 0L
 )
 
-// Global project state with LRU cache
+// Global project state with persistence
 object ProjectState {
     private const val MAX_RECENT_PROJECTS = 10
-
-    // Derive project name from path
-    private fun getProjectNameFromPath(path: String): String {
-        return path.trimEnd('/').substringAfterLast('/').ifEmpty { "Project" }
-    }
+    private const val RECENT_PROJECTS_FILE = "recent-projects.json"
 
     // Start with no project selected - user should choose
     private val _selectedProject = MutableStateFlow(
@@ -192,28 +189,67 @@ object ProjectState {
     )
     val selectedProject: StateFlow<Project> = _selectedProject.asStateFlow()
 
-    // Start with empty recent projects list
+    // Recent projects list - loaded from disk on init
     private val _recentProjects = MutableStateFlow<List<Project>>(emptyList())
     val recentProjects: StateFlow<List<Project>> = _recentProjects.asStateFlow()
-    
+
+    init {
+        // Load recent projects from disk on startup
+        loadRecentProjects()
+    }
+
     fun selectProject(project: Project) {
         _selectedProject.value = project
-        
+
         // Update recent projects list with LRU behavior
         val updated = _recentProjects.value.toMutableList()
-        
+
         // Remove if already exists
         updated.removeAll { it.path == project.path }
-        
+
         // Add to front - being at position 0 means most recently used
         updated.add(0, project)
-        
+
         // Keep only MAX_RECENT_PROJECTS
         while (updated.size > MAX_RECENT_PROJECTS) {
             updated.removeLast()
         }
-        
+
         _recentProjects.value = updated
+
+        // Save to disk
+        saveRecentProjects()
+    }
+
+    private fun getRecentProjectsFile(): java.io.File {
+        val userHome = System.getProperty("user.home")
+        val bossDir = java.io.File(userHome, ".boss")
+        if (!bossDir.exists()) bossDir.mkdirs()
+        return java.io.File(bossDir, RECENT_PROJECTS_FILE)
+    }
+
+    private fun loadRecentProjects() {
+        try {
+            val file = getRecentProjectsFile()
+            if (file.exists()) {
+                val json = file.readText()
+                val projects = kotlinx.serialization.json.Json.decodeFromString<List<Project>>(json)
+                _recentProjects.value = projects
+                println("Loaded ${projects.size} recent projects from disk")
+            }
+        } catch (e: Exception) {
+            println("Failed to load recent projects: ${e.message}")
+        }
+    }
+
+    private fun saveRecentProjects() {
+        try {
+            val file = getRecentProjectsFile()
+            val json = kotlinx.serialization.json.Json.encodeToString(_recentProjects.value)
+            file.writeText(json)
+        } catch (e: Exception) {
+            println("Failed to save recent projects: ${e.message}")
+        }
     }
 }
 
