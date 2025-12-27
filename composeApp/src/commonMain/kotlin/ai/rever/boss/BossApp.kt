@@ -1114,10 +1114,13 @@ fun ComponentContext.BossApp(
                     // Directly create and open terminal tab
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     activeTabsComponent?.let { component ->
+                        // Get current project path for terminal working directory
+                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
                         val terminalTab = TerminalTabInfo(
                             id = "terminal-${Random.nextLong()}",
                             typeId = TerminalTab.typeId,
-                            title = "Terminal"
+                            title = "Terminal",
+                            workingDirectory = projectPath.ifEmpty { null }
                         )
                         component.addTab(terminalTab)
                     }
@@ -1529,10 +1532,13 @@ fun ComponentContext.BossApp(
                                 targetComponent.addTab(tab)
                             }
                             TabType.TERMINAL -> {
+                                // Get current project path for terminal working directory
+                                val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
                                 val tab = TerminalTabInfo(
                                     id = "terminal-${Random.nextLong()}",
                                     typeId = TerminalTab.typeId,
-                                    title = "Terminal"
+                                    title = "Terminal",
+                                    workingDirectory = projectPath.ifEmpty { null }
                                 )
                                 targetComponent.addTab(tab)
                             }

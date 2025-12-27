@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
@@ -55,6 +56,7 @@ class TerminalComponent(
     @Composable
     override fun Content() {
         TabbedTerminalContent(
+            workingDirectory = ProjectState.selectedProject.value.path.ifEmpty { null },
             onExit = {
                 coroutineScope.launch {
                     PanelEventBus.closePanel(panelInfo.id)
@@ -75,11 +77,13 @@ class TerminalComponent(
  *
  * This is the full-featured terminal for the sidebar panel.
  *
+ * @param workingDirectory Optional working directory for the terminal (defaults to home directory)
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings (right-click menu)
  */
 @Composable
 expect fun TabbedTerminalContent(
+    workingDirectory: String? = null,
     onExit: () -> Unit = {},
     onShowSettings: () -> Unit = {}
 )
@@ -95,12 +99,14 @@ expect fun TabbedTerminalContent(
  *                   composition tree changes (e.g., when splitting panels). If null, state
  *                   is tied to composition position and may be lost on tree restructuring.
  * @param initialCommand Optional command to run after terminal starts
+ * @param workingDirectory Optional working directory for the terminal (defaults to home directory)
  * @param onExit Called when terminal process exits
  */
 @Composable
 expect fun TerminalContent(
     terminalId: String? = null,
     initialCommand: String? = null,
+    workingDirectory: String? = null,
     onExit: () -> Unit = {}
 )
 
@@ -114,6 +120,7 @@ expect fun TerminalContent(
  *
  * @param terminalId Unique ID for this terminal instance, used as key in state registry
  * @param initialCommand Optional command to run after terminal starts (only for new terminals)
+ * @param workingDirectory Optional working directory for the terminal (defaults to home directory)
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
@@ -122,6 +129,7 @@ expect fun TerminalContent(
 expect fun PersistentTabbedTerminalContent(
     terminalId: String,
     initialCommand: String? = null,
+    workingDirectory: String? = null,
     onExit: () -> Unit = {},
     onShowSettings: () -> Unit = {},
     onTitleChange: ((String) -> Unit)? = null

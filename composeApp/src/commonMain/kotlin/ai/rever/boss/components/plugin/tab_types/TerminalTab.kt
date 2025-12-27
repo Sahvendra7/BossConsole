@@ -26,7 +26,8 @@ data class TerminalTabInfo(
     override val title: String = "Terminal",
     override val icon: androidx.compose.ui.graphics.vector.ImageVector = TerminalTab.icon,
     override val tabIcon: TabIcon = TabIcon.Vector(icon),
-    val initialCommand: String? = null
+    val initialCommand: String? = null,
+    val workingDirectory: String? = null
 ) : TabInfo {
     companion object {
         /** Maximum length for terminal tab titles - fits typical "user@hostname:/path" patterns */
@@ -73,12 +74,15 @@ class TerminalTabComponent(
 
     @Composable
     override fun Content() {
-        // Get initial command from config if it's a TerminalTabInfo
-        val initialCommand = (config as? TerminalTabInfo)?.initialCommand
+        // Get initial command and working directory from config if it's a TerminalTabInfo
+        val terminalConfig = config as? TerminalTabInfo
+        val initialCommand = terminalConfig?.initialCommand
+        val workingDirectory = terminalConfig?.workingDirectory
 
         PersistentTabbedTerminalContent(
             terminalId = config.id,
             initialCommand = initialCommand,
+            workingDirectory = workingDirectory,
             onExit = { onClose() },
             onShowSettings = {
                 MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")
