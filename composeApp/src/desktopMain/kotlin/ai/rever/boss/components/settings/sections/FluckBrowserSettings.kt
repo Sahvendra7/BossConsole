@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -33,6 +34,8 @@ fun FluckBrowserSettings() {
     var userAgent by remember { mutableStateOf(BrowserSettings.userAgent ?: "Default") }
     var currentProfile by remember { mutableStateOf(BrowserSettings.currentProfile) }
     var customUserAgent by remember { mutableStateOf(BrowserSettings.customUserAgent ?: "") }
+    var maxInitRetries by remember { mutableStateOf(BrowserSettings.maxInitRetries) }
+    var maxRecoveryAttempts by remember { mutableStateOf(BrowserSettings.maxRecoveryAttempts) }
 
     val userAgents = listOf("Default", "Chrome", "Firefox", "Safari", "Edge", "Custom")
     var showRestartDialog by remember { mutableStateOf(false) }
@@ -128,8 +131,102 @@ fun FluckBrowserSettings() {
             currentProfile = currentProfile,
             onProfileChange = { currentProfile = it }
         )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Advanced Settings Section
+        SettingSection(
+            title = "Advanced",
+            description = "Configure browser retry and recovery behavior"
+        ) {
+            // Max Init Retries
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Max Initialization Retries",
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Number of attempts to initialize browser on startup",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { if (maxInitRetries > 1) maxInitRetries-- },
+                        enabled = maxInitRetries > 1
+                    ) {
+                        Text("-", fontSize = 20.sp, color = if (maxInitRetries > 1) Color.White else Color.Gray)
+                    }
+                    Text(
+                        text = maxInitRetries.toString(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        modifier = Modifier.width(40.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    IconButton(
+                        onClick = { if (maxInitRetries < 10) maxInitRetries++ },
+                        enabled = maxInitRetries < 10
+                    ) {
+                        Text("+", fontSize = 20.sp, color = if (maxInitRetries < 10) Color.White else Color.Gray)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Max Recovery Attempts
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Max Recovery Attempts",
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Number of attempts to recover when browser becomes invalid",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { if (maxRecoveryAttempts > 1) maxRecoveryAttempts-- },
+                        enabled = maxRecoveryAttempts > 1
+                    ) {
+                        Text("-", fontSize = 20.sp, color = if (maxRecoveryAttempts > 1) Color.White else Color.Gray)
+                    }
+                    Text(
+                        text = maxRecoveryAttempts.toString(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        modifier = Modifier.width(40.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    IconButton(
+                        onClick = { if (maxRecoveryAttempts < 10) maxRecoveryAttempts++ },
+                        enabled = maxRecoveryAttempts < 10
+                    ) {
+                        Text("+", fontSize = 20.sp, color = if (maxRecoveryAttempts < 10) Color.White else Color.Gray)
+                    }
+                }
+            }
+        }
     }
-    
+
     // Apply settings button
     Spacer(modifier = Modifier.height(32.dp))
     Row(
@@ -142,19 +239,22 @@ fun FluckBrowserSettings() {
                 val profileChanged = BrowserSettings.currentProfile != currentProfile
                 val userAgentChanged = BrowserSettings.userAgent != (if (userAgent == "Default") null else userAgent) ||
                     (userAgent == "Custom" && BrowserSettings.customUserAgent != customUserAgent)
-                
+
                 // Apply settings
                 BrowserSettings.currentProfile = currentProfile
                 BrowserSettings.userAgent = if (userAgent == "Default") null else userAgent
                 if (userAgent == "Custom") {
                     BrowserSettings.customUserAgent = customUserAgent
                 }
-                
+                // Apply retry/recovery settings (take effect immediately, no restart needed)
+                BrowserSettings.maxInitRetries = maxInitRetries
+                BrowserSettings.maxRecoveryAttempts = maxRecoveryAttempts
+
                 // Save settings
                 coroutineScope.launch {
                     BrowserSettingsManager.saveSettings()
                 }
-                
+
                 // Show restart dialog if significant changes were made
                 if (profileChanged || userAgentChanged) {
                     showRestartDialog = true

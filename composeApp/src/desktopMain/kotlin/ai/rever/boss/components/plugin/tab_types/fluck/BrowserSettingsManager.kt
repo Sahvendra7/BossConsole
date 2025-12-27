@@ -11,7 +11,10 @@ data class BrowserSettingsData(
     val userAgent: String? = null,
     val customUserAgent: String? = null,
     val currentProfile: String = "browser-profile",
-    val availableProfiles: List<String> = listOf("browser-profile")
+    val availableProfiles: List<String> = listOf("browser-profile"),
+    // Browser initialization retry settings
+    val maxInitRetries: Int = 3,
+    val maxRecoveryAttempts: Int = 3
 )
 
 object BrowserSettingsManager {
@@ -39,7 +42,10 @@ object BrowserSettingsManager {
                 BrowserSettings.userAgent = settings.userAgent
                 BrowserSettings.customUserAgent = settings.customUserAgent
                 BrowserSettings.currentProfile = settings.currentProfile
-                
+                // Validate retry/recovery settings to prevent invalid values from manual file editing
+                BrowserSettings.maxInitRetries = settings.maxInitRetries.coerceIn(1, 10)
+                BrowserSettings.maxRecoveryAttempts = settings.maxRecoveryAttempts.coerceIn(1, 10)
+
                 // Update available profiles if we have more
                 if (settings.availableProfiles.isNotEmpty()) {
                     BrowserSettings.availableProfiles.clear()
@@ -57,9 +63,11 @@ object BrowserSettingsManager {
                 userAgent = BrowserSettings.userAgent,
                 customUserAgent = BrowserSettings.customUserAgent,
                 currentProfile = BrowserSettings.currentProfile,
-                availableProfiles = BrowserSettings.availableProfiles.toList()
+                availableProfiles = BrowserSettings.availableProfiles.toList(),
+                maxInitRetries = BrowserSettings.maxInitRetries,
+                maxRecoveryAttempts = BrowserSettings.maxRecoveryAttempts
             )
-            
+
             val content = json.encodeToString(settings)
             settingsFile.writeText(content)
         } catch (e: Exception) {

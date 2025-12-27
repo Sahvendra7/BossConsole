@@ -122,6 +122,22 @@ expect suspend fun resetBrowserProfile(): Boolean
 // Browser tabs can use this to detect when their browser instance is stale
 expect fun getEngineGeneration(): Long
 
+// Platform-specific browser validity check - returns true if browser is still open and usable
+// Used to detect when underlying browser instance has been closed (e.g., engine shutdown)
+expect fun isBrowserValid(browser: Any?): Boolean
+
+// Platform-specific engine initialization error message
+// Returns user-friendly error message if engine failed to initialize (e.g., license validation, network error)
+expect fun getEngineInitError(): String?
+
+// Platform-specific engine initialization reset
+// Clears initialization error state to allow retry after fixing network issues
+expect fun resetEngineInitialization()
+
+// Platform-specific settings for browser retry/recovery limits (configurable via Settings)
+expect fun getMaxInitRetries(): Int
+expect fun getMaxRecoveryAttempts(): Int
+
 // Platform-specific composable to observe engine generation changes
 @Composable
 expect fun collectEngineGeneration(): Long
@@ -137,9 +153,12 @@ expect fun disposeBrowser(browser: Any)
 expect fun disposeBrowserViewState(browserViewState: Any)
 
 // Platform-specific browser state retrieval
+// onBrowserClosed is called when the browser is closed (e.g., engine shutdown)
+// This enables event-driven recovery instead of polling
 expect fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)? = null
+    onOpenInNewTab: ((String) -> Unit)? = null,
+    onBrowserClosed: (() -> Unit)? = null
 ): Pair<Any, Any>?
 
 // Platform-specific FluckTabComponent creation
@@ -194,8 +213,48 @@ open class FluckTabComponent(
 
     // Retry mechanism for browser initialization (Issue #162)
     private var retryCount = 0
-    private val maxRetries = 3
+    private val maxRetries: Int get() = getMaxInitRetries()  // Configurable via Settings
     private var retryTrigger by mutableStateOf(0)
+
+    // Recovery loop prevention - track consecutive recovery attempts
+    private var recoveryAttempts = 0
+    private val maxRecoveryAttempts: Int get() = getMaxRecoveryAttempts()  // Configurable via Settings
+
+    /**
+     * Resets browser state to trigger recovery/reinitialization.
+     * Call sites must also set localBrowserState = null separately since it's a local Compose state.
+     *
+     * @return true if recovery was triggered, false if max recovery attempts reached
+     */
+    private fun resetForRecovery(reason: String): Boolean {
+        recoveryAttempts++
+
+        // Prevent infinite recovery loops
+        if (recoveryAttempts > maxRecoveryAttempts) {
+            println("❌ [FluckTabComponent] Max recovery attempts ($maxRecoveryAttempts) reached for tab ${config.id}, giving up")
+            browserError = Exception("Browser recovery failed after $maxRecoveryAttempts attempts. Please close and reopen this tab.")
+            return false
+        }
+
+        println("🔄 [FluckTabComponent] $reason for tab ${config.id}, triggering recovery (attempt $recoveryAttempts/$maxRecoveryAttempts)")
+        browserState = null
+        browserError = null
+        retryCount = 0
+        browserEngineGeneration = -1L
+        retryTrigger++
+        return true
+    }
+
+    /**
+     * Reset recovery counter on successful browser initialization.
+     * Called when browser is successfully created.
+     */
+    private fun resetRecoveryCounter() {
+        if (recoveryAttempts > 0) {
+            println("✅ [FluckTabComponent] Browser recovered successfully for tab ${config.id}, resetting recovery counter")
+            recoveryAttempts = 0
+        }
+    }
 
     // Method to be overridden by platform-specific classes
     open fun reload() {
@@ -239,17 +298,9 @@ open class FluckTabComponent(
         LaunchedEffect(currentEngineGeneration) {
             if (browserEngineGeneration >= 0 && currentEngineGeneration > browserEngineGeneration) {
                 // Engine was reinitialized - our browser is stale
-                println("🔄 [FluckTabComponent] Engine generation changed from $browserEngineGeneration to $currentEngineGeneration, invalidating browser for tab ${config.id}")
-
-                // Invalidate browser state to trigger reload
-                this@FluckTabComponent.browserState = null
-                localBrowserState = null
-                browserError = null
-                retryCount = 0
-                browserEngineGeneration = -1L
-
-                // Trigger reinitialization
-                retryTrigger++
+                if (resetForRecovery("Engine generation changed from $browserEngineGeneration to $currentEngineGeneration")) {
+                    localBrowserState = null
+                }
             }
         }
 
@@ -274,9 +325,28 @@ open class FluckTabComponent(
 
                     kotlinx.coroutines.delay(delayMs)
 
-                    // Pass callback to configure popup handler
+                    // Pass callbacks to configure popup handler and browser close detection
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
-                    val state = getBrowserState(initialUrl, onOpenInNewTab)
+                    // onBrowserClosed triggers recovery when browser is closed (event-driven, no polling)
+                    val state = getBrowserState(
+                        url = initialUrl,
+                        onOpenInNewTab = onOpenInNewTab,
+                        onBrowserClosed = {
+                            // Browser was closed - trigger recovery only if tab is not being disposed
+                            // This prevents recovery when user intentionally closes the tab
+                            // Note: This callback runs on JxBrowser's thread, so we dispatch to Main
+                            // for thread-safe Compose state updates
+                            if (!isDisposed) {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    if (resetForRecovery("Browser closed unexpectedly")) {
+                                        localBrowserState = null
+                                    }
+                                }
+                            } else {
+                                println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
+                            }
+                        }
+                    )
 
                     if (state != null) {
                         this@FluckTabComponent.browserState = state
@@ -289,19 +359,31 @@ open class FluckTabComponent(
                             println("✅ [BrowserRetry] Success on attempt ${retryCount + 1}/$maxRetries for tab ${config.id}")
                         }
 
-                        // Reset retry count on success
+                        // Reset retry count and recovery counter on success
                         retryCount = 0
+                        resetRecoveryCounter()
                     } else {
                         // State creation failed, increment retry and try again
                         retryCount++
-                        println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+
+                        // Check if there's a known engine initialization error
+                        val engineError = getEngineInitError()
+                        if (engineError != null) {
+                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: $engineError")
+                        } else {
+                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+                        }
 
                         if (retryCount < maxRetries) {
                             // Trigger retry by incrementing retryTrigger
                             retryTrigger++
                         } else {
-                            // Max retries reached
-                            browserError = Exception("Could not initialize browser after $maxRetries attempts - window not ready")
+                            // Max retries reached - use engine error if available for better feedback
+                            browserError = if (engineError != null) {
+                                Exception(engineError)
+                            } else {
+                                Exception("Could not initialize browser after $maxRetries attempts - window not ready")
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -312,18 +394,35 @@ open class FluckTabComponent(
                         // Trigger retry by incrementing retryTrigger
                         retryTrigger++
                     } else {
-                        // Max retries reached
-                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${e.message}")
-                        browserError = e
+                        // Max retries reached - check for engine error first
+                        val engineError = getEngineInitError()
+                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${engineError ?: e.message}")
+                        browserError = if (engineError != null) {
+                            Exception(engineError)
+                        } else {
+                            e
+                        }
                     }
                 }
             } else if (this@FluckTabComponent.browserState != null) {
-                // Browser already exists (tab switch), use it
-                localBrowserState = this@FluckTabComponent.browserState
+                // Browser already exists (tab switch), verify it's still valid before using
+                val existingBrowser = this@FluckTabComponent.browserState?.first
+                if (existingBrowser != null && isBrowserValid(existingBrowser)) {
+                    localBrowserState = this@FluckTabComponent.browserState
+                } else {
+                    // Browser became invalid while tab was inactive - trigger recovery
+                    if (resetForRecovery("Browser invalid on tab switch")) {
+                        localBrowserState = null
+                    }
+                }
             }
         }
 
         if (!isDisposed) {
+            // Capture localBrowserState in a local val to prevent race conditions
+            // This ensures thread-safe access - the value won't change during the when block
+            val currentBrowserState = localBrowserState
+
             when {
                 browserError != null -> {
                     // Show error message instead of browser with retry/reset options (Issue #162)
@@ -357,12 +456,22 @@ open class FluckTabComponent(
                                     retryTrigger++
                                 }
                             }
+                        },
+                        onRetryEngine = {
+                            // Reset engine initialization state to allow fresh retry (network error recovery)
+                            // This clears the failed initialization flag so engine can attempt to start again
+                            resetEngineInitialization()
+                            browserError = null
+                            retryCount = 0
+                            this@FluckTabComponent.browserState = null
+                            retryTrigger++
                         }
                     )
                 }
-                localBrowserState != null -> {
-                    val browser = localBrowserState!!.first
-                    val browserViewState = localBrowserState!!.second
+                currentBrowserState != null && isBrowserValid(currentBrowserState.first) -> {
+                    val browser = currentBrowserState.first
+                    val browserViewState = currentBrowserState.second
+
                     // Wrap FluckView in key() to ensure proper state isolation per browser instance
                     // This prevents URL bar state from being shared across tabs (fixes #151)
                     key(browser) {
@@ -395,19 +504,56 @@ open class FluckTabComponent(
                         )
                     }
                 }
+                currentBrowserState != null && !isBrowserValid(currentBrowserState.first) -> {
+                    // Browser exists but is invalid (Issue #351)
+                    // Trigger immediate recovery
+                    LaunchedEffect(Unit) {
+                        if (resetForRecovery("Browser invalid at render")) {
+                            localBrowserState = null
+                        }
+                    }
+                    // Show recovery message (or error if max attempts reached)
+                    if (browserError != null) {
+                        BrowserErrorView(
+                            error = browserError!!,
+                            url = initialUrl,
+                            retryCount = maxRecoveryAttempts,
+                            maxRetries = maxRecoveryAttempts,
+                            onReset = {
+                                // Allow user to reset and try again
+                                browserError = null
+                                recoveryAttempts = 0
+                                retryCount = 0
+                                retryTrigger++
+                            }
+                        )
+                    } else {
+                        BrowserRecoveryView(url = initialUrl)
+                    }
+                }
                 else -> {
-                    // Loading state
+                    // Loading state - initial browser initialization
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Loading browser...",
+                                fontSize = 14.sp,
+                                color = Color(0xFFCCCCCC)
+                            )
+                        }
                     }
                 }
             }
         }
     }
-    
+
     fun dispose() {
         // Use compareAndSet for atomic thread-safe disposal flag update
         if (isDisposedAtomic.compareAndSet(false, true)) {
@@ -446,8 +592,19 @@ fun BrowserErrorView(
     maxRetries: Int = 3,
     onRetry: (() -> Unit)? = null,
     onReset: (() -> Unit)? = null,
-    onResetBrowser: (() -> Unit)? = null
+    onResetBrowser: (() -> Unit)? = null,
+    onRetryEngine: (() -> Unit)? = null
 ) {
+    // Detect if this is a network/license validation error
+    val errorMessage = error.message?.lowercase() ?: ""
+    val isNetworkError = errorMessage.contains("license") ||
+            errorMessage.contains("validation") ||
+            errorMessage.contains("network") ||
+            errorMessage.contains("connect") ||
+            errorMessage.contains("internet") ||
+            errorMessage.contains("timeout") ||
+            errorMessage.contains("unreachable")
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -466,14 +623,14 @@ fun BrowserErrorView(
                 Icon(
                     imageVector = Icons.Outlined.Warning,
                     contentDescription = "Error",
-                    tint = Color(0xFFFF6B6B),
+                    tint = if (isNetworkError) Color(0xFFFFB347) else Color(0xFFFF6B6B),
                     modifier = Modifier.size(48.dp)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Browser Not Available",
+                    text = if (isNetworkError) "Connection Required" else "Browser Not Available",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -481,11 +638,31 @@ fun BrowserErrorView(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text(
-                    text = "Unable to initialize the web browser component.",
-                    fontSize = 14.sp,
-                    color = Color(0xFFCCCCCC)
-                )
+                // Show prominent network message for connection errors
+                if (isNetworkError) {
+                    Text(
+                        text = "Please check your internet connection",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFFFB347),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "The browser requires an internet connection for license validation.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFCCCCCC),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = "Unable to initialize the web browser component.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFCCCCCC)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -501,7 +678,8 @@ fun BrowserErrorView(
                     text = "Error: ${error.message ?: error.toString()}",
                     fontSize = 12.sp,
                     color = Color(0xFF999999),
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    textAlign = TextAlign.Center
                 )
 
                 // Show retry progress if retries were attempted
@@ -517,8 +695,30 @@ fun BrowserErrorView(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Show appropriate button based on retry status
-                if (retryCount < maxRetries && onRetry != null) {
+                // For network errors, show a prominent "Try Again" button that resets engine state
+                if (isNetworkError && onRetryEngine != null) {
+                    Button(
+                        onClick = onRetryEngine,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4A90E2))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Try Again",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Try Again")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Ensure you have an active internet connection, then try again",
+                        fontSize = 11.sp,
+                        color = Color(0xFF888888),
+                        textAlign = TextAlign.Center
+                    )
+                } else if (retryCount < maxRetries && onRetry != null) {
                     // Still have retries left - show Retry button
                     Button(
                         onClick = onRetry,
@@ -593,6 +793,63 @@ fun BrowserErrorView(
                         color = Color(0xFFCCCCCC)
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * View shown when browser becomes invalid and is being recovered.
+ * Shows a friendly message while the browser reinitializes.
+ */
+@Composable
+fun BrowserRecoveryView(url: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = 4.dp,
+            backgroundColor = Color(0xFF2B2D30)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = Color(0xFF4A90E2)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Reconnecting Browser",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "The browser connection was lost. Reinitializing...",
+                    fontSize = 14.sp,
+                    color = Color(0xFFCCCCCC),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = url,
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

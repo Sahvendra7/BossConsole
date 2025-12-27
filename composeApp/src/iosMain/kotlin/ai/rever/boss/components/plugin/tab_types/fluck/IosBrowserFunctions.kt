@@ -22,7 +22,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 
 actual fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)?
+    onOpenInNewTab: ((String) -> Unit)?,
+    onBrowserClosed: (() -> Unit)?
 ): Pair<Any, Any>? {
     // iOS doesn't support browser state preservation yet
     return null
@@ -41,6 +42,24 @@ actual fun getEngineGeneration(): Long {
     // iOS doesn't use JxBrowser - always return 0
     return 0L
 }
+
+actual fun isBrowserValid(browser: Any?): Boolean {
+    // iOS doesn't use JxBrowser - always return true for non-null
+    return browser != null
+}
+
+actual fun getEngineInitError(): String? {
+    // iOS doesn't use JxBrowser
+    return null
+}
+
+actual fun resetEngineInitialization() {
+    // No-op for iOS
+}
+
+actual fun getMaxInitRetries(): Int = 3  // Default value
+
+actual fun getMaxRecoveryAttempts(): Int = 3  // Default value
 
 @Composable
 actual fun collectEngineGeneration(): Long {

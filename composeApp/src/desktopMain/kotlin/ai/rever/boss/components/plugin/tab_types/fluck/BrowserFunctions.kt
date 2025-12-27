@@ -29,6 +29,10 @@ object BrowserSettings {
     var customUserAgent: String? = null
     var currentProfile: String = "browser-profile"
     val availableProfiles = mutableListOf("browser-profile")
+
+    // Browser initialization retry settings (configurable via Settings)
+    var maxInitRetries: Int = 3
+    var maxRecoveryAttempts: Int = 3
 }
 
 /**
@@ -281,7 +285,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 
 actual fun getBrowserState(
     url: String,
-    onOpenInNewTab: ((String) -> Unit)?
+    onOpenInNewTab: ((String) -> Unit)?,
+    onBrowserClosed: (() -> Unit)?
 ): Pair<Any, Any>? {
     return try {
         // Verify engine is available before creating browser
@@ -298,6 +303,15 @@ actual fun getBrowserState(
         if (browser.isClosed) {
             println("⚠️ getBrowserState: Browser was closed immediately after creation")
             return null
+        }
+
+        // Subscribe to BrowserClosed event for event-driven recovery (Issue #351)
+        // This replaces polling - we get notified immediately when browser closes
+        if (onBrowserClosed != null) {
+            browser.on(BrowserClosed::class.java) {
+                println("🔔 [BrowserFunctions] BrowserClosed event fired")
+                onBrowserClosed()
+            }
         }
 
         // Configure popup handler BEFORE creating view state
@@ -345,6 +359,56 @@ actual fun getBrowserState(
  * Increments every time the FluckEngine is reinitialized.
  */
 actual fun getEngineGeneration(): Long = FluckEngine.currentEngineGeneration
+
+/**
+ * Checks if a browser instance is still valid and usable.
+ * Returns false if browser is null, closed, or its engine is closed.
+ */
+actual fun isBrowserValid(browser: Any?): Boolean {
+    if (browser == null) return false
+    val jxBrowser = browser as? Browser ?: return false
+    return try {
+        // Check if browser is closed
+        !jxBrowser.isClosed
+    } catch (e: Exception) {
+        // Any exception means browser is in bad state
+        println("⚠️ isBrowserValid: Exception checking browser state: ${e.message}")
+        false
+    }
+}
+
+/**
+ * Returns user-friendly error message if engine initialization failed.
+ * Useful for showing specific feedback about license validation or network errors.
+ */
+actual fun getEngineInitError(): String? {
+    return FluckEngine.initError?.let { error ->
+        when (error) {
+            is EngineInitError.LicenseValidation -> error.message
+            is EngineInitError.NetworkError -> error.message
+            is EngineInitError.Other -> error.message
+        }
+    }
+}
+
+/**
+ * Resets engine initialization state to allow retry after fixing network issues.
+ */
+actual fun resetEngineInitialization() {
+    FluckEngine.resetInitializationState()
+}
+
+/**
+ * Get max initialization retries from settings.
+ * Configurable via Settings > Browser > Advanced.
+ */
+actual fun getMaxInitRetries(): Int = BrowserSettings.maxInitRetries
+
+/**
+ * Get max recovery attempts from settings.
+ * Configurable via Settings > Browser > Advanced.
+ */
+actual fun getMaxRecoveryAttempts(): Int = BrowserSettings.maxRecoveryAttempts
 
 /**
  * Composable function to observe engine generation changes.

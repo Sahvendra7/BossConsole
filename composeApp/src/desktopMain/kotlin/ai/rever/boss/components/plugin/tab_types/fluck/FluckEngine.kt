@@ -24,6 +24,15 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.*
 
+/**
+ * Classification of engine initialization errors for better user feedback.
+ */
+sealed class EngineInitError {
+    data class LicenseValidation(val message: String) : EngineInitError()
+    data class NetworkError(val message: String) : EngineInitError()
+    data class Other(val message: String, val cause: Throwable?) : EngineInitError()
+}
+
 // Singleton engine for all browser tabs
 object FluckEngine {
     private var _engine: Engine? = null
@@ -49,6 +58,52 @@ object FluckEngine {
      */
     val currentEngineGeneration: Long
         get() = _engineGeneration
+
+    /**
+     * Classified initialization error for better user feedback.
+     * Returns null if no error or engine initialized successfully.
+     */
+    val initError: EngineInitError?
+        get() = initializationError?.let { classifyError(it) }
+
+    /**
+     * Classify the initialization error for user-friendly messages.
+     */
+    private fun classifyError(e: Throwable): EngineInitError {
+        val msg = e.message?.lowercase() ?: ""
+        val fullStackTrace = e.stackTraceToString().lowercase()
+
+        return when {
+            // License validation errors (usually network-related)
+            msg.contains("license") || msg.contains("validation") ||
+            fullStackTrace.contains("licensecheck") || fullStackTrace.contains("license") ->
+                EngineInitError.LicenseValidation(
+                    "License validation failed. Please check your internet connection."
+                )
+            // Network/connection errors
+            msg.contains("network") || msg.contains("connect") ||
+            msg.contains("timeout") || msg.contains("unreachable") ||
+            msg.contains("socket") || msg.contains("host") ||
+            e is java.net.UnknownHostException || e is java.net.ConnectException ||
+            e is java.net.SocketTimeoutException ->
+                EngineInitError.NetworkError(
+                    "Network error. Please check your internet connection and try again."
+                )
+            // Other errors
+            else -> EngineInitError.Other(
+                e.message ?: "Unknown error occurred",
+                e
+            )
+        }
+    }
+
+    /**
+     * Reset initialization state to allow retry after fixing network issues.
+     */
+    fun resetInitializationState() {
+        initializationError = null
+        attemptCount = 0
+    }
 
     /**
      * Proactively clean up stale lock files and zombie processes on app startup.
