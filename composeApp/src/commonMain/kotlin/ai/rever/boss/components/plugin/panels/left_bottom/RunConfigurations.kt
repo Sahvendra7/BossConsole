@@ -434,7 +434,7 @@ private fun RunConfigurationItem(
                 Icons.Outlined.PlayArrow,
                 contentDescription = "Run",
                 modifier = Modifier
-                    .size(18.dp)
+                    .size(24.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .clickable { onRun() }
                     .padding(2.dp),
