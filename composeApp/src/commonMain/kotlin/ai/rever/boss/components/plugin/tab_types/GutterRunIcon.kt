@@ -14,7 +14,7 @@ import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PlayArrow
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.PlayCircle
+import compose.icons.feathericons.Play
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,7 +52,7 @@ fun GutterRunIcon(
     }
 
     Icon(
-        imageVector = FeatherIcons.PlayCircle,
+        imageVector = FeatherIcons.Play,
         contentDescription = "Run ${detected.functionName}",
         tint = iconColor,
         modifier = modifier
