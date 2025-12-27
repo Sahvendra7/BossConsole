@@ -6,8 +6,10 @@ import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -31,6 +33,10 @@ import kotlinx.coroutines.launch
 class UserSecretListViewModel {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Job tracking to prevent race conditions and request cancellations (Issue #352)
+    private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     // State
     var state by mutableStateOf(UserSecretListState())
@@ -59,8 +65,14 @@ class UserSecretListViewModel {
 
     /**
      * Load all accessible secrets (owned + shared)
+     *
+     * Race condition fix (Issue #352): Cancels in-flight requests before starting new one
      */
     fun loadSecrets() {
+        // Cancel any in-flight load or pagination requests
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+
         state = state.copy(
             isLoading = true,
             errorMessage = null,
@@ -69,7 +81,7 @@ class UserSecretListViewModel {
             hasMore = true
         )
 
-        scope.launch {
+        loadJob = scope.launch {
             val result = SecretService.getUserSecretsWithSharingInfo(limit = state.pageSize, offset = 0)
 
             result.onSuccess { paginatedResult ->
@@ -83,6 +95,12 @@ class UserSecretListViewModel {
                 )
                 println("✅ Loaded ${secrets.size} secrets successfully (hasMore: ${paginatedResult.hasMore})")
             }.onFailure { exception ->
+                // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
+                if (exception is CancellationException) {
+                    println("⏸️  [UserSecretListVM] Load cancelled (new request started)")
+                    return@onFailure
+                }
+
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
@@ -95,6 +113,8 @@ class UserSecretListViewModel {
 
     /**
      * Load more secrets (pagination)
+     *
+     * Race condition fix (Issue #352): Tracks job to prevent overlapping requests
      */
     fun loadMoreSecrets() {
         // Don't load if already loading or no more data or in search mode
@@ -102,9 +122,12 @@ class UserSecretListViewModel {
             return
         }
 
+        // Cancel previous pagination request if still in flight
+        loadMoreJob?.cancel()
+
         state = state.copy(isLoadingMore = true)
 
-        scope.launch {
+        loadMoreJob = scope.launch {
             val result = SecretService.getUserSecretsWithSharingInfo(
                 limit = state.pageSize,
                 offset = state.currentOffset
@@ -122,6 +145,12 @@ class UserSecretListViewModel {
                 )
                 println("✅ Loaded ${newSecrets.size} more secrets (total: ${allSecrets.size}, hasMore: ${paginatedResult.hasMore})")
             }.onFailure { exception ->
+                // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
+                if (exception is CancellationException) {
+                    println("⏸️  [UserSecretListVM] Pagination cancelled (new request started)")
+                    return@onFailure
+                }
+
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,

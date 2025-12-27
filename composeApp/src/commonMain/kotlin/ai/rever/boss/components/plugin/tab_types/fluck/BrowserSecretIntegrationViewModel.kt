@@ -6,8 +6,10 @@ import ai.rever.boss.utils.WebsiteMatchingUtil
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -39,6 +41,9 @@ class BrowserSecretIntegrationViewModel {
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    // Job tracking to prevent race conditions and request cancellations (Issue #352)
+    private var loadJob: Job? = null
+
     /**
      * Initialize and load all secrets for the user.
      *
@@ -46,9 +51,7 @@ class BrowserSecretIntegrationViewModel {
      * Also starts observing secret change events for automatic synchronization.
      */
     fun initialize() {
-        coroutineScope.launch {
-            loadAllSecrets()
-        }
+        loadAllSecrets()
 
         // Observe secret change events for automatic synchronization
         coroutineScope.launch {
@@ -69,11 +72,16 @@ class BrowserSecretIntegrationViewModel {
 
     /**
      * Load all secrets from SecretService.
+     *
+     * Race condition fix (Issue #352): Cancels in-flight requests before starting new one
      */
-    private suspend fun loadAllSecrets() {
+    private fun loadAllSecrets() {
+        // Cancel any in-flight load request
+        loadJob?.cancel()
+
         state = state.copy(isLoadingSecrets = true)
 
-        try {
+        loadJob = coroutineScope.launch {
             val result = SecretService.getUserSecretsWithShared(limit = 1000, offset = 0)
 
             result.fold(
@@ -90,16 +98,17 @@ class BrowserSecretIntegrationViewModel {
                     }
                 },
                 onFailure = { error ->
+                    // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
+                    if (error is CancellationException) {
+                        println("⏸️  [BrowserSecretVM] Load cancelled (new request started)")
+                        return@launch
+                    }
+
                     state = state.copy(
                         isLoadingSecrets = false,
                         error = "Failed to load secrets: ${error.message}"
                     )
                 }
-            )
-        } catch (e: Exception) {
-            state = state.copy(
-                isLoadingSecrets = false,
-                error = "Exception loading secrets: ${e.message}"
             )
         }
     }
