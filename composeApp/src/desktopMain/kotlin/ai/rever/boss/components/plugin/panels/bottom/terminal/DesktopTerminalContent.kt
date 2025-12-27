@@ -76,12 +76,6 @@ actual fun PersistentTabbedTerminalContent(
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // Build effective initial command with working directory
-    // For new terminals, prepend 'cd' to the working directory if specified
-    val effectiveInitialCommand = if (isNew) {
-        buildInitialCommand(workingDirectory, initialCommand)
-    } else null
-
     DisposableEffect(terminalId) {
         onDispose {
             // Don't remove from registry here - cleanup happens when tab is closed
@@ -94,8 +88,9 @@ actual fun PersistentTabbedTerminalContent(
     ) {
         TabbedTerminal(
             state = state,
-            // Only send initial command for newly created terminals
-            initialCommand = effectiveInitialCommand,
+            // Only send initial command and working directory for newly created terminals
+            initialCommand = if (isNew) initialCommand else null,
+            workingDirectory = if (isNew) workingDirectory else null,
             onExit = {
                 TabbedTerminalStateRegistry.remove(terminalId)
                 onExit()
@@ -105,28 +100,6 @@ actual fun PersistentTabbedTerminalContent(
             onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
         )
-    }
-}
-
-/**
- * Builds the initial command to run in the terminal.
- * If workingDirectory is specified, prepends 'cd' command to change to that directory.
- *
- * @param workingDirectory Directory to start the terminal in
- * @param initialCommand Optional command to run after changing directory
- * @return Combined command string, or null if both are null
- */
-private fun buildInitialCommand(workingDirectory: String?, initialCommand: String?): String? {
-    return when {
-        workingDirectory != null && initialCommand != null -> {
-            // Change to directory and then run the command
-            "cd \"$workingDirectory\" && $initialCommand"
-        }
-        workingDirectory != null -> {
-            // Just change to the directory
-            "cd \"$workingDirectory\""
-        }
-        else -> initialCommand
     }
 }
 
