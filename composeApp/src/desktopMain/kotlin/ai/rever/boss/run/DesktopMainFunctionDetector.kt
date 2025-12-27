@@ -310,7 +310,9 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     }
 
     override fun generateCommand(detected: DetectedMainFunction, projectPath: String): String {
-        val projectDir = File(projectPath)
+        // Find the actual project root by walking up from the file's directory
+        val fileDir = File(detected.filePath).parentFile
+        val projectDir = findProjectRoot(fileDir) ?: File(projectPath)
 
         return when (detected.language) {
             Language.KOTLIN -> generateKotlinCommand(detected, projectDir)
@@ -322,6 +324,45 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
             Language.RUST -> generateRustCommand(detected, projectDir)
             Language.UNKNOWN -> "echo 'Unknown language'"
         }
+    }
+
+    /**
+     * Find the project root by walking up the directory tree looking for project markers.
+     * Markers: gradlew, build.gradle.kts, pom.xml, Cargo.toml, package.json, .git
+     */
+    private fun findProjectRoot(startDir: File?): File? {
+        var current = startDir
+        while (current != null && current.exists()) {
+            // Check for Gradle project (prioritize this)
+            if (File(current, "gradlew").exists() || File(current, "gradlew.bat").exists()) {
+                return current
+            }
+            // Check for standalone Gradle build file
+            if (File(current, "build.gradle.kts").exists() || File(current, "build.gradle").exists()) {
+                // Only use this if no gradlew found above - might be a submodule
+                if (current.parentFile?.let { findProjectRoot(it) } == null) {
+                    return current
+                }
+            }
+            // Check for Maven project
+            if (File(current, "pom.xml").exists()) {
+                return current
+            }
+            // Check for Cargo project
+            if (File(current, "Cargo.toml").exists()) {
+                return current
+            }
+            // Check for Node.js project
+            if (File(current, "package.json").exists()) {
+                return current
+            }
+            // Check for Git root (last resort)
+            if (File(current, ".git").exists()) {
+                return current
+            }
+            current = current.parentFile
+        }
+        return null
     }
 
     private fun generateKotlinCommand(detected: DetectedMainFunction, projectDir: File): String {
