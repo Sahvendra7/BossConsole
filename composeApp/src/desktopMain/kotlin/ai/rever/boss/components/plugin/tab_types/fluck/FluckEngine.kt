@@ -75,11 +75,18 @@ object FluckEngine {
                         val command = process.info().command().orElse("")
                         val commandLine = process.info().commandLine().orElse("")
 
-                        // Security: Check if this is specifically a Chromium process from our JxBrowser
-                        // Use explicit full paths to avoid false positives with other .boss directories
-                        val isJxBrowserChromium = command.contains(bossChromiumDir) ||
+                        // Security: First verify it's actually a Chromium/Chrome executable
+                        val isChromiumExecutable = command.contains("chrome", ignoreCase = true) ||
+                                command.contains("chromium", ignoreCase = true) ||
+                                command.contains("jxbrowser", ignoreCase = true)
+
+                        // Security: Then check if it's from our JxBrowser installation
+                        // Use explicit full paths to avoid false positives
+                        val isFromBossDir = command.contains(bossChromiumDir) ||
                                 commandLine.contains(bossChromiumDir) ||
                                 commandLine.contains(bossProfileDir)
+
+                        val isJxBrowserChromium = isChromiumExecutable && isFromBossDir
 
                         // Don't kill processes that belong to current BOSS instance
                         val parentPid = process.parent().map { it.pid() }.orElse(-1L)
