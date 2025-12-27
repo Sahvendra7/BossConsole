@@ -15,6 +15,9 @@ import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.awt.Toolkit
 import java.nio.file.Files
@@ -27,6 +30,25 @@ object FluckEngine {
     private var initializationError: Throwable? = null
     private var attemptCount = 0
     private var proactiveCleanupDone = false
+
+    /**
+     * Engine generation counter - increments every time the engine is reinitialized.
+     * Browser tabs can use this to detect when their browser instance is stale.
+     */
+    private var _engineGeneration = 0L
+    private val _engineGenerationFlow = MutableStateFlow(0L)
+
+    /**
+     * Observable flow of engine generation changes.
+     * Browser tabs should collect this and invalidate/reload when generation changes.
+     */
+    val engineGenerationFlow: StateFlow<Long> = _engineGenerationFlow.asStateFlow()
+
+    /**
+     * Current engine generation. Browsers created before this generation are stale.
+     */
+    val currentEngineGeneration: Long
+        get() = _engineGeneration
 
     /**
      * Proactively clean up stale lock files and zombie processes on app startup.
@@ -324,6 +346,10 @@ object FluckEngine {
                 _engine = null
                 initializationError = null
                 attemptCount = 0
+                // Increment generation to notify browser tabs that they need to reload
+                _engineGeneration++
+                _engineGenerationFlow.value = _engineGeneration
+                println("🔄 FluckEngine: Engine generation incremented to $_engineGeneration")
             }
 
             // Throw cached error if initialization failed before and we've tried too many times
@@ -882,6 +908,10 @@ object FluckEngine {
             _engine = null
             initializationError = null
             attemptCount = 0
+            // Increment generation to notify browser tabs that they need to reload
+            _engineGeneration++
+            _engineGenerationFlow.value = _engineGeneration
+            println("🔄 FluckEngine: Engine generation incremented to $_engineGeneration (reset)")
 
             // Step 3: Kill any stale Chromium processes
             val userHome = System.getProperty("user.home")

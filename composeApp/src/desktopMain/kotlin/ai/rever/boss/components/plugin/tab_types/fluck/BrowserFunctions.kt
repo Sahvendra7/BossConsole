@@ -1,5 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.event.Subscription
@@ -335,5 +338,21 @@ actual fun getBrowserState(
         println("   Details: ${e.message}")
         null
     }
+}
+
+/**
+ * Returns the current engine generation counter.
+ * Increments every time the FluckEngine is reinitialized.
+ */
+actual fun getEngineGeneration(): Long = FluckEngine.currentEngineGeneration
+
+/**
+ * Composable function to observe engine generation changes.
+ * Returns the current generation and triggers recomposition when it changes.
+ */
+@Composable
+actual fun collectEngineGeneration(): Long {
+    val generation by FluckEngine.engineGenerationFlow.collectAsState()
+    return generation
 }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import androidx.compose.runtime.Composable
+
 actual fun createBrowser(): Any {
     // iOS doesn't use JxBrowser - return dummy object
     return Any()
@@ -33,4 +35,15 @@ actual fun releaseBrowserState(url: String) {
 actual suspend fun resetBrowserProfile(): Boolean {
     // No-op for iOS - return true as no reset needed
     return true
+}
+
+actual fun getEngineGeneration(): Long {
+    // iOS doesn't use JxBrowser - always return 0
+    return 0L
+}
+
+@Composable
+actual fun collectEngineGeneration(): Long {
+    // iOS doesn't use JxBrowser - always return 0
+    return 0L
 }

@@ -118,6 +118,14 @@ expect fun createBrowser(): Any
 // This is a suspend function to avoid blocking the UI thread during I/O operations
 expect suspend fun resetBrowserProfile(): Boolean
 
+// Platform-specific engine generation - increments when engine reinitializes
+// Browser tabs can use this to detect when their browser instance is stale
+expect fun getEngineGeneration(): Long
+
+// Platform-specific composable to observe engine generation changes
+@Composable
+expect fun collectEngineGeneration(): Long
+
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
 expect fun createBrowserViewState(browser: Any): Any?
@@ -167,6 +175,10 @@ open class FluckTabComponent(
     val browser: Any? get() = browserState?.first
     val browserViewState: Any? get() = browserState?.second
 
+    // Track which engine generation this browser was created with (Issue #351)
+    // When engine reinitializes, this becomes stale and browser needs reload
+    private var browserEngineGeneration: Long = -1L
+
     // Thread-safe disposal flag using AtomicBoolean to prevent race conditions
     // between UI thread checks and IO thread disposal
     private val isDisposedAtomic = AtomicBoolean(false)
@@ -213,10 +225,32 @@ open class FluckTabComponent(
         // Coroutine scope for async operations (like browser reset)
         val scope = rememberCoroutineScope()
 
+        // Observe engine generation changes (Issue #351)
+        // When engine reinitializes, existing browsers become stale
+        val currentEngineGeneration = collectEngineGeneration()
+
         // Local Compose state to trigger recomposition when browser is ready
         // Initialized from class-level browserState which persists across tab switches
         var localBrowserState by remember(config.id) {
             mutableStateOf(this@FluckTabComponent.browserState)
+        }
+
+        // Detect engine reinitialization and invalidate stale browser (Issue #351)
+        LaunchedEffect(currentEngineGeneration) {
+            if (browserEngineGeneration >= 0 && currentEngineGeneration > browserEngineGeneration) {
+                // Engine was reinitialized - our browser is stale
+                println("🔄 [FluckTabComponent] Engine generation changed from $browserEngineGeneration to $currentEngineGeneration, invalidating browser for tab ${config.id}")
+
+                // Invalidate browser state to trigger reload
+                this@FluckTabComponent.browserState = null
+                localBrowserState = null
+                browserError = null
+                retryCount = 0
+                browserEngineGeneration = -1L
+
+                // Trigger reinitialization
+                retryTrigger++
+            }
         }
 
         // Initialize browser only once - check class-level browserState
@@ -247,6 +281,9 @@ open class FluckTabComponent(
                     if (state != null) {
                         this@FluckTabComponent.browserState = state
                         localBrowserState = state  // Update local state to trigger recomposition
+
+                        // Track which engine generation this browser was created with (Issue #351)
+                        browserEngineGeneration = getEngineGeneration()
 
                         if (retryCount > 0) {
                             println("✅ [BrowserRetry] Success on attempt ${retryCount + 1}/$maxRetries for tab ${config.id}")
