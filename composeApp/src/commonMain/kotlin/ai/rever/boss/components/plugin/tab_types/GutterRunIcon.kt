@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,8 +61,11 @@ fun GutterRunIcon(
 
     Box(
         modifier = modifier
-            .size(24.dp)
-            .background(backgroundColor, RoundedCornerShape(4.dp))
+            .size(22.dp)
+            .background(
+                color = if (isHovered) Color(0xFF4CAF50) else Color(0xFF2E7D32),
+                shape = RoundedCornerShape(6.dp)
+            )
             .hoverable(interactionSource)
             .clickable { onRun(detected) }
             .onPointerEvent(PointerEventType.Press) { event ->
@@ -74,10 +77,10 @@ fun GutterRunIcon(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Outlined.PlayArrow,
+            imageVector = Icons.Filled.PlayArrow,
             contentDescription = "Run ${detected.functionName}",
-            tint = iconColor,
-            modifier = Modifier.size(22.dp)
+            tint = Color.White,
+            modifier = Modifier.size(14.dp)
         )
     }
 
@@ -143,5 +146,5 @@ private fun GutterRunContextMenu(
  */
 @Composable
 fun GutterRunIconSpacer(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(24.dp))
+    Box(modifier = modifier.size(22.dp))
 }
