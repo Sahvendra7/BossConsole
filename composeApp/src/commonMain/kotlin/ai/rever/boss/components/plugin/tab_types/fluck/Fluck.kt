@@ -126,6 +126,14 @@ expect fun getEngineGeneration(): Long
 // Used to detect when underlying browser instance has been closed (e.g., engine shutdown)
 expect fun isBrowserValid(browser: Any?): Boolean
 
+// Platform-specific engine initialization error message
+// Returns user-friendly error message if engine failed to initialize (e.g., license validation, network error)
+expect fun getEngineInitError(): String?
+
+// Platform-specific engine initialization reset
+// Clears initialization error state to allow retry after fixing network issues
+expect fun resetEngineInitialization()
+
 // Platform-specific composable to observe engine generation changes
 @Composable
 expect fun collectEngineGeneration(): Long
@@ -320,14 +328,25 @@ open class FluckTabComponent(
                     } else {
                         // State creation failed, increment retry and try again
                         retryCount++
-                        println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+
+                        // Check if there's a known engine initialization error
+                        val engineError = getEngineInitError()
+                        if (engineError != null) {
+                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: $engineError")
+                        } else {
+                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+                        }
 
                         if (retryCount < maxRetries) {
                             // Trigger retry by incrementing retryTrigger
                             retryTrigger++
                         } else {
-                            // Max retries reached
-                            browserError = Exception("Could not initialize browser after $maxRetries attempts - window not ready")
+                            // Max retries reached - use engine error if available for better feedback
+                            browserError = if (engineError != null) {
+                                Exception(engineError)
+                            } else {
+                                Exception("Could not initialize browser after $maxRetries attempts - window not ready")
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -338,9 +357,14 @@ open class FluckTabComponent(
                         // Trigger retry by incrementing retryTrigger
                         retryTrigger++
                     } else {
-                        // Max retries reached
-                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${e.message}")
-                        browserError = e
+                        // Max retries reached - check for engine error first
+                        val engineError = getEngineInitError()
+                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${engineError ?: e.message}")
+                        browserError = if (engineError != null) {
+                            Exception(engineError)
+                        } else {
+                            e
+                        }
                     }
                 }
             } else if (this@FluckTabComponent.browserState != null) {
@@ -395,6 +419,15 @@ open class FluckTabComponent(
                                     retryTrigger++
                                 }
                             }
+                        },
+                        onRetryEngine = {
+                            // Reset engine initialization state to allow fresh retry (network error recovery)
+                            // This clears the failed initialization flag so engine can attempt to start again
+                            resetEngineInitialization()
+                            browserError = null
+                            retryCount = 0
+                            this@FluckTabComponent.browserState = null
+                            retryTrigger++
                         }
                     )
                 }
@@ -510,8 +543,19 @@ fun BrowserErrorView(
     maxRetries: Int = 3,
     onRetry: (() -> Unit)? = null,
     onReset: (() -> Unit)? = null,
-    onResetBrowser: (() -> Unit)? = null
+    onResetBrowser: (() -> Unit)? = null,
+    onRetryEngine: (() -> Unit)? = null
 ) {
+    // Detect if this is a network/license validation error
+    val errorMessage = error.message?.lowercase() ?: ""
+    val isNetworkError = errorMessage.contains("license") ||
+            errorMessage.contains("validation") ||
+            errorMessage.contains("network") ||
+            errorMessage.contains("connect") ||
+            errorMessage.contains("internet") ||
+            errorMessage.contains("timeout") ||
+            errorMessage.contains("unreachable")
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -530,14 +574,14 @@ fun BrowserErrorView(
                 Icon(
                     imageVector = Icons.Outlined.Warning,
                     contentDescription = "Error",
-                    tint = Color(0xFFFF6B6B),
+                    tint = if (isNetworkError) Color(0xFFFFB347) else Color(0xFFFF6B6B),
                     modifier = Modifier.size(48.dp)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Browser Not Available",
+                    text = if (isNetworkError) "Connection Required" else "Browser Not Available",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -545,11 +589,31 @@ fun BrowserErrorView(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text(
-                    text = "Unable to initialize the web browser component.",
-                    fontSize = 14.sp,
-                    color = Color(0xFFCCCCCC)
-                )
+                // Show prominent network message for connection errors
+                if (isNetworkError) {
+                    Text(
+                        text = "Please check your internet connection",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFFFB347),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "The browser requires an internet connection for license validation.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFCCCCCC),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = "Unable to initialize the web browser component.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFCCCCCC)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -565,7 +629,8 @@ fun BrowserErrorView(
                     text = "Error: ${error.message ?: error.toString()}",
                     fontSize = 12.sp,
                     color = Color(0xFF999999),
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    textAlign = TextAlign.Center
                 )
 
                 // Show retry progress if retries were attempted
@@ -581,8 +646,30 @@ fun BrowserErrorView(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Show appropriate button based on retry status
-                if (retryCount < maxRetries && onRetry != null) {
+                // For network errors, show a prominent "Try Again" button that resets engine state
+                if (isNetworkError && onRetryEngine != null) {
+                    Button(
+                        onClick = onRetryEngine,
+                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4A90E2))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Try Again",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Try Again")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Ensure you have an active internet connection, then try again",
+                        fontSize = 11.sp,
+                        color = Color(0xFF888888),
+                        textAlign = TextAlign.Center
+                    )
+                } else if (retryCount < maxRetries && onRetry != null) {
                     // Still have retries left - show Retry button
                     Button(
                         onClick = onRetry,

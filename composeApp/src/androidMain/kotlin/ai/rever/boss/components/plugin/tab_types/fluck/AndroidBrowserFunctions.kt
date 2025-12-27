@@ -48,6 +48,15 @@ actual fun isBrowserValid(browser: Any?): Boolean {
     return browser != null
 }
 
+actual fun getEngineInitError(): String? {
+    // Android doesn't use JxBrowser
+    return null
+}
+
+actual fun resetEngineInitialization() {
+    // No-op for Android
+}
+
 @Composable
 actual fun collectEngineGeneration(): Long {
     // Android doesn't use JxBrowser - always return 0

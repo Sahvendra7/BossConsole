@@ -48,6 +48,15 @@ actual fun isBrowserValid(browser: Any?): Boolean {
     return browser != null
 }
 
+actual fun getEngineInitError(): String? {
+    // iOS doesn't use JxBrowser
+    return null
+}
+
+actual fun resetEngineInitialization() {
+    // No-op for iOS
+}
+
 @Composable
 actual fun collectEngineGeneration(): Long {
     // iOS doesn't use JxBrowser - always return 0

@@ -374,6 +374,27 @@ actual fun isBrowserValid(browser: Any?): Boolean {
 }
 
 /**
+ * Returns user-friendly error message if engine initialization failed.
+ * Useful for showing specific feedback about license validation or network errors.
+ */
+actual fun getEngineInitError(): String? {
+    return FluckEngine.initError?.let { error ->
+        when (error) {
+            is EngineInitError.LicenseValidation -> error.message
+            is EngineInitError.NetworkError -> error.message
+            is EngineInitError.Other -> error.message
+        }
+    }
+}
+
+/**
+ * Resets engine initialization state to allow retry after fixing network issues.
+ */
+actual fun resetEngineInitialization() {
+    FluckEngine.resetInitializationState()
+}
+
+/**
  * Composable function to observe engine generation changes.
  * Returns the current generation and triggers recomposition when it changes.
  */

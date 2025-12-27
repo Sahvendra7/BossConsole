@@ -48,6 +48,15 @@ actual fun isBrowserValid(browser: Any?): Boolean {
     return browser != null
 }
 
+actual fun getEngineInitError(): String? {
+    // WASM doesn't use JxBrowser
+    return null
+}
+
+actual fun resetEngineInitialization() {
+    // No-op for WASM
+}
+
 @Composable
 actual fun collectEngineGeneration(): Long {
     // WASM doesn't use JxBrowser - always return 0
