@@ -325,17 +325,89 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     }
 
     private fun generateKotlinCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Use kotlin command to run the specific file directly
-        // This works for .kt files with main functions and .kts scripts
-        // Note: Won't work for files with project dependencies - use Gradle for that
-        return "kotlin \"${detected.filePath}\""
+        val filePath = detected.filePath
+
+        // For .kts scripts, use kotlinc -script
+        if (filePath.endsWith(".kts")) {
+            return "kotlinc -script \"$filePath\""
+        }
+
+        // For Gradle projects, use ./gradlew :moduleName:run
+        if (hasGradleWrapper(projectDir)) {
+            val moduleName = detectModuleName(filePath, projectDir)
+            if (moduleName != null) {
+                return "./gradlew :$moduleName:run"
+            }
+            // Root project run task as fallback
+            return "./gradlew run"
+        }
+
+        // Fallback: compile and run with kotlinc (for simple standalone files)
+        val jarName = File(filePath).nameWithoutExtension
+        return "kotlinc \"$filePath\" -include-runtime -d \"/tmp/$jarName.jar\" && java -jar \"/tmp/$jarName.jar\""
     }
 
     private fun generateJavaCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Java 11+ supports single-file source-code execution
-        // This runs the file directly without explicit compilation
-        // Note: Won't work for files with project dependencies - use Gradle for that
-        return "java \"${detected.filePath}\""
+        val filePath = detected.filePath
+
+        // For Gradle projects, use ./gradlew :moduleName:run
+        if (hasGradleWrapper(projectDir)) {
+            val moduleName = detectModuleName(filePath, projectDir)
+            if (moduleName != null) {
+                return "./gradlew :$moduleName:run"
+            }
+            // Root project run task as fallback
+            return "./gradlew run"
+        }
+
+        // For Maven projects, use mvn exec:java
+        if (File(projectDir, "pom.xml").exists()) {
+            val className = buildClassName(detected)
+            return "mvn exec:java -Dexec.mainClass=\"$className\""
+        }
+
+        // Fallback: Java 11+ single-file source-code execution
+        return "java \"$filePath\""
+    }
+
+    /**
+     * Detect the Gradle module name from the file path.
+     * Looks for common patterns like /moduleName/src/main/... or /moduleName/src/...Main/...
+     */
+    private fun detectModuleName(filePath: String, projectDir: File): String? {
+        val projectPath = projectDir.absolutePath
+        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
+
+        // Pattern: moduleName/src/...
+        val parts = relativePath.split("/")
+        if (parts.size >= 2 && parts[1] == "src") {
+            val potentialModule = parts[0]
+            // Verify it's a valid module by checking for build.gradle(.kts)
+            val moduleDir = File(projectDir, potentialModule)
+            if (moduleDir.isDirectory &&
+                (File(moduleDir, "build.gradle.kts").exists() || File(moduleDir, "build.gradle").exists())) {
+                return potentialModule
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Build the fully qualified class name from detected function info.
+     */
+    private fun buildClassName(detected: DetectedMainFunction): String {
+        return when {
+            detected.packageName != null && detected.className != null ->
+                "${detected.packageName}.${detected.className}"
+            detected.className != null -> detected.className
+            else -> "Main"
+        }
+    }
+
+    private fun hasGradleWrapper(projectDir: File): Boolean {
+        return File(projectDir, "gradlew").exists() ||
+               File(projectDir, "gradlew.bat").exists()
     }
 
     private fun generatePythonCommand(detected: DetectedMainFunction): String {
@@ -355,11 +427,42 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     }
 
     private fun generateRustCommand(detected: DetectedMainFunction, projectDir: File): String {
-        // Compile and run the specific Rust file
-        // Note: Won't work for files with crate dependencies - use Cargo for that
         val filePath = detected.filePath
+
+        // For Cargo projects, use cargo run
+        if (File(projectDir, "Cargo.toml").exists()) {
+            // Check if it's in a workspace member
+            val moduleName = detectCargoModule(filePath, projectDir)
+            if (moduleName != null) {
+                return "cargo run -p $moduleName"
+            }
+            return "cargo run"
+        }
+
+        // Fallback: Compile and run the specific Rust file directly
         val outputName = File(filePath).nameWithoutExtension
-        return "rustc \"$filePath\" -o \"$outputName\" && ./\"$outputName\""
+        return "rustc \"$filePath\" -o \"/tmp/$outputName\" && /tmp/\"$outputName\""
+    }
+
+    /**
+     * Detect Cargo workspace member name from file path.
+     */
+    private fun detectCargoModule(filePath: String, projectDir: File): String? {
+        val projectPath = projectDir.absolutePath
+        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
+
+        // Pattern: crate-name/src/...
+        val parts = relativePath.split("/")
+        if (parts.size >= 2 && parts[1] == "src") {
+            val potentialCrate = parts[0]
+            // Verify it's a valid crate by checking for Cargo.toml
+            val crateDir = File(projectDir, potentialCrate)
+            if (crateDir.isDirectory && File(crateDir, "Cargo.toml").exists()) {
+                return potentialCrate
+            }
+        }
+
+        return null
     }
 
 }
