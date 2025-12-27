@@ -8,27 +8,33 @@ actual fun scanDirectory(path: String): FileNode? {
         name = path.substringAfterLast('/'),
         path = path,
         isDirectory = true,
-        children = mutableListOf(
+        children = listOf(
             FileNode(
                 name = "index.html",
                 path = "$path/index.html",
-                isDirectory = false
+                isDirectory = false,
+                hasChildren = false,
+                loadingState = NodeLoadingState.LOADED
             ),
             FileNode(
                 name = "js",
                 path = "$path/js",
                 isDirectory = true,
-                children = mutableListOf(
+                children = listOf(
                     FileNode(
                         name = "app.js",
                         path = "$path/js/app.js",
-                        isDirectory = false
+                        isDirectory = false,
+                        hasChildren = false,
+                        loadingState = NodeLoadingState.LOADED
                     )
                 ),
-                isLoaded = true
+                hasChildren = true,
+                loadingState = NodeLoadingState.LOADED
             )
         ),
-        isLoaded = true
+        hasChildren = true,
+        loadingState = NodeLoadingState.LOADED
     )
 }
 
@@ -36,4 +42,12 @@ actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDept
     // Browser doesn't have direct file system access
     // Return the same mock data
     return scanDirectory(path)
+}
+
+/**
+ * Wasm mock implementation - always returns true for directories
+ */
+actual fun directoryHasChildren(path: String): Boolean {
+    // Mock - assume directories have children
+    return true
 }

@@ -3,7 +3,12 @@ package ai.rever.boss.components.bars.horizontal
 import BossDarkTextSecondary
 import BossDarkBorder
 import ai.rever.boss.components.buttons.BossActionButton
+import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.performance.PerformanceState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
@@ -164,5 +169,15 @@ fun BossRightBottomBar() {
     }
 
     BossActionButton(text = "UTF-8", color = BossDarkTextSecondary, onClick = {})
-    BossActionButton(imageVector = Icons.Outlined.Info, text = "Info", color = BossDarkTextSecondary, onClick = {})
+    BossActionButton(
+        imageVector = Icons.Outlined.Info,
+        text = "Console",
+        color = BossDarkTextSecondary,
+        onClick = {
+            // Open Console panel (PanelId "console" with order 14)
+            CoroutineScope(Dispatchers.Main).launch {
+                PanelEventBus.openPanel(PanelId("console", 14))
+            }
+        }
+    )
 }

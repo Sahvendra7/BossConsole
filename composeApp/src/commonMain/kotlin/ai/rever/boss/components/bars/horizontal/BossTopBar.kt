@@ -27,13 +27,14 @@ import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.windows.SettingsWindow
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.workspaces.WorkspaceButton
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import kotlinx.coroutines.launch
 
 
 @Composable
@@ -64,10 +65,9 @@ fun BossDraggableComponent.BossTopBar(
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
             BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind)
             Spacer(modifier = Modifier.weight(1f))
-            // TODO: #91 - Implement run/debug controls
-            // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/91
-            // BossTopRunBar()
-            // Spacer(modifier = Modifier.weight(0.1f))
+            // Run/debug controls (Issue #91 / #321)
+            BossTopRunBar()
+            Spacer(modifier = Modifier.weight(0.1f))
             BossTopRightBar(onShowSettings = onShowSettings)
         }
     }
@@ -122,17 +122,20 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
     showProjectDialog: () -> Unit
 ): List<ContextMenuItem> {
     val recentProjects by ProjectState.recentProjects.collectAsState()
-    
+    val scope = rememberCoroutineScope()
+
     return buildList {
         // Recent projects
         addAll(recentProjects.map { project ->
             ContextMenuItem(
                 text = project.name,
                 icon = Icons.Outlined.Folder,
-                onClick = { 
+                onClick = {
                     ProjectState.selectProject(project)
-                    // Show CodeBase panel when project is selected
-                    setPanelVisible(left.top, true)
+                    // Show CodeBase panel when project is selected via event bus
+                    scope.launch {
+                        PanelEventBus.openPanel(CodeBaseInfo.id)
+                    }
                 }
             )
         })
@@ -168,13 +171,14 @@ fun BossDraggableComponent.BossTopLeftBar(
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     
     BossActionButtonWithLogo(
-        text = selectedProject.name, 
+        text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
             showProjectDialog = { showProjectDialog = true }
         ),
-        hintText = "Current Project: ${selectedProject.path}"
+        hintText = if (selectedProject.path.isEmpty()) "Click to open a project" else "Current Project: ${selectedProject.path}"
     )
     // TODO: #90 - Implement Git integration
     // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
@@ -205,8 +209,10 @@ fun BossDraggableComponent.BossTopLeftBar(
                     path = it
                 )
             )
-            // Show CodeBase panel when project is selected
-            setPanelVisible(left.top, true)
+            // Show CodeBase panel when project is selected via event bus
+            scope.launch {
+                PanelEventBus.openPanel(CodeBaseInfo.id)
+            }
             // Close the dialog after selection
             showProjectDialog = false
         }

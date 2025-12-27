@@ -5,7 +5,7 @@ import java.io.File
 actual fun scanDirectory(path: String): FileNode? {
     val file = File(path)
     if (!file.exists()) return null
-    
+
     // Initial scan is shallow - only immediate children
     return scanFileRecursively(file, maxDepth = 1)
 }
@@ -13,45 +13,74 @@ actual fun scanDirectory(path: String): FileNode? {
 actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode? {
     val file = File(path)
     if (!file.exists()) return null
-    
+
     return scanFileRecursively(file, currentDepth = startDepth, maxDepth = maxDepth)
+}
+
+/**
+ * IntelliJ's isAlwaysShowPlus() pattern implementation.
+ * Quick check if a directory has any visible children without loading them all.
+ * This is O(1) - just checks if directory has any files, much faster than full scan.
+ */
+actual fun directoryHasChildren(path: String): Boolean {
+    val file = File(path)
+    if (!file.exists() || !file.isDirectory) return false
+
+    // Quick check - just see if there are any visible files
+    val children = file.listFiles() ?: return false
+    return children.any { child ->
+        // Apply same filter as scanFileRecursively
+        !child.name.startsWith(".") &&
+        child.name != "build" &&
+        child.name != "node_modules"
+    }
 }
 
 private fun scanFileRecursively(file: File, currentDepth: Int = 0, maxDepth: Int = 5): FileNode {
     val isDirectory = file.isDirectory
     val shouldLoadChildren = isDirectory && currentDepth < maxDepth
-    
-    val children = if (shouldLoadChildren) {
+
+    val children: List<FileNode> = if (shouldLoadChildren) {
         file.listFiles()
             ?.filter { !it.name.startsWith(".") && it.name != "build" && it.name != "node_modules" }
             ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
             ?.map { childFile ->
                 // For directories at the edge of our scan depth, just create a placeholder
                 if (childFile.isDirectory && currentDepth + 1 >= maxDepth) {
+                    // Quick check if this directory has children (isAlwaysShowPlus pattern)
+                    val hasKids = directoryHasChildren(childFile.absolutePath)
                     FileNode(
                         name = childFile.name,
                         path = childFile.absolutePath,
                         isDirectory = true,
-                        children = mutableListOf(),
-                        isLoaded = false,
+                        children = emptyList(),
+                        hasChildren = hasKids,
+                        loadingState = NodeLoadingState.UNKNOWN,
                         loadDepth = currentDepth + 1
                     )
                 } else {
                     scanFileRecursively(childFile, currentDepth + 1, maxDepth)
                 }
             }
-            ?.toMutableList()
-            ?: mutableListOf()
+            ?: emptyList()
     } else {
-        mutableListOf()
+        emptyList()
     }
-    
+
+    // Determine loading state
+    val loadingState = when {
+        !isDirectory -> NodeLoadingState.LOADED
+        currentDepth >= maxDepth - 1 -> NodeLoadingState.UNKNOWN
+        else -> NodeLoadingState.LOADED
+    }
+
     return FileNode(
         name = file.name,
         path = file.absolutePath,
         isDirectory = isDirectory,
         children = children,
-        isLoaded = !isDirectory || currentDepth >= maxDepth - 1,
+        hasChildren = if (isDirectory) children.isNotEmpty() || directoryHasChildren(file.absolutePath) else false,
+        loadingState = loadingState,
         loadDepth = currentDepth
     )
 }

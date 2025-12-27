@@ -7,10 +7,13 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
+import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitOrientation
 import kotlin.random.Random
+import kotlin.time.Clock
 
 /**
  * Applies a layout workspace to the split view
@@ -21,16 +24,28 @@ suspend fun applyWorkspace(
 ) {
     // Generate ID if missing
     val workspaceId = workspace.id.ifEmpty { LayoutWorkspace.generateId() }
-    
+
+    // Restore project if workspace has one
+    workspace.projectPath?.let { path ->
+        if (path.isNotEmpty()) {
+            val projectName = path.trimEnd('/').substringAfterLast('/').ifEmpty { "Project" }
+            ProjectState.selectProject(Project(
+                name = projectName,
+                path = path,
+                lastOpened = Clock.System.now().toEpochMilliseconds()
+            ))
+        }
+    }
+
     // Try to restore preserved state first
     if (splitViewState.restorePreservedState(workspaceId)) {
         // State restored successfully
         return
     }
-    
+
     // No preserved state, apply workspace from scratch
     splitViewState.clearAllPanels()
-    
+
     // Apply the workspace recursively
     applyWorkspaceNode(workspace.layout, splitViewState, "main")
 }

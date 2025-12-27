@@ -110,6 +110,14 @@ fun main(args: Array<String>) {
 
     println("Successfully acquired single-instance lock. Starting BOSS...")
 
+    // Proactively clean up stale JxBrowser lock files from previous sessions
+    // This is especially important for debug mode where shutdown hooks may not run
+    try {
+        ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.proactiveCleanupOnStartup()
+    } catch (e: Exception) {
+        println("Warning: Proactive browser lock cleanup failed: ${e.message}")
+    }
+
     // Parse CLI arguments if provided
     if (args.isNotEmpty()) {
         try {

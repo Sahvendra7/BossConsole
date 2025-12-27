@@ -5,6 +5,7 @@ import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import kotlin.time.Clock
 
 /**
@@ -16,12 +17,14 @@ fun extractCurrentWorkspace(
     description: String = "Current layout workspace"
 ): LayoutWorkspace {
     val layout = extractSplitConfig(splitViewState.rootNode)
+    val currentProject = ProjectState.selectedProject.value
     return LayoutWorkspace(
         id = LayoutWorkspace.generateId(),
         name = name,
         description = description,
         layout = layout,
-        timestamp = Clock.System.now().toEpochMilliseconds()
+        timestamp = Clock.System.now().toEpochMilliseconds(),
+        projectPath = currentProject.path.ifEmpty { null }
     )
 }
 
