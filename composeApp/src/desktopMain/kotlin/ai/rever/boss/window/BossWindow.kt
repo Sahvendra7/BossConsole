@@ -12,13 +12,16 @@ import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
+import ai.rever.boss.updater.UpdateManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.res.painterResource
@@ -137,6 +140,9 @@ fun ApplicationScope.BossWindow(
         val registeredPlugins = remember(registeredPluginsVersion) {
             panelRegistry.getAllPanels()
         }
+
+        // Coroutine scope for menu actions (like checking for updates)
+        val menuScope = rememberCoroutineScope()
 
         // Listen for panel registry changes to update the menu
         DisposableEffect(panelRegistry) {
@@ -425,6 +431,18 @@ fun ApplicationScope.BossWindow(
                         )
                     }
                 }
+            }
+
+            // Help Menu
+            Menu("Help") {
+                Item(
+                    "Check for Updates...",
+                    onClick = {
+                        menuScope.launch {
+                            UpdateManager.instance.checkForUpdates()
+                        }
+                    }
+                )
             }
         }
 
