@@ -58,8 +58,10 @@ actual fun TerminalContent(
 @Composable
 actual fun PersistentTabbedTerminalContent(
     terminalId: String,
+    initialCommand: String?,
     onExit: () -> Unit,
-    onShowSettings: () -> Unit
+    onShowSettings: () -> Unit,
+    onTitleChange: ((String) -> Unit)?
 ) {
     Box(
         modifier = Modifier
