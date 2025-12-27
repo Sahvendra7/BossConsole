@@ -58,6 +58,11 @@ object PerformanceMonitor {
     private const val MAX_HISTORY_SIZE = 10_000
 
     // Use ArrayDeque as a circular buffer for efficient history management
+    // Memory implications: Each PerformanceSnapshot is ~200-300 bytes, so 10K entries ≈ 2-3 MB
+    // The historyBuffer is the source of truth; _history StateFlow is updated every 10 seconds
+    // to avoid excessive allocations. Each StateFlow update creates an immutable list copy.
+    // For UI charts that need real-time data, use currentSnapshot instead of history.
+    // For historical analysis, consider paginating history access or using historyBuffer directly.
     private val historyBuffer = ArrayDeque<PerformanceSnapshot>(MAX_HISTORY_SIZE)
     private val _history = MutableStateFlow<List<PerformanceSnapshot>>(emptyList())
     val history: StateFlow<List<PerformanceSnapshot>> = _history.asStateFlow()

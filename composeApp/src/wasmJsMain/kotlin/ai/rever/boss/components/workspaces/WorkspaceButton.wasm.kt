@@ -11,6 +11,6 @@ actual fun openWorkspaceDirectory(path: String) {
     try {
         window.alert("Workspaces are stored in browser localStorage.\nPrefix: $path")
     } catch (e: Exception) {
-        e.printStackTrace()
+        println("Error showing workspace info: ${e.message}")
     }
 }

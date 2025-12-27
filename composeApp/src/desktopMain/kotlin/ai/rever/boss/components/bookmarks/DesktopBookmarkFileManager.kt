@@ -31,7 +31,7 @@ actual class BookmarkFileManager {
             }
             dir.exists() && dir.isDirectory
         } catch (e: Exception) {
-            e.printStackTrace()
+            println("Error ensuring bookmarks directory: ${e.message}")
             false
         }
     }
@@ -56,7 +56,7 @@ actual class BookmarkFileManager {
 
                 true
             } catch (e: Exception) {
-                e.printStackTrace()
+                println("Error saving collections: ${e.message}")
                 false
             }
         }
@@ -78,7 +78,7 @@ actual class BookmarkFileManager {
                 val json = file.readText()
                 BookmarkSerializer.deserializeCollections(json)
             } catch (e: Exception) {
-                e.printStackTrace()
+                println("Error loading collections: ${e.message}")
                 emptyList()
             }
         }
@@ -103,7 +103,7 @@ actual class BookmarkFileManager {
 
                 true
             } catch (e: Exception) {
-                e.printStackTrace()
+                println("Error saving favorite workspaces: ${e.message}")
                 false
             }
         }
@@ -125,7 +125,7 @@ actual class BookmarkFileManager {
                 val json = file.readText()
                 BookmarkSerializer.deserializeFavoriteWorkspaces(json)
             } catch (e: Exception) {
-                e.printStackTrace()
+                println("Error loading favorite workspaces: ${e.message}")
                 emptyList()
             }
         }

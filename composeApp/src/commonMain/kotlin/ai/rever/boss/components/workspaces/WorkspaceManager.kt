@@ -61,7 +61,7 @@ class WorkspaceManager {
                 }
             } catch (e: Exception) {
                 // Log error but continue with predefined workspaces
-                e.printStackTrace()
+                println("Error loading workspaces: ${e.message}")
             }
 
             _workspaces.value = allWorkspaces

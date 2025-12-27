@@ -171,7 +171,6 @@ actual object URLHandlerService {
             }
         } catch (e: Exception) {
             println("URLHandlerService: Error handling URL: ${e.message}")
-            e.printStackTrace()
             // Only decrement if THIS specific invocation actually incremented
             // This prevents decrementing other threads' counts in multi-threaded scenarios
             if (incremented) {

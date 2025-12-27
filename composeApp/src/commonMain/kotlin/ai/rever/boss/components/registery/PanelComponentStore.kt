@@ -82,7 +82,6 @@ class PanelComponentStore(
             return true
         } catch (e: Exception) {
             println("❌ [PanelComponentStore] Error resetting panel ${panelId.panelId}: ${e.message}")
-            e.printStackTrace()
             return false
         }
     }

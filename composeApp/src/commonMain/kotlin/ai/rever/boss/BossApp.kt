@@ -748,7 +748,6 @@ fun ComponentContext.BossApp(
                     }
                 } catch (e: Exception) {
                     println("BossApp: Error loading workspace: ${e.message}")
-                    e.printStackTrace()
                 }
             }
             .launchIn(this)
@@ -804,7 +803,6 @@ fun ComponentContext.BossApp(
                     }
                 } catch (e: Exception) {
                     println("BossApp: Error opening panel: ${e.message}")
-                    e.printStackTrace()
                 }
             }
             .launchIn(this)
