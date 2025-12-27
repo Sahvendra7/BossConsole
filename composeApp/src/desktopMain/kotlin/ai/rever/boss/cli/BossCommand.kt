@@ -22,7 +22,7 @@ import java.net.URLEncoder
  *   boss terminal -c <command>      # Opens terminal with command
  */
 class BossCommand : NoOpCliktCommand(name = "boss") {
-    override fun help(context: Context) = "BOSS Console - Business Operating System Service"
+    override fun help(context: Context) = "BOSS Console - Business Operating System + Simulation"
 }
 
 /**
