@@ -217,7 +217,9 @@ fun CodeEditorUI(
 private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
     try {
         val detector = MainFunctionDetectorProvider.get()
-        val command = detector.generateCommand(detected, projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') })
+        // Find the actual project root for the working directory
+        val actualProjectRoot = detector.findProjectRoot(detected.filePath)
+        val command = detector.generateCommand(detected, actualProjectRoot)
 
         val config = RunConfiguration(
             id = UUID.randomUUID().toString(),
@@ -227,7 +229,7 @@ private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, 
             lineNumber = detected.lineNumber,
             language = detected.language,
             command = command,
-            workingDirectory = projectPath.ifEmpty { detected.filePath.substringBeforeLast('/') },
+            workingDirectory = actualProjectRoot,
             isAutoDetected = true
         )
 

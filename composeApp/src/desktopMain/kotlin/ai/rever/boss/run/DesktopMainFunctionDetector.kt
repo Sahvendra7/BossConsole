@@ -312,7 +312,7 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     override fun generateCommand(detected: DetectedMainFunction, projectPath: String): String {
         // Find the actual project root by walking up from the file's directory
         val fileDir = File(detected.filePath).parentFile
-        val projectDir = findProjectRoot(fileDir) ?: File(projectPath)
+        val projectDir = findProjectRootInternal(fileDir) ?: File(projectPath)
 
         return when (detected.language) {
             Language.KOTLIN -> generateKotlinCommand(detected, projectDir)
@@ -327,10 +327,18 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
     }
 
     /**
+     * Public interface implementation - finds project root from a file path.
+     */
+    override fun findProjectRoot(filePath: String): String {
+        val fileDir = File(filePath).parentFile
+        return findProjectRootInternal(fileDir)?.absolutePath ?: fileDir?.absolutePath ?: filePath
+    }
+
+    /**
      * Find the project root by walking up the directory tree looking for project markers.
      * Markers: gradlew, build.gradle.kts, pom.xml, Cargo.toml, package.json, .git
      */
-    private fun findProjectRoot(startDir: File?): File? {
+    private fun findProjectRootInternal(startDir: File?): File? {
         var current = startDir
         while (current != null && current.exists()) {
             // Check for Gradle project (prioritize this)
@@ -340,7 +348,7 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
             // Check for standalone Gradle build file
             if (File(current, "build.gradle.kts").exists() || File(current, "build.gradle").exists()) {
                 // Only use this if no gradlew found above - might be a submodule
-                if (current.parentFile?.let { findProjectRoot(it) } == null) {
+                if (current.parentFile?.let { findProjectRootInternal(it) } == null) {
                     return current
                 }
             }

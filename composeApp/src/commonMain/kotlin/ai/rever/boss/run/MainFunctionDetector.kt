@@ -35,6 +35,13 @@ interface MainFunctionDetector {
         detected: DetectedMainFunction,
         projectPath: String
     ): String
+
+    /**
+     * Finds the project root directory from a file path by looking for project markers.
+     * @param filePath The path to a file in the project
+     * @return The project root path, or the file's parent directory if not found
+     */
+    fun findProjectRoot(filePath: String): String
 }
 
 /**
