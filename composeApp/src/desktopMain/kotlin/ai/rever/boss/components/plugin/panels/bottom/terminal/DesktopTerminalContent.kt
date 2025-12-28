@@ -6,6 +6,7 @@ import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
 import ai.rever.bossterm.compose.TabbedTerminalState
+import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.bossterm.compose.rememberEmbeddableTerminalState
 import ai.rever.bossterm.compose.settings.SettingsManager
 import ai.rever.bossterm.compose.settings.TerminalSettings
@@ -138,6 +139,15 @@ actual fun TabbedTerminalContent(
                 onExit = {
                     TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
                     onExit()
+                },
+                onTabClose = { tabId ->
+                    // When a tab is closed in sidebar terminal, check if it's a runner config
+                    // and clean up the runner state for just that config
+                    val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(tabId)
+                    if (configId != null) {
+                        RunnerTerminalService.removeConfig(configId)
+                        TabbedTerminalStateRegistry.removeSidebarConfigTracking(configId)
+                    }
                 },
                 onShowSettings = onShowSettings,
                 onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
@@ -387,6 +397,14 @@ object TabbedTerminalStateRegistry {
      */
     fun removeSidebarConfigTracking(configId: String) {
         sidebarConfigToTabId.remove(configId)
+    }
+
+    /**
+     * Get the config ID for a sidebar tab ID (reverse lookup).
+     * Returns the configId if found, null otherwise.
+     */
+    fun getConfigIdForSidebarTab(tabId: String): String? {
+        return sidebarConfigToTabId.entries.find { it.value == tabId }?.key
     }
 
     /**

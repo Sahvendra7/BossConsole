@@ -268,6 +268,25 @@ actual object RunnerTerminalService {
     }
 
     /**
+     * Remove a specific config from tracking (when its tab is closed in sidebar).
+     * Unlike removeTerminal which removes all configs for a terminal,
+     * this only removes one specific config.
+     *
+     * @param configId The configuration ID to remove
+     */
+    actual fun removeConfig(configId: String) {
+        stateLock.withLock {
+            val terminalId = _configToTerminal.value[configId]
+            if (terminalId != null) {
+                _configToTerminal.update { it - configId }
+                removeConfigFromTerminal(terminalId, configId)
+                _runningConfigs.update { it - configId }
+                println("[Runner] Config removed: $configId (terminal: $terminalId)")
+            }
+        }
+    }
+
+    /**
      * Open a runner command in the sidebar terminal panel.
      * Creates a new tab in the sidebar terminal with the given command.
      * Updates tracking to map configId → SIDEBAR_TERMINAL_ID so stop works correctly.

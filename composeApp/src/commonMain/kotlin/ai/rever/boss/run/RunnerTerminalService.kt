@@ -86,6 +86,15 @@ expect object RunnerTerminalService {
     fun getConfigForTerminal(terminalId: String): String?
 
     /**
+     * Remove a specific config from tracking (when its tab is closed in sidebar).
+     * Unlike removeTerminal which removes all configs for a terminal,
+     * this only removes one specific config.
+     *
+     * @param configId The configuration ID to remove
+     */
+    fun removeConfig(configId: String)
+
+    /**
      * Open a runner command in the sidebar terminal panel.
      * Creates a new tab in the sidebar terminal with the given command.
      * Also updates the configId → terminalId mapping to use SIDEBAR_TERMINAL_ID.
