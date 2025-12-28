@@ -32,7 +32,8 @@ const val SIDEBAR_TERMINAL_ID = "sidebar-terminal"
  */
 data class PendingRunnerCommand(
     val command: String,
-    val workingDirectory: String?
+    val workingDirectory: String?,
+    val configId: String? = null
 )
 
 /** Pending command to run when sidebar terminal first renders */
@@ -42,8 +43,8 @@ private var pendingRunnerCommand: PendingRunnerCommand? = null
  * Set a pending command to run when the sidebar terminal panel opens.
  * This should be called BEFORE opening the panel.
  */
-fun setPendingSidebarCommand(command: String, workingDirectory: String?) {
-    pendingRunnerCommand = PendingRunnerCommand(command, workingDirectory)
+fun setPendingSidebarCommand(command: String, workingDirectory: String?, configId: String? = null) {
+    pendingRunnerCommand = PendingRunnerCommand(command, workingDirectory, configId)
 }
 
 /**
@@ -87,6 +88,18 @@ actual fun TabbedTerminalContent(
     // Override settings to always show tab bar for runner integration
     val sidebarSettings = remember {
         TerminalSettingsOverride(alwaysShowTabBar = true)
+    }
+
+    // Register the first tab's ID after terminal renders (for pending command with configId)
+    androidx.compose.runtime.LaunchedEffect(pendingCommand?.configId) {
+        if (pendingCommand?.configId != null) {
+            // Wait for terminal to initialize and create the first tab
+            kotlinx.coroutines.delay(100)
+            val tabId = state.activeTabId
+            if (tabId != null) {
+                TabbedTerminalStateRegistry.registerSidebarTabId(pendingCommand.configId, tabId)
+            }
+        }
     }
 
     Surface(
@@ -235,19 +248,21 @@ object TabbedTerminalStateRegistry {
         return true
     }
 
-    // Track configId → tabIndex for sidebar terminal tabs
-    // This allows re-run to send to the correct tab, not just the active one
-    private val sidebarConfigToTabIndex = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    // Track configId → stable tabId for sidebar terminal tabs
+    // Uses BossTerm 1.0.61+ stable tab ID API
+    private val sidebarConfigToTabId = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /**
      * Run a command in the sidebar terminal.
      * - First run (panel not open): Sets pending command, panel will use it on render
-     * - First run (panel already open): Creates a new tab with initialCommand
-     * - Re-run: Sends Ctrl+C to the config's tab, waits, then sends new command
+     * - First run (panel already open): Creates a new tab with configId as stable tabId
+     * - Re-run: Sends Ctrl+C to the config's tab by stable tabId, waits, then sends new command
+     *
+     * Uses BossTerm 1.0.61+ stable tab ID API for reliable tab targeting.
      *
      * @param command The command to run
      * @param workingDirectory Optional working directory for the terminal
-     * @param configId The configuration ID (used to track which tab belongs to which config)
+     * @param configId The configuration ID (used as stable tabId for the tab)
      * @param isRerun If true, sends Ctrl+C first to stop any running process in the config's tab
      * @return true if command was sent successfully
      */
@@ -261,13 +276,13 @@ object TabbedTerminalStateRegistry {
         println("[SidebarTerminal] newSidebarTab: isRerun=$isRerun, terminalExists=$terminalExists, configId=$configId, command=$command")
 
         if (isRerun && configId != null) {
-            // Re-run: send Ctrl+C to the config's tab (not active tab), wait, then send new command
+            // Re-run: send Ctrl+C to the config's tab by stable tabId, wait, then send new command
             val state = get(SIDEBAR_TERMINAL_ID) ?: return false
-            val tabIndex = sidebarConfigToTabIndex[configId]
+            val tabId = sidebarConfigToTabId[configId]
 
-            if (tabIndex != null) {
-                println("[SidebarTerminal] Re-run: sending Ctrl+C to tab $tabIndex then command after delay")
-                state.sendInput(byteArrayOf(0x03), tabIndex) // Ctrl+C to specific tab
+            if (tabId != null) {
+                println("[SidebarTerminal] Re-run: sending Ctrl+C to tab '$tabId' then command after delay")
+                state.sendCtrlC(tabId) // Ctrl+C to specific tab by stable ID
 
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = if (workingDirectory != null) {
@@ -277,11 +292,11 @@ object TabbedTerminalStateRegistry {
                 }
                 CoroutineScope(Dispatchers.Default).launch {
                     delay(delayMs)
-                    state.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8), tabIndex)
+                    state.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8), tabId)
                 }
             } else {
-                // Fallback: no tab index tracked, send to active tab
-                println("[SidebarTerminal] Re-run: no tab index for config, sending to active tab")
+                // Fallback: no tabId tracked, send to active tab
+                println("[SidebarTerminal] Re-run: no tabId for config, sending to active tab")
                 state.sendInput(byteArrayOf(0x03))
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = if (workingDirectory != null) {
@@ -296,39 +311,43 @@ object TabbedTerminalStateRegistry {
             }
         } else if (!terminalExists) {
             // First run, panel not open yet: set pending command for TabbedTerminalContent to use
-            println("[SidebarTerminal] First run (panel opening): setting pending command")
-            setPendingSidebarCommand(command, workingDirectory)
-            // Tab index will be 0 (first tab)
-            if (configId != null) {
-                sidebarConfigToTabIndex[configId] = 0
-            }
+            println("[SidebarTerminal] First run (panel opening): setting pending command with configId=$configId")
+            setPendingSidebarCommand(command, workingDirectory, configId)
         } else {
-            // Panel already open, new config: create a new tab
+            // Panel already open, new config: create a new tab with configId as stable tabId
             val state = get(SIDEBAR_TERMINAL_ID) ?: return false
-            println("[SidebarTerminal] New config (panel open): creating new tab")
-            state.createTab(workingDir = workingDirectory, initialCommand = command)
-            // Record the tab index (new tab becomes active)
+            println("[SidebarTerminal] New config (panel open): creating new tab with tabId=$configId")
+            state.createTab(workingDir = workingDirectory, initialCommand = command, tabId = configId)
+            // Record the mapping (configId is the tabId)
             if (configId != null) {
-                val newTabIndex = state.activeTabIndex
-                sidebarConfigToTabIndex[configId] = newTabIndex
-                println("[SidebarTerminal] Recorded tab index $newTabIndex for config $configId")
+                sidebarConfigToTabId[configId] = configId
+                println("[SidebarTerminal] Recorded tabId '$configId' for config")
             }
         }
         return true
     }
 
     /**
-     * Remove tab index tracking for a config when it's stopped/removed.
+     * Register the tabId for a config after the first tab is created.
+     * Called from TabbedTerminalContent after the initial tab renders.
+     */
+    fun registerSidebarTabId(configId: String, tabId: String) {
+        sidebarConfigToTabId[configId] = tabId
+        println("[SidebarTerminal] Registered tabId '$tabId' for config '$configId'")
+    }
+
+    /**
+     * Remove tab tracking for a config when it's stopped/removed.
      */
     fun removeSidebarConfigTracking(configId: String) {
-        sidebarConfigToTabIndex.remove(configId)
+        sidebarConfigToTabId.remove(configId)
     }
 
     /**
      * Clear all sidebar config tracking (e.g., when sidebar terminal is closed).
      */
     fun clearSidebarConfigTracking() {
-        sidebarConfigToTabIndex.clear()
+        sidebarConfigToTabId.clear()
     }
 }
 
