@@ -1,0 +1,241 @@
+package ai.rever.boss.run
+
+import ai.rever.boss.components.events.RunnerTerminalEventBus
+import ai.rever.boss.components.plugin.panels.bottom.terminal.SIDEBAR_TERMINAL_ID
+import ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+/**
+ * Desktop implementation of RunnerTerminalService.
+ * Manages runner terminals with configuration tracking.
+ *
+ * Features:
+ * - Stop sends Ctrl+C (0x03) to interrupt running processes (BossTerm 1.0.58+)
+ * - Re-run stops the current process and starts a new one
+ * - One terminal per configuration (reused on re-run)
+ *
+ * Issue #347: Runner should open in terminal sidebar panel with run/stop state management
+ */
+actual object RunnerTerminalService {
+
+    // Map: configId → terminalTabId
+    private val _configToTerminal = MutableStateFlow<Map<String, String>>(emptyMap())
+    actual val configToTerminal: StateFlow<Map<String, String>> = _configToTerminal.asStateFlow()
+
+    // Reverse map: terminalTabId → configId (for quick lookup)
+    private val terminalToConfig = mutableMapOf<String, String>()
+
+    // Set of currently running configuration IDs
+    private val _runningConfigs = MutableStateFlow<Set<String>>(emptySet())
+    actual val runningConfigs: StateFlow<Set<String>> = _runningConfigs.asStateFlow()
+
+    /**
+     * Check if a specific configuration is currently running.
+     */
+    actual fun isConfigRunning(configId: String): Boolean {
+        return configId in _runningConfigs.value
+    }
+
+    /**
+     * Open or reuse a runner terminal for the given configuration.
+     */
+    actual suspend fun openRunnerTerminal(
+        config: RunConfiguration,
+        onTerminalCreated: (String) -> Unit
+    ): String {
+        // Check if we already have a terminal for this config
+        val existingTerminalId = _configToTerminal.value[config.id]
+
+        // Build the command
+        val command = buildFullCommand(config)
+
+        // Generate terminal ID
+        val terminalId = existingTerminalId ?: "runner-${config.id}-${System.currentTimeMillis()}"
+
+        // Update mappings
+        _configToTerminal.update { it + (config.id to terminalId) }
+        terminalToConfig[terminalId] = config.id
+
+        // Mark as running
+        _runningConfigs.update { it + config.id }
+
+        // Emit event to create/open terminal
+        println("[Runner] Opening terminal for config: ${config.name}")
+        println("[Runner] Command: $command")
+        RunnerTerminalEventBus.openRunnerTerminal(
+            terminalId = terminalId,
+            command = command,
+            configId = config.id,
+            configName = config.name,
+            workingDirectory = config.workingDirectory.ifBlank { null },
+            isRerun = existingTerminalId != null
+        )
+
+        onTerminalCreated(terminalId)
+        return terminalId
+    }
+
+    /**
+     * Stop the runner for a configuration by sending Ctrl+C (interrupt signal).
+     *
+     * Uses BossTerm 1.0.58+ sendInput() API to send the interrupt signal (0x03 byte).
+     */
+    actual suspend fun stopRunner(configId: String): Boolean {
+        if (!isConfigRunning(configId)) {
+            println("[Runner] Config $configId is not running")
+            return false
+        }
+
+        val terminalId = _configToTerminal.value[configId]
+        if (terminalId == null) {
+            println("[Runner] No terminal found for config $configId")
+            return false
+        }
+
+        // Send Ctrl+C to the terminal to interrupt the running process
+        val sent = TabbedTerminalStateRegistry.sendCtrlC(terminalId)
+        if (sent) {
+            println("[Runner] Sent Ctrl+C to terminal: $terminalId (config: $configId)")
+        } else {
+            println("[Runner] Failed to send Ctrl+C - terminal not found: $terminalId")
+        }
+
+        // Emit stop event for any additional UI handling
+        RunnerTerminalEventBus.stopRunnerTerminal(terminalId, configId)
+
+        // Note: We don't mark as not running here - the terminal's onExit callback
+        // will be triggered when the process actually exits, which calls markTerminalStopped()
+
+        return sent
+    }
+
+    /**
+     * Re-run a configuration: stop current process (if running) and run again.
+     *
+     * For main panel: Sends Ctrl+C to stop the current process, closes the old terminal,
+     * and creates a new one with the same command.
+     * For sidebar panel: Ctrl+C is handled by openInSidebarTerminal via the isRerun flag.
+     */
+    actual suspend fun rerunRunner(
+        config: RunConfiguration,
+        onTerminalCreated: (String) -> Unit
+    ): String {
+        println("[Runner] Re-running config: ${config.name}")
+
+        // Check if using sidebar mode - Ctrl+C will be handled by openInSidebarTerminal
+        val usesSidebar = RunnerSettingsManager.currentSettings.value.terminalTarget == RunnerTerminalTarget.SIDEBAR_PANEL
+
+        // Get the existing terminal ID (if any)
+        val existingTerminalId = _configToTerminal.value[config.id]
+
+        // Stop existing process and close terminal (only for main panel mode)
+        if (existingTerminalId != null && !usesSidebar) {
+            // Send Ctrl+C to stop the running process
+            val sent = TabbedTerminalStateRegistry.sendCtrlC(existingTerminalId)
+            if (sent) {
+                println("[Runner] Sent Ctrl+C to stop existing process")
+            }
+            // Close the terminal tab
+            RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
+            // Remove old mapping
+            terminalToConfig.remove(existingTerminalId)
+        }
+
+        // Create new terminal with fresh ID
+        val command = buildFullCommand(config)
+        val terminalId = "runner-${config.id}-${System.currentTimeMillis()}"
+
+        // Update mappings
+        _configToTerminal.update { it + (config.id to terminalId) }
+        terminalToConfig[terminalId] = config.id
+
+        // Mark as running
+        _runningConfigs.update { it + config.id }
+
+        // Emit event to create terminal
+        RunnerTerminalEventBus.openRunnerTerminal(
+            terminalId = terminalId,
+            command = command,
+            configId = config.id,
+            configName = config.name,
+            workingDirectory = config.workingDirectory.ifBlank { null },
+            isRerun = true
+        )
+
+        onTerminalCreated(terminalId)
+        return terminalId
+    }
+
+    /**
+     * Mark a runner terminal as stopped (process exited).
+     */
+    actual fun markTerminalStopped(terminalId: String) {
+        val configId = terminalToConfig[terminalId]
+        if (configId != null) {
+            _runningConfigs.update { it - configId }
+            println("[Runner] Terminal stopped: $terminalId (config: $configId)")
+        }
+    }
+
+    /**
+     * Remove tracking for a terminal tab (when tab is closed).
+     */
+    actual fun removeTerminal(terminalId: String) {
+        val configId = terminalToConfig.remove(terminalId)
+        if (configId != null) {
+            _configToTerminal.update { it - configId }
+            _runningConfigs.update { it - configId }
+            println("[Runner] Terminal removed: $terminalId (config: $configId)")
+        }
+    }
+
+    /**
+     * Get the configuration ID associated with a terminal tab.
+     */
+    actual fun getConfigForTerminal(terminalId: String): String? {
+        return terminalToConfig[terminalId]
+    }
+
+    /**
+     * Open a runner command in the sidebar terminal panel.
+     * Creates a new tab in the sidebar terminal with the given command.
+     * Updates tracking to map configId → SIDEBAR_TERMINAL_ID so stop works correctly.
+     */
+    actual fun openInSidebarTerminal(
+        configId: String,
+        command: String,
+        workingDirectory: String?,
+        tabTitle: String,
+        isRerun: Boolean
+    ): Boolean {
+        val success = TabbedTerminalStateRegistry.newSidebarTab(
+            command = command,
+            workingDirectory = workingDirectory,
+            tabTitle = tabTitle,
+            isRerun = isRerun
+        )
+        if (success) {
+            // Update mapping to point to SIDEBAR_TERMINAL_ID so stop/Ctrl+C works
+            _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
+            terminalToConfig[SIDEBAR_TERMINAL_ID] = configId
+            println("[Runner] Opened command in sidebar terminal: $tabTitle (mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
+        } else {
+            println("[Runner] Failed to open in sidebar terminal - panel may not be open")
+        }
+        return success
+    }
+
+    /**
+     * Build the full command including cd to working directory.
+     */
+    private fun buildFullCommand(config: RunConfiguration): String {
+        return if (config.workingDirectory.isNotBlank()) {
+            "cd ${config.workingDirectory} && ${config.command}"
+        } else {
+            config.command
+        }
+    }
+}

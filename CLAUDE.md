@@ -39,6 +39,10 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 ./gradlew incrementMajor        # Increment major version
 ```
 
+## Workflow Rules
+
+**IMPORTANT**: Do NOT run `./gradlew run` to test the application. The user will run and test the app themselves and report back the results. Only make code changes and wait for user feedback.
+
 ## Architecture Overview
 
 ### Module Structure
@@ -162,9 +166,11 @@ supabase db reset --linked
 
 **Disabled Features** (commented out with tracking issues):
 - Git Integration (#90)
-- Run/Debug Controls (#91)
 - Global Search (#92)
 - Lanager Plugin (#93)
+
+**Implemented Features**:
+- Run/Debug Controls (#347) - Runner terminal system with run/stop/re-run
 
 ### Keyboard Shortcuts System
 
@@ -239,6 +245,35 @@ CoroutineScope(Dispatchers.IO).launch {
 3. If http/https: forwards to `URLHandlerService`
 4. If boss://: processes as authentication deep link
 5. Creates new browser tab in active window
+
+### Runner Terminal System
+
+**Overview**: Run configurations execute in terminal with run/stop/re-run controls (Issue #347).
+
+**Key Components**:
+- `RunnerTerminalService.kt` - Manages runner terminals with state tracking
+- `RunnerSettingsManager.kt` - Persists runner settings (`~/.boss/runner-settings.json`)
+- `RunnerTerminalEventBus.kt` - Events for opening/closing runner terminals
+- `DesktopTerminalContent.kt` - Sidebar terminal with persistent state
+
+**Terminal Targets** (configurable in Settings > Runner):
+- **Sidebar Panel**: Opens in left sidebar terminal (like VS Code)
+- **Main Panel**: Opens in main content area (like IntelliJ IDEA)
+
+**Features**:
+- **Run**: Execute selected configuration in terminal
+- **Stop**: Send Ctrl+C (0x03) to interrupt running process (BossTerm 1.0.58+)
+- **Re-run**: Stop current process, close terminal, create new one with same command
+
+**Sidebar Terminal Integration**:
+- Uses `TabbedTerminalStateRegistry` with `SIDEBAR_TERMINAL_ID` for persistent state
+- `settingsOverride` with `alwaysShowTabBar = true` ensures tab bar visibility (BossTerm 1.0.59+)
+- Commands sent via `sendInput()` API even before panel renders
+
+**Key Files**:
+- `DesktopRunnerTerminalService.kt` - Desktop implementation with Ctrl+C support
+- `RunnerSettings.kt` (UI) - Settings UI in Settings > Runner section
+- `BossTopRunBar.kt` - Run/Stop buttons in top bar
 
 ## Code Quality
 

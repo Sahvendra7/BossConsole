@@ -53,8 +53,12 @@ import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.components.events.RunnerTerminalEventBus
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
+import ai.rever.boss.run.RunnerSettingsManager
+import ai.rever.boss.run.RunnerTerminalService
+import ai.rever.boss.run.RunnerTerminalTarget
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
@@ -194,6 +198,45 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
                 tabToMove = result.tabInfo
             )
         }
+    }
+}
+
+/**
+ * Helper function to open a runner terminal in the main panel.
+ * Creates a terminal tab with the run command and adds it to the active panel.
+ */
+private fun openRunnerInMainPanel(
+    event: ai.rever.boss.components.events.RunnerTerminalOpenEvent,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState
+) {
+    // Create terminal tab in active panel
+    val terminalTab = TerminalTabInfo(
+        id = event.terminalId,
+        typeId = ai.rever.boss.components.registery.TabTypeId("terminal"),
+        title = "Run: ${event.configName}",
+        initialCommand = event.command,
+        workingDirectory = event.workingDirectory
+    )
+
+    // Find existing tab or create new one
+    val existingPanel = splitViewState.findPanelWithTab(event.terminalId)
+    if (existingPanel != null && event.isRerun) {
+        // Re-run: Update existing tab with new command
+        existingPanel.tabsComponent.removeTabById(event.terminalId)
+    }
+
+    // Add to active panel (or first available)
+    val activeComponent = splitViewState.getActiveTabsComponent()
+        ?: splitViewState.getAllPanels().firstOrNull()?.tabsComponent
+
+    if (activeComponent != null) {
+        val tabIndex = activeComponent.addTab(terminalTab)
+        if (tabIndex >= 0) {
+            activeComponent.selectTab(tabIndex)
+            println("[BossApp] Runner terminal tab created in main panel: ${event.terminalId}")
+        }
+    } else {
+        println("[BossApp] ERROR - No panel available for runner terminal")
     }
 }
 
@@ -768,6 +811,69 @@ fun ComponentContext.BossApp(
 
         // Note: We DON'T call markReady() here - that happens AFTER Last Session loads
         // just like URL handler, to prevent terminals from being destroyed by clearAllPanels()
+    }
+
+    // Listen for runner terminal events (Issue #347 - Runner in terminal sidebar)
+    LaunchedEffect(splitViewState) {
+        // Open runner terminal events
+        RunnerTerminalEventBus.openEvents
+            .onEach { event ->
+                println("[BossApp] Runner terminal open event: ${event.configName}")
+
+                // Check settings for terminal target
+                val settings = RunnerSettingsManager.currentSettings.value
+                val usesSidebar = settings.terminalTarget == RunnerTerminalTarget.SIDEBAR_PANEL
+
+                if (usesSidebar) {
+                    // Open in sidebar terminal panel
+                    // First, ensure the sidebar terminal panel is open
+                    PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
+
+                    // Create a new tab in the sidebar terminal with the command
+                    val success = RunnerTerminalService.openInSidebarTerminal(
+                        configId = event.configId,
+                        command = event.command,
+                        workingDirectory = event.workingDirectory,
+                        tabTitle = "Run: ${event.configName}",
+                        isRerun = event.isRerun
+                    )
+
+                    if (success) {
+                        println("[BossApp] Runner opened in sidebar terminal: ${event.configName}")
+                    } else {
+                        // Fallback to main panel if sidebar terminal not available
+                        println("[BossApp] Sidebar terminal not available, falling back to main panel")
+                        openRunnerInMainPanel(event, splitViewState)
+                    }
+                } else {
+                    // Open in main panel (original behavior)
+                    openRunnerInMainPanel(event, splitViewState)
+                }
+            }
+            .launchIn(this)
+
+        // Close runner terminal events
+        RunnerTerminalEventBus.closeEvents
+            .onEach { event ->
+                println("[BossApp] Runner terminal close event: ${event.terminalId}")
+
+                // Find and close the terminal tab
+                val panel = splitViewState.findPanelWithTab(event.terminalId)
+                panel?.tabsComponent?.removeTabById(event.terminalId)
+
+                // Notify service that terminal was removed
+                RunnerTerminalService.removeTerminal(event.terminalId)
+            }
+            .launchIn(this)
+
+        // Stop runner terminal events
+        // Note: Ctrl+C is sent by RunnerTerminalService.stopRunner() via TabbedTerminalStateRegistry
+        RunnerTerminalEventBus.stopEvents
+            .onEach { event ->
+                println("[BossApp] Runner terminal stop event: ${event.terminalId}")
+                // Ctrl+C is already sent by the service - this event is for any additional UI handling
+            }
+            .launchIn(this)
     }
 
     // Listen for run execute events (Issue #321 - Run functionality)

@@ -7,6 +7,8 @@ import ai.rever.bossterm.compose.TabbedTerminal
 import ai.rever.bossterm.compose.TabbedTerminalState
 import ai.rever.bossterm.compose.rememberEmbeddableTerminalState
 import ai.rever.bossterm.compose.settings.SettingsManager
+import ai.rever.bossterm.compose.settings.TerminalSettings
+import ai.rever.bossterm.compose.settings.TerminalSettingsOverride
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
@@ -18,7 +20,40 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** ID for the sidebar terminal panel's persistent state */
+const val SIDEBAR_TERMINAL_ID = "sidebar-terminal"
+
+/**
+ * Holds pending command info for sidebar terminal.
+ * Set this BEFORE opening the panel so TabbedTerminal can use it on first render.
+ */
+data class PendingRunnerCommand(
+    val command: String,
+    val workingDirectory: String?
+)
+
+/** Pending command to run when sidebar terminal first renders */
+private var pendingRunnerCommand: PendingRunnerCommand? = null
+
+/**
+ * Set a pending command to run when the sidebar terminal panel opens.
+ * This should be called BEFORE opening the panel.
+ */
+fun setPendingSidebarCommand(command: String, workingDirectory: String?) {
+    pendingRunnerCommand = PendingRunnerCommand(command, workingDirectory)
+}
+
+/**
+ * Get and clear the pending command (called by TabbedTerminalContent on render).
+ */
+fun consumePendingSidebarCommand(): PendingRunnerCommand? {
+    val cmd = pendingRunnerCommand
+    pendingRunnerCommand = null
+    return cmd
+}
 
 /**
  * Desktop implementation of TabbedTerminalContent using BossTerm's TabbedTerminal.
@@ -28,6 +63,8 @@ import kotlinx.coroutines.launch
  * - Split panes (horizontal/vertical)
  * - Tab management keyboard shortcuts
  * - Settings integration (opens BOSS Settings)
+ *
+ * Uses persistent state so runner commands can create tabs in this terminal.
  */
 @Composable
 actual fun TabbedTerminalContent(
@@ -38,13 +75,34 @@ actual fun TabbedTerminalContent(
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
+    // Check if this is a fresh terminal (not in registry yet)
+    val isNew = !TabbedTerminalStateRegistry.contains(SIDEBAR_TERMINAL_ID)
+
+    // Use persistent state so runner can send commands to this terminal
+    val state = remember { TabbedTerminalStateRegistry.getOrCreate(SIDEBAR_TERMINAL_ID) }
+
+    // Check for pending runner command (set before panel opened)
+    val pendingCommand = remember { if (isNew) consumePendingSidebarCommand() else null }
+
+    // Override settings to always show tab bar for runner integration
+    val sidebarSettings = remember {
+        TerminalSettingsOverride(alwaysShowTabBar = true)
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = settings.defaultBackgroundColor
     ) {
         TabbedTerminal(
-            workingDirectory = workingDirectory,
-            onExit = onExit,
+            state = state,
+            // Pass pending command for first render (runs in default tab)
+            initialCommand = pendingCommand?.command,
+            workingDirectory = pendingCommand?.workingDirectory ?: workingDirectory,
+            settingsOverride = sidebarSettings,
+            onExit = {
+                TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
+                onExit()
+            },
             onShowSettings = onShowSettings,
             onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
             modifier = Modifier.fillMaxSize()
@@ -116,11 +174,103 @@ object TabbedTerminalStateRegistry {
         return states.getOrPut(terminalId) { TabbedTerminalState() }
     }
 
+    fun get(terminalId: String): TabbedTerminalState? = states[terminalId]
+
     fun remove(terminalId: String) {
         states.remove(terminalId)?.dispose()
     }
 
     fun contains(terminalId: String): Boolean = terminalId in states
+
+    /**
+     * Send input bytes to a terminal by ID.
+     * Used for sending control characters like Ctrl+C (0x03).
+     *
+     * @param terminalId The terminal ID to send input to
+     * @param bytes The bytes to send
+     * @return true if the terminal exists and input was sent, false otherwise
+     */
+    fun sendInput(terminalId: String, bytes: ByteArray): Boolean {
+        val state = states[terminalId] ?: return false
+        state.sendInput(bytes)
+        return true
+    }
+
+    /**
+     * Send Ctrl+C (interrupt signal) to a terminal.
+     *
+     * @param terminalId The terminal ID to send Ctrl+C to
+     * @return true if the terminal exists and Ctrl+C was sent, false otherwise
+     */
+    fun sendCtrlC(terminalId: String): Boolean {
+        return sendInput(terminalId, byteArrayOf(0x03))
+    }
+
+    /**
+     * Run a command in a terminal by sending it as input.
+     * This sends the command text followed by Enter to execute it.
+     *
+     * @param terminalId The terminal ID to send the command to
+     * @param command The command to run
+     * @return true if the terminal exists and command was sent, false otherwise
+     */
+    fun runCommand(terminalId: String, command: String): Boolean {
+        val state = states[terminalId] ?: return false
+        // Send the command followed by Enter (newline)
+        val commandWithEnter = "$command\n"
+        state.sendInput(commandWithEnter.toByteArray(Charsets.UTF_8))
+        return true
+    }
+
+    /**
+     * Run a command in the sidebar terminal.
+     * - First run (panel not open): Sets pending command, panel will use it on render
+     * - First run (panel already open): Creates a new tab with initialCommand
+     * - Re-run: Sends Ctrl+C to active tab, waits, then sends new command
+     *
+     * @param command The command to run
+     * @param workingDirectory Optional working directory for the terminal
+     * @param tabTitle Optional title (not currently used, for future tab naming)
+     * @param isRerun If true, sends Ctrl+C first to stop any running process in active tab
+     * @return true if command was sent successfully
+     */
+    fun newSidebarTab(
+        command: String,
+        workingDirectory: String? = null,
+        tabTitle: String? = null,
+        isRerun: Boolean = false
+    ): Boolean {
+        val terminalExists = contains(SIDEBAR_TERMINAL_ID)
+        println("[SidebarTerminal] newSidebarTab: isRerun=$isRerun, terminalExists=$terminalExists, command=$command")
+
+        if (isRerun) {
+            // Re-run: send Ctrl+C to active tab, wait, then send new command
+            val state = get(SIDEBAR_TERMINAL_ID) ?: return false
+            println("[SidebarTerminal] Re-run: sending Ctrl+C then command after delay")
+            state.sendInput(byteArrayOf(0x03)) // Ctrl+C
+
+            val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
+            val fullCommand = if (workingDirectory != null) {
+                "cd $workingDirectory && $command"
+            } else {
+                command
+            }
+            CoroutineScope(Dispatchers.Default).launch {
+                delay(delayMs)
+                state.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8))
+            }
+        } else if (!terminalExists) {
+            // First run, panel not open yet: set pending command for TabbedTerminalContent to use
+            println("[SidebarTerminal] First run (panel opening): setting pending command")
+            setPendingSidebarCommand(command, workingDirectory)
+        } else {
+            // Panel already open, new config: create a new tab
+            val state = get(SIDEBAR_TERMINAL_ID) ?: return false
+            println("[SidebarTerminal] New config (panel open): creating new tab")
+            state.createTab(workingDir = workingDirectory, initialCommand = command)
+        }
+        return true
+    }
 }
 
 /**
