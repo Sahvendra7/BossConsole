@@ -5,6 +5,8 @@ import ai.rever.boss.components.model.Panel
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
+import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.registery.PanelComponentStore
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
@@ -19,7 +21,9 @@ fun BossDraggableComponent.BossWindow(
     modifier: Modifier = Modifier,
     tabsComponent: BossTabsComponent,
     panelComponentStore: PanelComponentStore,
-    splitViewState: SplitViewState? = null
+    splitViewState: SplitViewState? = null,
+    tabDragComponent: TabDraggableComponent? = null,
+    onTabDropResult: (TabDropResult) -> Unit = {}
 ) {
     // State for split panels - use provided or create new
     val actualSplitViewState = splitViewState ?: rememberSplitViewState(
@@ -71,7 +75,9 @@ fun BossDraggableComponent.BossWindow(
             WithNestedPanel(right) {
                 // Use the new split view panel
                 SplitViewPanel(
-                    splitViewState = actualSplitViewState
+                    splitViewState = actualSplitViewState,
+                    tabDragComponent = tabDragComponent,
+                    onTabDropResult = onTabDropResult
                 )
             }
         }

@@ -11,7 +11,10 @@ import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.overlays.DraggingItemOverlay
+import ai.rever.boss.components.overlays.TabDraggingOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
@@ -123,6 +126,7 @@ import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.components.events.KeyboardEventResult
 import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.window.WindowAppearanceSettingsManager
 import ai.rever.boss.performance.PerformanceState
@@ -132,6 +136,66 @@ import ai.rever.boss.performance.EditorTabResourceInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
+
+// Platform-specific function to consume pending initial tab for a window
+// Returns the TabInfo if there's a pending tab for this window, null otherwise
+expect fun consumePendingInitialTab(windowId: String): TabInfo?
+
+/**
+ * Handle the result of a tab drop operation.
+ * Includes bounds checking to handle cases where tab list may have changed during drag.
+ */
+private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitViewState) {
+    when (result) {
+        is TabDropResult.Reorder -> {
+            // Reorder within the same panel
+            val panel = splitViewState.getPanel(result.panelId)
+            val tabCount = panel?.tabsComponent?.tabsState?.value?.tabs?.size ?: 0
+            // Validate indices are within bounds before reordering
+            if (result.fromIndex in 0 until tabCount && result.toIndex in 0..tabCount) {
+                panel?.tabsComponent?.moveTab(result.fromIndex, result.toIndex)
+            }
+        }
+        is TabDropResult.MoveToPanel -> {
+            // Move tab from source panel to target panel
+            val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
+            val targetPanel = splitViewState.getPanel(result.targetPanelId)
+            val sourceTabCount = sourcePanel?.tabsComponent?.tabsState?.value?.tabs?.size ?: 0
+
+            // Validate source index is within bounds
+            if (sourcePanel != null && targetPanel != null && result.sourceIndex in 0 until sourceTabCount) {
+                // Remove from source panel FIRST to prevent duplicate entries
+                // and ensure sourceIndex remains valid during removal
+                sourcePanel.tabsComponent.removeTab(result.sourceIndex)
+
+                // Then add to target panel
+                val newIndex = targetPanel.tabsComponent.addTab(result.tabInfo)
+                if (newIndex >= 0) {
+                    targetPanel.tabsComponent.selectTab(newIndex)
+                }
+
+                // Set target panel as active
+                splitViewState.setActivePanel(result.targetPanelId)
+            }
+        }
+        is TabDropResult.CreateSplit -> {
+            // Remove from source panel FIRST if it's a different panel
+            // This ensures the tab is removed before splitPanel potentially modifies state
+            if (result.sourcePanelId != result.targetPanelId) {
+                val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
+                // Use tab ID for removal instead of index - more reliable after state changes
+                sourcePanel?.tabsComponent?.removeTabById(result.tabInfo.id)
+            }
+
+            // Create a new split with the tab
+            splitViewState.splitPanel(
+                panelId = result.targetPanelId,
+                orientation = result.orientation,
+                tabToMove = result.tabInfo
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -148,6 +212,7 @@ fun ComponentContext.BossApp(
     val panelComponentStore = remember { PanelComponentStore(this, panelRegistry) }
 
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
+    val tabDragComponent = remember { TabDraggableComponent() }
     val tabsComponent = remember { BossTabsComponent(this, tabRegistry) }
     
     // Create split view state that manages all tab panels
@@ -164,6 +229,22 @@ fun ComponentContext.BossApp(
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
     LaunchedEffect(splitViewState) {
         setupDownloadTabCloseCallback(splitViewState)
+    }
+
+    // Consume any pending initial tab for this window (from "Open in New Window" context menu)
+    LaunchedEffect(windowId, splitViewState) {
+        val pendingTab = consumePendingInitialTab(windowId)
+        if (pendingTab != null) {
+            println("BossApp: Consuming pending tab '${pendingTab.title}' for window: $windowId")
+            // Add the tab to the active panel (first panel by default)
+            val activePanel = splitViewState.getAllPanels().firstOrNull()
+            if (activePanel != null) {
+                val index = activePanel.tabsComponent.addTab(pendingTab)
+                if (index >= 0) {
+                    activePanel.tabsComponent.selectTab(index)
+                }
+            }
+        }
     }
 
     // Register resource count providers for performance monitoring
@@ -1377,7 +1458,11 @@ fun ComponentContext.BossApp(
                             modifier = Modifier.weight(1f),
                             tabsComponent = tabsComponent,
                             panelComponentStore = panelComponentStore,
-                            splitViewState = splitViewState
+                            splitViewState = splitViewState,
+                            tabDragComponent = tabDragComponent,
+                            onTabDropResult = { result ->
+                                handleTabDropResult(result, splitViewState)
+                            }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation
@@ -1495,6 +1580,9 @@ fun ComponentContext.BossApp(
 
                 // Draw the dragging item overlay (ghost) if an item is being dragged
                 DraggingItemOverlay()
+
+                // Draw the tab dragging overlay (ghost tab) if a tab is being dragged
+                tabDragComponent.TabDraggingOverlay()
             }
             
             // Show new tab dialog

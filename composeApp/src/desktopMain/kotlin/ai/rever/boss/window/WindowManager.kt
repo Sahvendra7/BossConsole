@@ -1,9 +1,11 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.registery.TabInfo
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Window type enum for determining appropriate size calculation
@@ -31,6 +33,14 @@ object WindowManager {
      * Using SnapshotStateList for reactive Compose updates
      */
     private val _windows = mutableStateListOf<BossWindowState>()
+
+    /**
+     * Map of pending initial tabs for new windows.
+     * When a window is created with an initial tab, the tab is stored here
+     * and consumed by BossApp when the window initializes.
+     * Key: windowId, Value: TabInfo to open
+     */
+    private val pendingInitialTabs = ConcurrentHashMap<String, TabInfo>()
 
     /**
      * Read-only access to the list of windows
@@ -65,6 +75,38 @@ object WindowManager {
         println("Created new window: $windowId (type: $windowType, total windows: ${_windows.size})")
 
         return windowState
+    }
+
+    /**
+     * Create a new window with an initial tab
+     *
+     * @param initialTab The tab to open in the new window
+     * @param position Window position (null for default cascade)
+     * @param windowType Type of window (determines adaptive sizing)
+     * @return The newly created window state
+     */
+    fun createNewWindowWithTab(
+        initialTab: TabInfo,
+        position: WindowPosition? = null,
+        windowType: WindowType = WindowType.MAIN
+    ): BossWindowState {
+        val windowState = createNewWindow(position, windowType)
+        // Store the pending tab for this window
+        pendingInitialTabs[windowState.id] = initialTab
+        println("Stored pending tab '${initialTab.title}' for new window: ${windowState.id}")
+        return windowState
+    }
+
+    /**
+     * Get and consume the pending initial tab for a window
+     *
+     * @param windowId The window ID to get the pending tab for
+     * @return The pending TabInfo, or null if none
+     */
+    fun consumePendingTab(windowId: String): TabInfo? {
+        return pendingInitialTabs.remove(windowId)?.also {
+            println("Consumed pending tab '${it.title}' for window: $windowId")
+        }
     }
 
     /**

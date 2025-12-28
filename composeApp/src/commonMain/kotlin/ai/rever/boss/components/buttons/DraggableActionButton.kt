@@ -7,6 +7,7 @@ import ai.rever.boss.components.model.SidebarItem
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -47,6 +48,17 @@ fun BossDraggableComponent.DraggableActionButton(
             startDragging(currentItem, currentSlot, startPosition)
             // Reset pending offset AFTER starting the drag
             pendingDragStartOffset = null
+        }
+    }
+
+    // Cleanup drag state if this component is disposed while dragging
+    // This prevents "stuck" drag overlays when gesture is interrupted
+    DisposableEffect(item.id) {
+        onDispose {
+            // Only cancel if THIS item is the one being dragged
+            if (draggingItem?.first?.id == item.id) {
+                stopDragging()
+            }
         }
     }
 

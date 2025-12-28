@@ -54,6 +54,32 @@ class TabsNavigation<C : Any>(
         }
     }
 
+    fun moveTab(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+
+        _tabs.update { currentState ->
+            if (fromIndex !in currentState.tabs.indices || toIndex !in currentState.tabs.indices) {
+                return@update currentState
+            }
+
+            val newTabs = currentState.tabs.toMutableList()
+            val tab = newTabs.removeAt(fromIndex)
+            newTabs.add(toIndex, tab)
+
+            // Adjust activeIndex based on the move
+            val newActiveIndex = when {
+                currentState.activeIndex == fromIndex -> toIndex
+                fromIndex < currentState.activeIndex && toIndex >= currentState.activeIndex ->
+                    currentState.activeIndex - 1
+                fromIndex > currentState.activeIndex && toIndex <= currentState.activeIndex ->
+                    currentState.activeIndex + 1
+                else -> currentState.activeIndex
+            }
+
+            currentState.copy(tabs = newTabs, activeIndex = newActiveIndex)
+        }
+    }
+
     data class TabsState<C>(
         val tabs: List<C> = emptyList(),
         val activeIndex: Int = -1
