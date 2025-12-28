@@ -160,7 +160,7 @@ class TabDraggableComponent {
 
     /**
      * Track tab bounds for reorder detection within a tab bar.
-     * Key: tabId, Value: bounds in window coordinates
+     * Key: tabId (format: "panelId:tabId"), Value: bounds in window coordinates
      */
     val tabBounds = mutableStateMapOf<String, Rect>()
 
@@ -181,6 +181,18 @@ class TabDraggableComponent {
      */
     val isDragging: Boolean
         get() = draggingTab != null
+
+    /**
+     * Timestamp of last drop target update for throttling.
+     * Prevents excessive calculations during drag (every pixel movement).
+     */
+    private var lastDropTargetUpdateTime = 0L
+
+    /**
+     * Minimum interval between drop target updates in milliseconds.
+     * ~60fps = 16ms between updates
+     */
+    private val dropTargetUpdateInterval = 16L
 
     /**
      * Start dragging a tab.
@@ -207,11 +219,18 @@ class TabDraggableComponent {
 
     /**
      * Update the drag delta during a drag gesture.
+     * Throttled to ~60fps to avoid excessive drop target calculations.
      */
     fun updateDrag(delta: Offset) {
         if (draggingTab == null || dragStartPosition == null) return
         dragDelta += delta
-        updateDropTarget()
+
+        // Throttle drop target updates to avoid excessive calculations
+        val now = System.currentTimeMillis()
+        if (now - lastDropTargetUpdateTime >= dropTargetUpdateInterval) {
+            updateDropTarget()
+            lastDropTargetUpdateTime = now
+        }
     }
 
     /**
@@ -403,5 +422,21 @@ class TabDraggableComponent {
         tabBounds.clear()
         tabBarBounds.clear()
         panelDropZones.clear()
+    }
+
+    /**
+     * Unregister all bounds for a specific panel.
+     * Should be called when a panel is destroyed to prevent memory leaks.
+     */
+    fun unregisterPanel(panelId: String) {
+        // Remove tab bar bounds for this panel
+        tabBarBounds.remove(panelId)
+
+        // Remove panel drop zones
+        panelDropZones.remove(panelId)
+
+        // Remove all tab bounds for this panel (format: "panelId:tabId")
+        val tabsToRemove = tabBounds.keys.filter { it.startsWith("$panelId:") }
+        tabsToRemove.forEach { tabBounds.remove(it) }
     }
 }

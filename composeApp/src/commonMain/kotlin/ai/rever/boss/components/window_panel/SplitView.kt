@@ -1092,6 +1092,15 @@ private fun RenderSplitNode(
         is SplitNode.Panel -> {
             // key() preserves panel composition identity when split tree restructures
             key(node.id) {
+                // Cleanup panel bounds when panel is removed from composition
+                // This prevents memory leaks in tabDragComponent's bound maps
+                DisposableEffect(node.id, tabDragComponent) {
+                    onDispose {
+                        splitViewState.clearPanelBounds(node.id)
+                        tabDragComponent?.unregisterPanel(node.id)
+                    }
+                }
+
                 // Monitor this specific panel's tab count
                 val tabsState = node.tabsComponent.tabsState.subscribeAsState()
                 LaunchedEffect(node.id, tabsState.value.tabs.size) {
