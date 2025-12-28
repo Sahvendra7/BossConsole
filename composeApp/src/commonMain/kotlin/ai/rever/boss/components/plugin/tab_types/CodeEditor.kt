@@ -223,7 +223,7 @@ private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, 
 
         val config = RunConfiguration(
             id = UUID.randomUUID().toString(),
-            name = detected.toShortName(),
+            name = detected.toShortNameWithProject(actualProjectRoot),
             type = RunConfigurationType.MAIN_FUNCTION,
             filePath = detected.filePath,
             lineNumber = detected.lineNumber,

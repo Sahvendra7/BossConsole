@@ -98,7 +98,7 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
                             configurations.add(
                                 RunConfiguration(
                                     id = UUID.randomUUID().toString(),
-                                    name = mainFunc.toShortName(),
+                                    name = mainFunc.toShortNameWithProject(projectPath),
                                     type = RunConfigurationType.MAIN_FUNCTION,
                                     filePath = file.absolutePath,
                                     lineNumber = mainFunc.lineNumber,
