@@ -95,10 +95,12 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
                         val content = file.readText()
                         val detected = detectInFile(file.absolutePath, content)
                         detected.forEach { mainFunc ->
+                            val configName = mainFunc.toShortNameWithProject(projectPath)
+                            println("[MainFunctionDetector] Creating config: name='$configName', projectPath='$projectPath', file='${file.absolutePath}'")
                             configurations.add(
                                 RunConfiguration(
                                     id = UUID.randomUUID().toString(),
-                                    name = mainFunc.toShortNameWithProject(projectPath),
+                                    name = configName,
                                     type = RunConfigurationType.MAIN_FUNCTION,
                                     filePath = file.absolutePath,
                                     lineNumber = mainFunc.lineNumber,
