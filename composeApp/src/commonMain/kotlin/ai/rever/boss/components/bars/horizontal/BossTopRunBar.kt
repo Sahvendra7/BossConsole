@@ -79,14 +79,23 @@ fun BossTopRunBar() {
                     RunConfigurationManager.selectConfiguration(config.id)
                 }
             },
-            onRunOrStop = { config, isRunning ->
+            onRun = { config ->
                 scope.launch {
-                    if (isRunning) {
-                        RunnerTerminalService.stopRunner(config.id)
-                    } else {
-                        RunnerTerminalService.openRunnerTerminal(config)
-                        RunConfigurationManager.addConfiguration(config)
-                    }
+                    RunConfigurationManager.selectConfiguration(config.id)
+                    RunnerTerminalService.openRunnerTerminal(config)
+                    RunConfigurationManager.addConfiguration(config)
+                }
+            },
+            onRerun = { config ->
+                scope.launch {
+                    RunConfigurationManager.selectConfiguration(config.id)
+                    RunnerTerminalService.rerunRunner(config)
+                }
+            },
+            onStop = { config ->
+                scope.launch {
+                    RunConfigurationManager.selectConfiguration(config.id)
+                    RunnerTerminalService.stopRunner(config.id)
                 }
             },
             onDelete = { config ->
@@ -197,7 +206,9 @@ private fun RunSquareButton(
 /**
  * Dropdown selector for run configurations.
  * IntelliJ-style: Only shows run history (previously executed configurations).
- * Each item has play/stop button and delete button (delete hidden when running).
+ * - Not running: [Play] [Delete]
+ * - Running: [Rerun] [Stop]
+ * Clicking any action button also selects that configuration.
  */
 @Composable
 private fun RunConfigurationSelector(
@@ -205,26 +216,29 @@ private fun RunConfigurationSelector(
     runHistory: List<RunConfiguration>,
     runningConfigs: Set<String>,
     onSelect: (RunConfiguration) -> Unit,
-    onRunOrStop: (RunConfiguration, Boolean) -> Unit,
+    onRun: (RunConfiguration) -> Unit,
+    onRerun: (RunConfiguration) -> Unit,
+    onStop: (RunConfiguration) -> Unit,
     onDelete: (RunConfiguration) -> Unit
 ) {
     // Build context menu items from run history only
     val contextMenuItems = buildList {
         if (runHistory.isNotEmpty()) {
-            // Show run history with play/stop and conditional delete buttons
+            // Show run history with action buttons based on running state
             runHistory.forEach { config ->
                 val isRunning = config.id in runningConfigs
                 add(ContextMenuItem(
                     text = config.name,
                     icon = getLanguageIcon(config.language),
                     onClick = { onSelect(config) },
-                    // Play/Stop button (always visible)
-                    trailingIcon = if (isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
-                    trailingIconColor = if (isRunning) Color(0xFFE05555) else Color(0xFF59A869),
-                    onTrailingClick = { onRunOrStop(config, isRunning) },
-                    // Delete button (hidden when running)
-                    secondaryTrailingIcon = if (isRunning) null else Icons.Outlined.Close,
-                    onSecondaryTrailingClick = if (isRunning) null else {{ onDelete(config) }}
+                    // Primary action: Play (not running) or Rerun (running)
+                    trailingIcon = if (isRunning) Icons.Outlined.Refresh else Icons.Outlined.PlayArrow,
+                    trailingIconColor = Color(0xFF59A869), // Green for both play and rerun
+                    onTrailingClick = { if (isRunning) onRerun(config) else onRun(config) },
+                    // Secondary action: Delete (not running) or Stop (running)
+                    secondaryTrailingIcon = if (isRunning) Icons.Outlined.Stop else Icons.Outlined.Close,
+                    secondaryTrailingIconColor = if (isRunning) Color(0xFFE05555) else Color(0xFF888888),
+                    onSecondaryTrailingClick = { if (isRunning) onStop(config) else onDelete(config) }
                 ))
             }
         } else {
