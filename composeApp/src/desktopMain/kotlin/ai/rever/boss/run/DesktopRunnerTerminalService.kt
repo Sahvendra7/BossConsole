@@ -126,6 +126,11 @@ actual object RunnerTerminalService {
         removeConfigFromTerminal(terminalId, configId)
         _runningConfigs.update { it - configId }
 
+        // Clear sidebar tab tracking if this was a sidebar config
+        if (terminalId == SIDEBAR_TERMINAL_ID) {
+            TabbedTerminalStateRegistry.removeSidebarConfigTracking(configId)
+        }
+
         // Emit stop event for any additional UI handling
         RunnerTerminalEventBus.stopRunnerTerminal(terminalId, configId)
 
@@ -212,6 +217,10 @@ actual object RunnerTerminalService {
                 current.filterKeys { it !in configIds }
             }
             _runningConfigs.update { it - configIds }
+            // Clear sidebar tab tracking if this was the sidebar terminal
+            if (terminalId == SIDEBAR_TERMINAL_ID) {
+                TabbedTerminalStateRegistry.clearSidebarConfigTracking()
+            }
             println("[Runner] Terminal removed: $terminalId (configs: $configIds)")
         }
     }
@@ -239,7 +248,7 @@ actual object RunnerTerminalService {
         val success = TabbedTerminalStateRegistry.newSidebarTab(
             command = command,
             workingDirectory = workingDirectory,
-            tabTitle = tabTitle,
+            configId = configId,
             isRerun = isRerun
         )
         if (success) {
