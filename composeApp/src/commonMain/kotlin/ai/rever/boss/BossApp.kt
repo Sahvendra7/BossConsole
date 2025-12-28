@@ -150,7 +150,7 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
         is TabDropResult.Reorder -> {
             // Reorder within the same panel
             val panel = splitViewState.getPanel(result.panelId)
-            val tabCount = panel?.tabsComponent?.getTabCount() ?: 0
+            val tabCount = panel?.tabsComponent?.tabsState?.value?.tabs?.size ?: 0
             // Validate indices are within bounds before reordering
             if (result.fromIndex in 0 until tabCount && result.toIndex in 0..tabCount) {
                 panel?.tabsComponent?.moveTab(result.fromIndex, result.toIndex)
@@ -160,7 +160,7 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
             // Move tab from source panel to target panel
             val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
             val targetPanel = splitViewState.getPanel(result.targetPanelId)
-            val sourceTabCount = sourcePanel?.tabsComponent?.getTabCount() ?: 0
+            val sourceTabCount = sourcePanel?.tabsComponent?.tabsState?.value?.tabs?.size ?: 0
 
             // Validate source index is within bounds
             if (sourcePanel != null && targetPanel != null && result.sourceIndex in 0 until sourceTabCount) {
