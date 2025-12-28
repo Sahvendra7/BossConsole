@@ -190,8 +190,10 @@ open class FluckTabComponent(
     private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
-    // Store the URL to load
-    private val initialUrl = (config as? FluckTabInfo)?.url ?: "https://www.risalabs.ai"
+    // Store the URL to load - use currentUrl if available (for split tabs), otherwise initial url
+    private val initialUrl = (config as? FluckTabInfo)?.let {
+        it.currentUrl.ifEmpty { it.url }
+    } ?: "https://www.risalabs.ai"
 
     // Browser state will be initialized lazily in Content() - NOT during construction
     // This prevents blocking the UI thread during window initialization

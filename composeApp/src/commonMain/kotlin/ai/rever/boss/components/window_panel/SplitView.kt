@@ -365,9 +365,10 @@ class SplitViewState(
             val copiedTab = when (tab) {
                 is EditorTabInfo -> 
                     tab.copy(id = "editor-${Random.nextLong()}")
-                is FluckTabInfo -> 
+                is FluckTabInfo ->
                     tab.copy(
                         id = "fluck-${Random.nextLong()}",
+                        _currentUrl = tab.currentUrl, // Preserve the current URL (not initial URL)
                         navigationHistory = tab.navigationHistory.toMutableList() // Deep copy the history
                     )
                 is TerminalTabInfo -> 
