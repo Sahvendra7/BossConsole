@@ -4,6 +4,7 @@ import BossDarkBorder
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -27,8 +28,12 @@ import androidx.compose.ui.window.PopupProperties
  * @param text The text to display for this item
  * @param icon The icon to display for this item (optional)
  * @param isDivider Whether this item is a divider
- * @param trailingIcon Optional trailing icon (e.g., delete button)
+ * @param trailingIcon Optional trailing icon (e.g., action button)
+ * @param trailingIconColor Color for trailing icon (defaults to gray)
  * @param onTrailingClick Action when trailing icon is clicked
+ * @param secondaryTrailingIcon Optional second trailing icon (e.g., delete button)
+ * @param secondaryTrailingIconColor Color for secondary trailing icon (defaults to gray)
+ * @param onSecondaryTrailingClick Action when secondary trailing icon is clicked
  * @param onClick The action to perform when this item is clicked (last param for trailing lambda)
  */
 data class ContextMenuItem(
@@ -36,7 +41,11 @@ data class ContextMenuItem(
     val icon: ImageVector? = null,
     val isDivider: Boolean = false,
     val trailingIcon: ImageVector? = null,
+    val trailingIconColor: Color? = null,
     val onTrailingClick: (() -> Unit)? = null,
+    val secondaryTrailingIcon: ImageVector? = null,
+    val secondaryTrailingIconColor: Color? = null,
+    val onSecondaryTrailingClick: (() -> Unit)? = null,
     val onClick: () -> Unit = {}
 )
 
@@ -104,20 +113,51 @@ fun ContextMenu(
                             modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
                                 .padding(bottom = 4.dp)
                         )
-                        // Trailing icon (e.g., delete button)
+                        // Primary trailing icon (e.g., play/stop button)
                         if (item.trailingIcon != null && item.onTrailingClick != null) {
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Icon(
-                                imageVector = item.trailingIcon,
-                                contentDescription = "Delete",
-                                tint = Color(0xFF888888),
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
                                 modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable {
+                                    .size(20.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
                                         item.onTrailingClick.invoke()
                                         onDismissRequest()
-                                    }
-                            )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = item.trailingIcon,
+                                    contentDescription = "Action",
+                                    tint = item.trailingIconColor ?: Color(0xFF888888),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        // Secondary trailing icon (e.g., delete button)
+                        if (item.secondaryTrailingIcon != null && item.onSecondaryTrailingClick != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        item.onSecondaryTrailingClick.invoke()
+                                        onDismissRequest()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = item.secondaryTrailingIcon,
+                                    contentDescription = "Delete",
+                                    tint = item.secondaryTrailingIconColor ?: Color(0xFF888888),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
                 }

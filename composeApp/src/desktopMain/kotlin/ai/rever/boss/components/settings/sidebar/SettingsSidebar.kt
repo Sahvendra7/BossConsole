@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE
+    FLUCK, CODE_EDITOR, TERMINAL, RUNNER, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE
 }
 
 @Composable
@@ -66,9 +66,19 @@ fun SettingsSidebar(
             isSelected = selectedSection == SettingsSection.TERMINAL,
             onClick = { onSectionChange(SettingsSection.TERMINAL) }
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
+        SidebarItem(
+            icon = Icons.Outlined.PlayArrow,
+            title = "Runner",
+            subtitle = "Run/stop, terminal target",
+            isSelected = selectedSection == SettingsSection.RUNNER,
+            onClick = { onSectionChange(SettingsSection.RUNNER) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         SidebarItem(
             icon = Icons.Outlined.AutoAwesome,
             title = "LLM Providers",

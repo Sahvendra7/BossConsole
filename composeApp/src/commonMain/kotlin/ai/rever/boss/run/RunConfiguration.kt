@@ -87,8 +87,30 @@ data class DetectedMainFunction(
     fun toShortName(): String {
         val fileName = filePath.substringAfterLast('/')
         return when {
-            className != null -> "$className.$functionName (${fileName})"
-            else -> "$functionName (${fileName})"
+            className != null -> "$className.$functionName ($fileName)"
+            else -> "$functionName ($fileName)"
+        }
+    }
+
+    /**
+     * Creates a short display name including the project name.
+     * Format: "main (main.kt [ProjectName])" or "ClassName.main (Main.kt [ProjectName])"
+     *
+     * @param projectRoot The project root directory path
+     */
+    fun toShortNameWithProject(projectRoot: String?): String {
+        val fileName = filePath.substringAfterLast('/')
+        val projectName = projectRoot?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+
+        val nameWithFile = when {
+            className != null -> "$className.$functionName"
+            else -> functionName
+        }
+
+        return if (projectName != null) {
+            "$nameWithFile ($fileName [$projectName])"
+        } else {
+            "$nameWithFile ($fileName)"
         }
     }
 }
