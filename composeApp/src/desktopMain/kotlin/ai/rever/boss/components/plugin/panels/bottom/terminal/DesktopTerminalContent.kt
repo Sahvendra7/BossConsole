@@ -207,6 +207,19 @@ object TabbedTerminalStateRegistry {
     }
 
     /**
+     * Close the active tab in a terminal.
+     * This will terminate the running process and close the tab.
+     *
+     * @param terminalId The terminal ID to close the active tab in
+     * @return true if the terminal exists and tab was closed, false otherwise
+     */
+    fun closeActiveTab(terminalId: String): Boolean {
+        val state = states[terminalId] ?: return false
+        state.closeActiveTab()
+        return true
+    }
+
+    /**
      * Run a command in a terminal by sending it as input.
      * This sends the command text followed by Enter to execute it.
      *

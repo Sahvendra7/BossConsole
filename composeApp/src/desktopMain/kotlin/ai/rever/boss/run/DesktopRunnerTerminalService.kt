@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.update
  * Manages runner terminals with configuration tracking.
  *
  * Features:
- * - Stop sends Ctrl+C (0x03) to interrupt running processes (BossTerm 1.0.58+)
- * - Re-run stops the current process and starts a new one
+ * - Stop closes the terminal tab and clears tracking
+ * - Re-run sends Ctrl+C, waits, then runs new command in same tab
  * - One terminal per configuration (reused on re-run)
  *
  * Issue #347: Runner should open in terminal sidebar panel with run/stop state management
@@ -79,9 +79,9 @@ actual object RunnerTerminalService {
     }
 
     /**
-     * Stop the runner for a configuration by sending Ctrl+C (interrupt signal).
+     * Stop the runner for a configuration by closing its terminal tab.
      *
-     * Uses BossTerm 1.0.58+ sendInput() API to send the interrupt signal (0x03 byte).
+     * This closes the active tab which terminates the running process.
      */
     actual suspend fun stopRunner(configId: String): Boolean {
         if (!isConfigRunning(configId)) {
@@ -95,21 +95,23 @@ actual object RunnerTerminalService {
             return false
         }
 
-        // Send Ctrl+C to the terminal to interrupt the running process
-        val sent = TabbedTerminalStateRegistry.sendCtrlC(terminalId)
-        if (sent) {
-            println("[Runner] Sent Ctrl+C to terminal: $terminalId (config: $configId)")
+        // Close the active tab in the terminal (terminates the process)
+        val closed = TabbedTerminalStateRegistry.closeActiveTab(terminalId)
+        if (closed) {
+            println("[Runner] Closed terminal tab: $terminalId (config: $configId)")
         } else {
-            println("[Runner] Failed to send Ctrl+C - terminal not found: $terminalId")
+            println("[Runner] Failed to close tab - terminal not found: $terminalId")
         }
+
+        // Clear tracking
+        _configToTerminal.update { it - configId }
+        terminalToConfig.remove(terminalId)
+        _runningConfigs.update { it - configId }
 
         // Emit stop event for any additional UI handling
         RunnerTerminalEventBus.stopRunnerTerminal(terminalId, configId)
 
-        // Note: We don't mark as not running here - the terminal's onExit callback
-        // will be triggered when the process actually exits, which calls markTerminalStopped()
-
-        return sent
+        return closed
     }
 
     /**
