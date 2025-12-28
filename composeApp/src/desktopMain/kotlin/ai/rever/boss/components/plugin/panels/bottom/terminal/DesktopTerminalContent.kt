@@ -474,6 +474,14 @@ fun resetAllTerminalStates(): Int {
 }
 
 /**
+ * Desktop implementation of resetTerminals.
+ * Called when user triggers reset from panel's more menu.
+ */
+actual fun resetTerminals() {
+    resetAllTerminalStates()
+}
+
+/**
  * Handles terminal link clicks by opening HTTP/HTTPS links in BOSS browser
  * and other protocols (file://, mailto:, etc.) in the system default handler.
  *

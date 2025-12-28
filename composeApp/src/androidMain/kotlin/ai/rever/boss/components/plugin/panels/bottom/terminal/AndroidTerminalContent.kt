@@ -78,3 +78,10 @@ actual fun PersistentTabbedTerminalContent(
         )
     }
 }
+
+/**
+ * Android stub implementation - no-op since terminal not supported.
+ */
+actual fun resetTerminals() {
+    // No-op on Android - terminal not supported
+}

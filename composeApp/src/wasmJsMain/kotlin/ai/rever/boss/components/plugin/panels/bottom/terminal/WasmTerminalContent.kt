@@ -78,3 +78,10 @@ actual fun PersistentTabbedTerminalContent(
         )
     }
 }
+
+/**
+ * WASM stub implementation - no-op since terminal not supported.
+ */
+actual fun resetTerminals() {
+    // No-op on WASM - terminal not supported
+}
