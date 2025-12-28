@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicReference
 
 /** ID for the sidebar terminal panel's persistent state */
 const val SIDEBAR_TERMINAL_ID = "sidebar-terminal"
@@ -36,24 +37,24 @@ data class PendingRunnerCommand(
     val configId: String? = null
 )
 
-/** Pending command to run when sidebar terminal first renders */
-private var pendingRunnerCommand: PendingRunnerCommand? = null
+/** Pending command to run when sidebar terminal first renders (thread-safe) */
+private val pendingRunnerCommand = AtomicReference<PendingRunnerCommand?>(null)
 
 /**
  * Set a pending command to run when the sidebar terminal panel opens.
  * This should be called BEFORE opening the panel.
+ * Thread-safe via AtomicReference.
  */
 fun setPendingSidebarCommand(command: String, workingDirectory: String?, configId: String? = null) {
-    pendingRunnerCommand = PendingRunnerCommand(command, workingDirectory, configId)
+    pendingRunnerCommand.set(PendingRunnerCommand(command, workingDirectory, configId))
 }
 
 /**
  * Get and clear the pending command (called by TabbedTerminalContent on render).
+ * Thread-safe via AtomicReference.getAndSet().
  */
 fun consumePendingSidebarCommand(): PendingRunnerCommand? {
-    val cmd = pendingRunnerCommand
-    pendingRunnerCommand = null
-    return cmd
+    return pendingRunnerCommand.getAndSet(null)
 }
 
 /**
@@ -281,12 +282,15 @@ object TabbedTerminalStateRegistry {
             val tabId = sidebarConfigToTabId[configId]
 
             if (tabId != null) {
-                println("[SidebarTerminal] Re-run: sending Ctrl+C to tab '$tabId' then command after delay")
+                println("[SidebarTerminal] Re-run: switching to tab '$tabId', sending Ctrl+C, then command after delay")
+                state.switchToTab(tabId) // Switch to the tab first so user sees it
                 state.sendCtrlC(tabId) // Ctrl+C to specific tab by stable ID
 
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = if (workingDirectory != null) {
-                    "cd \"$workingDirectory\" && $command"
+                    // Escape double quotes in the path to prevent command injection
+                    val escapedDir = workingDirectory.replace("\"", "\\\"")
+                    "cd \"$escapedDir\" && $command"
                 } else {
                     command
                 }
@@ -300,7 +304,9 @@ object TabbedTerminalStateRegistry {
                 state.sendInput(byteArrayOf(0x03))
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = if (workingDirectory != null) {
-                    "cd \"$workingDirectory\" && $command"
+                    // Escape double quotes in the path to prevent command injection
+                    val escapedDir = workingDirectory.replace("\"", "\\\"")
+                    "cd \"$escapedDir\" && $command"
                 } else {
                     command
                 }

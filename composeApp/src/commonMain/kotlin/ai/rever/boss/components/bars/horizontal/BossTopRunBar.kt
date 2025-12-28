@@ -73,9 +73,20 @@ fun BossTopRunBar() {
         RunConfigurationSelector(
             selectedConfig = selectedConfig,
             runHistory = runHistory,
+            runningConfigs = runningConfigs,
             onSelect = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
+                }
+            },
+            onRunOrStop = { config, isRunning ->
+                scope.launch {
+                    if (isRunning) {
+                        RunnerTerminalService.stopRunner(config.id)
+                    } else {
+                        RunnerTerminalService.openRunnerTerminal(config)
+                        RunConfigurationManager.addConfiguration(config)
+                    }
                 }
             },
             onDelete = { config ->
@@ -186,26 +197,34 @@ private fun RunSquareButton(
 /**
  * Dropdown selector for run configurations.
  * IntelliJ-style: Only shows run history (previously executed configurations).
- * Each item has a delete button to remove from history.
+ * Each item has play/stop button and delete button (delete hidden when running).
  */
 @Composable
 private fun RunConfigurationSelector(
     selectedConfig: RunConfiguration?,
     runHistory: List<RunConfiguration>,
+    runningConfigs: Set<String>,
     onSelect: (RunConfiguration) -> Unit,
+    onRunOrStop: (RunConfiguration, Boolean) -> Unit,
     onDelete: (RunConfiguration) -> Unit
 ) {
     // Build context menu items from run history only
     val contextMenuItems = buildList {
         if (runHistory.isNotEmpty()) {
-            // Show run history with delete buttons
+            // Show run history with play/stop and conditional delete buttons
             runHistory.forEach { config ->
+                val isRunning = config.id in runningConfigs
                 add(ContextMenuItem(
                     text = config.name,
                     icon = getLanguageIcon(config.language),
                     onClick = { onSelect(config) },
-                    trailingIcon = Icons.Outlined.Close,
-                    onTrailingClick = { onDelete(config) }
+                    // Play/Stop button (always visible)
+                    trailingIcon = if (isRunning) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                    trailingIconColor = if (isRunning) Color(0xFFE05555) else Color(0xFF59A869),
+                    onTrailingClick = { onRunOrStop(config, isRunning) },
+                    // Delete button (hidden when running)
+                    secondaryTrailingIcon = if (isRunning) null else Icons.Outlined.Close,
+                    onSecondaryTrailingClick = if (isRunning) null else {{ onDelete(config) }}
                 ))
             }
         } else {
