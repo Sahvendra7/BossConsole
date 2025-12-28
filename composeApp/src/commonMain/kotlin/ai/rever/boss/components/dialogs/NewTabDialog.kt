@@ -35,6 +35,10 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import ai.rever.boss.platform.rememberFilePicker
+import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.Folder
 
 enum class TabType {
     URL, FILE, TERMINAL
@@ -271,6 +275,133 @@ fun NewTabDialog(
                             )
                         )
                     } else if (selectedType == TabType.FILE) {
+                        // Current project/folder selector
+                        val selectedProject by ProjectState.selectedProject.collectAsState()
+                        val recentProjects by ProjectState.recentProjects.collectAsState()
+                        var showFolderDropdown by remember { mutableStateOf(false) }
+
+                        // Directory picker for selecting new folder
+                        val directoryPicker = rememberDirectoryPicker { path ->
+                            path?.let {
+                                val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                                ProjectState.selectProject(
+                                    ai.rever.boss.components.plugin.panels.left_top.Project(
+                                        name = projectName,
+                                        path = it
+                                    )
+                                )
+                                // Update file path to start from selected folder
+                                fileText = it
+                                inputText = it
+                            }
+                        }
+
+                        // Folder selector dropdown
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { showFolderDropdown = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    backgroundColor = Color(0xFF1E1F22),
+                                    contentColor = Color.White
+                                ),
+                                border = ButtonDefaults.outlinedBorder.copy(
+                                    brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
+                                ),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = "Folder",
+                                    tint = Color(0xFF6B9EFF),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (selectedProject.path.isNotEmpty())
+                                        selectedProject.name
+                                    else
+                                        "Select folder...",
+                                    color = if (selectedProject.path.isNotEmpty())
+                                        Color.White
+                                    else
+                                        Color(0xFF999999),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Expand",
+                                    tint = Color(0xFF999999)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showFolderDropdown,
+                                onDismissRequest = { showFolderDropdown = false },
+                                modifier = Modifier
+                                    .width(450.dp)
+                                    .background(Color(0xFF2B2D30))
+                            ) {
+                                // Recent projects
+                                if (recentProjects.isNotEmpty()) {
+                                    recentProjects.forEach { project ->
+                                        DropdownMenuItem(
+                                            onClick = {
+                                                ProjectState.selectProject(project)
+                                                fileText = project.path
+                                                inputText = project.path
+                                                showFolderDropdown = false
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Folder,
+                                                contentDescription = null,
+                                                tint = Color(0xFF6B9EFF),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = project.name,
+                                                    color = Color.White,
+                                                    fontSize = 14.sp
+                                                )
+                                                Text(
+                                                    text = project.path,
+                                                    color = Color(0xFF999999),
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Divider(color = Color(0xFF555555))
+                                }
+
+                                // Browse option
+                                DropdownMenuItem(
+                                    onClick = {
+                                        showFolderDropdown = false
+                                        directoryPicker.pickDirectory()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        tint = Color(0xFF999999),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Browse...",
+                                        color = Color.White,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
                         // File input with browse button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
