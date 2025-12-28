@@ -164,36 +164,35 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
 
             // Validate source index is within bounds
             if (sourcePanel != null && targetPanel != null && result.sourceIndex in 0 until sourceTabCount) {
-                // Add to target panel first
+                // Remove from source panel FIRST to prevent duplicate entries
+                // and ensure sourceIndex remains valid during removal
+                sourcePanel.tabsComponent.removeTab(result.sourceIndex)
+
+                // Then add to target panel
                 val newIndex = targetPanel.tabsComponent.addTab(result.tabInfo)
                 if (newIndex >= 0) {
                     targetPanel.tabsComponent.selectTab(newIndex)
                 }
-
-                // Then remove from source panel
-                sourcePanel.tabsComponent.removeTab(result.sourceIndex)
 
                 // Set target panel as active
                 splitViewState.setActivePanel(result.targetPanelId)
             }
         }
         is TabDropResult.CreateSplit -> {
+            // Remove from source panel FIRST if it's a different panel
+            // This ensures the tab is removed before splitPanel potentially modifies state
+            if (result.sourcePanelId != result.targetPanelId) {
+                val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
+                // Use tab ID for removal instead of index - more reliable after state changes
+                sourcePanel?.tabsComponent?.removeTabById(result.tabInfo.id)
+            }
+
             // Create a new split with the tab
             splitViewState.splitPanel(
                 panelId = result.targetPanelId,
                 orientation = result.orientation,
                 tabToMove = result.tabInfo
             )
-
-            // Remove from source panel if it's a different panel
-            if (result.sourcePanelId != result.targetPanelId) {
-                val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
-                val sourceTabCount = sourcePanel?.tabsComponent?.getTabCount() ?: 0
-                // Validate source index is within bounds
-                if (result.sourceIndex in 0 until sourceTabCount) {
-                    sourcePanel?.tabsComponent?.removeTab(result.sourceIndex)
-                }
-            }
         }
     }
 }

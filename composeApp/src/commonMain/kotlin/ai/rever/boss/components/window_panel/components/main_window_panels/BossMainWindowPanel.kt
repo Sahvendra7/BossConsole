@@ -801,7 +801,7 @@ class BossTabsComponent(
         return -1 // Failed to create component
     }
 
-    // Remove a tab
+    // Remove a tab by index
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let {
@@ -812,6 +812,14 @@ class BossTabsComponent(
             }
         }
         tabsNavigation.removeTab(index)
+    }
+
+    // Remove a tab by ID - safer than index-based removal when state may have changed
+    fun removeTabById(tabId: String) {
+        val index = tabsState.value.tabs.indexOfFirst { it.id == tabId }
+        if (index >= 0) {
+            removeTab(index)
+        }
     }
 
     // Select a tab

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Information about a tab being dragged.
@@ -185,8 +186,9 @@ class TabDraggableComponent {
     /**
      * Timestamp of last drop target update for throttling.
      * Prevents excessive calculations during drag (every pixel movement).
+     * Uses AtomicLong for thread safety even though primarily accessed from UI thread.
      */
-    private var lastDropTargetUpdateTime = 0L
+    private val lastDropTargetUpdateTime = AtomicLong(0L)
 
     /**
      * Minimum interval between drop target updates in milliseconds.
@@ -227,9 +229,12 @@ class TabDraggableComponent {
 
         // Throttle drop target updates to avoid excessive calculations
         val now = System.currentTimeMillis()
-        if (now - lastDropTargetUpdateTime >= dropTargetUpdateInterval) {
-            updateDropTarget()
-            lastDropTargetUpdateTime = now
+        val lastUpdate = lastDropTargetUpdateTime.get()
+        if (now - lastUpdate >= dropTargetUpdateInterval) {
+            // Use compareAndSet to avoid race conditions
+            if (lastDropTargetUpdateTime.compareAndSet(lastUpdate, now)) {
+                updateDropTarget()
+            }
         }
     }
 
