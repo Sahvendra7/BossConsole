@@ -91,26 +91,25 @@ actual fun TabbedTerminalContent(
         TerminalSettingsOverride(alwaysShowTabBar = true)
     }
 
-    // Register the first tab's ID after terminal renders (for pending command with configId)
-    androidx.compose.runtime.LaunchedEffect(pendingCommand?.configId) {
+    // Register the first tab's ID using session listener (callback-based, no polling)
+    androidx.compose.runtime.DisposableEffect(pendingCommand?.configId) {
         if (pendingCommand?.configId != null) {
-            // Poll for terminal to initialize and create the first tab (max 2 seconds)
-            val maxAttempts = 20
-            val delayMs = 100L
-            var attempts = 0
-            var tabId: String? = null
-
-            while (attempts < maxAttempts && tabId == null) {
-                kotlinx.coroutines.delay(delayMs)
-                tabId = state.activeTabId
-                attempts++
+            val configId = pendingCommand.configId
+            val listener = object : ai.rever.bossterm.compose.tabs.TerminalSessionListener {
+                override fun onSessionCreated(session: ai.rever.bossterm.compose.TerminalSession) {
+                    // Register the first session's ID for this config
+                    TabbedTerminalStateRegistry.registerSidebarTabId(configId, session.id)
+                    // Remove listener after first session (we only need the initial tab)
+                    state.removeSessionListener(this)
+                }
             }
+            state.addSessionListener(listener)
 
-            if (tabId != null) {
-                TabbedTerminalStateRegistry.registerSidebarTabId(pendingCommand.configId, tabId)
-            } else {
-                println("[Terminal] Warning: Could not register sidebar tab ID after ${maxAttempts * delayMs}ms")
+            onDispose {
+                state.removeSessionListener(listener)
             }
+        } else {
+            onDispose { }
         }
     }
 
