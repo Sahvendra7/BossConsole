@@ -220,11 +220,16 @@ actual object RunnerTerminalService {
     /**
      * Mark a runner terminal as stopped (process exited).
      * For terminals with multiple configs (sidebar), marks all as stopped.
+     * Also cleans up all mappings to prevent memory leaks.
      */
     actual fun markTerminalStopped(terminalId: String) {
         stateLock.withLock {
-            val configIds = terminalToConfigs[terminalId]?.toSet() ?: emptySet()
+            val configIds = terminalToConfigs.remove(terminalId)?.toSet() ?: emptySet()
             if (configIds.isNotEmpty()) {
+                // Clean up forward mapping
+                _configToTerminal.update { current ->
+                    current.filterKeys { it !in configIds }
+                }
                 _runningConfigs.update { it - configIds }
                 println("[Runner] Terminal stopped: $terminalId (configs: $configIds)")
             }
