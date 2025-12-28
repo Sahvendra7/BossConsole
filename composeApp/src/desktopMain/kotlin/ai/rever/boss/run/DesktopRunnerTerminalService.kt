@@ -7,9 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Desktop implementation of RunnerTerminalService.
@@ -24,8 +24,9 @@ import java.util.concurrent.ConcurrentHashMap
  */
 actual object RunnerTerminalService {
 
-    // Mutex for atomic state updates across configToTerminal, terminalToConfigs, and runningConfigs
-    private val stateMutex = Mutex()
+    // Single lock for ALL state updates - used by both suspend and non-suspend functions
+    // Using ReentrantLock instead of Mutex + synchronized to prevent independent lock issues
+    private val stateLock = ReentrantLock()
 
     // Map: configId → terminalTabId
     private val _configToTerminal = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -72,8 +73,8 @@ actual object RunnerTerminalService {
         // Build the command outside lock (no state access needed)
         val command = buildFullCommand(config)
 
-        // Atomic state update under mutex
-        val (terminalId, isRerun) = stateMutex.withLock {
+        // Atomic state update under lock
+        val (terminalId, isRerun) = stateLock.withLock {
             val existingTerminalId = _configToTerminal.value[config.id]
             val newTerminalId = existingTerminalId ?: "runner-${config.id}-${System.currentTimeMillis()}"
 
@@ -107,8 +108,8 @@ actual object RunnerTerminalService {
      * This closes the active tab which terminates the running process.
      */
     actual suspend fun stopRunner(configId: String): Boolean {
-        // Get terminal ID and validate under mutex
-        val terminalId = stateMutex.withLock {
+        // Get terminal ID and validate under lock
+        val terminalId = stateLock.withLock {
             if (!isConfigRunning(configId)) {
                 println("[Runner] Config $configId is not running")
                 return false
@@ -166,8 +167,8 @@ actual object RunnerTerminalService {
         // Build command outside lock
         val command = buildFullCommand(config)
 
-        // Atomic state update under mutex
-        val (terminalId, existingTerminalId) = stateMutex.withLock {
+        // Atomic state update under lock
+        val (terminalId, existingTerminalId) = stateLock.withLock {
             val existingId = _configToTerminal.value[config.id]
 
             // Stop existing process and close terminal (only for main panel mode)
@@ -186,15 +187,20 @@ actual object RunnerTerminalService {
             newTerminalId to existingId
         }
 
-        // Perform I/O operations outside lock
+        // Perform I/O operations outside lock with error handling
         if (existingTerminalId != null && !usesSidebar) {
-            // Send Ctrl+C to stop the running process
-            val sent = TabbedTerminalStateRegistry.sendCtrlC(existingTerminalId)
-            if (sent) {
-                println("[Runner] Sent Ctrl+C to stop existing process")
+            try {
+                // Send Ctrl+C to stop the running process
+                val sent = TabbedTerminalStateRegistry.sendCtrlC(existingTerminalId)
+                if (sent) {
+                    println("[Runner] Sent Ctrl+C to stop existing process")
+                }
+                // Close the terminal tab
+                RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
+            } catch (e: Exception) {
+                // Log error but continue - we've already updated state for new terminal
+                println("[Runner] Error stopping existing terminal: ${e.message}")
             }
-            // Close the terminal tab
-            RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
         }
 
         // Emit event to create terminal
@@ -214,11 +220,9 @@ actual object RunnerTerminalService {
     /**
      * Mark a runner terminal as stopped (process exited).
      * For terminals with multiple configs (sidebar), marks all as stopped.
-     * Note: This is called from non-suspend context, uses synchronized block.
      */
     actual fun markTerminalStopped(terminalId: String) {
-        // Use synchronized for non-suspend context
-        synchronized(this) {
+        stateLock.withLock {
             val configIds = terminalToConfigs[terminalId]?.toSet() ?: emptySet()
             if (configIds.isNotEmpty()) {
                 _runningConfigs.update { it - configIds }
@@ -230,11 +234,9 @@ actual object RunnerTerminalService {
     /**
      * Remove tracking for a terminal tab (when tab is closed).
      * For terminals with multiple configs (sidebar), removes all.
-     * Note: This is called from non-suspend context, uses synchronized block.
      */
     actual fun removeTerminal(terminalId: String) {
-        // Use synchronized for non-suspend context
-        synchronized(this) {
+        val isSidebar = stateLock.withLock {
             val configIds = terminalToConfigs.remove(terminalId)?.toSet() ?: emptySet()
             if (configIds.isNotEmpty()) {
                 _configToTerminal.update { current ->
@@ -243,10 +245,11 @@ actual object RunnerTerminalService {
                 _runningConfigs.update { it - configIds }
                 println("[Runner] Terminal removed: $terminalId (configs: $configIds)")
             }
+            terminalId == SIDEBAR_TERMINAL_ID
         }
 
         // Clear sidebar tab tracking outside lock (I/O operation)
-        if (terminalId == SIDEBAR_TERMINAL_ID) {
+        if (isSidebar) {
             TabbedTerminalStateRegistry.clearSidebarConfigTracking()
         }
     }
@@ -263,7 +266,6 @@ actual object RunnerTerminalService {
      * Open a runner command in the sidebar terminal panel.
      * Creates a new tab in the sidebar terminal with the given command.
      * Updates tracking to map configId → SIDEBAR_TERMINAL_ID so stop works correctly.
-     * Note: This is called from non-suspend context, uses synchronized block.
      */
     actual fun openInSidebarTerminal(
         configId: String,
@@ -282,7 +284,7 @@ actual object RunnerTerminalService {
 
         if (success) {
             // Update state atomically
-            synchronized(this) {
+            stateLock.withLock {
                 _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
                 addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
                 _runningConfigs.update { it + configId }
@@ -301,11 +303,23 @@ actual object RunnerTerminalService {
      */
     private fun buildFullCommand(config: RunConfiguration): String {
         return if (config.workingDirectory.isNotBlank()) {
-            // Escape double quotes in the path to prevent command injection
-            val escapedDir = config.workingDirectory.replace("\"", "\\\"")
+            val escapedDir = escapeForDoubleQuotes(config.workingDirectory)
             "cd \"$escapedDir\" && ${config.command}"
         } else {
             config.command
         }
+    }
+
+    /**
+     * Escape a string for safe use inside double quotes in shell.
+     * Characters that need escaping in double-quoted strings: $ ` \ " !
+     */
+    private fun escapeForDoubleQuotes(str: String): String {
+        return str
+            .replace("\\", "\\\\")  // Backslash must be escaped first
+            .replace("\"", "\\\"")  // Double quotes
+            .replace("\$", "\\\$")  // Dollar sign (prevents variable expansion)
+            .replace("`", "\\`")    // Backticks (prevents command substitution)
+            .replace("!", "\\!")    // Exclamation (history expansion in interactive shells)
     }
 }

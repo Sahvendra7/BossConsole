@@ -94,11 +94,22 @@ actual fun TabbedTerminalContent(
     // Register the first tab's ID after terminal renders (for pending command with configId)
     androidx.compose.runtime.LaunchedEffect(pendingCommand?.configId) {
         if (pendingCommand?.configId != null) {
-            // Wait for terminal to initialize and create the first tab
-            kotlinx.coroutines.delay(100)
-            val tabId = state.activeTabId
+            // Poll for terminal to initialize and create the first tab (max 2 seconds)
+            val maxAttempts = 20
+            val delayMs = 100L
+            var attempts = 0
+            var tabId: String? = null
+
+            while (attempts < maxAttempts && tabId == null) {
+                kotlinx.coroutines.delay(delayMs)
+                tabId = state.activeTabId
+                attempts++
+            }
+
             if (tabId != null) {
                 TabbedTerminalStateRegistry.registerSidebarTabId(pendingCommand.configId, tabId)
+            } else {
+                println("[Terminal] Warning: Could not register sidebar tab ID after ${maxAttempts * delayMs}ms")
             }
         }
     }
