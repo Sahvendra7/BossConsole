@@ -32,7 +32,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.res.painterResource
@@ -639,7 +641,7 @@ fun ApplicationScope.BossWindow(
                                 Text("• Terminal history in current session")
                                 Text("• Running processes")
                                 Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
-                                Text("All terminal tabs will be closed. Continue?")
+                                Text("All terminals will be reset with fresh sessions. Continue?")
                             }
                             resetTerminalResult == true -> {
                                 Text("✅ Terminal reset successful!")
@@ -665,7 +667,10 @@ fun ApplicationScope.BossWindow(
                                     isResetting = true
                                     menuScope.launch {
                                         try {
-                                            resetAllTerminalStates()
+                                            // Use IO dispatcher for resource disposal per CLAUDE.md threading guidelines
+                                            withContext(Dispatchers.IO) {
+                                                resetAllTerminalStates()
+                                            }
                                             resetTerminalResult = true
                                         } catch (e: Exception) {
                                             println("Error resetting terminals: ${e.message}")

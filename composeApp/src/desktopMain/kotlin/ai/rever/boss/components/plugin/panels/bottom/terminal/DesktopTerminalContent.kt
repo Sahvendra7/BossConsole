@@ -27,7 +27,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /** ID for the sidebar terminal panel's persistent state */
@@ -214,7 +213,18 @@ actual fun PersistentTabbedTerminalContent(
 object TabbedTerminalStateRegistry {
     private val states = mutableMapOf<String, TabbedTerminalState>()
 
-    /** Generation counter that increments on reset, used to force UI recomposition */
+    /**
+     * Generation counter that increments on each reset operation.
+     *
+     * This StateFlow triggers automatic UI recomposition when terminals are reset:
+     * 1. Composables observe this via `collectAsState()`
+     * 2. When reset increments the counter, composables recompose
+     * 3. `remember(resetGeneration)` blocks re-execute to fetch fresh state
+     * 4. `key(resetGeneration)` blocks force complete recreation of terminal UI
+     *
+     * This pattern ensures terminals refresh in place without requiring
+     * manual navigation away/back or close/reopen actions.
+     */
     private val _resetGeneration = MutableStateFlow(0)
     val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
@@ -418,7 +428,7 @@ object TabbedTerminalStateRegistry {
 private object TerminalStateRegistry {
     private val states = mutableMapOf<String, EmbeddableTerminalState>()
 
-    /** Generation counter that increments on reset, used to force UI recomposition */
+    /** Generation counter for this registry (incremented on reset but not externally observed) */
     private val _resetGeneration = MutableStateFlow(0)
     val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
