@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -22,6 +23,9 @@ import ai.rever.boss.run.ShellUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 
@@ -78,11 +82,15 @@ actual fun TabbedTerminalContent(
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
+    // Observe reset generation to force recomposition when terminals are reset
+    val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
+
     // Check if this is a fresh terminal (not in registry yet)
     val isNew = !TabbedTerminalStateRegistry.contains(SIDEBAR_TERMINAL_ID)
 
     // Use persistent state so runner can send commands to this terminal
-    val state = remember { TabbedTerminalStateRegistry.getOrCreate(SIDEBAR_TERMINAL_ID) }
+    // Key on resetGeneration to force re-creation after reset
+    val state = remember(resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(SIDEBAR_TERMINAL_ID) }
 
     // Check for pending runner command (set before panel opened)
     val pendingCommand = remember { if (isNew) consumePendingSidebarCommand() else null }
@@ -114,24 +122,27 @@ actual fun TabbedTerminalContent(
         }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = settings.defaultBackgroundColor
-    ) {
-        TabbedTerminal(
-            state = state,
-            // Pass pending command for first render (runs in default tab)
-            initialCommand = pendingCommand?.command,
-            workingDirectory = pendingCommand?.workingDirectory ?: workingDirectory,
-            settingsOverride = sidebarSettings,
-            onExit = {
-                TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
-                onExit()
-            },
-            onShowSettings = onShowSettings,
-            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
-            modifier = Modifier.fillMaxSize()
-        )
+    // Use key() to force complete recreation of terminal when reset happens
+    key(resetGeneration) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = settings.defaultBackgroundColor
+        ) {
+            TabbedTerminal(
+                state = state,
+                // Pass pending command for first render (runs in default tab)
+                initialCommand = pendingCommand?.command,
+                workingDirectory = pendingCommand?.workingDirectory ?: workingDirectory,
+                settingsOverride = sidebarSettings,
+                onExit = {
+                    TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
+                    onExit()
+                },
+                onShowSettings = onShowSettings,
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
@@ -155,9 +166,13 @@ actual fun PersistentTabbedTerminalContent(
     onShowSettings: () -> Unit,
     onTitleChange: ((String) -> Unit)?
 ) {
+    // Observe reset generation to force recomposition when terminals are reset
+    val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
+
     // Check if this is a new terminal (not already in registry)
     val isNew = !TabbedTerminalStateRegistry.contains(terminalId)
-    val state = remember(terminalId) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
+    // Key on both terminalId and resetGeneration to force re-creation after reset
+    val state = remember(terminalId, resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -167,24 +182,27 @@ actual fun PersistentTabbedTerminalContent(
         }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = settings.defaultBackgroundColor
-    ) {
-        TabbedTerminal(
-            state = state,
-            // Only send initial command and working directory for newly created terminals
-            initialCommand = if (isNew) initialCommand else null,
-            workingDirectory = if (isNew) workingDirectory else null,
-            onExit = {
-                TabbedTerminalStateRegistry.remove(terminalId)
-                onExit()
-            },
-            onShowSettings = onShowSettings,
-            onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
-            modifier = Modifier.fillMaxSize()
-        )
+    // Use key() to force complete recreation of terminal when reset happens
+    key(resetGeneration) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = settings.defaultBackgroundColor
+        ) {
+            TabbedTerminal(
+                state = state,
+                // Only send initial command and working directory for newly created terminals
+                initialCommand = if (isNew) initialCommand else null,
+                workingDirectory = if (isNew) workingDirectory else null,
+                onExit = {
+                    TabbedTerminalStateRegistry.remove(terminalId)
+                    onExit()
+                },
+                onShowSettings = onShowSettings,
+                onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
@@ -194,6 +212,21 @@ actual fun PersistentTabbedTerminalContent(
  */
 object TabbedTerminalStateRegistry {
     private val states = mutableMapOf<String, TabbedTerminalState>()
+
+    /**
+     * Generation counter that increments on each reset operation.
+     *
+     * This StateFlow triggers automatic UI recomposition when terminals are reset:
+     * 1. Composables observe this via `collectAsState()`
+     * 2. When reset increments the counter, composables recompose
+     * 3. `remember(resetGeneration)` blocks re-execute to fetch fresh state
+     * 4. `key(resetGeneration)` blocks force complete recreation of terminal UI
+     *
+     * This pattern ensures terminals refresh in place without requiring
+     * manual navigation away/back or close/reopen actions.
+     */
+    private val _resetGeneration = MutableStateFlow(0)
+    val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
     fun getOrCreate(terminalId: String): TabbedTerminalState {
         return states.getOrPut(terminalId) { TabbedTerminalState() }
@@ -361,6 +394,31 @@ object TabbedTerminalStateRegistry {
     fun clearSidebarConfigTracking() {
         sidebarConfigToTabId.clear()
     }
+
+    /**
+     * Reset all terminals by disposing all states and clearing tracking.
+     * Used by "Reset Terminal" in Help menu.
+     *
+     * @return Number of terminal states that were disposed
+     */
+    fun resetAllTerminals(): Int {
+        val count = states.size
+        // Dispose all terminal states
+        states.values.forEach { state ->
+            try {
+                state.dispose()
+            } catch (e: Exception) {
+                println("Error disposing terminal state: ${e.message}")
+            }
+        }
+        states.clear()
+        // Clear sidebar config tracking
+        sidebarConfigToTabId.clear()
+        // Increment generation to trigger UI recomposition
+        _resetGeneration.value++
+        println("[TabbedTerminalStateRegistry] Reset complete: disposed $count terminal states, generation=${_resetGeneration.value}")
+        return count
+    }
 }
 
 /**
@@ -369,6 +427,10 @@ object TabbedTerminalStateRegistry {
  */
 private object TerminalStateRegistry {
     private val states = mutableMapOf<String, EmbeddableTerminalState>()
+
+    /** Generation counter for this registry (incremented on reset but not externally observed) */
+    private val _resetGeneration = MutableStateFlow(0)
+    val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
     fun getOrCreate(terminalId: String): EmbeddableTerminalState {
         return states.getOrPut(terminalId) { EmbeddableTerminalState() }
@@ -379,6 +441,44 @@ private object TerminalStateRegistry {
     }
 
     fun contains(terminalId: String): Boolean = terminalId in states
+
+    fun resetAll(): Int {
+        val count = states.size
+        states.values.forEach { state ->
+            try {
+                state.dispose()
+            } catch (e: Exception) {
+                println("Error disposing embeddable terminal state: ${e.message}")
+            }
+        }
+        states.clear()
+        // Increment generation to trigger UI recomposition
+        _resetGeneration.value++
+        println("[TerminalStateRegistry] Reset complete: disposed $count terminal states, generation=${_resetGeneration.value}")
+        return count
+    }
+}
+
+/**
+ * Reset all terminal states across all registries.
+ * Called by "Reset Terminal" in Help menu.
+ *
+ * @return Total number of terminal states disposed
+ */
+fun resetAllTerminalStates(): Int {
+    val tabbedCount = TabbedTerminalStateRegistry.resetAllTerminals()
+    val embeddableCount = TerminalStateRegistry.resetAll()
+    val total = tabbedCount + embeddableCount
+    println("[Terminal] Total reset: disposed $total terminal states (tabbed=$tabbedCount, embeddable=$embeddableCount)")
+    return total
+}
+
+/**
+ * Desktop implementation of resetTerminals.
+ * Called when user triggers reset from panel's more menu.
+ */
+actual fun resetTerminals() {
+    resetAllTerminalStates()
 }
 
 /**
@@ -431,11 +531,16 @@ actual fun TerminalContent(
     workingDirectory: String?,
     onExit: () -> Unit
 ) {
+    // Observe reset generation to force recomposition when terminals are reset
+    // Uses TabbedTerminalStateRegistry's generation since both registries are reset together
+    val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
+
     // If terminalId is provided, use the registry for persistent state
     // Otherwise, use compose's remember (ephemeral state)
     val terminalState = if (terminalId != null) {
         val isNew = !TerminalStateRegistry.contains(terminalId)
-        val state = remember(terminalId) { TerminalStateRegistry.getOrCreate(terminalId) }
+        // Key on both terminalId and resetGeneration to force re-creation after reset
+        val state = remember(terminalId, resetGeneration) { TerminalStateRegistry.getOrCreate(terminalId) }
 
         // Clean up when this composable is permanently removed
         DisposableEffect(terminalId) {
@@ -457,22 +562,25 @@ actual fun TerminalContent(
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = settings.defaultBackgroundColor
-    ) {
-        EmbeddableTerminal(
-            state = state,
-            // Only send initial command and working directory for newly created terminals
-            initialCommand = if (isNew) initialCommand else null,
-            workingDirectory = if (isNew) workingDirectory else null,
-            onExit = { _ ->
-                // Clean up registry when terminal exits
-                terminalId?.let { TerminalStateRegistry.remove(it) }
-                onExit()
-            },
-            onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
-            modifier = Modifier.fillMaxSize()
-        )
+    // Use key() to force complete recreation of terminal when reset happens
+    key(resetGeneration) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = settings.defaultBackgroundColor
+        ) {
+            EmbeddableTerminal(
+                state = state,
+                // Only send initial command and working directory for newly created terminals
+                initialCommand = if (isNew) initialCommand else null,
+                workingDirectory = if (isNew) workingDirectory else null,
+                onExit = { _ ->
+                    // Clean up registry when terminal exits
+                    terminalId?.let { TerminalStateRegistry.remove(it) }
+                    onExit()
+                },
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }

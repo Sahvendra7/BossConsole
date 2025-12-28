@@ -53,6 +53,14 @@ class TerminalComponent(
         )
     }
 
+    /**
+     * Called when user clicks Reset in the panel's more menu.
+     * Resets all terminal states to fix persistent issues.
+     */
+    override fun onBeforeReset() {
+        resetTerminals()
+    }
+
     @Composable
     override fun Content() {
         TabbedTerminalContent(
@@ -134,6 +142,12 @@ expect fun PersistentTabbedTerminalContent(
     onShowSettings: () -> Unit = {},
     onTitleChange: ((String) -> Unit)? = null
 )
+
+/**
+ * Platform-specific function to reset all terminal states.
+ * Called when user triggers reset from panel's more menu.
+ */
+expect fun resetTerminals()
 
 fun DefaultPlugin.registerTerminal() = panelRegistry.registerPanel(TerminalInfo) {
     ctx, panelInfo -> TerminalComponent(ctx, panelInfo)
