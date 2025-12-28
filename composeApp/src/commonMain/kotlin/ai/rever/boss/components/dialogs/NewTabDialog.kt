@@ -37,8 +37,21 @@ import kotlinx.coroutines.delay
 import ai.rever.boss.platform.rememberFilePicker
 import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.FileNode
+import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
+import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
+import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class TabType {
     URL, FILE, TERMINAL
@@ -280,6 +293,25 @@ fun NewTabDialog(
                         val recentProjects by ProjectState.recentProjects.collectAsState()
                         var showFolderDropdown by remember { mutableStateOf(false) }
 
+                        // File tree state
+                        var fileTree by remember { mutableStateOf<FileNode?>(null) }
+                        var expandedPaths by remember { mutableStateOf(setOf<String>()) }
+                        var isLoadingTree by remember { mutableStateOf(false) }
+                        val coroutineScope = rememberCoroutineScope()
+
+                        // Load file tree when project changes
+                        LaunchedEffect(selectedProject.path) {
+                            if (selectedProject.path.isNotEmpty()) {
+                                isLoadingTree = true
+                                fileTree = withContext(Dispatchers.IO) {
+                                    scanDirectory(selectedProject.path)
+                                }
+                                isLoadingTree = false
+                            } else {
+                                fileTree = null
+                            }
+                        }
+
                         // Directory picker for selecting new folder
                         val directoryPicker = rememberDirectoryPicker { path ->
                             path?.let {
@@ -290,9 +322,8 @@ fun NewTabDialog(
                                         path = it
                                     )
                                 )
-                                // Update file path to start from selected folder
-                                fileText = it
-                                inputText = it
+                                // Clear expanded paths for new folder
+                                expandedPaths = emptySet()
                             }
                         }
 
@@ -348,8 +379,7 @@ fun NewTabDialog(
                                         DropdownMenuItem(
                                             onClick = {
                                                 ProjectState.selectProject(project)
-                                                fileText = project.path
-                                                inputText = project.path
+                                                expandedPaths = emptySet()
                                                 showFolderDropdown = false
                                             }
                                         ) {
@@ -400,7 +430,71 @@ fun NewTabDialog(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // File tree browser
+                        if (selectedProject.path.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                backgroundColor = Color(0xFF1E1F22),
+                                shape = RoundedCornerShape(4.dp),
+                                elevation = 0.dp
+                            ) {
+                                if (isLoadingTree) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = Color(0xFF4A9EFF),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                } else if (fileTree != null) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(4.dp)
+                                    ) {
+                                        fileTree?.children?.forEach { node ->
+                                            DialogFileTreeItem(
+                                                node = node,
+                                                level = 0,
+                                                expandedPaths = expandedPaths,
+                                                onToggleExpanded = { path ->
+                                                    expandedPaths = if (expandedPaths.contains(path)) {
+                                                        expandedPaths - path
+                                                    } else {
+                                                        expandedPaths + path
+                                                    }
+                                                },
+                                                onFileClick = { file ->
+                                                    inputText = file.path
+                                                    fileText = file.path
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Unable to load files",
+                                            color = Color(0xFF999999),
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
 
                         // File input with browse button
                         Row(
@@ -415,13 +509,13 @@ fun NewTabDialog(
                                 },
                                 label = {
                                     Text(
-                                        "Enter file path",
+                                        "File path",
                                         color = Color(0xFF999999)
                                     )
                                 },
                                 placeholder = {
                                     Text(
-                                        "README.md",
+                                        "Select a file above or enter path",
                                         color = Color(0xFF666666)
                                     )
                                 },
@@ -756,5 +850,90 @@ private fun processUrlInput(input: String): String {
         isLocalhost -> "http://$trimmed"
         isLikelyUrl -> "https://$trimmed"
         else -> "https://www.google.com/search?q=${encodeUrlParameter(trimmed)}"
+    }
+}
+
+/**
+ * Simplified file tree item for the NewTabDialog file browser.
+ */
+@Composable
+private fun DialogFileTreeItem(
+    node: FileNode,
+    level: Int,
+    expandedPaths: Set<String>,
+    onToggleExpanded: (String) -> Unit,
+    onFileClick: (FileNode) -> Unit
+) {
+    val isExpanded = expandedPaths.contains(node.path)
+    val hasChildren = node.isDirectory && (node.hasChildren != false || node.children.isNotEmpty())
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .clickable {
+                    if (node.isDirectory) {
+                        onToggleExpanded(node.path)
+                    } else {
+                        onFileClick(node)
+                    }
+                }
+                .padding(start = (8 + level * 12).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Expand/collapse icon for directories
+            if (node.isDirectory && hasChildren) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = Color(0xFF999999),
+                    modifier = Modifier.size(14.dp)
+                )
+            } else {
+                Spacer(modifier = Modifier.width(14.dp))
+            }
+
+            Spacer(modifier = Modifier.width(2.dp))
+
+            // File/folder icon
+            Icon(
+                imageVector = when {
+                    node.isDirectory -> if (isExpanded) Icons.Outlined.Folder else Icons.Outlined.Folder
+                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Icons.Outlined.Code
+                    node.name.endsWith(".md") -> Icons.Outlined.Description
+                    else -> Icons.AutoMirrored.Outlined.InsertDriveFile
+                },
+                contentDescription = if (node.isDirectory) "Folder" else "File",
+                tint = when {
+                    node.isDirectory -> Color(0xFF6B9EFF)
+                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Color(0xFFE57373)
+                    else -> Color(0xFF90A4AE)
+                },
+                modifier = Modifier.size(14.dp)
+            )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // File/folder name
+            Text(
+                text = node.name,
+                fontSize = 12.sp,
+                color = Color(0xFFCCCCCC)
+            )
+        }
+
+        // Show children if expanded
+        if (node.isDirectory && isExpanded && node.children.isNotEmpty()) {
+            node.children.forEach { child ->
+                DialogFileTreeItem(
+                    node = child,
+                    level = level + 1,
+                    expandedPaths = expandedPaths,
+                    onToggleExpanded = onToggleExpanded,
+                    onFileClick = onFileClick
+                )
+            }
+        }
     }
 }
