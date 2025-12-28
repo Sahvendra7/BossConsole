@@ -777,7 +777,8 @@ fun ComponentContext.BossApp(
                 val existingWorkspaceIds = configs.map { it.id }.toSet()
                 splitViewState.cleanupDeletedWorkspaces(existingWorkspaceIds)
                 
-                // Only load on first emission when configs are available
+                // Handle workspace restoration - only process when configs are loaded (non-empty)
+                // Empty configs might mean either "loading" or "fresh install" - we use timeout for fresh install
                 if (configs.isNotEmpty() && workspaceManager.currentWorkspace.value == null) {
                     // Only load "Last Session" for the first window (app startup)
                     // New windows should start fresh (Issue #129)
@@ -847,7 +848,28 @@ fun ComponentContext.BossApp(
             }
             .launchIn(this)
     }
-    
+
+    // Fallback timeout for fresh install (no workspaces on disk at all)
+    // This handles the case where workspace manager never emits non-empty configs
+    LaunchedEffect(isFirstWindow, isSessionResolved) {
+        if (isFirstWindow && !workspaceRestorationComplete) {
+            delay(500) // Wait for workspace manager to load from disk
+            if (!workspaceRestorationComplete) {
+                // Still not complete after timeout - assume fresh install
+                println("BossApp: Workspace loading timeout (500ms), assuming fresh install")
+                workspaceRestorationComplete = true
+
+                URLHandlerService.markAppReady()
+                FileHandlerService.markReady()
+                WorkspaceHandlerService.markReady()
+                if (isSessionResolved) {
+                    TerminalHandlerService.markReady()
+                }
+                println("BossApp: Marked all handlers ready (fresh install fallback)")
+            }
+        }
+    }
+
     // Listen for file open events - now handled by split state
     LaunchedEffect(splitViewState) {
         FileEventBus.fileOpenEvents
