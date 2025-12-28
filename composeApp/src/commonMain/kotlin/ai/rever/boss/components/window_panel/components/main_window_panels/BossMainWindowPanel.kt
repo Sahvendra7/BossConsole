@@ -1,5 +1,6 @@
 package ai.rever.boss.components.window_panel.components.main_window_panels
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
@@ -9,6 +10,9 @@ import ai.rever.boss.components.bars.horizontal.HorizontalBarRow
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.buttons.BossTabButton
 import ai.rever.boss.components.common.rememberFaviconLoader
+import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
+import ai.rever.boss.components.model.TabDropTarget
 import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabIcon
@@ -50,9 +54,12 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -77,7 +84,12 @@ private fun BossTabButtonWithFavicon(
     isFocused: Boolean,
     onClick: () -> Unit,
     onClose: () -> Unit,
-    contextMenuItems: List<ContextMenuItem>
+    contextMenuItems: List<ContextMenuItem>,
+    // Drag-related parameters
+    tabDragComponent: TabDraggableComponent? = null,
+    panelId: String? = null,
+    tabIndex: Int = -1,
+    onDragEnd: () -> Unit = {}
 ) {
     // Load favicon using shared composable (with error handling and caching)
     val loadedFavicon = rememberFaviconLoader(config)
@@ -93,7 +105,12 @@ private fun BossTabButtonWithFavicon(
         isFocused = isFocused,
         onClick = onClick,
         onClose = onClose,
-        contextMenuItems = contextMenuItems
+        contextMenuItems = contextMenuItems,
+        tabDragComponent = tabDragComponent,
+        tabInfo = config,
+        panelId = panelId,
+        tabIndex = tabIndex,
+        onDragEnd = onDragEnd
     )
 }
 
@@ -101,7 +118,9 @@ private fun BossTabButtonWithFavicon(
 fun BossTabsComponent.BossMainTabBar(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
     currentPanelId: String? = null,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    tabDragComponent: TabDraggableComponent? = null,
+    onTabDropResult: (TabDropResult) -> Unit = {}
 ) {
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
@@ -154,16 +173,42 @@ fun BossTabsComponent.BossMainTabBar(
         }
     }
 
+    // Track drop target for reorder indicator
+    val dropTarget = tabDragComponent?.dropTarget
+
     HorizontalBar(
-        height = 42.dp, 
+        height = 42.dp,
         backgroundColor = BossDarkBackground
     ) {
-        HorizontalBarRow {
+        HorizontalBarRow(
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                // Register tab bar bounds for drag detection
+                if (currentPanelId != null && tabDragComponent != null) {
+                    val bounds = coordinates.boundsInWindow()
+                    tabDragComponent.registerTabBarBounds(currentPanelId, bounds)
+                }
+            }
+        ) {
             BossLeftTabBar(listState) {
                 // Render tab buttons as lazy items
                 itemsIndexed(tabsState.value.tabs) { index, config ->
                     val isSelected = index == tabsState.value.activeIndex
                     val totalTabs = tabsState.value.tabs.size
+
+                    // Show reorder indicator before this tab if it's the drop target
+                    val showIndicatorBefore = dropTarget is TabDropTarget.Reorder &&
+                        (dropTarget as TabDropTarget.Reorder).panelId == currentPanelId &&
+                        (dropTarget as TabDropTarget.Reorder).targetIndex == index
+
+                    if (showIndicatorBefore) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .padding(vertical = 8.dp)
+                                .background(BossDarkAccent)
+                        )
+                    }
 
                     BossTabButtonWithFavicon(
                         config = config,
@@ -181,6 +226,15 @@ fun BossTabsComponent.BossMainTabBar(
                             // Request focus back to the main panel after closing tab
                             // This ensures keyboard shortcuts continue to work
                             focusRequester?.requestFocus()
+                        },
+                        tabDragComponent = tabDragComponent,
+                        panelId = currentPanelId,
+                        tabIndex = index,
+                        onDragEnd = {
+                            // Handle drop result
+                            tabDragComponent?.endDrag()?.let { result ->
+                                onTabDropResult(result)
+                            }
                         },
                         contextMenuItems = buildList {
                             // Track interaction when context menu is opened
@@ -300,6 +354,23 @@ fun BossTabsComponent.BossMainTabBar(
                     // Vertical divider after tab (only if not the last tab)
                     if (index < tabsState.value.tabs.size - 1) {
                         VDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp))
+                    }
+
+                    // Show reorder indicator after the last tab if dropping at the end
+                    val isLastTab = index == tabsState.value.tabs.size - 1
+                    val showIndicatorAfter = isLastTab &&
+                        dropTarget is TabDropTarget.Reorder &&
+                        (dropTarget as TabDropTarget.Reorder).panelId == currentPanelId &&
+                        (dropTarget as TabDropTarget.Reorder).targetIndex == tabsState.value.tabs.size
+
+                    if (showIndicatorAfter) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .padding(vertical = 8.dp)
+                                .background(BossDarkAccent)
+                        )
                     }
                 }
 
@@ -524,16 +595,18 @@ fun BossTabsComponent.BossMainTabBar(
 fun BossTabsComponent.BossMainPanel(
     modifier: Modifier = Modifier,
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
-    currentPanelId: String? = null
+    currentPanelId: String? = null,
+    tabDragComponent: TabDraggableComponent? = null,
+    onTabDropResult: (TabDropResult) -> Unit = {}
 ) {
     val focusRequester = remember { FocusRequester() }
     val isFocused = remember { mutableStateOf(false) }
-    
+
     // Track the active panel state to force recomposition
     val activePanelId by splitViewState?.activePanelIdState ?: remember { mutableStateOf("") }
     val isActivePanel = activePanelId == currentPanelId
-    
-    
+
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -558,7 +631,9 @@ fun BossTabsComponent.BossMainPanel(
         BossMainTabBar(
             splitViewState = splitViewState,
             currentPanelId = currentPanelId,
-            focusRequester = focusRequester
+            focusRequester = focusRequester,
+            tabDragComponent = tabDragComponent,
+            onTabDropResult = onTabDropResult
         )
         Divider(color = BossDarkBorder)
         BossMainPanelContent(
@@ -743,7 +818,12 @@ class BossTabsComponent(
     fun selectTab(index: Int) {
         tabsNavigation.selectTab(index)
     }
-    
+
+    // Move a tab from one position to another
+    fun moveTab(fromIndex: Int, toIndex: Int) {
+        tabsNavigation.moveTab(fromIndex, toIndex)
+    }
+
     // Update a tab
     fun updateTab(index: Int, config: TabInfo) {
         tabsNavigation.updateTab(index, config)

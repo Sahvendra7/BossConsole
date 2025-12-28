@@ -11,7 +11,10 @@ import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.overlays.DraggingItemOverlay
+import ai.rever.boss.components.overlays.TabDraggingOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
@@ -123,6 +126,7 @@ import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.components.events.KeyboardEventResult
 import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.window.WindowAppearanceSettingsManager
 import ai.rever.boss.performance.PerformanceState
@@ -132,6 +136,52 @@ import ai.rever.boss.performance.EditorTabResourceInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
+
+/**
+ * Handle the result of a tab drop operation.
+ */
+private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitViewState) {
+    when (result) {
+        is TabDropResult.Reorder -> {
+            // Reorder within the same panel
+            val panel = splitViewState.getPanel(result.panelId)
+            panel?.tabsComponent?.moveTab(result.fromIndex, result.toIndex)
+        }
+        is TabDropResult.MoveToPanel -> {
+            // Move tab from source panel to target panel
+            val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
+            val targetPanel = splitViewState.getPanel(result.targetPanelId)
+
+            if (sourcePanel != null && targetPanel != null) {
+                // Add to target panel first
+                val newIndex = targetPanel.tabsComponent.addTab(result.tabInfo)
+                if (newIndex >= 0) {
+                    targetPanel.tabsComponent.selectTab(newIndex)
+                }
+
+                // Then remove from source panel
+                sourcePanel.tabsComponent.removeTab(result.sourceIndex)
+
+                // Set target panel as active
+                splitViewState.setActivePanel(result.targetPanelId)
+            }
+        }
+        is TabDropResult.CreateSplit -> {
+            // Create a new split with the tab
+            splitViewState.splitPanel(
+                panelId = result.targetPanelId,
+                orientation = result.orientation,
+                tabToMove = result.tabInfo
+            )
+
+            // Remove from source panel if it's a different panel
+            if (result.sourcePanelId != result.targetPanelId) {
+                val sourcePanel = splitViewState.getPanel(result.sourcePanelId)
+                sourcePanel?.tabsComponent?.removeTab(result.sourceIndex)
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -148,6 +198,7 @@ fun ComponentContext.BossApp(
     val panelComponentStore = remember { PanelComponentStore(this, panelRegistry) }
 
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
+    val tabDragComponent = remember { TabDraggableComponent() }
     val tabsComponent = remember { BossTabsComponent(this, tabRegistry) }
     
     // Create split view state that manages all tab panels
@@ -1377,7 +1428,11 @@ fun ComponentContext.BossApp(
                             modifier = Modifier.weight(1f),
                             tabsComponent = tabsComponent,
                             panelComponentStore = panelComponentStore,
-                            splitViewState = splitViewState
+                            splitViewState = splitViewState,
+                            tabDragComponent = tabDragComponent,
+                            onTabDropResult = { result ->
+                                handleTabDropResult(result, splitViewState)
+                            }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation
@@ -1495,6 +1550,9 @@ fun ComponentContext.BossApp(
 
                 // Draw the dragging item overlay (ghost) if an item is being dragged
                 DraggingItemOverlay()
+
+                // Draw the tab dragging overlay (ghost tab) if a tab is being dragged
+                tabDragComponent.TabDraggingOverlay()
             }
             
             // Show new tab dialog

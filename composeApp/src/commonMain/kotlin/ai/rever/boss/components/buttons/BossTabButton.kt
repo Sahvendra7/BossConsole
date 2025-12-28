@@ -3,13 +3,16 @@ package ai.rever.boss.components.buttons
 import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
+import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.ContextMenu
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -34,13 +37,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +68,14 @@ fun BossTabButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onClose: () -> Unit = {},
-    contextMenuItems: List<ContextMenuItem> = emptyList()
+    contextMenuItems: List<ContextMenuItem> = emptyList(),
+    // Drag-related parameters
+    tabDragComponent: TabDraggableComponent? = null,
+    tabInfo: TabInfo? = null,
+    panelId: String? = null,
+    tabIndex: Int = -1,
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {}
 ) {
     // Determine which icon to use
     val painter = when {
@@ -132,7 +145,18 @@ fun BossTabButton(
 
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
-    
+
+    // Track window position for drag
+    var windowPosition by remember { mutableStateOf(Offset.Zero) }
+
+    // Register tab bounds for drag system
+    val compositeTabId = if (panelId != null && tabInfo != null) "$panelId:${tabInfo.id}" else null
+    DisposableEffect(compositeTabId) {
+        onDispose {
+            compositeTabId?.let { tabDragComponent?.unregisterTabBounds(it) }
+        }
+    }
+
     // Show context menu with proper positioning
     if (showContextMenu && contextMenuItems.isNotEmpty()) {
         ContextMenu(
@@ -144,7 +168,10 @@ fun BossTabButton(
             onDismissRequest = { showContextMenu = false }
         )
     }
-    
+
+    // Check if drag is enabled
+    val isDragEnabled = tabDragComponent != null && tabInfo != null && panelId != null && tabIndex >= 0
+
     Box(
         modifier = modifier
             .fillMaxHeight()
@@ -153,15 +180,21 @@ fun BossTabButton(
             .hoverable(interactionSource)
             .onGloballyPositioned { coordinates ->
                 buttonPosition = coordinates.positionInParent()
+                windowPosition = coordinates.positionInWindow()
                 buttonSize = IntOffset(
                     coordinates.size.width,
                     coordinates.size.height
                 )
+                // Register bounds for drag system
+                if (compositeTabId != null && tabDragComponent != null) {
+                    val bounds = coordinates.boundsInWindow()
+                    tabDragComponent.registerTabBounds(compositeTabId, bounds)
+                }
             }
             .pointerInput(contextMenuItems) {
                 awaitEachGesture {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
-                    if (contextMenuItems.isNotEmpty() && 
+                    if (contextMenuItems.isNotEmpty() &&
                         event.type == androidx.compose.ui.input.pointer.PointerEventType.Press &&
                         !event.buttons.isPrimaryPressed) {
                         showContextMenu = true
@@ -169,6 +202,37 @@ fun BossTabButton(
                     }
                 }
             }
+            .then(
+                if (isDragEnabled) {
+                    Modifier.pointerInput(tabInfo, panelId, tabIndex) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                // Calculate absolute position for drag start
+                                val absolutePosition = windowPosition + offset
+                                tabDragComponent!!.startDragging(
+                                    tabInfo = tabInfo!!,
+                                    panelId = panelId!!,
+                                    index = tabIndex,
+                                    startPosition = absolutePosition
+                                )
+                                onDragStart()
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                tabDragComponent!!.updateDrag(dragAmount)
+                            },
+                            onDragEnd = {
+                                onDragEnd()
+                            },
+                            onDragCancel = {
+                                tabDragComponent!!.cancelDrag()
+                            }
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
     ) {
         TextButton(
             modifier = Modifier.fillMaxHeight(),

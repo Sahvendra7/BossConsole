@@ -1,6 +1,11 @@
 package ai.rever.boss.components.window_panel
 
+import BossDarkAccent
 import ai.rever.boss.components.model.Panel
+import ai.rever.boss.components.model.PanelDropZones
+import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
+import ai.rever.boss.components.model.TabDropTarget
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabRegistry
@@ -8,12 +13,22 @@ import ai.rever.boss.components.window_panel.components.BossResizablePanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossMainPanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.components.main_window_panels.createBossAppContext
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.dp
 import kotlin.random.Random
 import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
@@ -825,6 +840,13 @@ class SplitViewState(
     fun getPanelTabsComponent(panelId: String): BossTabsComponent? {
         return findPanel(panelId)?.tabsComponent
     }
+
+    /**
+     * Get a panel by its ID.
+     */
+    fun getPanel(panelId: String): SplitNode.Panel? {
+        return findPanel(panelId)
+    }
     
     fun selectTabInPanel(tabId: String, panelId: String) {
         val panel = findPanel(panelId)
@@ -1045,12 +1067,16 @@ fun rememberSplitViewState(
 @Composable
 fun SplitViewPanel(
     splitViewState: SplitViewState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tabDragComponent: TabDraggableComponent? = null,
+    onTabDropResult: (TabDropResult) -> Unit = {}
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         RenderSplitNode(
             node = splitViewState.rootNode,
-            splitViewState = splitViewState
+            splitViewState = splitViewState,
+            tabDragComponent = tabDragComponent,
+            onTabDropResult = onTabDropResult
         )
     }
 }
@@ -1058,7 +1084,9 @@ fun SplitViewPanel(
 @Composable
 private fun RenderSplitNode(
     node: SplitNode,
-    splitViewState: SplitViewState
+    splitViewState: SplitViewState,
+    tabDragComponent: TabDraggableComponent? = null,
+    onTabDropResult: (TabDropResult) -> Unit = {}
 ) {
     when (node) {
         is SplitNode.Panel -> {
@@ -1074,7 +1102,12 @@ private fun RenderSplitNode(
                     }
                 }
 
-                // Capture panel position for spatial navigation
+                // Track drop target for panel drop zone highlights
+                val dropTarget = tabDragComponent?.dropTarget
+                val isDragging = tabDragComponent?.isDragging == true
+                val draggingTab = tabDragComponent?.draggingTab
+
+                // Capture panel position for spatial navigation and drop zones
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1089,12 +1122,27 @@ private fun RenderSplitNode(
                                     height = bounds.height
                                 )
                             )
+                            // Register panel drop zones for drag system
+                            if (tabDragComponent != null) {
+                                val windowBounds = coordinates.boundsInWindow()
+                                tabDragComponent.registerPanelDropZones(node.id, windowBounds)
+                            }
                         }
                 ) {
                     node.tabsComponent.BossMainPanel(
                         splitViewState = splitViewState,
-                        currentPanelId = node.id
+                        currentPanelId = node.id,
+                        tabDragComponent = tabDragComponent,
+                        onTabDropResult = onTabDropResult
                     )
+
+                    // Show drop zone highlights when dragging over this panel
+                    if (isDragging && draggingTab != null && draggingTab.sourcePanelId != node.id) {
+                        PanelDropZoneOverlay(
+                            panelId = node.id,
+                            dropTarget = dropTarget
+                        )
+                    }
                 }
             }
         }
@@ -1109,13 +1157,17 @@ private fun RenderSplitNode(
                 mainContent = {
                     RenderSplitNode(
                         node = node.left,
-                        splitViewState = splitViewState
+                        splitViewState = splitViewState,
+                        tabDragComponent = tabDragComponent,
+                        onTabDropResult = onTabDropResult
                     )
                 },
                 sideContent = {
                     RenderSplitNode(
                         node = node.right,
-                        splitViewState = splitViewState
+                        splitViewState = splitViewState,
+                        tabDragComponent = tabDragComponent,
+                        onTabDropResult = onTabDropResult
                     )
                 }
             )
@@ -1131,15 +1183,104 @@ private fun RenderSplitNode(
                 mainContent = {
                     RenderSplitNode(
                         node = node.top,
-                        splitViewState = splitViewState
+                        splitViewState = splitViewState,
+                        tabDragComponent = tabDragComponent,
+                        onTabDropResult = onTabDropResult
                     )
                 },
                 sideContent = {
                     RenderSplitNode(
                         node = node.bottom,
-                        splitViewState = splitViewState
+                        splitViewState = splitViewState,
+                        tabDragComponent = tabDragComponent,
+                        onTabDropResult = onTabDropResult
                     )
                 }
+            )
+        }
+    }
+}
+
+/**
+ * Overlay that shows drop zone highlights on panel edges during drag operations.
+ */
+@Composable
+private fun PanelDropZoneOverlay(
+    panelId: String,
+    dropTarget: TabDropTarget?
+) {
+    // Check which zone is highlighted
+    val isLeftHighlighted = dropTarget is TabDropTarget.SplitPanel &&
+        dropTarget.panelId == panelId &&
+        dropTarget.orientation == SplitOrientation.VERTICAL
+
+    val isRightHighlighted = isLeftHighlighted // Same condition for vertical split
+
+    val isTopHighlighted = dropTarget is TabDropTarget.SplitPanel &&
+        dropTarget.panelId == panelId &&
+        dropTarget.orientation == SplitOrientation.HORIZONTAL
+
+    val isBottomHighlighted = isTopHighlighted // Same condition for horizontal split
+
+    val isCenterHighlighted = dropTarget is TabDropTarget.ExistingPanel &&
+        dropTarget.panelId == panelId
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Left edge highlight
+        if (isLeftHighlighted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(60.dp)
+                    .fillMaxHeight()
+                    .alpha(0.3f)
+                    .background(BossDarkAccent)
+            )
+        }
+
+        // Right edge highlight
+        if (isRightHighlighted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(60.dp)
+                    .fillMaxHeight()
+                    .alpha(0.3f)
+                    .background(BossDarkAccent)
+            )
+        }
+
+        // Top edge highlight
+        if (isTopHighlighted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .alpha(0.3f)
+                    .background(BossDarkAccent)
+            )
+        }
+
+        // Bottom edge highlight
+        if (isBottomHighlighted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .alpha(0.3f)
+                    .background(BossDarkAccent)
+            )
+        }
+
+        // Center highlight (add to existing panel)
+        if (isCenterHighlighted) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(0.15f)
+                    .background(BossDarkAccent)
             )
         }
     }
