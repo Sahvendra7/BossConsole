@@ -2,14 +2,16 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,6 +24,8 @@ import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
@@ -170,7 +174,8 @@ expect fun createFluckTabComponent(
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
     onNavigationUpdate: ((String, String) -> Unit)? = null,
-    onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null
+    onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null,
+    onCloseTab: (() -> Unit)? = null
 ): FluckTabComponent
 
 open class FluckTabComponent(
@@ -181,7 +186,8 @@ open class FluckTabComponent(
     private val onTabIconUpdate: (TabIcon) -> Unit,
     private val onOpenInNewTab: (String) -> Unit,
     private val onNavigationUpdate: ((String, String) -> Unit)? = null,
-    private val onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null
+    private val onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null,
+    private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
     // Store the URL to load
@@ -207,6 +213,11 @@ open class FluckTabComponent(
     // Write lock: Exclusive access during disposal
     // Internal visibility allows JxBrowserCompose to acquire read locks
     internal val browserLock = ReentrantReadWriteLock()
+
+    // Component-scoped coroutine that survives recomposition (Issue #351)
+    // Unlike rememberCoroutineScope() which dies when composable leaves composition,
+    // this scope lives as long as the Component and is cancelled in dispose()
+    private val componentScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // Convenience property for backward compatibility
     private val isDisposed: Boolean get() = isDisposedAtomic.get()
@@ -281,9 +292,6 @@ open class FluckTabComponent(
 
     @Composable
     override fun Content() {
-        // Coroutine scope for async operations (like browser reset)
-        val scope = rememberCoroutineScope()
-
         // Observe engine generation changes (Issue #351)
         // When engine reinitializes, existing browsers become stale
         val currentEngineGeneration = collectEngineGeneration()
@@ -307,6 +315,13 @@ open class FluckTabComponent(
         // Initialize browser only once - check class-level browserState
         // Retry mechanism: LaunchedEffect re-runs when retryTrigger changes (Issue #162)
         LaunchedEffect(config.id, retryTrigger) {
+            // Early exit if already disposed (Issue #351)
+            // This prevents "coroutine scope left the composition" errors during session restore
+            if (isDisposed) {
+                println("⚠️ [FluckTabComponent] Skipping browser init - tab already disposed: ${config.id}")
+                return@LaunchedEffect
+            }
+
             if (this@FluckTabComponent.browserState == null && browserError == null) {
                 // Check if we should retry
                 if (retryCount >= maxRetries) {
@@ -324,6 +339,12 @@ open class FluckTabComponent(
                     }
 
                     kotlinx.coroutines.delay(delayMs)
+
+                    // Check again after delay - tab may have been disposed during wait (Issue #351)
+                    if (isDisposed) {
+                        println("⚠️ [FluckTabComponent] Tab disposed during init delay: ${config.id}")
+                        return@LaunchedEffect
+                    }
 
                     // Pass callbacks to configure popup handler and browser close detection
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
@@ -445,8 +466,8 @@ open class FluckTabComponent(
                         },
                         onResetBrowser = {
                             // Reset browser profile to fix persistent issues (Issue #340)
-                            // Use coroutine scope to avoid blocking UI thread
-                            scope.launch {
+                            // Use componentScope to survive recomposition (Issue #351)
+                            componentScope.launch {
                                 val success = resetBrowserProfile()
                                 if (success) {
                                     // Clear error and retry after browser reset
@@ -532,21 +553,73 @@ open class FluckTabComponent(
                     }
                 }
                 else -> {
-                    // Loading state - initial browser initialization
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                    // Loading state - show URL and give user control
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                            .background(Color(0xFF1E1E1E))
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        // URL bar with controls
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2D2D2D))
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Loading browser...",
-                                fontSize = 14.sp,
-                                color = Color(0xFFCCCCCC)
-                            )
+                            // Stop button - closes the tab
+                            IconButton(
+                                onClick = { onCloseTab?.invoke() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Stop and close tab",
+                                    tint = Color(0xFF999999),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Retry button
+                            IconButton(
+                                onClick = {
+                                    // Retry loading
+                                    retryCount = 0
+                                    browserError = null
+                                    retryTrigger++
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Retry",
+                                    tint = Color(0xFF999999),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // URL being loaded with spinner
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(Color(0xFF1E1E1E), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    strokeWidth = 1.5.dp,
+                                    color = Color(0xFF4A90E2)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = initialUrl.ifEmpty { "New Tab" },
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFAAAAAA),
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -557,6 +630,10 @@ open class FluckTabComponent(
     fun dispose() {
         // Use compareAndSet for atomic thread-safe disposal flag update
         if (isDisposedAtomic.compareAndSet(false, true)) {
+            // Cancel component scope first to stop any pending coroutines (Issue #351)
+            // This prevents "coroutine scope left the composition" errors during session restore
+            componentScope.cancel()
+
             // Dispose the browser and view state on background thread to avoid blocking UI
             // The composable's DisposableEffect and disposal guards will handle cleanup coordination
             CoroutineScope(Dispatchers.IO).launch {
@@ -945,6 +1022,16 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                     if (currentTab is FluckTabInfo) {
                         parent.updateTab(tabIndex, currentTab.updateFaviconCacheKey(newCacheKey))
                     }
+                }
+            }
+        },
+        onCloseTab = {
+            // Close this tab
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+                if (tabIndex >= 0) {
+                    parent.removeTab(tabIndex)
                 }
             }
         }

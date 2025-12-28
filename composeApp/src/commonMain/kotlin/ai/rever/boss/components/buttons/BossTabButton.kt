@@ -172,6 +172,17 @@ fun BossTabButton(
     // Check if drag is enabled
     val isDragEnabled = tabDragComponent != null && tabInfo != null && panelId != null && tabIndex >= 0
 
+    // Cleanup drag state if this component is disposed while dragging
+    // This prevents "stuck" drag overlays when gesture is interrupted
+    DisposableEffect(tabDragComponent, tabInfo?.id) {
+        onDispose {
+            // Only cancel if THIS tab is the one being dragged
+            if (tabDragComponent?.draggingTab?.tabInfo?.id == tabInfo?.id) {
+                tabDragComponent?.cancelDrag()
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxHeight()
