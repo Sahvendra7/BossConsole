@@ -88,17 +88,9 @@ fun NewTabDialog(
 ) {
     var selectedType by remember { mutableStateOf(initialTabType ?: TabType.URL) }
     var urlText by remember { mutableStateOf("") }
-    var fileText by remember { mutableStateOf(SystemUtils.getDefaultProjectPath() + "/README.md") }
+    var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
-    var inputText by remember {
-        mutableStateOf(
-            when (selectedType) {
-                TabType.URL -> urlText
-                TabType.FILE -> fileText
-                TabType.TERMINAL -> ""
-            }
-        )
-    }
+    var inputText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val terminalFocusRequester = remember { FocusRequester() }
     
