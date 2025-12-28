@@ -34,6 +34,7 @@ import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 import kotlinx.coroutines.launch
 
 
@@ -132,9 +133,10 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
                 icon = Icons.Outlined.Folder,
                 onClick = {
                     ProjectState.selectProject(project)
-                    // Show CodeBase panel when project is selected via event bus
+                    // Show CodeBase and Run Configurations panels when project is selected
                     scope.launch {
                         PanelEventBus.openPanel(CodeBaseInfo.id)
+                        PanelEventBus.openPanel(RunConfigurationsInfo.id)
                     }
                 }
             )
@@ -209,9 +211,10 @@ fun BossDraggableComponent.BossTopLeftBar(
                     path = it
                 )
             )
-            // Show CodeBase panel when project is selected via event bus
+            // Show CodeBase and Run Configurations panels when project is selected
             scope.launch {
                 PanelEventBus.openPanel(CodeBaseInfo.id)
+                PanelEventBus.openPanel(RunConfigurationsInfo.id)
             }
             // Close the dialog after selection
             showProjectDialog = false

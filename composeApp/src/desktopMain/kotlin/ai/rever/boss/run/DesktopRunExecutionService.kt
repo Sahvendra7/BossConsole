@@ -1,19 +1,17 @@
 package ai.rever.boss.run
 
-import ai.rever.boss.components.events.TerminalEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
  * Desktop implementation of RunExecutionService.
- * Executes run configurations by opening terminals with commands.
+ * Executes run configurations using RunnerTerminalService which respects
+ * the runner settings for sidebar vs main panel terminal.
  */
 actual object RunExecutionService {
     private val scope = CoroutineScope(Dispatchers.Default)
@@ -36,13 +34,14 @@ actual object RunExecutionService {
     }
 
     /**
-     * Execute a run configuration by opening a terminal with the command.
+     * Execute a run configuration using RunnerTerminalService.
+     * Respects runner settings for sidebar vs main panel terminal.
      */
     actual suspend fun execute(config: RunConfiguration, debug: Boolean): RunningProcess? {
         try {
             val processId = UUID.randomUUID().toString()
 
-            // Build the full command
+            // Build the full command (for display/tracking only)
             val command = buildFullCommand(config, debug)
 
             // Create running process entry
@@ -58,9 +57,9 @@ actual object RunExecutionService {
             // Add to running processes
             _runningProcesses.value = _runningProcesses.value + process
 
-            // Open terminal with command
-            println("[Run] Executing: $command")
-            TerminalEventBus.openTerminal(command)
+            // Use RunnerTerminalService which respects sidebar/main panel setting
+            println("[Run] Executing via RunnerTerminalService: $command")
+            RunnerTerminalService.openRunnerTerminal(config)
 
             // Update status to running
             updateProcessStatus(processId, ProcessStatus.RUNNING)

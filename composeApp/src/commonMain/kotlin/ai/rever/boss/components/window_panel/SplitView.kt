@@ -575,7 +575,7 @@ class SplitViewState(
     fun getAllPanels(): List<SplitNode.Panel> {
         return getAllPanelsInNode(_rootNode.value)
     }
-    
+
     private fun getAllPanelsInNode(node: SplitNode): List<SplitNode.Panel> {
         return when (node) {
             is SplitNode.Panel -> listOf(node)
@@ -583,6 +583,19 @@ class SplitViewState(
                 getAllPanelsInNode(node.left) + getAllPanelsInNode(node.right)
             is SplitNode.HorizontalSplit ->
                 getAllPanelsInNode(node.top) + getAllPanelsInNode(node.bottom)
+        }
+    }
+
+    /**
+     * Find the panel that contains a tab with the given ID.
+     * Issue #347: Used for runner terminal management.
+     *
+     * @param tabId The tab ID to search for
+     * @return The panel containing the tab, or null if not found
+     */
+    fun findPanelWithTab(tabId: String): SplitNode.Panel? {
+        return getAllPanels().find { panel ->
+            panel.tabsComponent.tabsState.value.tabs.any { it.id == tabId }
         }
     }
 

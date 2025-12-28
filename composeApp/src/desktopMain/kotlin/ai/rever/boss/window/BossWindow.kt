@@ -14,6 +14,7 @@ import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.components.plugin.panels.bottom.terminal.resetAllTerminalStates
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -31,7 +32,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.res.painterResource
@@ -108,6 +111,10 @@ fun ApplicationScope.BossWindow(
         // State for Reset Browser dialog
         var showResetBrowserDialog by remember { mutableStateOf(false) }
         var resetBrowserResult by remember { mutableStateOf<Boolean?>(null) }
+
+        // State for Reset Terminal dialog
+        var showResetTerminalDialog by remember { mutableStateOf(false) }
+        var resetTerminalResult by remember { mutableStateOf<Boolean?>(null) }
 
         DisposableEffect(window, globalInterceptor) {
             globalInterceptor.attach(window)
@@ -466,6 +473,13 @@ fun ApplicationScope.BossWindow(
                         showResetBrowserDialog = true
                     }
                 )
+
+                Item(
+                    "Reset Terminal...",
+                    onClick = {
+                        showResetTerminalDialog = true
+                    }
+                )
             }
         }
 
@@ -588,6 +602,107 @@ fun ApplicationScope.BossWindow(
                         TextButton(
                             onClick = {
                                 showResetBrowserDialog = false
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+            )
+        }
+
+        // Reset Terminal Confirmation Dialog
+        if (showResetTerminalDialog) {
+            var isResetting by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = {
+                    if (!isResetting) {
+                        showResetTerminalDialog = false
+                        resetTerminalResult = null
+                    }
+                },
+                title = {
+                    Text("Reset Terminal")
+                },
+                text = {
+                    Column {
+                        when {
+                            isResetting -> {
+                                Text("Resetting terminal sessions...")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please wait, this may take a moment.")
+                            }
+                            resetTerminalResult == null -> {
+                                Text("This will reset all terminals to fix persistent issues.")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("The following will be cleared:")
+                                Text("• All terminal sessions")
+                                Text("• Terminal history in current session")
+                                Text("• Running processes")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("All terminals will be reset with fresh sessions. Continue?")
+                            }
+                            resetTerminalResult == true -> {
+                                Text("✅ Terminal reset successful!")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Terminal tabs will refresh with new sessions automatically.")
+                            }
+                            else -> {
+                                Text("❌ Terminal reset failed.")
+                                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                                Text("Please try restarting BOSS manually.")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    when {
+                        isResetting -> {
+                            // No button while resetting
+                        }
+                        resetTerminalResult == null -> {
+                            Button(
+                                onClick = {
+                                    isResetting = true
+                                    menuScope.launch {
+                                        try {
+                                            // Use IO dispatcher for resource disposal per CLAUDE.md threading guidelines
+                                            withContext(Dispatchers.IO) {
+                                                resetAllTerminalStates()
+                                            }
+                                            resetTerminalResult = true
+                                        } catch (e: Exception) {
+                                            println("Error resetting terminals: ${e.message}")
+                                            resetTerminalResult = false
+                                        }
+                                        isResetting = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = androidx.compose.ui.graphics.Color(0xFFE05555)
+                                )
+                            ) {
+                                Text("Reset Terminal", color = androidx.compose.ui.graphics.Color.White)
+                            }
+                        }
+                        else -> {
+                            Button(
+                                onClick = {
+                                    showResetTerminalDialog = false
+                                    resetTerminalResult = null
+                                }
+                            ) {
+                                Text("Close")
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    if (resetTerminalResult == null && !isResetting) {
+                        TextButton(
+                            onClick = {
+                                showResetTerminalDialog = false
                             }
                         ) {
                             Text("Cancel")

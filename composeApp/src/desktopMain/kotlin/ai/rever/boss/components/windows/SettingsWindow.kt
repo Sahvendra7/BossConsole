@@ -96,6 +96,7 @@ private fun SettingsContent(initialSection: String? = null) {
                         SettingsSection.FLUCK -> FluckBrowserSettings()
                         SettingsSection.CODE_EDITOR -> CodeEditorSettings()
                         SettingsSection.TERMINAL -> TerminalSettings()
+                        SettingsSection.RUNNER -> RunnerSettings()
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                         SettingsSection.UPDATES -> UpdatesSettings()
                         SettingsSection.SECURITY -> SecuritySettings()

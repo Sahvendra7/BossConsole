@@ -140,24 +140,27 @@ actual object RunConfigurationManager {
 
     /**
      * Make configuration names unique by adding parent directory context for duplicates.
-     * E.g., two "main (Main.kt)" become "main (app/Main.kt)" and "main (lib/Main.kt)"
+     * E.g., two "main (Main.kt [Project])" become "main (app/Main.kt [Project])" and "main (lib/Main.kt [Project])"
+     * Preserves the project name in brackets if present.
      */
     private fun makeNamesUnique(configs: List<RunConfiguration>, projectPath: String): List<RunConfiguration> {
         // Group by name to find duplicates
         val nameGroups = configs.groupBy { it.name }
+        val projectName = projectPath.substringAfterLast('/').takeIf { it.isNotBlank() }
 
         return configs.map { config ->
             val group = nameGroups[config.name] ?: return@map config
             if (group.size <= 1) {
                 config
             } else {
-                // Add parent directory to make unique
+                // Add parent directory to make unique, preserving project name
                 val relativePath = config.filePath.removePrefix(projectPath).removePrefix("/")
                 val parts = relativePath.split("/")
                 val uniqueName = if (parts.size >= 2) {
-                    // Include parent directory: "main (parent/Main.kt)"
+                    // Include parent directory: "main (parent/Main.kt [Project])"
                     val parentAndFile = parts.takeLast(2).joinToString("/")
-                    config.name.replace(Regex("\\([^)]+\\)$")) { "($parentAndFile)" }
+                    val projectSuffix = if (projectName != null) " [$projectName]" else ""
+                    config.name.replace(Regex("\\([^)]+\\)$")) { "($parentAndFile$projectSuffix)" }
                 } else {
                     config.name
                 }

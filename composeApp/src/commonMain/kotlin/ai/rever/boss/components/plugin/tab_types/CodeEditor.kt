@@ -221,9 +221,11 @@ private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, 
         val actualProjectRoot = detector.findProjectRoot(detected.filePath)
         val command = detector.generateCommand(detected, actualProjectRoot)
 
+        val configName = detected.toShortNameWithProject(actualProjectRoot)
+
         val config = RunConfiguration(
             id = UUID.randomUUID().toString(),
-            name = detected.toShortName(),
+            name = configName,
             type = RunConfigurationType.MAIN_FUNCTION,
             filePath = detected.filePath,
             lineNumber = detected.lineNumber,

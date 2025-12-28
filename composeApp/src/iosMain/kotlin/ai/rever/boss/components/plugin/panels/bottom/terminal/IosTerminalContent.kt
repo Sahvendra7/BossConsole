@@ -78,3 +78,10 @@ actual fun PersistentTabbedTerminalContent(
         )
     }
 }
+
+/**
+ * iOS stub implementation - no-op since terminal not supported.
+ */
+actual fun resetTerminals() {
+    // No-op on iOS - terminal not supported
+}
