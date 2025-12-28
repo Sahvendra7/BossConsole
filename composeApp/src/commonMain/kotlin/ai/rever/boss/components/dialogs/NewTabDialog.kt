@@ -31,8 +31,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
+import ai.rever.boss.platform.rememberFilePicker
 
 enum class TabType {
     URL, FILE, TERMINAL
@@ -88,6 +90,17 @@ fun NewTabDialog(
     var showUrlDropdown by remember { mutableStateOf(false) }
     var selectedSuggestionIndex by remember { mutableStateOf(-1) }
     val listState = rememberLazyListState()
+
+    // File picker for browsing files
+    val filePicker = rememberFilePicker(
+        onFileSelected = { path, _ ->
+            path?.let {
+                fileText = it
+                inputText = it
+            }
+        },
+        fileExtensions = emptyList() // Allow all files
+    )
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -257,36 +270,83 @@ fun NewTabDialog(
                                 }
                             )
                         )
+                    } else if (selectedType == TabType.FILE) {
+                        // File input with browse button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = inputText,
+                                onValueChange = { newValue ->
+                                    inputText = newValue
+                                    fileText = newValue
+                                },
+                                label = {
+                                    Text(
+                                        "Enter file path",
+                                        color = Color(0xFF999999)
+                                    )
+                                },
+                                placeholder = {
+                                    Text(
+                                        "README.md",
+                                        color = Color(0xFF666666)
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester)
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                            handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                            true
+                                        } else false
+                                    },
+                                colors = TextFieldDefaults.outlinedTextFieldColors(
+                                    textColor = Color.White,
+                                    cursorColor = Color.White,
+                                    focusedBorderColor = Color(0xFF4A9EFF),
+                                    unfocusedBorderColor = Color(0xFF555555),
+                                    backgroundColor = Color(0xFF1E1F22)
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                    }
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { filePicker.pickFile() },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = "Browse files",
+                                    tint = Color(0xFF999999)
+                                )
+                            }
+                        }
                     } else {
-                        // URL/File input
+                        // URL input
                         OutlinedTextField(
                             value = inputText,
                             onValueChange = { newValue ->
                                 inputText = newValue
-                                // Update the appropriate state based on current type
-                                when (selectedType) {
-                                    TabType.URL -> urlText = newValue
-                                    TabType.FILE -> fileText = newValue
-                                    else -> {}
-                                }
+                                urlText = newValue
                             },
                             label = {
                                 Text(
-                                    when (selectedType) {
-                                        TabType.URL -> "Enter URL (e.g., https://example.com)"
-                                        TabType.FILE -> "Enter file path"
-                                        else -> ""
-                                    },
+                                    "Enter URL (e.g., https://example.com)",
                                     color = Color(0xFF999999)
                                 )
                             },
                             placeholder = {
                                 Text(
-                                    when (selectedType) {
-                                        TabType.URL -> "https://"
-                                        TabType.FILE -> "README.md"
-                                        else -> ""
-                                    },
+                                    "https://",
                                     color = Color(0xFF666666)
                                 )
                             },
@@ -294,7 +354,7 @@ fun NewTabDialog(
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester)
                                 .onPreviewKeyEvent { event ->
-                                    if (selectedType == TabType.URL && event.type == KeyEventType.KeyDown) {
+                                    if (event.type == KeyEventType.KeyDown) {
                                         when (event.key) {
                                             Key.DirectionDown -> {
                                                 // Always consume arrow keys to prevent cursor movement in text field
@@ -352,7 +412,7 @@ fun NewTabDialog(
                         )
                         
                         // URL suggestions dropdown
-                        if (selectedType == TabType.URL && showUrlDropdown) {
+                        if (showUrlDropdown) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
