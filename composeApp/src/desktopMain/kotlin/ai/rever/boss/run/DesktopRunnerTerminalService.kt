@@ -271,6 +271,9 @@ actual object RunnerTerminalService {
      * Open a runner command in the sidebar terminal panel.
      * Creates a new tab in the sidebar terminal with the given command.
      * Updates tracking to map configId → SIDEBAR_TERMINAL_ID so stop works correctly.
+     *
+     * State is updated BEFORE terminal operation to prevent race conditions where
+     * another thread sees inconsistent state. If the operation fails, state is rolled back.
      */
     actual fun openInSidebarTerminal(
         configId: String,
@@ -279,7 +282,14 @@ actual object RunnerTerminalService {
         tabTitle: String,
         isRerun: Boolean
     ): Boolean {
-        // Perform terminal operation first (I/O outside lock)
+        // Update state BEFORE terminal operation (prevents race conditions)
+        stateLock.withLock {
+            _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
+            addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
+            _runningConfigs.update { it + configId }
+        }
+
+        // Perform terminal operation
         val success = TabbedTerminalStateRegistry.newSidebarTab(
             command = command,
             workingDirectory = workingDirectory,
@@ -288,14 +298,14 @@ actual object RunnerTerminalService {
         )
 
         if (success) {
-            // Update state atomically
-            stateLock.withLock {
-                _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
-                addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
-                _runningConfigs.update { it + configId }
-            }
             println("[Runner] Opened command in sidebar terminal: $tabTitle (mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
         } else {
+            // Roll back state on failure
+            stateLock.withLock {
+                _configToTerminal.update { it - configId }
+                removeConfigFromTerminal(SIDEBAR_TERMINAL_ID, configId)
+                _runningConfigs.update { it - configId }
+            }
             println("[Runner] Failed to open in sidebar terminal - panel may not be open")
         }
         return success
@@ -307,24 +317,6 @@ actual object RunnerTerminalService {
      * quotes, and other special characters safely.
      */
     private fun buildFullCommand(config: RunConfiguration): String {
-        return if (config.workingDirectory.isNotBlank()) {
-            val escapedDir = escapeForDoubleQuotes(config.workingDirectory)
-            "cd \"$escapedDir\" && ${config.command}"
-        } else {
-            config.command
-        }
-    }
-
-    /**
-     * Escape a string for safe use inside double quotes in shell.
-     * Characters that need escaping in double-quoted strings: $ ` \ " !
-     */
-    private fun escapeForDoubleQuotes(str: String): String {
-        return str
-            .replace("\\", "\\\\")  // Backslash must be escaped first
-            .replace("\"", "\\\"")  // Double quotes
-            .replace("\$", "\\\$")  // Dollar sign (prevents variable expansion)
-            .replace("`", "\\`")    // Backticks (prevents command substitution)
-            .replace("!", "\\!")    // Exclamation (history expansion in interactive shells)
+        return ShellUtils.buildCommandWithWorkingDirectory(config.command, config.workingDirectory)
     }
 }

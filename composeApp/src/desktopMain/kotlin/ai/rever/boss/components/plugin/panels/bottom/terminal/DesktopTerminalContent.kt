@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import ai.rever.boss.run.ShellUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -297,32 +298,27 @@ object TabbedTerminalStateRegistry {
                 state.sendCtrlC(tabId) // Ctrl+C to specific tab by stable ID
 
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
-                val fullCommand = if (workingDirectory != null) {
-                    // Escape double quotes in the path to prevent command injection
-                    val escapedDir = workingDirectory.replace("\"", "\\\"")
-                    "cd \"$escapedDir\" && $command"
-                } else {
-                    command
-                }
+                val fullCommand = ShellUtils.buildCommandWithWorkingDirectory(command, workingDirectory)
+                val capturedTabId = tabId // Capture for lambda
                 CoroutineScope(Dispatchers.Default).launch {
                     delay(delayMs)
-                    state.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8), tabId)
+                    // Check if terminal still exists before sending (prevents sending to disposed terminal)
+                    if (contains(SIDEBAR_TERMINAL_ID)) {
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
+                    }
                 }
             } else {
                 // Fallback: no tabId tracked, send to active tab
                 println("[SidebarTerminal] Re-run: no tabId for config, sending to active tab")
                 state.sendInput(byteArrayOf(0x03))
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
-                val fullCommand = if (workingDirectory != null) {
-                    // Escape double quotes in the path to prevent command injection
-                    val escapedDir = workingDirectory.replace("\"", "\\\"")
-                    "cd \"$escapedDir\" && $command"
-                } else {
-                    command
-                }
+                val fullCommand = ShellUtils.buildCommandWithWorkingDirectory(command, workingDirectory)
                 CoroutineScope(Dispatchers.Default).launch {
                     delay(delayMs)
-                    state.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8))
+                    // Check if terminal still exists before sending (prevents sending to disposed terminal)
+                    if (contains(SIDEBAR_TERMINAL_ID)) {
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8))
+                    }
                 }
             }
         } else if (!terminalExists) {
