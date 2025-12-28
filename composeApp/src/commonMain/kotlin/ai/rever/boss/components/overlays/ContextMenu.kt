@@ -4,6 +4,7 @@ import BossDarkBorder
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -115,32 +116,48 @@ fun ContextMenu(
                         // Primary trailing icon (e.g., play/stop button)
                         if (item.trailingIcon != null && item.onTrailingClick != null) {
                             Spacer(modifier = Modifier.width(12.dp))
-                            Icon(
-                                imageVector = item.trailingIcon,
-                                contentDescription = "Action",
-                                tint = item.trailingIconColor ?: Color(0xFF888888),
+                            Box(
                                 modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable {
+                                    .size(20.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
                                         item.onTrailingClick.invoke()
                                         onDismissRequest()
-                                    }
-                            )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = item.trailingIcon,
+                                    contentDescription = "Action",
+                                    tint = item.trailingIconColor ?: Color(0xFF888888),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                         // Secondary trailing icon (e.g., delete button)
                         if (item.secondaryTrailingIcon != null && item.onSecondaryTrailingClick != null) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = item.secondaryTrailingIcon,
-                                contentDescription = "Delete",
-                                tint = item.secondaryTrailingIconColor ?: Color(0xFF888888),
+                            Box(
                                 modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable {
+                                    .size(18.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
                                         item.onSecondaryTrailingClick.invoke()
                                         onDismissRequest()
-                                    }
-                            )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = item.secondaryTrailingIcon,
+                                    contentDescription = "Delete",
+                                    tint = item.secondaryTrailingIconColor ?: Color(0xFF888888),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
                 }

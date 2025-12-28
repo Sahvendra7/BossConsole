@@ -889,6 +889,14 @@ fun ComponentContext.BossApp(
                 val historyConfig = event.configuration.copy(isAutoDetected = false)
                 RunConfigurationManager.addConfiguration(historyConfig)
 
+                // Select the config in top bar dropdown
+                // Use filePath lookup since addConfiguration may deduplicate (existing config has different ID)
+                val savedConfigs = RunConfigurationManager.currentSettings.value.configurations
+                val configToSelect = savedConfigs.find { it.filePath == historyConfig.filePath }
+                if (configToSelect != null) {
+                    RunConfigurationManager.selectConfiguration(configToSelect.id)
+                }
+
                 RunExecutionService.execute(event.configuration, event.debug)
             }
             .launchIn(this)

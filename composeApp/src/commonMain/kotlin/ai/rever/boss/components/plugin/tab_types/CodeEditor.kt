@@ -222,7 +222,6 @@ private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, 
         val command = detector.generateCommand(detected, actualProjectRoot)
 
         val configName = detected.toShortNameWithProject(actualProjectRoot)
-        println("[CodeEditor] Creating run config: name='$configName', projectRoot='$actualProjectRoot'")
 
         val config = RunConfiguration(
             id = UUID.randomUUID().toString(),
