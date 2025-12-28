@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.EmbeddableTerminalState
@@ -482,17 +483,21 @@ actual fun resetTerminals() {
 }
 
 /**
- * Handles terminal link clicks by opening HTTP/HTTPS links in BOSS browser
- * and other protocols (file://, mailto:, etc.) in the system default handler.
+ * Handles terminal link clicks by emitting HTTP/HTTPS links to TerminalLinkEventBus
+ * (for BossApp to handle with user preference) and opening other protocols
+ * (file://, mailto:, etc.) in the system default handler.
+ *
+ * Issue #346: Terminal link click prompt with remember preference
  *
  * @param url The URL to open
  * @param scope CoroutineScope to launch async operations
  */
 private fun handleTerminalLinkClick(url: String, scope: CoroutineScope) {
     if (url.startsWith("http://") || url.startsWith("https://")) {
-        // Open HTTP/HTTPS links in BOSS browser
+        // Emit HTTP/HTTPS links to event bus for BossApp to handle
+        // BossApp will show dialog or auto-open based on user preference
         scope.launch {
-            URLEventBus.openURL(url)
+            TerminalLinkEventBus.emitLinkClick(url)
         }
     } else {
         // For other protocols, open in system browser on IO dispatcher

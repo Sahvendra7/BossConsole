@@ -21,6 +21,9 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
+import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.terminal.TerminalLinkOpenMode
+import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.rememberSplitViewState
@@ -51,6 +54,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.TerminalEventBus
+import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
@@ -528,6 +532,10 @@ fun ComponentContext.BossApp(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var settingsInitialSection by remember { mutableStateOf<String?>(null) }
 
+    // State for terminal link open dialog (Issue #346)
+    var showTerminalLinkDialog by remember { mutableStateOf(false) }
+    var pendingTerminalLinkUrl by remember { mutableStateOf("") }
+
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
         splitViewState,
@@ -872,6 +880,57 @@ fun ComponentContext.BossApp(
             .onEach { event ->
                 println("[BossApp] Runner terminal stop event: ${event.terminalId}")
                 // Ctrl+C is already sent by the service - this event is for any additional UI handling
+            }
+            .launchIn(this)
+    }
+
+    // Listen for terminal link click events (Issue #346)
+    // Shows dialog or auto-opens based on user preference
+    LaunchedEffect(splitViewState) {
+        TerminalLinkEventBus.linkClickEvents
+            .onEach { event ->
+                val settings = TerminalLinkSettingsManager.currentSettings.value
+                println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}")
+
+                when (settings.openMode) {
+                    TerminalLinkOpenMode.ALWAYS_ASK -> {
+                        // Show dialog to ask user
+                        pendingTerminalLinkUrl = event.url
+                        showTerminalLinkDialog = true
+                    }
+                    TerminalLinkOpenMode.VERTICAL_SPLIT -> {
+                        // Create browser tab and split vertically
+                        val browserTab = FluckTabInfo(
+                            id = "browser-${kotlin.random.Random.nextLong()}",
+                            typeId = TabTypeId("fluck"),
+                            _title = "Loading...",
+                            url = event.url
+                        )
+                        splitViewState.splitPanel(
+                            panelId = splitViewState.activePanelId,
+                            orientation = SplitOrientation.VERTICAL,
+                            tabToMove = browserTab
+                        )
+                    }
+                    TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
+                        // Create browser tab and split horizontally
+                        val browserTab = FluckTabInfo(
+                            id = "browser-${kotlin.random.Random.nextLong()}",
+                            typeId = TabTypeId("fluck"),
+                            _title = "Loading...",
+                            url = event.url
+                        )
+                        splitViewState.splitPanel(
+                            panelId = splitViewState.activePanelId,
+                            orientation = SplitOrientation.HORIZONTAL,
+                            tabToMove = browserTab
+                        )
+                    }
+                    TerminalLinkOpenMode.NEW_TAB -> {
+                        // Open in current panel as new tab
+                        splitViewState.openUrlInActivePanel(event.url, "Loading...")
+                    }
+                }
             }
             .launchIn(this)
     }
@@ -1799,6 +1858,66 @@ fun ComponentContext.BossApp(
                         settingsInitialSection = null
                     },
                     initialSection = settingsInitialSection
+                )
+            }
+
+            // Terminal link open dialog (Issue #346)
+            if (showTerminalLinkDialog) {
+                TerminalLinkOpenDialog(
+                    url = pendingTerminalLinkUrl,
+                    onDismiss = {
+                        showTerminalLinkDialog = false
+                        pendingTerminalLinkUrl = ""
+                    },
+                    onOpenLink = { mode, rememberChoice ->
+                        showTerminalLinkDialog = false
+
+                        // Save preference if user wants to remember
+                        if (rememberChoice) {
+                            coroutineScope.launch {
+                                TerminalLinkSettingsManager.setOpenMode(mode)
+                            }
+                        }
+
+                        // Open the link based on selected mode
+                        when (mode) {
+                            TerminalLinkOpenMode.VERTICAL_SPLIT -> {
+                                val browserTab = FluckTabInfo(
+                                    id = "browser-${kotlin.random.Random.nextLong()}",
+                                    typeId = TabTypeId("fluck"),
+                                    _title = "Loading...",
+                                    url = pendingTerminalLinkUrl
+                                )
+                                splitViewState.splitPanel(
+                                    panelId = splitViewState.activePanelId,
+                                    orientation = SplitOrientation.VERTICAL,
+                                    tabToMove = browserTab
+                                )
+                            }
+                            TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
+                                val browserTab = FluckTabInfo(
+                                    id = "browser-${kotlin.random.Random.nextLong()}",
+                                    typeId = TabTypeId("fluck"),
+                                    _title = "Loading...",
+                                    url = pendingTerminalLinkUrl
+                                )
+                                splitViewState.splitPanel(
+                                    panelId = splitViewState.activePanelId,
+                                    orientation = SplitOrientation.HORIZONTAL,
+                                    tabToMove = browserTab
+                                )
+                            }
+                            TerminalLinkOpenMode.NEW_TAB -> {
+                                splitViewState.openUrlInActivePanel(pendingTerminalLinkUrl, "Loading...")
+                            }
+                            TerminalLinkOpenMode.ALWAYS_ASK -> {
+                                // This shouldn't happen in dialog callback, but handle gracefully
+                                splitViewState.openUrlInActivePanel(pendingTerminalLinkUrl, "Loading...")
+                            }
+                        }
+
+                        pendingTerminalLinkUrl = ""
+                    }
                 )
             }
 
