@@ -21,6 +21,9 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
+import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.terminal.TerminalLinkOpenMode
+import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.rememberSplitViewState
@@ -51,6 +54,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.TerminalEventBus
+import ai.rever.boss.components.events.TerminalLinkEventBus
+import kotlinx.coroutines.flow.combine
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
@@ -237,6 +242,47 @@ private fun openRunnerInMainPanel(
         }
     } else {
         println("[BossApp] ERROR - No panel available for runner terminal")
+    }
+}
+
+/**
+ * Helper function to open a terminal link based on user's selected mode.
+ * Handles creating browser tabs and splitting panels as needed.
+ *
+ * Issue #346: Terminal link click prompt with remember preference
+ *
+ * @param url The URL to open
+ * @param mode How to open the link (split or new tab)
+ * @param splitViewState The split view state for panel operations
+ */
+private fun openTerminalLink(
+    url: String,
+    mode: TerminalLinkOpenMode,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState
+) {
+    when (mode) {
+        TerminalLinkOpenMode.VERTICAL_SPLIT, TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
+            val browserTab = FluckTabInfo(
+                id = "browser-${kotlin.random.Random.nextLong()}",
+                typeId = TabTypeId("fluck"),
+                _title = "Loading...",
+                url = url
+            )
+            val orientation = if (mode == TerminalLinkOpenMode.VERTICAL_SPLIT) {
+                SplitOrientation.VERTICAL
+            } else {
+                SplitOrientation.HORIZONTAL
+            }
+            splitViewState.splitPanel(
+                panelId = splitViewState.activePanelId,
+                orientation = orientation,
+                tabToMove = browserTab
+            )
+        }
+        TerminalLinkOpenMode.NEW_TAB, TerminalLinkOpenMode.ALWAYS_ASK -> {
+            // NEW_TAB opens in current panel; ALWAYS_ASK shouldn't reach here but handle gracefully
+            splitViewState.openUrlInActivePanel(url, "Loading...")
+        }
     }
 }
 
@@ -527,6 +573,10 @@ fun ComponentContext.BossApp(
     // State for showing settings dialog
     var showSettingsDialog by remember { mutableStateOf(false) }
     var settingsInitialSection by remember { mutableStateOf<String?>(null) }
+
+    // State for terminal link open dialog (Issue #346)
+    var showTerminalLinkDialog by remember { mutableStateOf(false) }
+    var pendingTerminalLinkUrl by remember { mutableStateOf("") }
 
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
@@ -872,6 +922,30 @@ fun ComponentContext.BossApp(
             .onEach { event ->
                 println("[BossApp] Runner terminal stop event: ${event.terminalId}")
                 // Ctrl+C is already sent by the service - this event is for any additional UI handling
+            }
+            .launchIn(this)
+    }
+
+    // Listen for terminal link click events (Issue #346)
+    // Shows dialog or auto-opens based on user preference
+    // Uses combine() to ensure consistent settings during event processing
+    LaunchedEffect(splitViewState) {
+        combine(
+            TerminalLinkEventBus.linkClickEvents,
+            TerminalLinkSettingsManager.currentSettings
+        ) { event, settings -> event to settings }
+            .onEach { (event, settings) ->
+                println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}")
+
+                when (settings.openMode) {
+                    TerminalLinkOpenMode.ALWAYS_ASK -> {
+                        pendingTerminalLinkUrl = event.url
+                        showTerminalLinkDialog = true
+                    }
+                    else -> {
+                        openTerminalLink(event.url, settings.openMode, splitViewState)
+                    }
+                }
             }
             .launchIn(this)
     }
@@ -1799,6 +1873,31 @@ fun ComponentContext.BossApp(
                         settingsInitialSection = null
                     },
                     initialSection = settingsInitialSection
+                )
+            }
+
+            // Terminal link open dialog (Issue #346)
+            if (showTerminalLinkDialog) {
+                TerminalLinkOpenDialog(
+                    url = pendingTerminalLinkUrl,
+                    onDismiss = {
+                        showTerminalLinkDialog = false
+                        pendingTerminalLinkUrl = ""
+                    },
+                    onOpenLink = { mode, rememberChoice ->
+                        showTerminalLinkDialog = false
+
+                        // Save preference if user wants to remember
+                        if (rememberChoice) {
+                            coroutineScope.launch {
+                                TerminalLinkSettingsManager.setOpenMode(mode)
+                            }
+                        }
+
+                        // Open the link using helper function
+                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState)
+                        pendingTerminalLinkUrl = ""
+                    }
                 )
             }
 

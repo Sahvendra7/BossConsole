@@ -7,6 +7,8 @@ import BossDarkSurface
 import androidx.compose.foundation.background
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
+import ai.rever.boss.terminal.TerminalLinkOpenMode
+import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.settings.shared.DropdownSelector
 import ai.rever.boss.components.settings.shared.SectionHeader
 import ai.rever.boss.components.settings.shared.SettingSection
@@ -36,6 +38,10 @@ fun FluckBrowserSettings() {
     var customUserAgent by remember { mutableStateOf(BrowserSettings.customUserAgent ?: "") }
     var maxInitRetries by remember { mutableStateOf(BrowserSettings.maxInitRetries) }
     var maxRecoveryAttempts by remember { mutableStateOf(BrowserSettings.maxRecoveryAttempts) }
+
+    // Terminal link settings (Issue #346)
+    val terminalLinkSettings by TerminalLinkSettingsManager.currentSettings.collectAsState()
+    var terminalLinkOpenMode by remember(terminalLinkSettings) { mutableStateOf(terminalLinkSettings.openMode) }
 
     val userAgents = listOf("Default", "Chrome", "Firefox", "Safari", "Edge", "Custom")
     var showRestartDialog by remember { mutableStateOf(false) }
@@ -123,6 +129,74 @@ fun FluckBrowserSettings() {
 
         // Default Browser Section
         DefaultBrowserSection()
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Terminal Link Behavior Section (Issue #346)
+        SettingSection(
+            title = "Terminal Link Behavior",
+            description = "How to open links clicked in terminal"
+        ) {
+            val linkOpenModeOptions = listOf(
+                "Always Ask" to TerminalLinkOpenMode.ALWAYS_ASK,
+                "Vertical Split" to TerminalLinkOpenMode.VERTICAL_SPLIT,
+                "Horizontal Split" to TerminalLinkOpenMode.HORIZONTAL_SPLIT,
+                "New Tab" to TerminalLinkOpenMode.NEW_TAB
+            )
+
+            DropdownSelector(
+                label = "Open links with",
+                value = linkOpenModeOptions.find { it.second == terminalLinkOpenMode }?.first ?: "Always Ask",
+                options = linkOpenModeOptions.map { it.first },
+                onValueChange = { selectedLabel ->
+                    val selectedMode = linkOpenModeOptions.find { it.first == selectedLabel }?.second
+                        ?: TerminalLinkOpenMode.ALWAYS_ASK
+                    terminalLinkOpenMode = selectedMode
+                    coroutineScope.launch {
+                        TerminalLinkSettingsManager.setOpenMode(selectedMode)
+                    }
+                },
+                modifier = Modifier.width(400.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Description of each mode
+            Text(
+                text = when (terminalLinkOpenMode) {
+                    TerminalLinkOpenMode.ALWAYS_ASK -> "A dialog will appear each time you click a link in the terminal"
+                    TerminalLinkOpenMode.VERTICAL_SPLIT -> "Links open in a new browser panel to the right of the terminal"
+                    TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Links open in a new browser panel below the terminal"
+                    TerminalLinkOpenMode.NEW_TAB -> "Links open in a new tab in the current panel"
+                },
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+
+            // Reset button (only show if not already on ALWAYS_ASK)
+            if (terminalLinkOpenMode != TerminalLinkOpenMode.ALWAYS_ASK) {
+                Spacer(modifier = Modifier.height(16.dp))
+                TextButton(
+                    onClick = {
+                        terminalLinkOpenMode = TerminalLinkOpenMode.ALWAYS_ASK
+                        coroutineScope.launch {
+                            TerminalLinkSettingsManager.resetToDefault()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = BossDarkAccent
+                    )
+                ) {
+                    Icon(
+                        Icons.Outlined.Refresh,
+                        contentDescription = "Reset",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Reset to Always Ask", fontSize = 13.sp)
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
 
