@@ -115,7 +115,7 @@ fun TerminalLinkOpenDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Remember checkbox
+                // Remember checkbox - Row handles click, so Checkbox uses null for onCheckedChange
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -125,7 +125,7 @@ fun TerminalLinkOpenDialog(
                 ) {
                     Checkbox(
                         checked = rememberChoice,
-                        onCheckedChange = { rememberChoice = it },
+                        onCheckedChange = null, // Row handles click
                         colors = CheckboxDefaults.colors(
                             checkedColor = Color(0xFF4A9EFF),
                             uncheckedColor = Color(0xFF666666),

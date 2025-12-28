@@ -21,9 +21,19 @@ data class TerminalLinkClickEvent(
  * Issue #346: Terminal link click prompt with remember preference
  */
 object TerminalLinkEventBus {
+    /**
+     * SharedFlow for terminal link click events.
+     *
+     * Buffer sizing rationale:
+     * - replay = 0: New subscribers shouldn't see old events (user already dismissed dialog)
+     * - extraBufferCapacity = 10: Provides headroom for rapid link clicks while dialog is shown.
+     *   This is a conservative buffer; in practice, users rarely click more than a few links
+     *   before the first dialog appears (~16ms compose frame time). If buffer overflows,
+     *   emit() suspends until space is available (no events lost, just delayed).
+     */
     private val _linkClickEvents = MutableSharedFlow<TerminalLinkClickEvent>(
-        replay = 0,  // Don't replay past events to new subscribers
-        extraBufferCapacity = 10  // Buffer events if collector not ready
+        replay = 0,
+        extraBufferCapacity = 10
     )
     val linkClickEvents: SharedFlow<TerminalLinkClickEvent> = _linkClickEvents.asSharedFlow()
 
