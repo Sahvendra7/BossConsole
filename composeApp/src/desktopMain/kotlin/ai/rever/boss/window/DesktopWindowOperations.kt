@@ -11,18 +11,14 @@ actual object WindowOperations {
     /**
      * Open a tab in a new window
      *
-     * Note: Tab management moved to BossApp/SplitViewState.
-     * Currently creates an empty window. The "Open in New Window" feature
-     * needs to be reimplemented using SplitViewState.
+     * Creates a new window and stores the tab info as a pending initial tab.
+     * The new window's BossApp will consume the pending tab during initialization.
      *
-     * TODO: Implement tab moving through SplitViewState/BossApp
-     *
-     * @param tabInfo The tab to open in the new window (currently ignored)
+     * @param tabInfo The tab to open in the new window
      */
     actual fun openTabInNewWindow(tabInfo: TabInfo) {
-        println("Creating new window (tab moving not yet reimplemented)")
-        WindowManager.createNewWindow()
-        // TODO: Implement proper tab moving through BossApp/SplitViewState
+        println("Creating new window with tab: ${tabInfo.title}")
+        WindowManager.createNewWindowWithTab(tabInfo)
     }
 
     /**

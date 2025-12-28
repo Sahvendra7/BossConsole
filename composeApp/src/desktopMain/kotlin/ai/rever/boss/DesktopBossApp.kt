@@ -1,7 +1,9 @@
 package ai.rever.boss
 
+import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.window.WindowManager
 
 /**
  * Desktop-specific implementation for setting up download tab close callback.
@@ -16,4 +18,16 @@ actual fun setupDownloadTabCloseCallback(splitViewState: SplitViewState) {
             tabsComp?.closeMostRecentTab()
         }
     }
+}
+
+/**
+ * Desktop-specific implementation for consuming pending initial tab for a window.
+ * When a window is created via "Open in New Window", the tab is stored as pending
+ * and consumed here when the window's BossApp initializes.
+ *
+ * @param windowId The window ID to get the pending tab for
+ * @return The pending TabInfo if one exists, null otherwise
+ */
+actual fun consumePendingInitialTab(windowId: String): TabInfo? {
+    return WindowManager.consumePendingTab(windowId)
 }

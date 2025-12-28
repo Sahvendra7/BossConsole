@@ -137,6 +137,10 @@ import ai.rever.boss.performance.EditorTabResourceInfo
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
 
+// Platform-specific function to consume pending initial tab for a window
+// Returns the TabInfo if there's a pending tab for this window, null otherwise
+expect fun consumePendingInitialTab(windowId: String): TabInfo?
+
 /**
  * Handle the result of a tab drop operation.
  */
@@ -215,6 +219,22 @@ fun ComponentContext.BossApp(
     // Register callback for FluckEngine to auto-close download redirect tabs (desktop only)
     LaunchedEffect(splitViewState) {
         setupDownloadTabCloseCallback(splitViewState)
+    }
+
+    // Consume any pending initial tab for this window (from "Open in New Window" context menu)
+    LaunchedEffect(windowId, splitViewState) {
+        val pendingTab = consumePendingInitialTab(windowId)
+        if (pendingTab != null) {
+            println("BossApp: Consuming pending tab '${pendingTab.title}' for window: $windowId")
+            // Add the tab to the active panel (first panel by default)
+            val activePanel = splitViewState.getAllPanels().firstOrNull()
+            if (activePanel != null) {
+                val index = activePanel.tabsComponent.addTab(pendingTab)
+                if (index >= 0) {
+                    activePanel.tabsComponent.selectTab(index)
+                }
+            }
+        }
     }
 
     // Register resource count providers for performance monitoring
