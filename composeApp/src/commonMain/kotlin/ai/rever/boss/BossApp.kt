@@ -852,10 +852,10 @@ fun ComponentContext.BossApp(
 
     // Fallback timeout for fresh install (no workspaces on disk at all)
     // This handles the case where workspace manager never emits non-empty configs
-    val startupSettings by StartupSettingsManager.currentSettings.collectAsState()
-    LaunchedEffect(isFirstWindow, isSessionResolved, startupSettings) {
+    LaunchedEffect(isFirstWindow, isSessionResolved) {
         if (isFirstWindow && !workspaceRestorationComplete) {
-            val timeoutMs = startupSettings.workspaceLoadTimeoutMs
+            // Read timeout from settings (use current value, don't make it a key to avoid restart)
+            val timeoutMs = StartupSettingsManager.currentSettings.value.workspaceLoadTimeoutMs
             delay(timeoutMs) // Wait for workspace manager to load from disk
             if (!workspaceRestorationComplete) {
                 // Still not complete after timeout - assume fresh install
