@@ -564,6 +564,9 @@ fun ComponentContext.BossApp(
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
     var newTabDialogInitialType by remember { mutableStateOf<ai.rever.boss.components.dialogs.TabType?>(null) }
+    // Track if workspace restoration has completed (for first window only)
+    // New windows don't restore Last Session, so start as complete
+    var workspaceRestorationComplete by remember { mutableStateOf(!isFirstWindow) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
 
@@ -799,6 +802,9 @@ fun ComponentContext.BossApp(
                         } else {
                             println("BossApp: No Last Session found, starting with empty workspace")
                         }
+
+                        // Mark workspace restoration as complete (for auto-show dialog logic)
+                        workspaceRestorationComplete = true
 
                         // CRITICAL: Mark handlers as ready AFTER Last Session loads (or after determining no session exists)
                         // This ensures URLs/terminals/files/workspaces create tabs AFTER workspace is loaded,
@@ -1114,7 +1120,7 @@ fun ComponentContext.BossApp(
             }
             .launchIn(this)
 
-        // Step 3: Observe tab count AND processing state (URLs + Terminals + Files) reactively
+        // Step 3: Observe tab count AND processing state (URLs + Terminals + Files + Workspace Restoration) reactively
         // This eliminates all timing assumptions by waiting for actual completion
         snapshotFlow {
             val allPanels = splitViewState.getAllPanels()
@@ -1129,21 +1135,22 @@ fun ComponentContext.BossApp(
                 val totalTabs: Int,
                 val isProcessingURLs: Boolean,
                 val isProcessingTerminals: Boolean,
-                val isProcessingFiles: Boolean
+                val isProcessingFiles: Boolean,
+                val isRestorationComplete: Boolean
             )
-            ProcessingState(totalTabs, isProcessingURLs, isProcessingTerminals, isProcessingFiles)
+            ProcessingState(totalTabs, isProcessingURLs, isProcessingTerminals, isProcessingFiles, workspaceRestorationComplete)
         }
             .debounce(200) // Wait for 200ms of stability
             .take(1)       // Only take first stabilized value
             .collect { state ->
-                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles} (window: $windowId)")
+                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete} (window: $windowId)")
 
-                // Only show dialog if no tabs AND nothing being processed
-                if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles) {
+                // Only show dialog if no tabs AND nothing being processed AND workspace restoration is complete
+                if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles && state.isRestorationComplete) {
                     showNewTabDialog = true
-                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing)")
+                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing, restoration complete)")
                 } else {
-                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles})")
+                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete})")
                 }
             }
     }
