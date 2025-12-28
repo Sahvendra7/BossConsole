@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Desktop implementation of RunnerTerminalService.
@@ -15,7 +16,7 @@ import kotlinx.coroutines.flow.update
  * Features:
  * - Stop closes the terminal tab and clears tracking
  * - Re-run sends Ctrl+C, waits, then runs new command in same tab
- * - One terminal per configuration (reused on re-run)
+ * - Multiple configurations can run in sidebar mode (each tracked separately)
  *
  * Issue #347: Runner should open in terminal sidebar panel with run/stop state management
  */
@@ -25,12 +26,29 @@ actual object RunnerTerminalService {
     private val _configToTerminal = MutableStateFlow<Map<String, String>>(emptyMap())
     actual val configToTerminal: StateFlow<Map<String, String>> = _configToTerminal.asStateFlow()
 
-    // Reverse map: terminalTabId → configId (for quick lookup)
-    private val terminalToConfig = mutableMapOf<String, String>()
+    // Reverse map: terminalTabId → Set<configId> (supports multiple configs per terminal, e.g., sidebar)
+    // Thread-safe: uses ConcurrentHashMap with concurrent sets
+    private val terminalToConfigs = ConcurrentHashMap<String, ConcurrentHashMap.KeySetView<String, Boolean>>()
 
     // Set of currently running configuration IDs
     private val _runningConfigs = MutableStateFlow<Set<String>>(emptySet())
     actual val runningConfigs: StateFlow<Set<String>> = _runningConfigs.asStateFlow()
+
+    /**
+     * Add a config to a terminal's tracking set.
+     */
+    private fun addConfigToTerminal(terminalId: String, configId: String) {
+        terminalToConfigs.computeIfAbsent(terminalId) {
+            ConcurrentHashMap.newKeySet()
+        }.add(configId)
+    }
+
+    /**
+     * Remove a config from a terminal's tracking set.
+     */
+    private fun removeConfigFromTerminal(terminalId: String, configId: String) {
+        terminalToConfigs[terminalId]?.remove(configId)
+    }
 
     /**
      * Check if a specific configuration is currently running.
@@ -57,7 +75,7 @@ actual object RunnerTerminalService {
 
         // Update mappings
         _configToTerminal.update { it + (config.id to terminalId) }
-        terminalToConfig[terminalId] = config.id
+        addConfigToTerminal(terminalId, config.id)
 
         // Mark as running
         _runningConfigs.update { it + config.id }
@@ -105,7 +123,7 @@ actual object RunnerTerminalService {
 
         // Clear tracking
         _configToTerminal.update { it - configId }
-        terminalToConfig.remove(terminalId)
+        removeConfigFromTerminal(terminalId, configId)
         _runningConfigs.update { it - configId }
 
         // Emit stop event for any additional UI handling
@@ -143,7 +161,7 @@ actual object RunnerTerminalService {
             // Close the terminal tab
             RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
             // Remove old mapping
-            terminalToConfig.remove(existingTerminalId)
+            removeConfigFromTerminal(existingTerminalId, config.id)
         }
 
         // Create new terminal with fresh ID
@@ -152,7 +170,7 @@ actual object RunnerTerminalService {
 
         // Update mappings
         _configToTerminal.update { it + (config.id to terminalId) }
-        terminalToConfig[terminalId] = config.id
+        addConfigToTerminal(terminalId, config.id)
 
         // Mark as running
         _runningConfigs.update { it + config.id }
@@ -173,32 +191,37 @@ actual object RunnerTerminalService {
 
     /**
      * Mark a runner terminal as stopped (process exited).
+     * For terminals with multiple configs (sidebar), marks all as stopped.
      */
     actual fun markTerminalStopped(terminalId: String) {
-        val configId = terminalToConfig[terminalId]
-        if (configId != null) {
-            _runningConfigs.update { it - configId }
-            println("[Runner] Terminal stopped: $terminalId (config: $configId)")
+        val configIds = terminalToConfigs[terminalId]?.toSet() ?: emptySet()
+        if (configIds.isNotEmpty()) {
+            _runningConfigs.update { it - configIds }
+            println("[Runner] Terminal stopped: $terminalId (configs: $configIds)")
         }
     }
 
     /**
      * Remove tracking for a terminal tab (when tab is closed).
+     * For terminals with multiple configs (sidebar), removes all.
      */
     actual fun removeTerminal(terminalId: String) {
-        val configId = terminalToConfig.remove(terminalId)
-        if (configId != null) {
-            _configToTerminal.update { it - configId }
-            _runningConfigs.update { it - configId }
-            println("[Runner] Terminal removed: $terminalId (config: $configId)")
+        val configIds = terminalToConfigs.remove(terminalId)?.toSet() ?: emptySet()
+        if (configIds.isNotEmpty()) {
+            _configToTerminal.update { current ->
+                current.filterKeys { it !in configIds }
+            }
+            _runningConfigs.update { it - configIds }
+            println("[Runner] Terminal removed: $terminalId (configs: $configIds)")
         }
     }
 
     /**
-     * Get the configuration ID associated with a terminal tab.
+     * Get a configuration ID associated with a terminal tab.
+     * For terminals with multiple configs (sidebar), returns any one of them.
      */
     actual fun getConfigForTerminal(terminalId: String): String? {
-        return terminalToConfig[terminalId]
+        return terminalToConfigs[terminalId]?.firstOrNull()
     }
 
     /**
@@ -220,9 +243,10 @@ actual object RunnerTerminalService {
             isRerun = isRerun
         )
         if (success) {
-            // Update mapping to point to SIDEBAR_TERMINAL_ID so stop/Ctrl+C works
+            // Update mapping to point to SIDEBAR_TERMINAL_ID so stop works correctly
             _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
-            terminalToConfig[SIDEBAR_TERMINAL_ID] = configId
+            addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
+            _runningConfigs.update { it + configId }
             println("[Runner] Opened command in sidebar terminal: $tabTitle (mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
         } else {
             println("[Runner] Failed to open in sidebar terminal - panel may not be open")
@@ -232,10 +256,11 @@ actual object RunnerTerminalService {
 
     /**
      * Build the full command including cd to working directory.
+     * Working directory is quoted to handle paths with spaces and special characters.
      */
     private fun buildFullCommand(config: RunConfiguration): String {
         return if (config.workingDirectory.isNotBlank()) {
-            "cd ${config.workingDirectory} && ${config.command}"
+            "cd \"${config.workingDirectory}\" && ${config.command}"
         } else {
             config.command
         }
