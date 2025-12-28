@@ -17,7 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Layout
 
 /**
  * Platform-specific function to open workspace directory
@@ -138,7 +138,7 @@ fun WorkspaceButton(
     Box {
         Box {
             BossActionButton(
-                leftIcon = FeatherIcons.Settings,
+                leftIcon = FeatherIcons.Layout,
                 text = currentWorkspace?.let { workspace ->
                 if (workspace.name != "Current") workspace.name else "Default"
             } ?: "Default",

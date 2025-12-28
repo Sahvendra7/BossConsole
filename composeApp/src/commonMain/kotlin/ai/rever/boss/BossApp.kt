@@ -64,6 +64,7 @@ import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.run.RunnerTerminalTarget
+import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
@@ -851,12 +852,14 @@ fun ComponentContext.BossApp(
 
     // Fallback timeout for fresh install (no workspaces on disk at all)
     // This handles the case where workspace manager never emits non-empty configs
-    LaunchedEffect(isFirstWindow, isSessionResolved) {
+    val startupSettings by StartupSettingsManager.currentSettings.collectAsState()
+    LaunchedEffect(isFirstWindow, isSessionResolved, startupSettings) {
         if (isFirstWindow && !workspaceRestorationComplete) {
-            delay(500) // Wait for workspace manager to load from disk
+            val timeoutMs = startupSettings.workspaceLoadTimeoutMs
+            delay(timeoutMs) // Wait for workspace manager to load from disk
             if (!workspaceRestorationComplete) {
                 // Still not complete after timeout - assume fresh install
-                println("BossApp: Workspace loading timeout (500ms), assuming fresh install")
+                println("BossApp: Workspace loading timeout (${timeoutMs}ms), assuming fresh install")
                 workspaceRestorationComplete = true
 
                 URLHandlerService.markAppReady()
