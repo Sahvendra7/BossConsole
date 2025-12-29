@@ -445,7 +445,7 @@ fun NewTabDialog(
                                             strokeWidth = 2.dp
                                         )
                                     }
-                                } else if (fileTree != null) {
+                                } else if (fileTree != null && fileTree?.children?.isNotEmpty() == true) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -470,6 +470,18 @@ fun NewTabDialog(
                                                 }
                                             )
                                         }
+                                    }
+                                } else if (fileTree != null && fileTree?.children?.isEmpty() == true) {
+                                    // Empty folder
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Empty folder",
+                                            color = Color(0xFF999999),
+                                            fontSize = 13.sp
+                                        )
                                     }
                                 } else {
                                     Box(
