@@ -142,6 +142,15 @@ actual fun TabbedTerminalContent(
                     RunnerTerminalService.removeTerminal(SIDEBAR_TERMINAL_ID)
                     onExit()
                 },
+                onTabClose = { tabId ->
+                    // When a tab is closed in sidebar terminal, check if it's a runner config
+                    // and clean up the runner state for just that config
+                    val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(tabId)
+                    if (configId != null) {
+                        RunnerTerminalService.removeConfig(configId)
+                        TabbedTerminalStateRegistry.removeSidebarConfigTracking(configId)
+                    }
+                },
                 onShowSettings = onShowSettings,
                 onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
                 modifier = Modifier.fillMaxSize()
