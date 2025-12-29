@@ -32,6 +32,11 @@ expect object PerformanceState {
     fun openPerformancePanel()
 
     /**
+     * Toggle the performance panel (open if closed, close if open).
+     */
+    fun togglePerformancePanel()
+
+    /**
      * Register resource count providers.
      * Should be called once from BossApp with functions that return current counts.
      */

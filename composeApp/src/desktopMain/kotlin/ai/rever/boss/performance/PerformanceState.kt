@@ -40,6 +40,12 @@ actual object PerformanceState {
         }
     }
 
+    actual fun togglePerformancePanel() {
+        scope.launch {
+            PanelEventBus.togglePanel(PanelId("performance", 15))
+        }
+    }
+
     actual fun registerResourceProviders(
         browserTabs: () -> Int,
         terminals: () -> Int,

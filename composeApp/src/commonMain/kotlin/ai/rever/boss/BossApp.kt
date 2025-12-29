@@ -64,6 +64,7 @@ import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.run.RunnerTerminalTarget
+import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
@@ -564,6 +565,12 @@ fun ComponentContext.BossApp(
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
     var newTabDialogInitialType by remember { mutableStateOf<ai.rever.boss.components.dialogs.TabType?>(null) }
+    // Track if workspace restoration has completed (for first window only)
+    // New windows don't restore Last Session, so start as complete
+    var workspaceRestorationComplete by remember { mutableStateOf(!isFirstWindow) }
+    // Track if handlers have been marked ready (prevents race condition between workspace load and timeout)
+    // Uses atomic flag to ensure handler marking happens exactly once
+    val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
 
@@ -774,7 +781,8 @@ fun ComponentContext.BossApp(
                 val existingWorkspaceIds = configs.map { it.id }.toSet()
                 splitViewState.cleanupDeletedWorkspaces(existingWorkspaceIds)
                 
-                // Only load on first emission when configs are available
+                // Handle workspace restoration - only process when configs are loaded (non-empty)
+                // Empty configs might mean either "loading" or "fresh install" - we use timeout for fresh install
                 if (configs.isNotEmpty() && workspaceManager.currentWorkspace.value == null) {
                     // Only load "Last Session" for the first window (app startup)
                     // New windows should start fresh (Issue #129)
@@ -800,48 +808,83 @@ fun ComponentContext.BossApp(
                             println("BossApp: No Last Session found, starting with empty workspace")
                         }
 
+                        // Mark workspace restoration as complete (for auto-show dialog logic)
+                        workspaceRestorationComplete = true
+
                         // CRITICAL: Mark handlers as ready AFTER Last Session loads (or after determining no session exists)
                         // This ensures URLs/terminals/files/workspaces create tabs AFTER workspace is loaded,
                         // not before (which would cause tabs to be destroyed by clearAllPanels)
-                        URLHandlerService.markAppReady()
-                        println("BossApp: Marked URL handler as ready (window: $windowId)")
+                        // Uses atomic compareAndSet to prevent race with timeout fallback
+                        if (handlersMarked.compareAndSet(false, true)) {
+                            URLHandlerService.markAppReady()
+                            println("BossApp: Marked URL handler as ready (window: $windowId)")
 
-                        FileHandlerService.markReady()
-                        println("BossApp: Marked file handler as ready (window: $windowId)")
+                            FileHandlerService.markReady()
+                            println("BossApp: Marked file handler as ready (window: $windowId)")
 
-                        WorkspaceHandlerService.markReady()
-                        println("BossApp: Marked workspace handler as ready (window: $windowId)")
+                            WorkspaceHandlerService.markReady()
+                            println("BossApp: Marked workspace handler as ready (window: $windowId)")
 
-                        // Wait for session to resolve before marking terminal handler ready
-                        // This ensures terminal tabs only appear after authentication is fully initialized
-                        if (isSessionResolved) {
-                            TerminalHandlerService.markReady()
-                            println("BossApp: Marked terminal handler as ready (window: $windowId)")
-                        } else {
-                            println("BossApp: Session not resolved yet, will mark terminal handler ready later")
+                            // Wait for session to resolve before marking terminal handler ready
+                            // This ensures terminal tabs only appear after authentication is fully initialized
+                            if (isSessionResolved) {
+                                TerminalHandlerService.markReady()
+                                println("BossApp: Marked terminal handler as ready (window: $windowId)")
+                            } else {
+                                println("BossApp: Session not resolved yet, will mark terminal handler ready later")
+                            }
                         }
                     }
                     // Else: New window - don't load Last Session, start with empty workspace, but still mark ready
                     else {
-                        URLHandlerService.markAppReady()
-                        println("BossApp: Marked URL handler as ready (new window: $windowId)")
+                        // Uses atomic compareAndSet to prevent race with timeout fallback
+                        if (handlersMarked.compareAndSet(false, true)) {
+                            URLHandlerService.markAppReady()
+                            println("BossApp: Marked URL handler as ready (new window: $windowId)")
 
-                        FileHandlerService.markReady()
-                        println("BossApp: Marked file handler as ready (new window: $windowId)")
+                            FileHandlerService.markReady()
+                            println("BossApp: Marked file handler as ready (new window: $windowId)")
 
-                        WorkspaceHandlerService.markReady()
-                        println("BossApp: Marked workspace handler as ready (new window: $windowId)")
+                            WorkspaceHandlerService.markReady()
+                            println("BossApp: Marked workspace handler as ready (new window: $windowId)")
 
-                        if (isSessionResolved) {
-                            TerminalHandlerService.markReady()
-                            println("BossApp: Marked terminal handler as ready (new window: $windowId)")
+                            if (isSessionResolved) {
+                                TerminalHandlerService.markReady()
+                                println("BossApp: Marked terminal handler as ready (new window: $windowId)")
+                            }
                         }
                     }
                 }
             }
             .launchIn(this)
     }
-    
+
+    // Fallback timeout for fresh install (no workspaces on disk at all)
+    // This handles the case where workspace manager never emits non-empty configs
+    LaunchedEffect(isFirstWindow, isSessionResolved) {
+        if (isFirstWindow && !workspaceRestorationComplete) {
+            // Read timeout from settings (use current value, don't make it a key to avoid restart)
+            val timeoutMs = StartupSettingsManager.currentSettings.value.workspaceLoadTimeoutMs
+            delay(timeoutMs) // Wait for workspace manager to load from disk
+            if (!workspaceRestorationComplete) {
+                // Still not complete after timeout - assume fresh install
+                println("BossApp: Workspace loading timeout (${timeoutMs}ms), assuming fresh install")
+                workspaceRestorationComplete = true
+
+                // Uses atomic compareAndSet to prevent race with workspace loading flow
+                if (handlersMarked.compareAndSet(false, true)) {
+                    URLHandlerService.markAppReady()
+                    FileHandlerService.markReady()
+                    WorkspaceHandlerService.markReady()
+                    if (isSessionResolved) {
+                        TerminalHandlerService.markReady()
+                    }
+                    println("BossApp: Marked all handlers ready (fresh install fallback)")
+                }
+            }
+        }
+    }
+
     // Listen for file open events - now handled by split state
     LaunchedEffect(splitViewState) {
         FileEventBus.fileOpenEvents
@@ -1114,7 +1157,7 @@ fun ComponentContext.BossApp(
             }
             .launchIn(this)
 
-        // Step 3: Observe tab count AND processing state (URLs + Terminals + Files) reactively
+        // Step 3: Observe tab count AND processing state (URLs + Terminals + Files + Workspace Restoration) reactively
         // This eliminates all timing assumptions by waiting for actual completion
         snapshotFlow {
             val allPanels = splitViewState.getAllPanels()
@@ -1129,21 +1172,22 @@ fun ComponentContext.BossApp(
                 val totalTabs: Int,
                 val isProcessingURLs: Boolean,
                 val isProcessingTerminals: Boolean,
-                val isProcessingFiles: Boolean
+                val isProcessingFiles: Boolean,
+                val isRestorationComplete: Boolean
             )
-            ProcessingState(totalTabs, isProcessingURLs, isProcessingTerminals, isProcessingFiles)
+            ProcessingState(totalTabs, isProcessingURLs, isProcessingTerminals, isProcessingFiles, workspaceRestorationComplete)
         }
             .debounce(200) // Wait for 200ms of stability
             .take(1)       // Only take first stabilized value
             .collect { state ->
-                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles} (window: $windowId)")
+                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete} (window: $windowId)")
 
-                // Only show dialog if no tabs AND nothing being processed
-                if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles) {
+                // Only show dialog if no tabs AND nothing being processed AND workspace restoration is complete
+                if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles && state.isRestorationComplete) {
                     showNewTabDialog = true
-                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing)")
+                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing, restoration complete)")
                 } else {
-                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles})")
+                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete})")
                 }
             }
     }
@@ -1255,7 +1299,7 @@ fun ComponentContext.BossApp(
                     right.top,
                     right.bottom
                 )
-                
+
                 for (panel in panels) {
                     val panelContentId = draggablePanelComponent.getPanelContentId(panel)
                     if (panelContentId == event.panelId) {
@@ -1264,6 +1308,59 @@ fun ComponentContext.BossApp(
                         panelComponentStore.removeComponent(event.panelId)
                         break
                     }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Listen for panel toggle events (open if closed, close if open)
+    LaunchedEffect(draggablePanelComponent, panelRegistry) {
+        PanelEventBus.panelToggleEvents
+            .onEach { event ->
+                try {
+                    val panels = listOf(
+                        bottom,
+                        left.top,
+                        left.bottom,
+                        right.top,
+                        right.bottom
+                    )
+
+                    // Check if the panel is currently visible with this content
+                    var foundVisible = false
+                    for (panel in panels) {
+                        val panelContentId = draggablePanelComponent.getPanelContentId(panel)
+                        if (panelContentId?.panelId == event.panelId.panelId &&
+                            draggablePanelComponent.isVisible(panel)) {
+                            // Panel is visible - close it
+                            draggablePanelComponent.setPanelVisible(panel, false)
+                            panelComponentStore.removeComponent(event.panelId)
+                            println("BossApp: Toggled panel closed: ${event.panelId.panelId}")
+                            foundVisible = true
+                            break
+                        }
+                    }
+
+                    if (!foundVisible) {
+                        // Panel is not visible - open it using the same logic as panelOpenEvents
+                        val panelInfo = panelRegistry.getAllPanels().find {
+                            it.id.panelId == event.panelId.panelId &&
+                            it.id.pluginId == event.panelId.pluginId
+                        }
+
+                        if (panelInfo != null) {
+                            val panelSlot = panelInfo.defaultSlotPosition
+                            val panelItems = draggablePanelComponent.getItemsForSlot(panelSlot)
+                            val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
+
+                            if (targetItem != null) {
+                                draggablePanelComponent.onClick.invoke(targetItem)
+                                println("BossApp: Toggled panel open: ${event.panelId.panelId}")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("BossApp: Error toggling panel: ${e.message}")
                 }
             }
             .launchIn(this)

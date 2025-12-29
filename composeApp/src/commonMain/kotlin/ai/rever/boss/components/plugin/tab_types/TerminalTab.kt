@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.tab_types
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.panels.bottom.terminal.PersistentTabbedTerminalContent
 import ai.rever.boss.components.registery.*
+import ai.rever.boss.run.RUNNER_TERMINAL_PREFIX
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.material.icons.Icons
@@ -103,9 +104,9 @@ fun DefaultPlugin.registerTerminalTab() = tabRegistry.registerTabType(TerminalTa
         config = config,
         componentContext = context,
         onClose = {
-            // If this is a runner terminal (ID starts with "runner-"), notify the service
-            // that the terminal process has stopped. This updates the Run/Stop button state.
-            if (config.id.startsWith("runner-")) {
+            // If this is a runner terminal, notify the service that the terminal process
+            // has stopped. This updates the Run/Stop button state.
+            if (config.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
                 RunnerTerminalService.markTerminalStopped(config.id)
             }
 

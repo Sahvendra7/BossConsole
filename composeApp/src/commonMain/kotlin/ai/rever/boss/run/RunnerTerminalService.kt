@@ -2,6 +2,9 @@ package ai.rever.boss.run
 
 import kotlinx.coroutines.flow.StateFlow
 
+/** Prefix for runner terminal IDs */
+const val RUNNER_TERMINAL_PREFIX = "runner-"
+
 /**
  * Expect declaration for RunnerTerminalService.
  * Manages runner terminals with configuration tracking.
@@ -84,6 +87,15 @@ expect object RunnerTerminalService {
      * @return The configuration ID, or null if not a runner terminal
      */
     fun getConfigForTerminal(terminalId: String): String?
+
+    /**
+     * Remove a specific config from tracking (when its tab is closed in sidebar).
+     * Unlike removeTerminal which removes all configs for a terminal,
+     * this only removes one specific config.
+     *
+     * @param configId The configuration ID to remove
+     */
+    fun removeConfig(configId: String)
 
     /**
      * Open a runner command in the sidebar terminal panel.

@@ -76,7 +76,7 @@ actual object RunnerTerminalService {
         // Atomic state update under lock
         val (terminalId, isRerun) = stateLock.withLock {
             val existingTerminalId = _configToTerminal.value[config.id]
-            val newTerminalId = existingTerminalId ?: "runner-${config.id}-${System.currentTimeMillis()}"
+            val newTerminalId = existingTerminalId ?: "$RUNNER_TERMINAL_PREFIX${config.id}-${System.currentTimeMillis()}"
 
             // Update all state atomically
             _configToTerminal.update { it + (config.id to newTerminalId) }
@@ -177,7 +177,7 @@ actual object RunnerTerminalService {
             }
 
             // Create new terminal with fresh ID
-            val newTerminalId = "runner-${config.id}-${System.currentTimeMillis()}"
+            val newTerminalId = "$RUNNER_TERMINAL_PREFIX${config.id}-${System.currentTimeMillis()}"
 
             // Update all state atomically
             _configToTerminal.update { it + (config.id to newTerminalId) }
@@ -265,6 +265,25 @@ actual object RunnerTerminalService {
      */
     actual fun getConfigForTerminal(terminalId: String): String? {
         return terminalToConfigs[terminalId]?.firstOrNull()
+    }
+
+    /**
+     * Remove a specific config from tracking (when its tab is closed in sidebar).
+     * Unlike removeTerminal which removes all configs for a terminal,
+     * this only removes one specific config.
+     *
+     * @param configId The configuration ID to remove
+     */
+    actual fun removeConfig(configId: String) {
+        stateLock.withLock {
+            val terminalId = _configToTerminal.value[configId]
+            if (terminalId != null) {
+                _configToTerminal.update { it - configId }
+                removeConfigFromTerminal(terminalId, configId)
+                _runningConfigs.update { it - configId }
+                println("[Runner] Config removed: $configId (terminal: $terminalId)")
+            }
+        }
     }
 
     /**

@@ -104,6 +104,7 @@ private fun SettingsContent(initialSection: String? = null) {
                         SettingsSection.FOCUS_MODE -> FocusModeSettings()
                         SettingsSection.WINDOW_APPEARANCE -> WindowAppearanceSettings()
                         SettingsSection.PERFORMANCE -> PerformanceSettings()
+                        SettingsSection.STARTUP -> StartupSettingsSection()
                     }
                 }
             }
