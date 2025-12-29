@@ -1640,35 +1640,33 @@ fun ComponentContext.BossApp(
                         )
                     }
 
-                    // Update banner - hidden in focus mode
-                    if (!isFocusModeEnabled) {
-                        val updateState by UpdateManager.instance.updateState.collectAsState()
-                        UpdateBanner(
-                            updateState = updateState,
-                            onCheckForUpdates = {
-                                coroutineScope.launch {
-                                    UpdateManager.instance.checkForUpdates()
-                                }
-                            },
-                            onDownloadUpdate = { updateInfo ->
-                                coroutineScope.launch {
-                                    UpdateManager.instance.downloadUpdate(updateInfo)
-                                }
-                            },
-                            onInstallUpdate = { downloadPath ->
-                                coroutineScope.launch {
-                                    val success = UpdateManager.instance.installUpdate(downloadPath)
-                                    if (success) {
-                                        // Optionally restart the application here
-                                        // ApplicationRestarter.restart()
-                                    }
-                                }
-                            },
-                            onDismiss = {
-                                UpdateManager.instance.resetState()
+                    // Update banner - always visible (even in focus mode)
+                    val updateState by UpdateManager.instance.updateState.collectAsState()
+                    UpdateBanner(
+                        updateState = updateState,
+                        onCheckForUpdates = {
+                            coroutineScope.launch {
+                                UpdateManager.instance.checkForUpdates()
                             }
-                        )
-                    }
+                        },
+                        onDownloadUpdate = { updateInfo ->
+                            coroutineScope.launch {
+                                UpdateManager.instance.downloadUpdate(updateInfo)
+                            }
+                        },
+                        onInstallUpdate = { downloadPath ->
+                            coroutineScope.launch {
+                                val success = UpdateManager.instance.installUpdate(downloadPath)
+                                if (success) {
+                                    // Optionally restart the application here
+                                    // ApplicationRestarter.restart()
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            UpdateManager.instance.resetState()
+                        }
+                    )
 
                     // Top bar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(
