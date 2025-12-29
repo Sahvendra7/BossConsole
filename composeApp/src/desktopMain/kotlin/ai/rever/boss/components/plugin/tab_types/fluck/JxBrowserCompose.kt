@@ -1199,23 +1199,21 @@ fun JxBrowserCompose(
                     }
 
                     // Handle mouse back button - navigate back
-                    // Linux: awtButton=6, Windows/macOS: awtButton=4
-                    if (awtEvent?.button == 6 || awtEvent?.button == 4) {
+                    // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
+                    if (awtEvent?.button in listOf(4, 6, 8)) {
                         if (isBrowserEnvironmentValid() && browser.navigation().canGoBack()) {
                             browser.navigation().goBack()
                         }
-                        // Consume event to prevent context menu from showing
                         event.changes.forEach { it.consume() }
                         return@onPointerEvent
                     }
 
                     // Handle mouse forward button - navigate forward
-                    // Linux: awtButton=7, Windows/macOS: awtButton=5
-                    if (awtEvent?.button == 7 || awtEvent?.button == 5) {
+                    // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
+                    if (awtEvent?.button in listOf(5, 7, 9)) {
                         if (isBrowserEnvironmentValid() && browser.navigation().canGoForward()) {
                             browser.navigation().goForward()
                         }
-                        // Consume event to prevent context menu from showing
                         event.changes.forEach { it.consume() }
                         return@onPointerEvent
                     }
