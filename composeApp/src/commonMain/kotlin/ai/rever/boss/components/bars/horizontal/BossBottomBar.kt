@@ -164,7 +164,7 @@ fun BossRightBottomBar() {
         PerformanceIndicator(
             snapshot = snapshot,
             health = health,
-            onClick = { PerformanceState.openPerformancePanel() }
+            onClick = { PerformanceState.togglePerformancePanel() }
         )
     }
 
@@ -174,9 +174,9 @@ fun BossRightBottomBar() {
         text = "Console",
         color = BossDarkTextSecondary,
         onClick = {
-            // Open Console panel (PanelId "console" with order 14)
+            // Toggle Console panel (PanelId "console" with order 14)
             CoroutineScope(Dispatchers.Main).launch {
-                PanelEventBus.openPanel(PanelId("console", 14))
+                PanelEventBus.togglePanel(PanelId("console", 14))
             }
         }
     )

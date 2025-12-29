@@ -6,6 +6,7 @@ import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.performance.HealthStatus
 import ai.rever.boss.performance.PerformanceHealth
 import ai.rever.boss.performance.PerformanceSnapshot
+import ai.rever.boss.utils.FormatUtils
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -16,7 +17,7 @@ val BossDarkWarning = Color(0xFFFFA726)
  * Compact performance indicator for the status bar.
  * Shows memory and CPU usage with color-coded health status.
  *
- * Format: "256M/512M 45%" (memory usage / max, CPU %)
+ * Format: "256MB/512MB 45%" or "1.5GB/4GB 45%" (memory usage / max, CPU %)
  */
 @Composable
 fun PerformanceIndicator(
@@ -32,22 +33,14 @@ fun PerformanceIndicator(
         HealthStatus.CRITICAL -> BossDarkError
     }
 
-    val memoryText = "${snapshot.memory.heapUsedMB.toInt()}M/${snapshot.memory.heapMaxMB.toInt()}M"
+    val memoryUsed = FormatUtils.formatMegabytes(snapshot.memory.heapUsedMB, compact = true)
+    val memoryMax = FormatUtils.formatMegabytes(snapshot.memory.heapMaxMB, compact = true)
+    val memoryText = "$memoryUsed/$memoryMax"
     val cpuText = "${snapshot.cpu.processLoadPercent.toInt()}%"
 
     BossActionButton(
         text = "$memoryText $cpuText",
         color = color,
-        hintText = buildHintText(snapshot, health),
         onClick = onClick
     )
-}
-
-private fun buildHintText(snapshot: PerformanceSnapshot, health: PerformanceHealth): String {
-    return buildString {
-        appendLine("Memory: ${snapshot.memory.heapUsedMB.toInt()}MB / ${snapshot.memory.heapMaxMB.toInt()}MB (${snapshot.memory.heapUsagePercent.toInt()}%)")
-        appendLine("CPU: ${snapshot.cpu.processLoadPercent.toInt()}% (${snapshot.cpu.activeThreadCount} threads)")
-        appendLine("GC: ${snapshot.gc.collectionCount} collections")
-        append("Resources: ${snapshot.resources.browserTabCount} browser, ${snapshot.resources.terminalCount} terminal, ${snapshot.resources.editorTabCount} editor tabs")
-    }
 }

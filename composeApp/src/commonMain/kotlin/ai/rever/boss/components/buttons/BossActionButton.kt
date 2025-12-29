@@ -20,6 +20,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -33,6 +34,14 @@ import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
+
+/**
+ * State holder for hover popup to survive recomposition.
+ */
+private class HoverPopupState {
+    var isShowing by mutableStateOf(false)
+    var capturedText by mutableStateOf<String?>(null)
+}
 
 @Composable
 fun BossActionButton(
@@ -98,22 +107,25 @@ fun BossActionButton(
         IntOffset(x, y)
     }
 
-    // State for hover popup
-    var showHoverPopup by remember { mutableStateOf(false) }
-    val hoverPopupPosition = run {
-        val x = buttonPosition.x.toInt() +
-                when (hintDirection) {
-                    right -> buttonSize.x
-                    left -> -hintPopupSize.x
-                    else -> (buttonSize.x - hintPopupSize.x) / 2
-                }
-        val y = buttonPosition.y.toInt() +
-                when (hintDirection) {
-                    top -> -hintPopupSize.y
-                    bottom -> buttonSize.y
-                    else -> 0
-                }
-        IntOffset(x, y)
+    // State for hover popup - use class-level state holder to survive recomposition
+    val hoverState = remember { HoverPopupState() }
+    val hoverPopupPosition by remember(buttonPosition, buttonSize, hintPopupSize, hintDirection) {
+        mutableStateOf(
+            IntOffset(
+                buttonPosition.x.toInt() +
+                    when (hintDirection) {
+                        right -> buttonSize.x
+                        left -> -hintPopupSize.x
+                        else -> (buttonSize.x - hintPopupSize.x) / 2
+                    },
+                buttonPosition.y.toInt() +
+                    when (hintDirection) {
+                        top -> -hintPopupSize.y
+                        bottom -> buttonSize.y
+                        else -> 0
+                    }
+            )
+        )
     }
 
     // Use interaction source to track states
@@ -124,18 +136,30 @@ fun BossActionButton(
     // Determine active state based on hover, focus or selection
     val isActive = isHovered || isFocused || isSelected
 
-    // Handle hover popup delay
-    LaunchedEffect(isHovered) {
-        if (isHovered && hintText != null) {
-            if (showHintWithDelay) {
-                delay(500) // 500 millisecond delay
+    // Use rememberUpdatedState to access latest hintText without triggering recomposition
+    val latestHintText by rememberUpdatedState(hintText)
+
+    // Handle hover popup delay - only track isHovered to avoid flickering from hint text updates
+    LaunchedEffect(Unit) {
+        snapshotFlow { isHovered }
+            .collect { hovering ->
+                if (hovering && latestHintText != null) {
+                    // Capture hint text when hover starts (only if not already showing)
+                    if (!hoverState.isShowing) {
+                        hoverState.capturedText = latestHintText
+                        if (showHintWithDelay) {
+                            delay(500)
+                        }
+                        // Re-check hover state after delay
+                        if (isHovered) {
+                            hoverState.isShowing = true
+                        }
+                    }
+                } else if (!hovering) {
+                    hoverState.isShowing = false
+                    hoverState.capturedText = null
+                }
             }
-            if (isHovered) { // Check if still hovering after delay
-                showHoverPopup = true
-            }
-        } else {
-            showHoverPopup = false
-        }
     }
 
     // Show context menu if enabled
@@ -154,7 +178,9 @@ fun BossActionButton(
     }
     
     // Show hover popup if hovering and hint text is provided
-    if (showHoverPopup && hintText != null) {
+    // Use hoverState.capturedText to prevent flickering when content updates during hover
+    val displayHintText = hoverState.capturedText ?: hintText
+    if (hoverState.isShowing && displayHintText != null) {
         Popup(
             alignment = Alignment.TopStart,
             offset = hoverPopupPosition,
@@ -176,7 +202,7 @@ fun BossActionButton(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = hintText,
+                        text = displayHintText,
                         color = Color.White,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(bottom = 4.dp)
@@ -222,7 +248,7 @@ fun BossActionButton(
     val handleClick = {
         if (contextMenuItems != null) {
             showContextMenu = true
-            showHoverPopup = false // Hide hover popup when showing context menu
+            hoverState.isShowing = false // Hide hover popup when showing context menu
         }
         // Always call the provided onClick handler
         onClick()

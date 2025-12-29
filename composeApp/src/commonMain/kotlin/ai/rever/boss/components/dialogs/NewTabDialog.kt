@@ -31,8 +31,67 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
+import ai.rever.boss.platform.rememberFilePicker
+import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.FileNode
+import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
+import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
+import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * Validates and sanitizes a file path to prevent path traversal attacks.
+ *
+ * @param path The file path to validate
+ * @param basePath Optional base path that the file must be within (null allows any path)
+ * @return The canonical path if valid, null if the path is invalid or attempts traversal
+ */
+private fun validateFilePath(path: String, basePath: String? = null): String? {
+    if (path.isBlank()) return null
+
+    return try {
+        val file = File(path)
+        val canonicalPath = file.canonicalPath
+
+        // If a base path is provided, ensure the file is within it
+        if (basePath != null) {
+            val baseFile = File(basePath)
+            val canonicalBase = baseFile.canonicalPath
+
+            // The file must be within the base directory
+            if (!canonicalPath.startsWith(canonicalBase)) {
+                println("[PathValidation] Path traversal attempt blocked: $path (outside $basePath)")
+                return null
+            }
+        }
+
+        // Validate the file exists
+        if (!file.exists()) {
+            println("[PathValidation] File does not exist: $path")
+            return null
+        }
+
+        canonicalPath
+    } catch (e: Exception) {
+        println("[PathValidation] Invalid path: $path - ${e.message}")
+        null
+    }
+}
 
 enum class TabType {
     URL, FILE, TERMINAL
@@ -69,17 +128,9 @@ fun NewTabDialog(
 ) {
     var selectedType by remember { mutableStateOf(initialTabType ?: TabType.URL) }
     var urlText by remember { mutableStateOf("") }
-    var fileText by remember { mutableStateOf(SystemUtils.getDefaultProjectPath() + "/README.md") }
+    var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
-    var inputText by remember {
-        mutableStateOf(
-            when (selectedType) {
-                TabType.URL -> urlText
-                TabType.FILE -> fileText
-                TabType.TERMINAL -> ""
-            }
-        )
-    }
+    var inputText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val terminalFocusRequester = remember { FocusRequester() }
     
@@ -88,6 +139,17 @@ fun NewTabDialog(
     var showUrlDropdown by remember { mutableStateOf(false) }
     var selectedSuggestionIndex by remember { mutableStateOf(-1) }
     val listState = rememberLazyListState()
+
+    // File picker for browsing files
+    val filePicker = rememberFilePicker(
+        onFileSelected = { path, _ ->
+            path?.let {
+                fileText = it
+                inputText = it
+            }
+        },
+        fileExtensions = emptyList() // Allow all files
+    )
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -257,36 +319,317 @@ fun NewTabDialog(
                                 }
                             )
                         )
+                    } else if (selectedType == TabType.FILE) {
+                        // Current project/folder selector
+                        val selectedProject by ProjectState.selectedProject.collectAsState()
+                        val recentProjects by ProjectState.recentProjects.collectAsState()
+                        var showFolderDropdown by remember { mutableStateOf(false) }
+
+                        // File tree state
+                        var fileTree by remember { mutableStateOf<FileNode?>(null) }
+                        var expandedPaths by remember { mutableStateOf(setOf<String>()) }
+                        var isLoadingTree by remember { mutableStateOf(false) }
+                        val coroutineScope = rememberCoroutineScope()
+
+                        // Load file tree when project changes
+                        LaunchedEffect(selectedProject.path) {
+                            if (selectedProject.path.isNotEmpty()) {
+                                isLoadingTree = true
+                                fileTree = try {
+                                    withContext(Dispatchers.IO) {
+                                        scanDirectory(selectedProject.path)
+                                    }
+                                } catch (e: Exception) {
+                                    println("[NewTabDialog] Error scanning directory: ${e.message}")
+                                    null
+                                }
+                                isLoadingTree = false
+                            } else {
+                                fileTree = null
+                            }
+                        }
+
+                        // Directory picker for selecting new folder
+                        val directoryPicker = rememberDirectoryPicker { path ->
+                            path?.let {
+                                val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                                ProjectState.selectProject(
+                                    ai.rever.boss.components.plugin.panels.left_top.Project(
+                                        name = projectName,
+                                        path = it
+                                    )
+                                )
+                                // Clear expanded paths for new folder
+                                expandedPaths = emptySet()
+                            }
+                        }
+
+                        // Folder selector dropdown
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { showFolderDropdown = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    backgroundColor = Color(0xFF1E1F22),
+                                    contentColor = Color.White
+                                ),
+                                border = ButtonDefaults.outlinedBorder.copy(
+                                    brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
+                                ),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = "Folder",
+                                    tint = Color(0xFF6B9EFF),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (selectedProject.path.isNotEmpty())
+                                        selectedProject.name
+                                    else
+                                        "Select folder...",
+                                    color = if (selectedProject.path.isNotEmpty())
+                                        Color.White
+                                    else
+                                        Color(0xFF999999),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Expand",
+                                    tint = Color(0xFF999999)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showFolderDropdown,
+                                onDismissRequest = { showFolderDropdown = false },
+                                modifier = Modifier
+                                    .width(450.dp)
+                                    .background(Color(0xFF2B2D30))
+                            ) {
+                                // Recent projects
+                                if (recentProjects.isNotEmpty()) {
+                                    recentProjects.forEach { project ->
+                                        DropdownMenuItem(
+                                            onClick = {
+                                                ProjectState.selectProject(project)
+                                                expandedPaths = emptySet()
+                                                showFolderDropdown = false
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Folder,
+                                                contentDescription = null,
+                                                tint = Color(0xFF6B9EFF),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = project.name,
+                                                    color = Color.White,
+                                                    fontSize = 14.sp
+                                                )
+                                                Text(
+                                                    text = project.path,
+                                                    color = Color(0xFF999999),
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Divider(color = Color(0xFF555555))
+                                }
+
+                                // Browse option
+                                DropdownMenuItem(
+                                    onClick = {
+                                        showFolderDropdown = false
+                                        directoryPicker.pickDirectory()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        tint = Color(0xFF999999),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Browse...",
+                                        color = Color.White,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // File tree browser
+                        if (selectedProject.path.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                backgroundColor = Color(0xFF1E1F22),
+                                shape = RoundedCornerShape(4.dp),
+                                elevation = 0.dp
+                            ) {
+                                if (isLoadingTree) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = Color(0xFF4A9EFF),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                } else if (fileTree != null && fileTree?.children?.isNotEmpty() == true) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState())
+                                            .padding(4.dp)
+                                    ) {
+                                        fileTree?.children?.forEach { node ->
+                                            DialogFileTreeItem(
+                                                node = node,
+                                                level = 0,
+                                                expandedPaths = expandedPaths,
+                                                onToggleExpanded = { path ->
+                                                    expandedPaths = if (expandedPaths.contains(path)) {
+                                                        expandedPaths - path
+                                                    } else {
+                                                        expandedPaths + path
+                                                    }
+                                                },
+                                                onFileClick = { file ->
+                                                    inputText = file.path
+                                                    fileText = file.path
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else if (fileTree != null && fileTree?.children?.isEmpty() == true) {
+                                    // Empty folder (hidden files like .git are excluded)
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "No visible files",
+                                                color = Color(0xFF999999),
+                                                fontSize = 13.sp
+                                            )
+                                            Text(
+                                                text = "(hidden files and build folders are excluded)",
+                                                color = Color(0xFF666666),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Unable to load files",
+                                            color = Color(0xFF999999),
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        // File input with browse button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = inputText,
+                                onValueChange = { newValue ->
+                                    inputText = newValue
+                                    fileText = newValue
+                                },
+                                label = {
+                                    Text(
+                                        "File path",
+                                        color = Color(0xFF999999)
+                                    )
+                                },
+                                placeholder = {
+                                    Text(
+                                        "Select a file above or enter path",
+                                        color = Color(0xFF666666)
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester)
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                                            handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                            true
+                                        } else false
+                                    },
+                                colors = TextFieldDefaults.outlinedTextFieldColors(
+                                    textColor = Color.White,
+                                    cursorColor = Color.White,
+                                    focusedBorderColor = Color(0xFF4A9EFF),
+                                    unfocusedBorderColor = Color(0xFF555555),
+                                    backgroundColor = Color(0xFF1E1F22)
+                                ),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        handleCreateTab(selectedType, inputText, onCreateTab, onDismiss)
+                                    }
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { filePicker.pickFile() },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = "Browse files",
+                                    tint = Color(0xFF999999)
+                                )
+                            }
+                        }
                     } else {
-                        // URL/File input
+                        // URL input
                         OutlinedTextField(
                             value = inputText,
                             onValueChange = { newValue ->
                                 inputText = newValue
-                                // Update the appropriate state based on current type
-                                when (selectedType) {
-                                    TabType.URL -> urlText = newValue
-                                    TabType.FILE -> fileText = newValue
-                                    else -> {}
-                                }
+                                urlText = newValue
                             },
                             label = {
                                 Text(
-                                    when (selectedType) {
-                                        TabType.URL -> "Enter URL (e.g., https://example.com)"
-                                        TabType.FILE -> "Enter file path"
-                                        else -> ""
-                                    },
+                                    "Enter URL (e.g., https://example.com)",
                                     color = Color(0xFF999999)
                                 )
                             },
                             placeholder = {
                                 Text(
-                                    when (selectedType) {
-                                        TabType.URL -> "https://"
-                                        TabType.FILE -> "README.md"
-                                        else -> ""
-                                    },
+                                    "https://",
                                     color = Color(0xFF666666)
                                 )
                             },
@@ -294,7 +637,7 @@ fun NewTabDialog(
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester)
                                 .onPreviewKeyEvent { event ->
-                                    if (selectedType == TabType.URL && event.type == KeyEventType.KeyDown) {
+                                    if (event.type == KeyEventType.KeyDown) {
                                         when (event.key) {
                                             Key.DirectionDown -> {
                                                 // Always consume arrow keys to prevent cursor movement in text field
@@ -352,7 +695,7 @@ fun NewTabDialog(
                         )
                         
                         // URL suggestions dropdown
-                        if (selectedType == TabType.URL && showUrlDropdown) {
+                        if (showUrlDropdown) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -528,7 +871,14 @@ private fun handleCreateTab(
             processUrlInput(input)
         }
         TabType.FILE -> {
-            input.trim()
+            // Validate file path to prevent path traversal attacks
+            val validatedPath = validateFilePath(input.trim())
+            if (validatedPath == null) {
+                // Path validation failed - don't create the tab
+                println("[NewTabDialog] File path validation failed: ${input.trim()}")
+                return
+            }
+            validatedPath
         }
         TabType.TERMINAL -> {
             // Pass the command (or empty string if none)
@@ -565,5 +915,90 @@ private fun processUrlInput(input: String): String {
         isLocalhost -> "http://$trimmed"
         isLikelyUrl -> "https://$trimmed"
         else -> "https://www.google.com/search?q=${encodeUrlParameter(trimmed)}"
+    }
+}
+
+/**
+ * Simplified file tree item for the NewTabDialog file browser.
+ */
+@Composable
+private fun DialogFileTreeItem(
+    node: FileNode,
+    level: Int,
+    expandedPaths: Set<String>,
+    onToggleExpanded: (String) -> Unit,
+    onFileClick: (FileNode) -> Unit
+) {
+    val isExpanded = expandedPaths.contains(node.path)
+    val hasChildren = node.isDirectory && (node.hasChildren != false || node.children.isNotEmpty())
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .clickable {
+                    if (node.isDirectory) {
+                        onToggleExpanded(node.path)
+                    } else {
+                        onFileClick(node)
+                    }
+                }
+                .padding(start = (8 + level * 12).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Expand/collapse icon for directories
+            if (node.isDirectory && hasChildren) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = Color(0xFF999999),
+                    modifier = Modifier.size(14.dp)
+                )
+            } else {
+                Spacer(modifier = Modifier.width(14.dp))
+            }
+
+            Spacer(modifier = Modifier.width(2.dp))
+
+            // File/folder icon
+            Icon(
+                imageVector = when {
+                    node.isDirectory -> if (isExpanded) Icons.Outlined.Folder else Icons.Outlined.Folder
+                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Icons.Outlined.Code
+                    node.name.endsWith(".md") -> Icons.Outlined.Description
+                    else -> Icons.AutoMirrored.Outlined.InsertDriveFile
+                },
+                contentDescription = if (node.isDirectory) "Folder" else "File",
+                tint = when {
+                    node.isDirectory -> Color(0xFF6B9EFF)
+                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Color(0xFFE57373)
+                    else -> Color(0xFF90A4AE)
+                },
+                modifier = Modifier.size(14.dp)
+            )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // File/folder name
+            Text(
+                text = node.name,
+                fontSize = 12.sp,
+                color = Color(0xFFCCCCCC)
+            )
+        }
+
+        // Show children if expanded
+        if (node.isDirectory && isExpanded && node.children.isNotEmpty()) {
+            node.children.forEach { child ->
+                DialogFileTreeItem(
+                    node = child,
+                    level = level + 1,
+                    expandedPaths = expandedPaths,
+                    onToggleExpanded = onToggleExpanded,
+                    onFileClick = onFileClick
+                )
+            }
+        }
     }
 }
