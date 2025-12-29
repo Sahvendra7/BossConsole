@@ -7,6 +7,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 
@@ -31,10 +32,10 @@ actual class ContextMenuHandler {
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Main)
 
-                    // Handle right-click
+                    // Handle right-click (secondary button only, not back/forward buttons)
                     val pointerPress = event.changes.find { it.type == PointerType.Companion.Mouse }
                     if (event.type == PointerEventType.Companion.Press &&
-                        !event.buttons.isPrimaryPressed &&
+                        event.buttons.isSecondaryPressed &&
                         pointerPress != null) {
 
                         setMenuPosition(

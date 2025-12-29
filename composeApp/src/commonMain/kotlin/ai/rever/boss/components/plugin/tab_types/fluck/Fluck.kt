@@ -527,7 +527,8 @@ open class FluckTabComponent(
                             onFaviconCached = { cacheKey ->
                                 // Update favicon cache key through proper callback (Issue #160)
                                 onFaviconCacheKeyUpdate?.invoke(cacheKey)
-                            }
+                            },
+                            onCloseTab = onCloseTab
                         )
                     }
                 }

@@ -19,6 +19,7 @@ expect fun FluckView(
     onOpenInNewTab: (String) -> Unit = {},
     onNavigationUpdate: ((String, String) -> Unit)? = null,
     onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null,
-    onFaviconCached: ((String?) -> Unit)? = null
+    onFaviconCached: ((String?) -> Unit)? = null,
+    onCloseTab: (() -> Unit)? = null
 )
 
