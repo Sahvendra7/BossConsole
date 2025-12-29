@@ -13,6 +13,10 @@ data class PanelOpenEvent(
     val panelId: PanelId
 )
 
+data class PanelToggleEvent(
+    val panelId: PanelId
+)
+
 object PanelEventBus {
     private val _panelCloseEvents = MutableSharedFlow<PanelCloseEvent>()
     val panelCloseEvents: SharedFlow<PanelCloseEvent> = _panelCloseEvents.asSharedFlow()
@@ -23,11 +27,20 @@ object PanelEventBus {
     )
     val panelOpenEvents: SharedFlow<PanelOpenEvent> = _panelOpenEvents.asSharedFlow()
 
+    private val _panelToggleEvents = MutableSharedFlow<PanelToggleEvent>(
+        extraBufferCapacity = 10
+    )
+    val panelToggleEvents: SharedFlow<PanelToggleEvent> = _panelToggleEvents.asSharedFlow()
+
     suspend fun closePanel(panelId: PanelId) {
         _panelCloseEvents.emit(PanelCloseEvent(panelId))
     }
 
     suspend fun openPanel(panelId: PanelId) {
         _panelOpenEvents.emit(PanelOpenEvent(panelId))
+    }
+
+    suspend fun togglePanel(panelId: PanelId) {
+        _panelToggleEvents.emit(PanelToggleEvent(panelId))
     }
 }

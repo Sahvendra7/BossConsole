@@ -568,6 +568,9 @@ fun ComponentContext.BossApp(
     // Track if workspace restoration has completed (for first window only)
     // New windows don't restore Last Session, so start as complete
     var workspaceRestorationComplete by remember { mutableStateOf(!isFirstWindow) }
+    // Track if handlers have been marked ready (prevents race condition between workspace load and timeout)
+    // Uses atomic flag to ensure handler marking happens exactly once
+    val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
 
@@ -811,38 +814,44 @@ fun ComponentContext.BossApp(
                         // CRITICAL: Mark handlers as ready AFTER Last Session loads (or after determining no session exists)
                         // This ensures URLs/terminals/files/workspaces create tabs AFTER workspace is loaded,
                         // not before (which would cause tabs to be destroyed by clearAllPanels)
-                        URLHandlerService.markAppReady()
-                        println("BossApp: Marked URL handler as ready (window: $windowId)")
+                        // Uses atomic compareAndSet to prevent race with timeout fallback
+                        if (handlersMarked.compareAndSet(false, true)) {
+                            URLHandlerService.markAppReady()
+                            println("BossApp: Marked URL handler as ready (window: $windowId)")
 
-                        FileHandlerService.markReady()
-                        println("BossApp: Marked file handler as ready (window: $windowId)")
+                            FileHandlerService.markReady()
+                            println("BossApp: Marked file handler as ready (window: $windowId)")
 
-                        WorkspaceHandlerService.markReady()
-                        println("BossApp: Marked workspace handler as ready (window: $windowId)")
+                            WorkspaceHandlerService.markReady()
+                            println("BossApp: Marked workspace handler as ready (window: $windowId)")
 
-                        // Wait for session to resolve before marking terminal handler ready
-                        // This ensures terminal tabs only appear after authentication is fully initialized
-                        if (isSessionResolved) {
-                            TerminalHandlerService.markReady()
-                            println("BossApp: Marked terminal handler as ready (window: $windowId)")
-                        } else {
-                            println("BossApp: Session not resolved yet, will mark terminal handler ready later")
+                            // Wait for session to resolve before marking terminal handler ready
+                            // This ensures terminal tabs only appear after authentication is fully initialized
+                            if (isSessionResolved) {
+                                TerminalHandlerService.markReady()
+                                println("BossApp: Marked terminal handler as ready (window: $windowId)")
+                            } else {
+                                println("BossApp: Session not resolved yet, will mark terminal handler ready later")
+                            }
                         }
                     }
                     // Else: New window - don't load Last Session, start with empty workspace, but still mark ready
                     else {
-                        URLHandlerService.markAppReady()
-                        println("BossApp: Marked URL handler as ready (new window: $windowId)")
+                        // Uses atomic compareAndSet to prevent race with timeout fallback
+                        if (handlersMarked.compareAndSet(false, true)) {
+                            URLHandlerService.markAppReady()
+                            println("BossApp: Marked URL handler as ready (new window: $windowId)")
 
-                        FileHandlerService.markReady()
-                        println("BossApp: Marked file handler as ready (new window: $windowId)")
+                            FileHandlerService.markReady()
+                            println("BossApp: Marked file handler as ready (new window: $windowId)")
 
-                        WorkspaceHandlerService.markReady()
-                        println("BossApp: Marked workspace handler as ready (new window: $windowId)")
+                            WorkspaceHandlerService.markReady()
+                            println("BossApp: Marked workspace handler as ready (new window: $windowId)")
 
-                        if (isSessionResolved) {
-                            TerminalHandlerService.markReady()
-                            println("BossApp: Marked terminal handler as ready (new window: $windowId)")
+                            if (isSessionResolved) {
+                                TerminalHandlerService.markReady()
+                                println("BossApp: Marked terminal handler as ready (new window: $windowId)")
+                            }
                         }
                     }
                 }
@@ -862,13 +871,16 @@ fun ComponentContext.BossApp(
                 println("BossApp: Workspace loading timeout (${timeoutMs}ms), assuming fresh install")
                 workspaceRestorationComplete = true
 
-                URLHandlerService.markAppReady()
-                FileHandlerService.markReady()
-                WorkspaceHandlerService.markReady()
-                if (isSessionResolved) {
-                    TerminalHandlerService.markReady()
+                // Uses atomic compareAndSet to prevent race with workspace loading flow
+                if (handlersMarked.compareAndSet(false, true)) {
+                    URLHandlerService.markAppReady()
+                    FileHandlerService.markReady()
+                    WorkspaceHandlerService.markReady()
+                    if (isSessionResolved) {
+                        TerminalHandlerService.markReady()
+                    }
+                    println("BossApp: Marked all handlers ready (fresh install fallback)")
                 }
-                println("BossApp: Marked all handlers ready (fresh install fallback)")
             }
         }
     }
@@ -1287,7 +1299,7 @@ fun ComponentContext.BossApp(
                     right.top,
                     right.bottom
                 )
-                
+
                 for (panel in panels) {
                     val panelContentId = draggablePanelComponent.getPanelContentId(panel)
                     if (panelContentId == event.panelId) {
@@ -1296,6 +1308,59 @@ fun ComponentContext.BossApp(
                         panelComponentStore.removeComponent(event.panelId)
                         break
                     }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Listen for panel toggle events (open if closed, close if open)
+    LaunchedEffect(draggablePanelComponent, panelRegistry) {
+        PanelEventBus.panelToggleEvents
+            .onEach { event ->
+                try {
+                    val panels = listOf(
+                        bottom,
+                        left.top,
+                        left.bottom,
+                        right.top,
+                        right.bottom
+                    )
+
+                    // Check if the panel is currently visible with this content
+                    var foundVisible = false
+                    for (panel in panels) {
+                        val panelContentId = draggablePanelComponent.getPanelContentId(panel)
+                        if (panelContentId?.panelId == event.panelId.panelId &&
+                            draggablePanelComponent.isVisible(panel)) {
+                            // Panel is visible - close it
+                            draggablePanelComponent.setPanelVisible(panel, false)
+                            panelComponentStore.removeComponent(event.panelId)
+                            println("BossApp: Toggled panel closed: ${event.panelId.panelId}")
+                            foundVisible = true
+                            break
+                        }
+                    }
+
+                    if (!foundVisible) {
+                        // Panel is not visible - open it using the same logic as panelOpenEvents
+                        val panelInfo = panelRegistry.getAllPanels().find {
+                            it.id.panelId == event.panelId.panelId &&
+                            it.id.pluginId == event.panelId.pluginId
+                        }
+
+                        if (panelInfo != null) {
+                            val panelSlot = panelInfo.defaultSlotPosition
+                            val panelItems = draggablePanelComponent.getItemsForSlot(panelSlot)
+                            val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
+
+                            if (targetItem != null) {
+                                draggablePanelComponent.onClick.invoke(targetItem)
+                                println("BossApp: Toggled panel open: ${event.panelId.panelId}")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("BossApp: Error toggling panel: ${e.message}")
                 }
             }
             .launchIn(this)

@@ -21,6 +21,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
+// Validation constants for workspace load timeout
+private const val MIN_TIMEOUT_MS = 100L
+private const val MAX_TIMEOUT_MS = 30000L  // 30 seconds max
+private const val DEFAULT_TIMEOUT_MS = 1000L  // 1 second - adequate for slower machines
+
+/**
+ * Validates timeout value and returns error message if invalid, null if valid.
+ */
+private fun validateTimeout(value: Long?): String? {
+    return when {
+        value == null -> "Please enter a valid number"
+        value < MIN_TIMEOUT_MS -> "Minimum value is ${MIN_TIMEOUT_MS}ms"
+        value > MAX_TIMEOUT_MS -> "Maximum value is ${MAX_TIMEOUT_MS}ms (30 seconds)"
+        else -> null
+    }
+}
+
 /**
  * Settings UI section for startup configuration.
  */
@@ -31,6 +48,12 @@ fun StartupSettingsSection() {
 
     // Local state for the text field
     var timeoutText by remember(settings) { mutableStateOf(settings.workspaceLoadTimeoutMs.toString()) }
+
+    // Validation state
+    val timeoutValue = timeoutText.toLongOrNull()
+    val validationError = validateTimeout(timeoutValue)
+    val isValid = validationError == null
+    val hasChanges = timeoutValue != null && timeoutValue != settings.workspaceLoadTimeoutMs
 
     Column(
         modifier = Modifier
@@ -64,13 +87,16 @@ fun StartupSettingsSection() {
                     },
                     label = { Text("Timeout (ms)") },
                     singleLine = true,
+                    isError = timeoutText.isNotEmpty() && !isValid,
                     modifier = Modifier.width(200.dp),
                     colors = TextFieldDefaults.outlinedTextFieldColors(
                         textColor = Color.White,
-                        focusedBorderColor = BossDarkAccent,
-                        unfocusedBorderColor = BossDarkBorder,
-                        focusedLabelColor = BossDarkAccent,
-                        unfocusedLabelColor = Color.Gray
+                        focusedBorderColor = if (isValid) BossDarkAccent else Color(0xFFE57373),
+                        unfocusedBorderColor = if (isValid) BossDarkBorder else Color(0xFFE57373),
+                        errorBorderColor = Color(0xFFE57373),
+                        focusedLabelColor = if (isValid) BossDarkAccent else Color(0xFFE57373),
+                        unfocusedLabelColor = Color.Gray,
+                        errorLabelColor = Color(0xFFE57373)
                     )
                 )
 
@@ -78,10 +104,9 @@ fun StartupSettingsSection() {
 
                 Button(
                     onClick = {
-                        val timeout = timeoutText.toLongOrNull()
-                        if (timeout != null && timeout >= 100) {
+                        if (isValid && timeoutValue != null) {
                             coroutineScope.launch {
-                                StartupSettingsManager.setWorkspaceLoadTimeout(timeout)
+                                StartupSettingsManager.setWorkspaceLoadTimeout(timeoutValue)
                             }
                         }
                     },
@@ -90,8 +115,7 @@ fun StartupSettingsSection() {
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(6.dp),
-                    enabled = timeoutText.toLongOrNull()?.let { it >= 100 } == true &&
-                            timeoutText.toLongOrNull() != settings.workspaceLoadTimeoutMs
+                    enabled = isValid && hasChanges
                 ) {
                     Text("Apply")
                 }
@@ -99,21 +123,30 @@ fun StartupSettingsSection() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "Minimum: 100ms. Higher values give more time for workspace to load but delay the New Tab dialog on fresh installs.",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
+            // Show validation error or help text
+            if (timeoutText.isNotEmpty() && validationError != null) {
+                Text(
+                    text = validationError,
+                    fontSize = 12.sp,
+                    color = Color(0xFFE57373)
+                )
+            } else {
+                Text(
+                    text = "Range: ${MIN_TIMEOUT_MS}ms - ${MAX_TIMEOUT_MS}ms. Higher values give more time for workspace to load but delay the New Tab dialog on fresh installs.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
 
             // Reset button
-            if (settings.workspaceLoadTimeoutMs != 500L) {
+            if (settings.workspaceLoadTimeoutMs != DEFAULT_TIMEOUT_MS) {
                 Spacer(modifier = Modifier.height(16.dp))
                 TextButton(
                     onClick = {
                         coroutineScope.launch {
                             StartupSettingsManager.resetToDefault()
                         }
-                        timeoutText = "500"
+                        timeoutText = DEFAULT_TIMEOUT_MS.toString()
                     },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = BossDarkAccent
@@ -125,7 +158,7 @@ fun StartupSettingsSection() {
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reset to Default (500ms)", fontSize = 13.sp)
+                    Text("Reset to Default (${DEFAULT_TIMEOUT_MS}ms)", fontSize = 13.sp)
                 }
             }
         }

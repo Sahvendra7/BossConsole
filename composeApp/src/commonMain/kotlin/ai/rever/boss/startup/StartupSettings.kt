@@ -10,7 +10,7 @@ data class StartupSettings(
     /**
      * Timeout in milliseconds to wait for workspace to load before assuming fresh install.
      * If no workspaces are found within this time, the New Tab dialog will be shown.
-     * Default: 500ms
+     * Default: 1000ms (1 second) - provides adequate time for slower machines or systems under load.
      */
-    val workspaceLoadTimeoutMs: Long = 500L
+    val workspaceLoadTimeoutMs: Long = 1000L
 )

@@ -52,6 +52,46 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * Validates and sanitizes a file path to prevent path traversal attacks.
+ *
+ * @param path The file path to validate
+ * @param basePath Optional base path that the file must be within (null allows any path)
+ * @return The canonical path if valid, null if the path is invalid or attempts traversal
+ */
+private fun validateFilePath(path: String, basePath: String? = null): String? {
+    if (path.isBlank()) return null
+
+    return try {
+        val file = File(path)
+        val canonicalPath = file.canonicalPath
+
+        // If a base path is provided, ensure the file is within it
+        if (basePath != null) {
+            val baseFile = File(basePath)
+            val canonicalBase = baseFile.canonicalPath
+
+            // The file must be within the base directory
+            if (!canonicalPath.startsWith(canonicalBase)) {
+                println("[PathValidation] Path traversal attempt blocked: $path (outside $basePath)")
+                return null
+            }
+        }
+
+        // Validate the file exists
+        if (!file.exists()) {
+            println("[PathValidation] File does not exist: $path")
+            return null
+        }
+
+        canonicalPath
+    } catch (e: Exception) {
+        println("[PathValidation] Invalid path: $path - ${e.message}")
+        null
+    }
+}
 
 enum class TabType {
     URL, FILE, TERMINAL
@@ -295,8 +335,13 @@ fun NewTabDialog(
                         LaunchedEffect(selectedProject.path) {
                             if (selectedProject.path.isNotEmpty()) {
                                 isLoadingTree = true
-                                fileTree = withContext(Dispatchers.IO) {
-                                    scanDirectory(selectedProject.path)
+                                fileTree = try {
+                                    withContext(Dispatchers.IO) {
+                                        scanDirectory(selectedProject.path)
+                                    }
+                                } catch (e: Exception) {
+                                    println("[NewTabDialog] Error scanning directory: ${e.message}")
+                                    null
                                 }
                                 isLoadingTree = false
                             } else {
@@ -472,16 +517,25 @@ fun NewTabDialog(
                                         }
                                     }
                                 } else if (fileTree != null && fileTree?.children?.isEmpty() == true) {
-                                    // Empty folder
+                                    // Empty folder (hidden files like .git are excluded)
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = "Empty folder",
-                                            color = Color(0xFF999999),
-                                            fontSize = 13.sp
-                                        )
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "No visible files",
+                                                color = Color(0xFF999999),
+                                                fontSize = 13.sp
+                                            )
+                                            Text(
+                                                text = "(hidden files and build folders are excluded)",
+                                                color = Color(0xFF666666),
+                                                fontSize = 11.sp
+                                            )
+                                        }
                                     }
                                 } else {
                                     Box(
@@ -817,7 +871,14 @@ private fun handleCreateTab(
             processUrlInput(input)
         }
         TabType.FILE -> {
-            input.trim()
+            // Validate file path to prevent path traversal attacks
+            val validatedPath = validateFilePath(input.trim())
+            if (validatedPath == null) {
+                // Path validation failed - don't create the tab
+                println("[NewTabDialog] File path validation failed: ${input.trim()}")
+                return
+            }
+            validatedPath
         }
         TabType.TERMINAL -> {
             // Pass the command (or empty string if none)

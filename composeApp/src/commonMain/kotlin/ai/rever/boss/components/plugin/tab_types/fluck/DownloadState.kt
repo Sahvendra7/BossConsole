@@ -95,26 +95,18 @@ data class DownloadItem(
 
 /**
  * Helper functions for formatting download information.
+ * Delegates to FormatUtils for common formatting operations.
  */
 object DownloadFormatters {
     /**
      * Formats bytes to human-readable string (e.g., "1.5 MB", "512 KB").
      */
-    fun formatBytes(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-            bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-            else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
-        }
-    }
+    fun formatBytes(bytes: Long): String = ai.rever.boss.utils.FormatUtils.formatBytes(bytes)
 
     /**
      * Formats speed to human-readable string (e.g., "1.5 MB/s").
      */
-    fun formatSpeed(bytesPerSecond: Double): String {
-        return "${formatBytes(bytesPerSecond.toLong())}/s"
-    }
+    fun formatSpeed(bytesPerSecond: Double): String = ai.rever.boss.utils.FormatUtils.formatSpeed(bytesPerSecond)
 
     /**
      * Formats time duration to human-readable string (e.g., "2m 30s", "45s").
