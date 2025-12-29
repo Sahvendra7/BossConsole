@@ -463,6 +463,8 @@ open class FluckTabComponent(
                         },
                         onReset = {
                             // Full reset: clear error, reset counter, clear browser state
+                            // Also reset engine initialization state to allow fresh retry (Issue #358)
+                            resetEngineInitialization()
                             browserError = null
                             retryCount = 0
                             this@FluckTabComponent.browserState = null
