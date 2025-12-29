@@ -9,9 +9,8 @@ import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.ContextMenu
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -55,8 +54,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.ExperimentalComposeUiApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun BossTabButton(
     fileName: String,
@@ -146,6 +148,11 @@ fun BossTabButton(
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
 
+    // Coroutine scope for middle-click close (Issue #328)
+    // Using scope.launch because calling onClose directly from pointerInput's
+    // awaitPointerEventScope doesn't properly trigger Compose state updates
+    val closeScope = rememberCoroutineScope()
+
     // Track window position for drag
     var windowPosition by remember { mutableStateOf(Offset.Zero) }
 
@@ -203,13 +210,26 @@ fun BossTabButton(
                 }
             }
             .pointerInput(contextMenuItems) {
-                awaitEachGesture {
-                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                    if (contextMenuItems.isNotEmpty() &&
-                        event.type == androidx.compose.ui.input.pointer.PointerEventType.Press &&
-                        !event.buttons.isPrimaryPressed) {
-                        showContextMenu = true
-                        event.changes.forEach { it.consume() }
+                // Handle right-click for context menu and middle-click to close (Issue #328)
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) {
+                            val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
+                            // Middle-click (button 2): close tab
+                            if (awtEvent?.button == 2) {
+                                // Launch on the composable's coroutine scope to properly trigger state updates
+                                closeScope.launch {
+                                    onClose()
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                            // Right-click (button 3): show context menu
+                            else if (awtEvent?.button == 3 && contextMenuItems.isNotEmpty()) {
+                                showContextMenu = true
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
                     }
                 }
             }

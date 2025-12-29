@@ -44,8 +44,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -195,7 +195,8 @@ fun JxBrowserCompose(
     onOpenInNewTab: (String) -> Unit = {},
     onNavigationUpdate: ((String, String) -> Unit)? = null,
     onNavigationStateChange: ((isBack: Boolean) -> Unit)? = null,
-    onFaviconCached: ((String?) -> Unit)? = null
+    onFaviconCached: ((String?) -> Unit)? = null,
+    onCloseTab: (() -> Unit)? = null
 ) {
     var urlInput by remember { mutableStateOf(TextFieldValue(initialUrl, TextRange(initialUrl.length))) }
     var isLoading by remember { mutableStateOf(false) }
@@ -1187,7 +1188,40 @@ fun JxBrowserCompose(
             modifier = Modifier
                 .fillMaxSize()
                 .onPointerEvent(PointerEventType.Press) { event ->
-                    if (event.buttons.isSecondaryPressed) {
+                    // Access native AWT MouseEvent for extended button detection (Issue #325)
+                    val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
+
+                    // Handle middle-click - close tab (Issue #328)
+                    if (awtEvent?.button == 2) {
+                        onCloseTab?.invoke()
+                        event.changes.forEach { it.consume() }
+                        return@onPointerEvent
+                    }
+
+                    // Handle mouse back button - navigate back
+                    // Linux: awtButton=6, Windows/macOS: awtButton=4
+                    if (awtEvent?.button == 6 || awtEvent?.button == 4) {
+                        if (isBrowserEnvironmentValid() && browser.navigation().canGoBack()) {
+                            browser.navigation().goBack()
+                        }
+                        // Consume event to prevent context menu from showing
+                        event.changes.forEach { it.consume() }
+                        return@onPointerEvent
+                    }
+
+                    // Handle mouse forward button - navigate forward
+                    // Linux: awtButton=7, Windows/macOS: awtButton=5
+                    if (awtEvent?.button == 7 || awtEvent?.button == 5) {
+                        if (isBrowserEnvironmentValid() && browser.navigation().canGoForward()) {
+                            browser.navigation().goForward()
+                        }
+                        // Consume event to prevent context menu from showing
+                        event.changes.forEach { it.consume() }
+                        return@onPointerEvent
+                    }
+
+                    // Handle right-click for context menu
+                    if (event.button == PointerButton.Secondary) {
                         // Store the click position
                         val change = event.changes.firstOrNull()
                         if (change != null) {

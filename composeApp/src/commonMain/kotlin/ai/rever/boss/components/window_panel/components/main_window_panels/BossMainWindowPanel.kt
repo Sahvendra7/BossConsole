@@ -99,6 +99,7 @@ private fun BossTabButtonWithFavicon(
     // Determine which icon to use: loaded favicon > config.tabIcon > fallback to config.icon
     val effectiveTabIcon = loadedFavicon ?: config.tabIcon
 
+    // Middle-click handling is now in BossTabButton.kt (Issue #328)
     BossTabButton(
         fileName = config.title,
         icon = config.icon,
