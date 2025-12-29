@@ -103,8 +103,6 @@ fun FocusModeSettings() {
                 InfoItem(text = "× Right sidebar - plugin panels")
                 Spacer(modifier = Modifier.height(8.dp))
                 InfoItem(text = "× Bottom status bar")
-                Spacer(modifier = Modifier.height(8.dp))
-                InfoItem(text = "× Update banner (if visible)")
             }
         }
 
