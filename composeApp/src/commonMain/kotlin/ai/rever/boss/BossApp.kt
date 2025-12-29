@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
-import kotlinx.coroutines.flow.combine
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
@@ -971,13 +970,12 @@ fun ComponentContext.BossApp(
 
     // Listen for terminal link click events (Issue #346)
     // Shows dialog or auto-opens based on user preference
-    // Uses combine() to ensure consistent settings during event processing
+    // Note: We collect linkClickEvents directly (not with combine()) to avoid
+    // re-processing the same event when settings change (e.g., when user clicks "Remember")
     LaunchedEffect(splitViewState) {
-        combine(
-            TerminalLinkEventBus.linkClickEvents,
-            TerminalLinkSettingsManager.currentSettings
-        ) { event, settings -> event to settings }
-            .onEach { (event, settings) ->
+        TerminalLinkEventBus.linkClickEvents
+            .onEach { event ->
+                val settings = TerminalLinkSettingsManager.currentSettings.value
                 println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}")
 
                 when (settings.openMode) {
