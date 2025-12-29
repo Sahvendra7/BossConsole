@@ -36,6 +36,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.window_panel.SplitOrientation
+import ai.rever.boss.run.RUNNER_TERMINAL_PREFIX
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.foundation.background
@@ -814,7 +815,7 @@ class BossTabsComponent(
 
             // If this is a runner terminal, notify the service to clean up tracking
             // This handles the case where user closes the tab directly (not via Stop button)
-            if (it.id.startsWith("runner-")) {
+            if (it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
                 RunnerTerminalService.removeTerminal(it.id)
             }
         }

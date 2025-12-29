@@ -76,7 +76,7 @@ actual object RunnerTerminalService {
         // Atomic state update under lock
         val (terminalId, isRerun) = stateLock.withLock {
             val existingTerminalId = _configToTerminal.value[config.id]
-            val newTerminalId = existingTerminalId ?: "runner-${config.id}-${System.currentTimeMillis()}"
+            val newTerminalId = existingTerminalId ?: "$RUNNER_TERMINAL_PREFIX${config.id}-${System.currentTimeMillis()}"
 
             // Update all state atomically
             _configToTerminal.update { it + (config.id to newTerminalId) }
@@ -177,7 +177,7 @@ actual object RunnerTerminalService {
             }
 
             // Create new terminal with fresh ID
-            val newTerminalId = "runner-${config.id}-${System.currentTimeMillis()}"
+            val newTerminalId = "$RUNNER_TERMINAL_PREFIX${config.id}-${System.currentTimeMillis()}"
 
             // Update all state atomically
             _configToTerminal.update { it + (config.id to newTerminalId) }

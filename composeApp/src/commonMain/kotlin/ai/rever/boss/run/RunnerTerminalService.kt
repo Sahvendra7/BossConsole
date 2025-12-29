@@ -2,6 +2,9 @@ package ai.rever.boss.run
 
 import kotlinx.coroutines.flow.StateFlow
 
+/** Prefix for runner terminal IDs */
+const val RUNNER_TERMINAL_PREFIX = "runner-"
+
 /**
  * Expect declaration for RunnerTerminalService.
  * Manages runner terminals with configuration tracking.
