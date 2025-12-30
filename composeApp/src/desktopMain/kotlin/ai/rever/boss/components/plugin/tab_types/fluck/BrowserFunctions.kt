@@ -21,7 +21,11 @@ import kotlinx.coroutines.launch
 import java.awt.Window
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
+import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
+import com.teamdev.jxbrowser.browser.callback.AlertCallback
+import com.teamdev.jxbrowser.browser.callback.ConfirmCallback
+import com.teamdev.jxbrowser.browser.callback.PromptCallback
 
 // User agent settings
 object BrowserSettings {
@@ -54,6 +58,78 @@ private fun getValidComposeWindow(): Window? {
                 false
             }
         }
+}
+
+/**
+ * Configures JavaScript dialog handlers to prevent UI freeze (Issue #369).
+ *
+ * JxBrowser's JS dialogs (alert, confirm, prompt) use callbacks that block the Chromium
+ * process until a response is provided. In Compose Desktop, showing a modal Swing dialog
+ * from within these callbacks causes a deadlock between Swing's EDT and JxBrowser's IPC.
+ *
+ * Solution: Call tell.ok() immediately to unblock JxBrowser, then show a non-blocking
+ * informational dialog on the Swing EDT.
+ *
+ * @param browser The browser instance to configure
+ */
+private fun setupBrowserDialogHandlers(browser: Browser) {
+    // Alert callback - show message dialog after unblocking
+    browser.set(AlertCallback::class.java, AlertCallback { params, tell ->
+        val message = params.message()
+        val title = params.title()
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser
+        tell.ok()
+
+        // Then show non-blocking informational dialog on EDT
+        SwingUtilities.invokeLater {
+            JOptionPane.showMessageDialog(
+                null,
+                message,
+                title.ifEmpty { "Alert" },
+                JOptionPane.INFORMATION_MESSAGE
+            )
+        }
+    })
+
+    // Confirm callback - auto-confirm and show info message
+    browser.set(ConfirmCallback::class.java, ConfirmCallback { params, tell ->
+        val message = params.message()
+        val title = params.title()
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (auto-confirm)
+        tell.ok()
+
+        // Show informational dialog about what was auto-confirmed
+        SwingUtilities.invokeLater {
+            JOptionPane.showMessageDialog(
+                null,
+                "Auto-confirmed: $message",
+                title.ifEmpty { "Confirm" },
+                JOptionPane.INFORMATION_MESSAGE
+            )
+        }
+    })
+
+    // Prompt callback - auto-accept with default text and show info
+    browser.set(PromptCallback::class.java, PromptCallback { params, tell ->
+        val message = params.message()
+        val defaultText = params.text()  // text() returns the default prompt value
+        val title = params.title()
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (with default text)
+        tell.ok(defaultText)
+
+        // Show informational dialog about the prompt
+        SwingUtilities.invokeLater {
+            JOptionPane.showMessageDialog(
+                null,
+                "Prompt auto-accepted: $message\nValue: $defaultText",
+                title.ifEmpty { "Prompt" },
+                JOptionPane.INFORMATION_MESSAGE
+            )
+        }
+    })
 }
 
 /**
@@ -313,6 +389,10 @@ actual fun getBrowserState(
                 onBrowserClosed()
             }
         }
+
+        // Configure JS dialog handlers to prevent UI freeze (Issue #369)
+        // Must call tell.ok() immediately to unblock JxBrowser, then show informational dialog
+        setupBrowserDialogHandlers(browser)
 
         // Configure popup handler BEFORE creating view state
         // This intercepts target="_blank" and window.open() intelligently:

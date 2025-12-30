@@ -74,8 +74,9 @@ import java.awt.image.BufferedImage
 private fun processUrlInput(input: String): String {
     val trimmed = input.trim()
     
-    // If it's already a full URL, return as-is
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    // If it's already a full URL or special scheme, return as-is
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
+        trimmed.startsWith("file://") || trimmed.startsWith("javascript:")) {
         return trimmed
     }
     
