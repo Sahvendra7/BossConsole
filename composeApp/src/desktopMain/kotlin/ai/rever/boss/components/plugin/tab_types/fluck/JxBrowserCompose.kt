@@ -1488,9 +1488,12 @@ fun JxBrowserCompose(
         // JavaScript Dialog (BOSS-styled) - shown when JS alert/confirm/prompt fires
         jsDialogState?.let { event ->
             val (title, message) = when (event) {
-                is JsDialogNotifier.JsDialogEvent.Alert -> event.title to event.message
-                is JsDialogNotifier.JsDialogEvent.Confirm -> event.title to "Auto-confirmed: ${event.message}"
-                is JsDialogNotifier.JsDialogEvent.Prompt -> event.title to "Auto-accepted: ${event.message}\nValue: ${event.value}"
+                is JsDialogNotifier.JsDialogEvent.Alert ->
+                    event.title to event.message
+                is JsDialogNotifier.JsDialogEvent.Confirm ->
+                    event.title to "⚠️ BOSS auto-confirmed this dialog to prevent browser freeze.\n\n${event.message}"
+                is JsDialogNotifier.JsDialogEvent.Prompt ->
+                    event.title to "⚠️ BOSS auto-accepted this prompt to prevent browser freeze.\n\nPrompt: ${event.message}\nValue used: ${event.value.ifEmpty { "(empty)" }}"
             }
             InfoDialog(
                 title = title,
