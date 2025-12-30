@@ -96,6 +96,13 @@ actual object TerminalLinkSettingsManager {
     }
 
     /**
+     * Set the existing split target mode preference.
+     */
+    actual suspend fun setExistingSplitTarget(mode: ExistingSplitTargetMode) {
+        updateSettings(_currentSettings.value.copy(existingSplitTarget = mode))
+    }
+
+    /**
      * Reset settings to defaults (ALWAYS_ASK).
      */
     actual suspend fun resetToDefault() {

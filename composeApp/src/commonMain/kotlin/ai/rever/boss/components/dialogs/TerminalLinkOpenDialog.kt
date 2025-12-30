@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.ViewColumn
@@ -29,12 +30,14 @@ import androidx.compose.ui.window.DialogProperties
  * Issue #346: Terminal link click prompt with remember preference
  *
  * @param url The URL that was clicked
+ * @param hasSplits Whether splits already exist (shows "Existing Split" option first if true)
  * @param onDismiss Called when dialog is dismissed without selection
  * @param onOpenLink Called when user selects an option. Receives the mode and whether to remember the choice.
  */
 @Composable
 fun TerminalLinkOpenDialog(
     url: String,
+    hasSplits: Boolean,
     onDismiss: () -> Unit,
     onOpenLink: (mode: TerminalLinkOpenMode, rememberChoice: Boolean) -> Unit
 ) {
@@ -87,10 +90,21 @@ fun TerminalLinkOpenDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Options
+                // Options - show "Existing Split" first when splits exist (smart default)
+                if (hasSplits) {
+                    LinkOpenOption(
+                        icon = Icons.Outlined.OpenInNew,
+                        title = "Existing Split",
+                        description = "Open in other panel",
+                        onClick = { onOpenLink(TerminalLinkOpenMode.EXISTING_SPLIT, rememberChoice) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 LinkOpenOption(
                     icon = Icons.Outlined.ViewColumn,
-                    title = "Vertical Split",
+                    title = if (hasSplits) "New Vertical Split" else "Vertical Split",
                     description = "Open alongside terminal",
                     onClick = { onOpenLink(TerminalLinkOpenMode.VERTICAL_SPLIT, rememberChoice) }
                 )
@@ -99,7 +113,7 @@ fun TerminalLinkOpenDialog(
 
                 LinkOpenOption(
                     icon = Icons.Outlined.ViewAgenda,
-                    title = "Horizontal Split",
+                    title = if (hasSplits) "New Horizontal Split" else "Horizontal Split",
                     description = "Open below terminal",
                     onClick = { onOpenLink(TerminalLinkOpenMode.HORIZONTAL_SPLIT, rememberChoice) }
                 )

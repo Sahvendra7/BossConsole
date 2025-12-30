@@ -7,6 +7,7 @@ import BossDarkSurface
 import androidx.compose.foundation.background
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
+import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.settings.shared.DropdownSelector
@@ -42,6 +43,7 @@ fun FluckBrowserSettings() {
     // Terminal link settings (Issue #346)
     val terminalLinkSettings by TerminalLinkSettingsManager.currentSettings.collectAsState()
     var terminalLinkOpenMode by remember(terminalLinkSettings) { mutableStateOf(terminalLinkSettings.openMode) }
+    var existingSplitTarget by remember(terminalLinkSettings) { mutableStateOf(terminalLinkSettings.existingSplitTarget) }
 
     val userAgents = listOf("Default", "Chrome", "Firefox", "Safari", "Edge", "Custom")
     var showRestartDialog by remember { mutableStateOf(false) }
@@ -139,6 +141,7 @@ fun FluckBrowserSettings() {
         ) {
             val linkOpenModeOptions = listOf(
                 "Always Ask" to TerminalLinkOpenMode.ALWAYS_ASK,
+                "Existing Split" to TerminalLinkOpenMode.EXISTING_SPLIT,
                 "Vertical Split" to TerminalLinkOpenMode.VERTICAL_SPLIT,
                 "Horizontal Split" to TerminalLinkOpenMode.HORIZONTAL_SPLIT,
                 "New Tab" to TerminalLinkOpenMode.NEW_TAB
@@ -165,6 +168,7 @@ fun FluckBrowserSettings() {
             Text(
                 text = when (terminalLinkOpenMode) {
                     TerminalLinkOpenMode.ALWAYS_ASK -> "A dialog will appear each time you click a link in the terminal"
+                    TerminalLinkOpenMode.EXISTING_SPLIT -> "Links open in an existing split panel (if available)"
                     TerminalLinkOpenMode.VERTICAL_SPLIT -> "Links open in a new browser panel to the right of the terminal"
                     TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Links open in a new browser panel below the terminal"
                     TerminalLinkOpenMode.NEW_TAB -> "Links open in a new tab in the current panel"
@@ -172,6 +176,42 @@ fun FluckBrowserSettings() {
                 fontSize = 12.sp,
                 color = Color.Gray
             )
+
+            // Target panel selection for EXISTING_SPLIT mode
+            if (terminalLinkOpenMode == TerminalLinkOpenMode.EXISTING_SPLIT) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val targetModeOptions = listOf(
+                    "Most Recent Active" to ExistingSplitTargetMode.MOST_RECENT_ACTIVE,
+                    "First Available" to ExistingSplitTargetMode.FIRST_AVAILABLE
+                )
+
+                DropdownSelector(
+                    label = "Target panel",
+                    value = targetModeOptions.find { it.second == existingSplitTarget }?.first ?: "Most Recent Active",
+                    options = targetModeOptions.map { it.first },
+                    onValueChange = { selectedLabel ->
+                        val selectedMode = targetModeOptions.find { it.first == selectedLabel }?.second
+                            ?: ExistingSplitTargetMode.MOST_RECENT_ACTIVE
+                        existingSplitTarget = selectedMode
+                        coroutineScope.launch {
+                            TerminalLinkSettingsManager.setExistingSplitTarget(selectedMode)
+                        }
+                    },
+                    modifier = Modifier.width(400.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = when (existingSplitTarget) {
+                        ExistingSplitTargetMode.MOST_RECENT_ACTIVE -> "Opens in the most recently used panel"
+                        ExistingSplitTargetMode.FIRST_AVAILABLE -> "Opens in the first available panel"
+                    },
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
 
             // Reset button (only show if not already on ALWAYS_ASK)
             if (terminalLinkOpenMode != TerminalLinkOpenMode.ALWAYS_ASK) {
