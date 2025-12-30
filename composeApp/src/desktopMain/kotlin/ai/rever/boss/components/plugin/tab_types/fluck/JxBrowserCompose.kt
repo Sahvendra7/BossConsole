@@ -74,10 +74,11 @@ import java.awt.image.BufferedImage
 // Helper function to process URL input - either as URL or search query
 private fun processUrlInput(input: String): String {
     val trimmed = input.trim()
-    
+    val lowerTrimmed = trimmed.lowercase()
+
     // If it's already a full URL or special scheme, return as-is
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
-        trimmed.startsWith("file://") || trimmed.startsWith("javascript:")) {
+    if (lowerTrimmed.startsWith("http://") || lowerTrimmed.startsWith("https://") ||
+        lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:")) {
         return trimmed
     }
     
