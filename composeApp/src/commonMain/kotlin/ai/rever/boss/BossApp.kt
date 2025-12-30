@@ -254,13 +254,52 @@ private fun openRunnerInMainPanel(
  * @param url The URL to open
  * @param mode How to open the link (split or new tab)
  * @param splitViewState The split view state for panel operations
+ * @param sourceTerminalId Optional terminal tab ID where the link was clicked (for finding source panel)
  */
 private fun openTerminalLink(
     url: String,
     mode: TerminalLinkOpenMode,
-    splitViewState: ai.rever.boss.components.window_panel.SplitViewState
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    sourceTerminalId: String? = null
 ) {
+    // Find the source panel (where the terminal is) to correctly identify "the other" panel
+    // This is important because cmd+click doesn't change focus, so activePanelId may not be the terminal panel
+    val sourcePanelId = sourceTerminalId?.let { terminalId ->
+        splitViewState.findPanelWithTab(terminalId)?.id
+    } ?: splitViewState.activePanelId
+
     when (mode) {
+        TerminalLinkOpenMode.EXISTING_SPLIT -> {
+            // Open in existing split panel (not the source panel where terminal is)
+            val targetPanel = splitViewState.getOtherPanelExcluding(sourcePanelId)
+            if (targetPanel != null) {
+                val browserTab = FluckTabInfo(
+                    id = "browser-${kotlin.random.Random.nextLong()}",
+                    typeId = TabTypeId("fluck"),
+                    _title = "Loading...",
+                    url = url
+                )
+                val tabIndex = targetPanel.tabsComponent.addTab(browserTab)
+                if (tabIndex >= 0) {
+                    targetPanel.tabsComponent.selectTab(tabIndex)
+                    splitViewState.setActivePanel(targetPanel.id)
+                }
+            } else {
+                // Fallback: create vertical split if no other panel exists
+                // (handles edge case where user saved EXISTING_SPLIT but later closed splits)
+                val browserTab = FluckTabInfo(
+                    id = "browser-${kotlin.random.Random.nextLong()}",
+                    typeId = TabTypeId("fluck"),
+                    _title = "Loading...",
+                    url = url
+                )
+                splitViewState.splitPanel(
+                    panelId = sourcePanelId,
+                    orientation = SplitOrientation.VERTICAL,
+                    tabToMove = browserTab
+                )
+            }
+        }
         TerminalLinkOpenMode.VERTICAL_SPLIT, TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
             val browserTab = FluckTabInfo(
                 id = "browser-${kotlin.random.Random.nextLong()}",
@@ -273,8 +312,9 @@ private fun openTerminalLink(
             } else {
                 SplitOrientation.HORIZONTAL
             }
+            // Create split from the source panel (where terminal is), not from active panel
             splitViewState.splitPanel(
-                panelId = splitViewState.activePanelId,
+                panelId = sourcePanelId,
                 orientation = orientation,
                 tabToMove = browserTab
             )
@@ -583,6 +623,7 @@ fun ComponentContext.BossApp(
     // State for terminal link open dialog (Issue #346)
     var showTerminalLinkDialog by remember { mutableStateOf(false) }
     var pendingTerminalLinkUrl by remember { mutableStateOf("") }
+    var pendingTerminalSourceId by remember { mutableStateOf<String?>(null) }
 
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
@@ -981,10 +1022,11 @@ fun ComponentContext.BossApp(
                 when (settings.openMode) {
                     TerminalLinkOpenMode.ALWAYS_ASK -> {
                         pendingTerminalLinkUrl = event.url
+                        pendingTerminalSourceId = event.sourceTerminalId
                         showTerminalLinkDialog = true
                     }
                     else -> {
-                        openTerminalLink(event.url, settings.openMode, splitViewState)
+                        openTerminalLink(event.url, settings.openMode, splitViewState, event.sourceTerminalId)
                     }
                 }
             }
@@ -1973,9 +2015,11 @@ fun ComponentContext.BossApp(
             if (showTerminalLinkDialog) {
                 TerminalLinkOpenDialog(
                     url = pendingTerminalLinkUrl,
+                    hasSplits = splitViewState.hasSplits(),
                     onDismiss = {
                         showTerminalLinkDialog = false
                         pendingTerminalLinkUrl = ""
+                        pendingTerminalSourceId = null
                     },
                     onOpenLink = { mode, rememberChoice ->
                         showTerminalLinkDialog = false
@@ -1988,8 +2032,9 @@ fun ComponentContext.BossApp(
                         }
 
                         // Open the link using helper function
-                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState)
+                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId)
                         pendingTerminalLinkUrl = ""
+                        pendingTerminalSourceId = null
                     }
                 )
             }

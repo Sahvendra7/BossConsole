@@ -6,10 +6,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * Event emitted when a link is clicked in a terminal.
- * Contains the URL to open.
+ * Contains the URL to open and the source terminal ID for panel detection.
  */
 data class TerminalLinkClickEvent(
-    val url: String
+    val url: String,
+    /** Terminal tab ID where the link was clicked (used to find source panel) */
+    val sourceTerminalId: String? = null
 )
 
 /**
@@ -41,8 +43,9 @@ object TerminalLinkEventBus {
      * Emit a terminal link click event.
      *
      * @param url The URL that was clicked in the terminal
+     * @param sourceTerminalId Optional terminal tab ID (for detecting source panel in splits)
      */
-    suspend fun emitLinkClick(url: String) {
-        _linkClickEvents.emit(TerminalLinkClickEvent(url))
+    suspend fun emitLinkClick(url: String, sourceTerminalId: String? = null) {
+        _linkClickEvents.emit(TerminalLinkClickEvent(url, sourceTerminalId))
     }
 }

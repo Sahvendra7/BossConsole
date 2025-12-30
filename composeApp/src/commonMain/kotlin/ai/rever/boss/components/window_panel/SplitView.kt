@@ -586,6 +586,34 @@ class SplitViewState(
         }
     }
 
+
+    /**
+     * Check if any splits exist (more than one panel).
+     */
+    fun hasSplits(): Boolean = getAllPanels().size > 1
+
+    /**
+     * Get the first panel that is not the currently active panel.
+     * Useful for opening content in an existing split.
+     */
+    fun getOtherPanel(): SplitNode.Panel? {
+        val allPanels = getAllPanels()
+        return allPanels.firstOrNull { it.id != activePanelId }
+    }
+
+
+    /**
+     * Get the first panel that is not the specified panel.
+     * Useful for opening content in a split other than where the action originated.
+     *
+     * @param excludePanelId The panel ID to exclude from the search
+     * @return The first panel with a different ID, or null if only one panel exists
+     */
+    fun getOtherPanelExcluding(excludePanelId: String): SplitNode.Panel? {
+        val allPanels = getAllPanels()
+        return allPanels.firstOrNull { it.id != excludePanelId }
+    }
+
     /**
      * Find the panel that contains a tab with the given ID.
      * Issue #347: Used for runner terminal management.

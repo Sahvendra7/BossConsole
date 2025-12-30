@@ -152,7 +152,7 @@ actual fun TabbedTerminalContent(
                     }
                 },
                 onShowSettings = onShowSettings,
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope, SIDEBAR_TERMINAL_ID) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -212,7 +212,7 @@ actual fun PersistentTabbedTerminalContent(
                 },
                 onShowSettings = onShowSettings,
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope, terminalId) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -511,13 +511,14 @@ actual fun resetTerminals() {
  *
  * @param url The URL to open
  * @param scope CoroutineScope to launch async operations
+ * @param terminalId Optional terminal tab ID (for detecting source panel when opening in splits)
  */
-private fun handleTerminalLinkClick(url: String, scope: CoroutineScope) {
+private fun handleTerminalLinkClick(url: String, scope: CoroutineScope, terminalId: String? = null) {
     if (url.startsWith("http://") || url.startsWith("https://")) {
         // Emit HTTP/HTTPS links to event bus for BossApp to handle
         // BossApp will show dialog or auto-open based on user preference
         scope.launch {
-            TerminalLinkEventBus.emitLinkClick(url)
+            TerminalLinkEventBus.emitLinkClick(url, terminalId)
         }
     } else {
         // For other protocols, open in system browser on IO dispatcher
@@ -603,7 +604,7 @@ actual fun TerminalContent(
                     terminalId?.let { TerminalStateRegistry.remove(it) }
                     onExit()
                 },
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope) },
+                onLinkClick = { url -> handleTerminalLinkClick(url, scope, terminalId) },
                 modifier = Modifier.fillMaxSize()
             )
         }

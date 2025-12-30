@@ -165,6 +165,7 @@ fun FluckBrowserSettings() {
             Text(
                 text = when (terminalLinkOpenMode) {
                     TerminalLinkOpenMode.ALWAYS_ASK -> "A dialog will appear each time you click a link in the terminal"
+                    TerminalLinkOpenMode.EXISTING_SPLIT -> "Links open in an existing split panel (if available)"
                     TerminalLinkOpenMode.VERTICAL_SPLIT -> "Links open in a new browser panel to the right of the terminal"
                     TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Links open in a new browser panel below the terminal"
                     TerminalLinkOpenMode.NEW_TAB -> "Links open in a new tab in the current panel"
