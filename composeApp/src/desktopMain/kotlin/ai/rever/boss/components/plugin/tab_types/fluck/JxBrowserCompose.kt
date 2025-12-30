@@ -76,9 +76,12 @@ private fun processUrlInput(input: String): String {
     val trimmed = input.trim()
     val lowerTrimmed = trimmed.lowercase()
 
+    println("DEBUG processUrlInput: input='$input', trimmed='$trimmed', lowerTrimmed='$lowerTrimmed'")
+
     // If it's already a full URL or special scheme, return as-is
     if (lowerTrimmed.startsWith("http://") || lowerTrimmed.startsWith("https://") ||
         lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:")) {
+        println("DEBUG processUrlInput: returning as-is: '$trimmed'")
         return trimmed
     }
     
@@ -94,11 +97,13 @@ private fun processUrlInput(input: String): String {
                      trimmed.matches(Regex("""^127\.0\.0\.1(:\d+)?(/.*)?$""")) ||
                      trimmed.matches(Regex("""^localhost(:\d+)?(/.*)?$"""))
     
-    return when {
+    val result = when {
         isLocalhost -> "http://$trimmed"
         isLikelyUrl -> "https://$trimmed"
         else -> "https://www.google.com/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
     }
+    println("DEBUG processUrlInput: isLikelyUrl=$isLikelyUrl, isLocalhost=$isLocalhost, result='$result'")
+    return result
 }
 
 // Helper function to convert JxBrowser Bitmap to AWT BufferedImage
