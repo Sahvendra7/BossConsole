@@ -22,10 +22,10 @@ object JsDialogNotifier {
         /** JavaScript alert() was auto-accepted */
         data class Alert(val title: String, val message: String) : JsDialogEvent()
 
-        /** JavaScript confirm() was auto-confirmed */
-        data class Confirm(val title: String, val message: String) : JsDialogEvent()
+        /** JavaScript confirm() was auto-handled (confirmed or cancelled based on settings) */
+        data class Confirm(val title: String, val message: String, val confirmed: Boolean) : JsDialogEvent()
 
-        /** JavaScript prompt() was auto-accepted with default value */
+        /** JavaScript prompt() was auto-accepted with configured value */
         data class Prompt(val title: String, val message: String, val value: String) : JsDialogEvent()
     }
 
@@ -48,10 +48,10 @@ object JsDialogNotifier {
     }
 
     /**
-     * Notify that a confirm was auto-confirmed.
+     * Notify that a confirm was auto-handled.
      */
-    fun notifyConfirm(title: String, message: String) {
-        _dialogEvents.tryEmit(JsDialogEvent.Confirm(title, message))
+    fun notifyConfirm(title: String, message: String, confirmed: Boolean) {
+        _dialogEvents.tryEmit(JsDialogEvent.Confirm(title, message, confirmed))
     }
 
     /**

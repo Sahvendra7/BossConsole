@@ -36,6 +36,13 @@ object BrowserSettings {
     // Browser initialization retry settings (configurable via Settings)
     var maxInitRetries: Int = 3
     var maxRecoveryAttempts: Int = 3
+
+    // JavaScript dialog settings (configurable via Settings > Browser)
+    // Due to JxBrowser threading limitations, dialogs must be auto-handled
+    enum class JsConfirmBehavior { AUTO_CONFIRM, AUTO_CANCEL }
+    var jsConfirmBehavior: JsConfirmBehavior = JsConfirmBehavior.AUTO_CONFIRM
+    var jsPromptDefaultValue: String = ""  // Empty string or user-configured default
+    var jsPromptUsePageDefault: Boolean = true  // Use page's default value if true, else use jsPromptDefaultValue
 }
 
 /**
@@ -87,35 +94,48 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
         )
     })
 
-    // Confirm callback - auto-confirm, then notify for BOSS-styled dialog
+    // Confirm callback - behavior based on settings
     browser.set(ConfirmCallback::class.java, ConfirmCallback { params, tell ->
         val message = params.message()
         val title = params.title()
+        val confirmed = BrowserSettings.jsConfirmBehavior == BrowserSettings.JsConfirmBehavior.AUTO_CONFIRM
 
-        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (auto-confirm)
-        tell.ok()
+        // CRITICAL: Call tell FIRST to unblock JxBrowser
+        if (confirmed) {
+            tell.ok()
+        } else {
+            tell.cancel()
+        }
 
         // Emit event for Compose UI to show BOSS-styled dialog
         JsDialogNotifier.notifyConfirm(
             title = title.ifEmpty { "Confirm" },
-            message = message
+            message = message,
+            confirmed = confirmed
         )
     })
 
-    // Prompt callback - auto-accept with default text, then notify
+    // Prompt callback - value based on settings
     browser.set(PromptCallback::class.java, PromptCallback { params, tell ->
         val message = params.message()
-        val defaultText = params.text()  // text() returns the default prompt value
+        val pageDefault = params.text()  // text() returns the page's default prompt value
         val title = params.title()
 
-        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (with default text)
-        tell.ok(defaultText)
+        // Determine value to use based on settings
+        val valueToUse = if (BrowserSettings.jsPromptUsePageDefault) {
+            pageDefault
+        } else {
+            BrowserSettings.jsPromptDefaultValue
+        }
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser
+        tell.ok(valueToUse)
 
         // Emit event for Compose UI to show BOSS-styled dialog
         JsDialogNotifier.notifyPrompt(
             title = title.ifEmpty { "Prompt" },
             message = message,
-            value = defaultText
+            value = valueToUse
         )
     })
 }

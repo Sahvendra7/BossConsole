@@ -1490,8 +1490,10 @@ fun JxBrowserCompose(
             val (title, message) = when (event) {
                 is JsDialogNotifier.JsDialogEvent.Alert ->
                     event.title to event.message
-                is JsDialogNotifier.JsDialogEvent.Confirm ->
-                    event.title to "⚠️ BOSS auto-confirmed this dialog to prevent browser freeze.\n\n${event.message}"
+                is JsDialogNotifier.JsDialogEvent.Confirm -> {
+                    val action = if (event.confirmed) "confirmed" else "cancelled"
+                    event.title to "⚠️ BOSS auto-$action this dialog to prevent browser freeze.\n\n${event.message}"
+                }
                 is JsDialogNotifier.JsDialogEvent.Prompt ->
                     event.title to "⚠️ BOSS auto-accepted this prompt to prevent browser freeze.\n\nPrompt: ${event.message}\nValue used: ${event.value.ifEmpty { "(empty)" }}"
             }
