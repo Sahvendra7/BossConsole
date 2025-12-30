@@ -79,6 +79,8 @@ private fun getValidComposeWindow(): Window? {
  * @param browser The browser instance to configure
  */
 private fun setupBrowserDialogHandlers(browser: Browser) {
+    val browserId = System.identityHashCode(browser)  // Unique ID for this browser instance
+
     // Alert callback - unblock immediately, then notify for BOSS-styled dialog
     browser.set(AlertCallback::class.java, AlertCallback { params, tell ->
         val message = params.message()
@@ -89,6 +91,7 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
 
         // Emit event for Compose UI to show BOSS-styled dialog
         JsDialogNotifier.notifyAlert(
+            browserId = browserId,
             title = title.ifEmpty { "Alert" },
             message = message
         )
@@ -109,6 +112,7 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
 
         // Emit event for Compose UI to show BOSS-styled dialog
         JsDialogNotifier.notifyConfirm(
+            browserId = browserId,
             title = title.ifEmpty { "Confirm" },
             message = message,
             confirmed = confirmed
@@ -133,6 +137,7 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
 
         // Emit event for Compose UI to show BOSS-styled dialog
         JsDialogNotifier.notifyPrompt(
+            browserId = browserId,
             title = title.ifEmpty { "Prompt" },
             message = message,
             value = valueToUse

@@ -76,34 +76,29 @@ private fun processUrlInput(input: String): String {
     val trimmed = input.trim()
     val lowerTrimmed = trimmed.lowercase()
 
-    println("DEBUG processUrlInput: input='$input', trimmed='$trimmed', lowerTrimmed='$lowerTrimmed'")
-
-    // If it's already a full URL or special scheme, return as-is
+    // If it's already a full URL or special scheme, return as-is (case-insensitive check)
     if (lowerTrimmed.startsWith("http://") || lowerTrimmed.startsWith("https://") ||
         lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:")) {
-        println("DEBUG processUrlInput: returning as-is: '$trimmed'")
         return trimmed
     }
-    
+
     // Check if it looks like a URL (contains dots and no spaces)
     val looksLikeUrl = trimmed.contains(".") && !trimmed.contains(" ")
-    
+
     // Check for common URL patterns
     val urlPattern = Regex("""^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$""")
     val isLikelyUrl = looksLikeUrl || urlPattern.matches(trimmed)
-    
+
     // Check for localhost patterns
-    val isLocalhost = trimmed.startsWith("localhost") || 
+    val isLocalhost = trimmed.startsWith("localhost") ||
                      trimmed.matches(Regex("""^127\.0\.0\.1(:\d+)?(/.*)?$""")) ||
                      trimmed.matches(Regex("""^localhost(:\d+)?(/.*)?$"""))
-    
-    val result = when {
+
+    return when {
         isLocalhost -> "http://$trimmed"
         isLikelyUrl -> "https://$trimmed"
         else -> "https://www.google.com/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
     }
-    println("DEBUG processUrlInput: isLikelyUrl=$isLikelyUrl, isLocalhost=$isLocalhost, result='$result'")
-    return result
 }
 
 // Helper function to convert JxBrowser Bitmap to AWT BufferedImage
@@ -270,15 +265,21 @@ fun JxBrowserCompose(
     // JavaScript dialog state (for BOSS-styled dialogs from JxBrowser callbacks)
     var jsDialogState by remember { mutableStateOf<JsDialogNotifier.JsDialogEvent?>(null) }
 
+    // Get browser ID for this instance (used to filter JS dialog events)
+    val currentBrowserId = remember { System.identityHashCode(browser.unsafe()) }
+
     // Initialize secret integration
     LaunchedEffect(Unit) {
         secretViewModel.initialize()
     }
 
-    // Observe JavaScript dialog events and show BOSS-styled dialogs
-    LaunchedEffect(Unit) {
+    // Observe JavaScript dialog events and show BOSS-styled dialogs (only for this browser instance)
+    LaunchedEffect(currentBrowserId) {
         JsDialogNotifier.dialogEvents.collect { event ->
-            jsDialogState = event
+            // Only show dialog if it's for this browser instance (fixes duplicate dialogs issue)
+            if (event.browserId == currentBrowserId) {
+                jsDialogState = event
+            }
         }
     }
 
