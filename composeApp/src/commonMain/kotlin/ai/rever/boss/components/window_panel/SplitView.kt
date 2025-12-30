@@ -120,6 +120,10 @@ class SplitViewState(
     private var _lastInteractedTabId: String? = null
     val lastInteractedTabPanelId: String get() = _lastInteractedTabPanelId.value
 
+    // Track panel activation history for MOST_RECENT_ACTIVE mode in terminal link handling
+    // Maintains order of recently activated panels (most recent first, limited to last 10)
+    private val _panelActivationHistory = mutableListOf("main")
+
     // Track preserved workspace states
     private val preservedWorkspaceStates = mutableMapOf<String, PreservedWorkspaceState>()
     private var _currentWorkspaceId: String? = null
@@ -163,13 +167,29 @@ class SplitViewState(
 
     fun setActivePanel(panelId: String) {
         _activePanelId.value = panelId
+        // Record in activation history for MOST_RECENT_ACTIVE mode
+        recordPanelActivation(panelId)
+    }
+
+    /**
+     * Records a panel activation in the history.
+     * Moves the panel to the front of the list (most recent), removes duplicates,
+     * and limits history to last 10 panels.
+     */
+    private fun recordPanelActivation(panelId: String) {
+        _panelActivationHistory.remove(panelId)
+        _panelActivationHistory.add(0, panelId)
+        // Limit to last 10 panels to avoid unbounded growth
+        while (_panelActivationHistory.size > 10) {
+            _panelActivationHistory.removeAt(_panelActivationHistory.size - 1)
+        }
     }
     
     fun trackTabInteraction(panelId: String, tabId: String) {
         _lastInteractedTabPanelId.value = panelId
         _lastInteractedTabId = tabId
-        // Also set as active panel
-        _activePanelId.value = panelId
+        // Also set as active panel (which also records in activation history)
+        setActivePanel(panelId)
     }
     
     fun getLastInteractedTabComponent(): BossTabsComponent? {
@@ -603,14 +623,25 @@ class SplitViewState(
 
 
     /**
-     * Get the first panel that is not the specified panel.
+     * Get the most recently active panel that is not the specified panel.
+     * Uses panel activation history to prefer panels the user recently interacted with.
      * Useful for opening content in a split other than where the action originated.
      *
      * @param excludePanelId The panel ID to exclude from the search
-     * @return The first panel with a different ID, or null if only one panel exists
+     * @return The most recently active panel with a different ID, or null if only one panel exists
      */
     fun getOtherPanelExcluding(excludePanelId: String): SplitNode.Panel? {
         val allPanels = getAllPanels()
+        val allPanelIds = allPanels.map { it.id }.toSet()
+
+        // Find the most recently activated panel (excluding the specified one) that still exists
+        for (panelId in _panelActivationHistory) {
+            if (panelId != excludePanelId && panelId in allPanelIds) {
+                return allPanels.firstOrNull { it.id == panelId }
+            }
+        }
+
+        // Fallback: return the first available panel that isn't the excluded one
         return allPanels.firstOrNull { it.id != excludePanelId }
     }
 

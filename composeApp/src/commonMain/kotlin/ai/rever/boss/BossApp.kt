@@ -246,6 +246,19 @@ private fun openRunnerInMainPanel(
 }
 
 /**
+ * Creates a browser tab for the given URL.
+ * Extracted to reduce duplication in openTerminalLink.
+ */
+private fun createBrowserTab(url: String): FluckTabInfo {
+    return FluckTabInfo(
+        id = "browser-${kotlin.random.Random.nextLong()}",
+        typeId = TabTypeId("fluck"),
+        _title = "Loading...",
+        url = url
+    )
+}
+
+/**
  * Helper function to open a terminal link based on user's selected mode.
  * Handles creating browser tabs and splitting panels as needed.
  *
@@ -273,40 +286,23 @@ private fun openTerminalLink(
             // Open in existing split panel (not the source panel where terminal is)
             val targetPanel = splitViewState.getOtherPanelExcluding(sourcePanelId)
             if (targetPanel != null) {
-                val browserTab = FluckTabInfo(
-                    id = "browser-${kotlin.random.Random.nextLong()}",
-                    typeId = TabTypeId("fluck"),
-                    _title = "Loading...",
-                    url = url
-                )
+                val browserTab = createBrowserTab(url)
                 val tabIndex = targetPanel.tabsComponent.addTab(browserTab)
                 if (tabIndex >= 0) {
                     targetPanel.tabsComponent.selectTab(tabIndex)
                     splitViewState.setActivePanel(targetPanel.id)
                 }
             } else {
-                // Fallback: create vertical split if no other panel exists
-                // (handles edge case where user saved EXISTING_SPLIT but later closed splits)
-                val browserTab = FluckTabInfo(
-                    id = "browser-${kotlin.random.Random.nextLong()}",
-                    typeId = TabTypeId("fluck"),
-                    _title = "Loading...",
-                    url = url
-                )
+                // IMPORTANT: Fallback when user saved EXISTING_SPLIT preference but later closed all splits.
+                // Creates a new vertical split instead of failing silently.
                 splitViewState.splitPanel(
                     panelId = sourcePanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = browserTab
+                    tabToMove = createBrowserTab(url)
                 )
             }
         }
         TerminalLinkOpenMode.VERTICAL_SPLIT, TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
-            val browserTab = FluckTabInfo(
-                id = "browser-${kotlin.random.Random.nextLong()}",
-                typeId = TabTypeId("fluck"),
-                _title = "Loading...",
-                url = url
-            )
             val orientation = if (mode == TerminalLinkOpenMode.VERTICAL_SPLIT) {
                 SplitOrientation.VERTICAL
             } else {
@@ -316,7 +312,7 @@ private fun openTerminalLink(
             splitViewState.splitPanel(
                 panelId = sourcePanelId,
                 orientation = orientation,
-                tabToMove = browserTab
+                tabToMove = createBrowserTab(url)
             )
         }
         TerminalLinkOpenMode.NEW_TAB, TerminalLinkOpenMode.ALWAYS_ASK -> {
