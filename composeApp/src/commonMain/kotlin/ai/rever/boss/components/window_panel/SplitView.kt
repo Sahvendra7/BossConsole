@@ -646,6 +646,18 @@ class SplitViewState(
     }
 
     /**
+     * Get the first panel that is not the specified panel (FIRST_AVAILABLE mode).
+     * Unlike getOtherPanelExcluding which uses activation history, this simply
+     * returns the first panel in the tree traversal order.
+     *
+     * @param excludePanelId The panel ID to exclude from the search
+     * @return The first available panel with a different ID, or null if only one panel exists
+     */
+    fun getFirstOtherPanelExcluding(excludePanelId: String): SplitNode.Panel? {
+        return getAllPanels().firstOrNull { it.id != excludePanelId }
+    }
+
+    /**
      * Find the panel that contains a tab with the given ID.
      * Issue #347: Used for runner terminal management.
      *

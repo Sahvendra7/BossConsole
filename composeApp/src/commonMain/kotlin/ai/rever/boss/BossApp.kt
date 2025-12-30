@@ -22,6 +22,7 @@ import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.window_panel.BossWindow
@@ -284,7 +285,14 @@ private fun openTerminalLink(
     when (mode) {
         TerminalLinkOpenMode.EXISTING_SPLIT -> {
             // Open in existing split panel (not the source panel where terminal is)
-            val targetPanel = splitViewState.getOtherPanelExcluding(sourcePanelId)
+            // Use the target mode setting to determine which panel to use
+            val targetMode = TerminalLinkSettingsManager.currentSettings.value.existingSplitTarget
+            val targetPanel = when (targetMode) {
+                ExistingSplitTargetMode.MOST_RECENT_ACTIVE ->
+                    splitViewState.getOtherPanelExcluding(sourcePanelId)
+                ExistingSplitTargetMode.FIRST_AVAILABLE ->
+                    splitViewState.getFirstOtherPanelExcluding(sourcePanelId)
+            }
             if (targetPanel != null) {
                 val browserTab = createBrowserTab(url)
                 val tabIndex = targetPanel.tabsComponent.addTab(browserTab)

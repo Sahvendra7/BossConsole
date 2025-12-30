@@ -19,6 +19,9 @@ expect object TerminalLinkSettingsManager {
     /** Set the open mode preference */
     suspend fun setOpenMode(mode: TerminalLinkOpenMode)
 
+    /** Set the existing split target mode preference */
+    suspend fun setExistingSplitTarget(mode: ExistingSplitTargetMode)
+
     /** Reset settings to default (ALWAYS_ASK) */
     suspend fun resetToDefault()
 }
