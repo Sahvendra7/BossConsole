@@ -5,6 +5,7 @@ import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
 import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.components.dialogs.BookmarkDialog
+import ai.rever.boss.components.dialogs.InfoDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
@@ -260,9 +261,19 @@ fun JxBrowserCompose(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var showRemoveBookmarkDialog by remember { mutableStateOf(false) }
 
+    // JavaScript dialog state (for BOSS-styled dialogs from JxBrowser callbacks)
+    var jsDialogState by remember { mutableStateOf<JsDialogNotifier.JsDialogEvent?>(null) }
+
     // Initialize secret integration
     LaunchedEffect(Unit) {
         secretViewModel.initialize()
+    }
+
+    // Observe JavaScript dialog events and show BOSS-styled dialogs
+    LaunchedEffect(Unit) {
+        JsDialogNotifier.dialogEvents.collect { event ->
+            jsDialogState = event
+        }
     }
 
     // Auto-scroll to selected suggestion when using arrow keys
@@ -1472,6 +1483,20 @@ fun JxBrowserCompose(
                 // Bookmark not found, close dialog
                 showRemoveBookmarkDialog = false
             }
+        }
+
+        // JavaScript Dialog (BOSS-styled) - shown when JS alert/confirm/prompt fires
+        jsDialogState?.let { event ->
+            val (title, message) = when (event) {
+                is JsDialogNotifier.JsDialogEvent.Alert -> event.title to event.message
+                is JsDialogNotifier.JsDialogEvent.Confirm -> event.title to "Auto-confirmed: ${event.message}"
+                is JsDialogNotifier.JsDialogEvent.Prompt -> event.title to "Auto-accepted: ${event.message}\nValue: ${event.value}"
+            }
+            InfoDialog(
+                title = title,
+                message = message,
+                onDismiss = { jsDialogState = null }
+            )
         }
     }
 }

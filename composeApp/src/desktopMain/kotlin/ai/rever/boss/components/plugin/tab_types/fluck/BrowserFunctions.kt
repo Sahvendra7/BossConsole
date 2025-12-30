@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 import java.awt.Window
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
-import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import com.teamdev.jxbrowser.browser.callback.AlertCallback
 import com.teamdev.jxbrowser.browser.callback.ConfirmCallback
@@ -73,7 +72,7 @@ private fun getValidComposeWindow(): Window? {
  * @param browser The browser instance to configure
  */
 private fun setupBrowserDialogHandlers(browser: Browser) {
-    // Alert callback - show message dialog after unblocking
+    // Alert callback - unblock immediately, then notify for BOSS-styled dialog
     browser.set(AlertCallback::class.java, AlertCallback { params, tell ->
         val message = params.message()
         val title = params.title()
@@ -81,18 +80,14 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
         // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser
         tell.ok()
 
-        // Then show non-blocking informational dialog on EDT
-        SwingUtilities.invokeLater {
-            JOptionPane.showMessageDialog(
-                null,
-                message,
-                title.ifEmpty { "Alert" },
-                JOptionPane.INFORMATION_MESSAGE
-            )
-        }
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyAlert(
+            title = title.ifEmpty { "Alert" },
+            message = message
+        )
     })
 
-    // Confirm callback - auto-confirm and show info message
+    // Confirm callback - auto-confirm, then notify for BOSS-styled dialog
     browser.set(ConfirmCallback::class.java, ConfirmCallback { params, tell ->
         val message = params.message()
         val title = params.title()
@@ -100,18 +95,14 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
         // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (auto-confirm)
         tell.ok()
 
-        // Show informational dialog about what was auto-confirmed
-        SwingUtilities.invokeLater {
-            JOptionPane.showMessageDialog(
-                null,
-                "Auto-confirmed: $message",
-                title.ifEmpty { "Confirm" },
-                JOptionPane.INFORMATION_MESSAGE
-            )
-        }
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyConfirm(
+            title = title.ifEmpty { "Confirm" },
+            message = message
+        )
     })
 
-    // Prompt callback - auto-accept with default text and show info
+    // Prompt callback - auto-accept with default text, then notify
     browser.set(PromptCallback::class.java, PromptCallback { params, tell ->
         val message = params.message()
         val defaultText = params.text()  // text() returns the default prompt value
@@ -120,15 +111,12 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
         // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser (with default text)
         tell.ok(defaultText)
 
-        // Show informational dialog about the prompt
-        SwingUtilities.invokeLater {
-            JOptionPane.showMessageDialog(
-                null,
-                "Prompt auto-accepted: $message\nValue: $defaultText",
-                title.ifEmpty { "Prompt" },
-                JOptionPane.INFORMATION_MESSAGE
-            )
-        }
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyPrompt(
+            title = title.ifEmpty { "Prompt" },
+            message = message,
+            value = defaultText
+        )
     })
 }
 
