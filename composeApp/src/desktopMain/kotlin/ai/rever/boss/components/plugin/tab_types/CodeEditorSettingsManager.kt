@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.font.FontManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.Dispatchers
@@ -10,10 +11,13 @@ import java.io.File
 
 // Global settings object
 object CodeEditorSettings {
-    var fontFamily: String = "JetBrains Mono"
+    var fontFamily: String = FontManager.BUNDLED_JETBRAINS_MONO
     var fontSize: Int = 14
     var theme: String = "Dark"
-    
+    var useLigatures: Boolean = true
+    var useAntialiasing: Boolean = true
+    var lineSpacing: Float = 1.2f
+
     // Theme colors
     fun getBackgroundColor(): Color = when (theme) {
         "Light" -> Color(0xFF_FFFFFF)
@@ -69,21 +73,31 @@ object CodeEditorSettings {
         else -> Color(0xFF_6A9955) // Dark theme
     }
     
-    fun getFontFamily(): FontFamily = when (fontFamily) {
-        "Fira Code" -> FontFamily.Monospace // Would need custom font loading
-        "Source Code Pro" -> FontFamily.Monospace
-        "Consolas" -> FontFamily.Monospace
-        "Monaco" -> FontFamily.Monospace
-        "Menlo" -> FontFamily.Monospace
-        else -> FontFamily.Monospace // Default to JetBrains Mono
-    }
+    /**
+     * Get the Compose FontFamily for UI preview.
+     * Uses FontManager for proper font loading including bundled fonts.
+     */
+    fun getFontFamily(): FontFamily = FontManager.loadComposeFontFamily(fontFamily)
+
+    /**
+     * Get a list of all available monospace fonts for the settings UI.
+     */
+    fun getAvailableFonts(): List<String> = FontManager.getAvailableMonospaceFonts()
+
+    /**
+     * Get fonts organized by category (Bundled, Fixed Pitch, Variable Pitch).
+     */
+    fun getCategorizedFonts(): Map<String, List<String>> = FontManager.getCategorizedFonts()
 }
 
 @Serializable
 data class CodeEditorSettingsData(
-    val fontFamily: String = "JetBrains Mono",
+    val fontFamily: String = FontManager.BUNDLED_JETBRAINS_MONO,
     val fontSize: Int = 14,
-    val theme: String = "Dark"
+    val theme: String = "Dark",
+    val useLigatures: Boolean = true,
+    val useAntialiasing: Boolean = true,
+    val lineSpacing: Float = 1.2f
 )
 
 object CodeEditorSettingsManager {
@@ -106,11 +120,14 @@ object CodeEditorSettingsManager {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<CodeEditorSettingsData>(content)
-                
+
                 // Apply loaded settings
                 CodeEditorSettings.fontFamily = settings.fontFamily
                 CodeEditorSettings.fontSize = settings.fontSize
                 CodeEditorSettings.theme = settings.theme
+                CodeEditorSettings.useLigatures = settings.useLigatures
+                CodeEditorSettings.useAntialiasing = settings.useAntialiasing
+                CodeEditorSettings.lineSpacing = settings.lineSpacing
             }
         } catch (e: Exception) {
             println("Failed to load code editor settings: ${e.message}")
@@ -122,9 +139,12 @@ object CodeEditorSettingsManager {
             val settings = CodeEditorSettingsData(
                 fontFamily = CodeEditorSettings.fontFamily,
                 fontSize = CodeEditorSettings.fontSize,
-                theme = CodeEditorSettings.theme
+                theme = CodeEditorSettings.theme,
+                useLigatures = CodeEditorSettings.useLigatures,
+                useAntialiasing = CodeEditorSettings.useAntialiasing,
+                lineSpacing = CodeEditorSettings.lineSpacing
             )
-            
+
             val content = json.encodeToString(settings)
             settingsFile.writeText(content)
         } catch (e: Exception) {

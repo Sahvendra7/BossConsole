@@ -305,6 +305,14 @@ kotlin {
 
             // CLI argument parsing
             implementation("com.github.ajalt.clikt:clikt:5.0.3")
+
+            // RSyntaxTextArea - Advanced code editor with syntax highlighting, code folding, etc.
+            // https://github.com/bobbylight/RSyntaxTextArea
+            implementation(libs.rsyntaxtextarea)
+            // RSTAUI - Search/replace dialogs, Go to Line, Find toolbar
+            implementation(libs.rstaui)
+            // AutoComplete - Code completion with parameter hints
+            implementation(libs.autocomplete)
         }
 
         desktopTest.dependencies {
