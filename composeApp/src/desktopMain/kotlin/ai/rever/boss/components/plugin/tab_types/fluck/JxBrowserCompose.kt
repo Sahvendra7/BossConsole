@@ -5,6 +5,7 @@ import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
 import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.components.dialogs.BookmarkDialog
+import ai.rever.boss.components.dialogs.InfoDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
@@ -73,24 +74,26 @@ import java.awt.image.BufferedImage
 // Helper function to process URL input - either as URL or search query
 private fun processUrlInput(input: String): String {
     val trimmed = input.trim()
-    
-    // If it's already a full URL, return as-is
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    val lowerTrimmed = trimmed.lowercase()
+
+    // If it's already a full URL or special scheme, return as-is (case-insensitive check)
+    if (lowerTrimmed.startsWith("http://") || lowerTrimmed.startsWith("https://") ||
+        lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:")) {
         return trimmed
     }
-    
+
     // Check if it looks like a URL (contains dots and no spaces)
     val looksLikeUrl = trimmed.contains(".") && !trimmed.contains(" ")
-    
+
     // Check for common URL patterns
     val urlPattern = Regex("""^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(/.*)?$""")
     val isLikelyUrl = looksLikeUrl || urlPattern.matches(trimmed)
-    
+
     // Check for localhost patterns
-    val isLocalhost = trimmed.startsWith("localhost") || 
+    val isLocalhost = trimmed.startsWith("localhost") ||
                      trimmed.matches(Regex("""^127\.0\.0\.1(:\d+)?(/.*)?$""")) ||
                      trimmed.matches(Regex("""^localhost(:\d+)?(/.*)?$"""))
-    
+
     return when {
         isLocalhost -> "http://$trimmed"
         isLikelyUrl -> "https://$trimmed"
@@ -259,9 +262,25 @@ fun JxBrowserCompose(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var showRemoveBookmarkDialog by remember { mutableStateOf(false) }
 
+    // JavaScript dialog state (for BOSS-styled dialogs from JxBrowser callbacks)
+    var jsDialogState by remember { mutableStateOf<JsDialogNotifier.JsDialogEvent?>(null) }
+
+    // Get browser ID for this instance (used to filter JS dialog events)
+    val currentBrowserId = remember { System.identityHashCode(browser.unsafe()) }
+
     // Initialize secret integration
     LaunchedEffect(Unit) {
         secretViewModel.initialize()
+    }
+
+    // Observe JavaScript dialog events and show BOSS-styled dialogs (only for this browser instance)
+    LaunchedEffect(currentBrowserId) {
+        JsDialogNotifier.dialogEvents.collect { event ->
+            // Only show dialog if it's for this browser instance (fixes duplicate dialogs issue)
+            if (event.browserId == currentBrowserId) {
+                jsDialogState = event
+            }
+        }
     }
 
     // Auto-scroll to selected suggestion when using arrow keys
@@ -1471,6 +1490,25 @@ fun JxBrowserCompose(
                 // Bookmark not found, close dialog
                 showRemoveBookmarkDialog = false
             }
+        }
+
+        // JavaScript Dialog (BOSS-styled) - shown when JS alert/confirm/prompt fires
+        jsDialogState?.let { event ->
+            val (title, message) = when (event) {
+                is JsDialogNotifier.JsDialogEvent.Alert ->
+                    event.title to event.message
+                is JsDialogNotifier.JsDialogEvent.Confirm -> {
+                    val action = if (event.confirmed) "confirmed" else "cancelled"
+                    event.title to "⚠️ BOSS auto-$action this dialog to prevent browser freeze.\n\n${event.message}"
+                }
+                is JsDialogNotifier.JsDialogEvent.Prompt ->
+                    event.title to "⚠️ BOSS auto-accepted this prompt to prevent browser freeze.\n\nPrompt: ${event.message}\nValue used: ${event.value.ifEmpty { "(empty)" }}"
+            }
+            InfoDialog(
+                title = title,
+                message = message,
+                onDismiss = { jsDialogState = null }
+            )
         }
     }
 }

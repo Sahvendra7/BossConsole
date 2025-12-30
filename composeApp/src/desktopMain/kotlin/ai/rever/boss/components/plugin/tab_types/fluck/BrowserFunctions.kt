@@ -22,6 +22,9 @@ import java.awt.Window
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
+import com.teamdev.jxbrowser.browser.callback.AlertCallback
+import com.teamdev.jxbrowser.browser.callback.ConfirmCallback
+import com.teamdev.jxbrowser.browser.callback.PromptCallback
 
 // User agent settings
 object BrowserSettings {
@@ -33,6 +36,13 @@ object BrowserSettings {
     // Browser initialization retry settings (configurable via Settings)
     var maxInitRetries: Int = 3
     var maxRecoveryAttempts: Int = 3
+
+    // JavaScript dialog settings (configurable via Settings > Browser)
+    // Due to JxBrowser threading limitations, dialogs must be auto-handled
+    enum class JsConfirmBehavior { AUTO_CONFIRM, AUTO_CANCEL }
+    var jsConfirmBehavior: JsConfirmBehavior = JsConfirmBehavior.AUTO_CONFIRM
+    var jsPromptDefaultValue: String = ""  // Empty string or user-configured default
+    var jsPromptUsePageDefault: Boolean = true  // Use page's default value if true, else use jsPromptDefaultValue
 }
 
 /**
@@ -54,6 +64,85 @@ private fun getValidComposeWindow(): Window? {
                 false
             }
         }
+}
+
+/**
+ * Configures JavaScript dialog handlers to prevent UI freeze (Issue #369).
+ *
+ * JxBrowser's JS dialogs (alert, confirm, prompt) use callbacks that block the Chromium
+ * process until a response is provided. In Compose Desktop, showing a modal Swing dialog
+ * from within these callbacks causes a deadlock between Swing's EDT and JxBrowser's IPC.
+ *
+ * Solution: Call tell.ok() immediately to unblock JxBrowser, then show a non-blocking
+ * informational dialog on the Swing EDT.
+ *
+ * @param browser The browser instance to configure
+ */
+private fun setupBrowserDialogHandlers(browser: Browser) {
+    val browserId = System.identityHashCode(browser)  // Unique ID for this browser instance
+
+    // Alert callback - unblock immediately, then notify for BOSS-styled dialog
+    browser.set(AlertCallback::class.java, AlertCallback { params, tell ->
+        val message = params.message()
+        val title = params.title()
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser
+        tell.ok()
+
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyAlert(
+            browserId = browserId,
+            title = title.ifEmpty { "Alert" },
+            message = message
+        )
+    })
+
+    // Confirm callback - behavior based on settings
+    browser.set(ConfirmCallback::class.java, ConfirmCallback { params, tell ->
+        val message = params.message()
+        val title = params.title()
+        val confirmed = BrowserSettings.jsConfirmBehavior == BrowserSettings.JsConfirmBehavior.AUTO_CONFIRM
+
+        // CRITICAL: Call tell FIRST to unblock JxBrowser
+        if (confirmed) {
+            tell.ok()
+        } else {
+            tell.cancel()
+        }
+
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyConfirm(
+            browserId = browserId,
+            title = title.ifEmpty { "Confirm" },
+            message = message,
+            confirmed = confirmed
+        )
+    })
+
+    // Prompt callback - value based on settings
+    browser.set(PromptCallback::class.java, PromptCallback { params, tell ->
+        val message = params.message()
+        val pageDefault = params.text()  // text() returns the page's default prompt value
+        val title = params.title()
+
+        // Determine value to use based on settings
+        val valueToUse = if (BrowserSettings.jsPromptUsePageDefault) {
+            pageDefault
+        } else {
+            BrowserSettings.jsPromptDefaultValue
+        }
+
+        // CRITICAL: Call tell.ok() FIRST to unblock JxBrowser
+        tell.ok(valueToUse)
+
+        // Emit event for Compose UI to show BOSS-styled dialog
+        JsDialogNotifier.notifyPrompt(
+            browserId = browserId,
+            title = title.ifEmpty { "Prompt" },
+            message = message,
+            value = valueToUse
+        )
+    })
 }
 
 /**
@@ -313,6 +402,10 @@ actual fun getBrowserState(
                 onBrowserClosed()
             }
         }
+
+        // Configure JS dialog handlers to prevent UI freeze (Issue #369)
+        // Must call tell.ok() immediately to unblock JxBrowser, then show informational dialog
+        setupBrowserDialogHandlers(browser)
 
         // Configure popup handler BEFORE creating view state
         // This intercepts target="_blank" and window.open() intelligently:
