@@ -509,6 +509,11 @@ actual fun resetTerminals() {
  *
  * Issue #346: Terminal link click prompt with remember preference
  *
+ * Note: This launches coroutines without structured concurrency. If the terminal is closed
+ * immediately after a link click, the event might emit after cleanup. This is low-risk
+ * because the event bus is fire-and-forget, and BossApp handles stale events gracefully
+ * by verifying panel existence before operations.
+ *
  * @param url The URL to open
  * @param scope CoroutineScope to launch async operations
  * @param terminalId Optional terminal tab ID (for detecting source panel when opening in splits)

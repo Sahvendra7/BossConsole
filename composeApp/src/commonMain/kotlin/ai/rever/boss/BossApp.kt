@@ -282,6 +282,14 @@ private fun openTerminalLink(
         splitViewState.findPanelWithTab(terminalId)?.id
     } ?: splitViewState.activePanelId
 
+    // Defensive check: verify source panel still exists (could be closed between link click and handling)
+    // Fall back to active panel if source panel no longer exists
+    val validSourcePanelId = if (splitViewState.findPanel(sourcePanelId) != null) {
+        sourcePanelId
+    } else {
+        splitViewState.activePanelId
+    }
+
     when (mode) {
         TerminalLinkOpenMode.EXISTING_SPLIT -> {
             // Open in existing split panel (not the source panel where terminal is)
@@ -289,9 +297,9 @@ private fun openTerminalLink(
             val targetMode = TerminalLinkSettingsManager.currentSettings.value.existingSplitTarget
             val targetPanel = when (targetMode) {
                 ExistingSplitTargetMode.MOST_RECENT_ACTIVE ->
-                    splitViewState.getOtherPanelExcluding(sourcePanelId)
+                    splitViewState.getOtherPanelExcluding(validSourcePanelId)
                 ExistingSplitTargetMode.FIRST_AVAILABLE ->
-                    splitViewState.getFirstOtherPanelExcluding(sourcePanelId)
+                    splitViewState.getFirstOtherPanelExcluding(validSourcePanelId)
             }
             if (targetPanel != null) {
                 val browserTab = createBrowserTab(url)
@@ -304,7 +312,7 @@ private fun openTerminalLink(
                 // IMPORTANT: Fallback when user saved EXISTING_SPLIT preference but later closed all splits.
                 // Creates a new vertical split instead of failing silently.
                 splitViewState.splitPanel(
-                    panelId = sourcePanelId,
+                    panelId = validSourcePanelId,
                     orientation = SplitOrientation.VERTICAL,
                     tabToMove = createBrowserTab(url)
                 )
@@ -318,7 +326,7 @@ private fun openTerminalLink(
             }
             // Create split from the source panel (where terminal is), not from active panel
             splitViewState.splitPanel(
-                panelId = sourcePanelId,
+                panelId = validSourcePanelId,
                 orientation = orientation,
                 tabToMove = createBrowserTab(url)
             )

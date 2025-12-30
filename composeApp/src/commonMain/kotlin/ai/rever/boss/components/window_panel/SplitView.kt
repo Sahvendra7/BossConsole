@@ -455,14 +455,17 @@ class SplitViewState(
     fun closePanel(panelId: String) {
         // Don't close the main panel if it's the only one
         if (panelId == "main" && getAllPanels().size == 1) return
-        
+
         // First, dispose all tabs in the panel being closed
         findPanel(panelId)?.let { panel ->
             panel.tabsComponent.clearAllTabs()
         }
-        
+
         _rootNode.value = removePanel(_rootNode.value, panelId)
-        
+
+        // Clean up activation history to prevent accumulation of deleted panel IDs
+        _panelActivationHistory.remove(panelId)
+
         // If active panel was closed, switch to first available
         if (_activePanelId.value == panelId) {
             getAllPanels().firstOrNull()?.let {
@@ -549,7 +552,11 @@ class SplitViewState(
         }
     }
     
-    private fun findPanel(panelId: String): SplitNode.Panel? {
+    /**
+     * Find a panel by its ID.
+     * Returns null if no panel with the given ID exists.
+     */
+    internal fun findPanel(panelId: String): SplitNode.Panel? {
         return findPanelInNode(_rootNode.value, panelId)
     }
     
