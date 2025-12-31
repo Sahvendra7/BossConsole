@@ -51,31 +51,52 @@ fun RSyntaxTextAreaCompose(
     // Create and remember RSyntaxTextArea instance
     val textAreaState = remember {
         RSyntaxTextAreaState().also { state ->
-            state.textArea.apply {
-                syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
-                isCodeFoldingEnabled = true
-                isAutoIndentEnabled = true
-                tabSize = 4
-                isEditable = !isReadOnly
-                antiAliasingEnabled = true
-                markOccurrences = true
-                paintMatchedBracketPair = true
-                isBracketMatchingEnabled = true
-                highlightCurrentLine = true
-                fadeCurrentLineHighlight = true
-                isWhitespaceVisible = false
-                eolMarkersVisible = false
-                paintTabLines = true
+            // CRITICAL: ALL Swing component configuration must happen on EDT
+            // This includes setting syntaxEditingStyle, text content, and theme
+            // Previously, these were set off-EDT which caused tokenization issues
+            val configureOnEdt = {
+                state.textArea.apply {
+                    // Configure editor features first
+                    isCodeFoldingEnabled = true
+                    isAutoIndentEnabled = true
+                    tabSize = 4
+                    isEditable = !isReadOnly
+                    antiAliasingEnabled = true
+                    markOccurrences = true
+                    paintMatchedBracketPair = true
+                    isBracketMatchingEnabled = true
+                    highlightCurrentLine = true
+                    fadeCurrentLineHighlight = true
+                    isWhitespaceVisible = false
+                    eolMarkersVisible = false
+                    paintTabLines = true
 
-                // Set initial font
-                font = createEditorFont(fontFamily, fontSize)
+                    // Set initial font
+                    font = createEditorFont(fontFamily, fontSize)
 
-                // Set initial content
-                text = content
+                    // IMPORTANT ORDER: Set syntax style BEFORE content
+                    // This ensures the correct TokenMaker is in place when text is set
+                    syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
+
+                    // Set initial content (tokenization happens during this call)
+                    text = content
+                }
+
+                // Apply theme (which also ensures TokenMaker is correctly attached)
+                RSyntaxThemeMapper.applyTheme(state.textArea, theme)
+                state.textArea.revalidate()
+                state.textArea.repaint()
             }
 
-            // Apply initial theme
-            RSyntaxThemeMapper.applyTheme(state.textArea, theme)
+            // Use invokeAndWait to ensure configuration is complete before returning
+            // This prevents "flash of unstyled content" and tokenization issues
+            if (SwingUtilities.isEventDispatchThread()) {
+                configureOnEdt()
+            } else {
+                SwingUtilities.invokeAndWait {
+                    configureOnEdt()
+                }
+            }
         }
     }
 
@@ -93,6 +114,10 @@ fun RSyntaxTextAreaCompose(
                     textArea.text = content
                     // Restore caret position
                     textArea.caretPosition = caretPos.coerceIn(0, textArea.document.length)
+                    // Force re-tokenization after content change to ensure syntax highlighting
+                    textArea.forceReparsing(0)
+                    textArea.revalidate()
+                    textArea.repaint()
                 } finally {
                     // Post back to Main dispatcher to reset flag (avoid modifying from EDT)
                     coroutineScope.launch(Dispatchers.Main) {
@@ -107,6 +132,10 @@ fun RSyntaxTextAreaCompose(
     LaunchedEffect(language) {
         SwingUtilities.invokeLater {
             textArea.syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
+            // Force re-tokenization and repaint after language change
+            textArea.forceReparsing(0)
+            textArea.revalidate()
+            textArea.repaint()
         }
     }
 
@@ -231,7 +260,7 @@ private fun createEditorFont(fontFamily: String, fontSize: Int): Font {
 fun mapLanguageToSyntaxStyle(language: String): String {
     val lang = language.lowercase().trim()
 
-    return when {
+    val result = when {
         // Kotlin
         lang in listOf("kotlin", "kt", "kts") -> SyntaxConstants.SYNTAX_STYLE_KOTLIN
 
@@ -312,6 +341,7 @@ fun mapLanguageToSyntaxStyle(language: String): String {
         // Default - no syntax highlighting
         else -> SyntaxConstants.SYNTAX_STYLE_NONE
     }
+    return result
 }
 
 /**

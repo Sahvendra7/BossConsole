@@ -59,6 +59,7 @@ import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
+import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
@@ -942,6 +943,10 @@ fun ComponentContext.BossApp(
         FileEventBus.fileOpenEvents
             .onEach { event ->
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
+                // Emit navigation target for cursor positioning (PSI navigation)
+                if (event.line > 0) {
+                    NavigationTargetBus.navigateTo(event.filePath, event.line, event.column)
+                }
             }
             .launchIn(this)
     }

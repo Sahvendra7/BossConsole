@@ -2,6 +2,9 @@ package ai.rever.boss
 
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.cli.CLICommandHandler
+import ai.rever.boss.psi.PSIBootstrap
+import ai.rever.boss.psi.PSIThreadBridge
+import ai.rever.boss.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
@@ -14,6 +17,9 @@ import androidx.compose.ui.window.application
 import com.github.ajalt.clikt.core.main
 import java.io.File
 import kotlin.system.exitProcess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 fun main(args: Array<String>) {
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
@@ -105,6 +111,21 @@ fun main(args: Array<String>) {
         } catch (e: Exception) {
             println("Error closing browser engine: ${e.message}")
         }
+        try {
+            // Shutdown project indexer
+            ProjectIndexer.shutdownGlobal()
+        } catch (e: Exception) {
+            println("Error shutting down project indexer: ${e.message}")
+        }
+        try {
+            // Shutdown PSI to prevent memory leaks
+            if (PSIBootstrap.isInitialized) {
+                PSIBootstrap.shutdown()
+                PSIThreadBridge.shutdown()
+            }
+        } catch (e: Exception) {
+            println("Error shutting down PSI: ${e.message}")
+        }
         SingleInstanceManager.release()
     })
 
@@ -148,6 +169,44 @@ fun main(args: Array<String>) {
     
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()
+
+    // Initialize PSI for Kotlin code navigation (must be before any editor opens)
+    try {
+        PSIBootstrap.initialize()
+    } catch (e: Exception) {
+        println("Warning: PSI initialization failed: ${e.message}")
+        // Continue - navigation will just be disabled
+    }
+
+    // Initialize ProjectIndexer for cross-file navigation
+    // Uses current working directory as project root
+    if (PSIBootstrap.isInitialized) {
+        try {
+            val projectPath = System.getProperty("user.dir")
+            println("[Indexer] Initializing project indexer for: $projectPath")
+            val indexer = ProjectIndexer.initialize(projectPath)
+
+            // Start project indexing, then library indexing
+            CoroutineScope(Dispatchers.IO).launch {
+                // First index project files
+                indexer.startIndexing { indexed, total, file ->
+                    if (indexed % 50 == 0 || indexed == total) {
+                        println("[Indexer] Progress: $indexed/$total - $file")
+                    }
+                }.join()
+
+                // Then index library sources (Compose, stdlib, etc.)
+                indexer.indexLibrarySources { indexed, total, jar ->
+                    if (indexed % 10 == 0 || indexed == total) {
+                        println("[Indexer] Library progress: $indexed/$total - $jar")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("Warning: ProjectIndexer initialization failed: ${e.message}")
+            // Continue - cross-file navigation will be limited
+        }
+    }
 
     // Start global log capture from app startup
     GlobalLogCapture.start()

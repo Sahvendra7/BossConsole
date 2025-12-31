@@ -1,6 +1,11 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.font.FontManager
+import ai.rever.boss.components.events.NavigationTargetBus
+import ai.rever.boss.psi.NavigationEvent
+import ai.rever.boss.psi.NavigationHandler
+import ai.rever.boss.psi.PSIBootstrap
+import ai.rever.boss.psi.SemanticHighlighter
 import ai.rever.boss.run.DetectedMainFunction
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
@@ -52,6 +57,7 @@ import javax.swing.event.DocumentListener
  * @param onCursorPositionChange Callback for cursor position changes (line, column)
  * @param onModifiedStateChange Callback when modification state changes
  * @param onRun Callback when a run icon is clicked
+ * @param onNavigate Callback when Cmd+Click navigation is triggered (go-to-definition)
  */
 @Composable
 fun RSyntaxEditorWithGutter(
@@ -67,7 +73,8 @@ fun RSyntaxEditorWithGutter(
     theme: String = CodeEditorSettings.theme,
     onCursorPositionChange: (line: Int, column: Int) -> Unit = { _, _ -> },
     onModifiedStateChange: (Boolean) -> Unit = { },
-    onRun: (DetectedMainFunction) -> Unit = { }
+    onRun: (DetectedMainFunction) -> Unit = { },
+    onNavigate: (NavigationEvent) -> Unit = { }
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -85,41 +92,64 @@ fun RSyntaxEditorWithGutter(
     var gutterState by remember { mutableStateOf(RSyntaxGutterState()) }
 
     // Create and remember RSyntaxTextArea instance
-    val editorState = remember {
-        RSyntaxEditorState().also { state ->
-            state.textArea.apply {
-                syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
-                isCodeFoldingEnabled = true
-                isAutoIndentEnabled = true
-                tabSize = 4
-                isEditable = !isReadOnly
-                antiAliasingEnabled = true
-                markOccurrences = true
-                paintMatchedBracketPair = true
-                isBracketMatchingEnabled = true
-                highlightCurrentLine = true
-                fadeCurrentLineHighlight = true
-                isWhitespaceVisible = false
-                eolMarkersVisible = false
-                paintTabLines = true
+    val editorState = remember(filePath) {
+        RSyntaxEditorState(filePath, onNavigate).also { state ->
+            // CRITICAL: ALL Swing component configuration must happen on EDT
+            // This includes setting syntaxEditingStyle, text content, and theme
+            // Previously, these were set off-EDT which caused tokenization issues
+            val configureOnEdt = {
+                state.textArea.apply {
+                    // Configure editor features first
+                    isCodeFoldingEnabled = true
+                    isAutoIndentEnabled = true
+                    tabSize = 4
+                    isEditable = !isReadOnly
+                    antiAliasingEnabled = true
+                    markOccurrences = true
+                    paintMatchedBracketPair = true
+                    isBracketMatchingEnabled = true
+                    highlightCurrentLine = true
+                    fadeCurrentLineHighlight = true
+                    isWhitespaceVisible = false
+                    eolMarkersVisible = false
+                    paintTabLines = true
 
-                // Set initial font
-                font = createRSyntaxEditorFont(fontFamily, fontSize)
+                    // Set initial font
+                    font = createRSyntaxEditorFont(fontFamily, fontSize)
 
-                // Set initial content
-                text = content
+                    // Configure keyboard bindings
+                    configureBossKeyBindings()
 
-                // Configure keyboard bindings
-                configureBossKeyBindings()
+                    // IMPORTANT ORDER: Set syntax style BEFORE content
+                    // This ensures the correct TokenMaker is in place when text is set
+                    syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
+
+                    // Set initial content (tokenization happens during this call)
+                    text = content
+                }
+
+                // Apply theme (which also ensures TokenMaker is correctly attached)
+                RSyntaxThemeMapper.applyTheme(state.textArea, theme)
+                state.textArea.revalidate()
+                state.textArea.repaint()
             }
 
-            // Apply initial theme
-            RSyntaxThemeMapper.applyTheme(state.textArea, theme)
+            // Use invokeAndWait to ensure configuration is complete before returning
+            // This prevents "flash of unstyled content" and tokenization issues
+            if (SwingUtilities.isEventDispatchThread()) {
+                configureOnEdt()
+            } else {
+                SwingUtilities.invokeAndWait {
+                    configureOnEdt()
+                }
+            }
         }
     }
 
     val textArea = editorState.textArea
     val scrollPane = editorState.scrollPane
+
+    // PSI is initialized at app startup in main.kt (no lazy init needed here)
 
     // Detect main functions when content changes
     LaunchedEffect(content, filePath) {
@@ -163,6 +193,10 @@ fun RSyntaxEditorWithGutter(
                     textArea.text = content
                     // Restore caret position
                     textArea.caretPosition = caretPos.coerceIn(0, textArea.document.length)
+                    // Force re-tokenization after content change to ensure syntax highlighting
+                    textArea.forceReparsing(0)
+                    textArea.revalidate()
+                    textArea.repaint()
                 } finally {
                     // Post back to Main dispatcher to reset flag (avoid modifying from EDT)
                     coroutineScope.launch(Dispatchers.Main) {
@@ -171,12 +205,18 @@ fun RSyntaxEditorWithGutter(
                 }
             }
         }
+        // Notify navigation handler that content changed (invalidates cached PSI)
+        editorState.updateContent(content)
     }
 
     // Update language syntax highlighting
     LaunchedEffect(language) {
         SwingUtilities.invokeLater {
             textArea.syntaxEditingStyle = mapLanguageToSyntaxStyle(language)
+            // Force re-tokenization and repaint after language change
+            textArea.forceReparsing(0)
+            textArea.revalidate()
+            textArea.repaint()
         }
     }
 
@@ -203,6 +243,39 @@ fun RSyntaxEditorWithGutter(
         SwingUtilities.invokeLater {
             textArea.isEditable = !isReadOnly
         }
+    }
+
+    // Listen for navigation targets (PSI go-to-definition cursor positioning)
+    LaunchedEffect(filePath) {
+        NavigationTargetBus.targets
+            .collect { target ->
+                // Only process if this editor is showing the target file
+                if (target.filePath == filePath && target.line > 0) {
+                    SwingUtilities.invokeLater {
+                        try {
+                            val text = textArea.text ?: return@invokeLater
+                            val lines = text.split("\n")
+
+                            // Calculate offset from line/column (both are 1-based)
+                            var offset = 0
+                            for (i in 0 until (target.line - 1).coerceAtMost(lines.size)) {
+                                offset += lines[i].length + 1  // +1 for newline
+                            }
+                            offset += (target.column - 1).coerceAtLeast(0)
+
+                            // Position cursor and scroll into view
+                            val safeOffset = offset.coerceIn(0, text.length)
+                            textArea.caretPosition = safeOffset
+                            textArea.requestFocusInWindow()
+
+                            // Clear replay cache after consumption to avoid re-triggering
+                            NavigationTargetBus.clearCache()
+                        } catch (e: Exception) {
+                            println("[RSyntaxEditor] Error positioning cursor: ${e.message}")
+                        }
+                    }
+                }
+            }
     }
 
     // Register with EditorSearchEventBus for search/replace functionality
@@ -428,9 +501,12 @@ private fun RunGutterColumn(
 }
 
 /**
- * Holds the RSyntaxTextArea, scroll pane, and search manager for the combined editor.
+ * Holds the RSyntaxTextArea, scroll pane, search manager, navigation handler, and semantic highlighter.
  */
-private class RSyntaxEditorState {
+private class RSyntaxEditorState(
+    initialFilePath: String,
+    onNavigate: (NavigationEvent) -> Unit
+) {
     val textArea: RSyntaxTextArea = RSyntaxTextArea(40, 100)
 
     val scrollPane: RTextScrollPane = RTextScrollPane(textArea).apply {
@@ -441,8 +517,52 @@ private class RSyntaxEditorState {
     // Search manager for find/replace functionality
     val searchManager: RSyntaxSearchManager by lazy { RSyntaxSearchManager(textArea) }
 
+    // Navigation handler for Cmd+Click go-to-definition (Kotlin files only for now)
+    val navigationHandler: NavigationHandler? = if (isKotlinFile(initialFilePath) && PSIBootstrap.isInitialized) {
+        NavigationHandler(textArea, initialFilePath, onNavigate)
+    } else null
+
+    // Semantic highlighter for PSI-based syntax highlighting (function calls, properties, etc.)
+    val semanticHighlighter: SemanticHighlighter? = if (isKotlinFile(initialFilePath) && PSIBootstrap.isInitialized) {
+        SemanticHighlighter(textArea).also {
+            // Set the current file path for token maker semantic lookup
+            FixedKotlinTokenMaker.currentFilePath = initialFilePath
+            it.setFilePath(initialFilePath)
+        }
+    } else null
+
+    fun updateFilePath(filePath: String) {
+        navigationHandler?.updateFilePath(filePath)
+        semanticHighlighter?.setFilePath(filePath)
+
+        // Update token maker file path for semantic lookup
+        if (isKotlinFile(filePath)) {
+            FixedKotlinTokenMaker.currentFilePath = filePath
+        } else {
+            FixedKotlinTokenMaker.currentFilePath = ""
+        }
+    }
+
+    fun updateContent(content: String) {
+        navigationHandler?.updateContent(content)
+
+        // Trigger semantic analysis when content changes
+        if (semanticHighlighter != null && FixedKotlinTokenMaker.currentFilePath.isNotEmpty()) {
+            semanticHighlighter.analyzeAndHighlight(FixedKotlinTokenMaker.currentFilePath)
+        }
+    }
+
     fun dispose() {
         searchManager.dispose()
+        navigationHandler?.dispose()
+        semanticHighlighter?.dispose()
+        FixedKotlinTokenMaker.currentFilePath = ""
+    }
+
+    companion object {
+        fun isKotlinFile(filePath: String): Boolean {
+            return filePath.endsWith(".kt") || filePath.endsWith(".kts")
+        }
     }
 }
 

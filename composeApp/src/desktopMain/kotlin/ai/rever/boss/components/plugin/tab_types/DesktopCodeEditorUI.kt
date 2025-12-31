@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.psi.NavigationEvent
 import ai.rever.boss.run.DetectedMainFunction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -112,6 +114,16 @@ fun DesktopCodeEditorUI(
                 onRun = { detected ->
                     scope.launch {
                         executeDetectedMainFunction(detected, projectPath)
+                    }
+                },
+                onNavigate = { event ->
+                    if (event.filePath.isNotEmpty()) {
+                        scope.launch {
+                            // Open the target file at the specified position
+                            // For same-file navigation, FileEventBus handler will scroll to position
+                            // For cross-file, it opens the file and navigates
+                            FileEventBus.openFile(event.filePath, event.line, event.column)
+                        }
                     }
                 }
             )

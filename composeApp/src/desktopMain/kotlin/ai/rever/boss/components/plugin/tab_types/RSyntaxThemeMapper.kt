@@ -6,6 +6,7 @@ import org.fife.ui.rsyntaxtextarea.SyntaxScheme
 import org.fife.ui.rsyntaxtextarea.Style
 import org.fife.ui.rsyntaxtextarea.Token
 import org.fife.ui.rsyntaxtextarea.Theme
+import org.fife.ui.rsyntaxtextarea.folding.FoldParserManager
 import java.awt.Color
 import java.awt.Font
 
@@ -25,6 +26,47 @@ object RSyntaxThemeMapper {
     fun applyTheme(textArea: RSyntaxTextArea, bossTheme: String = CodeEditorSettings.theme) {
         val theme = createTheme(bossTheme, textArea.font)
         theme.apply(textArea)
+
+        // Also explicitly set the textArea foreground color for base text
+        val colors = getThemeColors(bossTheme)
+        textArea.foreground = colors.text
+
+        // CRITICAL FIX: RSyntaxTextArea 3.5.4's KotlinTokenMaker is broken - it doesn't
+        // recognize keywords. Use our FixedKotlinTokenMaker instead.
+        val currentStyle = textArea.syntaxEditingStyle
+        if (currentStyle == org.fife.ui.rsyntaxtextarea.SyntaxConstants.SYNTAX_STYLE_KOTLIN) {
+            val doc = textArea.document
+            if (doc is org.fife.ui.rsyntaxtextarea.RSyntaxDocument) {
+                // Use our fixed Kotlin TokenMaker that properly recognizes keywords
+                val fixedTokenMaker = FixedKotlinTokenMaker()
+                doc.setSyntaxStyle(fixedTokenMaker)
+            }
+
+            // Register our custom Kotlin fold parser that handles import folding
+            FoldParserManager.get().addFoldParserMapping(
+                org.fife.ui.rsyntaxtextarea.SyntaxConstants.SYNTAX_STYLE_KOTLIN,
+                KotlinFoldParser()
+            )
+
+            // Re-fold the document to apply the new fold parser
+            textArea.foldManager?.reparse()
+        }
+
+        // Save and restore text to force re-tokenization with the fixed TokenMaker
+        val savedText = textArea.text
+        if (savedText.isNotEmpty()) {
+            val savedCaretPos = textArea.caretPosition.coerceIn(0, savedText.length)
+            textArea.text = ""
+            textArea.text = savedText
+            textArea.caretPosition = savedCaretPos.coerceIn(0, textArea.document.length)
+        }
+
+        // Force RSyntaxTextArea to re-tokenize the document with the new syntax scheme
+        textArea.forceReparsing(0)
+
+        // Trigger full UI refresh
+        textArea.revalidate()
+        textArea.repaint()
     }
 
     /**
@@ -54,11 +96,13 @@ object RSyntaxThemeMapper {
         }
 
         return try {
-            RSyntaxThemeMapper::class.java.getResourceAsStream(resourcePath)?.use { stream ->
-                Theme.load(stream)
-            } ?: createFallbackTheme()
+            val stream = RSyntaxThemeMapper::class.java.getResourceAsStream(resourcePath)
+            if (stream == null) {
+                createFallbackTheme()
+            } else {
+                stream.use { Theme.load(it) }
+            }
         } catch (e: Exception) {
-            println("[RSyntaxThemeMapper] Failed to load base theme: ${e.message}")
             // Create a minimal fallback theme
             createFallbackTheme()
         }
@@ -151,9 +195,12 @@ object RSyntaxThemeMapper {
             foreground = colors.dataType
         }
 
-        // Functions
+        // Functions - IntelliJ Darcula doesn't specially color regular function calls
+        // They use text color. Only static methods get yellow italic, but RSyntaxTextArea
+        // doesn't distinguish, so we use text color for authenticity.
         scheme.getStyle(Token.FUNCTION)?.apply {
             foreground = colors.function
+            // No italic - IntelliJ only uses italic for static methods
         }
 
         // Comments
@@ -166,7 +213,7 @@ object RSyntaxThemeMapper {
             font = baseFont?.deriveFont(Font.ITALIC)
         }
         scheme.getStyle(Token.COMMENT_DOCUMENTATION)?.apply {
-            foreground = colors.comment
+            foreground = colors.docComment
             font = baseFont?.deriveFont(Font.ITALIC)
         }
         scheme.getStyle(Token.COMMENT_KEYWORD)?.apply {
@@ -280,50 +327,52 @@ object RSyntaxThemeMapper {
     // ========== Theme Color Definitions ==========
 
     private fun darkThemeColors() = ThemeColors(
-        // Editor colors
-        background = Color(0x1E, 0x1E, 0x1E),
-        text = Color(0xD4, 0xD4, 0xD4),
-        caret = Color(0xFF, 0xFF, 0xFF),
-        selectionBackground = Color(0x26, 0x4F, 0x78),
+        // Editor colors - IntelliJ Dark theme (expUI_darkScheme.xml)
+        background = Color(0x1E, 0x1F, 0x22),       // #1e1f22 - CONSOLE_BACKGROUND_KEY
+        text = Color(0xBC, 0xBE, 0xC4),             // #bcbec4 - DEFAULT_IDENTIFIER
+        caret = Color(0xCE, 0xD0, 0xD6),            // #ced0d6 - CARET_COLOR
+        selectionBackground = Color(0x21, 0x42, 0x83), // #214283 - SELECTION_BACKGROUND
         selectionForeground = null,
-        currentLineHighlight = Color(0x2D, 0x2D, 0x2D),
-        marginLine = Color(0x40, 0x40, 0x40),
+        currentLineHighlight = Color(0x26, 0x28, 0x2E), // #26282e - CARET_ROW_COLOR
+        marginLine = Color(0x39, 0x3B, 0x40),       // #393b40 - RIGHT_MARGIN_COLOR
 
         // Bracket matching
-        matchedBracketBackground = Color(0x3A, 0x3D, 0x41),
-        matchedBracketForeground = Color(0xFF, 0xD7, 0x00),
+        matchedBracketBackground = Color(0x3B, 0x51, 0x4D),
+        matchedBracketForeground = Color(0xFF, 0xEF, 0x28),
 
         // Gutter
-        gutterBackground = Color(0x2D, 0x2D, 0x30),
-        gutterBorder = Color(0x40, 0x40, 0x40),
-        lineNumber = Color(0x85, 0x85, 0x85),
-        foldIndicator = Color(0x85, 0x85, 0x85),
-        foldBackground = Color(0x2D, 0x2D, 0x30),
+        gutterBackground = Color(0x1E, 0x1F, 0x22), // same as background
+        gutterBorder = Color(0x39, 0x3B, 0x40),
+        lineNumber = Color(0x4B, 0x50, 0x59),       // #4b5059 - LINE_NUMBERS_COLOR
+        foldIndicator = Color(0x6E, 0x73, 0x7A),  // Brighter for visibility
+        foldBackground = Color(0x1E, 0x1F, 0x22),
 
-        // Syntax colors
-        keyword = Color(0x56, 0x9C, 0xD6),
-        dataType = Color(0x4E, 0xC9, 0xB0),
-        function = Color(0xDC, 0xDC, 0xAA),
-        comment = Color(0x6A, 0x99, 0x55),
-        commentKeyword = Color(0x6A, 0x99, 0x55),
-        commentMarkup = Color(0x6A, 0x99, 0x55),
-        string = Color(0xCE, 0x91, 0x78),
-        number = Color(0xB5, 0xCE, 0xA8),
-        boolean = Color(0x56, 0x9C, 0xD6),
-        operator = Color(0xD4, 0xD4, 0xD4),
-        separator = Color(0xD4, 0xD4, 0xD4),
-        preprocessor = Color(0xC5, 0x86, 0xC0),
-        annotation = Color(0xDC, 0xDC, 0xAA),
-        variable = Color(0x9C, 0xDC, 0xFE),
-        regex = Color(0xD1, 0x6D, 0x69),
-        markupTag = Color(0x80, 0x80, 0x80),
-        markupTagName = Color(0x56, 0x9C, 0xD6),
-        markupAttribute = Color(0x9C, 0xDC, 0xFE),
-        error = Color(0xF4, 0x47, 0x47),
+        // Syntax colors - IntelliJ Dark theme exact colors
+        // Reference: expUI_darkScheme.xml in intellij-community
+        keyword = Color(0xCF, 0x8E, 0x6D),          // #cf8e6d - DEFAULT_KEYWORD
+        dataType = Color(0xBC, 0xBE, 0xC4),         // #bcbec4 - same as identifier
+        function = Color(0x56, 0xA8, 0xF5),         // #56a8f5 - DEFAULT_FUNCTION_DECLARATION (blue)
+        comment = Color(0x7A, 0x7E, 0x85),          // #7a7e85 - DEFAULT_LINE_COMMENT
+        docComment = Color(0x6A, 0xAB, 0x73),       // #6aab73 - DEFAULT_DOC_COMMENT (green)
+        commentKeyword = Color(0x67, 0xA3, 0x7C),   // #67a37c - DEFAULT_DOC_COMMENT_TAG
+        commentMarkup = Color(0x68, 0xA6, 0x7E),    // #68a67e - DEFAULT_DOC_MARKUP
+        string = Color(0x6A, 0xAB, 0x73),           // #6aab73 - DEFAULT_STRING
+        number = Color(0x2A, 0xAC, 0xB8),           // #2aacb8 - DEFAULT_NUMBER (cyan)
+        boolean = Color(0xCF, 0x8E, 0x6D),          // #cf8e6d - same as keyword
+        operator = Color(0xBC, 0xBE, 0xC4),         // #bcbec4 - DEFAULT_OPERATION_SIGN
+        separator = Color(0xBC, 0xBE, 0xC4),        // #bcbec4
+        preprocessor = Color(0xCF, 0x8E, 0x6D),     // #cf8e6d
+        annotation = Color(0xB3, 0xAE, 0x60),       // #b3ae60 - DEFAULT_METADATA
+        variable = Color(0xC7, 0x7D, 0xBB),         // #c77dbb - DEFAULT_INSTANCE_FIELD (purple/pink)
+        regex = Color(0x6A, 0xAB, 0x73),            // #6aab73
+        markupTag = Color(0x2F, 0xBA, 0xA3),        // #2fbaa3 - HTML_CUSTOM_TAG_NAME
+        markupTagName = Color(0x2F, 0xBA, 0xA3),    // #2fbaa3
+        markupAttribute = Color(0xBC, 0xBE, 0xC4),  // #bcbec4
+        error = Color(0xF7, 0x54, 0x64),            // #f75464 - BAD_CHARACTER
 
         // Other
-        hyperlink = Color(0x3A, 0x96, 0xDD),
-        markOccurrences = Color(0x32, 0x32, 0x32)
+        hyperlink = Color(0x54, 0x8A, 0xF7),        // #548af7 - CTRL_CLICKABLE
+        markOccurrences = Color(0x32, 0x59, 0x3D)
     )
 
     private fun lightThemeColors() = ThemeColors(
@@ -352,6 +401,7 @@ object RSyntaxThemeMapper {
         dataType = Color(0x09, 0x50, 0x79),
         function = Color(0x79, 0x5E, 0x26),
         comment = Color(0x6E, 0x77, 0x81),
+        docComment = Color(0x0A, 0x3D, 0x06),        // Green for doc comments
         commentKeyword = Color(0x6E, 0x77, 0x81),
         commentMarkup = Color(0x6E, 0x77, 0x81),
         string = Color(0x0A, 0x3D, 0x06),
@@ -399,6 +449,7 @@ object RSyntaxThemeMapper {
         dataType = Color(0x8B, 0xE9, 0xFD),     // Cyan
         function = Color(0x50, 0xFA, 0x7B),     // Green
         comment = Color(0x62, 0x72, 0xA4),      // Comment purple
+        docComment = Color(0x50, 0xFA, 0x7B),   // Green for doc comments
         commentKeyword = Color(0x62, 0x72, 0xA4),
         commentMarkup = Color(0x62, 0x72, 0xA4),
         string = Color(0xF1, 0xFA, 0x8C),       // Yellow
@@ -446,6 +497,7 @@ object RSyntaxThemeMapper {
         dataType = Color(0x66, 0xD9, 0xEF),     // Blue
         function = Color(0xA6, 0xE2, 0x2E),     // Green
         comment = Color(0x75, 0x71, 0x5E),      // Gray
+        docComment = Color(0xA6, 0xE2, 0x2E),   // Green for doc comments
         commentKeyword = Color(0x75, 0x71, 0x5E),
         commentMarkup = Color(0x75, 0x71, 0x5E),
         string = Color(0xE6, 0xDB, 0x74),       // Yellow
@@ -493,6 +545,7 @@ object RSyntaxThemeMapper {
         dataType = Color(0xB5, 0x89, 0x00),     // Yellow
         function = Color(0x26, 0x8B, 0xD2),     // Blue
         comment = Color(0x58, 0x6E, 0x75),      // Base01
+        docComment = Color(0x85, 0x99, 0x00),   // Green for doc comments
         commentKeyword = Color(0x58, 0x6E, 0x75),
         commentMarkup = Color(0x58, 0x6E, 0x75),
         string = Color(0x2A, 0xA1, 0x98),       // Cyan
@@ -540,6 +593,7 @@ object RSyntaxThemeMapper {
         dataType = Color(0xB5, 0x89, 0x00),     // Yellow
         function = Color(0x26, 0x8B, 0xD2),     // Blue
         comment = Color(0x93, 0xA1, 0xA1),      // Base1
+        docComment = Color(0x85, 0x99, 0x00),   // Green for doc comments
         commentKeyword = Color(0x93, 0xA1, 0xA1),
         commentMarkup = Color(0x93, 0xA1, 0xA1),
         string = Color(0x2A, 0xA1, 0x98),       // Cyan
@@ -590,6 +644,7 @@ object RSyntaxThemeMapper {
         val dataType: Color,
         val function: Color,
         val comment: Color,
+        val docComment: Color,
         val commentKeyword: Color,
         val commentMarkup: Color,
         val string: Color,
