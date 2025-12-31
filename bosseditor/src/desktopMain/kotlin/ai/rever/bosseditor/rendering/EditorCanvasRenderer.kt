@@ -6,6 +6,9 @@ import ai.rever.bosseditor.features.DiagnosticSeverity
 import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.GutterIconType
 import ai.rever.bosseditor.features.Hyperlink
+import ai.rever.bosseditor.features.InlayHint
+import ai.rever.bosseditor.features.InlayHintKind
+import ai.rever.bosseditor.features.InlayHintPosition
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
@@ -45,6 +48,11 @@ object EditorCanvasRenderer {
 
         // Pass 2: Draw text content
         renderText(ctx)
+
+        // Pass 2.5: Draw inlay hints (after text, before overlays)
+        if (ctx.inlayHintsEnabled && ctx.inlayHints.isNotEmpty()) {
+            renderInlayHints(ctx)
+        }
 
         // Pass 3: Draw overlays
         renderOverlays(ctx)
@@ -373,6 +381,127 @@ object EditorCanvasRenderer {
             style = style,
             topLeft = Offset(x, y)
         )
+    }
+
+    // ========== Pass 2.5: Inlay Hints ==========
+
+    /**
+     * Renders inlay hints (type hints, parameter hints, etc.).
+     * These are semi-transparent inline hints that don't modify the actual text.
+     */
+    private fun DrawScope.renderInlayHints(ctx: EditorRenderingContext) {
+        // Group hints by line for efficient rendering
+        val hintsByLine = ctx.inlayHints.groupBy { it.line }
+
+        for (line in ctx.visibleLineRange) {
+            val lineHints = hintsByLine[line] ?: continue
+            val lineText = ctx.getLineText(line)
+            val y = line * ctx.lineHeight - ctx.scrollOffsetY
+
+            // Sort hints by column for proper positioning
+            val sortedHints = lineHints.sortedBy { it.column }
+
+            // Calculate cumulative offset from previous hints on this line
+            var cumulativeOffset = 0f
+
+            for (hint in sortedHints) {
+                // Calculate x position based on column and cumulative offset from previous hints
+                val baseX = ctx.gutterWidth + hint.column * ctx.charWidth - ctx.scrollOffsetX
+
+                // Determine position based on hint position (BEFORE or AFTER)
+                val x = when (hint.hintPosition) {
+                    InlayHintPosition.BEFORE -> baseX + cumulativeOffset
+                    InlayHintPosition.AFTER -> {
+                        // Position after the character at this column
+                        baseX + ctx.charWidth + cumulativeOffset
+                    }
+                }
+
+                // Render the hint
+                val hintWidth = drawInlayHint(ctx, hint, x, y)
+
+                // Add to cumulative offset for subsequent hints
+                cumulativeOffset += hintWidth
+            }
+        }
+    }
+
+    /**
+     * Draws a single inlay hint and returns its width.
+     *
+     * @return The width of the rendered hint (including padding)
+     */
+    private fun DrawScope.drawInlayHint(
+        ctx: EditorRenderingContext,
+        hint: InlayHint,
+        x: Float,
+        y: Float
+    ): Float {
+        val colors = ctx.colors
+
+        // Calculate hint colors based on kind
+        val (bgColor, textColor) = when (hint.kind) {
+            InlayHintKind.PARAMETER -> Pair(
+                colors.inlayHintParameterBackground,
+                colors.inlayHintParameterForeground
+            )
+            InlayHintKind.TYPE -> Pair(
+                colors.inlayHintTypeBackground,
+                colors.inlayHintTypeForeground
+            )
+            InlayHintKind.CHAIN -> Pair(
+                colors.inlayHintTypeBackground.copy(alpha = 0.5f),
+                colors.inlayHintTypeForeground.copy(alpha = 0.8f)
+            )
+            InlayHintKind.OTHER -> Pair(
+                colors.inlayHintParameterBackground,
+                colors.inlayHintParameterForeground
+            )
+        }
+
+        // Calculate text dimensions
+        val measurement = TextMeasurementCache.getMeasurement(
+            textMeasurer = ctx.textMeasurer,
+            text = hint.text,
+            fontFamily = ctx.fontFamily,
+            fontSize = ctx.fontSize * 0.9f, // Slightly smaller font
+            isBold = false,
+            isItalic = false
+        )
+
+        val paddingH = ctx.charWidth * 0.3f // Horizontal padding
+        val paddingLeft = if (hint.paddingLeft) ctx.charWidth * 0.5f else paddingH
+        val paddingRight = if (hint.paddingRight) ctx.charWidth * 0.5f else paddingH
+
+        val totalWidth = measurement.width + paddingLeft + paddingRight
+        val cornerRadius = 3f
+
+        // Draw background with rounded corners (approximated with regular rect for simplicity)
+        val bgY = y + (ctx.lineHeight - measurement.height) / 2f
+        drawRect(
+            color = bgColor,
+            topLeft = Offset(x, bgY),
+            size = Size(totalWidth, measurement.height)
+        )
+
+        // Draw hint text
+        val textX = x + paddingLeft
+        val textY = bgY
+
+        val style = TextStyle(
+            fontFamily = ctx.fontFamily,
+            fontSize = (ctx.fontSize * 0.9f).sp,
+            color = textColor
+        )
+
+        drawText(
+            textMeasurer = ctx.textMeasurer,
+            text = hint.text,
+            style = style,
+            topLeft = Offset(textX, textY)
+        )
+
+        return totalWidth
     }
 
     // ========== Pass 3: Overlays ==========

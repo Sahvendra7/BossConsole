@@ -8,6 +8,7 @@ import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.features.Diagnostic
 import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.Hyperlink
+import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
@@ -103,6 +104,10 @@ data class EditorRenderingContext(
     // Gutter icons (Phase 17) - icons in the gutter (run, debug, breakpoints, etc.)
     val gutterIcons: List<GutterIcon>,
 
+    // Inlay hints (Phase 18) - inline hints for types, parameter names, etc.
+    val inlayHints: List<InlayHint>,
+    val inlayHintsEnabled: Boolean,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -144,6 +149,8 @@ data class EditorRenderingContext(
             hyperlinks: List<Hyperlink> = emptyList(),
             hyperlinkUnderlineVisible: Boolean = false,
             gutterIcons: List<GutterIcon> = emptyList(),
+            inlayHints: List<InlayHint> = emptyList(),
+            inlayHintsEnabled: Boolean = true,
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Calculate visible lines
@@ -190,6 +197,8 @@ data class EditorRenderingContext(
                 hyperlinks = hyperlinks,
                 hyperlinkUnderlineVisible = hyperlinkUnderlineVisible,
                 gutterIcons = gutterIcons,
+                inlayHints = inlayHints,
+                inlayHintsEnabled = inlayHintsEnabled,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }

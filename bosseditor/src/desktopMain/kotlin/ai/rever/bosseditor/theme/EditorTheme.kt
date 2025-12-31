@@ -116,7 +116,13 @@ data class EditorColors(
     val gutterError: Color,
     val gutterWarning: Color,
     val gutterInfo: Color,
-    val gutterHint: Color
+    val gutterHint: Color,
+
+    // Inlay hints (inline hints for types and parameter names)
+    val inlayHintParameterBackground: Color,
+    val inlayHintParameterForeground: Color,
+    val inlayHintTypeBackground: Color,
+    val inlayHintTypeForeground: Color
 ) {
     /**
      * Gets the rainbow bracket color for a given nesting depth.
@@ -372,7 +378,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFF75464),
                 gutterWarning = Color(0xFFFFB848),
                 gutterInfo = Color(0xFF548AF7),
-                gutterHint = Color(0xFF6E737A)
+                gutterHint = Color(0xFF6E737A),
+
+                // Inlay hints - subtle, semi-transparent
+                inlayHintParameterBackground = Color(0xFF393B40),
+                inlayHintParameterForeground = Color(0xFFA1A3AB),
+                inlayHintTypeBackground = Color(0xFF2B3D2F),
+                inlayHintTypeForeground = Color(0xFF6AAB73)
             )
         )
 
@@ -469,7 +481,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFCF222E),
                 gutterWarning = Color(0xFFBF8700),
                 gutterInfo = Color(0xFF0066CC),
-                gutterHint = Color(0xFF6E7681)
+                gutterHint = Color(0xFF6E7681),
+
+                // Inlay hints - light theme
+                inlayHintParameterBackground = Color(0xFFE8E8E8),
+                inlayHintParameterForeground = Color(0xFF6E7681),
+                inlayHintTypeBackground = Color(0xFFE6F4EA),
+                inlayHintTypeForeground = Color(0xFF0A3D06)
             )
         )
 
@@ -566,7 +584,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFFF5555),
                 gutterWarning = Color(0xFFFFB86C),
                 gutterInfo = Color(0xFF8BE9FD),
-                gutterHint = Color(0xFF6272A4)
+                gutterHint = Color(0xFF6272A4),
+
+                // Inlay hints - Dracula palette
+                inlayHintParameterBackground = Color(0xFF44475A),
+                inlayHintParameterForeground = Color(0xFF6272A4),
+                inlayHintTypeBackground = Color(0xFF2E3A25),
+                inlayHintTypeForeground = Color(0xFF50FA7B)
             )
         )
 
@@ -663,7 +687,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFF92672),
                 gutterWarning = Color(0xFFFD971F),
                 gutterInfo = Color(0xFF66D9EF),
-                gutterHint = Color(0xFF75715E)
+                gutterHint = Color(0xFF75715E),
+
+                // Inlay hints - Monokai palette
+                inlayHintParameterBackground = Color(0xFF49483E),
+                inlayHintParameterForeground = Color(0xFF75715E),
+                inlayHintTypeBackground = Color(0xFF3E4A2C),
+                inlayHintTypeForeground = Color(0xFFA6E22E)
             )
         )
 
@@ -760,7 +790,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFDC322F),
                 gutterWarning = Color(0xFFCB4B16),
                 gutterInfo = Color(0xFF268BD2),
-                gutterHint = Color(0xFF586E75)
+                gutterHint = Color(0xFF586E75),
+
+                // Inlay hints - Solarized Dark palette
+                inlayHintParameterBackground = Color(0xFF073642),
+                inlayHintParameterForeground = Color(0xFF586E75),
+                inlayHintTypeBackground = Color(0xFF0A3622),
+                inlayHintTypeForeground = Color(0xFF859900)
             )
         )
 
@@ -857,7 +893,13 @@ data class EditorTheme(
                 gutterError = Color(0xFFDC322F),
                 gutterWarning = Color(0xFFCB4B16),
                 gutterInfo = Color(0xFF268BD2),
-                gutterHint = Color(0xFF93A1A1)
+                gutterHint = Color(0xFF93A1A1),
+
+                // Inlay hints - Solarized Light palette
+                inlayHintParameterBackground = Color(0xFFEEE8D5),
+                inlayHintParameterForeground = Color(0xFF93A1A1),
+                inlayHintTypeBackground = Color(0xFFE8F0D8),
+                inlayHintTypeForeground = Color(0xFF859900)
             )
         )
     }
