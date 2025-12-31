@@ -88,6 +88,11 @@ object EditorCanvasRenderer {
             drawMarkOccurrences(ctx, colors)
         }
 
+        // Draw bracket match backgrounds (behind text, so bracket characters are visible)
+        ctx.bracketMatch?.let { match ->
+            drawBracketMatchBackgrounds(ctx, match)
+        }
+
         // Draw selections (all caret selections if multi-caret, otherwise primary selection)
         if (ctx.hasMultipleCarets) {
             for (caret in ctx.allCarets) {
@@ -512,9 +517,9 @@ object EditorCanvasRenderer {
      * Renders overlay elements: carets, bracket matching, diagnostics, hyperlinks.
      */
     private fun DrawScope.renderOverlays(ctx: EditorRenderingContext) {
-        // Draw bracket matching highlight
+        // Draw bracket matching borders (backgrounds are drawn in Pass 1)
         ctx.bracketMatch?.let { match ->
-            drawBracketMatch(ctx, match)
+            drawBracketMatchBorders(ctx, match)
         }
 
         // Draw diagnostic squiggles (error, warning, info, hint underlines)
@@ -697,9 +702,10 @@ object EditorCanvasRenderer {
     }
 
     /**
-     * Draws bracket matching highlight for both source and matching brackets.
+     * Draws bracket matching backgrounds for both source and matching brackets.
+     * Called in Pass 1 (before text) so bracket characters remain visible.
      */
-    private fun DrawScope.drawBracketMatch(
+    private fun DrawScope.drawBracketMatchBackgrounds(
         ctx: EditorRenderingContext,
         match: ai.rever.bosseditor.features.BracketMatch
     ) {
@@ -709,21 +715,46 @@ object EditorCanvasRenderer {
         val sourcePos = ctx.offsetToPosition(match.sourceOffset)
         val matchingPos = ctx.offsetToPosition(match.matchingOffset)
 
-        // Draw highlight for source bracket
+        // Draw background for source bracket
         if (sourcePos.line in ctx.visibleLineRange) {
-            drawBracketHighlight(ctx, sourcePos, colors)
+            drawBracketBackground(ctx, sourcePos, colors)
         }
 
-        // Draw highlight for matching bracket
+        // Draw background for matching bracket
         if (matchingPos.line in ctx.visibleLineRange) {
-            drawBracketHighlight(ctx, matchingPos, colors)
+            drawBracketBackground(ctx, matchingPos, colors)
         }
     }
 
     /**
-     * Draws a single bracket highlight (rectangle with optional border).
+     * Draws bracket matching borders for both source and matching brackets.
+     * Called in Pass 3 (after text) so borders appear on top.
      */
-    private fun DrawScope.drawBracketHighlight(
+    private fun DrawScope.drawBracketMatchBorders(
+        ctx: EditorRenderingContext,
+        match: ai.rever.bosseditor.features.BracketMatch
+    ) {
+        val colors = ctx.colors
+
+        // Convert offsets to positions
+        val sourcePos = ctx.offsetToPosition(match.sourceOffset)
+        val matchingPos = ctx.offsetToPosition(match.matchingOffset)
+
+        // Draw border for source bracket
+        if (sourcePos.line in ctx.visibleLineRange) {
+            drawBracketBorder(ctx, sourcePos, colors)
+        }
+
+        // Draw border for matching bracket
+        if (matchingPos.line in ctx.visibleLineRange) {
+            drawBracketBorder(ctx, matchingPos, colors)
+        }
+    }
+
+    /**
+     * Draws a single bracket background (filled rectangle).
+     */
+    private fun DrawScope.drawBracketBackground(
         ctx: EditorRenderingContext,
         position: EditorPosition,
         colors: EditorColors
@@ -731,14 +762,24 @@ object EditorCanvasRenderer {
         val x = ctx.gutterWidth + position.column * ctx.charWidth - ctx.scrollOffsetX
         val y = position.line * ctx.lineHeight - ctx.scrollOffsetY
 
-        // Draw background
         drawRect(
             color = colors.matchedBracketBackground,
             topLeft = Offset(x, y),
             size = Size(ctx.charWidth, ctx.lineHeight)
         )
+    }
 
-        // Draw border for better visibility
+    /**
+     * Draws a single bracket border (stroked rectangle).
+     */
+    private fun DrawScope.drawBracketBorder(
+        ctx: EditorRenderingContext,
+        position: EditorPosition,
+        colors: EditorColors
+    ) {
+        val x = ctx.gutterWidth + position.column * ctx.charWidth - ctx.scrollOffsetX
+        val y = position.line * ctx.lineHeight - ctx.scrollOffsetY
+
         drawRect(
             color = colors.matchedBracketForeground,
             topLeft = Offset(x, y),
