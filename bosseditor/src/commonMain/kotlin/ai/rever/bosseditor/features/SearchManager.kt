@@ -1,6 +1,7 @@
 package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.core.EditorDocument
+import ai.rever.bosseditor.core.OffsetRange
 
 /**
  * Manages search and replace functionality for the editor.
@@ -404,26 +405,6 @@ data class SearchMatch(
     val startOffset: Int get() = range.start
     val endOffset: Int get() = range.end
     val length: Int get() = range.length
-}
-
-/**
- * Simple offset-based range for search operations.
- */
-data class OffsetRange(
-    val start: Int,
-    val end: Int
-) {
-    init {
-        require(start <= end) { "Start must be <= end: $start > $end" }
-    }
-
-    val length: Int get() = end - start
-
-    val isEmpty: Boolean get() = start == end
-
-    operator fun contains(offset: Int): Boolean = offset in start until end
-
-    fun overlaps(other: OffsetRange): Boolean = start < other.end && end > other.start
 }
 
 /**
