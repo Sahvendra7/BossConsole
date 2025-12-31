@@ -167,6 +167,12 @@ data class EditorColors(
         TokenType.TODO -> commentKeyword
         TokenType.FIXME -> error
         TokenType.HYPERLINK -> hyperlink
+
+        // Diff/Patch
+        TokenType.INSERTION -> string  // Green-ish for added lines
+        TokenType.DELETION -> error    // Red for removed lines
+        TokenType.MODIFICATION -> variable  // Yellow/orange for changes
+        TokenType.ESCAPE -> regex      // Same as string escapes
     }
 }
 

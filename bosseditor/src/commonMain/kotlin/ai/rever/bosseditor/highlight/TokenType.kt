@@ -82,7 +82,13 @@ enum class TokenType {
     // Special rendering
     TODO,                 // TODO comments
     FIXME,                // FIXME comments
-    HYPERLINK             // URLs in comments/strings
+    HYPERLINK,            // URLs in comments/strings
+
+    // Diff/Patch
+    INSERTION,            // Added lines (+)
+    DELETION,             // Removed lines (-)
+    MODIFICATION,         // Changed lines (context diff !)
+    ESCAPE                // Escape sequences
 }
 
 /**

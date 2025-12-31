@@ -9,15 +9,23 @@ import ai.rever.bosseditor.compose.BossEditor
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
-import ai.rever.bosseditor.highlight.LexerState
 import ai.rever.bosseditor.highlight.Token
-import ai.rever.bosseditor.highlight.TokenType
-import ai.rever.bosseditor.highlight.lexers.KotlinLexer
+import ai.rever.bosseditor.highlight.TokenCache
+import ai.rever.bosseditor.highlight.lexers.*
 import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.theme.EditorTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -84,12 +92,20 @@ fun BossEditorIntegration(
     // State for detected main functions
     var detectedMainFunctions by remember { mutableStateOf<List<DetectedMainFunction>>(emptyList()) }
 
-    // Create lexer based on language (currently only Kotlin is supported)
+    // Create lexer based on language
     val lexer = remember(language) {
-        when (language.lowercase()) {
-            "kotlin", "kt", "kts" -> KotlinLexer()
-            // Add more lexers as they are implemented
-            else -> null
+        getLexerForLanguage(language.lowercase())
+    }
+
+    // Create token cache for multi-line state tracking (only if lexer is available)
+    val tokenCache = remember(lexer, editorState.document) {
+        lexer?.let { TokenCache(editorState.document, it) }
+    }
+
+    // Dispose token cache when composable is disposed
+    DisposableEffect(tokenCache) {
+        onDispose {
+            tokenCache?.dispose()
         }
     }
 
@@ -149,7 +165,8 @@ fun BossEditorIntegration(
     }
 
     // Token provider combining lexer and semantic highlighting
-    val tokenProvider: (Int) -> List<EditorToken> = remember(lexer, semanticAdapter) {
+    // Uses TokenCache for proper multi-line state tracking (block comments, raw strings, etc.)
+    val tokenProvider: (Int) -> List<EditorToken> = remember(tokenCache, semanticAdapter) {
         { lineNumber ->
             // First try semantic tokens (higher priority)
             val semanticTokens = semanticAdapter?.getLineTokens(lineNumber)
@@ -157,15 +174,9 @@ fun BossEditorIntegration(
             if (!semanticTokens.isNullOrEmpty()) {
                 EditorToken.fromTokens(semanticTokens)
             } else {
-                // Fall back to lexer-based highlighting
-                val lexerTokens: List<Token> = lexer?.let { lex ->
-                    val lineText = if (lineNumber < editorState.document.lineCount) {
-                        editorState.document.getLineText(lineNumber)
-                    } else ""
-                    // TODO: Track state across lines for multi-line constructs
-                    val lineTokens = lex.tokenizeLine(lineText, lineNumber, LexerState.NORMAL)
-                    lineTokens.tokens
-                } ?: emptyList()
+                // Fall back to lexer-based highlighting via TokenCache
+                // TokenCache handles multi-line state tracking automatically
+                val lexerTokens: List<Token> = tokenCache?.getLineTokens(lineNumber) ?: emptyList()
                 EditorToken.fromTokens(lexerTokens)
             }
         }
@@ -231,7 +242,141 @@ private fun mapBossThemeToEditorTheme(themeName: String): EditorTheme {
 }
 
 /**
+ * Returns the appropriate lexer for the given language.
+ * Supports language names, file extensions, and common aliases.
+ */
+private fun getLexerForLanguage(language: String): BaseLexer? {
+    return when (language) {
+        // Kotlin
+        "kotlin", "kt", "kts" -> KotlinLexer()
+
+        // Java
+        "java" -> JavaLexer()
+
+        // JavaScript
+        "javascript", "js", "jsx", "mjs", "cjs" -> JavaScriptLexer()
+
+        // TypeScript
+        "typescript", "ts", "tsx", "mts", "cts" -> TypeScriptLexer()
+
+        // Python
+        "python", "py", "pyw", "pyi", "pyx" -> PythonLexer()
+
+        // JSON
+        "json", "jsonc", "json5" -> JsonLexer()
+
+        // XML
+        "xml", "xsd", "xsl", "xslt", "svg", "plist", "wsdl" -> XmlLexer()
+
+        // HTML
+        "html", "htm", "xhtml", "vue", "svelte" -> HtmlLexer()
+
+        // CSS
+        "css", "scss", "sass", "less" -> CssLexer()
+
+        // Shell/Bash
+        "shell", "sh", "bash", "zsh", "fish", "ksh", "csh", "tcsh" -> ShellLexer()
+
+        // Markdown
+        "markdown", "md", "mdx", "mkd", "mkdn" -> MarkdownLexer()
+
+        // SQL
+        "sql", "mysql", "pgsql", "plsql", "sqlite" -> SqlLexer()
+
+        // YAML
+        "yaml", "yml" -> YamlLexer()
+
+        // Groovy
+        "groovy", "gradle", "gvy", "gy", "gsh" -> GroovyLexer()
+
+        // C/C++
+        "c", "h", "cpp", "hpp", "cc", "hh", "cxx", "hxx", "c++", "h++", "ino" -> CLexer()
+
+        // Rust
+        "rust", "rs" -> RustLexer()
+
+        // Go
+        "go", "golang" -> GoLexer()
+
+        // Swift
+        "swift" -> SwiftLexer()
+
+        // Ruby
+        "ruby", "rb", "rake", "gemspec", "ru", "erb", "podspec" -> RubyLexer()
+
+        // PHP
+        "php", "phtml", "php3", "php4", "php5", "php7", "phps" -> PHPLexer()
+
+        // Dockerfile
+        "dockerfile", "docker" -> DockerfileLexer()
+
+        // Makefile
+        "makefile", "mk", "mak", "make" -> MakefileLexer()
+
+        // TOML
+        "toml" -> TomlLexer()
+
+        // Properties/INI
+        "properties", "env", "cfg", "conf", "ini" -> PropertiesLexer()
+
+        // Scala
+        "scala", "sc", "sbt" -> ScalaLexer()
+
+        // Perl
+        "perl", "pl", "pm", "pod", "t", "psgi" -> PerlLexer()
+
+        // Lua
+        "lua" -> LuaLexer()
+
+        // C#
+        "csharp", "cs", "csx" -> CSharpLexer()
+
+        // Clojure
+        "clojure", "clj", "cljs", "cljc", "edn" -> ClojureLexer()
+
+        // LaTeX
+        "latex", "tex", "sty", "cls", "bib", "bst", "ltx" -> LaTeXLexer()
+
+        // Batch/CMD (Windows)
+        "batch", "bat", "cmd" -> BatchLexer()
+
+        // Visual Basic
+        "vb", "vbs", "bas", "frm", "vba" -> VisualBasicLexer()
+
+        // Tcl/Tk
+        "tcl", "tk", "itcl", "itk" -> TclLexer()
+
+        // Lisp/Scheme/Racket
+        "lisp", "lsp", "cl", "el", "elc", "scm", "ss", "rkt", "scheme", "racket", "elisp", "emacs-lisp" -> LispLexer()
+
+        // D
+        "d", "di" -> DLexer()
+
+        // Pascal/Delphi
+        "pascal", "pas", "dpr", "dpk", "pp", "inc", "lpr", "lfm", "dfm", "delphi" -> DelphiLexer()
+
+        // ActionScript
+        "actionscript", "as", "mxml" -> ActionScriptLexer()
+
+        // Fortran
+        "fortran", "f", "for", "f77", "f90", "f95", "f03", "f08", "f18" -> FortranLexer()
+
+        // JSP
+        "jsp", "jspf", "jspx", "tag", "tagx", "tld" -> JspLexer()
+
+        // Diff/Patch
+        "diff", "patch", "rej" -> DiffLexer()
+
+        // Default: no syntax highlighting
+        else -> null
+    }
+}
+
+/**
  * Run gutter for BossEditor showing detected main functions.
+ *
+ * This is a pure Compose implementation that directly uses EditorState's
+ * scroll offset, avoiding the Swing synchronization issues in RSyntaxGutterOverlay.
  */
 @Composable
 private fun BossEditorRunGutter(
@@ -241,20 +386,51 @@ private fun BossEditorRunGutter(
     onRun: (DetectedMainFunction) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Calculate line height (approximate)
-    val lineHeight = fontSize * 1.5f // Common line height ratio
+    // Collect scroll offset from editor state
+    val scrollOffset by editorState.scrollOffset.collectAsState()
+
+    // Calculate line height to match the editor's line height
+    // This should match the calculation in EditorCanvas
+    val lineHeight = fontSize * 1.5f
+
+    // Create a map for fast lookup
+    val runnableLines = remember(detectedMainFunctions) {
+        detectedMainFunctions.associateBy { it.lineNumber }
+    }
+
+    // Calculate visible range with buffer
+    val firstVisibleLine = (scrollOffset.y / lineHeight).toInt().coerceAtLeast(0)
+    val visibleLineCount = 50 // Generous buffer for smooth scrolling
+    val visibleRange = remember(firstVisibleLine, visibleLineCount, editorState.document.lineCount) {
+        val start = (firstVisibleLine - 2).coerceAtLeast(0)
+        val end = (firstVisibleLine + visibleLineCount + 2).coerceAtMost(editorState.document.lineCount)
+        start until end
+    }
 
     Box(modifier = modifier) {
-        // For each detected main function, place a run icon at its line
-        for (detected in detectedMainFunctions) {
-            val yOffset = (detected.lineNumber - 1) * lineHeight
+        // Render run icons for detected main functions in visible range
+        detectedMainFunctions
+            .filter { it.lineNumber in visibleRange }
+            .forEach { detected ->
+                // Calculate Y position: (lineNumber - 1) because lineNumber is 1-based
+                val yOffset = ((detected.lineNumber - 1) * lineHeight) - scrollOffset.y.toFloat()
 
-            // TODO: Add actual run icon button at yOffset position
-            // For now, this is a placeholder for the run gutter
-            // The full implementation would include:
-            // - Scroll synchronization with editor
-            // - Clickable run icons
-            // - Visual feedback on hover
-        }
+                // Only render if within viewport
+                if (yOffset >= -lineHeight && yOffset < 2000f) {
+                    Box(
+                        modifier = Modifier
+                            .offset(y = yOffset.dp)
+                            .height(lineHeight.dp)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        GutterRunIcon(
+                            detected = detected,
+                            onRun = onRun,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
     }
 }

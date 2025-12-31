@@ -3,6 +3,8 @@ package ai.rever.bosseditor.rendering
 import ai.rever.bosseditor.core.EditorDocument
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
+import ai.rever.bosseditor.core.OffsetRange
+import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
@@ -70,7 +72,16 @@ data class EditorRenderingContext(
     val foldedRegions: List<FoldedRegion>,
 
     // Token highlighting (will be populated from lexer in Phase 4)
-    val getLineTokens: (Int) -> List<EditorToken>
+    val getLineTokens: (Int) -> List<EditorToken>,
+
+    // Bracket matching (Phase 11)
+    val bracketMatch: BracketMatch?,
+
+    // Mark occurrences (Phase 11) - list of offset ranges in document
+    val markOccurrences: List<OffsetRange>,
+
+    // Helper for offset to position conversion (cached from document)
+    val offsetToPosition: (Int) -> EditorPosition
 ) {
     companion object {
         /**
@@ -100,7 +111,10 @@ data class EditorRenderingContext(
             showLineNumbers: Boolean = true,
             gutterWidth: Float = 50f,
             foldedRegions: List<FoldedRegion> = emptyList(),
-            getLineTokens: (Int) -> List<EditorToken> = { emptyList() }
+            getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
+            bracketMatch: BracketMatch? = null,
+            markOccurrences: List<OffsetRange> = emptyList(),
+            offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Calculate visible lines
             val firstVisibleLine = (scrollOffsetY / lineHeight).toInt().coerceAtLeast(0)
@@ -135,7 +149,10 @@ data class EditorRenderingContext(
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
                 foldedRegions = foldedRegions,
-                getLineTokens = getLineTokens
+                getLineTokens = getLineTokens,
+                bracketMatch = bracketMatch,
+                markOccurrences = markOccurrences,
+                offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }
     }

@@ -1,11 +1,13 @@
 package ai.rever.bosseditor.rendering
 
+import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontStyle
@@ -47,7 +49,7 @@ object EditorCanvasRenderer {
     // ========== Pass 1: Backgrounds ==========
 
     /**
-     * Renders background elements: current line highlight, selection.
+     * Renders background elements: current line highlight, selection, mark occurrences.
      */
     private fun DrawScope.renderBackgrounds(ctx: EditorRenderingContext) {
         val colors = ctx.colors
@@ -55,6 +57,11 @@ object EditorCanvasRenderer {
         // Draw current line highlight
         if (ctx.highlightCurrentLine) {
             drawCurrentLineHighlight(ctx, colors)
+        }
+
+        // Draw mark occurrences (behind selection and text)
+        if (ctx.markOccurrences.isNotEmpty()) {
+            drawMarkOccurrences(ctx, colors)
         }
 
         // Draw selection
@@ -257,13 +264,15 @@ object EditorCanvasRenderer {
      * Renders overlay elements: caret, bracket matching.
      */
     private fun DrawScope.renderOverlays(ctx: EditorRenderingContext) {
+        // Draw bracket matching highlight
+        ctx.bracketMatch?.let { match ->
+            drawBracketMatch(ctx, match)
+        }
+
         // Draw caret
         if (ctx.caretVisible && ctx.caretBlinkVisible) {
             drawCaret(ctx)
         }
-
-        // TODO: Add bracket matching highlight
-        // TODO: Add mark occurrences highlight
     }
 
     /**
@@ -285,6 +294,101 @@ object EditorCanvasRenderer {
             topLeft = Offset(x, y),
             size = Size(2f, ctx.lineHeight)
         )
+    }
+
+    /**
+     * Draws bracket matching highlight for both source and matching brackets.
+     */
+    private fun DrawScope.drawBracketMatch(
+        ctx: EditorRenderingContext,
+        match: ai.rever.bosseditor.features.BracketMatch
+    ) {
+        val colors = ctx.colors
+
+        // Convert offsets to positions
+        val sourcePos = ctx.offsetToPosition(match.sourceOffset)
+        val matchingPos = ctx.offsetToPosition(match.matchingOffset)
+
+        // Draw highlight for source bracket
+        if (sourcePos.line in ctx.visibleLineRange) {
+            drawBracketHighlight(ctx, sourcePos, colors)
+        }
+
+        // Draw highlight for matching bracket
+        if (matchingPos.line in ctx.visibleLineRange) {
+            drawBracketHighlight(ctx, matchingPos, colors)
+        }
+    }
+
+    /**
+     * Draws a single bracket highlight (rectangle with optional border).
+     */
+    private fun DrawScope.drawBracketHighlight(
+        ctx: EditorRenderingContext,
+        position: EditorPosition,
+        colors: EditorColors
+    ) {
+        val x = ctx.gutterWidth + position.column * ctx.charWidth - ctx.scrollOffsetX
+        val y = position.line * ctx.lineHeight - ctx.scrollOffsetY
+
+        // Draw background
+        drawRect(
+            color = colors.matchedBracketBackground,
+            topLeft = Offset(x, y),
+            size = Size(ctx.charWidth, ctx.lineHeight)
+        )
+
+        // Draw border for better visibility
+        drawRect(
+            color = colors.matchedBracketForeground,
+            topLeft = Offset(x, y),
+            size = Size(ctx.charWidth, ctx.lineHeight),
+            style = Stroke(width = 1f)
+        )
+    }
+
+    /**
+     * Draws mark occurrences highlights for all occurrences of the word under cursor.
+     */
+    private fun DrawScope.drawMarkOccurrences(
+        ctx: EditorRenderingContext,
+        colors: EditorColors
+    ) {
+        for (occurrence in ctx.markOccurrences) {
+            // Convert offset range to position range
+            val startPos = ctx.offsetToPosition(occurrence.start)
+            val endPos = ctx.offsetToPosition(occurrence.end)
+
+            // Skip if entirely outside visible range
+            if (endPos.line < ctx.visibleLineRange.first || startPos.line > ctx.visibleLineRange.last) {
+                continue
+            }
+
+            // Draw occurrence on each line it spans (usually just one line for words)
+            for (line in maxOf(startPos.line, ctx.visibleLineRange.first)..minOf(endPos.line, ctx.visibleLineRange.last)) {
+                val startCol = if (line == startPos.line) startPos.column else 0
+                val endCol = if (line == endPos.line) endPos.column else ctx.getLineLength(line)
+
+                val y = line * ctx.lineHeight - ctx.scrollOffsetY
+                val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+                val width = (endCol - startCol) * ctx.charWidth
+
+                // Draw background
+                drawRect(
+                    color = colors.markOccurrences,
+                    topLeft = Offset(xStart, y),
+                    size = Size(width, ctx.lineHeight)
+                )
+
+                // Draw border for better visibility
+                drawRect(
+                    color = colors.markOccurrences.copy(alpha = 0.8f),
+                    topLeft = Offset(xStart, y),
+                    size = Size(width, ctx.lineHeight),
+                    style = Stroke(width = 1f)
+                )
+            }
+        }
     }
 
     // ========== Pass 4: Gutter ==========

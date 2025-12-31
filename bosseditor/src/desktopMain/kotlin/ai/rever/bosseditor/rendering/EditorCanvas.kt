@@ -3,6 +3,10 @@ package ai.rever.bosseditor.rendering
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
+import ai.rever.bosseditor.core.OffsetRange
+import ai.rever.bosseditor.features.BracketMatch
+import ai.rever.bosseditor.features.BracketMatcher
+import ai.rever.bosseditor.features.MarkOccurrences
 import ai.rever.bosseditor.theme.LocalEditorTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -91,6 +95,30 @@ fun EditorCanvas(
     val caretPosition by editorState.caretPosition.collectAsState()
     val selection by editorState.selection.collectAsState()
     val scrollOffset by editorState.scrollOffset.collectAsState()
+
+    // Create bracket matcher and mark occurrences (reuse across recompositions)
+    val bracketMatcher = remember(editorState.document) {
+        BracketMatcher(editorState.document)
+    }
+    val markOccurrencesHelper = remember(editorState.document) {
+        MarkOccurrences(editorState.document)
+    }
+
+    // Compute bracket match based on caret position
+    val bracketMatch: BracketMatch? = remember(caretPosition, editorState.document.documentVersion) {
+        val caretOffset = editorState.document.positionToOffset(caretPosition)
+        bracketMatcher.findMatchingBracket(caretOffset)
+    }
+
+    // Compute mark occurrences based on caret position (only when no selection)
+    val markOccurrences: List<OffsetRange> = remember(caretPosition, selection, editorState.document.documentVersion) {
+        if (selection == null || selection!!.isEmpty) {
+            val caretOffset = editorState.document.positionToOffset(caretPosition)
+            markOccurrencesHelper.findOccurrences(caretOffset)
+        } else {
+            emptyList()
+        }
+    }
 
     // Track caret position changes
     LaunchedEffect(caretPosition) {
@@ -255,7 +283,9 @@ fun EditorCanvas(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
-                getLineTokens = getLineTokens
+                getLineTokens = getLineTokens,
+                bracketMatch = bracketMatch,
+                markOccurrences = markOccurrences
             )
 
             // Clip to canvas bounds and render
