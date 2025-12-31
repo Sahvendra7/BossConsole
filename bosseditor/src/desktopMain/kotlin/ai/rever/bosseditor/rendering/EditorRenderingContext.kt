@@ -3,6 +3,8 @@ package ai.rever.bosseditor.rendering
 import ai.rever.bosseditor.core.EditorDocument
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
+import ai.rever.bosseditor.highlight.Token
+import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.font.FontFamily
@@ -150,31 +152,32 @@ data class FoldedRegion(
 )
 
 /**
- * Represents a syntax token for highlighting.
- * (Will be populated by lexer in Phase 4)
+ * Represents a syntax token for rendering.
+ * Uses column positions (0-indexed) within a line.
  */
 data class EditorToken(
     val startColumn: Int,
     val endColumn: Int,
     val type: TokenType
-)
+) {
+    companion object {
+        /**
+         * Converts a highlight Token (offset-based) to an EditorToken (column-based).
+         * Since tokens are line-local, offsets equal columns.
+         */
+        fun fromToken(token: Token): EditorToken {
+            return EditorToken(
+                startColumn = token.startOffset,
+                endColumn = token.endOffset,
+                type = token.type
+            )
+        }
 
-/**
- * Token types for syntax highlighting.
- * Maps to colors in EditorColors.
- */
-enum class TokenType {
-    DEFAULT,
-    KEYWORD,
-    STRING,
-    NUMBER,
-    COMMENT,
-    OPERATOR,
-    IDENTIFIER,
-    FUNCTION,
-    TYPE,
-    ANNOTATION,
-    PROPERTY,
-    PARAMETER,
-    LOCAL_VARIABLE
+        /**
+         * Converts a list of highlight Tokens to EditorTokens.
+         */
+        fun fromTokens(tokens: List<Token>): List<EditorToken> {
+            return tokens.map { fromToken(it) }
+        }
+    }
 }

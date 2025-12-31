@@ -1,5 +1,6 @@
 package ai.rever.bosseditor.rendering
 
+import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size

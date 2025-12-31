@@ -1,6 +1,6 @@
 package ai.rever.bosseditor.theme
 
-import ai.rever.bosseditor.rendering.TokenType
+import ai.rever.bosseditor.highlight.TokenType
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -82,19 +82,82 @@ data class EditorColors(
      * Gets the color for a token type.
      */
     fun getTokenColor(tokenType: TokenType): Color = when (tokenType) {
+        // Basic
         TokenType.DEFAULT -> text
+        TokenType.WHITESPACE -> text
+
+        // Keywords
         TokenType.KEYWORD -> keyword
-        TokenType.STRING -> string
-        TokenType.NUMBER -> number
-        TokenType.COMMENT -> comment
-        TokenType.OPERATOR -> operator
+        TokenType.KEYWORD_MODIFIER -> keyword
+        TokenType.KEYWORD_CONTROL -> keyword
+
+        // Identifiers
         TokenType.IDENTIFIER -> text
         TokenType.FUNCTION -> function
+        TokenType.FUNCTION_CALL -> function
         TokenType.TYPE -> dataType
-        TokenType.ANNOTATION -> annotation
-        TokenType.PROPERTY -> property
+        TokenType.TYPE_PARAMETER -> dataType
+        TokenType.INTERFACE -> dataType
+        TokenType.ENUM -> dataType
+        TokenType.ENUM_MEMBER -> variable
+
+        // Variables
+        TokenType.VARIABLE -> variable
         TokenType.PARAMETER -> parameter
+        TokenType.PROPERTY -> property
         TokenType.LOCAL_VARIABLE -> localVariable
+        TokenType.CONSTANT -> variable
+
+        // Literals
+        TokenType.STRING -> string
+        TokenType.STRING_ESCAPE -> regex  // Use regex color for escape sequences
+        TokenType.STRING_TEMPLATE -> variable
+        TokenType.CHAR -> string
+        TokenType.NUMBER -> number
+        TokenType.BOOLEAN -> boolean
+        TokenType.NULL -> keyword
+
+        // Comments
+        TokenType.COMMENT -> comment
+        TokenType.COMMENT_BLOCK -> comment
+        TokenType.COMMENT_DOC -> docComment
+        TokenType.COMMENT_DOC_TAG -> commentKeyword
+
+        // Operators and punctuation
+        TokenType.OPERATOR -> operator
+        TokenType.OPERATOR_LOGICAL -> operator
+        TokenType.OPERATOR_COMPARISON -> operator
+        TokenType.PUNCTUATION -> separator
+        TokenType.BRACKET -> separator
+        TokenType.PARENTHESIS -> separator
+
+        // Annotations
+        TokenType.ANNOTATION -> annotation
+
+        // Special
+        TokenType.PREPROCESSOR -> preprocessor
+        TokenType.REGEX -> regex
+        TokenType.LABEL -> annotation
+
+        // Markup/HTML
+        TokenType.MARKUP_TAG -> markupTag
+        TokenType.MARKUP_ATTRIBUTE -> markupAttribute
+        TokenType.MARKUP_ENTITY -> markupTag
+
+        // Semantic
+        TokenType.SEMANTIC_VARIABLE -> variable
+        TokenType.SEMANTIC_PARAMETER -> parameter
+        TokenType.SEMANTIC_PROPERTY -> property
+        TokenType.SEMANTIC_FUNCTION -> function
+
+        // Errors
+        TokenType.ERROR -> error
+        TokenType.ERROR_DEPRECATED -> error
+
+        // Special rendering
+        TokenType.TODO -> commentKeyword
+        TokenType.FIXME -> error
+        TokenType.HYPERLINK -> hyperlink
     }
 }
 
