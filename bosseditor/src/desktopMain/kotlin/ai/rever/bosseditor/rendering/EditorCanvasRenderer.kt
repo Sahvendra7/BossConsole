@@ -1,6 +1,7 @@
 package ai.rever.bosseditor.rendering
 
 import ai.rever.bosseditor.core.EditorPosition
+import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.geometry.Offset
@@ -201,9 +202,21 @@ object EditorCanvasRenderer {
         val y = lineNumber * ctx.lineHeight - ctx.scrollOffsetY
         val tokens = ctx.getLineTokens(lineNumber)
 
+        // Get rainbow brackets for this line (column -> RainbowBracket mapping)
+        val rainbowBracketsByColumn = if (ctx.rainbowBracketsEnabled) {
+            getRainbowBracketsForLine(ctx, lineNumber)
+        } else {
+            emptyMap()
+        }
+
         if (tokens.isEmpty()) {
-            // No tokens - render as plain text
-            drawLineText(ctx, lineText, 0, lineText.length, ctx.colors.text, y, isBold = false, isItalic = false)
+            // No tokens - render as plain text, but handle rainbow brackets
+            if (rainbowBracketsByColumn.isEmpty()) {
+                drawLineText(ctx, lineText, 0, lineText.length, ctx.colors.text, y, isBold = false, isItalic = false)
+            } else {
+                renderTextWithRainbowBrackets(ctx, lineText, 0, lineText.length, ctx.colors.text, y,
+                    isBold = false, isItalic = false, rainbowBracketsByColumn)
+            }
         } else {
             // Render each token with its color
             for (token in tokens) {
@@ -216,7 +229,95 @@ object EditorCanvasRenderer {
                 val isBold = token.type == TokenType.KEYWORD
                 val isItalic = token.type == TokenType.COMMENT
 
-                drawLineText(ctx, lineText, startCol, endCol, tokenColor, y, isBold, isItalic)
+                // Check if this token contains rainbow brackets
+                val hasRainbowBrackets = rainbowBracketsByColumn.keys.any { it in startCol until endCol }
+
+                if (hasRainbowBrackets && isBracketToken(token.type)) {
+                    // Render with rainbow colors
+                    renderTextWithRainbowBrackets(ctx, lineText, startCol, endCol, tokenColor, y,
+                        isBold, isItalic, rainbowBracketsByColumn)
+                } else {
+                    drawLineText(ctx, lineText, startCol, endCol, tokenColor, y, isBold, isItalic)
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks if a token type represents a bracket.
+     */
+    private fun isBracketToken(tokenType: TokenType): Boolean {
+        return tokenType == TokenType.BRACKET ||
+               tokenType == TokenType.PARENTHESIS ||
+               tokenType == TokenType.PUNCTUATION
+    }
+
+    /**
+     * Gets rainbow brackets for a specific line as a column -> bracket map.
+     */
+    private fun getRainbowBracketsForLine(
+        ctx: EditorRenderingContext,
+        lineNumber: Int
+    ): Map<Int, RainbowBracket> {
+        if (ctx.rainbowBrackets.isEmpty()) return emptyMap()
+
+        // Calculate line start/end offsets
+        val lineStartOffset = calculateLineStartOffset(ctx, lineNumber)
+        val lineEndOffset = lineStartOffset + ctx.getLineLength(lineNumber)
+
+        return ctx.rainbowBrackets
+            .filter { it.offset in lineStartOffset until lineEndOffset }
+            .associateBy { it.offset - lineStartOffset } // Convert to column
+    }
+
+    /**
+     * Calculates the start offset for a given line.
+     */
+    private fun calculateLineStartOffset(ctx: EditorRenderingContext, lineNumber: Int): Int {
+        var offset = 0
+        for (i in 0 until lineNumber) {
+            offset += ctx.getLineLength(i) + 1 // +1 for newline
+        }
+        return offset
+    }
+
+    /**
+     * Renders text with rainbow bracket colors.
+     * Splits the text at bracket positions to apply different colors.
+     */
+    private fun DrawScope.renderTextWithRainbowBrackets(
+        ctx: EditorRenderingContext,
+        lineText: String,
+        startCol: Int,
+        endCol: Int,
+        defaultColor: Color,
+        y: Float,
+        isBold: Boolean,
+        isItalic: Boolean,
+        rainbowBracketsByColumn: Map<Int, RainbowBracket>
+    ) {
+        var currentStart = startCol
+
+        while (currentStart < endCol) {
+            // Check if current position is a rainbow bracket
+            val rainbowBracket = rainbowBracketsByColumn[currentStart]
+
+            if (rainbowBracket != null) {
+                // Render single bracket character with rainbow color
+                val bracketColor = ctx.colors.getRainbowBracketColor(rainbowBracket.depth)
+                drawLineText(ctx, lineText, currentStart, currentStart + 1, bracketColor, y, isBold = false, isItalic = false)
+                currentStart++
+            } else {
+                // Find the next rainbow bracket position or end of range
+                val nextBracketCol = rainbowBracketsByColumn.keys
+                    .filter { it > currentStart && it < endCol }
+                    .minOrNull() ?: endCol
+
+                // Render text up to next bracket with default color
+                if (currentStart < nextBracketCol) {
+                    drawLineText(ctx, lineText, currentStart, nextBracketCol, defaultColor, y, isBold, isItalic)
+                    currentStart = nextBracketCol
+                }
             }
         }
     }

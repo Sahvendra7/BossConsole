@@ -7,6 +7,8 @@ import ai.rever.bosseditor.core.OffsetRange
 import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.features.BracketMatcher
 import ai.rever.bosseditor.features.MarkOccurrences
+import ai.rever.bosseditor.features.RainbowBracket
+import ai.rever.bosseditor.features.RainbowBrackets
 import ai.rever.bosseditor.theme.LocalEditorTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -53,6 +55,7 @@ fun EditorCanvas(
     searchQuery: String? = null,
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
+    rainbowBracketsEnabled: Boolean = true,
     getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {}
@@ -116,6 +119,20 @@ fun EditorCanvas(
         if (selection == null || selection!!.isEmpty) {
             val caretOffset = editorState.document.positionToOffset(caretPosition)
             markOccurrencesHelper.findOccurrences(caretOffset)
+        } else {
+            emptyList()
+        }
+    }
+
+    // Create rainbow brackets helper (reuse across recompositions)
+    val rainbowBracketsHelper = remember(editorState.document) {
+        RainbowBrackets(editorState.document)
+    }
+
+    // Compute rainbow brackets (only when enabled)
+    val rainbowBrackets: List<RainbowBracket> = remember(rainbowBracketsEnabled, editorState.document.documentVersion) {
+        if (rainbowBracketsEnabled) {
+            rainbowBracketsHelper.getRainbowBrackets()
         } else {
             emptyList()
         }
@@ -287,7 +304,9 @@ fun EditorCanvas(
                 getLineTokens = getLineTokens,
                 bracketMatch = bracketMatch,
                 markOccurrences = markOccurrences,
-                allCarets = allCarets
+                allCarets = allCarets,
+                rainbowBrackets = rainbowBrackets,
+                rainbowBracketsEnabled = rainbowBracketsEnabled
             )
 
             // Clip to canvas bounds and render

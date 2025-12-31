@@ -98,8 +98,24 @@ data class EditorColors(
     val minimapError: Color,
     val minimapWarning: Color,
     val minimapInfo: Color,
-    val minimapHint: Color
+    val minimapHint: Color,
+
+    // Rainbow brackets (4 colors cycling based on nesting depth)
+    val rainbowBracket1: Color,
+    val rainbowBracket2: Color,
+    val rainbowBracket3: Color,
+    val rainbowBracket4: Color
 ) {
+    /**
+     * Gets the rainbow bracket color for a given nesting depth.
+     * Colors cycle through 4 colors: 0 -> 1 -> 2 -> 3 -> 0 -> ...
+     */
+    fun getRainbowBracketColor(depth: Int): Color = when (depth % 4) {
+        0 -> rainbowBracket1
+        1 -> rainbowBracket2
+        2 -> rainbowBracket3
+        else -> rainbowBracket4
+    }
     /**
      * Gets the color for a token type.
      */
@@ -306,7 +322,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFF75464),
                 minimapWarning = Color(0xFFFFB848),
                 minimapInfo = Color(0xFF548AF7),
-                minimapHint = Color(0xFF6E737A)
+                minimapHint = Color(0xFF6E737A),
+
+                // Rainbow brackets - IntelliJ-like colors
+                rainbowBracket1 = Color(0xFFFFD700),  // Gold
+                rainbowBracket2 = Color(0xFFDA70D6),  // Orchid
+                rainbowBracket3 = Color(0xFF87CEEB),  // Sky blue
+                rainbowBracket4 = Color(0xFF98FB98)   // Pale green
             )
         )
 
@@ -385,7 +407,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFCF222E),
                 minimapWarning = Color(0xFFBF8700),
                 minimapInfo = Color(0xFF0066CC),
-                minimapHint = Color(0xFF6E7681)
+                minimapHint = Color(0xFF6E7681),
+
+                // Rainbow brackets - darker colors for light theme
+                rainbowBracket1 = Color(0xFFB8860B),  // Dark goldenrod
+                rainbowBracket2 = Color(0xFF9932CC),  // Dark orchid
+                rainbowBracket3 = Color(0xFF4682B4),  // Steel blue
+                rainbowBracket4 = Color(0xFF228B22)   // Forest green
             )
         )
 
@@ -464,7 +492,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFFF5555),
                 minimapWarning = Color(0xFFFFB86C),
                 minimapInfo = Color(0xFF8BE9FD),
-                minimapHint = Color(0xFF6272A4)
+                minimapHint = Color(0xFF6272A4),
+
+                // Rainbow brackets - Dracula palette
+                rainbowBracket1 = Color(0xFFF1FA8C),  // Yellow
+                rainbowBracket2 = Color(0xFFFF79C6),  // Pink
+                rainbowBracket3 = Color(0xFF8BE9FD),  // Cyan
+                rainbowBracket4 = Color(0xFF50FA7B)   // Green
             )
         )
 
@@ -543,7 +577,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFF92672),
                 minimapWarning = Color(0xFFFD971F),
                 minimapInfo = Color(0xFF66D9EF),
-                minimapHint = Color(0xFF75715E)
+                minimapHint = Color(0xFF75715E),
+
+                // Rainbow brackets - Monokai palette
+                rainbowBracket1 = Color(0xFFE6DB74),  // Yellow
+                rainbowBracket2 = Color(0xFFF92672),  // Pink/Red
+                rainbowBracket3 = Color(0xFF66D9EF),  // Blue
+                rainbowBracket4 = Color(0xFFA6E22E)   // Green
             )
         )
 
@@ -622,7 +662,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFDC322F),
                 minimapWarning = Color(0xFFCB4B16),
                 minimapInfo = Color(0xFF268BD2),
-                minimapHint = Color(0xFF586E75)
+                minimapHint = Color(0xFF586E75),
+
+                // Rainbow brackets - Solarized palette
+                rainbowBracket1 = Color(0xFFB58900),  // Yellow
+                rainbowBracket2 = Color(0xFFD33682),  // Magenta
+                rainbowBracket3 = Color(0xFF268BD2),  // Blue
+                rainbowBracket4 = Color(0xFF859900)   // Green
             )
         )
 
@@ -701,7 +747,13 @@ data class EditorTheme(
                 minimapError = Color(0xFFDC322F),
                 minimapWarning = Color(0xFFCB4B16),
                 minimapInfo = Color(0xFF268BD2),
-                minimapHint = Color(0xFF93A1A1)
+                minimapHint = Color(0xFF93A1A1),
+
+                // Rainbow brackets - Solarized palette
+                rainbowBracket1 = Color(0xFFB58900),  // Yellow
+                rainbowBracket2 = Color(0xFFD33682),  // Magenta
+                rainbowBracket3 = Color(0xFF268BD2),  // Blue
+                rainbowBracket4 = Color(0xFF859900)   // Green
             )
         )
     }

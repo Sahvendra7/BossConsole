@@ -5,6 +5,7 @@ import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.OffsetRange
 import ai.rever.bosseditor.features.BracketMatch
+import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.model.Caret
@@ -85,6 +86,10 @@ data class EditorRenderingContext(
     val allCarets: List<Caret>,
     val hasMultipleCarets: Boolean,
 
+    // Rainbow brackets (Phase 16) - brackets with nesting depth for colorization
+    val rainbowBrackets: List<RainbowBracket>,
+    val rainbowBracketsEnabled: Boolean,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -120,6 +125,8 @@ data class EditorRenderingContext(
             bracketMatch: BracketMatch? = null,
             markOccurrences: List<OffsetRange> = emptyList(),
             allCarets: List<Caret> = emptyList(),
+            rainbowBrackets: List<RainbowBracket> = emptyList(),
+            rainbowBracketsEnabled: Boolean = true,
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Calculate visible lines
@@ -160,6 +167,8 @@ data class EditorRenderingContext(
                 markOccurrences = markOccurrences,
                 allCarets = allCarets,
                 hasMultipleCarets = allCarets.size > 1,
+                rainbowBrackets = rainbowBrackets,
+                rainbowBracketsEnabled = rainbowBracketsEnabled,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }
