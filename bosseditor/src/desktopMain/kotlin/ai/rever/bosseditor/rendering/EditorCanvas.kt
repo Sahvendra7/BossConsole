@@ -3,13 +3,12 @@ package ai.rever.bosseditor.rendering
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
-import ai.rever.bosseditor.theme.EditorColors
-import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
@@ -17,9 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -34,7 +36,7 @@ import androidx.compose.ui.unit.sp
  * - Measures text dimensions using TextMeasurer
  * - Creates rendering contexts for each frame
  * - Delegates rendering to EditorCanvasRenderer
- * - Handles focus and basic mouse input
+ * - Handles focus and mouse input (click, double-click, triple-click, drag)
  */
 @Composable
 fun EditorCanvas(
@@ -61,6 +63,15 @@ fun EditorCanvas(
 
     // Caret blink state
     var caretBlinkVisible by remember { mutableStateOf(true) }
+
+    // Mouse state for drag selection
+    var isDragging by remember { mutableStateOf(false) }
+    var dragStartPosition by remember { mutableStateOf<EditorPosition?>(null) }
+
+    // Click tracking for double/triple click
+    var lastClickTime by remember { mutableStateOf(0L) }
+    var lastClickPosition by remember { mutableStateOf<Offset?>(null) }
+    var clickCount by remember { mutableStateOf(0) }
 
     // Measure character dimensions using a monospace reference character
     val (charWidth, lineHeight, baselineOffset) = remember(fontFamily, fontSize, density) {
@@ -104,6 +115,20 @@ fun EditorCanvas(
         }
     }
 
+    // Helper to convert offset to position
+    fun offsetToEditorPosition(offset: Offset): EditorPosition {
+        return offsetToPosition(
+            offset = offset,
+            charWidth = charWidth,
+            lineHeight = lineHeight,
+            gutterWidth = gutterWidth,
+            scrollOffsetX = scrollOffset.x.toFloat(),
+            scrollOffsetY = scrollOffset.y.toFloat(),
+            lineCount = editorState.document.lineCount,
+            getLineLength = { editorState.document.getLineLength(it) }
+        )
+    }
+
     Box(
         modifier = modifier
             .background(theme.colors.background)
@@ -113,30 +138,94 @@ fun EditorCanvas(
                 isFocused = focusState.isFocused
             }
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        // Request focus on tap
-                        focusRequester.requestFocus()
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    focusRequester.requestFocus()
 
-                        // Calculate position from tap
-                        val position = offsetToPosition(
-                            offset = offset,
-                            charWidth = charWidth,
-                            lineHeight = lineHeight,
-                            gutterWidth = gutterWidth,
-                            scrollOffsetX = scrollOffset.x.toFloat(),
-                            scrollOffsetY = scrollOffset.y.toFloat(),
-                            lineCount = editorState.document.lineCount,
-                            getLineLength = { editorState.document.getLineLength(it) }
-                        )
-                        editorState.moveCaret(position)
-                    },
-                    onDoubleTap = { offset ->
-                        // Select word on double tap
-                        focusRequester.requestFocus()
-                        editorState.selectWord()
+                    val currentTime = System.currentTimeMillis()
+                    val position = down.position
+
+                    // Detect multi-clicks (double, triple)
+                    val isMultiClick = lastClickPosition?.let { lastPos ->
+                        val timeDiff = currentTime - lastClickTime
+                        val distance = (position - lastPos).getDistance()
+                        timeDiff < MULTI_CLICK_TIMEOUT && distance < MULTI_CLICK_DISTANCE
+                    } ?: false
+
+                    if (isMultiClick) {
+                        clickCount = (clickCount % 3) + 1
+                    } else {
+                        clickCount = 1
                     }
-                )
+
+                    lastClickTime = currentTime
+                    lastClickPosition = position
+
+                    val editorPosition = offsetToEditorPosition(position)
+
+                    when (clickCount) {
+                        1 -> {
+                            // Single click - position caret
+                            val isShift = down.isShiftPressed()
+                            if (isShift) {
+                                // Extend selection
+                                extendSelectionTo(editorState, editorPosition)
+                            } else {
+                                editorState.moveCaret(editorPosition)
+                                editorState.clearSelection()
+                            }
+                            // Start drag
+                            isDragging = true
+                            dragStartPosition = editorPosition
+                        }
+                        2 -> {
+                            // Double click - select word
+                            editorState.selectWord()
+                            isDragging = false
+                        }
+                        3 -> {
+                            // Triple click - select line
+                            editorState.selectLine()
+                            isDragging = false
+                        }
+                    }
+
+                    // Handle drag and release
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+
+                        when (event.type) {
+                            PointerEventType.Move -> {
+                                if (isDragging && dragStartPosition != null) {
+                                    val currentPos = offsetToEditorPosition(change.position)
+                                    val startPos = dragStartPosition!!
+
+                                    // Create selection from drag start to current position
+                                    val range = if (startPos <= currentPos) {
+                                        EditorRange(startPos, currentPos)
+                                    } else {
+                                        EditorRange(currentPos, startPos)
+                                    }
+
+                                    editorState.setSelection(range)
+                                    editorState.moveCaret(currentPos, extendSelection = true)
+                                }
+                            }
+                            PointerEventType.Release -> {
+                                if (change.changedToUp()) {
+                                    isDragging = false
+                                    dragStartPosition = null
+                                    break
+                                }
+                            }
+                        }
+
+                        if (change.positionChange() != Offset.Zero) {
+                            change.consume()
+                        }
+                    }
+                }
             }
     ) {
         Canvas(
@@ -177,6 +266,42 @@ fun EditorCanvas(
             }
         }
     }
+}
+
+// Constants for multi-click detection
+private const val MULTI_CLICK_TIMEOUT = 400L // ms
+private const val MULTI_CLICK_DISTANCE = 10f // pixels
+
+/**
+ * Extension to check if shift is pressed during pointer event.
+ */
+private fun androidx.compose.ui.input.pointer.PointerInputChange.isShiftPressed(): Boolean {
+    // Note: In Compose, modifier key detection during pointer events requires
+    // accessing keyboard modifiers which isn't directly available here.
+    // For now, we'll handle shift+click at a higher level or through key events.
+    // This is a limitation that can be addressed with AWT event inspection.
+    return false
+}
+
+/**
+ * Extends the selection from the current anchor to the new position.
+ */
+private fun extendSelectionTo(editorState: EditorState, position: EditorPosition) {
+    val currentSel = editorState.selection.value
+    val caretPos = editorState.caretPosition.value
+
+    val anchor = currentSel?.let {
+        if (caretPos == it.start) it.end else it.start
+    } ?: caretPos
+
+    val newRange = if (anchor <= position) {
+        EditorRange(anchor, position)
+    } else {
+        EditorRange(position, anchor)
+    }
+
+    editorState.setSelection(newRange)
+    editorState.moveCaret(position, extendSelection = true)
 }
 
 /**
@@ -231,7 +356,7 @@ private fun calculateGutterWidth(
  * Converts a canvas offset to an editor position.
  */
 private fun offsetToPosition(
-    offset: androidx.compose.ui.geometry.Offset,
+    offset: Offset,
     charWidth: Float,
     lineHeight: Float,
     gutterWidth: Float,

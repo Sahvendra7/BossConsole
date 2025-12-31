@@ -3,6 +3,7 @@ package ai.rever.bosseditor.compose
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
+import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.theme.EditorTheme
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
  * - Multiple themes
  * - Undo/redo with typing coalescing
  * - Selection (mouse and keyboard)
+ * - Clipboard operations (copy, cut, paste)
  *
  * ## Usage
  * ```kotlin
@@ -73,15 +75,24 @@ fun BossEditor(
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {}
 ) {
+    // Create input handler
+    val inputHandler = remember(state) {
+        EditorInputHandler(
+            state = state,
+            onTextChanged = onTextChanged
+        )
+    }
+
     // Provide theme via CompositionLocal
     CompositionLocalProvider(LocalEditorTheme provides theme) {
         Box(
             modifier = modifier
                 .onKeyEvent { event ->
-                    if (!readOnly && event.type == KeyEventType.KeyDown) {
-                        handleKeyEvent(state, event, onTextChanged)
+                    if (!readOnly) {
+                        inputHandler.handleKeyEvent(event)
                     } else {
-                        false
+                        // In read-only mode, still allow navigation but not editing
+                        handleReadOnlyKeyEvent(state, event)
                     }
                 }
         ) {
@@ -104,23 +115,20 @@ fun BossEditor(
 }
 
 /**
- * Handles keyboard input for the editor.
- * Returns true if the event was consumed.
+ * Handles key events in read-only mode (navigation only).
  */
-private fun handleKeyEvent(
-    state: EditorState,
-    event: KeyEvent,
-    onTextChanged: () -> Unit
-): Boolean {
+private fun handleReadOnlyKeyEvent(state: EditorState, event: KeyEvent): Boolean {
+    if (event.type != KeyEventType.KeyDown) return false
+
     val isShift = event.isShiftPressed
     val isCtrl = event.isCtrlPressed
     val isMeta = event.isMetaPressed
-    val isCmd = isMeta // macOS command key
+    val isCmdOrCtrl = isMeta || isCtrl
 
     return when {
-        // Navigation keys
+        // Navigation
         event.key == Key.DirectionLeft -> {
-            if (isCmd || isCtrl) {
+            if (isCmdOrCtrl) {
                 state.moveCaretToLineStart(isShift)
             } else {
                 state.moveCaretBy(0, -1, isShift)
@@ -128,7 +136,7 @@ private fun handleKeyEvent(
             true
         }
         event.key == Key.DirectionRight -> {
-            if (isCmd || isCtrl) {
+            if (isCmdOrCtrl) {
                 state.moveCaretToLineEnd(isShift)
             } else {
                 state.moveCaretBy(0, 1, isShift)
@@ -136,15 +144,23 @@ private fun handleKeyEvent(
             true
         }
         event.key == Key.DirectionUp -> {
-            state.moveCaretBy(-1, 0, isShift)
+            if (isCmdOrCtrl) {
+                state.moveCaretToStart(isShift)
+            } else {
+                state.moveCaretBy(-1, 0, isShift)
+            }
             true
         }
         event.key == Key.DirectionDown -> {
-            state.moveCaretBy(1, 0, isShift)
+            if (isCmdOrCtrl) {
+                state.moveCaretToEnd(isShift)
+            } else {
+                state.moveCaretBy(1, 0, isShift)
+            }
             true
         }
         event.key == Key.Home -> {
-            if (isCmd || isCtrl) {
+            if (isCmdOrCtrl) {
                 state.moveCaretToStart(isShift)
             } else {
                 state.moveCaretToLineStart(isShift)
@@ -152,7 +168,7 @@ private fun handleKeyEvent(
             true
         }
         event.key == Key.MoveEnd -> {
-            if (isCmd || isCtrl) {
+            if (isCmdOrCtrl) {
                 state.moveCaretToEnd(isShift)
             } else {
                 state.moveCaretToLineEnd(isShift)
@@ -160,63 +176,34 @@ private fun handleKeyEvent(
             true
         }
 
-        // Text editing
-        event.key == Key.Backspace -> {
-            state.deleteBackward()
-            onTextChanged()
-            true
-        }
-        event.key == Key.Delete -> {
-            state.deleteForward()
-            onTextChanged()
-            true
-        }
-        event.key == Key.Enter -> {
-            state.insertText("\n")
-            onTextChanged()
-            true
-        }
-        event.key == Key.Tab -> {
-            // Insert 4 spaces (or could be configurable)
-            state.insertText("    ")
-            onTextChanged()
-            true
-        }
-
-        // Select all (Cmd+A / Ctrl+A)
-        (isCmd || isCtrl) && event.key == Key.A -> {
+        // Select all (Cmd/Ctrl + A)
+        isCmdOrCtrl && event.key == Key.A -> {
             state.selectAll()
             true
         }
 
-        // Undo (Cmd+Z / Ctrl+Z)
-        (isCmd || isCtrl) && !isShift && event.key == Key.Z -> {
-            state.undo()
-            onTextChanged()
+        // Copy (Cmd/Ctrl + C) - allowed in read-only mode
+        isCmdOrCtrl && event.key == Key.C -> {
+            copyToClipboard(state)
             true
-        }
-
-        // Redo (Cmd+Shift+Z / Ctrl+Y / Ctrl+Shift+Z)
-        ((isCmd || isCtrl) && isShift && event.key == Key.Z) ||
-        (isCtrl && event.key == Key.Y) -> {
-            state.redo()
-            onTextChanged()
-            true
-        }
-
-        // Character input
-        event.utf16CodePoint != 0 && !isCtrl && !isMeta -> {
-            val char = event.utf16CodePoint.toChar()
-            if (char.isISOControl().not()) {
-                state.insertText(char.toString())
-                onTextChanged()
-                true
-            } else {
-                false
-            }
         }
 
         else -> false
+    }
+}
+
+/**
+ * Copies selected text to clipboard.
+ */
+private fun copyToClipboard(state: EditorState) {
+    val text = state.selectedText
+    if (text.isNotEmpty()) {
+        try {
+            val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+            clipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
+        } catch (e: Exception) {
+            // Ignore clipboard errors
+        }
     }
 }
 
