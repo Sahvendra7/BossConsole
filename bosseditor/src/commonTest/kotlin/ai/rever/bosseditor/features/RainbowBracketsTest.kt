@@ -252,4 +252,142 @@ class RainbowBracketsTest {
             assertTrue(brackets[i].offset < brackets[i + 1].offset)
         }
     }
+
+    @Test
+    fun testUserCase_NestedConditionExpression() {
+        // User's specific failing case:
+        // ((isMacOS && keyEvent.isMetaPressed) || (!isMacOS && keyEvent.isCtrlPressed))
+        // Expected: first two (( should have DIFFERENT colors (depths 0 and 1)
+        val doc = EditorDocument("((isMacOS && keyEvent.isMetaPressed) || (!isMacOS && keyEvent.isCtrlPressed))")
+        val rainbow = RainbowBrackets(doc)
+
+        val brackets = rainbow.getRainbowBrackets()
+        val sorted = brackets.sortedBy { it.offset }
+
+        // Should have 6 parentheses
+        assertEquals(6, brackets.size, "Expected 6 brackets")
+
+        // First ( at offset 0 should have depth 0
+        assertEquals('(', sorted[0].char)
+        assertEquals(0, sorted[0].offset)
+        assertEquals(0, sorted[0].depth, "First ( should have depth 0")
+
+        // Second ( at offset 1 should have depth 1 (DIFFERENT from first!)
+        assertEquals('(', sorted[1].char)
+        assertEquals(1, sorted[1].offset)
+        assertEquals(1, sorted[1].depth, "Second ( should have depth 1 (different from first!)")
+
+        // First ) after "isMetaPressed" should have depth 1 (matches second ()
+        assertEquals(')', sorted[2].char)
+        assertEquals(1, sorted[2].depth, "First ) should have depth 1 (matches second ()")
+
+        // Third ( before "!" should have depth 1 (same level as second ()
+        assertEquals('(', sorted[3].char)
+        assertEquals(1, sorted[3].depth, "Third ( should have depth 1")
+
+        // Second ) should have depth 1 (matches third ()
+        assertEquals(')', sorted[4].char)
+        assertEquals(1, sorted[4].depth, "Second ) should have depth 1")
+
+        // Third ) at end should have depth 0 (matches first ()
+        assertEquals(')', sorted[5].char)
+        assertEquals(0, sorted[5].depth, "Last ) should have depth 0 (matches first ()")
+
+        // CRITICAL: First two brackets must have DIFFERENT depths!
+        assertTrue(sorted[0].depth != sorted[1].depth,
+            "CRITICAL: First two (( must have different depths! Got ${sorted[0].depth} and ${sorted[1].depth}")
+    }
+
+    @Test
+    fun testSimpleDoubleParens() {
+        // Simplest case: ((a))
+        val doc = EditorDocument("((a))")
+        val rainbow = RainbowBrackets(doc)
+
+        val brackets = rainbow.getRainbowBrackets()
+        val sorted = brackets.sortedBy { it.offset }
+
+        assertEquals(4, brackets.size)
+
+        // First ( at depth 0
+        assertEquals('(', sorted[0].char)
+        assertEquals(0, sorted[0].depth)
+
+        // Second ( at depth 1
+        assertEquals('(', sorted[1].char)
+        assertEquals(1, sorted[1].depth)
+
+        // First ) at depth 1 (matches inner ()
+        assertEquals(')', sorted[2].char)
+        assertEquals(1, sorted[2].depth)
+
+        // Second ) at depth 0 (matches outer ()
+        assertEquals(')', sorted[3].char)
+        assertEquals(0, sorted[3].depth)
+
+        // First two ( must have different depths
+        assertTrue(sorted[0].depth != sorted[1].depth)
+    }
+
+    @Test
+    fun testUserCase_MultiLineCondition() {
+        // User's exact failing case - multi-line condition
+        val code = """(keyEvent.type == KeyEventType.KeyDown &&
+                            keyEvent.key == Key.Comma &&
+                            ((isMacOS && keyEvent.isMetaPressed) || (!isMacOS && keyEvent.isCtrlPressed))
+                        )"""
+        val doc = EditorDocument(code)
+        val rainbow = RainbowBrackets(doc)
+
+        val brackets = rainbow.getRainbowBrackets()
+        val sorted = brackets.sortedBy { it.offset }
+
+        // Print for debugging
+        println("=== Rainbow Brackets Debug ===")
+        sorted.forEachIndexed { index, bracket ->
+            println("[$index] offset=${bracket.offset}, char='${bracket.char}', depth=${bracket.depth}")
+        }
+
+        // Should have 8 parentheses:
+        // 1. ( at start - outer wrapper, depth 0
+        // 2. (( - two parens, depths 1 and 2
+        // 3. ) after isMetaPressed - depth 2
+        // 4. ( before ! - depth 2
+        // 5. ) after isCtrlPressed - depth 2
+        // 6. ) after )) - depth 1
+        // 7. ) at very end - depth 0
+        assertEquals(8, brackets.size, "Expected 8 brackets, got ${brackets.size}")
+
+        // Find all opening parens
+        val opens = sorted.filter { it.char == '(' }
+        val closes = sorted.filter { it.char == ')' }
+
+        assertEquals(4, opens.size, "Expected 4 opening parens")
+        assertEquals(4, closes.size, "Expected 4 closing parens")
+
+        // First ( should be depth 0
+        assertEquals(0, opens[0].depth, "First ( should be depth 0, got ${opens[0].depth}")
+
+        // Second ( should be depth 1
+        assertEquals(1, opens[1].depth, "Second ( should be depth 1, got ${opens[1].depth}")
+
+        // Third ( should be depth 2
+        assertEquals(2, opens[2].depth, "Third ( should be depth 2, got ${opens[2].depth}")
+
+        // Fourth ( should be depth 2 (same level as third, after closing third)
+        assertEquals(2, opens[3].depth, "Fourth ( should be depth 2, got ${opens[3].depth}")
+
+        // Verify matching pairs have same depth
+        // The pattern is: ( ... (( ... ) ( ... )) )
+        // Depths:         0     12     2 2     21 0
+
+        // Last ) should match first ( - both depth 0
+        assertEquals(0, closes[3].depth, "Last ) should be depth 0")
+
+        // CRITICAL: Each consecutive opening bracket should have increasing depth
+        assertTrue(opens[0].depth < opens[1].depth,
+            "First two ( must have different depths! ${opens[0].depth} vs ${opens[1].depth}")
+        assertTrue(opens[1].depth < opens[2].depth,
+            "Second and third ( must have different depths! ${opens[1].depth} vs ${opens[2].depth}")
+    }
 }

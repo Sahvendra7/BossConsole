@@ -255,8 +255,9 @@ object EditorCanvasRenderer {
                 // Check if this token contains rainbow brackets
                 val hasRainbowBrackets = rainbowBracketsByColumn.keys.any { it in startCol until endCol }
 
-                if (hasRainbowBrackets && isBracketToken(token.type)) {
-                    // Render with rainbow colors
+                if (hasRainbowBrackets) {
+                    // Render with rainbow colors - bracket characters get rainbow colors,
+                    // non-bracket characters get the token's color
                     renderTextWithRainbowBrackets(ctx, lineText, startCol, endCol, tokenColor, y,
                         isBold, isItalic, rainbowBracketsByColumn)
                 } else {
@@ -264,15 +265,6 @@ object EditorCanvasRenderer {
                 }
             }
         }
-    }
-
-    /**
-     * Checks if a token type represents a bracket.
-     */
-    private fun isBracketToken(tokenType: TokenType): Boolean {
-        return tokenType == TokenType.BRACKET ||
-               tokenType == TokenType.PARENTHESIS ||
-               tokenType == TokenType.PUNCTUATION
     }
 
     /**
@@ -284,24 +276,14 @@ object EditorCanvasRenderer {
     ): Map<Int, RainbowBracket> {
         if (ctx.rainbowBrackets.isEmpty()) return emptyMap()
 
-        // Calculate line start/end offsets
-        val lineStartOffset = calculateLineStartOffset(ctx, lineNumber)
+        // Use document's line start offset for consistency with RainbowBrackets algorithm
+        val lineStartOffset = ctx.getLineStartOffset(lineNumber)
         val lineEndOffset = lineStartOffset + ctx.getLineLength(lineNumber)
 
-        return ctx.rainbowBrackets
+        val filtered = ctx.rainbowBrackets
             .filter { it.offset in lineStartOffset until lineEndOffset }
-            .associateBy { it.offset - lineStartOffset } // Convert to column
-    }
 
-    /**
-     * Calculates the start offset for a given line.
-     */
-    private fun calculateLineStartOffset(ctx: EditorRenderingContext, lineNumber: Int): Int {
-        var offset = 0
-        for (i in 0 until lineNumber) {
-            offset += ctx.getLineLength(i) + 1 // +1 for newline
-        }
-        return offset
+        return filtered.associateBy { it.offset - lineStartOffset } // Convert to column
     }
 
     /**
@@ -372,20 +354,27 @@ object EditorCanvasRenderer {
         if (x + textWidth < 0 || x > size.width) return
         if (y + ctx.lineHeight < 0 || y > size.height) return
 
-        val style = TextStyle(
-            fontFamily = ctx.fontFamily,
-            fontSize = ctx.fontSize.sp,
-            color = color,
-            fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
-            fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal
-        )
+        // Use AnnotatedString with explicit SpanStyle to ensure color is applied
+        // This bypasses potential caching issues with plain text + TextStyle
+        val annotatedString = androidx.compose.ui.text.AnnotatedString.Builder().apply {
+            pushStyle(
+                androidx.compose.ui.text.SpanStyle(
+                    color = color,
+                    fontFamily = ctx.fontFamily,
+                    fontSize = ctx.fontSize.sp,
+                    fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                    fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal
+                )
+            )
+            append(text)
+            pop()
+        }.toAnnotatedString()
 
         // Use explicit size constraints to avoid internal constraint calculation issues
         // when topLeft.x is negative (text scrolled off-screen left)
         drawText(
             textMeasurer = ctx.textMeasurer,
-            text = text,
-            style = style,
+            text = annotatedString,
             topLeft = Offset(x, y),
             size = Size(textWidth + ctx.charWidth, ctx.lineHeight)
         )
@@ -539,6 +528,8 @@ object EditorCanvasRenderer {
         }
 
         // Draw all carets (multi-caret support)
+        // caretVisible controls whether caret should be shown at all
+        // caretBlinkVisible controls the blink on/off state
         if (ctx.caretVisible && ctx.caretBlinkVisible) {
             if (ctx.hasMultipleCarets) {
                 drawAllCarets(ctx)
@@ -693,11 +684,15 @@ object EditorCanvasRenderer {
         val x = ctx.gutterWidth + caretColumn * ctx.charWidth - ctx.scrollOffsetX
         val y = caretLine * ctx.lineHeight - ctx.scrollOffsetY
 
-        // Draw a thin line caret (2 pixels wide)
+        // Ensure caret has valid dimensions
+        val caretWidth = 2f
+        val caretHeight = ctx.lineHeight.coerceAtLeast(14f)
+
+        // Draw a thin line caret
         drawRect(
             color = ctx.colors.caret,
             topLeft = Offset(x, y),
-            size = Size(2f, ctx.lineHeight)
+            size = Size(caretWidth, caretHeight)
         )
     }
 

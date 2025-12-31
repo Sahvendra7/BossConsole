@@ -33,6 +33,7 @@ data class EditorRenderingContext(
     val lineCount: Int,
     val getLineText: (Int) -> String,
     val getLineLength: (Int) -> Int,
+    val getLineStartOffset: (Int) -> Int,
 
     // Dimensions
     val charWidth: Float,
@@ -156,13 +157,15 @@ data class EditorRenderingContext(
             // Calculate visible lines
             val firstVisibleLine = (scrollOffsetY / lineHeight).toInt().coerceAtLeast(0)
             val visibleLineCount = (viewportHeight / lineHeight).toInt() + 2 // +2 for partial lines
-            val lastVisibleLine = (firstVisibleLine + visibleLineCount).coerceAtMost(document.lineCount - 1)
+            // Ensure lastVisibleLine is at least 0 (for empty documents) so caret can still be drawn
+            val lastVisibleLine = (firstVisibleLine + visibleLineCount).coerceAtMost(maxOf(document.lineCount - 1, 0))
 
             return EditorRenderingContext(
                 documentVersion = document.documentVersion,
                 lineCount = document.lineCount,
                 getLineText = { line -> document.getLineText(line) },
                 getLineLength = { line -> document.getLineLength(line) },
+                getLineStartOffset = { line -> document.getLineStartOffset(line) },
                 charWidth = charWidth,
                 lineHeight = lineHeight,
                 fontSize = fontSize,

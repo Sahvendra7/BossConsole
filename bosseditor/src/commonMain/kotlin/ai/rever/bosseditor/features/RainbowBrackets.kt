@@ -32,49 +32,137 @@ class RainbowBrackets(
      * Gets all brackets with their rainbow color depth.
      * The depth determines which color to use (cycles every 4 levels).
      *
+     * Uses the same matching algorithm as findMatchingBracket() for correctness.
+     *
      * @return List of rainbow brackets sorted by offset
      */
     fun getRainbowBrackets(): List<RainbowBracket> {
-        val pairs = bracketMatcher.findAllBracketPairs()
-        if (pairs.isEmpty()) return emptyList()
+        val text = document.getText()
+        if (text.isEmpty()) return emptyList()
 
         val result = mutableListOf<RainbowBracket>()
 
-        // Sort pairs by open offset to process in order
-        val sortedPairs = pairs.sortedBy { it.openOffset }
+        // Single unified stack for ALL bracket types (like BracketMatcher.findAllBracketPairs)
+        // Each entry: (offset, char, depth)
+        val stack = mutableListOf<Triple<Int, Char, Int>>()
 
-        // Track nesting depth using a stack-like approach
-        // For each position, track how many brackets are "active" (opened but not closed)
-        val brackets = mutableListOf<BracketWithDepth>()
-
-        // First, collect all bracket positions
-        for (pair in sortedPairs) {
-            brackets.add(BracketWithDepth(pair.openOffset, pair.openChar, isOpening = true, pairId = pair.hashCode()))
-            brackets.add(BracketWithDepth(pair.closeOffset, pair.closeChar, isOpening = false, pairId = pair.hashCode()))
-        }
-
-        // Sort by offset
-        brackets.sortBy { it.offset }
-
-        // Assign depths using a stack
-        var currentDepth = 0
-        val depthByPairId = mutableMapOf<Int, Int>()
-
-        for (bracket in brackets) {
-            if (bracket.isOpening) {
-                // Opening bracket gets current depth, then depth increases
-                depthByPairId[bracket.pairId] = currentDepth
-                result.add(RainbowBracket(bracket.offset, bracket.char, currentDepth))
-                currentDepth++
-            } else {
-                // Closing bracket gets same depth as its opening bracket
-                val depth = depthByPairId[bracket.pairId] ?: 0
-                result.add(RainbowBracket(bracket.offset, bracket.char, depth))
-                currentDepth = (currentDepth - 1).coerceAtLeast(0)
+        var i = 0
+        while (i < text.length) {
+            // Skip strings
+            if (text[i] == '"') {
+                i = skipString(text, i)
+                continue
             }
+
+            // Skip chars
+            if (text[i] == '\'') {
+                i = skipChar(text, i)
+                continue
+            }
+
+            // Skip comments
+            if (i + 1 < text.length && text[i] == '/') {
+                if (text[i + 1] == '/') {
+                    i = skipLineComment(text, i)
+                    continue
+                } else if (text[i + 1] == '*') {
+                    i = skipBlockComment(text, i)
+                    continue
+                }
+            }
+
+            val char = text[i]
+
+            when (char) {
+                '(', '[', '{' -> {
+                    // Opening bracket: depth = current stack size
+                    val depth = stack.size
+                    result.add(RainbowBracket(i, char, depth))
+                    stack.add(Triple(i, char, depth))
+                }
+                ')', ']', '}' -> {
+                    // Closing bracket: find matching opening bracket by type
+                    val expectedOpen = when (char) {
+                        ')' -> '('
+                        ']' -> '['
+                        '}' -> '{'
+                        else -> char
+                    }
+                    // Find last matching opening bracket (same as BracketMatcher)
+                    val matchIndex = stack.indexOfLast { it.second == expectedOpen }
+                    if (matchIndex >= 0) {
+                        val (_, _, depth) = stack.removeAt(matchIndex)
+                        result.add(RainbowBracket(i, char, depth))
+                    }
+                }
+            }
+
+            i++
         }
 
         return result.sortedBy { it.offset }
+    }
+
+    // Helper methods for skipping strings, chars, and comments
+
+    private fun skipString(text: String, start: Int): Int {
+        // Handle triple-quoted strings
+        if (start + 2 < text.length && text[start + 1] == '"' && text[start + 2] == '"') {
+            var i = start + 3
+            while (i + 2 < text.length) {
+                if (text[i] == '"' && text[i + 1] == '"' && text[i + 2] == '"') {
+                    return i + 3
+                }
+                i++
+            }
+            return text.length
+        }
+
+        // Regular string
+        var i = start + 1
+        while (i < text.length) {
+            if (text[i] == '"' && text[i - 1] != '\\') {
+                return i + 1
+            }
+            if (text[i] == '\\' && i + 1 < text.length) {
+                i++ // Skip escaped char
+            }
+            i++
+        }
+        return text.length
+    }
+
+    private fun skipChar(text: String, start: Int): Int {
+        var i = start + 1
+        while (i < text.length) {
+            if (text[i] == '\'' && text[i - 1] != '\\') {
+                return i + 1
+            }
+            if (text[i] == '\\' && i + 1 < text.length) {
+                i++
+            }
+            i++
+        }
+        return text.length
+    }
+
+    private fun skipLineComment(text: String, start: Int): Int {
+        var i = start + 2
+        while (i < text.length && text[i] != '\n') {
+            i++
+        }
+        return i + 1
+    }
+
+    private fun skipBlockComment(text: String, start: Int): Int {
+        var i = start + 2
+        while (i + 1 < text.length) {
+            if (text[i] == '*' && text[i + 1] == '/') {
+                return i + 2
+            }
+            i++
+        }
+        return text.length
     }
 
     /**
@@ -107,12 +195,6 @@ class RainbowBrackets(
         return getRainbowBrackets().find { it.offset == offset }?.depth
     }
 
-    private data class BracketWithDepth(
-        val offset: Int,
-        val char: Char,
-        val isOpening: Boolean,
-        val pairId: Int
-    )
 }
 
 /**

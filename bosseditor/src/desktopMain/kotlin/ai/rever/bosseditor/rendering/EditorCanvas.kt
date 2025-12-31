@@ -157,16 +157,13 @@ fun EditorCanvas(
         onSelectionChanged(selection)
     }
 
-    // Caret blink timer
-    LaunchedEffect(isFocused, caretPosition) {
-        if (isFocused) {
-            caretBlinkVisible = true
-            while (true) {
-                kotlinx.coroutines.delay(530) // Standard cursor blink rate
-                caretBlinkVisible = !caretBlinkVisible
-            }
-        } else {
-            caretBlinkVisible = false
+    // Caret blink timer - always run since caret is always visible
+    // Reset to visible when caret position changes (so cursor shows immediately after moving)
+    LaunchedEffect(caretPosition) {
+        caretBlinkVisible = true
+        while (true) {
+            kotlinx.coroutines.delay(530) // Standard cursor blink rate
+            caretBlinkVisible = !caretBlinkVisible
         }
     }
 
@@ -328,7 +325,7 @@ fun EditorCanvas(
                 textMeasurer = textMeasurer,
                 fontFamily = fontFamily,
                 colors = theme.colors,
-                caretVisible = isFocused,
+                caretVisible = true, // Always show caret - focus handled at BossEditor level
                 caretBlinkVisible = caretBlinkVisible,
                 highlightCurrentLine = highlightCurrentLine,
                 searchQuery = searchQuery,
