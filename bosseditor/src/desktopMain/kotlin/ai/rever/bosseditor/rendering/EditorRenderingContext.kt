@@ -1,0 +1,180 @@
+package ai.rever.bosseditor.rendering
+
+import ai.rever.bosseditor.core.EditorDocument
+import ai.rever.bosseditor.core.EditorPosition
+import ai.rever.bosseditor.core.EditorRange
+import ai.rever.bosseditor.theme.EditorColors
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.font.FontFamily
+
+/**
+ * Holds all the state needed for editor rendering.
+ * This is a snapshot of the editor state, making rendering lock-free.
+ *
+ * The context is created at the start of each frame and passed to the renderer.
+ * This pattern (from BossTerm) allows:
+ * - Lock-free rendering (no synchronization needed during draw)
+ * - Consistent state within a frame (no mid-frame changes)
+ * - Easy parameter passing (single object vs many parameters)
+ */
+data class EditorRenderingContext(
+    // Document snapshot
+    val documentVersion: Long,
+    val lineCount: Int,
+    val getLineText: (Int) -> String,
+    val getLineLength: (Int) -> Int,
+
+    // Dimensions
+    val charWidth: Float,
+    val lineHeight: Float,
+    val fontSize: Float,
+    val baselineOffset: Float,
+
+    // Visible area
+    val visibleLineRange: IntRange,
+    val viewportWidth: Float,
+    val viewportHeight: Float,
+    val scrollOffsetX: Float,
+    val scrollOffsetY: Float,
+
+    // Font and text
+    val textMeasurer: TextMeasurer,
+    val fontFamily: FontFamily,
+
+    // Colors/Theme
+    val colors: EditorColors,
+
+    // Caret state
+    val caretPosition: EditorPosition,
+    val caretVisible: Boolean,
+    val caretBlinkVisible: Boolean,
+
+    // Selection state
+    val selection: EditorRange?,
+
+    // Current line highlight
+    val highlightCurrentLine: Boolean,
+
+    // Search state (for search highlighting)
+    val searchQuery: String?,
+    val searchMatches: List<EditorRange>,
+    val currentSearchMatchIndex: Int,
+
+    // Line numbers
+    val showLineNumbers: Boolean,
+    val gutterWidth: Float,
+
+    // Folding state (will be expanded in Phase 5)
+    val foldedRegions: List<FoldedRegion>,
+
+    // Token highlighting (will be populated from lexer in Phase 4)
+    val getLineTokens: (Int) -> List<EditorToken>
+) {
+    companion object {
+        /**
+         * Creates a rendering context from an EditorState.
+         */
+        fun from(
+            document: EditorDocument,
+            caretPosition: EditorPosition,
+            selection: EditorRange?,
+            charWidth: Float,
+            lineHeight: Float,
+            fontSize: Float,
+            baselineOffset: Float,
+            viewportWidth: Float,
+            viewportHeight: Float,
+            scrollOffsetX: Float,
+            scrollOffsetY: Float,
+            textMeasurer: TextMeasurer,
+            fontFamily: FontFamily,
+            colors: EditorColors,
+            caretVisible: Boolean = true,
+            caretBlinkVisible: Boolean = true,
+            highlightCurrentLine: Boolean = true,
+            searchQuery: String? = null,
+            searchMatches: List<EditorRange> = emptyList(),
+            currentSearchMatchIndex: Int = -1,
+            showLineNumbers: Boolean = true,
+            gutterWidth: Float = 50f,
+            foldedRegions: List<FoldedRegion> = emptyList(),
+            getLineTokens: (Int) -> List<EditorToken> = { emptyList() }
+        ): EditorRenderingContext {
+            // Calculate visible lines
+            val firstVisibleLine = (scrollOffsetY / lineHeight).toInt().coerceAtLeast(0)
+            val visibleLineCount = (viewportHeight / lineHeight).toInt() + 2 // +2 for partial lines
+            val lastVisibleLine = (firstVisibleLine + visibleLineCount).coerceAtMost(document.lineCount - 1)
+
+            return EditorRenderingContext(
+                documentVersion = document.documentVersion,
+                lineCount = document.lineCount,
+                getLineText = { line -> document.getLineText(line) },
+                getLineLength = { line -> document.getLineLength(line) },
+                charWidth = charWidth,
+                lineHeight = lineHeight,
+                fontSize = fontSize,
+                baselineOffset = baselineOffset,
+                visibleLineRange = firstVisibleLine..lastVisibleLine,
+                viewportWidth = viewportWidth,
+                viewportHeight = viewportHeight,
+                scrollOffsetX = scrollOffsetX,
+                scrollOffsetY = scrollOffsetY,
+                textMeasurer = textMeasurer,
+                fontFamily = fontFamily,
+                colors = colors,
+                caretPosition = caretPosition,
+                caretVisible = caretVisible,
+                caretBlinkVisible = caretBlinkVisible,
+                selection = selection,
+                highlightCurrentLine = highlightCurrentLine,
+                searchQuery = searchQuery,
+                searchMatches = searchMatches,
+                currentSearchMatchIndex = currentSearchMatchIndex,
+                showLineNumbers = showLineNumbers,
+                gutterWidth = gutterWidth,
+                foldedRegions = foldedRegions,
+                getLineTokens = getLineTokens
+            )
+        }
+    }
+}
+
+/**
+ * Represents a folded region in the editor.
+ * (Placeholder for Phase 5)
+ */
+data class FoldedRegion(
+    val startLine: Int,
+    val endLine: Int,
+    val placeholder: String // e.g., "import ...", "{ ... }"
+)
+
+/**
+ * Represents a syntax token for highlighting.
+ * (Will be populated by lexer in Phase 4)
+ */
+data class EditorToken(
+    val startColumn: Int,
+    val endColumn: Int,
+    val type: TokenType
+)
+
+/**
+ * Token types for syntax highlighting.
+ * Maps to colors in EditorColors.
+ */
+enum class TokenType {
+    DEFAULT,
+    KEYWORD,
+    STRING,
+    NUMBER,
+    COMMENT,
+    OPERATOR,
+    IDENTIFIER,
+    FUNCTION,
+    TYPE,
+    ANNOTATION,
+    PROPERTY,
+    PARAMETER,
+    LOCAL_VARIABLE
+}
