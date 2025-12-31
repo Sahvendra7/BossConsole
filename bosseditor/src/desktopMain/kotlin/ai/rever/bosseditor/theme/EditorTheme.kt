@@ -85,7 +85,20 @@ data class EditorColors(
 
     // Other
     val hyperlink: Color,
-    val markOccurrences: Color
+    val markOccurrences: Color,
+
+    // Minimap
+    val minimapBackground: Color,
+    val minimapForeground: Color,
+    val minimapViewport: Color,
+    val minimapViewportBorder: Color,
+    val minimapSelection: Color,
+    val minimapSearchHighlight: Color,
+    val minimapOccurrence: Color,
+    val minimapError: Color,
+    val minimapWarning: Color,
+    val minimapInfo: Color,
+    val minimapHint: Color
 ) {
     /**
      * Gets the color for a token type.
@@ -280,7 +293,20 @@ data class EditorTheme(
 
                 // Other
                 hyperlink = Color(0xFF548AF7),             // #548af7
-                markOccurrences = Color(0xFF32593D)
+                markOccurrences = Color(0xFF32593D),
+
+                // Minimap
+                minimapBackground = Color(0xFF1E1F22).copy(alpha = 0.8f),
+                minimapForeground = Color(0xFF6E737A),
+                minimapViewport = Color(0xFF3B3D40).copy(alpha = 0.5f),
+                minimapViewportBorder = Color(0xFF6E737A).copy(alpha = 0.7f),
+                minimapSelection = Color(0xFF214283).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFFFFFF00),
+                minimapOccurrence = Color(0xFF32593D),
+                minimapError = Color(0xFFF75464),
+                minimapWarning = Color(0xFFFFB848),
+                minimapInfo = Color(0xFF548AF7),
+                minimapHint = Color(0xFF6E737A)
             )
         )
 
@@ -346,7 +372,20 @@ data class EditorTheme(
                 currentSearchMatchBackground = Color(0xFFFFA500),
 
                 hyperlink = Color(0xFF0066CC),
-                markOccurrences = Color(0xFFE8E8E8)
+                markOccurrences = Color(0xFFE8E8E8),
+
+                // Minimap
+                minimapBackground = Color(0xFFF6F8FA),
+                minimapForeground = Color(0xFF6E7681),
+                minimapViewport = Color(0xFF000000).copy(alpha = 0.1f),
+                minimapViewportBorder = Color(0xFF6E7681).copy(alpha = 0.5f),
+                minimapSelection = Color(0xFFADD6FF).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFFFFFF00),
+                minimapOccurrence = Color(0xFF6E7681),
+                minimapError = Color(0xFFCF222E),
+                minimapWarning = Color(0xFFBF8700),
+                minimapInfo = Color(0xFF0066CC),
+                minimapHint = Color(0xFF6E7681)
             )
         )
 
@@ -412,7 +451,20 @@ data class EditorTheme(
                 currentSearchMatchBackground = Color(0xFFFFB86C).copy(alpha = 0.5f),
 
                 hyperlink = Color(0xFF8BE9FD),
-                markOccurrences = Color(0xFF44475A)
+                markOccurrences = Color(0xFF44475A),
+
+                // Minimap
+                minimapBackground = Color(0xFF21222C).copy(alpha = 0.8f),
+                minimapForeground = Color(0xFF6272A4),
+                minimapViewport = Color(0xFF44475A).copy(alpha = 0.5f),
+                minimapViewportBorder = Color(0xFF6272A4).copy(alpha = 0.7f),
+                minimapSelection = Color(0xFF44475A).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFF50FA7B),
+                minimapOccurrence = Color(0xFFBD93F9),
+                minimapError = Color(0xFFFF5555),
+                minimapWarning = Color(0xFFFFB86C),
+                minimapInfo = Color(0xFF8BE9FD),
+                minimapHint = Color(0xFF6272A4)
             )
         )
 
@@ -478,7 +530,20 @@ data class EditorTheme(
                 currentSearchMatchBackground = Color(0xFFFD971F).copy(alpha = 0.5f),
 
                 hyperlink = Color(0xFF66D9EF),
-                markOccurrences = Color(0xFF49483E)
+                markOccurrences = Color(0xFF49483E),
+
+                // Minimap
+                minimapBackground = Color(0xFF1E1F1C).copy(alpha = 0.8f),
+                minimapForeground = Color(0xFF75715E),
+                minimapViewport = Color(0xFF49483E).copy(alpha = 0.5f),
+                minimapViewportBorder = Color(0xFF75715E).copy(alpha = 0.7f),
+                minimapSelection = Color(0xFF49483E).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFFA6E22E),
+                minimapOccurrence = Color(0xFFAE81FF),
+                minimapError = Color(0xFFF92672),
+                minimapWarning = Color(0xFFFD971F),
+                minimapInfo = Color(0xFF66D9EF),
+                minimapHint = Color(0xFF75715E)
             )
         )
 
@@ -544,7 +609,20 @@ data class EditorTheme(
                 currentSearchMatchBackground = Color(0xFFB58900).copy(alpha = 0.5f),
 
                 hyperlink = Color(0xFF268BD2),
-                markOccurrences = Color(0xFF073642)
+                markOccurrences = Color(0xFF073642),
+
+                // Minimap
+                minimapBackground = Color(0xFF073642).copy(alpha = 0.8f),
+                minimapForeground = Color(0xFF586E75),
+                minimapViewport = Color(0xFF073642).copy(alpha = 0.5f),
+                minimapViewportBorder = Color(0xFF586E75).copy(alpha = 0.7f),
+                minimapSelection = Color(0xFF073642).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFF859900),
+                minimapOccurrence = Color(0xFF268BD2),
+                minimapError = Color(0xFFDC322F),
+                minimapWarning = Color(0xFFCB4B16),
+                minimapInfo = Color(0xFF268BD2),
+                minimapHint = Color(0xFF586E75)
             )
         )
 
@@ -610,7 +688,20 @@ data class EditorTheme(
                 currentSearchMatchBackground = Color(0xFFB58900).copy(alpha = 0.5f),
 
                 hyperlink = Color(0xFF268BD2),
-                markOccurrences = Color(0xFFEEE8D5)
+                markOccurrences = Color(0xFFEEE8D5),
+
+                // Minimap
+                minimapBackground = Color(0xFFEEE8D5),
+                minimapForeground = Color(0xFF93A1A1),
+                minimapViewport = Color(0xFF000000).copy(alpha = 0.1f),
+                minimapViewportBorder = Color(0xFF93A1A1).copy(alpha = 0.5f),
+                minimapSelection = Color(0xFFEEE8D5).copy(alpha = 0.5f),
+                minimapSearchHighlight = Color(0xFF859900),
+                minimapOccurrence = Color(0xFF268BD2),
+                minimapError = Color(0xFFDC322F),
+                minimapWarning = Color(0xFFCB4B16),
+                minimapInfo = Color(0xFF268BD2),
+                minimapHint = Color(0xFF93A1A1)
             )
         )
     }
