@@ -5,6 +5,7 @@ import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
 import ai.rever.bosseditor.features.NavigationManager
 import ai.rever.bosseditor.features.NavigationOutcome
+import ai.rever.bosseditor.fold.KotlinFoldParser
 import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
@@ -88,6 +89,7 @@ fun BossEditor(
     searchQuery: String? = null,
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
+    foldingEnabled: Boolean = true,
     filePath: String? = null,
     projectPath: String? = null,
     tokenProvider: (Int) -> List<EditorToken> = { emptyList() },
@@ -125,6 +127,29 @@ fun BossEditor(
     DisposableEffect(navigationManager) {
         onDispose {
             navigationManager.dispose()
+        }
+    }
+
+    // Set up fold parser based on file type
+    LaunchedEffect(filePath, foldingEnabled) {
+        if (foldingEnabled && filePath != null) {
+            val parser = when {
+                filePath.endsWith(".kt") || filePath.endsWith(".kts") -> KotlinFoldParser()
+                // Add more parsers for other languages here
+                // filePath.endsWith(".java") -> JavaFoldParser()
+                // filePath.endsWith(".js") || filePath.endsWith(".ts") -> JavaScriptFoldParser()
+                else -> null
+            }
+            state.setFoldParser(parser)
+        } else {
+            state.setFoldParser(null)
+        }
+    }
+
+    // Handle fold toggle
+    val handleFoldToggle: (Int) -> Unit = remember(state) {
+        { documentLine ->
+            state.toggleFoldAt(documentLine)
         }
     }
 
@@ -189,10 +214,12 @@ fun BossEditor(
                 searchQuery = searchQuery,
                 searchMatches = searchMatches,
                 currentSearchMatchIndex = currentSearchMatchIndex,
+                foldingEnabled = foldingEnabled,
                 getLineTokens = tokenProvider,
                 onCaretPositionChanged = onCaretPositionChanged,
                 onSelectionChanged = onSelectionChanged,
-                onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null
+                onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
+                onFoldToggle = if (foldingEnabled) handleFoldToggle else null
             )
         }
     }

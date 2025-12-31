@@ -1,5 +1,11 @@
 package ai.rever.bosseditor.core
 
+import ai.rever.bosseditor.fold.FoldParser
+import ai.rever.bosseditor.fold.FoldRegion
+import ai.rever.bosseditor.fold.FoldingListener
+import ai.rever.bosseditor.fold.FoldingModel
+import ai.rever.bosseditor.fold.VisualLineMapper
+import ai.rever.bosseditor.fold.createVisualLineMapper
 import ai.rever.bosseditor.model.MultiCaretModel
 import ai.rever.bosseditor.model.MultiCaretOperations
 import androidx.compose.runtime.getValue
@@ -34,6 +40,17 @@ class EditorState(
     // Multi-caret support
     val multiCaretModel = MultiCaretModel(document)
     val multiCaretOperations = MultiCaretOperations(document, multiCaretModel)
+
+    // Code folding
+    val foldingModel = FoldingModel(document)
+
+    // Visual line mapper (updated when folds change)
+    private val _visualLineMapper = MutableStateFlow(VisualLineMapper.noFolds(document.lineCount))
+    val visualLineMapper: StateFlow<VisualLineMapper> = _visualLineMapper.asStateFlow()
+
+    // Folding state version (incremented when folds change, for recomposition)
+    private val _foldingVersion = MutableStateFlow(0L)
+    val foldingVersion: StateFlow<Long> = _foldingVersion.asStateFlow()
 
     // Caret position (observable)
     private val _caretPosition = MutableStateFlow(EditorPosition.ZERO)
@@ -73,6 +90,21 @@ class EditorState(
             // Clear selection on document change (unless it's from undo/redo)
             // The selection will be re-set by the operation that caused the change if needed
         }
+
+        // Listen to folding changes
+        foldingModel.addFoldingListener(object : FoldingListener {
+            override fun foldCollapsed(region: FoldRegion) {
+                updateVisualLineMapper()
+            }
+
+            override fun foldExpanded(region: FoldRegion) {
+                updateVisualLineMapper()
+            }
+
+            override fun foldsChanged() {
+                updateVisualLineMapper()
+            }
+        })
     }
 
     /**
@@ -392,6 +424,95 @@ class EditorState(
      */
     fun removeStateListener(listener: EditorStateListener) {
         stateListeners.remove(listener)
+    }
+
+    // --- Folding operations ---
+
+    /**
+     * Sets the fold parser for detecting fold regions.
+     */
+    fun setFoldParser(parser: FoldParser?) {
+        foldingModel.setFoldParser(parser)
+        updateVisualLineMapper()
+    }
+
+    /**
+     * Toggles the fold at the given document line.
+     */
+    fun toggleFoldAt(documentLine: Int): Boolean {
+        return foldingModel.toggleFoldAt(documentLine)
+    }
+
+    /**
+     * Collapses the fold at the given document line.
+     */
+    fun collapseFoldAt(documentLine: Int): Boolean {
+        return foldingModel.collapseFoldAt(documentLine)
+    }
+
+    /**
+     * Expands the fold at the given document line.
+     */
+    fun expandFoldAt(documentLine: Int): Boolean {
+        return foldingModel.expandFoldAt(documentLine)
+    }
+
+    /**
+     * Collapses all folds.
+     */
+    fun collapseAllFolds() {
+        foldingModel.collapseAll()
+    }
+
+    /**
+     * Expands all folds.
+     */
+    fun expandAllFolds() {
+        foldingModel.expandAll()
+    }
+
+    /**
+     * Expands folds to reveal the given document line.
+     * Useful when navigating to a line that might be hidden.
+     */
+    fun expandToRevealLine(documentLine: Int) {
+        foldingModel.expandToReveal(documentLine)
+    }
+
+    /**
+     * Checks if a document line is the start of a fold region.
+     */
+    fun isFoldStart(documentLine: Int): Boolean {
+        return foldingModel.isFoldStart(documentLine)
+    }
+
+    /**
+     * Checks if a document line has a collapsed fold.
+     */
+    fun isCollapsedAt(documentLine: Int): Boolean {
+        return foldingModel.isCollapsedAt(documentLine)
+    }
+
+    /**
+     * Gets the fold region at the given document line, if any.
+     */
+    fun getFoldAt(documentLine: Int): FoldRegion? {
+        return foldingModel.getFoldAt(documentLine)
+    }
+
+    /**
+     * Gets all fold regions.
+     */
+    fun getAllFoldRegions(): List<FoldRegion> {
+        return foldingModel.getAllRegions()
+    }
+
+    /**
+     * Updates the visual line mapper after fold state changes.
+     */
+    private fun updateVisualLineMapper() {
+        _visualLineMapper.value = foldingModel.createVisualLineMapper(document.lineCount)
+        _foldingVersion.value++
     }
 
     // --- Private helpers ---

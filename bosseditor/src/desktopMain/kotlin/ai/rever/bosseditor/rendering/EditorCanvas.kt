@@ -70,10 +70,12 @@ fun EditorCanvas(
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
     rainbowBracketsEnabled: Boolean = true,
+    foldingEnabled: Boolean = true,
     getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {},
-    onNavigationRequest: ((EditorPosition) -> Unit)? = null
+    onNavigationRequest: ((EditorPosition) -> Unit)? = null,
+    onFoldToggle: ((Int) -> Unit)? = null // Document line number
 ) {
     val theme = LocalEditorTheme.current
     val density = LocalDensity.current
@@ -106,10 +108,13 @@ fun EditorCanvas(
         measureCharacterDimensions(textMeasurer, fontFamily, fontSize, lineSpacing)
     }
 
-    // Calculate gutter width based on line count
-    val gutterWidth = remember(editorState.document.lineCount, fontFamily, fontSize, showLineNumbers) {
+    // Calculate gutter width based on line count (includes fold indicator space when enabled)
+    val gutterWidth = remember(editorState.document.lineCount, fontFamily, fontSize, showLineNumbers, foldingEnabled) {
         if (showLineNumbers) {
-            calculateGutterWidth(textMeasurer, editorState.document.lineCount, fontFamily, fontSize)
+            val baseWidth = calculateGutterWidth(textMeasurer, editorState.document.lineCount, fontFamily, fontSize)
+            // Add space for fold indicator: 16 (size) + 8 (paddingRight) + 8 (paddingLeft) = 32px
+            val foldIndicatorSpace = if (foldingEnabled) 32f else 0f
+            baseWidth + foldIndicatorSpace
         } else {
             0f
         }
@@ -120,6 +125,8 @@ fun EditorCanvas(
     val selection by editorState.selection.collectAsState()
     val scrollOffset by editorState.scrollOffset.collectAsState()
     val allCarets by editorState.multiCaretModel.carets.collectAsState()
+    val visualLineMapper by editorState.visualLineMapper.collectAsState()
+    val foldingVersion by editorState.foldingVersion.collectAsState()
 
     // Create bracket matcher and mark occurrences (reuse across recompositions)
     val bracketMatcher = remember(editorState.document) {
@@ -179,18 +186,27 @@ fun EditorCanvas(
         }
     }
 
-    // Helper to convert offset to position
+    // Helper to convert offset to position (uses visual line mapping for folding)
     fun offsetToEditorPosition(offset: Offset): EditorPosition {
-        return offsetToPosition(
-            offset = offset,
-            charWidth = charWidth,
-            lineHeight = lineHeight,
-            gutterWidth = gutterWidth,
-            scrollOffsetX = scrollOffset.x.toFloat(),
-            scrollOffsetY = scrollOffset.y.toFloat(),
-            lineCount = editorState.document.lineCount,
-            getLineLength = { editorState.document.getLineLength(it) }
-        )
+        // Calculate visual line from screen position
+        val visualLine = ((offset.y + scrollOffset.y.toFloat()) / lineHeight)
+            .toInt()
+            .coerceIn(0, (visualLineMapper.visibleLineCount - 1).coerceAtLeast(0))
+
+        // Convert visual line to document line
+        val documentLine = visualLineMapper.visualToDocument(visualLine)
+            .coerceIn(0, (editorState.document.lineCount - 1).coerceAtLeast(0))
+
+        // Calculate column based on document line length
+        val maxColumn = if (editorState.document.lineCount > 0) {
+            editorState.document.getLineLength(documentLine)
+        } else 0
+
+        val column = ((offset.x - gutterWidth + scrollOffset.x.toFloat()) / charWidth)
+            .toInt()
+            .coerceIn(0, maxColumn)
+
+        return EditorPosition(documentLine, column)
     }
 
     Box(
@@ -255,8 +271,27 @@ fun EditorCanvas(
 
                     val editorPosition = offsetToEditorPosition(position)
 
+                    // Check for fold indicator click (in the gutter area, right side)
+                    val isFoldIndicatorClick = foldingEnabled &&
+                        showLineNumbers &&
+                        position.x >= gutterWidth - 20f &&
+                        position.x < gutterWidth
+
                     when (clickCount) {
                         1 -> {
+                            // Check for fold indicator click first
+                            if (isFoldIndicatorClick && onFoldToggle != null) {
+                                // Calculate which visual line was clicked
+                                val visualLine = ((position.y + scrollOffset.y.toFloat()) / lineHeight).toInt()
+                                val documentLine = visualLineMapper.visualToDocument(visualLine)
+                                if (documentLine >= 0 && editorState.isFoldStart(documentLine)) {
+                                    onFoldToggle.invoke(documentLine)
+                                    isDragging = false
+                                    // Consume the event - don't continue to other handlers
+                                    return@awaitEachGesture
+                                }
+                            }
+
                             // Check for Cmd/Ctrl+Click navigation
                             if (isNavigationModifier && onNavigationRequest != null) {
                                 // Navigation click - don't position caret, invoke callback
@@ -377,6 +412,9 @@ fun EditorCanvas(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
+                visualLineMapper = visualLineMapper,
+                allFoldRegions = editorState.getAllFoldRegions(),
+                foldingEnabled = foldingEnabled,
                 getLineTokens = getLineTokens,
                 bracketMatch = bracketMatch,
                 markOccurrences = markOccurrences,

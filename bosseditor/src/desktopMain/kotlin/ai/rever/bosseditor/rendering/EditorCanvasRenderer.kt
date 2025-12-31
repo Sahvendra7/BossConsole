@@ -10,6 +10,7 @@ import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.InlayHintKind
 import ai.rever.bosseditor.features.InlayHintPosition
 import ai.rever.bosseditor.features.RainbowBracket
+import ai.rever.bosseditor.fold.FoldType
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.geometry.Offset
@@ -116,10 +117,12 @@ object EditorCanvasRenderer {
      * Draws the current line highlight background.
      */
     private fun DrawScope.drawCurrentLineHighlight(ctx: EditorRenderingContext, colors: EditorColors) {
-        val caretLine = ctx.caretPosition.line
-        if (caretLine !in ctx.visibleLineRange) return
+        val caretDocumentLine = ctx.caretPosition.line
+        // Convert document line to visual line
+        val caretVisualLine = ctx.visualLineMapper.documentToVisual(caretDocumentLine)
+        if (caretVisualLine < 0 || caretVisualLine !in ctx.visibleLineRange) return
 
-        val y = caretLine * ctx.lineHeight - ctx.scrollOffsetY
+        val y = caretVisualLine * ctx.lineHeight - ctx.scrollOffsetY
         val width = ctx.viewportWidth + ctx.scrollOffsetX // Cover full width
 
         drawRect(
@@ -131,17 +134,21 @@ object EditorCanvasRenderer {
 
     /**
      * Draws the selection highlight.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.drawSelection(
         ctx: EditorRenderingContext,
         selection: ai.rever.bosseditor.core.EditorRange,
         colors: EditorColors
     ) {
-        // Iterate through visible lines that intersect with selection
-        for (line in ctx.visibleLineRange) {
-            val lineStartPos = ai.rever.bosseditor.core.EditorPosition(line, 0)
-            val lineLength = ctx.getLineLength(line)
-            val lineEndPos = ai.rever.bosseditor.core.EditorPosition(line, lineLength)
+        // Iterate through visible visual lines
+        for (visualLine in ctx.visibleLineRange) {
+            val documentLine = ctx.visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
+
+            val lineStartPos = ai.rever.bosseditor.core.EditorPosition(documentLine, 0)
+            val lineLength = ctx.getLineLength(documentLine)
+            val lineEndPos = ai.rever.bosseditor.core.EditorPosition(documentLine, lineLength)
 
             // Check if this line intersects with selection
             if (selection.end < lineStartPos || selection.start > lineEndPos) {
@@ -149,14 +156,14 @@ object EditorCanvasRenderer {
             }
 
             // Calculate selection bounds on this line
-            val selStartCol = if (selection.start.line < line) 0 else selection.start.column
-            val selEndCol = if (selection.end.line > line) lineLength else selection.end.column
+            val selStartCol = if (selection.start.line < documentLine) 0 else selection.start.column
+            val selEndCol = if (selection.end.line > documentLine) lineLength else selection.end.column
 
-            if (selStartCol >= selEndCol && selection.end.line == line) continue
+            if (selStartCol >= selEndCol && selection.end.line == documentLine) continue
 
-            val y = line * ctx.lineHeight - ctx.scrollOffsetY
+            val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
             val xStart = ctx.gutterWidth + selStartCol * ctx.charWidth - ctx.scrollOffsetX
-            val width = if (selection.end.line > line) {
+            val width = if (selection.end.line > documentLine) {
                 // Selection continues to next line - extend to viewport edge
                 ctx.viewportWidth - xStart + ctx.gutterWidth + ctx.scrollOffsetX
             } else {
@@ -173,16 +180,12 @@ object EditorCanvasRenderer {
 
     /**
      * Draws search match highlights.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.drawSearchMatches(ctx: EditorRenderingContext, colors: EditorColors) {
         ctx.searchMatches.forEachIndexed { index, match ->
-            // Only draw matches in visible range
-            val startLine = match.start.line
-            val endLine = match.end.line
-
-            if (endLine < ctx.visibleLineRange.first || startLine > ctx.visibleLineRange.last) {
-                return@forEachIndexed
-            }
+            val startDocLine = match.start.line
+            val endDocLine = match.end.line
 
             val isCurrentMatch = index == ctx.currentSearchMatchIndex
             val bgColor = if (isCurrentMatch) {
@@ -191,12 +194,17 @@ object EditorCanvasRenderer {
                 colors.searchMatchBackground
             }
 
-            // Draw match on each line it spans
-            for (line in maxOf(startLine, ctx.visibleLineRange.first)..minOf(endLine, ctx.visibleLineRange.last)) {
-                val startCol = if (line == startLine) match.start.column else 0
-                val endCol = if (line == endLine) match.end.column else ctx.getLineLength(line)
+            // Draw match on each visible line it spans
+            for (docLine in startDocLine..endDocLine) {
+                // Convert document line to visual line
+                val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
+                if (visualLine < 0) continue // Line is hidden (folded)
+                if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
 
-                val y = line * ctx.lineHeight - ctx.scrollOffsetY
+                val startCol = if (docLine == startDocLine) match.start.column else 0
+                val endCol = if (docLine == endDocLine) match.end.column else ctx.getLineLength(docLine)
+
+                val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
                 val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
                 val width = (endCol - startCol) * ctx.charWidth
 
@@ -213,26 +221,141 @@ object EditorCanvasRenderer {
 
     /**
      * Renders all visible text with syntax highlighting.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.renderText(ctx: EditorRenderingContext) {
-        for (line in ctx.visibleLineRange) {
-            renderLine(ctx, line)
+        // visibleLineRange is now in terms of visual lines
+        for (visualLine in ctx.visibleLineRange) {
+            val documentLine = ctx.visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
+
+            // Check if this is a collapsed fold
+            val collapsedFold = ctx.visualLineMapper.getCollapsedFoldAt(visualLine)
+
+            // For IMPORTS and DOC_COMMENT folds, only show placeholder (no line text)
+            // For CODE folds, show line text (without trailing {) + placeholder
+            // For other folds, show line text + placeholder
+            if (collapsedFold != null && (collapsedFold.type == FoldType.IMPORTS || collapsedFold.type == FoldType.DOC_COMMENT)) {
+                // Only render placeholder for imports/doc comments (no line text)
+                renderFoldPlaceholder(ctx, collapsedFold, visualLine, showLineText = false)
+            } else if (collapsedFold != null && collapsedFold.type == FoldType.CODE) {
+                // For code folds, render line without trailing '{' and append placeholder
+                renderLineWithoutTrailingBrace(ctx, documentLine, visualLine)
+                renderFoldPlaceholder(ctx, collapsedFold, visualLine, showLineText = true, stripTrailingBrace = true)
+            } else {
+                // Render the line at the visual line position
+                renderLine(ctx, documentLine, visualLine)
+
+                // If this is a collapsed fold start, render the placeholder after line text
+                if (collapsedFold != null) {
+                    renderFoldPlaceholder(ctx, collapsedFold, visualLine, showLineText = true)
+                }
+            }
         }
     }
 
     /**
-     * Renders a single line of text.
+     * Renders the fold placeholder text (e.g., "{ ... }" or "import ...") for collapsed folds.
+     *
+     * @param showLineText If true, positions placeholder after the line text (for code folds).
+     *                     If false, positions placeholder at the start of the line (for import folds).
+     * @param stripTrailingBrace If true, positions placeholder before the trailing '{' in the line.
      */
-    private fun DrawScope.renderLine(ctx: EditorRenderingContext, lineNumber: Int) {
-        val lineText = ctx.getLineText(lineNumber)
+    private fun DrawScope.renderFoldPlaceholder(
+        ctx: EditorRenderingContext,
+        fold: ai.rever.bosseditor.fold.FoldRegion,
+        visualLine: Int,
+        showLineText: Boolean = true,
+        stripTrailingBrace: Boolean = false
+    ) {
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
+
+        // Margin after gutter/fold icon before placeholder
+        val leftMargin = ctx.charWidth * 1.5f
+
+        // Position placeholder based on whether line text is shown
+        val placeholderX = if (showLineText) {
+            // Position after the line text (for code blocks)
+            val lineText = ctx.getLineText(fold.startLine)
+            val effectiveLength = if (stripTrailingBrace) {
+                // Find position before trailing '{' and whitespace
+                val trimmedEnd = lineText.trimEnd()
+                if (trimmedEnd.endsWith("{")) {
+                    trimmedEnd.dropLast(1).trimEnd().length
+                } else {
+                    lineText.length
+                }
+            } else {
+                lineText.length
+            }
+            ctx.gutterWidth + effectiveLength * ctx.charWidth - ctx.scrollOffsetX + ctx.charWidth * 0.5f
+        } else {
+            // Position at the start of the line with left margin (for imports/doc comments)
+            ctx.gutterWidth - ctx.scrollOffsetX + leftMargin
+        }
+
+        // Use the fold's placeholder text or default
+        val placeholderText = fold.placeholder.ifEmpty { "..." }
+
+        // Draw placeholder background
+        val measurement = TextMeasurementCache.getMeasurement(
+            textMeasurer = ctx.textMeasurer,
+            text = placeholderText,
+            fontFamily = ctx.fontFamily,
+            fontSize = ctx.fontSize * 0.9f,
+            isBold = false,
+            isItalic = false
+        )
+
+        val paddingH = ctx.charWidth * 0.3f
+        val bgY = y + (ctx.lineHeight - measurement.height) / 2f
+
+        drawRect(
+            color = ctx.colors.foldPlaceholderBackground,
+            topLeft = Offset(placeholderX, bgY),
+            size = Size(measurement.width + paddingH * 2, measurement.height)
+        )
+
+        // Draw placeholder border
+        drawRect(
+            color = ctx.colors.foldPlaceholderBorder,
+            topLeft = Offset(placeholderX, bgY),
+            size = Size(measurement.width + paddingH * 2, measurement.height),
+            style = Stroke(width = 1f)
+        )
+
+        // Draw placeholder text
+        val style = TextStyle(
+            fontFamily = ctx.fontFamily,
+            fontSize = (ctx.fontSize * 0.9f).sp,
+            color = ctx.colors.foldPlaceholderText
+        )
+
+        drawText(
+            textMeasurer = ctx.textMeasurer,
+            text = placeholderText,
+            style = style,
+            topLeft = Offset(placeholderX + paddingH, bgY),
+            size = Size(measurement.width + ctx.charWidth, measurement.height)
+        )
+    }
+
+    /**
+     * Renders a single line of text.
+     *
+     * @param documentLine The document line number (for getting text/tokens)
+     * @param visualLine The visual line number (for Y position calculation)
+     */
+    private fun DrawScope.renderLine(ctx: EditorRenderingContext, documentLine: Int, visualLine: Int) {
+        val lineText = ctx.getLineText(documentLine)
         if (lineText.isEmpty()) return
 
-        val y = lineNumber * ctx.lineHeight - ctx.scrollOffsetY
-        val tokens = ctx.getLineTokens(lineNumber)
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
+        val tokens = ctx.getLineTokens(documentLine)
 
         // Get rainbow brackets for this line (column -> RainbowBracket mapping)
         val rainbowBracketsByColumn = if (ctx.rainbowBracketsEnabled) {
-            getRainbowBracketsForLine(ctx, lineNumber)
+            getRainbowBracketsForLine(ctx, documentLine)
         } else {
             emptyMap()
         }
@@ -263,6 +386,70 @@ object EditorCanvasRenderer {
                 if (hasRainbowBrackets) {
                     // Render with rainbow colors - bracket characters get rainbow colors,
                     // non-bracket characters get the token's color
+                    renderTextWithRainbowBrackets(ctx, lineText, startCol, endCol, tokenColor, y,
+                        isBold, isItalic, rainbowBracketsByColumn)
+                } else {
+                    drawLineText(ctx, lineText, startCol, endCol, tokenColor, y, isBold, isItalic)
+                }
+            }
+        }
+    }
+
+    /**
+     * Renders a line without its trailing '{' character (for collapsed code folds).
+     * This allows the fold placeholder "{ ... }" to replace the opening brace.
+     */
+    private fun DrawScope.renderLineWithoutTrailingBrace(ctx: EditorRenderingContext, documentLine: Int, visualLine: Int) {
+        val lineText = ctx.getLineText(documentLine)
+        if (lineText.isEmpty()) return
+
+        // Find where to stop rendering (before trailing '{' and whitespace)
+        val trimmedEnd = lineText.trimEnd()
+        val endIndex = if (trimmedEnd.endsWith("{")) {
+            // Find the position of '{' and exclude it plus any whitespace before it
+            val braceIndex = lineText.lastIndexOf('{')
+            lineText.substring(0, braceIndex).trimEnd().length
+        } else {
+            lineText.length
+        }
+
+        if (endIndex <= 0) return
+
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
+        val tokens = ctx.getLineTokens(documentLine)
+
+        // Get rainbow brackets for this line (column -> RainbowBracket mapping)
+        val rainbowBracketsByColumn = if (ctx.rainbowBracketsEnabled) {
+            getRainbowBracketsForLine(ctx, documentLine)
+        } else {
+            emptyMap()
+        }
+
+        if (tokens.isEmpty()) {
+            // No tokens - render as plain text up to endIndex
+            val textToRender = lineText.substring(0, endIndex)
+            if (rainbowBracketsByColumn.isEmpty()) {
+                drawLineText(ctx, textToRender, 0, textToRender.length, ctx.colors.text, y, isBold = false, isItalic = false)
+            } else {
+                renderTextWithRainbowBrackets(ctx, textToRender, 0, textToRender.length, ctx.colors.text, y,
+                    isBold = false, isItalic = false, rainbowBracketsByColumn)
+            }
+        } else {
+            // Render each token with its color, stopping at endIndex
+            for (token in tokens) {
+                val startCol = token.startColumn.coerceIn(0, endIndex)
+                val endCol = token.endColumn.coerceIn(startCol, endIndex)
+
+                if (startCol >= endCol) continue
+
+                val tokenColor = ctx.colors.getTokenColor(token.type)
+                val isBold = token.type == TokenType.KEYWORD
+                val isItalic = token.type == TokenType.COMMENT
+
+                // Check if this token contains rainbow brackets
+                val hasRainbowBrackets = rainbowBracketsByColumn.keys.any { it in startCol until endCol }
+
+                if (hasRainbowBrackets) {
                     renderTextWithRainbowBrackets(ctx, lineText, startCol, endCol, tokenColor, y,
                         isBold, isItalic, rainbowBracketsByColumn)
                 } else {
@@ -390,15 +577,19 @@ object EditorCanvasRenderer {
     /**
      * Renders inlay hints (type hints, parameter hints, etc.).
      * These are semi-transparent inline hints that don't modify the actual text.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.renderInlayHints(ctx: EditorRenderingContext) {
-        // Group hints by line for efficient rendering
-        val hintsByLine = ctx.inlayHints.groupBy { it.line }
+        // Group hints by document line for efficient rendering
+        val hintsByDocLine = ctx.inlayHints.groupBy { it.line }
 
-        for (line in ctx.visibleLineRange) {
-            val lineHints = hintsByLine[line] ?: continue
-            val lineText = ctx.getLineText(line)
-            val y = line * ctx.lineHeight - ctx.scrollOffsetY
+        for (visualLine in ctx.visibleLineRange) {
+            val documentLine = ctx.visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
+
+            val lineHints = hintsByDocLine[documentLine] ?: continue
+            val lineText = ctx.getLineText(documentLine)
+            val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
 
             // Sort hints by column for proper positioning
             val sortedHints = lineHints.sortedBy { it.column }
@@ -548,26 +739,25 @@ object EditorCanvasRenderer {
 
     /**
      * Draws diagnostic squiggle underlines for errors, warnings, etc.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.drawDiagnostics(ctx: EditorRenderingContext) {
         for (diagnostic in ctx.diagnostics) {
-            // Skip if diagnostic is entirely outside visible range
-            if (diagnostic.endLine < ctx.visibleLineRange.first ||
-                diagnostic.startLine > ctx.visibleLineRange.last) {
-                continue
-            }
-
             val color = ctx.colors.getSquiggleColor(diagnostic.severity)
 
-            // Draw squiggle on each line the diagnostic spans
-            for (line in maxOf(diagnostic.startLine, ctx.visibleLineRange.first)..
-                        minOf(diagnostic.endLine, ctx.visibleLineRange.last)) {
-                val startCol = if (line == diagnostic.startLine) diagnostic.range.start.column else 0
-                val endCol = if (line == diagnostic.endLine) diagnostic.range.end.column else ctx.getLineLength(line)
+            // Draw squiggle on each visible line the diagnostic spans
+            for (docLine in diagnostic.startLine..diagnostic.endLine) {
+                // Convert document line to visual line
+                val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
+                if (visualLine < 0) continue // Line is hidden (folded)
+                if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
+
+                val startCol = if (docLine == diagnostic.startLine) diagnostic.range.start.column else 0
+                val endCol = if (docLine == diagnostic.endLine) diagnostic.range.end.column else ctx.getLineLength(docLine)
 
                 if (startCol >= endCol) continue
 
-                val y = line * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
+                val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
                 val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
                 val width = (endCol - startCol) * ctx.charWidth
 
@@ -633,26 +823,25 @@ object EditorCanvasRenderer {
 
     /**
      * Draws hyperlink underlines (shown when Cmd/Ctrl is held).
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.drawHyperlinks(ctx: EditorRenderingContext) {
         for (hyperlink in ctx.hyperlinks) {
-            // Skip if hyperlink is entirely outside visible range
-            if (hyperlink.endLine < ctx.visibleLineRange.first ||
-                hyperlink.startLine > ctx.visibleLineRange.last) {
-                continue
-            }
-
             val color = ctx.colors.hyperlink
 
-            // Draw underline on each line the hyperlink spans
-            for (line in maxOf(hyperlink.startLine, ctx.visibleLineRange.first)..
-                        minOf(hyperlink.endLine, ctx.visibleLineRange.last)) {
-                val startCol = if (line == hyperlink.startLine) hyperlink.range.start.column else 0
-                val endCol = if (line == hyperlink.endLine) hyperlink.range.end.column else ctx.getLineLength(line)
+            // Draw underline on each visible line the hyperlink spans
+            for (docLine in hyperlink.startLine..hyperlink.endLine) {
+                // Convert document line to visual line
+                val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
+                if (visualLine < 0) continue // Line is hidden (folded)
+                if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
+
+                val startCol = if (docLine == hyperlink.startLine) hyperlink.range.start.column else 0
+                val endCol = if (docLine == hyperlink.endLine) hyperlink.range.end.column else ctx.getLineLength(docLine)
 
                 if (startCol >= endCol) continue
 
-                val y = line * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f
+                val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f
                 val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
                 val width = (endCol - startCol) * ctx.charWidth
 
@@ -680,14 +869,15 @@ object EditorCanvasRenderer {
      * Draws a single text caret (cursor) at the given position.
      */
     private fun DrawScope.drawCaret(ctx: EditorRenderingContext, position: EditorPosition) {
-        val caretLine = position.line
+        val documentLine = position.line
         val caretColumn = position.column
 
-        // Check if caret is in visible range
-        if (caretLine !in ctx.visibleLineRange) return
+        // Convert document line to visual line
+        val visualLine = ctx.visualLineMapper.documentToVisual(documentLine)
+        if (visualLine < 0 || visualLine !in ctx.visibleLineRange) return
 
         val x = ctx.gutterWidth + caretColumn * ctx.charWidth - ctx.scrollOffsetX
-        val y = caretLine * ctx.lineHeight - ctx.scrollOffsetY
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
 
         // Ensure caret has valid dimensions
         val caretWidth = 2f
@@ -711,18 +901,22 @@ object EditorCanvasRenderer {
     ) {
         val colors = ctx.colors
 
-        // Convert offsets to positions
+        // Convert offsets to positions (document lines)
         val sourcePos = ctx.offsetToPosition(match.sourceOffset)
         val matchingPos = ctx.offsetToPosition(match.matchingOffset)
 
+        // Convert to visual lines for visibility check
+        val sourceVisualLine = ctx.visualLineMapper.documentToVisual(sourcePos.line)
+        val matchingVisualLine = ctx.visualLineMapper.documentToVisual(matchingPos.line)
+
         // Draw background for source bracket
-        if (sourcePos.line in ctx.visibleLineRange) {
-            drawBracketBackground(ctx, sourcePos, colors)
+        if (sourceVisualLine >= 0 && sourceVisualLine in ctx.visibleLineRange) {
+            drawBracketBackground(ctx, sourcePos, sourceVisualLine, colors)
         }
 
         // Draw background for matching bracket
-        if (matchingPos.line in ctx.visibleLineRange) {
-            drawBracketBackground(ctx, matchingPos, colors)
+        if (matchingVisualLine >= 0 && matchingVisualLine in ctx.visibleLineRange) {
+            drawBracketBackground(ctx, matchingPos, matchingVisualLine, colors)
         }
     }
 
@@ -736,18 +930,22 @@ object EditorCanvasRenderer {
     ) {
         val colors = ctx.colors
 
-        // Convert offsets to positions
+        // Convert offsets to positions (document lines)
         val sourcePos = ctx.offsetToPosition(match.sourceOffset)
         val matchingPos = ctx.offsetToPosition(match.matchingOffset)
 
+        // Convert to visual lines for visibility check
+        val sourceVisualLine = ctx.visualLineMapper.documentToVisual(sourcePos.line)
+        val matchingVisualLine = ctx.visualLineMapper.documentToVisual(matchingPos.line)
+
         // Draw border for source bracket
-        if (sourcePos.line in ctx.visibleLineRange) {
-            drawBracketBorder(ctx, sourcePos, colors)
+        if (sourceVisualLine >= 0 && sourceVisualLine in ctx.visibleLineRange) {
+            drawBracketBorder(ctx, sourcePos, sourceVisualLine, colors)
         }
 
         // Draw border for matching bracket
-        if (matchingPos.line in ctx.visibleLineRange) {
-            drawBracketBorder(ctx, matchingPos, colors)
+        if (matchingVisualLine >= 0 && matchingVisualLine in ctx.visibleLineRange) {
+            drawBracketBorder(ctx, matchingPos, matchingVisualLine, colors)
         }
     }
 
@@ -757,10 +955,11 @@ object EditorCanvasRenderer {
     private fun DrawScope.drawBracketBackground(
         ctx: EditorRenderingContext,
         position: EditorPosition,
+        visualLine: Int,
         colors: EditorColors
     ) {
         val x = ctx.gutterWidth + position.column * ctx.charWidth - ctx.scrollOffsetX
-        val y = position.line * ctx.lineHeight - ctx.scrollOffsetY
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
 
         drawRect(
             color = colors.matchedBracketBackground,
@@ -775,10 +974,11 @@ object EditorCanvasRenderer {
     private fun DrawScope.drawBracketBorder(
         ctx: EditorRenderingContext,
         position: EditorPosition,
+        visualLine: Int,
         colors: EditorColors
     ) {
         val x = ctx.gutterWidth + position.column * ctx.charWidth - ctx.scrollOffsetX
-        val y = position.line * ctx.lineHeight - ctx.scrollOffsetY
+        val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
 
         drawRect(
             color = colors.matchedBracketForeground,
@@ -790,27 +990,28 @@ object EditorCanvasRenderer {
 
     /**
      * Draws mark occurrences highlights for all occurrences of the word under cursor.
+     * Uses visual line mapping to properly handle collapsed folds.
      */
     private fun DrawScope.drawMarkOccurrences(
         ctx: EditorRenderingContext,
         colors: EditorColors
     ) {
         for (occurrence in ctx.markOccurrences) {
-            // Convert offset range to position range
+            // Convert offset range to position range (document lines)
             val startPos = ctx.offsetToPosition(occurrence.start)
             val endPos = ctx.offsetToPosition(occurrence.end)
 
-            // Skip if entirely outside visible range
-            if (endPos.line < ctx.visibleLineRange.first || startPos.line > ctx.visibleLineRange.last) {
-                continue
-            }
+            // Draw occurrence on each visible line it spans (usually just one line for words)
+            for (docLine in startPos.line..endPos.line) {
+                // Convert document line to visual line
+                val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
+                if (visualLine < 0) continue // Line is hidden (folded)
+                if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
 
-            // Draw occurrence on each line it spans (usually just one line for words)
-            for (line in maxOf(startPos.line, ctx.visibleLineRange.first)..minOf(endPos.line, ctx.visibleLineRange.last)) {
-                val startCol = if (line == startPos.line) startPos.column else 0
-                val endCol = if (line == endPos.line) endPos.column else ctx.getLineLength(line)
+                val startCol = if (docLine == startPos.line) startPos.column else 0
+                val endCol = if (docLine == endPos.line) endPos.column else ctx.getLineLength(docLine)
 
-                val y = line * ctx.lineHeight - ctx.scrollOffsetY
+                val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
                 val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
                 val width = (endCol - startCol) * ctx.charWidth
 
@@ -862,25 +1063,31 @@ object EditorCanvasRenderer {
             fontSize = ctx.fontSize.sp
         )
 
-        for (line in ctx.visibleLineRange) {
-            val lineNumberText = (line + 1).toString() // 1-indexed display
-            val y = line * ctx.lineHeight - ctx.scrollOffsetY
+        // visibleLineRange is in terms of visual lines
+        for (visualLine in ctx.visibleLineRange) {
+            val documentLine = ctx.visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
+
+            val lineNumberText = (documentLine + 1).toString() // 1-indexed display
+            val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY
 
             // Use brighter color for current line
-            val lineColor = if (line == currentLine) {
+            val lineColor = if (documentLine == currentLine) {
                 colors.lineNumberActive
             } else {
                 colors.lineNumber
             }
 
-            // Right-align line numbers
+            // Right-align line numbers (gutter width already includes fold indicator space)
             val measurement = TextMeasurementCache.getMeasurement(
                 textMeasurer = ctx.textMeasurer,
                 text = lineNumberText,
                 fontFamily = ctx.fontFamily,
                 fontSize = ctx.fontSize
             )
-            val x = ctx.gutterWidth - measurement.width - 8f // 8px padding from right edge
+            // Position line numbers with padding from fold indicator area
+            val foldIndicatorSpace = if (ctx.foldingEnabled) 32f else 0f
+            val x = ctx.gutterWidth - measurement.width - 8f - foldIndicatorSpace
 
             // Skip if line number is completely off-screen
             if (x + measurement.width < 0 || x > size.width) continue
@@ -895,7 +1102,63 @@ object EditorCanvasRenderer {
             )
 
             // Draw gutter icon if present
-            drawGutterIconForLine(ctx, line, y, colors)
+            drawGutterIconForLine(ctx, documentLine, y, colors)
+
+            // Draw fold indicator if this line is a fold start
+            if (ctx.foldingEnabled) {
+                drawFoldIndicatorForLine(ctx, documentLine, y, colors)
+            }
+        }
+    }
+
+    /**
+     * Draws a fold indicator (> or v) for fold start lines.
+     * - Collapsed: > (right-pointing chevron)
+     * - Expanded: v (down-pointing chevron)
+     */
+    private fun DrawScope.drawFoldIndicatorForLine(
+        ctx: EditorRenderingContext,
+        documentLine: Int,
+        y: Float,
+        colors: EditorColors
+    ) {
+        // Find fold region starting at this line
+        val foldRegion = ctx.allFoldRegions.find { it.startLine == documentLine } ?: return
+
+        // Larger indicator dimensions with generous padding
+        val indicatorSize = 16f
+        val paddingRight = 8f // Padding from gutter border
+        val paddingLeft = 8f // Padding from line numbers
+        val strokeWidth = 2f
+
+        // Position after line number area with padding from gutter border
+        val indicatorX = ctx.gutterWidth - indicatorSize - paddingRight
+        val indicatorY = y + (ctx.lineHeight - indicatorSize) / 2f
+
+        val indicatorColor = colors.foldIndicator
+
+        if (foldRegion.isCollapsed) {
+            // Draw right-pointing chevron (>) for collapsed
+            val path = Path()
+            path.moveTo(indicatorX + 2f, indicatorY)
+            path.lineTo(indicatorX + indicatorSize - 2f, indicatorY + indicatorSize / 2f)
+            path.lineTo(indicatorX + 2f, indicatorY + indicatorSize)
+            drawPath(
+                path = path,
+                color = indicatorColor,
+                style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            )
+        } else {
+            // Draw down-pointing chevron (v) for expanded
+            val path = Path()
+            path.moveTo(indicatorX, indicatorY + 2f)
+            path.lineTo(indicatorX + indicatorSize / 2f, indicatorY + indicatorSize - 2f)
+            path.lineTo(indicatorX + indicatorSize, indicatorY + 2f)
+            drawPath(
+                path = path,
+                color = indicatorColor,
+                style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            )
         }
     }
 

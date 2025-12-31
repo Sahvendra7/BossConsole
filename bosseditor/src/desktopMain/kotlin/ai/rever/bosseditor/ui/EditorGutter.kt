@@ -70,7 +70,7 @@ fun EditorGutter(
         max(3, lineCount.toString().length)
     }
     val gutterWidth = remember(maxLineDigits) {
-        (maxLineDigits * 9 + 24).dp // ~9dp per digit + padding + fold icon space
+        (maxLineDigits * 9 + 36).dp // ~9dp per digit + left padding + fold icon space + right padding
     }
 
     val textStyle = remember {
@@ -90,9 +90,13 @@ fun EditorGutter(
             modifier = Modifier.fillMaxSize()
         ) {
             val lineHeightPx = lineHeight
+            val leftPadding = 8.dp.toPx()           // Space for run gutter icons on left
             val foldIconSize = 12.dp.toPx()
-            val foldIconPadding = 4.dp.toPx()
-            val lineNumberEndX = size.width - foldIconSize - foldIconPadding * 2
+            val foldIconRightPadding = 8.dp.toPx()  // Space after fold icon to right edge
+            val foldIconLeftPadding = 4.dp.toPx()   // Space before fold icon
+            // Line numbers positioned between left padding and fold icon area
+            val lineNumberEndX = size.width - foldIconSize - foldIconLeftPadding - foldIconRightPadding
+            val lineNumberStartX = leftPadding      // Minimum X for line numbers
 
             // Draw visible lines
             val lastVisibleLine = (firstVisibleLine + visibleLineCount).coerceAtMost(
@@ -136,7 +140,7 @@ fun EditorGutter(
                 if (fold != null) {
                     // Collapsed fold - draw expand icon (▶)
                     drawFoldIcon(
-                        x = lineNumberEndX + foldIconPadding,
+                        x = lineNumberEndX + foldIconLeftPadding,
                         y = yOffset + (lineHeightPx - foldIconSize) / 2,
                         size = foldIconSize,
                         isCollapsed = true,

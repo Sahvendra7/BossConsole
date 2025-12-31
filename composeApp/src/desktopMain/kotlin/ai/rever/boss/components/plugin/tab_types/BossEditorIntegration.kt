@@ -307,7 +307,7 @@ fun BossEditorIntegration(
                 lineSpacing = lineSpacing,
                 onRun = onRun,
                 modifier = Modifier
-                    .width(24.dp)
+                    .width(28.dp)
                     .fillMaxHeight()
                     .background(editorTheme.colors.gutterBackground)
             )
@@ -514,6 +514,8 @@ private fun BossEditorRunGutter(
 ) {
     // Collect scroll offset from editor state
     val scrollOffset by editorState.scrollOffset.collectAsState()
+    // Collect visual line mapper for folding support
+    val visualLineMapper by editorState.visualLineMapper.collectAsState()
     val density = LocalDensity.current
 
     // Measure line height to match EditorCanvas exactly
@@ -549,19 +551,30 @@ private fun BossEditorRunGutter(
         detectedMainFunctions
             .filter { it.lineNumber in visibleRange }
             .forEach { detected ->
-                // Calculate Y position in pixels
-                // lineNumber from detector is 1-based, editor lines are 0-based internally
-                val yOffsetPx = (detected.lineNumber * lineHeightPx) - scrollOffset.y.toFloat()
+                // lineNumber from detector is 0-based document line
+                val documentLine = detected.lineNumber
+
+                // Convert document line to visual line (accounts for folding)
+                val visualLine = visualLineMapper.documentToVisual(documentLine)
+
+                // Skip if line is hidden (inside a collapsed fold)
+                if (visualLine < 0) return@forEach
+
+                // Calculate Y position using visual line
+                val yOffsetPx = (visualLine * lineHeightPx) - scrollOffset.y.toFloat()
 
                 // Only render if within viewport
                 if (yOffsetPx >= -lineHeightPx && yOffsetPx < 2000f) {
+                    // Left margin to position icon away from left edge
+                    val leftMarginPx = with(density) { 4.dp.toPx().toInt() }
+
                     Box(
                         modifier = Modifier
                             // Use pixel-based offset to match EditorCanvas rendering
-                            .offset { IntOffset(0, yOffsetPx.toInt()) }
+                            .offset { IntOffset(leftMarginPx, yOffsetPx.toInt()) }
                             .height(lineHeightDp)
                             .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.CenterStart
                     ) {
                         GutterRunIcon(
                             detected = detected,

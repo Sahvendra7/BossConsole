@@ -33,10 +33,13 @@ class KotlinFoldParser : FoldParser {
         // Track brace-based folds
         val braceStack = mutableListOf<BraceInfo>()
 
-        // Track multi-line comments
+        // Track multi-line comments (for fold regions)
         var commentStartLine = -1
-        var inBlockComment = false
+        var inBlockCommentForFold = false
         var isDocComment = false
+
+        // Track block comment state for brace parsing (separate from fold tracking)
+        var inBlockCommentForBraces = false
 
         // Track raw strings
         var inRawString = false
@@ -46,7 +49,7 @@ class KotlinFoldParser : FoldParser {
             val trimmedLine = line.trim()
 
             // Handle raw strings (triple-quoted)
-            if (!inBlockComment) {
+            if (!inBlockCommentForFold) {
                 val tripleQuoteCount = countTripleQuotes(line)
                 if (tripleQuoteCount > 0) {
                     if (!inRawString) {
@@ -92,17 +95,17 @@ class KotlinFoldParser : FoldParser {
                 importEndLine = -1
             }
 
-            // Handle block comment folding
-            if (!inBlockComment) {
+            // Handle block comment folding (for creating fold regions)
+            if (!inBlockCommentForFold) {
                 val commentStart = findBlockCommentStart(trimmedLine)
                 if (commentStart != null) {
-                    inBlockComment = true
+                    inBlockCommentForFold = true
                     isDocComment = commentStart.isDoc
                     commentStartLine = lineIndex
 
                     // Check if comment ends on same line
                     if (trimmedLine.contains("*/") && trimmedLine.indexOf("*/") > trimmedLine.indexOf("/*")) {
-                        inBlockComment = false
+                        inBlockCommentForFold = false
                         commentStartLine = -1
                     }
                 }
@@ -111,14 +114,13 @@ class KotlinFoldParser : FoldParser {
                 if (lineIndex > commentStartLine) {
                     regions.add(FoldRegion.forComment(commentStartLine, lineIndex, isDocComment))
                 }
-                inBlockComment = false
+                inBlockCommentForFold = false
                 commentStartLine = -1
             }
 
-            // Handle curly brace folding (skip if in comment)
-            if (!inBlockComment) {
-                parseBraces(line, lineIndex, lines, braceStack, regions)
-            }
+            // Handle curly brace folding - parseBraces tracks its own block comment state
+            // to properly skip braces inside comments
+            inBlockCommentForBraces = parseBraces(line, lineIndex, lines, braceStack, regions, inBlockCommentForBraces)
         }
 
         // Handle imports at end of file
@@ -134,27 +136,56 @@ class KotlinFoldParser : FoldParser {
 
     /**
      * Parses curly braces in a line for code block folding.
+     *
+     * @param inBlockComment Whether we're currently inside a multi-line block comment
+     * @return Whether we're still inside a block comment at end of line
      */
     private fun parseBraces(
         line: String,
         lineIndex: Int,
         allLines: List<String>,
         braceStack: MutableList<BraceInfo>,
-        regions: MutableList<FoldRegion>
-    ) {
+        regions: MutableList<FoldRegion>,
+        inBlockComment: Boolean
+    ): Boolean {
         var charIndex = 0
         var inString = false
         var inChar = false
         var stringChar = '"'
+        var currentlyInBlockComment = inBlockComment
 
         while (charIndex < line.length) {
             val char = line[charIndex]
 
-            // Handle string literals
-            if (!inChar && (char == '"' || char == '\'')) {
+            // Handle block comment end
+            if (currentlyInBlockComment) {
+                if (char == '*' && charIndex + 1 < line.length && line[charIndex + 1] == '/') {
+                    currentlyInBlockComment = false
+                    charIndex += 2
+                    continue
+                }
+                charIndex++
+                continue
+            }
+
+            // Handle block comment start
+            if (char == '/' && charIndex + 1 < line.length && line[charIndex + 1] == '*') {
+                currentlyInBlockComment = true
+                charIndex += 2
+                continue
+            }
+
+            // Handle string and char literals
+            if (char == '"' || char == '\'') {
                 if (char == '"') {
+                    // Skip double quote inside char literal
+                    if (inChar) {
+                        charIndex++
+                        continue
+                    }
+
                     // Check for triple-quoted string
-                    if (charIndex + 2 < line.length &&
+                    if (!inString && charIndex + 2 < line.length &&
                         line[charIndex + 1] == '"' &&
                         line[charIndex + 2] == '"'
                     ) {
@@ -180,9 +211,16 @@ class KotlinFoldParser : FoldParser {
                         inString = false
                     }
                 } else if (char == '\'') {
-                    if (!inString && !inChar) {
+                    // Skip single quote inside string literal
+                    if (inString) {
+                        charIndex++
+                        continue
+                    }
+
+                    // Toggle char literal state
+                    if (!inChar) {
                         inChar = true
-                    } else if (inChar && (charIndex == 0 || line[charIndex - 1] != '\\')) {
+                    } else if (charIndex == 0 || line[charIndex - 1] != '\\') {
                         inChar = false
                     }
                 }
@@ -224,6 +262,8 @@ class KotlinFoldParser : FoldParser {
 
             charIndex++
         }
+
+        return currentlyInBlockComment
     }
 
     /**

@@ -80,8 +80,9 @@ data class FoldRegion(
     companion object {
         /**
          * Creates a fold region for imports.
+         * Imports are collapsed by default.
          */
-        fun forImports(startLine: Int, endLine: Int, collapsed: Boolean = false): FoldRegion {
+        fun forImports(startLine: Int, endLine: Int, collapsed: Boolean = true): FoldRegion {
             return FoldRegion(
                 startLine = startLine,
                 endLine = endLine,
@@ -130,41 +131,11 @@ data class FoldRegion(
         }
 
         /**
-         * Generates an IntelliJ-style placeholder for a code block.
+         * Generates a simple placeholder for a code block.
          */
+        @Suppress("UNUSED_PARAMETER")
         private fun generateCodeBlockPlaceholder(firstLineText: String): String {
-            val trimmed = firstLineText.trim()
-
-            // Function: fun name(...) { ... }
-            if (trimmed.contains("fun ")) {
-                val funMatch = Regex("""(fun\s+\w+\s*\([^)]*\)[^{]*)""").find(trimmed)
-                if (funMatch != null) {
-                    return "${funMatch.value.trim()} { ... }"
-                }
-            }
-
-            // Class/Interface/Object: class Name { ... }
-            for (keyword in listOf("class ", "interface ", "object ", "enum class ")) {
-                if (trimmed.contains(keyword)) {
-                    val nameMatch = Regex("""($keyword\w+[^{]*)""").find(trimmed)
-                    if (nameMatch != null) {
-                        return "${nameMatch.value.trim()} { ... }"
-                    }
-                }
-            }
-
-            // Lambda or anonymous block
-            if (trimmed.endsWith("{") || trimmed.contains("->")) {
-                // Try to get context before the brace
-                val beforeBrace = trimmed.substringBefore("{").trim()
-                return if (beforeBrace.isNotEmpty()) {
-                    "$beforeBrace { ... }"
-                } else {
-                    "{ ... }"
-                }
-            }
-
-            // Default
+            // Simple placeholder for all code blocks
             return "{ ... }"
         }
     }

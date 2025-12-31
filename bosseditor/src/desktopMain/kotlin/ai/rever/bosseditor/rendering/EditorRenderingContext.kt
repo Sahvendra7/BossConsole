@@ -10,6 +10,8 @@ import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.Hyperlink
 import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.RainbowBracket
+import ai.rever.bosseditor.fold.FoldRegion
+import ai.rever.bosseditor.fold.VisualLineMapper
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.model.Caret
@@ -75,8 +77,10 @@ data class EditorRenderingContext(
     val showLineNumbers: Boolean,
     val gutterWidth: Float,
 
-    // Folding state (will be expanded in Phase 5)
-    val foldedRegions: List<FoldedRegion>,
+    // Folding state
+    val visualLineMapper: VisualLineMapper,
+    val allFoldRegions: List<FoldRegion>,
+    val foldingEnabled: Boolean,
 
     // Token highlighting (will be populated from lexer in Phase 4)
     val getLineTokens: (Int) -> List<EditorToken>,
@@ -139,7 +143,9 @@ data class EditorRenderingContext(
             currentSearchMatchIndex: Int = -1,
             showLineNumbers: Boolean = true,
             gutterWidth: Float = 50f,
-            foldedRegions: List<FoldedRegion> = emptyList(),
+            visualLineMapper: VisualLineMapper? = null,
+            allFoldRegions: List<FoldRegion> = emptyList(),
+            foldingEnabled: Boolean = true,
             getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
             bracketMatch: BracketMatch? = null,
             markOccurrences: List<OffsetRange> = emptyList(),
@@ -154,11 +160,15 @@ data class EditorRenderingContext(
             inlayHintsEnabled: Boolean = true,
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
-            // Calculate visible lines
-            val firstVisibleLine = (scrollOffsetY / lineHeight).toInt().coerceAtLeast(0)
+            // Create the visual line mapper (needed for visible line calculation)
+            val mapper = visualLineMapper ?: VisualLineMapper.noFolds(document.lineCount)
+
+            // Calculate visible lines in terms of VISUAL lines (accounting for folds)
+            val firstVisibleVisualLine = (scrollOffsetY / lineHeight).toInt().coerceAtLeast(0)
             val visibleLineCount = (viewportHeight / lineHeight).toInt() + 2 // +2 for partial lines
-            // Ensure lastVisibleLine is at least 0 (for empty documents) so caret can still be drawn
-            val lastVisibleLine = (firstVisibleLine + visibleLineCount).coerceAtMost(maxOf(document.lineCount - 1, 0))
+            // Ensure lastVisibleVisualLine is at least 0 (for empty documents) so caret can still be drawn
+            val lastVisibleVisualLine = (firstVisibleVisualLine + visibleLineCount)
+                .coerceAtMost(maxOf(mapper.visibleLineCount - 1, 0))
 
             return EditorRenderingContext(
                 documentVersion = document.documentVersion,
@@ -170,7 +180,7 @@ data class EditorRenderingContext(
                 lineHeight = lineHeight,
                 fontSize = fontSize,
                 baselineOffset = baselineOffset,
-                visibleLineRange = firstVisibleLine..lastVisibleLine,
+                visibleLineRange = firstVisibleVisualLine..lastVisibleVisualLine,
                 viewportWidth = viewportWidth,
                 viewportHeight = viewportHeight,
                 scrollOffsetX = scrollOffsetX,
@@ -188,7 +198,9 @@ data class EditorRenderingContext(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
-                foldedRegions = foldedRegions,
+                visualLineMapper = mapper,
+                allFoldRegions = allFoldRegions,
+                foldingEnabled = foldingEnabled,
                 getLineTokens = getLineTokens,
                 bracketMatch = bracketMatch,
                 markOccurrences = markOccurrences,
@@ -207,16 +219,6 @@ data class EditorRenderingContext(
         }
     }
 }
-
-/**
- * Represents a folded region in the editor.
- * (Placeholder for Phase 5)
- */
-data class FoldedRegion(
-    val startLine: Int,
-    val endLine: Int,
-    val placeholder: String // e.g., "import ...", "{ ... }"
-)
 
 /**
  * Represents a syntax token for rendering.

@@ -42,13 +42,7 @@ object RSyntaxThemeMapper {
                 doc.setSyntaxStyle(fixedTokenMaker)
             }
 
-            // Register our custom Kotlin fold parser that handles import folding
-            FoldParserManager.get().addFoldParserMapping(
-                org.fife.ui.rsyntaxtextarea.SyntaxConstants.SYNTAX_STYLE_KOTLIN,
-                KotlinFoldParser()
-            )
-
-            // Re-fold the document to apply the new fold parser
+            // Re-fold the document
             textArea.foldManager?.reparse()
         }
 
