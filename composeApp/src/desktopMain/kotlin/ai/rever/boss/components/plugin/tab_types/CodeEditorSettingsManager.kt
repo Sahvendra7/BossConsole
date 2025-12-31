@@ -20,10 +20,10 @@ object CodeEditorSettings {
 
     /**
      * Whether to use the native BossEditor (Compose Canvas) instead of RSyntaxTextArea (Swing).
-     * When true, uses BossEditorIntegration for code editing.
-     * When false (default), uses RSyntaxEditorWithGutter for maximum compatibility.
+     * When true (default), uses BossEditorIntegration for code editing.
+     * When false, uses RSyntaxEditorWithGutter for Swing compatibility.
      */
-    var useNativeEditor: Boolean = false
+    var useNativeEditor: Boolean = true
 
     // Theme colors
     fun getBackgroundColor(): Color = when (theme) {
@@ -105,7 +105,7 @@ data class CodeEditorSettingsData(
     val useLigatures: Boolean = true,
     val useAntialiasing: Boolean = true,
     val lineSpacing: Float = 1.2f,
-    val useNativeEditor: Boolean = false
+    val useNativeEditor: Boolean = true
 )
 
 object CodeEditorSettingsManager {
