@@ -28,8 +28,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -190,6 +195,7 @@ fun BossEditorIntegration(
                 detectedMainFunctions = detectedMainFunctions,
                 editorState = editorState,
                 fontSize = fontSize.toFloat(),
+                fontFamily = composeFontFamily,
                 onRun = onRun,
                 modifier = Modifier
                     .width(24.dp)
@@ -383,15 +389,27 @@ private fun BossEditorRunGutter(
     detectedMainFunctions: List<DetectedMainFunction>,
     editorState: EditorState,
     fontSize: Float,
+    fontFamily: FontFamily = FontFamily.Monospace,
     onRun: (DetectedMainFunction) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Collect scroll offset from editor state
     val scrollOffset by editorState.scrollOffset.collectAsState()
+    val density = LocalDensity.current
 
-    // Calculate line height to match the editor's line height
-    // This should match the calculation in EditorCanvas
-    val lineHeight = fontSize * 1.5f
+    // Measure line height to match EditorCanvas exactly
+    // EditorCanvas uses textMeasurer.measure("M", style).size.height
+    val textMeasurer = rememberTextMeasurer()
+    val lineHeightPx = remember(fontSize, fontFamily) {
+        val style = TextStyle(
+            fontFamily = fontFamily,
+            fontSize = fontSize.sp
+        )
+        textMeasurer.measure("M", style).size.height.toFloat()
+    }
+
+    // Convert pixel height to dp for sizing
+    val lineHeightDp = with(density) { lineHeightPx.toDp() }
 
     // Create a map for fast lookup
     val runnableLines = remember(detectedMainFunctions) {
@@ -399,7 +417,7 @@ private fun BossEditorRunGutter(
     }
 
     // Calculate visible range with buffer
-    val firstVisibleLine = (scrollOffset.y / lineHeight).toInt().coerceAtLeast(0)
+    val firstVisibleLine = (scrollOffset.y / lineHeightPx).toInt().coerceAtLeast(0)
     val visibleLineCount = 50 // Generous buffer for smooth scrolling
     val visibleRange = remember(firstVisibleLine, visibleLineCount, editorState.document.lineCount) {
         val start = (firstVisibleLine - 2).coerceAtLeast(0)
@@ -412,15 +430,17 @@ private fun BossEditorRunGutter(
         detectedMainFunctions
             .filter { it.lineNumber in visibleRange }
             .forEach { detected ->
-                // Calculate Y position: (lineNumber - 1) because lineNumber is 1-based
-                val yOffset = ((detected.lineNumber - 1) * lineHeight) - scrollOffset.y.toFloat()
+                // Calculate Y position in pixels
+                // lineNumber from detector is 1-based, editor lines are 0-based internally
+                val yOffsetPx = (detected.lineNumber * lineHeightPx) - scrollOffset.y.toFloat()
 
                 // Only render if within viewport
-                if (yOffset >= -lineHeight && yOffset < 2000f) {
+                if (yOffsetPx >= -lineHeightPx && yOffsetPx < 2000f) {
                     Box(
                         modifier = Modifier
-                            .offset(y = yOffset.dp)
-                            .height(lineHeight.dp)
+                            // Use pixel-based offset to match EditorCanvas rendering
+                            .offset { IntOffset(0, yOffsetPx.toInt()) }
+                            .height(lineHeightDp)
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {

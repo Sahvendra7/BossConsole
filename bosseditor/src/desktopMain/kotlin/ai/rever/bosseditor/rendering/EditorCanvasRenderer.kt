@@ -43,6 +43,13 @@ object EditorCanvasRenderer {
      * Renders the entire visible portion of the editor.
      */
     fun DrawScope.renderEditor(ctx: EditorRenderingContext) {
+        // Skip rendering if canvas is not yet sized (initial frame)
+        // This prevents constraint errors from drawText when size is 0
+        if (size.width <= 0f || size.height <= 0f) return
+
+        // Skip rendering if essential dimensions are invalid
+        if (ctx.charWidth <= 0f || ctx.lineHeight <= 0f) return
+
         // Pass 1: Draw backgrounds
         renderBackgrounds(ctx)
 
@@ -351,16 +358,19 @@ object EditorCanvasRenderer {
         isBold: Boolean,
         isItalic: Boolean
     ) {
-        // Guard against empty text which can cause invalid constraints
-        if (startCol >= endCol || startCol >= lineText.length) return
+        // Guard against empty text
+        if (startCol < 0 || startCol >= endCol || startCol >= lineText.length) return
 
         val safeEndCol = minOf(endCol, lineText.length)
         val text = lineText.substring(startCol, safeEndCol)
-
-        // Don't attempt to draw empty text
         if (text.isEmpty()) return
 
         val x = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+
+        // Skip if text is completely off-screen (optimization)
+        val textWidth = text.length * ctx.charWidth
+        if (x + textWidth < 0 || x > size.width) return
+        if (y + ctx.lineHeight < 0 || y > size.height) return
 
         val style = TextStyle(
             fontFamily = ctx.fontFamily,
@@ -370,24 +380,14 @@ object EditorCanvasRenderer {
             fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal
         )
 
-        // Use cached measurement for consistent positioning
-        val measurement = TextMeasurementCache.getMeasurement(
-            textMeasurer = ctx.textMeasurer,
-            text = text,
-            fontFamily = ctx.fontFamily,
-            fontSize = ctx.fontSize,
-            isBold = isBold,
-            isItalic = isItalic
-        )
-
-        // Calculate baseline offset for proper vertical alignment
-        val baselineY = y + ctx.baselineOffset
-
+        // Use explicit size constraints to avoid internal constraint calculation issues
+        // when topLeft.x is negative (text scrolled off-screen left)
         drawText(
             textMeasurer = ctx.textMeasurer,
             text = text,
             style = style,
-            topLeft = Offset(x, y)
+            topLeft = Offset(x, y),
+            size = Size(textWidth + ctx.charWidth, ctx.lineHeight)
         )
     }
 
@@ -496,6 +496,10 @@ object EditorCanvasRenderer {
         val textX = x + paddingLeft
         val textY = bgY
 
+        // Skip if text is completely off-screen
+        if (textX + measurement.width < 0 || textX > size.width) return totalWidth
+        if (textY + measurement.height < 0 || textY > size.height) return totalWidth
+
         val style = TextStyle(
             fontFamily = ctx.fontFamily,
             fontSize = (ctx.fontSize * 0.9f).sp,
@@ -506,7 +510,8 @@ object EditorCanvasRenderer {
             textMeasurer = ctx.textMeasurer,
             text = hint.text,
             style = style,
-            topLeft = Offset(textX, textY)
+            topLeft = Offset(textX, textY),
+            size = Size(measurement.width + ctx.charWidth, measurement.height)
         )
 
         return totalWidth
@@ -841,11 +846,16 @@ object EditorCanvasRenderer {
             )
             val x = ctx.gutterWidth - measurement.width - 8f // 8px padding from right edge
 
+            // Skip if line number is completely off-screen
+            if (x + measurement.width < 0 || x > size.width) continue
+            if (y + ctx.lineHeight < 0 || y > size.height) continue
+
             drawText(
                 textMeasurer = ctx.textMeasurer,
                 text = lineNumberText,
                 style = style.copy(color = lineColor),
-                topLeft = Offset(x, y)
+                topLeft = Offset(x, y),
+                size = Size(measurement.width + ctx.charWidth, ctx.lineHeight)
             )
 
             // Draw gutter icon if present

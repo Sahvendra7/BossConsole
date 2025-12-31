@@ -18,7 +18,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -26,6 +30,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
@@ -44,6 +49,7 @@ import androidx.compose.ui.unit.sp
  * - Delegates rendering to EditorCanvasRenderer
  * - Handles focus and mouse input (click, double-click, triple-click, drag)
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun EditorCanvas(
     editorState: EditorState,
@@ -79,6 +85,9 @@ fun EditorCanvas(
     var lastClickTime by remember { mutableStateOf(0L) }
     var lastClickPosition by remember { mutableStateOf<Offset?>(null) }
     var clickCount by remember { mutableStateOf(0) }
+
+    // Viewport size for scroll calculations
+    var viewportSize by remember { mutableStateOf(Size.Zero) }
 
     // Measure character dimensions using a monospace reference character
     val (charWidth, lineHeight, baselineOffset) = remember(fontFamily, fontSize, density) {
@@ -178,6 +187,9 @@ fun EditorCanvas(
     Box(
         modifier = modifier
             .background(theme.colors.background)
+            .onSizeChanged { size ->
+                viewportSize = size.toSize()
+            }
             .focusRequester(focusRequester)
             .focusable()
             .onFocusChanged { focusState ->
@@ -272,6 +284,29 @@ fun EditorCanvas(
                         }
                     }
                 }
+            }
+            .onPointerEvent(PointerEventType.Scroll) { event ->
+                val change = event.changes.first()
+                if (change.isConsumed) return@onPointerEvent
+
+                val delta = change.scrollDelta
+                val scrollLines = 3 // Lines to scroll per wheel tick
+
+                // Calculate max scroll based on content (in pixels)
+                val contentHeight = editorState.document.lineCount * lineHeight
+                val maxScrollY = (contentHeight - viewportSize.height).coerceAtLeast(0f).toInt()
+
+                // delta.y is typically -1 or 1 per scroll tick
+                // Scroll by number of lines * line height (pixels)
+                val scrollAmount = (delta.y * scrollLines * lineHeight).toInt()
+                val newScrollY = (scrollOffset.y + scrollAmount).coerceIn(0, maxScrollY)
+
+                editorState.setScrollOffset(
+                    ai.rever.bosseditor.core.ScrollOffset(
+                        x = scrollOffset.x,
+                        y = newScrollY
+                    )
+                )
             }
     ) {
         Canvas(
