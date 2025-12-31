@@ -64,9 +64,17 @@ object EditorCanvasRenderer {
             drawMarkOccurrences(ctx, colors)
         }
 
-        // Draw selection
-        ctx.selection?.let { selection ->
-            drawSelection(ctx, selection, colors)
+        // Draw selections (all caret selections if multi-caret, otherwise primary selection)
+        if (ctx.hasMultipleCarets) {
+            for (caret in ctx.allCarets) {
+                caret.selection?.let { selection ->
+                    drawSelection(ctx, selection, colors)
+                }
+            }
+        } else {
+            ctx.selection?.let { selection ->
+                drawSelection(ctx, selection, colors)
+            }
         }
 
         // Draw search match backgrounds
@@ -261,7 +269,7 @@ object EditorCanvasRenderer {
     // ========== Pass 3: Overlays ==========
 
     /**
-     * Renders overlay elements: caret, bracket matching.
+     * Renders overlay elements: carets, bracket matching.
      */
     private fun DrawScope.renderOverlays(ctx: EditorRenderingContext) {
         // Draw bracket matching highlight
@@ -269,18 +277,31 @@ object EditorCanvasRenderer {
             drawBracketMatch(ctx, match)
         }
 
-        // Draw caret
+        // Draw all carets (multi-caret support)
         if (ctx.caretVisible && ctx.caretBlinkVisible) {
-            drawCaret(ctx)
+            if (ctx.hasMultipleCarets) {
+                drawAllCarets(ctx)
+            } else {
+                drawCaret(ctx, ctx.caretPosition)
+            }
         }
     }
 
     /**
-     * Draws the text caret (cursor).
+     * Draws all carets for multi-caret editing.
      */
-    private fun DrawScope.drawCaret(ctx: EditorRenderingContext) {
-        val caretLine = ctx.caretPosition.line
-        val caretColumn = ctx.caretPosition.column
+    private fun DrawScope.drawAllCarets(ctx: EditorRenderingContext) {
+        for (caret in ctx.allCarets) {
+            drawCaret(ctx, caret.position)
+        }
+    }
+
+    /**
+     * Draws a single text caret (cursor) at the given position.
+     */
+    private fun DrawScope.drawCaret(ctx: EditorRenderingContext, position: EditorPosition) {
+        val caretLine = position.line
+        val caretColumn = position.column
 
         // Check if caret is in visible range
         if (caretLine !in ctx.visibleLineRange) return

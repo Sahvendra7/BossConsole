@@ -65,11 +65,56 @@ class EditorInputHandler(
                 true
             }
 
+            // Multi-caret operations
+            handleMultiCaret(event, isCmdOrCtrl, isShift, isAlt) -> true
+
+            // Escape: clear secondary carets
+            event.key == Key.Escape && state.multiCaretModel.hasMultipleCarets -> {
+                state.multiCaretModel.clearSecondaryCarets()
+                true
+            }
+
             // Text editing (only if not a modifier key combo)
             !isCmdOrCtrl && !isAlt && handleTextInput(event) -> true
 
             else -> false
         }
+    }
+
+    /**
+     * Handles multi-caret operations.
+     */
+    private fun handleMultiCaret(
+        event: KeyEvent,
+        isCmdOrCtrl: Boolean,
+        isShift: Boolean,
+        isAlt: Boolean
+    ): Boolean {
+        // Ctrl/Cmd+Alt+Up: Add caret above
+        if (isCmdOrCtrl && isAlt && event.key == Key.DirectionUp) {
+            state.multiCaretOperations.addCaretAbove()
+            return true
+        }
+
+        // Ctrl/Cmd+Alt+Down: Add caret below
+        if (isCmdOrCtrl && isAlt && event.key == Key.DirectionDown) {
+            state.multiCaretOperations.addCaretBelow()
+            return true
+        }
+
+        // Ctrl/Cmd+D: Select next occurrence
+        if (isCmdOrCtrl && !isShift && event.key == Key.D) {
+            state.multiCaretOperations.selectNextOccurrence()
+            return true
+        }
+
+        // Ctrl/Cmd+Shift+L: Select all occurrences
+        if (isCmdOrCtrl && isShift && event.key == Key.L) {
+            state.multiCaretOperations.selectAllOccurrences()
+            return true
+        }
+
+        return false
     }
 
     /**
@@ -232,41 +277,69 @@ class EditorInputHandler(
 
     /**
      * Handles text input (typing, backspace, delete, etc.).
+     * Uses multi-caret operations when multiple carets are active.
      */
     private fun handleTextInput(event: KeyEvent): Boolean {
+        val hasMultipleCarets = state.multiCaretModel.hasMultipleCarets
+
         return when (event.key) {
             Key.Backspace -> {
-                if (event.isAltPressed) {
-                    deleteWordBackward()
+                if (hasMultipleCarets) {
+                    if (event.isAltPressed) {
+                        state.multiCaretOperations.deleteWordBeforeAllCarets()
+                    } else {
+                        state.multiCaretOperations.backspaceAtAllCarets()
+                    }
                 } else {
-                    state.deleteBackward()
+                    if (event.isAltPressed) {
+                        deleteWordBackward()
+                    } else {
+                        state.deleteBackward()
+                    }
                 }
                 onTextChanged()
                 true
             }
 
             Key.Delete -> {
-                if (event.isAltPressed) {
-                    deleteWordForward()
+                if (hasMultipleCarets) {
+                    if (event.isAltPressed) {
+                        state.multiCaretOperations.deleteWordAfterAllCarets()
+                    } else {
+                        state.multiCaretOperations.deleteAtAllCarets()
+                    }
                 } else {
-                    state.deleteForward()
+                    if (event.isAltPressed) {
+                        deleteWordForward()
+                    } else {
+                        state.deleteForward()
+                    }
                 }
                 onTextChanged()
                 true
             }
 
             Key.Enter, Key.NumPadEnter -> {
-                insertNewLine()
+                if (hasMultipleCarets) {
+                    state.multiCaretOperations.insertAtAllCarets("\n")
+                } else {
+                    insertNewLine()
+                }
                 onTextChanged()
                 true
             }
 
             Key.Tab -> {
-                if (event.isShiftPressed) {
-                    // Shift+Tab: outdent (future feature)
-                    state.insertText("    ")
+                val tabText = "    " // 4 spaces
+                if (hasMultipleCarets) {
+                    state.multiCaretOperations.insertAtAllCarets(tabText)
                 } else {
-                    state.insertText("    ") // 4 spaces
+                    if (event.isShiftPressed) {
+                        // Shift+Tab: outdent (future feature)
+                        state.insertText(tabText)
+                    } else {
+                        state.insertText(tabText)
+                    }
                 }
                 onTextChanged()
                 true
@@ -278,7 +351,11 @@ class EditorInputHandler(
                 if (codePoint != 0) {
                     val char = codePoint.toChar()
                     if (!char.isISOControl()) {
-                        state.insertText(char.toString())
+                        if (hasMultipleCarets) {
+                            state.multiCaretOperations.insertAtAllCarets(char.toString())
+                        } else {
+                            state.insertText(char.toString())
+                        }
                         onTextChanged()
                         return true
                     }
@@ -512,15 +589,26 @@ class EditorMouseHandler(
         when (event.clickCount) {
             1 -> {
                 // Single click: position caret or start selection
-                if (event.isShift) {
-                    // Shift+click: extend selection
-                    extendSelectionTo(event.position)
-                } else {
-                    // Start potential drag selection
-                    isDragging = true
-                    dragStartPosition = event.position
-                    state.moveCaret(event.position)
-                    state.clearSelection()
+                when {
+                    event.isAlt -> {
+                        // Alt+click: add caret at clicked position
+                        state.multiCaretModel.addCaret(event.position)
+                    }
+                    event.isShift -> {
+                        // Shift+click: extend selection
+                        extendSelectionTo(event.position)
+                    }
+                    else -> {
+                        // Start potential drag selection
+                        // Clear secondary carets on regular click
+                        if (state.multiCaretModel.hasMultipleCarets) {
+                            state.multiCaretModel.clearSecondaryCarets()
+                        }
+                        isDragging = true
+                        dragStartPosition = event.position
+                        state.moveCaret(event.position)
+                        state.clearSelection()
+                    }
                 }
             }
 

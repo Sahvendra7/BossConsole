@@ -7,6 +7,7 @@ import ai.rever.bosseditor.core.OffsetRange
 import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
+import ai.rever.bosseditor.model.Caret
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.font.FontFamily
@@ -80,6 +81,10 @@ data class EditorRenderingContext(
     // Mark occurrences (Phase 11) - list of offset ranges in document
     val markOccurrences: List<OffsetRange>,
 
+    // Multi-caret support (Phase 15)
+    val allCarets: List<Caret>,
+    val hasMultipleCarets: Boolean,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -114,6 +119,7 @@ data class EditorRenderingContext(
             getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
             bracketMatch: BracketMatch? = null,
             markOccurrences: List<OffsetRange> = emptyList(),
+            allCarets: List<Caret> = emptyList(),
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Calculate visible lines
@@ -152,6 +158,8 @@ data class EditorRenderingContext(
                 getLineTokens = getLineTokens,
                 bracketMatch = bracketMatch,
                 markOccurrences = markOccurrences,
+                allCarets = allCarets,
+                hasMultipleCarets = allCarets.size > 1,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }

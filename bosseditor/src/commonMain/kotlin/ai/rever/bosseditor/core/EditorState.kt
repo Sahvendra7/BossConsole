@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.core
 
+import ai.rever.bosseditor.model.MultiCaretModel
+import ai.rever.bosseditor.model.MultiCaretOperations
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,6 +30,10 @@ class EditorState(
 
     // Undo manager
     val undoManager = UndoManager(document)
+
+    // Multi-caret support
+    val multiCaretModel = MultiCaretModel(document)
+    val multiCaretOperations = MultiCaretOperations(document, multiCaretModel)
 
     // Caret position (observable)
     private val _caretPosition = MutableStateFlow(EditorPosition.ZERO)

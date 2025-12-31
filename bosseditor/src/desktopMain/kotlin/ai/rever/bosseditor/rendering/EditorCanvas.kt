@@ -95,6 +95,7 @@ fun EditorCanvas(
     val caretPosition by editorState.caretPosition.collectAsState()
     val selection by editorState.selection.collectAsState()
     val scrollOffset by editorState.scrollOffset.collectAsState()
+    val allCarets by editorState.multiCaretModel.carets.collectAsState()
 
     // Create bracket matcher and mark occurrences (reuse across recompositions)
     val bracketMatcher = remember(editorState.document) {
@@ -285,7 +286,8 @@ fun EditorCanvas(
                 gutterWidth = gutterWidth,
                 getLineTokens = getLineTokens,
                 bracketMatch = bracketMatch,
-                markOccurrences = markOccurrences
+                markOccurrences = markOccurrences,
+                allCarets = allCarets
             )
 
             // Clip to canvas bounds and render
