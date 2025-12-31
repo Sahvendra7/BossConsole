@@ -347,6 +347,31 @@ class EditorState(
     }
 
     /**
+     * Scrolls to make the specified line visible.
+     * The line will be positioned near the center of the viewport if possible.
+     *
+     * @param line The line number (0-based) to scroll to
+     * @param lineHeight The height of each line in pixels
+     * @param viewportHeight The height of the viewport in pixels
+     */
+    fun scrollToLine(line: Int, lineHeight: Float, viewportHeight: Float) {
+        val targetLine = line.coerceIn(0, (document.lineCount - 1).coerceAtLeast(0))
+
+        // Calculate the Y offset that would center this line
+        val lineY = targetLine * lineHeight
+        val viewportLines = (viewportHeight / lineHeight).toInt()
+        val centerOffset = (viewportLines / 2) * lineHeight
+
+        // Calculate new scroll Y, keeping line visible with some context
+        val newScrollY = (lineY - centerOffset).coerceAtLeast(0f).toInt()
+
+        _scrollOffset.value = ScrollOffset(
+            x = _scrollOffset.value.x,
+            y = newScrollY
+        )
+    }
+
+    /**
      * Updates the visible line range based on scroll position and viewport.
      */
     fun updateVisibleLineRange(firstLine: Int, lastLine: Int) {

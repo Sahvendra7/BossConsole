@@ -47,6 +47,8 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+                // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)
+                implementation(libs.kotlin.compiler.embeddable)
             }
         }
 

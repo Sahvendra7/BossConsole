@@ -1,17 +1,27 @@
 package ai.rever.boss.components.plugin.tab_types
 
-import ai.rever.boss.editor.SemanticAdapterFactory
+import ai.rever.boss.components.events.NavigationTargetBus
+import ai.rever.boss.font.FontManager
 import ai.rever.boss.psi.NavigationEvent
+import ai.rever.boss.psi.NavigationResult
+import ai.rever.boss.psi.NavigationService
+import ai.rever.boss.psi.PSIBootstrap
+import ai.rever.boss.psi.PSIThreadBridge
+import ai.rever.boss.psi.ProjectIndexer
 import ai.rever.boss.run.DetectedMainFunction
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
 import ai.rever.bosseditor.compose.BossEditor
+import ai.rever.bosseditor.compose.NavigationResolveResult
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenCache
+import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.highlight.lexers.*
+import ai.rever.bosseditor.psi.SemanticCache
+import ai.rever.bosseditor.psi.SemanticType
 import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.theme.EditorTheme
 import androidx.compose.foundation.background
@@ -60,7 +70,8 @@ import kotlinx.coroutines.withContext
  * @param modifier Modifier for the editor
  * @param isReadOnly Whether the editor is read-only
  * @param fontSize Font size in pixels
- * @param fontFamily Font family name
+ * @param fontFamily Font family name (uses FontManager for proper loading)
+ * @param lineSpacing Line height multiplier (1.0 = tight, 1.2 = comfortable, 1.5 = spacious)
  * @param theme BOSS theme name
  * @param onCursorPositionChange Callback for cursor position changes (line, column)
  * @param onModifiedStateChange Callback when modification state changes
@@ -78,6 +89,7 @@ fun BossEditorIntegration(
     isReadOnly: Boolean = false,
     fontSize: Int = CodeEditorSettings.fontSize,
     fontFamily: String = CodeEditorSettings.fontFamily,
+    lineSpacing: Float = CodeEditorSettings.lineSpacing,
     theme: String = CodeEditorSettings.theme,
     onCursorPositionChange: (line: Int, column: Int) -> Unit = { _, _ -> },
     onModifiedStateChange: (Boolean) -> Unit = { },
@@ -114,9 +126,66 @@ fun BossEditorIntegration(
         }
     }
 
-    // Create semantic adapter for Kotlin files
-    val semanticAdapter = remember(filePath, editorState.document) {
-        SemanticAdapterFactory.create(editorState.document, filePath)
+    // Note: Semantic highlighting is now handled internally by BossEditor
+    // via NavigationManager, which uses PSI-based SemanticHighlighter
+
+    // Create navigation service for PSI-based navigation (uses composeApp's PSI)
+    val navigationService = remember { NavigationService() }
+
+    // Ensure project is indexed when projectPath is set
+    LaunchedEffect(projectPath) {
+        if (projectPath.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                ProjectIndexer.current?.ensureFileProjectIndexed(filePath)
+            }
+        }
+    }
+
+    // Navigation resolver using composeApp's PSI infrastructure
+    val navigationResolver: suspend (String, String, Int) -> NavigationResolveResult = remember(navigationService) {
+        { content, currentFilePath, offset ->
+            if (!PSIBootstrap.isInitialized) {
+                NavigationResolveResult.NotFound
+            } else if (!currentFilePath.endsWith(".kt") && !currentFilePath.endsWith(".kts")) {
+                NavigationResolveResult.NotFound
+            } else {
+                try {
+                    val fileName = currentFilePath.substringAfterLast('/')
+                    val ktFile = PSIThreadBridge.readAction {
+                        PSIBootstrap.parseKotlinFile(fileName, content)
+                    }
+                    if (ktFile == null) {
+                        NavigationResolveResult.NotFound
+                    } else {
+                        val result = PSIThreadBridge.readAction {
+                            navigationService.goToDefinition(ktFile, offset, currentFilePath)
+                        }
+                        when (result) {
+                            is NavigationResult.Found -> {
+                                NavigationResolveResult.Found(
+                                    filePath = result.target.filePath,
+                                    line = result.target.line,
+                                    column = result.target.column
+                                )
+                            }
+                            is NavigationResult.MultipleTargets -> {
+                                result.targets.firstOrNull()?.let { target ->
+                                    NavigationResolveResult.Found(
+                                        filePath = target.filePath,
+                                        line = target.line,
+                                        column = target.column
+                                    )
+                                } ?: NavigationResolveResult.NotFound
+                            }
+                            else -> NavigationResolveResult.NotFound
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("[BossEditorIntegration] Navigation error: ${e.message}")
+                    NavigationResolveResult.NotFound
+                }
+            }
+        }
     }
 
     // Map theme name to EditorTheme
@@ -124,14 +193,49 @@ fun BossEditorIntegration(
         mapBossThemeToEditorTheme(theme)
     }
 
-    // Map font family name to FontFamily
+    // Map font family name to FontFamily using FontManager for proper font loading
     val composeFontFamily = remember(fontFamily) {
-        when (fontFamily.lowercase()) {
-            "jetbrains mono", "jetbrainsmono" -> FontFamily.Monospace
-            "fira code", "firacode" -> FontFamily.Monospace
-            "source code pro" -> FontFamily.Monospace
-            else -> FontFamily.Monospace
-        }
+        FontManager.loadComposeFontFamily(fontFamily)
+    }
+
+    // Calculate line height for scrolling (same calculation as EditorCanvas)
+    val textMeasurer = rememberTextMeasurer()
+    val lineHeightPx = remember(fontSize, composeFontFamily, lineSpacing) {
+        val style = TextStyle(
+            fontFamily = composeFontFamily,
+            fontSize = fontSize.sp
+        )
+        textMeasurer.measure("M", style).size.height.toFloat() * lineSpacing
+    }
+
+    // Listen for navigation targets (cursor positioning after navigation)
+    LaunchedEffect(filePath, editorState, lineHeightPx) {
+        NavigationTargetBus.targets
+            .collect { target ->
+                // Only process if this editor is showing the target file
+                if (target.filePath == filePath && target.line > 0) {
+                    try {
+                        // Convert 1-based line/column to 0-based EditorPosition
+                        val line = (target.line - 1).coerceAtLeast(0)
+                        val column = (target.column - 1).coerceAtLeast(0)
+
+                        // Position cursor
+                        val position = EditorPosition(line, column)
+                        editorState.moveCaret(position)
+                        editorState.clearSelection()
+
+                        // Scroll to make the line visible (estimate viewport as 600px)
+                        editorState.scrollToLine(line, lineHeightPx, 600f)
+
+                        // Clear replay cache after consumption to avoid re-triggering
+                        NavigationTargetBus.clearCache()
+
+                        println("[BossEditorIntegration] Positioned cursor at line ${target.line}, column ${target.column}")
+                    } catch (e: Exception) {
+                        println("[BossEditorIntegration] Error positioning cursor: ${e.message}")
+                    }
+                }
+            }
     }
 
     // Update content from external source
@@ -169,21 +273,25 @@ fun BossEditorIntegration(
         }
     }
 
-    // Token provider combining lexer and semantic highlighting
+    // Token provider for lexer-based + semantic syntax highlighting
     // Uses TokenCache for proper multi-line state tracking (block comments, raw strings, etc.)
-    val tokenProvider: (Int) -> List<EditorToken> = remember(tokenCache, semanticAdapter) {
+    // Merges with SemanticCache for PSI-based semantic highlighting (function calls, properties, etc.)
+    val tokenProvider: (Int) -> List<EditorToken> = remember(tokenCache, filePath) {
         { lineNumber ->
-            // First try semantic tokens (higher priority)
-            val semanticTokens = semanticAdapter?.getLineTokens(lineNumber)
+            // Get lexer-based tokens (cached, handles multi-line state)
+            val lexerTokens: List<Token> = tokenCache?.getLineTokens(lineNumber) ?: emptyList()
 
-            if (!semanticTokens.isNullOrEmpty()) {
-                EditorToken.fromTokens(semanticTokens)
+            // Get semantic tokens from PSI analysis (if available for this file)
+            val semanticTokens = getSemanticTokensForLine(editorState.document, filePath, lineNumber)
+
+            // Merge tokens (semantic takes precedence for overlapping ranges)
+            val mergedTokens = if (semanticTokens.isNotEmpty()) {
+                mergeTokens(lexerTokens, semanticTokens)
             } else {
-                // Fall back to lexer-based highlighting via TokenCache
-                // TokenCache handles multi-line state tracking automatically
-                val lexerTokens: List<Token> = tokenCache?.getLineTokens(lineNumber) ?: emptyList()
-                EditorToken.fromTokens(lexerTokens)
+                lexerTokens
             }
+
+            EditorToken.fromTokens(mergedTokens)
         }
     }
 
@@ -196,6 +304,7 @@ fun BossEditorIntegration(
                 editorState = editorState,
                 fontSize = fontSize.toFloat(),
                 fontFamily = composeFontFamily,
+                lineSpacing = lineSpacing,
                 onRun = onRun,
                 modifier = Modifier
                     .width(24.dp)
@@ -211,9 +320,12 @@ fun BossEditorIntegration(
             theme = editorTheme,
             fontFamily = composeFontFamily,
             fontSize = fontSize.toFloat(),
+            lineSpacing = lineSpacing,
             showLineNumbers = true,
             highlightCurrentLine = true,
             readOnly = isReadOnly,
+            filePath = filePath,
+            projectPath = projectPath,
             tokenProvider = tokenProvider,
             onTextChanged = {
                 val newContent = editorState.document.getText()
@@ -227,6 +339,12 @@ fun BossEditorIntegration(
             },
             onSelectionChanged = { _ ->
                 // Selection changed - could integrate with mark occurrences
+            },
+            navigationResolver = navigationResolver,
+            onNavigate = { navFilePath, line, column ->
+                // Convert to NavigationEvent for BOSS integration
+                println("[Nav] BossEditorIntegration received: $navFilePath:$line")
+                onNavigate(NavigationEvent(navFilePath, line, column))
             }
         )
     }
@@ -390,6 +508,7 @@ private fun BossEditorRunGutter(
     editorState: EditorState,
     fontSize: Float,
     fontFamily: FontFamily = FontFamily.Monospace,
+    lineSpacing: Float = 1.2f,
     onRun: (DetectedMainFunction) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -398,14 +517,14 @@ private fun BossEditorRunGutter(
     val density = LocalDensity.current
 
     // Measure line height to match EditorCanvas exactly
-    // EditorCanvas uses textMeasurer.measure("M", style).size.height
+    // EditorCanvas uses textMeasurer.measure("M", style).size.height * lineSpacing
     val textMeasurer = rememberTextMeasurer()
-    val lineHeightPx = remember(fontSize, fontFamily) {
+    val lineHeightPx = remember(fontSize, fontFamily, lineSpacing) {
         val style = TextStyle(
             fontFamily = fontFamily,
             fontSize = fontSize.sp
         )
-        textMeasurer.measure("M", style).size.height.toFloat()
+        textMeasurer.measure("M", style).size.height.toFloat() * lineSpacing
     }
 
     // Convert pixel height to dp for sizing
@@ -453,4 +572,173 @@ private fun BossEditorRunGutter(
                 }
             }
     }
+}
+
+/**
+ * Gets semantic tokens for a specific line from the PSI-based SemanticCache.
+ *
+ * @param document The editor document
+ * @param filePath The current file path
+ * @param lineNumber The line number (0-based)
+ * @return List of semantic tokens for the line, empty if not available
+ */
+private fun getSemanticTokensForLine(
+    document: ai.rever.bosseditor.core.EditorDocument,
+    filePath: String,
+    lineNumber: Int
+): List<Token> {
+    // Only Kotlin files have semantic highlighting
+    if (!filePath.endsWith(".kt") && !filePath.endsWith(".kts")) {
+        return emptyList()
+    }
+
+    // Get all semantic elements for this file from the cache
+    val allElements = SemanticCache.get(filePath) ?: return emptyList()
+    if (allElements.isEmpty()) return emptyList()
+
+    // Get the line range in the document
+    if (lineNumber < 0 || lineNumber >= document.lineCount) {
+        return emptyList()
+    }
+    val lineStart = document.getLineStartOffset(lineNumber)
+    val lineEnd = document.getLineEndOffset(lineNumber)
+
+    // Filter elements that fall within this line
+    val lineElements = allElements.filter { element ->
+        element.startOffset >= lineStart && element.endOffset <= lineEnd
+    }
+
+    if (lineElements.isEmpty()) return emptyList()
+
+    // Convert SemanticElements to Tokens with line-relative offsets
+    return lineElements.map { element ->
+        Token(
+            startOffset = element.startOffset - lineStart,
+            endOffset = element.endOffset - lineStart,
+            type = mapSemanticType(element.type)
+        )
+    }.sortedBy { it.startOffset }
+}
+
+/**
+ * Maps PSI SemanticType to BossEditor TokenType.
+ */
+private fun mapSemanticType(type: SemanticType): TokenType = when (type) {
+    SemanticType.FUNCTION_CALL -> TokenType.FUNCTION_CALL
+    SemanticType.PROPERTY_ACCESS -> TokenType.PROPERTY
+    SemanticType.CLASS_REFERENCE -> TokenType.TYPE
+    SemanticType.OBJECT_REFERENCE -> TokenType.VARIABLE
+    SemanticType.PARAMETER -> TokenType.PARAMETER
+    SemanticType.LOCAL_VARIABLE -> TokenType.LOCAL_VARIABLE
+    SemanticType.ANNOTATION -> TokenType.ANNOTATION
+    SemanticType.LABEL -> TokenType.LABEL
+    SemanticType.TYPE_PARAMETER -> TokenType.TYPE_PARAMETER
+}
+
+/**
+ * Merges lexer tokens with semantic tokens, where semantic tokens take precedence.
+ *
+ * @param base Lexer-based tokens (always available)
+ * @param overlay Semantic tokens from PSI analysis
+ * @return Merged token list
+ */
+private fun mergeTokens(base: List<Token>, overlay: List<Token>): List<Token> {
+    if (base.isEmpty()) return overlay
+    if (overlay.isEmpty()) return base
+
+    val result = mutableListOf<Token>()
+    var baseIndex = 0
+    var overlayIndex = 0
+
+    while (baseIndex < base.size || overlayIndex < overlay.size) {
+        // If no more overlay tokens, add remaining base tokens
+        if (overlayIndex >= overlay.size) {
+            result.addAll(base.subList(baseIndex, base.size))
+            break
+        }
+
+        // If no more base tokens, add remaining overlay tokens
+        if (baseIndex >= base.size) {
+            result.addAll(overlay.subList(overlayIndex, overlay.size))
+            break
+        }
+
+        val baseToken = base[baseIndex]
+        val overlayToken = overlay[overlayIndex]
+
+        when {
+            // Base token comes completely before overlay - keep it
+            baseToken.endOffset <= overlayToken.startOffset -> {
+                result.add(baseToken)
+                baseIndex++
+            }
+
+            // Overlay token comes completely before base - add it
+            overlayToken.endOffset <= baseToken.startOffset -> {
+                result.add(overlayToken)
+                overlayIndex++
+            }
+
+            // Tokens overlap - overlay takes precedence
+            else -> {
+                // Add part of base before overlay (if any)
+                if (baseToken.startOffset < overlayToken.startOffset) {
+                    result.add(
+                        Token(
+                            baseToken.startOffset,
+                            overlayToken.startOffset,
+                            baseToken.type,
+                            baseToken.modifiers
+                        )
+                    )
+                }
+
+                // Add overlay token
+                result.add(overlayToken)
+
+                // Handle remaining part of base token
+                if (baseToken.endOffset > overlayToken.endOffset) {
+                    // Create remaining part after overlay
+                    val remaining = Token(
+                        overlayToken.endOffset,
+                        baseToken.endOffset,
+                        baseToken.type,
+                        baseToken.modifiers
+                    )
+                    overlayIndex++
+                    // Check if remaining part overlaps with next overlay
+                    if (overlayIndex < overlay.size &&
+                        remaining.startOffset < overlay[overlayIndex].startOffset
+                    ) {
+                        val nextOverlay = overlay[overlayIndex]
+                        if (remaining.endOffset <= nextOverlay.startOffset) {
+                            result.add(remaining)
+                        } else {
+                            result.add(
+                                Token(
+                                    remaining.startOffset,
+                                    nextOverlay.startOffset,
+                                    remaining.type,
+                                    remaining.modifiers
+                                )
+                            )
+                        }
+                    } else if (overlayIndex >= overlay.size) {
+                        result.add(remaining)
+                    }
+                    baseIndex++
+                } else {
+                    // Base token completely covered by overlay
+                    baseIndex++
+                    if (overlayToken.endOffset >= base.getOrNull(baseIndex)?.startOffset ?: Int.MAX_VALUE) {
+                        // Overlay covers next base token too
+                    } else {
+                        overlayIndex++
+                    }
+                }
+            }
+        }
+    }
+
+    return result.sortedBy { it.startOffset }
 }

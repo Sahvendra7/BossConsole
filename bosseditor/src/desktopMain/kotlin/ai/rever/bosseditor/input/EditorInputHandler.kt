@@ -346,6 +346,11 @@ class EditorInputHandler(
             }
 
             else -> {
+                // Ignore modifier-only keys (Shift, Ctrl, Alt, Meta, Caps Lock, etc.)
+                if (isModifierOnlyKey(event.key)) {
+                    return false
+                }
+
                 // Character input
                 val codePoint = event.utf16CodePoint
                 if (codePoint != 0) {
@@ -432,6 +437,25 @@ class EditorInputHandler(
 
     private fun isWordChar(char: Char): Boolean {
         return char.isLetterOrDigit() || char == '_'
+    }
+
+    /**
+     * Checks if the key is a modifier-only key (should not produce character input).
+     */
+    private fun isModifierOnlyKey(key: Key): Boolean {
+        return key == Key.ShiftLeft ||
+                key == Key.ShiftRight ||
+                key == Key.CtrlLeft ||
+                key == Key.CtrlRight ||
+                key == Key.AltLeft ||
+                key == Key.AltRight ||
+                key == Key.MetaLeft ||
+                key == Key.MetaRight ||
+                key == Key.CapsLock ||
+                key == Key.NumLock ||
+                key == Key.ScrollLock ||
+                key == Key.Function ||
+                key == Key.Unknown
     }
 
     // --- Text editing helpers ---

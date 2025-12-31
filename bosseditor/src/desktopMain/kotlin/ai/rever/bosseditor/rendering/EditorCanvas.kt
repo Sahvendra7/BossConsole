@@ -28,8 +28,15 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -56,6 +63,7 @@ fun EditorCanvas(
     modifier: Modifier = Modifier,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Float = 14f,
+    lineSpacing: Float = 1.2f,
     showLineNumbers: Boolean = true,
     highlightCurrentLine: Boolean = true,
     searchQuery: String? = null,
@@ -64,7 +72,8 @@ fun EditorCanvas(
     rainbowBracketsEnabled: Boolean = true,
     getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
-    onSelectionChanged: (EditorRange?) -> Unit = {}
+    onSelectionChanged: (EditorRange?) -> Unit = {},
+    onNavigationRequest: ((EditorPosition) -> Unit)? = null
 ) {
     val theme = LocalEditorTheme.current
     val density = LocalDensity.current
@@ -89,9 +98,12 @@ fun EditorCanvas(
     // Viewport size for scroll calculations
     var viewportSize by remember { mutableStateOf(Size.Zero) }
 
+    // Track Cmd/Ctrl modifier key state for navigation
+    var isNavigationModifierHeld by remember { mutableStateOf(false) }
+
     // Measure character dimensions using a monospace reference character
-    val (charWidth, lineHeight, baselineOffset) = remember(fontFamily, fontSize, density) {
-        measureCharacterDimensions(textMeasurer, fontFamily, fontSize)
+    val (charWidth, lineHeight, baselineOffset) = remember(fontFamily, fontSize, lineSpacing, density) {
+        measureCharacterDimensions(textMeasurer, fontFamily, fontSize, lineSpacing)
     }
 
     // Calculate gutter width based on line count
@@ -192,13 +204,38 @@ fun EditorCanvas(
             .onFocusChanged { focusState ->
                 isFocused = focusState.isFocused
             }
+            .onPreviewKeyEvent { keyEvent ->
+                // Track Cmd/Ctrl modifier key state for navigation
+                val isMac = System.getProperty("os.name").lowercase().contains("mac")
+                val isNavigationKey = if (isMac) {
+                    keyEvent.key == Key.MetaLeft || keyEvent.key == Key.MetaRight
+                } else {
+                    keyEvent.key == Key.CtrlLeft || keyEvent.key == Key.CtrlRight
+                }
+                if (isNavigationKey) {
+                    isNavigationModifierHeld = keyEvent.type == KeyEventType.KeyDown
+                }
+                false // Don't consume the event
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Use awaitPointerEvent first to get access to keyboard modifiers
+                    val downEvent = awaitPointerEvent()
+                    val down = downEvent.changes.firstOrNull() ?: return@awaitEachGesture
+                    if (!down.pressed) return@awaitEachGesture
+
                     focusRequester.requestFocus()
 
                     val currentTime = System.currentTimeMillis()
                     val position = down.position
+
+                    // Check keyboard modifiers from the pointer event
+                    val isMac = System.getProperty("os.name").lowercase().contains("mac")
+                    val isNavigationModifier = if (isMac) {
+                        downEvent.keyboardModifiers.isMetaPressed
+                    } else {
+                        downEvent.keyboardModifiers.isCtrlPressed
+                    }
 
                     // Detect multi-clicks (double, triple)
                     val isMultiClick = lastClickPosition?.let { lastPos ->
@@ -220,18 +257,25 @@ fun EditorCanvas(
 
                     when (clickCount) {
                         1 -> {
-                            // Single click - position caret
-                            val isShift = down.isShiftPressed()
-                            if (isShift) {
-                                // Extend selection
-                                extendSelectionTo(editorState, editorPosition)
+                            // Check for Cmd/Ctrl+Click navigation
+                            if (isNavigationModifier && onNavigationRequest != null) {
+                                // Navigation click - don't position caret, invoke callback
+                                onNavigationRequest.invoke(editorPosition)
+                                isDragging = false
                             } else {
-                                editorState.moveCaret(editorPosition)
-                                editorState.clearSelection()
+                                // Single click - position caret
+                                val isShift = down.isShiftPressed()
+                                if (isShift) {
+                                    // Extend selection
+                                    extendSelectionTo(editorState, editorPosition)
+                                } else {
+                                    editorState.moveCaret(editorPosition)
+                                    editorState.clearSelection()
+                                }
+                                // Start drag
+                                isDragging = true
+                                dragStartPosition = editorPosition
                             }
-                            // Start drag
-                            isDragging = true
-                            dragStartPosition = editorPosition
                         }
                         2 -> {
                             // Double click - select word
@@ -390,11 +434,14 @@ private fun extendSelectionTo(editorState: EditorState, position: EditorPosition
 /**
  * Measures character dimensions for a monospace font.
  * Returns (charWidth, lineHeight, baselineOffset).
+ *
+ * @param lineSpacing Line height multiplier (1.0 = tight, 1.2 = comfortable, 1.5 = spacious)
  */
 private fun measureCharacterDimensions(
     textMeasurer: TextMeasurer,
     fontFamily: FontFamily,
-    fontSize: Float
+    fontSize: Float,
+    lineSpacing: Float = 1.2f
 ): Triple<Float, Float, Float> {
     val style = TextStyle(
         fontFamily = fontFamily,
@@ -405,7 +452,9 @@ private fun measureCharacterDimensions(
     val measurement = textMeasurer.measure("M", style)
 
     val charWidth = measurement.size.width.toFloat()
-    val lineHeight = measurement.size.height.toFloat()
+    // Apply line spacing multiplier to the natural line height
+    val naturalLineHeight = measurement.size.height.toFloat()
+    val lineHeight = naturalLineHeight * lineSpacing
     val baselineOffset = measurement.firstBaseline
 
     return Triple(charWidth, lineHeight, baselineOffset)

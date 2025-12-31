@@ -942,6 +942,7 @@ fun ComponentContext.BossApp(
     LaunchedEffect(splitViewState) {
         FileEventBus.fileOpenEvents
             .onEach { event ->
+                println("[BossApp] FileEventBus received: ${event.filePath}:${event.line}")
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
                 // Emit navigation target for cursor positioning (PSI navigation)
                 if (event.line > 0) {

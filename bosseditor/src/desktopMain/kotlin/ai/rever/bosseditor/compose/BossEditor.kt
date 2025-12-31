@@ -3,6 +3,8 @@ package ai.rever.bosseditor.compose
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
+import ai.rever.bosseditor.features.NavigationManager
+import ai.rever.bosseditor.features.NavigationOutcome
 import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
@@ -14,6 +16,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.launch
+
+/**
+ * Navigation resolver result.
+ */
+sealed class NavigationResolveResult {
+    data class Found(val filePath: String, val line: Int, val column: Int) : NavigationResolveResult()
+    data object NotFound : NavigationResolveResult()
+}
 
 /**
  * Main composable entry point for BossEditor.
@@ -46,16 +57,22 @@ import androidx.compose.ui.text.font.FontFamily
  * @param modifier Modifier for the root composable
  * @param fontFamily Font family (should be monospace)
  * @param fontSize Font size in scaled pixels
+ * @param lineSpacing Line height multiplier (1.0 = tight, 1.2 = comfortable, 1.5 = spacious)
  * @param showLineNumbers Whether to show line number gutter
  * @param highlightCurrentLine Whether to highlight current line
  * @param readOnly If true, editing operations are disabled
  * @param searchQuery Current search query (null if not searching)
  * @param searchMatches List of search match ranges
  * @param currentSearchMatchIndex Index of current search match
+ * @param filePath Current file path (enables PSI-based features like navigation)
+ * @param projectPath Project root path (enables cross-file navigation)
  * @param tokenProvider Function to get tokens for a line (for syntax highlighting)
  * @param onTextChanged Callback when text changes
  * @param onCaretPositionChanged Callback when caret position changes
  * @param onSelectionChanged Callback when selection changes
+ * @param navigationResolver Custom navigation resolver (if provided, uses this instead of internal PSI).
+ *                           Takes file content, file path, and click offset; returns resolved target.
+ * @param onNavigate Callback for code navigation (Cmd+Click go-to-definition)
  */
 @Composable
 fun BossEditor(
@@ -64,16 +81,21 @@ fun BossEditor(
     theme: EditorTheme = EditorTheme.Dark,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Float = 14f,
+    lineSpacing: Float = 1.2f,
     showLineNumbers: Boolean = true,
     highlightCurrentLine: Boolean = true,
     readOnly: Boolean = false,
     searchQuery: String? = null,
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
+    filePath: String? = null,
+    projectPath: String? = null,
     tokenProvider: (Int) -> List<EditorToken> = { emptyList() },
     onTextChanged: () -> Unit = {},
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
-    onSelectionChanged: (EditorRange?) -> Unit = {}
+    onSelectionChanged: (EditorRange?) -> Unit = {},
+    navigationResolver: (suspend (content: String, filePath: String, offset: Int) -> NavigationResolveResult)? = null,
+    onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null
 ) {
     // Create input handler
     val inputHandler = remember(state) {
@@ -81,6 +103,66 @@ fun BossEditor(
             state = state,
             onTextChanged = onTextChanged
         )
+    }
+
+    // Create navigation manager for semantic highlighting (always created for Kotlin files)
+    // Navigation resolution can be overridden via navigationResolver parameter
+    val navigationManager = remember(state.document, filePath) {
+        NavigationManager(state.document, filePath)
+    }
+
+    // Update project path when it changes
+    LaunchedEffect(projectPath) {
+        navigationManager.setProjectPath(projectPath)
+    }
+
+    // Trigger semantic analysis when content changes (for semantic highlighting)
+    LaunchedEffect(state.document.documentVersion) {
+        navigationManager.analyzeContent()
+    }
+
+    // Cleanup navigation manager
+    DisposableEffect(navigationManager) {
+        onDispose {
+            navigationManager.dispose()
+        }
+    }
+
+    // Coroutine scope for navigation
+    val coroutineScope = rememberCoroutineScope()
+
+    // Handle navigation request from EditorCanvas
+    val handleNavigationRequest: (EditorPosition) -> Unit = remember(navigationResolver, navigationManager, onNavigate, filePath) {
+        { position ->
+            if (onNavigate != null) {
+                coroutineScope.launch {
+                    // Use custom resolver if provided, otherwise fall back to internal NavigationManager
+                    if (navigationResolver != null && filePath != null) {
+                        val content = state.document.getText()
+                        val offset = state.document.positionToOffset(position)
+                        when (val result = navigationResolver(content, filePath, offset)) {
+                            is NavigationResolveResult.Found -> {
+                                println("[Nav] -> ${result.filePath}:${result.line}")
+                                onNavigate.invoke(result.filePath, result.line, result.column)
+                            }
+                            is NavigationResolveResult.NotFound -> println("[Nav] Not found")
+                        }
+                    } else {
+                        // Fall back to internal NavigationManager
+                        when (val result = navigationManager.resolveNavigation(position)) {
+                            is NavigationOutcome.Found -> {
+                                println("[Nav] -> ${result.filePath}:${result.line}")
+                                onNavigate.invoke(result.filePath, result.line, result.column)
+                            }
+                            is NavigationOutcome.NotFound -> println("[Nav] Not found")
+                            is NavigationOutcome.Unavailable -> println("[Nav] Unavailable")
+                        }
+                    }
+                }
+            } else {
+                println("[Nav] onNavigate is null!")
+            }
+        }
     }
 
     // Provide theme via CompositionLocal
@@ -101,6 +183,7 @@ fun BossEditor(
                 modifier = Modifier.fillMaxSize(),
                 fontFamily = fontFamily,
                 fontSize = fontSize,
+                lineSpacing = lineSpacing,
                 showLineNumbers = showLineNumbers,
                 highlightCurrentLine = highlightCurrentLine,
                 searchQuery = searchQuery,
@@ -108,7 +191,8 @@ fun BossEditor(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 getLineTokens = tokenProvider,
                 onCaretPositionChanged = onCaretPositionChanged,
-                onSelectionChanged = onSelectionChanged
+                onSelectionChanged = onSelectionChanged,
+                onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null
             )
         }
     }
