@@ -45,6 +45,15 @@ data class EditorColors(
     val foldIndicator: Color,
     val foldBackground: Color,
 
+    // Fold placeholders and guides
+    val foldPlaceholderBackground: Color,
+    val foldPlaceholderHover: Color,
+    val foldPlaceholderBorder: Color,
+    val foldPlaceholderText: Color,
+    val foldGuide: Color,
+    val indentGuide: Color,
+    val activeIndentGuide: Color,
+
     // Syntax highlighting
     val keyword: Color,
     val dataType: Color,
@@ -225,6 +234,15 @@ data class EditorTheme(
                 foldIndicator = Color(0xFF6E737A),
                 foldBackground = Color(0xFF1E1F22),
 
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFF2B2D30),
+                foldPlaceholderHover = Color(0xFF3B3D40),
+                foldPlaceholderBorder = Color(0xFF393B40),
+                foldPlaceholderText = Color(0xFF8A8D91),
+                foldGuide = Color(0xFF393B40),
+                indentGuide = Color(0xFF393B40),
+                activeIndentGuide = Color(0xFF6E737A),
+
                 // Syntax colors - IntelliJ Dark exact colors
                 keyword = Color(0xFFCF8E6D),               // #cf8e6d
                 dataType = Color(0xFFBCBEC4),              // #bcbec4
@@ -285,6 +303,15 @@ data class EditorTheme(
                 foldIndicator = Color(0xFF6E7681),
                 foldBackground = Color(0xFFF6F8FA),
 
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFFEEF0F2),
+                foldPlaceholderHover = Color(0xFFE4E6E8),
+                foldPlaceholderBorder = Color(0xFFD0D7DE),
+                foldPlaceholderText = Color(0xFF6E7681),
+                foldGuide = Color(0xFFD0D7DE),
+                indentGuide = Color(0xFFE0E0E0),
+                activeIndentGuide = Color(0xFF6E7681),
+
                 keyword = Color(0xFFCF222E),
                 dataType = Color(0xFF095079),
                 function = Color(0xFF795E26),
@@ -341,6 +368,15 @@ data class EditorTheme(
                 lineNumberActive = Color(0xFFF8F8F2),
                 foldIndicator = Color(0xFF6272A4),
                 foldBackground = Color(0xFF21222C),
+
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFF343746),
+                foldPlaceholderHover = Color(0xFF44475A),
+                foldPlaceholderBorder = Color(0xFF44475A),
+                foldPlaceholderText = Color(0xFF6272A4),
+                foldGuide = Color(0xFF44475A),
+                indentGuide = Color(0xFF44475A),
+                activeIndentGuide = Color(0xFF6272A4),
 
                 keyword = Color(0xFFFF79C6),       // Pink
                 dataType = Color(0xFF8BE9FD),      // Cyan
@@ -399,6 +435,15 @@ data class EditorTheme(
                 foldIndicator = Color(0xFF75715E),
                 foldBackground = Color(0xFF1E1F1C),
 
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFF383830),
+                foldPlaceholderHover = Color(0xFF49483E),
+                foldPlaceholderBorder = Color(0xFF49483E),
+                foldPlaceholderText = Color(0xFF75715E),
+                foldGuide = Color(0xFF3E3D32),
+                indentGuide = Color(0xFF3E3D32),
+                activeIndentGuide = Color(0xFF75715E),
+
                 keyword = Color(0xFFF92672),       // Pink/Red
                 dataType = Color(0xFF66D9EF),      // Blue
                 function = Color(0xFFA6E22E),      // Green
@@ -456,6 +501,15 @@ data class EditorTheme(
                 foldIndicator = Color(0xFF586E75),
                 foldBackground = Color(0xFF073642),
 
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFF0A4351),
+                foldPlaceholderHover = Color(0xFF073642),
+                foldPlaceholderBorder = Color(0xFF586E75),
+                foldPlaceholderText = Color(0xFF657B83),
+                foldGuide = Color(0xFF073642),
+                indentGuide = Color(0xFF073642),
+                activeIndentGuide = Color(0xFF586E75),
+
                 keyword = Color(0xFF859900),       // Green
                 dataType = Color(0xFFB58900),      // Yellow
                 function = Color(0xFF268BD2),      // Blue
@@ -512,6 +566,15 @@ data class EditorTheme(
                 lineNumberActive = Color(0xFF586E75),
                 foldIndicator = Color(0xFF93A1A1),
                 foldBackground = Color(0xFFEEE8D5),
+
+                // Fold placeholders and guides
+                foldPlaceholderBackground = Color(0xFFE8E2CC),
+                foldPlaceholderHover = Color(0xFFEEE8D5),
+                foldPlaceholderBorder = Color(0xFF93A1A1),
+                foldPlaceholderText = Color(0xFF657B83),
+                foldGuide = Color(0xFFEEE8D5),
+                indentGuide = Color(0xFFEEE8D5),
+                activeIndentGuide = Color(0xFF93A1A1),
 
                 keyword = Color(0xFF859900),       // Green
                 dataType = Color(0xFFB58900),      // Yellow
