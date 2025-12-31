@@ -146,8 +146,29 @@ object EditorCanvasRenderer {
             val documentLine = ctx.visualLineMapper.visualToDocument(visualLine)
             if (documentLine < 0) continue
 
+            // Check if this visual line has a collapsed fold
+            val collapsedFold = ctx.visualLineMapper.getCollapsedFoldAt(visualLine)
+
+            // For imports/doc comments folds, don't show selection (content is hidden)
+            if (collapsedFold != null &&
+                (collapsedFold.type == FoldType.IMPORTS || collapsedFold.type == FoldType.DOC_COMMENT)) {
+                continue
+            }
+
+            // Calculate effective line length (for code folds, exclude trailing '{')
+            val lineLength = if (collapsedFold != null && collapsedFold.type == FoldType.CODE) {
+                val lineText = ctx.getLineText(documentLine)
+                val trimmedEnd = lineText.trimEnd()
+                if (trimmedEnd.endsWith("{")) {
+                    trimmedEnd.dropLast(1).trimEnd().length
+                } else {
+                    ctx.getLineLength(documentLine)
+                }
+            } else {
+                ctx.getLineLength(documentLine)
+            }
+
             val lineStartPos = ai.rever.bosseditor.core.EditorPosition(documentLine, 0)
-            val lineLength = ctx.getLineLength(documentLine)
             val lineEndPos = ai.rever.bosseditor.core.EditorPosition(documentLine, lineLength)
 
             // Check if this line intersects with selection
@@ -156,8 +177,8 @@ object EditorCanvasRenderer {
             }
 
             // Calculate selection bounds on this line
-            val selStartCol = if (selection.start.line < documentLine) 0 else selection.start.column
-            val selEndCol = if (selection.end.line > documentLine) lineLength else selection.end.column
+            val selStartCol = if (selection.start.line < documentLine) 0 else selection.start.column.coerceAtMost(lineLength)
+            val selEndCol = if (selection.end.line > documentLine) lineLength else selection.end.column.coerceAtMost(lineLength)
 
             if (selStartCol >= selEndCol && selection.end.line == documentLine) continue
 
@@ -870,11 +891,33 @@ object EditorCanvasRenderer {
      */
     private fun DrawScope.drawCaret(ctx: EditorRenderingContext, position: EditorPosition) {
         val documentLine = position.line
-        val caretColumn = position.column
 
         // Convert document line to visual line
         val visualLine = ctx.visualLineMapper.documentToVisual(documentLine)
         if (visualLine < 0 || visualLine !in ctx.visibleLineRange) return
+
+        // Check if this visual line has a collapsed fold
+        val collapsedFold = ctx.visualLineMapper.getCollapsedFoldAt(visualLine)
+
+        // Calculate effective max column based on fold type
+        val maxColumn = if (collapsedFold != null &&
+            (collapsedFold.type == FoldType.IMPORTS || collapsedFold.type == FoldType.DOC_COMMENT)) {
+            // For imports/doc comments, caret at position 0 (content hidden)
+            0
+        } else if (collapsedFold != null && collapsedFold.type == FoldType.CODE) {
+            // For code folds, limit to visible part (before trailing '{')
+            val lineText = ctx.getLineText(documentLine)
+            val trimmedEnd = lineText.trimEnd()
+            if (trimmedEnd.endsWith("{")) {
+                trimmedEnd.dropLast(1).trimEnd().length
+            } else {
+                ctx.getLineLength(documentLine)
+            }
+        } else {
+            ctx.getLineLength(documentLine)
+        }
+
+        val caretColumn = position.column.coerceAtMost(maxColumn)
 
         val x = ctx.gutterWidth + caretColumn * ctx.charWidth - ctx.scrollOffsetX
         val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY

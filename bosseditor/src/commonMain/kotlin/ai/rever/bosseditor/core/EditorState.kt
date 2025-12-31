@@ -381,16 +381,26 @@ class EditorState(
     /**
      * Scrolls to make the specified line visible.
      * The line will be positioned near the center of the viewport if possible.
+     * Fold-aware: expands any fold containing the line and uses visual line for scroll calculation.
      *
-     * @param line The line number (0-based) to scroll to
+     * @param line The line number (0-based document line) to scroll to
      * @param lineHeight The height of each line in pixels
      * @param viewportHeight The height of the viewport in pixels
      */
     fun scrollToLine(line: Int, lineHeight: Float, viewportHeight: Float) {
-        val targetLine = line.coerceIn(0, (document.lineCount - 1).coerceAtLeast(0))
+        val targetDocLine = line.coerceIn(0, (document.lineCount - 1).coerceAtLeast(0))
 
-        // Calculate the Y offset that would center this line
-        val lineY = targetLine * lineHeight
+        // Expand any fold that contains this line (so it becomes visible)
+        foldingModel.expandToReveal(targetDocLine)
+        updateVisualLineMapper()
+
+        // Convert document line to visual line
+        val mapper = _visualLineMapper.value
+        val visualLine = mapper.documentToVisual(targetDocLine)
+            .coerceAtLeast(0)
+
+        // Calculate the Y offset that would center this line (using visual line)
+        val lineY = visualLine * lineHeight
         val viewportLines = (viewportHeight / lineHeight).toInt()
         val centerOffset = (viewportLines / 2) * lineHeight
 

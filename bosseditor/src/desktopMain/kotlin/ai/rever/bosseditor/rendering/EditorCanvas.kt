@@ -197,9 +197,29 @@ fun EditorCanvas(
         val documentLine = visualLineMapper.visualToDocument(visualLine)
             .coerceIn(0, (editorState.document.lineCount - 1).coerceAtLeast(0))
 
+        // Check if this visual line has a collapsed fold
+        val collapsedFold = visualLineMapper.getCollapsedFoldAt(visualLine)
+
         // Calculate column based on document line length
         val maxColumn = if (editorState.document.lineCount > 0) {
-            editorState.document.getLineLength(documentLine)
+            // For imports/doc comments folds, the line content is hidden (only placeholder shown)
+            // So limit column to 0 to place cursor at start of line
+            if (collapsedFold != null &&
+                (collapsedFold.type == ai.rever.bosseditor.fold.FoldType.IMPORTS ||
+                 collapsedFold.type == ai.rever.bosseditor.fold.FoldType.DOC_COMMENT)) {
+                0
+            } else if (collapsedFold != null && collapsedFold.type == ai.rever.bosseditor.fold.FoldType.CODE) {
+                // For code folds, limit to the visible part (before the '{')
+                val lineText = editorState.document.getLineText(documentLine)
+                val trimmedEnd = lineText.trimEnd()
+                if (trimmedEnd.endsWith("{")) {
+                    trimmedEnd.dropLast(1).trimEnd().length
+                } else {
+                    editorState.document.getLineLength(documentLine)
+                }
+            } else {
+                editorState.document.getLineLength(documentLine)
+            }
         } else 0
 
         val column = ((offset.x - gutterWidth + scrollOffset.x.toFloat()) / charWidth)
@@ -289,6 +309,41 @@ fun EditorCanvas(
                                     isDragging = false
                                     // Consume the event - don't continue to other handlers
                                     return@awaitEachGesture
+                                }
+                            }
+
+                            // Check for fold placeholder click (in the text area)
+                            if (foldingEnabled && onFoldToggle != null && position.x >= gutterWidth) {
+                                val visualLine = ((position.y + scrollOffset.y.toFloat()) / lineHeight).toInt()
+                                val collapsedFold = visualLineMapper.getCollapsedFoldAt(visualLine)
+                                if (collapsedFold != null) {
+                                    // Calculate placeholder X position
+                                    val lineText = editorState.document.getLineText(collapsedFold.startLine)
+                                    val foldType = collapsedFold.type
+
+                                    // For imports/doc comments, placeholder starts near gutter
+                                    // For code, placeholder starts after line text (minus trailing brace)
+                                    val placeholderStartX = if (foldType == ai.rever.bosseditor.fold.FoldType.IMPORTS ||
+                                        foldType == ai.rever.bosseditor.fold.FoldType.DOC_COMMENT) {
+                                        gutterWidth + charWidth * 1.5f
+                                    } else {
+                                        // Strip trailing '{' for code folds
+                                        val trimmedEnd = lineText.trimEnd()
+                                        val effectiveLength = if (trimmedEnd.endsWith("{")) {
+                                            trimmedEnd.dropLast(1).trimEnd().length
+                                        } else {
+                                            lineText.length
+                                        }
+                                        gutterWidth + effectiveLength * charWidth - scrollOffset.x.toFloat() + charWidth * 0.5f
+                                    }
+
+                                    // Check if click is on or after placeholder start
+                                    val clickX = position.x
+                                    if (clickX >= placeholderStartX) {
+                                        onFoldToggle.invoke(collapsedFold.startLine)
+                                        isDragging = false
+                                        return@awaitEachGesture
+                                    }
                                 }
                             }
 
