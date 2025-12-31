@@ -104,7 +104,19 @@ data class EditorColors(
     val rainbowBracket1: Color,
     val rainbowBracket2: Color,
     val rainbowBracket3: Color,
-    val rainbowBracket4: Color
+    val rainbowBracket4: Color,
+
+    // Diagnostic squiggles (for error, warning, info, hint underlines)
+    val errorSquiggle: Color,
+    val warningSquiggle: Color,
+    val infoSquiggle: Color,
+    val hintSquiggle: Color,
+
+    // Gutter diagnostic icons (background colors for gutter indicators)
+    val gutterError: Color,
+    val gutterWarning: Color,
+    val gutterInfo: Color,
+    val gutterHint: Color
 ) {
     /**
      * Gets the rainbow bracket color for a given nesting depth.
@@ -115,6 +127,26 @@ data class EditorColors(
         1 -> rainbowBracket2
         2 -> rainbowBracket3
         else -> rainbowBracket4
+    }
+
+    /**
+     * Gets the squiggle underline color for a diagnostic severity.
+     */
+    fun getSquiggleColor(severity: ai.rever.bosseditor.features.DiagnosticSeverity): Color = when (severity) {
+        ai.rever.bosseditor.features.DiagnosticSeverity.ERROR -> errorSquiggle
+        ai.rever.bosseditor.features.DiagnosticSeverity.WARNING -> warningSquiggle
+        ai.rever.bosseditor.features.DiagnosticSeverity.INFO -> infoSquiggle
+        ai.rever.bosseditor.features.DiagnosticSeverity.HINT -> hintSquiggle
+    }
+
+    /**
+     * Gets the gutter icon color for a diagnostic severity.
+     */
+    fun getGutterIconColor(severity: ai.rever.bosseditor.features.DiagnosticSeverity): Color = when (severity) {
+        ai.rever.bosseditor.features.DiagnosticSeverity.ERROR -> gutterError
+        ai.rever.bosseditor.features.DiagnosticSeverity.WARNING -> gutterWarning
+        ai.rever.bosseditor.features.DiagnosticSeverity.INFO -> gutterInfo
+        ai.rever.bosseditor.features.DiagnosticSeverity.HINT -> gutterHint
     }
     /**
      * Gets the color for a token type.
@@ -328,7 +360,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFFFD700),  // Gold
                 rainbowBracket2 = Color(0xFFDA70D6),  // Orchid
                 rainbowBracket3 = Color(0xFF87CEEB),  // Sky blue
-                rainbowBracket4 = Color(0xFF98FB98)   // Pale green
+                rainbowBracket4 = Color(0xFF98FB98), // Pale green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFF75464),    // Red - matches IntelliJ
+                warningSquiggle = Color(0xFFFFB848),  // Orange/Yellow
+                infoSquiggle = Color(0xFF548AF7),    // Blue
+                hintSquiggle = Color(0xFF6E737A),    // Gray
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFF75464),
+                gutterWarning = Color(0xFFFFB848),
+                gutterInfo = Color(0xFF548AF7),
+                gutterHint = Color(0xFF6E737A)
             )
         )
 
@@ -413,7 +457,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFB8860B),  // Dark goldenrod
                 rainbowBracket2 = Color(0xFF9932CC),  // Dark orchid
                 rainbowBracket3 = Color(0xFF4682B4),  // Steel blue
-                rainbowBracket4 = Color(0xFF228B22)   // Forest green
+                rainbowBracket4 = Color(0xFF228B22), // Forest green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFCF222E),    // Red
+                warningSquiggle = Color(0xFFBF8700),  // Dark yellow/orange
+                infoSquiggle = Color(0xFF0066CC),    // Blue
+                hintSquiggle = Color(0xFF6E7681),    // Gray
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFCF222E),
+                gutterWarning = Color(0xFFBF8700),
+                gutterInfo = Color(0xFF0066CC),
+                gutterHint = Color(0xFF6E7681)
             )
         )
 
@@ -498,7 +554,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFF1FA8C),  // Yellow
                 rainbowBracket2 = Color(0xFFFF79C6),  // Pink
                 rainbowBracket3 = Color(0xFF8BE9FD),  // Cyan
-                rainbowBracket4 = Color(0xFF50FA7B)   // Green
+                rainbowBracket4 = Color(0xFF50FA7B), // Green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFFF5555),    // Red
+                warningSquiggle = Color(0xFFFFB86C),  // Orange
+                infoSquiggle = Color(0xFF8BE9FD),    // Cyan
+                hintSquiggle = Color(0xFF6272A4),    // Comment purple
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFFF5555),
+                gutterWarning = Color(0xFFFFB86C),
+                gutterInfo = Color(0xFF8BE9FD),
+                gutterHint = Color(0xFF6272A4)
             )
         )
 
@@ -583,7 +651,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFE6DB74),  // Yellow
                 rainbowBracket2 = Color(0xFFF92672),  // Pink/Red
                 rainbowBracket3 = Color(0xFF66D9EF),  // Blue
-                rainbowBracket4 = Color(0xFFA6E22E)   // Green
+                rainbowBracket4 = Color(0xFFA6E22E), // Green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFF92672),    // Pink/Red
+                warningSquiggle = Color(0xFFFD971F),  // Orange
+                infoSquiggle = Color(0xFF66D9EF),    // Blue
+                hintSquiggle = Color(0xFF75715E),    // Gray
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFF92672),
+                gutterWarning = Color(0xFFFD971F),
+                gutterInfo = Color(0xFF66D9EF),
+                gutterHint = Color(0xFF75715E)
             )
         )
 
@@ -668,7 +748,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFB58900),  // Yellow
                 rainbowBracket2 = Color(0xFFD33682),  // Magenta
                 rainbowBracket3 = Color(0xFF268BD2),  // Blue
-                rainbowBracket4 = Color(0xFF859900)   // Green
+                rainbowBracket4 = Color(0xFF859900), // Green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFDC322F),    // Red
+                warningSquiggle = Color(0xFFCB4B16),  // Orange
+                infoSquiggle = Color(0xFF268BD2),    // Blue
+                hintSquiggle = Color(0xFF586E75),    // Base01
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFDC322F),
+                gutterWarning = Color(0xFFCB4B16),
+                gutterInfo = Color(0xFF268BD2),
+                gutterHint = Color(0xFF586E75)
             )
         )
 
@@ -753,7 +845,19 @@ data class EditorTheme(
                 rainbowBracket1 = Color(0xFFB58900),  // Yellow
                 rainbowBracket2 = Color(0xFFD33682),  // Magenta
                 rainbowBracket3 = Color(0xFF268BD2),  // Blue
-                rainbowBracket4 = Color(0xFF859900)   // Green
+                rainbowBracket4 = Color(0xFF859900), // Green
+
+                // Diagnostic squiggles
+                errorSquiggle = Color(0xFFDC322F),    // Red
+                warningSquiggle = Color(0xFFCB4B16),  // Orange
+                infoSquiggle = Color(0xFF268BD2),    // Blue
+                hintSquiggle = Color(0xFF93A1A1),    // Base1
+
+                // Gutter diagnostic icons
+                gutterError = Color(0xFFDC322F),
+                gutterWarning = Color(0xFFCB4B16),
+                gutterInfo = Color(0xFF268BD2),
+                gutterHint = Color(0xFF93A1A1)
             )
         )
     }

@@ -1,18 +1,26 @@
 package ai.rever.bosseditor.rendering
 
 import ai.rever.bosseditor.core.EditorPosition
+import ai.rever.bosseditor.features.Diagnostic
+import ai.rever.bosseditor.features.DiagnosticSeverity
+import ai.rever.bosseditor.features.GutterIcon
+import ai.rever.bosseditor.features.GutterIconType
+import ai.rever.bosseditor.features.Hyperlink
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
 
 /**
@@ -370,12 +378,22 @@ object EditorCanvasRenderer {
     // ========== Pass 3: Overlays ==========
 
     /**
-     * Renders overlay elements: carets, bracket matching.
+     * Renders overlay elements: carets, bracket matching, diagnostics, hyperlinks.
      */
     private fun DrawScope.renderOverlays(ctx: EditorRenderingContext) {
         // Draw bracket matching highlight
         ctx.bracketMatch?.let { match ->
             drawBracketMatch(ctx, match)
+        }
+
+        // Draw diagnostic squiggles (error, warning, info, hint underlines)
+        if (ctx.diagnostics.isNotEmpty()) {
+            drawDiagnostics(ctx)
+        }
+
+        // Draw hyperlink underlines
+        if (ctx.hyperlinks.isNotEmpty() && ctx.hyperlinkUnderlineVisible) {
+            drawHyperlinks(ctx)
         }
 
         // Draw all carets (multi-caret support)
@@ -384,6 +402,129 @@ object EditorCanvasRenderer {
                 drawAllCarets(ctx)
             } else {
                 drawCaret(ctx, ctx.caretPosition)
+            }
+        }
+    }
+
+    // ========== Diagnostic Squiggles ==========
+
+    /**
+     * Draws diagnostic squiggle underlines for errors, warnings, etc.
+     */
+    private fun DrawScope.drawDiagnostics(ctx: EditorRenderingContext) {
+        for (diagnostic in ctx.diagnostics) {
+            // Skip if diagnostic is entirely outside visible range
+            if (diagnostic.endLine < ctx.visibleLineRange.first ||
+                diagnostic.startLine > ctx.visibleLineRange.last) {
+                continue
+            }
+
+            val color = ctx.colors.getSquiggleColor(diagnostic.severity)
+
+            // Draw squiggle on each line the diagnostic spans
+            for (line in maxOf(diagnostic.startLine, ctx.visibleLineRange.first)..
+                        minOf(diagnostic.endLine, ctx.visibleLineRange.last)) {
+                val startCol = if (line == diagnostic.startLine) diagnostic.range.start.column else 0
+                val endCol = if (line == diagnostic.endLine) diagnostic.range.end.column else ctx.getLineLength(line)
+
+                if (startCol >= endCol) continue
+
+                val y = line * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
+                val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+                val width = (endCol - startCol) * ctx.charWidth
+
+                drawSquiggleLine(xStart, y, width, color)
+            }
+        }
+    }
+
+    /**
+     * Draws a wavy/squiggly line (like IntelliJ's error underlines).
+     *
+     * @param x Start X position
+     * @param y Y position (baseline of squiggle)
+     * @param width Width of the squiggle line
+     * @param color Color of the squiggle
+     */
+    private fun DrawScope.drawSquiggleLine(
+        x: Float,
+        y: Float,
+        width: Float,
+        color: Color
+    ) {
+        if (width <= 0f) return
+
+        val waveHeight = 2f  // Height of each wave
+        val wavelength = 4f  // Width of each wave segment
+
+        val path = Path()
+        var currentX = x
+
+        path.moveTo(currentX, y)
+
+        while (currentX < x + width) {
+            val segmentWidth = minOf(wavelength / 2f, x + width - currentX)
+            val nextX = currentX + segmentWidth
+
+            // Draw downward then upward curve (sine wave approximation)
+            if ((((currentX - x) / (wavelength / 2f)).toInt() % 2) == 0) {
+                // Going down
+                path.quadraticTo(
+                    currentX + segmentWidth / 2f, y + waveHeight,
+                    nextX, y
+                )
+            } else {
+                // Going up
+                path.quadraticTo(
+                    currentX + segmentWidth / 2f, y - waveHeight,
+                    nextX, y
+                )
+            }
+
+            currentX = nextX
+        }
+
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(width = 1.5f)
+        )
+    }
+
+    // ========== Hyperlinks ==========
+
+    /**
+     * Draws hyperlink underlines (shown when Cmd/Ctrl is held).
+     */
+    private fun DrawScope.drawHyperlinks(ctx: EditorRenderingContext) {
+        for (hyperlink in ctx.hyperlinks) {
+            // Skip if hyperlink is entirely outside visible range
+            if (hyperlink.endLine < ctx.visibleLineRange.first ||
+                hyperlink.startLine > ctx.visibleLineRange.last) {
+                continue
+            }
+
+            val color = ctx.colors.hyperlink
+
+            // Draw underline on each line the hyperlink spans
+            for (line in maxOf(hyperlink.startLine, ctx.visibleLineRange.first)..
+                        minOf(hyperlink.endLine, ctx.visibleLineRange.last)) {
+                val startCol = if (line == hyperlink.startLine) hyperlink.range.start.column else 0
+                val endCol = if (line == hyperlink.endLine) hyperlink.range.end.column else ctx.getLineLength(line)
+
+                if (startCol >= endCol) continue
+
+                val y = line * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f
+                val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+                val width = (endCol - startCol) * ctx.charWidth
+
+                // Draw solid underline for hyperlinks
+                drawLine(
+                    color = color,
+                    start = Offset(xStart, y),
+                    end = Offset(xStart + width, y),
+                    strokeWidth = 1f
+                )
             }
         }
     }
@@ -569,6 +710,117 @@ object EditorCanvasRenderer {
                 style = style.copy(color = lineColor),
                 topLeft = Offset(x, y)
             )
+
+            // Draw gutter icon if present
+            drawGutterIconForLine(ctx, line, y, colors)
+        }
+    }
+
+    /**
+     * Draws a gutter icon for a specific line.
+     */
+    private fun DrawScope.drawGutterIconForLine(
+        ctx: EditorRenderingContext,
+        line: Int,
+        y: Float,
+        colors: EditorColors
+    ) {
+        val icon = ctx.gutterIcons.find { it.line == line } ?: return
+
+        val iconSize = ctx.lineHeight * 0.8f // 80% of line height
+        val iconX = 4f // Left padding
+        val iconY = y + (ctx.lineHeight - iconSize) / 2f
+
+        when (icon.type) {
+            GutterIconType.ERROR -> {
+                // Red circle with X
+                drawCircle(
+                    color = colors.gutterError,
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
+            GutterIconType.WARNING -> {
+                // Yellow triangle
+                val path = Path()
+                path.moveTo(iconX + iconSize / 2f, iconY) // Top
+                path.lineTo(iconX + iconSize, iconY + iconSize) // Bottom right
+                path.lineTo(iconX, iconY + iconSize) // Bottom left
+                path.close()
+                drawPath(path, colors.gutterWarning)
+            }
+            GutterIconType.INFO -> {
+                // Blue circle with i
+                drawCircle(
+                    color = colors.gutterInfo,
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
+            GutterIconType.HINT -> {
+                // Gray circle
+                drawCircle(
+                    color = colors.gutterHint,
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
+            GutterIconType.RUN -> {
+                // Green play triangle
+                val path = Path()
+                path.moveTo(iconX, iconY) // Top left
+                path.lineTo(iconX + iconSize, iconY + iconSize / 2f) // Right point
+                path.lineTo(iconX, iconY + iconSize) // Bottom left
+                path.close()
+                drawPath(path, Color(0xFF4CAF50)) // Green
+            }
+            GutterIconType.DEBUG -> {
+                // Green bug icon (simplified as circle)
+                drawCircle(
+                    color = Color(0xFF4CAF50),
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
+            GutterIconType.BREAKPOINT -> {
+                // Red filled circle
+                drawCircle(
+                    color = Color(0xFFFF5252),
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
+            GutterIconType.BREAKPOINT_DISABLED -> {
+                // Gray circle outline
+                drawCircle(
+                    color = Color(0xFF9E9E9E),
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f),
+                    style = Stroke(width = 2f)
+                )
+            }
+            GutterIconType.BOOKMARK -> {
+                // Blue bookmark flag
+                val path = Path()
+                path.moveTo(iconX, iconY) // Top left
+                path.lineTo(iconX + iconSize, iconY) // Top right
+                path.lineTo(iconX + iconSize, iconY + iconSize * 0.8f) // Bottom right
+                path.lineTo(iconX + iconSize / 2f, iconY + iconSize * 0.6f) // Point
+                path.lineTo(iconX, iconY + iconSize * 0.8f) // Bottom left
+                path.close()
+                drawPath(path, Color(0xFF2196F3))
+            }
+            GutterIconType.FOLD_START, GutterIconType.FOLD_END -> {
+                // Fold icon handled elsewhere (code folding)
+            }
+            GutterIconType.OVERRIDE, GutterIconType.RECURSIVE -> {
+                // Arrow down for override
+                drawCircle(
+                    color = Color(0xFF9C27B0),
+                    radius = iconSize / 2f,
+                    center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
+                )
+            }
         }
     }
 }

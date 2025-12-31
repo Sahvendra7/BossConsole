@@ -5,6 +5,9 @@ import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.OffsetRange
 import ai.rever.bosseditor.features.BracketMatch
+import ai.rever.bosseditor.features.Diagnostic
+import ai.rever.bosseditor.features.GutterIcon
+import ai.rever.bosseditor.features.Hyperlink
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
@@ -90,6 +93,16 @@ data class EditorRenderingContext(
     val rainbowBrackets: List<RainbowBracket>,
     val rainbowBracketsEnabled: Boolean,
 
+    // Diagnostics (Phase 17) - errors, warnings, info, hints with squiggly underlines
+    val diagnostics: List<Diagnostic>,
+
+    // Hyperlinks (Phase 17) - clickable links in code
+    val hyperlinks: List<Hyperlink>,
+    val hyperlinkUnderlineVisible: Boolean, // True when Cmd/Ctrl is held
+
+    // Gutter icons (Phase 17) - icons in the gutter (run, debug, breakpoints, etc.)
+    val gutterIcons: List<GutterIcon>,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -127,6 +140,10 @@ data class EditorRenderingContext(
             allCarets: List<Caret> = emptyList(),
             rainbowBrackets: List<RainbowBracket> = emptyList(),
             rainbowBracketsEnabled: Boolean = true,
+            diagnostics: List<Diagnostic> = emptyList(),
+            hyperlinks: List<Hyperlink> = emptyList(),
+            hyperlinkUnderlineVisible: Boolean = false,
+            gutterIcons: List<GutterIcon> = emptyList(),
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Calculate visible lines
@@ -169,6 +186,10 @@ data class EditorRenderingContext(
                 hasMultipleCarets = allCarets.size > 1,
                 rainbowBrackets = rainbowBrackets,
                 rainbowBracketsEnabled = rainbowBracketsEnabled,
+                diagnostics = diagnostics,
+                hyperlinks = hyperlinks,
+                hyperlinkUnderlineVisible = hyperlinkUnderlineVisible,
+                gutterIcons = gutterIcons,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }

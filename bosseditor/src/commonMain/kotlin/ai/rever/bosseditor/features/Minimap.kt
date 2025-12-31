@@ -414,12 +414,4 @@ data class DiagnosticInfo(
     val message: String = ""
 )
 
-/**
- * Severity level for diagnostics.
- */
-enum class DiagnosticSeverity {
-    ERROR,
-    WARNING,
-    INFO,
-    HINT
-}
+// DiagnosticSeverity is defined in Diagnostics.kt
