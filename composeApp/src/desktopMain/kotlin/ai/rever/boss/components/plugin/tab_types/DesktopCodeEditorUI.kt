@@ -90,43 +90,82 @@ fun DesktopCodeEditorUI(
     Column(modifier = modifier.fillMaxSize()) {
         // Main editor area
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            RSyntaxEditorWithGutter(
-                content = content,
-                onContentChange = { newContent ->
-                    onContentChange(newContent)
-                },
-                language = language,
-                filePath = filePath,
-                projectPath = projectPath,
-                modifier = Modifier.fillMaxSize(),
-                isReadOnly = false,
-                fontSize = CodeEditorSettings.fontSize,
-                fontFamily = CodeEditorSettings.fontFamily,
-                theme = CodeEditorSettings.theme,
-                onCursorPositionChange = { line, column ->
-                    cursorLine = line
-                    cursorColumn = column
-                },
-                onModifiedStateChange = { modified ->
-                    isModified = modified
-                    onModifiedStateChange(modified)
-                },
-                onRun = { detected ->
-                    scope.launch {
-                        executeDetectedMainFunction(detected, projectPath)
-                    }
-                },
-                onNavigate = { event ->
-                    if (event.filePath.isNotEmpty()) {
+            if (CodeEditorSettings.useNativeEditor) {
+                // Use native BossEditor (Compose Canvas-based)
+                BossEditorIntegration(
+                    content = content,
+                    onContentChange = { newContent ->
+                        onContentChange(newContent)
+                    },
+                    language = language,
+                    filePath = filePath,
+                    projectPath = projectPath,
+                    modifier = Modifier.fillMaxSize(),
+                    isReadOnly = false,
+                    fontSize = CodeEditorSettings.fontSize,
+                    fontFamily = CodeEditorSettings.fontFamily,
+                    theme = CodeEditorSettings.theme,
+                    onCursorPositionChange = { line, column ->
+                        cursorLine = line
+                        cursorColumn = column
+                    },
+                    onModifiedStateChange = { modified ->
+                        isModified = modified
+                        onModifiedStateChange(modified)
+                    },
+                    onRun = { detected ->
                         scope.launch {
-                            // Open the target file at the specified position
-                            // For same-file navigation, FileEventBus handler will scroll to position
-                            // For cross-file, it opens the file and navigates
-                            FileEventBus.openFile(event.filePath, event.line, event.column)
+                            executeDetectedMainFunction(detected, projectPath)
+                        }
+                    },
+                    onNavigate = { event ->
+                        if (event.filePath.isNotEmpty()) {
+                            scope.launch {
+                                FileEventBus.openFile(event.filePath, event.line, event.column)
+                            }
                         }
                     }
-                }
-            )
+                )
+            } else {
+                // Use RSyntaxTextArea (Swing-based) - default for maximum compatibility
+                RSyntaxEditorWithGutter(
+                    content = content,
+                    onContentChange = { newContent ->
+                        onContentChange(newContent)
+                    },
+                    language = language,
+                    filePath = filePath,
+                    projectPath = projectPath,
+                    modifier = Modifier.fillMaxSize(),
+                    isReadOnly = false,
+                    fontSize = CodeEditorSettings.fontSize,
+                    fontFamily = CodeEditorSettings.fontFamily,
+                    theme = CodeEditorSettings.theme,
+                    onCursorPositionChange = { line, column ->
+                        cursorLine = line
+                        cursorColumn = column
+                    },
+                    onModifiedStateChange = { modified ->
+                        isModified = modified
+                        onModifiedStateChange(modified)
+                    },
+                    onRun = { detected ->
+                        scope.launch {
+                            executeDetectedMainFunction(detected, projectPath)
+                        }
+                    },
+                    onNavigate = { event ->
+                        if (event.filePath.isNotEmpty()) {
+                            scope.launch {
+                                // Open the target file at the specified position
+                                // For same-file navigation, FileEventBus handler will scroll to position
+                                // For cross-file, it opens the file and navigates
+                                FileEventBus.openFile(event.filePath, event.line, event.column)
+                            }
+                        }
+                    }
+                )
+            }
         }
 
         // Status bar

@@ -18,6 +18,13 @@ object CodeEditorSettings {
     var useAntialiasing: Boolean = true
     var lineSpacing: Float = 1.2f
 
+    /**
+     * Whether to use the native BossEditor (Compose Canvas) instead of RSyntaxTextArea (Swing).
+     * When true, uses BossEditorIntegration for code editing.
+     * When false (default), uses RSyntaxEditorWithGutter for maximum compatibility.
+     */
+    var useNativeEditor: Boolean = false
+
     // Theme colors
     fun getBackgroundColor(): Color = when (theme) {
         "Light" -> Color(0xFF_FFFFFF)
@@ -97,7 +104,8 @@ data class CodeEditorSettingsData(
     val theme: String = "Dark",
     val useLigatures: Boolean = true,
     val useAntialiasing: Boolean = true,
-    val lineSpacing: Float = 1.2f
+    val lineSpacing: Float = 1.2f,
+    val useNativeEditor: Boolean = false
 )
 
 object CodeEditorSettingsManager {
@@ -128,6 +136,7 @@ object CodeEditorSettingsManager {
                 CodeEditorSettings.useLigatures = settings.useLigatures
                 CodeEditorSettings.useAntialiasing = settings.useAntialiasing
                 CodeEditorSettings.lineSpacing = settings.lineSpacing
+                CodeEditorSettings.useNativeEditor = settings.useNativeEditor
             }
         } catch (e: Exception) {
             println("Failed to load code editor settings: ${e.message}")
@@ -142,7 +151,8 @@ object CodeEditorSettingsManager {
                 theme = CodeEditorSettings.theme,
                 useLigatures = CodeEditorSettings.useLigatures,
                 useAntialiasing = CodeEditorSettings.useAntialiasing,
-                lineSpacing = CodeEditorSettings.lineSpacing
+                lineSpacing = CodeEditorSettings.lineSpacing,
+                useNativeEditor = CodeEditorSettings.useNativeEditor
             )
 
             val content = json.encodeToString(settings)
