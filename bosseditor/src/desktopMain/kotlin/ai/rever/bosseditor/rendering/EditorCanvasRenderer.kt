@@ -351,7 +351,15 @@ object EditorCanvasRenderer {
         isBold: Boolean,
         isItalic: Boolean
     ) {
-        val text = lineText.substring(startCol, endCol)
+        // Guard against empty text which can cause invalid constraints
+        if (startCol >= endCol || startCol >= lineText.length) return
+
+        val safeEndCol = minOf(endCol, lineText.length)
+        val text = lineText.substring(startCol, safeEndCol)
+
+        // Don't attempt to draw empty text
+        if (text.isEmpty()) return
+
         val x = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
 
         val style = TextStyle(
