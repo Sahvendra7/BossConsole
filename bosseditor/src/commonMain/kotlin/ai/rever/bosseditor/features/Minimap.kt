@@ -77,13 +77,14 @@ class Minimap(
         val lineCount = document.lineCount
 
         for (lineNumber in 0 until lineCount) {
-            val lineStart = document.getLineStartOffset(lineNumber)
             val tokens = getLineTokens(lineNumber)
 
+            // Note: tokens from lexers already have line-relative offsets (0-based within line)
+            // so we use them directly as column positions
             val segments = tokens.map { token ->
                 MinimapSegment(
-                    startColumn = token.startOffset - lineStart,
-                    endColumn = token.endOffset - lineStart,
+                    startColumn = token.startOffset,
+                    endColumn = token.endOffset,
                     tokenType = token.type
                 )
             }

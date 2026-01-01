@@ -6,6 +6,8 @@ import ai.rever.bosseditor.core.EditorState
 import ai.rever.bosseditor.core.OffsetRange
 import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.features.BracketMatcher
+import ai.rever.bosseditor.features.IndentGuide
+import ai.rever.bosseditor.features.IndentGuides
 import ai.rever.bosseditor.features.MarkOccurrences
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.features.RainbowBrackets
@@ -70,6 +72,9 @@ fun EditorCanvas(
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
     rainbowBracketsEnabled: Boolean = true,
+    indentGuidesEnabled: Boolean = true,
+    tabSize: Int = 4,
+    scrollSpeed: Float = 1.5f,
     foldingEnabled: Boolean = true,
     getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
@@ -166,6 +171,29 @@ fun EditorCanvas(
         }
     }
 
+    // Create indent guides helper (reuse across recompositions)
+    val indentGuidesHelper = remember(editorState.document, tabSize) {
+        IndentGuides(editorState.document, tabSize)
+    }
+
+    // Compute indent guides (only when enabled)
+    val indentGuides: List<IndentGuide> = remember(indentGuidesEnabled, editorState.document.documentVersion, tabSize) {
+        if (indentGuidesEnabled) {
+            indentGuidesHelper.calculateGuides()
+        } else {
+            emptyList()
+        }
+    }
+
+    // Compute the active indent guide (guide containing the caret)
+    val activeIndentGuide: IndentGuide? = remember(indentGuidesEnabled, caretPosition, indentGuides) {
+        if (indentGuidesEnabled && indentGuides.isNotEmpty()) {
+            indentGuidesHelper.getGuideAtCaret(caretPosition.line, caretPosition.column)
+        } else {
+            null
+        }
+    }
+
     // Track caret position changes
     LaunchedEffect(caretPosition) {
         onCaretPositionChanged(caretPosition)
@@ -174,6 +202,22 @@ fun EditorCanvas(
     // Track selection changes
     LaunchedEffect(selection) {
         onSelectionChanged(selection)
+    }
+
+    // Update visible line range in EditorState (for minimap sync)
+    // Uses same calculation as EditorRenderingContext.from() for consistency
+    // Passes actual measured lineHeight so minimap click scroll uses correct values
+    LaunchedEffect(scrollOffset, viewportSize, visualLineMapper, lineHeight) {
+        if (viewportSize.height > 0 && lineHeight > 0) {
+            val firstVisibleVisualLine = (scrollOffset.y.toFloat() / lineHeight).toInt().coerceAtLeast(0)
+            val visibleLineCount = (viewportSize.height / lineHeight).toInt() + 2 // +2 for partial lines
+            editorState.updateVisibleLineRange(
+                firstVisibleVisualLine,
+                visibleLineCount,
+                lineHeight,
+                viewportSize.height
+            )
+        }
     }
 
     // Caret blink timer - always run since caret is always visible
@@ -421,15 +465,14 @@ fun EditorCanvas(
                 if (change.isConsumed) return@onPointerEvent
 
                 val delta = change.scrollDelta
-                val scrollLines = 3 // Lines to scroll per wheel tick
 
                 // Calculate max scroll based on content (in pixels)
                 val contentHeight = editorState.document.lineCount * lineHeight
                 val maxScrollY = (contentHeight - viewportSize.height).coerceAtLeast(0f).toInt()
 
                 // delta.y is typically -1 or 1 per scroll tick
-                // Scroll by number of lines * line height (pixels)
-                val scrollAmount = (delta.y * scrollLines * lineHeight).toInt()
+                // Scroll by scrollSpeed lines * line height (pixels)
+                val scrollAmount = (delta.y * scrollSpeed * lineHeight).toInt()
                 val newScrollY = (scrollOffset.y + scrollAmount).coerceIn(0, maxScrollY)
 
                 editorState.setScrollOffset(
@@ -475,7 +518,11 @@ fun EditorCanvas(
                 markOccurrences = markOccurrences,
                 allCarets = allCarets,
                 rainbowBrackets = rainbowBrackets,
-                rainbowBracketsEnabled = rainbowBracketsEnabled
+                rainbowBracketsEnabled = rainbowBracketsEnabled,
+                indentGuides = indentGuides,
+                activeIndentGuide = activeIndentGuide,
+                indentGuidesEnabled = indentGuidesEnabled,
+                tabSize = tabSize
             )
 
             // Clip to canvas bounds and render

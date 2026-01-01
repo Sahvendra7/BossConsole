@@ -72,6 +72,11 @@ class EditorState(
     val scrollOffset: StateFlow<ScrollOffset> = _scrollOffset.asStateFlow()
 
     // Visible line range (computed from scroll position and viewport)
+    // Exposed as StateFlow so minimap can collect and stay in sync
+    private val _visibleViewport = MutableStateFlow(VisibleViewport(0, 30))
+    val visibleViewport: StateFlow<VisibleViewport> = _visibleViewport.asStateFlow()
+
+    // Legacy property for backward compatibility
     var visibleLineRange: IntRange = 0..0
         private set
 
@@ -415,9 +420,18 @@ class EditorState(
 
     /**
      * Updates the visible line range based on scroll position and viewport.
+     * This should be called from EditorCanvas after creating the rendering context.
+     *
+     * @param firstLine First visible visual line (accounts for folding)
+     * @param lineCount Number of visible lines in viewport
+     * @param lineHeight Actual measured line height in pixels
+     * @param viewportHeight Viewport height in pixels
      */
-    fun updateVisibleLineRange(firstLine: Int, lastLine: Int) {
-        visibleLineRange = firstLine.coerceAtLeast(0)..lastLine.coerceAtMost(document.lineCount - 1)
+    fun updateVisibleLineRange(firstLine: Int, lineCount: Int, lineHeight: Float = 0f, viewportHeight: Float = 0f) {
+        val clampedFirst = firstLine.coerceAtLeast(0)
+        val clampedLast = (firstLine + lineCount).coerceAtMost(document.lineCount - 1)
+        visibleLineRange = clampedFirst..clampedLast
+        _visibleViewport.value = VisibleViewport(clampedFirst, lineCount, lineHeight, viewportHeight)
     }
 
     // --- Listeners ---
@@ -611,6 +625,21 @@ class EditorState(
 data class ScrollOffset(
     val x: Int,
     val y: Int
+)
+
+/**
+ * Represents the visible viewport for the editor.
+ * Used by minimap to sync viewport indicator position.
+ */
+data class VisibleViewport(
+    /** First visible visual line (0-based, accounts for folding) */
+    val firstVisibleLine: Int,
+    /** Number of visible lines in the viewport */
+    val visibleLineCount: Int,
+    /** Actual measured line height in pixels (from EditorCanvas text measurement) */
+    val lineHeight: Float = 0f,
+    /** Viewport height in pixels */
+    val viewportHeight: Float = 0f
 )
 
 /**

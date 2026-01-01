@@ -1,11 +1,13 @@
 package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.core.EditorDocument
+import ai.rever.bosseditor.fold.VisualLineMapper
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenProvider
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.highlight.LexerState
 import ai.rever.bosseditor.theme.EditorColors
+import androidx.compose.ui.graphics.toArgb
 import org.jetbrains.skia.*
 
 /**
@@ -13,11 +15,13 @@ import org.jetbrains.skia.*
  *
  * The minimap provides a scaled-down view of the entire document,
  * showing syntax highlighting colors and the current viewport position.
+ * Uses VisualLineMapper to respect code folding state.
  */
 class MinimapRenderer(
     private val document: EditorDocument,
     private val tokenProvider: TokenProvider?,
-    private val colors: EditorColors
+    private val colors: EditorColors,
+    private val visualLineMapper: VisualLineMapper
 ) {
     private val minimap = Minimap(document)
 
@@ -48,16 +52,28 @@ class MinimapRenderer(
         height: Float,
         state: MinimapState
     ) {
-        if (!config.enabled || document.lineCount == 0) return
-
-        // Draw background
+        // Always draw background first, even if minimap is disabled or empty
         drawBackground(canvas, x, y, width, height)
 
-        // Calculate line height based on document size and available height
-        val lineCount = document.lineCount
-        val lineHeight = calculateLineHeight(height, lineCount)
+        // Use visible line count (respects folding)
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        if (!config.enabled || visibleLineCount == 0) return
 
-        // Draw document content
+        // Draw left border for visual separation
+        drawLeftBorder(canvas, x, y, height)
+
+        // Calculate line height based on visible line count and available height
+        val lineHeight = calculateLineHeight(height, visibleLineCount)
+
+        // Draw current line indicator (behind content) - convert document line to visual line
+        if (state.currentLine >= 0) {
+            val visualLine = visualLineMapper.documentToVisual(state.currentLine)
+            if (visualLine >= 0) {
+                drawCurrentLineIndicator(canvas, x, y, width, lineHeight, visualLine)
+            }
+        }
+
+        // Draw document content (fold-aware)
         if (tokenProvider != null && config.renderCharacters) {
             drawWithSyntaxHighlighting(canvas, x, y, width, lineHeight, state)
         } else {
@@ -76,9 +92,39 @@ class MinimapRenderer(
         drawDiagnosticMarkers(canvas, x, width, height, state)
     }
 
+    private fun drawLeftBorder(canvas: Canvas, x: Float, y: Float, height: Float) {
+        val paint = Paint().apply {
+            // Use gutter border color for consistency with editor
+            color = colors.gutterBorder.toSkiaColor()
+            mode = PaintMode.FILL
+        }
+        canvas.drawRect(Rect.makeXYWH(x, y, 1f, height), paint)
+    }
+
+    private fun drawCurrentLineIndicator(
+        canvas: Canvas,
+        x: Float,
+        y: Float,
+        width: Float,
+        lineHeight: Float,
+        currentLine: Int
+    ) {
+        val lineY = y + currentLine * lineHeight
+        val paint = Paint().apply {
+            // Use editor's current line highlight color
+            color = colors.currentLineHighlight.toSkiaColor()
+            mode = PaintMode.FILL
+        }
+        canvas.drawRect(
+            Rect.makeXYWH(x + 1f, lineY, width - 1f, maxOf(lineHeight, 2f)),
+            paint
+        )
+    }
+
     private fun drawBackground(canvas: Canvas, x: Float, y: Float, width: Float, height: Float) {
         val paint = Paint().apply {
-            color = colors.minimapBackground.toSkiaColor()
+            // Use the main editor background color for seamless appearance
+            color = colors.background.toSkiaColor()
             mode = PaintMode.FILL
         }
         canvas.drawRect(Rect.makeXYWH(x, y, width, height), paint)
@@ -103,19 +149,28 @@ class MinimapRenderer(
     ) {
         val paint = Paint().apply {
             mode = PaintMode.FILL
+            color = colors.text.toSkiaColor()
         }
 
-        val lines = minimap.getMinimapLines()
         val maxChars = (width / config.charWidth).toInt()
+        val visibleLineCount = visualLineMapper.visibleLineCount
 
-        for (line in lines) {
-            if (line.isEmpty) continue
+        // Iterate over visual lines (respects folding)
+        for (visualLine in 0 until visibleLineCount) {
+            val documentLine = visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
 
-            val lineY = y + line.lineNumber * lineHeight
-            val displayLength = minOf(line.length, maxChars)
+            val lineStart = document.getLineStartOffset(documentLine)
+            val lineEnd = document.getLineEndOffset(documentLine)
+            val lineLength = lineEnd - lineStart
+
+            // Skip empty lines
+            if (lineLength <= 0) continue
+
+            val lineY = y + visualLine * lineHeight
+            val displayLength = minOf(lineLength, maxChars)
             val lineWidth = displayLength * config.charWidth
 
-            paint.color = colors.minimapForeground.toSkiaColor()
             canvas.drawRect(
                 Rect.makeXYWH(x + 2f, lineY, lineWidth, maxOf(lineHeight - 1f, 1f)),
                 paint
@@ -135,38 +190,56 @@ class MinimapRenderer(
             mode = PaintMode.FILL
         }
 
-        // Track lexer state across lines
-        var lexerState = LexerState.NORMAL
-
-        val lines = minimap.getMinimapLinesWithTokens { lineNumber ->
-            if (tokenProvider == null) return@getMinimapLinesWithTokens emptyList()
-
-            val lineStart = document.getLineStartOffset(lineNumber)
-            val lineEnd = document.getLineEndOffset(lineNumber)
-            val lineText = document.getText(lineStart, lineEnd)
-                .trimEnd('\n', '\r')
-
-            val result = tokenProvider.tokenizeLine(lineText, lineNumber, lexerState)
-            lexerState = result.endState
-
-            result.tokens
-        }
-
         val maxChars = (width / config.charWidth).toInt()
+        val visibleLineCount = visualLineMapper.visibleLineCount
 
-        for (line in lines) {
-            val lineY = y + line.lineNumber * lineHeight
+        // Track lexer state across document lines (must process in document order for proper state)
+        var lexerState = LexerState.NORMAL
+        var currentDocLine = 0
 
-            for (segment in line.segments) {
-                if (segment.startColumn >= maxChars) continue
+        // Iterate over visual lines (respects folding)
+        for (visualLine in 0 until visibleLineCount) {
+            val documentLine = visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
 
-                val startX = x + 2f + segment.startColumn * config.charWidth
-                val endColumn = minOf(segment.endColumn, maxChars)
-                val segmentWidth = (endColumn - segment.startColumn) * config.charWidth
+            // Process any skipped document lines to maintain lexer state (for folded regions)
+            while (currentDocLine < documentLine) {
+                if (tokenProvider != null) {
+                    val lineStart = document.getLineStartOffset(currentDocLine)
+                    val lineEnd = document.getLineEndOffset(currentDocLine)
+                    val lineText = document.getText(lineStart, lineEnd).trimEnd('\n', '\r')
+                    val result = tokenProvider.tokenizeLine(lineText, currentDocLine, lexerState)
+                    lexerState = result.endState
+                }
+                currentDocLine++
+            }
+
+            // Tokenize current visible line
+            val tokens = if (tokenProvider != null) {
+                val lineStart = document.getLineStartOffset(documentLine)
+                val lineEnd = document.getLineEndOffset(documentLine)
+                val lineText = document.getText(lineStart, lineEnd).trimEnd('\n', '\r')
+                val result = tokenProvider.tokenizeLine(lineText, documentLine, lexerState)
+                lexerState = result.endState
+                currentDocLine = documentLine + 1
+                result.tokens
+            } else {
+                emptyList()
+            }
+
+            val lineY = y + visualLine * lineHeight
+
+            // Draw tokens for this visual line
+            for (token in tokens) {
+                if (token.startOffset >= maxChars) continue
+
+                val startX = x + 2f + token.startOffset * config.charWidth
+                val endColumn = minOf(token.endOffset, maxChars)
+                val segmentWidth = (endColumn - token.startOffset) * config.charWidth
 
                 if (segmentWidth <= 0) continue
 
-                paint.color = getTokenColor(segment.tokenType).toSkiaColor()
+                paint.color = getTokenColor(token.type).toSkiaColor()
                 canvas.drawRect(
                     Rect.makeXYWH(startX, lineY, segmentWidth, maxOf(lineHeight - 1f, 1f)),
                     paint
@@ -183,30 +256,49 @@ class MinimapRenderer(
         height: Float,
         state: MinimapState
     ) {
-        val bounds = minimap.getViewportBounds(
-            state.firstVisibleLine,
-            state.visibleLineCount,
-            height
+        // Use visible line count (respects folding) for consistent rendering
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        val lineHeight = calculateLineHeight(height, visibleLineCount)
+
+        // Calculate viewport bounds using consistent line height
+        val viewportY = state.firstVisibleLine * lineHeight
+        val viewportHeight = state.visibleLineCount * lineHeight
+
+        val bounds = ViewportBounds(
+            y = viewportY.coerceIn(0f, height),
+            height = viewportHeight.coerceAtMost(height - viewportY)
         )
+
+        // Use brighter color when hovered or dragging
+        val viewportColor = if (state.isHovered || state.isDragging) {
+            colors.minimapSliderHover
+        } else {
+            colors.minimapViewport
+        }
 
         // Draw viewport background
         val bgPaint = Paint().apply {
-            color = colors.minimapViewport.toSkiaColor()
+            color = viewportColor.toSkiaColor()
             mode = PaintMode.FILL
         }
         canvas.drawRect(
-            Rect.makeXYWH(x, y + bounds.y, width, bounds.height),
+            Rect.makeXYWH(x + 1f, y + bounds.y, width - 1f, bounds.height),
             bgPaint
         )
 
-        // Draw viewport border
+        // Draw viewport border (slightly brighter when hovered)
+        val borderColor = if (state.isHovered || state.isDragging) {
+            colors.minimapViewportBorder.copy(alpha = 1f)
+        } else {
+            colors.minimapViewportBorder
+        }
         val borderPaint = Paint().apply {
-            color = colors.minimapViewportBorder.toSkiaColor()
+            color = borderColor.toSkiaColor()
             mode = PaintMode.STROKE
             strokeWidth = 1f
         }
         canvas.drawRect(
-            Rect.makeXYWH(x, y + bounds.y, width, bounds.height),
+            Rect.makeXYWH(x + 1f, y + bounds.y, width - 1f, bounds.height),
             borderPaint
         )
     }
@@ -223,37 +315,52 @@ class MinimapRenderer(
             mode = PaintMode.FILL
         }
 
-        // Draw search highlights
+        // Use visible line count for consistent line height
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        if (visibleLineCount == 0) return
+        val lineHeight = calculateLineHeight(height, visibleLineCount)
+
+        // Draw search highlights (only for visible lines)
         if (config.showSearchHighlights && state.searchResults.isNotEmpty()) {
-            val searchHighlights = minimap.getSearchHighlights(state.searchResults, height)
             paint.color = colors.minimapSearchHighlight.toSkiaColor()
-            for (highlight in searchHighlights) {
+            for (result in state.searchResults) {
+                val position = document.offsetToPosition(result.start)
+                val visualLine = visualLineMapper.documentToVisual(position.line)
+                if (visualLine < 0) continue  // Skip if inside folded region
+                val highlightY = visualLine * lineHeight
                 canvas.drawRect(
-                    Rect.makeXYWH(x + width - 4f, y + highlight.y, 3f, maxOf(highlight.height, 2f)),
+                    Rect.makeXYWH(x + width - 4f, y + highlightY, 3f, maxOf(lineHeight, 2f)),
                     paint
                 )
             }
         }
 
-        // Draw selection highlights
+        // Draw selection highlights (only for visible lines)
         if (config.showSelection && state.selection != null) {
-            val selectionHighlights = minimap.getSelectionHighlights(state.selection, height)
             paint.color = colors.minimapSelection.toSkiaColor()
-            for (highlight in selectionHighlights) {
+            val startPos = document.offsetToPosition(state.selection.start)
+            val endPos = document.offsetToPosition(state.selection.end)
+            for (docLine in startPos.line..endPos.line) {
+                val visualLine = visualLineMapper.documentToVisual(docLine)
+                if (visualLine < 0) continue  // Skip if inside folded region
+                val highlightY = visualLine * lineHeight
                 canvas.drawRect(
-                    Rect.makeXYWH(x, y + highlight.y, width, maxOf(highlight.height, 2f)),
+                    Rect.makeXYWH(x, y + highlightY, width, maxOf(lineHeight, 2f)),
                     paint
                 )
             }
         }
 
-        // Draw occurrence highlights
+        // Draw occurrence highlights (only for visible lines)
         if (state.occurrences.isNotEmpty()) {
-            val occurrenceHighlights = minimap.getOccurrenceHighlights(state.occurrences, height)
             paint.color = colors.minimapOccurrence.toSkiaColor()
-            for (highlight in occurrenceHighlights) {
+            for (occurrence in state.occurrences) {
+                val position = document.offsetToPosition(occurrence.start)
+                val visualLine = visualLineMapper.documentToVisual(position.line)
+                if (visualLine < 0) continue  // Skip if inside folded region
+                val highlightY = visualLine * lineHeight
                 canvas.drawRect(
-                    Rect.makeXYWH(x + width - 4f, y + highlight.y, 3f, maxOf(highlight.height, 2f)),
+                    Rect.makeXYWH(x + width - 4f, y + highlightY, 3f, maxOf(lineHeight, 2f)),
                     paint
                 )
             }
@@ -269,28 +376,37 @@ class MinimapRenderer(
     ) {
         if (state.diagnostics.isEmpty()) return
 
-        val markers = minimap.getDiagnosticMarkers(state.diagnostics, height)
+        // Use visible line count for consistent line height
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        if (visibleLineCount == 0) return
+        val lineHeight = calculateLineHeight(height, visibleLineCount)
+
         val paint = Paint().apply {
             mode = PaintMode.FILL
         }
 
-        for (marker in markers) {
-            paint.color = when (marker.severity) {
+        for (diagnostic in state.diagnostics) {
+            val position = document.offsetToPosition(diagnostic.range.start)
+            val visualLine = visualLineMapper.documentToVisual(position.line)
+            if (visualLine < 0) continue  // Skip if inside folded region
+            val markerY = visualLine * lineHeight
+
+            paint.color = when (diagnostic.severity) {
                 DiagnosticSeverity.ERROR -> colors.minimapError.toSkiaColor()
                 DiagnosticSeverity.WARNING -> colors.minimapWarning.toSkiaColor()
                 DiagnosticSeverity.INFO -> colors.minimapInfo.toSkiaColor()
                 DiagnosticSeverity.HINT -> colors.minimapHint.toSkiaColor()
             }
             canvas.drawRect(
-                Rect.makeXYWH(x + width - 4f, marker.y, 3f, 2f),
+                Rect.makeXYWH(x + width - 4f, markerY, 3f, 2f),
                 paint
             )
         }
     }
 
     private fun getTokenColor(tokenType: TokenType): androidx.compose.ui.graphics.Color {
-        // Use the theme's token color mapping
-        return colors.getTokenColor(tokenType)
+        // Use the theme's minimap token color (slightly dimmed for better visual balance)
+        return colors.getMinimapTokenColor(tokenType)
     }
 
     /**
@@ -298,17 +414,38 @@ class MinimapRenderer(
      *
      * @param clickY The Y coordinate of the click relative to minimap top
      * @param minimapHeight The total height of the minimap
-     * @return The line number to scroll to
+     * @return The visual line number to scroll to
      */
     fun getLineFromClick(clickY: Float, minimapHeight: Float): Int {
-        return minimap.getLineFromY(clickY, minimapHeight)
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        if (visibleLineCount == 0) return 0
+
+        val lineHeight = calculateLineHeight(minimapHeight, visibleLineCount)
+        val visualLine = (clickY / lineHeight).toInt()
+        return visualLine.coerceIn(0, visibleLineCount - 1)
     }
 
     /**
-     * Calculates the optimal width for the minimap.
+     * Calculates the optimal width for the minimap based on visible lines.
      */
     fun calculateOptimalWidth(): Float {
-        return minimap.calculateWidth(config.maxWidth)
+        val visibleLineCount = visualLineMapper.visibleLineCount
+        if (visibleLineCount == 0) return config.minWidth
+
+        var maxLineLength = 0
+        val linesToCheck = minOf(visibleLineCount, 1000)
+
+        for (visualLine in 0 until linesToCheck) {
+            val documentLine = visualLineMapper.visualToDocument(visualLine)
+            if (documentLine < 0) continue
+
+            val lineStart = document.getLineStartOffset(documentLine)
+            val lineEnd = document.getLineEndOffset(documentLine)
+            maxLineLength = maxOf(maxLineLength, lineEnd - lineStart)
+        }
+
+        val calculatedWidth = maxLineLength * config.charWidth
+        return calculatedWidth.coerceIn(config.minWidth, config.maxWidth)
     }
 }
 
@@ -325,6 +462,11 @@ data class MinimapState(
      * Number of visible lines in the editor viewport.
      */
     val visibleLineCount: Int = 30,
+
+    /**
+     * Current cursor line (0-based). -1 if no cursor.
+     */
+    val currentLine: Int = -1,
 
     /**
      * Current selection range (if any).
@@ -361,8 +503,6 @@ data class MinimapState(
  * Extension function to convert Compose Color to Skia Color.
  */
 private fun androidx.compose.ui.graphics.Color.toSkiaColor(): Int {
-    return (alpha * 255).toInt() shl 24 or
-            (red * 255).toInt() shl 16 or
-            (green * 255).toInt() shl 8 or
-            (blue * 255).toInt()
+    // Use Compose's built-in toArgb() for correct ARGB conversion
+    return this.toArgb()
 }

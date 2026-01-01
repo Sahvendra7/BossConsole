@@ -2,9 +2,11 @@ package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.core.EditorDocument
 import ai.rever.bosseditor.core.OffsetRange
+import ai.rever.bosseditor.fold.VisualLineMapper
 import ai.rever.bosseditor.highlight.TokenProvider
-import ai.rever.bosseditor.theme.LocalEditorTheme
+import ai.rever.bosseditor.theme.EditorColors
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,23 +22,29 @@ import androidx.compose.ui.unit.dp
  *
  * @param document The editor document to display
  * @param tokenProvider Optional token provider for colored rendering
+ * @param colors Editor colors to use (passed explicitly from parent to ensure consistency)
+ * @param visualLineMapper Maps between document and visual lines (handles folding)
  * @param firstVisibleLine First visible line in the editor
  * @param visibleLineCount Number of visible lines in the editor
+ * @param currentLine Current cursor line (0-based), -1 if none
  * @param selection Current selection range
  * @param searchResults Search result ranges
  * @param occurrences Mark occurrences ranges
  * @param diagnostics Diagnostic information
  * @param config Minimap configuration
- * @param onLineClicked Callback when a line is clicked
- * @param onDragToLine Callback when dragging to a line
+ * @param onLineClicked Callback when a line is clicked (returns visual line)
+ * @param onDragToLine Callback when dragging to a line (returns visual line)
  * @param modifier Modifier for the canvas
  */
 @Composable
 fun MinimapCanvas(
     document: EditorDocument,
     tokenProvider: TokenProvider?,
+    colors: EditorColors,
+    visualLineMapper: VisualLineMapper,
     firstVisibleLine: Int,
     visibleLineCount: Int,
+    currentLine: Int = -1,
     selection: OffsetRange? = null,
     searchResults: List<OffsetRange> = emptyList(),
     occurrences: List<OffsetRange> = emptyList(),
@@ -46,15 +54,13 @@ fun MinimapCanvas(
     onDragToLine: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val theme = LocalEditorTheme.current
-
     // Track hover state
     var isHovered by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
 
-    // Create renderer
-    val renderer = remember(document, tokenProvider, theme.colors) {
-        MinimapRenderer(document, tokenProvider, theme.colors).also {
+    // Create renderer with explicitly passed colors and visual line mapper
+    val renderer = remember(document, tokenProvider, colors, visualLineMapper) {
+        MinimapRenderer(document, tokenProvider, colors, visualLineMapper).also {
             it.config = config
         }
     }
@@ -68,6 +74,7 @@ fun MinimapCanvas(
     val state = remember(
         firstVisibleLine,
         visibleLineCount,
+        currentLine,
         selection,
         searchResults,
         occurrences,
@@ -78,6 +85,7 @@ fun MinimapCanvas(
         MinimapState(
             firstVisibleLine = firstVisibleLine,
             visibleLineCount = visibleLineCount,
+            currentLine = currentLine,
             selection = selection,
             searchResults = searchResults,
             occurrences = occurrences,
@@ -94,6 +102,7 @@ fun MinimapCanvas(
         modifier = modifier
             .width(minimapWidth.dp)
             .fillMaxHeight()
+            .background(colors.background)  // Use explicit editor background color
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val line = renderer.getLineFromClick(offset.y, size.height.toFloat())
@@ -137,6 +146,8 @@ fun MinimapCanvas(
 fun MinimapCanvasWithState(
     document: EditorDocument,
     tokenProvider: TokenProvider?,
+    colors: EditorColors,
+    visualLineMapper: VisualLineMapper,
     editorState: MinimapEditorState,
     config: MinimapConfig = MinimapConfig(),
     onScrollToLine: (Int) -> Unit,
@@ -145,6 +156,8 @@ fun MinimapCanvasWithState(
     MinimapCanvas(
         document = document,
         tokenProvider = tokenProvider,
+        colors = colors,
+        visualLineMapper = visualLineMapper,
         firstVisibleLine = editorState.firstVisibleLine,
         visibleLineCount = editorState.visibleLineCount,
         selection = editorState.selection,

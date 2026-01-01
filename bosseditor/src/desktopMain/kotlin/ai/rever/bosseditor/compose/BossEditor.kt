@@ -3,20 +3,35 @@ package ai.rever.bosseditor.compose
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
+import ai.rever.bosseditor.core.OffsetRange
+import ai.rever.bosseditor.features.MinimapCanvas
+import ai.rever.bosseditor.features.MinimapConfig
 import ai.rever.bosseditor.features.NavigationManager
 import ai.rever.bosseditor.features.NavigationOutcome
 import ai.rever.bosseditor.fold.KotlinFoldParser
+import ai.rever.bosseditor.fold.VisualLineMapper
+import ai.rever.bosseditor.highlight.lexers.KotlinLexer
+import ai.rever.bosseditor.highlight.LexerState
+import ai.rever.bosseditor.highlight.TokenProvider
 import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
+import ai.rever.bosseditor.theme.EditorColors
 import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
@@ -74,6 +89,8 @@ sealed class NavigationResolveResult {
  * @param navigationResolver Custom navigation resolver (if provided, uses this instead of internal PSI).
  *                           Takes file content, file path, and click offset; returns resolved target.
  * @param onNavigate Callback for code navigation (Cmd+Click go-to-definition)
+ * @param showMinimap Whether to show the minimap (code overview)
+ * @param minimapWidth Width of the minimap in pixels
  */
 @Composable
 fun BossEditor(
@@ -90,8 +107,14 @@ fun BossEditor(
     searchMatches: List<EditorRange> = emptyList(),
     currentSearchMatchIndex: Int = -1,
     foldingEnabled: Boolean = true,
+    scrollSpeed: Float = 1.5f,
     filePath: String? = null,
     projectPath: String? = null,
+    showMinimap: Boolean = true,
+    minimapWidth: Int = 80,
+    minimapUseEditorColors: Boolean = true,
+    minimapBackgroundColor: Color? = null,
+    minimapForegroundColor: Color? = null,
     tokenProvider: (Int) -> List<EditorToken> = { emptyList() },
     onTextChanged: () -> Unit = {},
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
@@ -190,9 +213,90 @@ fun BossEditor(
         }
     }
 
+    // Track viewport information for minimap (synced from EditorCanvas via EditorState)
+    // Uses actual measured values from EditorCanvas for accurate scroll calculation
+    val visibleViewport by state.visibleViewport.collectAsState()
+    val firstVisibleLine = visibleViewport.firstVisibleLine
+    val visibleLineCount = visibleViewport.visibleLineCount
+    // Use actual measured line height from EditorCanvas (not fontSize * lineSpacing which may differ)
+    val actualLineHeight = visibleViewport.lineHeight.takeIf { it > 0 } ?: (fontSize * lineSpacing)
+    val actualViewportHeight = visibleViewport.viewportHeight.takeIf { it > 0 } ?: 0f
+
+    val density = LocalDensity.current
+
+    // Get current caret line for minimap current line indicator
+    val caretPosition by state.caretPosition.collectAsState()
+    val minimapCurrentLine = caretPosition.line
+
+    // Get visual line mapper for fold-aware minimap rendering
+    val visualLineMapper by state.visualLineMapper.collectAsState()
+
+    // Convert selection to OffsetRange for minimap
+    val selectionValue by state.selection.collectAsState()
+    val minimapSelection = remember(selectionValue) {
+        selectionValue?.let { selection ->
+            val startOffset = state.document.positionToOffset(selection.start)
+            val endOffset = state.document.positionToOffset(selection.end)
+            OffsetRange(startOffset, endOffset)
+        }
+    }
+
+    // Create token provider for minimap (reusing the lexer)
+    val minimapTokenProvider: TokenProvider? = remember(filePath) {
+        if (filePath?.endsWith(".kt") == true || filePath?.endsWith(".kts") == true) {
+            object : TokenProvider {
+                override val languageId = "kotlin"
+                override val fileExtensions = listOf("kt", "kts")
+                private val lexer = KotlinLexer()
+                override fun tokenizeLine(text: String, lineNumber: Int, startState: LexerState) =
+                    lexer.tokenizeLine(text, lineNumber, startState)
+            }
+        } else {
+            null
+        }
+    }
+
+    // Handle scroll to line from minimap (receives visual line)
+    // Centers the clicked visual line in the viewport
+    val handleMinimapScrollToLine: (Int) -> Unit = remember(state, actualLineHeight, actualViewportHeight, visualLineMapper) {
+        { visualLine ->
+            // Calculate scroll offset to CENTER the visual line in the viewport
+            val clampedVisualLine = visualLine.coerceIn(0, (visualLineMapper.visibleLineCount - 1).coerceAtLeast(0))
+
+            // Calculate content height and max scroll using actual measured values
+            val contentHeight = visualLineMapper.visibleLineCount * actualLineHeight
+            val maxScrollY = (contentHeight - actualViewportHeight).coerceAtLeast(0f).toInt()
+
+            // Calculate scroll Y to center the clicked line
+            // lineY is where the line starts, subtract half viewport to center it
+            val lineY = clampedVisualLine * actualLineHeight
+            val centeredScrollY = (lineY - actualViewportHeight / 2).toInt()
+
+            // Clamp to valid range (handles edge cases at top and bottom)
+            val newScrollY = centeredScrollY.coerceIn(0, maxScrollY)
+
+            // Preserve current X offset
+            val currentScrollOffset = state.scrollOffset.value
+            state.setScrollOffset(ai.rever.bosseditor.core.ScrollOffset(
+                x = currentScrollOffset.x,
+                y = newScrollY
+            ))
+        }
+    }
+
+    // Minimap configuration
+    val minimapConfig = remember(minimapWidth) {
+        MinimapConfig(
+            maxWidth = minimapWidth.toFloat(),
+            minWidth = 50f,
+            enabled = true,
+            renderCharacters = true  // Enable syntax-highlighted colorful rendering
+        )
+    }
+
     // Provide theme via CompositionLocal
     CompositionLocalProvider(LocalEditorTheme provides theme) {
-        Box(
+        Row(
             modifier = modifier
                 .onKeyEvent { event ->
                     if (!readOnly) {
@@ -203,24 +307,81 @@ fun BossEditor(
                     }
                 }
         ) {
-            EditorCanvas(
-                editorState = state,
-                modifier = Modifier.fillMaxSize(),
-                fontFamily = fontFamily,
-                fontSize = fontSize,
-                lineSpacing = lineSpacing,
-                showLineNumbers = showLineNumbers,
-                highlightCurrentLine = highlightCurrentLine,
-                searchQuery = searchQuery,
-                searchMatches = searchMatches,
-                currentSearchMatchIndex = currentSearchMatchIndex,
-                foldingEnabled = foldingEnabled,
-                getLineTokens = tokenProvider,
-                onCaretPositionChanged = onCaretPositionChanged,
-                onSelectionChanged = onSelectionChanged,
-                onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
-                onFoldToggle = if (foldingEnabled) handleFoldToggle else null
-            )
+            // Main editor canvas
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                EditorCanvas(
+                    editorState = state,
+                    modifier = Modifier.fillMaxSize(),
+                    fontFamily = fontFamily,
+                    fontSize = fontSize,
+                    lineSpacing = lineSpacing,
+                    showLineNumbers = showLineNumbers,
+                    highlightCurrentLine = highlightCurrentLine,
+                    searchQuery = searchQuery,
+                    searchMatches = searchMatches,
+                    currentSearchMatchIndex = currentSearchMatchIndex,
+                    foldingEnabled = foldingEnabled,
+                    scrollSpeed = scrollSpeed,
+                    getLineTokens = tokenProvider,
+                    onCaretPositionChanged = onCaretPositionChanged,
+                    onSelectionChanged = onSelectionChanged,
+                    onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
+                    onFoldToggle = if (foldingEnabled) handleFoldToggle else null
+                )
+            }
+
+            // Minimap (right side)
+            if (showMinimap) {
+                // Compute minimap colors - use custom colors if specified, otherwise theme colors
+                val minimapColors = remember(
+                    minimapUseEditorColors,
+                    minimapBackgroundColor,
+                    minimapForegroundColor,
+                    theme.colors
+                ) {
+                    if (minimapUseEditorColors) {
+                        // Use editor theme colors
+                        theme.colors
+                    } else {
+                        // Use custom colors with fallback to theme colors
+                        theme.colors.copy(
+                            background = minimapBackgroundColor ?: theme.colors.background,
+                            text = minimapForegroundColor ?: theme.colors.text,
+                            minimapBackground = minimapBackgroundColor ?: theme.colors.minimapBackground,
+                            minimapForeground = minimapForegroundColor ?: theme.colors.minimapForeground
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(theme.colors.gutterBackground)
+                )
+
+                MinimapCanvas(
+                    document = state.document,
+                    tokenProvider = minimapTokenProvider,
+                    colors = minimapColors,
+                    visualLineMapper = visualLineMapper,
+                    firstVisibleLine = firstVisibleLine,
+                    visibleLineCount = visibleLineCount,
+                    currentLine = minimapCurrentLine,
+                    selection = minimapSelection,
+                    searchResults = emptyList(), // TODO: Convert searchMatches to OffsetRange
+                    occurrences = emptyList(),
+                    diagnostics = emptyList(),
+                    config = minimapConfig,
+                    onLineClicked = handleMinimapScrollToLine,
+                    onDragToLine = handleMinimapScrollToLine,
+                    modifier = Modifier.fillMaxHeight()
+                )
+            }
         }
     }
 }
