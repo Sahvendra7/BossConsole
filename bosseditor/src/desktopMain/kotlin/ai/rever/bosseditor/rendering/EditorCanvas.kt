@@ -50,6 +50,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 
 /**
  * Canvas composable for rendering editor content.
@@ -306,7 +307,7 @@ fun EditorCanvas(
         } else 0
 
         val column = ((offset.x - gutterWidth + scrollOffset.x.toFloat()) / charWidth)
-            .toInt()
+            .roundToInt()
             .coerceIn(0, maxColumn)
 
         return EditorPosition(documentLine, column)
@@ -691,7 +692,7 @@ private fun offsetToPosition(
     // Calculate column
     val maxColumn = if (lineCount > 0) getLineLength(line) else 0
     val column = ((offset.x - gutterWidth + scrollOffsetX) / charWidth)
-        .toInt()
+        .roundToInt()
         .coerceIn(0, maxColumn)
 
     return EditorPosition(line, column)
