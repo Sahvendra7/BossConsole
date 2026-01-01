@@ -33,14 +33,14 @@ kotlin {
                 implementation(compose.ui)
 
                 // Coroutines
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+                implementation(libs.kotlinx.coroutines.core)
             }
         }
 
         val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+                implementation(libs.kotlinx.coroutines.test)
             }
         }
 
@@ -49,7 +49,7 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation(compose.material)
                 implementation(compose.materialIconsExtended)
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+                implementation(libs.kotlinx.coroutines.swing)
                 // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)
                 implementation(libs.kotlin.compiler.embeddable)
                 // JSON serialization for settings persistence

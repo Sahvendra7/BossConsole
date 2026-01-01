@@ -406,6 +406,15 @@ class EditorDocument(initialText: String = "") {
         gapEnd += additionalSpace
     }
 
+    /**
+     * Rebuilds the entire line index from scratch.
+     *
+     * Performance: O(n) where n is document length. This is called when newlines
+     * are inserted or deleted, as incremental updates are complex for multi-line edits.
+     *
+     * For large documents (10k+ lines), consider implementing incremental updates
+     * for better performance on single-line edits with newlines.
+     */
     private fun rebuildLineIndex() {
         lineStarts.clear()
         lineStarts.add(0)
@@ -453,13 +462,27 @@ class EditorDocument(initialText: String = "") {
     }
 
     private fun notifyListeners(change: DocumentChange) {
-        for (listener in listeners) {
+        // Create a copy to avoid ConcurrentModificationException if listeners
+        // are added/removed during notification
+        val listenersCopy = listeners.toList()
+        for (listener in listenersCopy) {
             listener.documentChanged(change)
         }
     }
 
     companion object {
+        /**
+         * Initial gap size in characters. 256 provides a good balance between
+         * memory overhead and reducing gap moves for typical editing patterns
+         * (most edits are small insertions/deletions at cursor position).
+         */
         private const val INITIAL_GAP_SIZE = 256
+
+        /**
+         * Minimum gap size when expanding. 64 characters ensures we don't
+         * reallocate too frequently for small sequential edits while keeping
+         * memory overhead reasonable.
+         */
         private const val MIN_GAP_SIZE = 64
     }
 }
