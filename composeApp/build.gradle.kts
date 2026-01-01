@@ -1007,7 +1007,10 @@ tasks.register<Jar>("createExecutableJar") {
     dependsOn("desktopJar")
     group = "build"
     description = "Creates an executable JAR with all dependencies"
-    
+
+    // Enable zip64 for JARs with more than 65535 entries
+    isZip64 = true
+
     archiveClassifier.set("all")
     archiveBaseName.set("BOSS")
     archiveVersion.set(appVersion as String)
