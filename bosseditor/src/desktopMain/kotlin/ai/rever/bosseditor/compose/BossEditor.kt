@@ -104,6 +104,7 @@ sealed class NavigationResolveResult {
 fun BossEditor(
     state: EditorState,
     modifier: Modifier = Modifier,
+    isActiveEditor: Boolean = true,
     theme: EditorTheme = EditorTheme.Dark,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Float = 14f,
@@ -375,6 +376,7 @@ fun BossEditor(
                 EditorCanvas(
                     editorState = state,
                     modifier = Modifier.fillMaxSize(),
+                    isActiveEditor = isActiveEditor,
                     fontFamily = fontFamily,
                     fontSize = fontSize,
                     lineSpacing = lineSpacing,

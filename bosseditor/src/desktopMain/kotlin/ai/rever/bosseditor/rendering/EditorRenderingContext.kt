@@ -8,6 +8,7 @@ import ai.rever.bosseditor.features.BracketMatch
 import ai.rever.bosseditor.features.Diagnostic
 import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.Hyperlink
+import ai.rever.bosseditor.features.IndentGuide
 import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.RainbowBracket
 import ai.rever.bosseditor.fold.FoldRegion
@@ -61,6 +62,7 @@ data class EditorRenderingContext(
     val caretPosition: EditorPosition,
     val caretVisible: Boolean,
     val caretBlinkVisible: Boolean,
+    val isFocused: Boolean,
 
     // Selection state
     val selection: EditorRange?,
@@ -113,6 +115,12 @@ data class EditorRenderingContext(
     val inlayHints: List<InlayHint>,
     val inlayHintsEnabled: Boolean,
 
+    // Indent guides (Phase 19) - vertical lines showing indentation levels
+    val indentGuides: List<IndentGuide>,
+    val activeIndentGuide: IndentGuide?,
+    val indentGuidesEnabled: Boolean,
+    val tabSize: Int,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -137,6 +145,7 @@ data class EditorRenderingContext(
             colors: EditorColors,
             caretVisible: Boolean = true,
             caretBlinkVisible: Boolean = true,
+            isFocused: Boolean = true,
             highlightCurrentLine: Boolean = true,
             searchQuery: String? = null,
             searchMatches: List<EditorRange> = emptyList(),
@@ -158,6 +167,10 @@ data class EditorRenderingContext(
             gutterIcons: List<GutterIcon> = emptyList(),
             inlayHints: List<InlayHint> = emptyList(),
             inlayHintsEnabled: Boolean = true,
+            indentGuides: List<IndentGuide> = emptyList(),
+            activeIndentGuide: IndentGuide? = null,
+            indentGuidesEnabled: Boolean = true,
+            tabSize: Int = 4,
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Create the visual line mapper (needed for visible line calculation)
@@ -191,6 +204,7 @@ data class EditorRenderingContext(
                 caretPosition = caretPosition,
                 caretVisible = caretVisible,
                 caretBlinkVisible = caretBlinkVisible,
+                isFocused = isFocused,
                 selection = selection,
                 highlightCurrentLine = highlightCurrentLine,
                 searchQuery = searchQuery,
@@ -214,6 +228,10 @@ data class EditorRenderingContext(
                 gutterIcons = gutterIcons,
                 inlayHints = inlayHints,
                 inlayHintsEnabled = inlayHintsEnabled,
+                indentGuides = indentGuides,
+                activeIndentGuide = activeIndentGuide,
+                indentGuidesEnabled = indentGuidesEnabled,
+                tabSize = tabSize,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }

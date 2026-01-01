@@ -6,6 +6,7 @@ import ai.rever.bosseditor.features.DiagnosticSeverity
 import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.GutterIconType
 import ai.rever.bosseditor.features.Hyperlink
+import ai.rever.bosseditor.features.IndentGuide
 import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.InlayHintKind
 import ai.rever.bosseditor.features.InlayHintPosition
@@ -53,6 +54,11 @@ object EditorCanvasRenderer {
 
         // Pass 1: Draw backgrounds
         renderBackgrounds(ctx)
+
+        // Pass 1.5: Draw indent guides (after backgrounds, before text)
+        if (ctx.indentGuidesEnabled && ctx.indentGuides.isNotEmpty()) {
+            drawIndentGuides(ctx)
+        }
 
         // Pass 2: Draw text content
         renderText(ctx)
@@ -110,6 +116,68 @@ object EditorCanvasRenderer {
         // Draw search match backgrounds
         if (ctx.searchQuery != null && ctx.searchMatches.isNotEmpty()) {
             drawSearchMatches(ctx, colors)
+        }
+    }
+
+    /**
+     * Draws indent guide vertical lines.
+     * Guides are drawn at each indentation level, with the active guide highlighted.
+     */
+    private fun DrawScope.drawIndentGuides(ctx: EditorRenderingContext) {
+        val colors = ctx.colors
+        val gutterWidth = ctx.gutterWidth
+        val charWidth = ctx.charWidth
+        val lineHeight = ctx.lineHeight
+        val scrollOffsetX = ctx.scrollOffsetX
+        val scrollOffsetY = ctx.scrollOffsetY
+
+        for (guide in ctx.indentGuides) {
+            // Check if this guide overlaps with visible range (using document lines)
+            val visibleStartVisual = ctx.visibleLineRange.first
+            val visibleEndVisual = ctx.visibleLineRange.last
+
+            // Convert guide's document lines to visual lines
+            val guideStartVisual = ctx.visualLineMapper.documentToVisual(guide.startLine)
+            val guideEndVisual = ctx.visualLineMapper.documentToVisual(guide.endLine)
+
+            // Skip if completely outside visible range
+            if (guideEndVisual < visibleStartVisual || guideStartVisual > visibleEndVisual) {
+                continue
+            }
+
+            // Calculate the x position for this guide
+            // The guide is drawn at the left edge of the indentation column
+            val x = gutterWidth + guide.column * charWidth - scrollOffsetX
+
+            // Skip if outside horizontal viewport
+            if (x < gutterWidth || x > gutterWidth + ctx.viewportWidth) {
+                continue
+            }
+
+            // Clamp to visible range
+            val drawStartVisual = maxOf(guideStartVisual, visibleStartVisual)
+            val drawEndVisual = minOf(guideEndVisual, visibleEndVisual)
+
+            // Calculate Y coordinates
+            val yStart = drawStartVisual * lineHeight - scrollOffsetY
+
+            // Guide extends to bottom of end line
+            val yEnd = (drawEndVisual + 1) * lineHeight - scrollOffsetY
+
+            // Skip if no visible portion
+            if (yStart >= yEnd) continue
+
+            // Determine if this is the active guide
+            val isActive = guide == ctx.activeIndentGuide
+            val color = if (isActive) colors.activeIndentGuide else colors.indentGuide
+
+            // Draw the vertical line
+            drawLine(
+                color = color,
+                start = Offset(x, yStart),
+                end = Offset(x, yEnd),
+                strokeWidth = 1f
+            )
         }
     }
 
@@ -926,9 +994,13 @@ object EditorCanvasRenderer {
         val caretWidth = 2f
         val caretHeight = ctx.lineHeight.coerceAtLeast(14f)
 
+        // Caret opacity: brighter when focused, dimmer when not (like BossTerm)
+        val caretAlpha = if (ctx.isFocused) 1.0f else 0.4f
+        val caretColor = ctx.colors.caret.copy(alpha = caretAlpha)
+
         // Draw a thin line caret
         drawRect(
-            color = ctx.colors.caret,
+            color = caretColor,
             topLeft = Offset(x, y),
             size = Size(caretWidth, caretHeight)
         )

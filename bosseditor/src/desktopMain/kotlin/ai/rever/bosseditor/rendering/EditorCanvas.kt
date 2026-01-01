@@ -15,6 +15,8 @@ import ai.rever.bosseditor.theme.LocalEditorTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -63,6 +65,7 @@ import androidx.compose.ui.unit.sp
 fun EditorCanvas(
     editorState: EditorState,
     modifier: Modifier = Modifier,
+    isActiveEditor: Boolean = true,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Float = 14f,
     lineSpacing: Float = 1.2f,
@@ -86,9 +89,13 @@ fun EditorCanvas(
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
 
-    // Focus management
+    // Focus management - use MutableInteractionSource for robust focus tracking
     val focusRequester = remember { FocusRequester() }
-    var isFocused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val composeFocused by interactionSource.collectIsFocusedAsState()
+
+    // Effective focus = active editor AND Compose focused
+    val isFocused = isActiveEditor && composeFocused
 
     // Caret blink state
     var caretBlinkVisible by remember { mutableStateOf(true) }
@@ -238,14 +245,28 @@ fun EditorCanvas(
         }
     }
 
-    // Caret blink timer - always run since caret is always visible
-    // Reset to visible when caret position changes (so cursor shows immediately after moving)
+    // Request focus when this editor becomes active (like BossTerm's isActiveTab)
+    LaunchedEffect(isActiveEditor) {
+        if (isActiveEditor) {
+            kotlinx.coroutines.delay(50) // Allow UI to settle
+            focusRequester.requestFocus()
+        }
+    }
+
+    // Caret blink timer - restarts when focus changes (proper dependency)
+    LaunchedEffect(isFocused) {
+        caretBlinkVisible = true
+        if (isFocused) {
+            while (true) {
+                kotlinx.coroutines.delay(530) // Standard cursor blink rate
+                caretBlinkVisible = !caretBlinkVisible
+            }
+        }
+    }
+
+    // Reset caret to visible immediately when position changes
     LaunchedEffect(caretPosition) {
         caretBlinkVisible = true
-        while (true) {
-            kotlinx.coroutines.delay(530) // Standard cursor blink rate
-            caretBlinkVisible = !caretBlinkVisible
-        }
     }
 
     // Helper to convert offset to position (uses visual line mapping for folding)
@@ -298,10 +319,7 @@ fun EditorCanvas(
                 viewportSize = size.toSize()
             }
             .focusRequester(focusRequester)
-            .focusable()
-            .onFocusChanged { focusState ->
-                isFocused = focusState.isFocused
-            }
+            .focusable(interactionSource = interactionSource)
             .onPreviewKeyEvent { keyEvent ->
                 // Track Cmd/Ctrl modifier key state for navigation
                 val isMac = System.getProperty("os.name").lowercase().contains("mac")
@@ -529,8 +547,9 @@ fun EditorCanvas(
                 textMeasurer = textMeasurer,
                 fontFamily = fontFamily,
                 colors = theme.colors,
-                caretVisible = true, // Always show caret - focus handled at BossEditor level
+                caretVisible = true, // Always show caret (blink only when focused)
                 caretBlinkVisible = caretBlinkVisible,
+                isFocused = isFocused,
                 highlightCurrentLine = highlightCurrentLine,
                 searchQuery = searchQuery,
                 searchMatches = searchMatches,
