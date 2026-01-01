@@ -83,3 +83,73 @@ private class EditorScrollbarAdapter(
         onScroll(constrainedOffset)
     }
 }
+
+/**
+ * Custom ScrollbarAdapter for horizontal editor scrolling.
+ *
+ * Coordinate System:
+ * - scrollOffset: 0 = at left, positive = scrolled right
+ * - contentSize: total content width in pixels (longest line)
+ * - viewportSize: visible area width in pixels
+ *
+ * @param editorScrollOffset Current horizontal scroll offset in editor (in pixels)
+ * @param contentWidth Total content width in pixels (longest line * charWidth)
+ * @param viewportWidth Width of visible viewport in pixels
+ * @param onScroll Callback to update scroll offset when user drags scrollbar
+ */
+@Composable
+fun rememberHorizontalEditorScrollbarAdapter(
+    editorScrollOffset: State<Int>,
+    contentWidth: () -> Float,
+    viewportWidth: () -> Float,
+    onScroll: (Int) -> Unit
+): ScrollbarAdapter {
+    return remember(editorScrollOffset, contentWidth, viewportWidth, onScroll) {
+        HorizontalEditorScrollbarAdapter(
+            editorScrollOffset = editorScrollOffset,
+            contentWidth = contentWidth,
+            viewportWidth = viewportWidth,
+            onScroll = onScroll
+        )
+    }
+}
+
+/**
+ * Internal implementation of ScrollbarAdapter (v2) for horizontal editor scrolling.
+ */
+private class HorizontalEditorScrollbarAdapter(
+    private val editorScrollOffset: State<Int>,
+    private val contentWidth: () -> Float,
+    private val viewportWidth: () -> Float,
+    private val onScroll: (Int) -> Unit
+) : ScrollbarAdapter {
+
+    /**
+     * Total content width in pixels.
+     */
+    override val contentSize: Double
+        get() = contentWidth().toDouble().coerceAtLeast(1.0)
+
+    /**
+     * Viewport width in pixels (visible area).
+     */
+    override val viewportSize: Double
+        get() = viewportWidth().toDouble().coerceAtLeast(1.0)
+
+    /**
+     * Current scroll position in pixels (0.0 = left).
+     */
+    override val scrollOffset: Double
+        get() = editorScrollOffset.value.toDouble()
+
+    /**
+     * Update scroll offset when user drags scrollbar thumb.
+     *
+     * @param scrollOffset New scroll position in pixels (0.0 = left)
+     */
+    override suspend fun scrollTo(scrollOffset: Double) {
+        val maxScroll = (contentSize - viewportSize).coerceAtLeast(0.0)
+        val constrainedOffset = scrollOffset.coerceIn(0.0, maxScroll).toInt()
+        onScroll(constrainedOffset)
+    }
+}

@@ -426,12 +426,31 @@ class EditorState(
      * @param lineCount Number of visible lines in viewport
      * @param lineHeight Actual measured line height in pixels
      * @param viewportHeight Viewport height in pixels
+     * @param viewportWidth Viewport width in pixels
+     * @param contentWidth Total content width (longest line) in pixels
+     * @param charWidth Character width in pixels
      */
-    fun updateVisibleLineRange(firstLine: Int, lineCount: Int, lineHeight: Float = 0f, viewportHeight: Float = 0f) {
+    fun updateVisibleLineRange(
+        firstLine: Int,
+        lineCount: Int,
+        lineHeight: Float = 0f,
+        viewportHeight: Float = 0f,
+        viewportWidth: Float = 0f,
+        contentWidth: Float = 0f,
+        charWidth: Float = 0f
+    ) {
         val clampedFirst = firstLine.coerceAtLeast(0)
         val clampedLast = (firstLine + lineCount).coerceAtMost(document.lineCount - 1)
         visibleLineRange = clampedFirst..clampedLast
-        _visibleViewport.value = VisibleViewport(clampedFirst, lineCount, lineHeight, viewportHeight)
+        _visibleViewport.value = VisibleViewport(
+            firstVisibleLine = clampedFirst,
+            visibleLineCount = lineCount,
+            lineHeight = lineHeight,
+            viewportHeight = viewportHeight,
+            viewportWidth = viewportWidth,
+            contentWidth = contentWidth,
+            charWidth = charWidth
+        )
     }
 
     // --- Listeners ---
@@ -629,7 +648,7 @@ data class ScrollOffset(
 
 /**
  * Represents the visible viewport for the editor.
- * Used by minimap to sync viewport indicator position.
+ * Used by minimap to sync viewport indicator position and scrollbars.
  */
 data class VisibleViewport(
     /** First visible visual line (0-based, accounts for folding) */
@@ -639,7 +658,13 @@ data class VisibleViewport(
     /** Actual measured line height in pixels (from EditorCanvas text measurement) */
     val lineHeight: Float = 0f,
     /** Viewport height in pixels */
-    val viewportHeight: Float = 0f
+    val viewportHeight: Float = 0f,
+    /** Viewport width in pixels (for horizontal scrollbar) */
+    val viewportWidth: Float = 0f,
+    /** Total content width in pixels (longest line width, for horizontal scrollbar) */
+    val contentWidth: Float = 0f,
+    /** Character width in pixels (for horizontal scroll calculations) */
+    val charWidth: Float = 0f
 )
 
 /**

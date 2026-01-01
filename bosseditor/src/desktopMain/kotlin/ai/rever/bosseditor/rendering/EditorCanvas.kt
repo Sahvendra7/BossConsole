@@ -204,18 +204,36 @@ fun EditorCanvas(
         onSelectionChanged(selection)
     }
 
-    // Update visible line range in EditorState (for minimap sync)
+    // Calculate longest line length for horizontal scrollbar
+    // Recalculate when document changes
+    val maxLineLength = remember(editorState.document.documentVersion) {
+        var maxLen = 0
+        for (i in 0 until editorState.document.lineCount) {
+            val len = editorState.document.getLineLength(i)
+            if (len > maxLen) maxLen = len
+        }
+        maxLen
+    }
+
+    // Update visible line range in EditorState (for minimap sync and scrollbars)
     // Uses same calculation as EditorRenderingContext.from() for consistency
     // Passes actual measured lineHeight so minimap click scroll uses correct values
-    LaunchedEffect(scrollOffset, viewportSize, visualLineMapper, lineHeight) {
+    LaunchedEffect(scrollOffset, viewportSize, visualLineMapper, lineHeight, charWidth, maxLineLength, gutterWidth) {
         if (viewportSize.height > 0 && lineHeight > 0) {
             val firstVisibleVisualLine = (scrollOffset.y.toFloat() / lineHeight).toInt().coerceAtLeast(0)
             val visibleLineCount = (viewportSize.height / lineHeight).toInt() + 2 // +2 for partial lines
+            // Content width = longest line chars * charWidth + some padding
+            val contentWidth = (maxLineLength * charWidth) + charWidth * 2 // +2 chars padding
+            // Viewport width excludes gutter
+            val effectiveViewportWidth = viewportSize.width - gutterWidth
             editorState.updateVisibleLineRange(
-                firstVisibleVisualLine,
-                visibleLineCount,
-                lineHeight,
-                viewportSize.height
+                firstLine = firstVisibleVisualLine,
+                lineCount = visibleLineCount,
+                lineHeight = lineHeight,
+                viewportHeight = viewportSize.height,
+                viewportWidth = effectiveViewportWidth,
+                contentWidth = contentWidth,
+                charWidth = charWidth
             )
         }
     }
@@ -466,18 +484,27 @@ fun EditorCanvas(
 
                 val delta = change.scrollDelta
 
-                // Calculate max scroll based on content (in pixels)
+                // Calculate max vertical scroll based on content (in pixels)
                 val contentHeight = editorState.document.lineCount * lineHeight
                 val maxScrollY = (contentHeight - viewportSize.height).coerceAtLeast(0f).toInt()
 
+                // Calculate max horizontal scroll based on longest line
+                val contentWidth = maxLineLength * charWidth + charWidth * 2 // +2 chars padding
+                val effectiveViewportWidth = viewportSize.width - gutterWidth
+                val maxScrollX = (contentWidth - effectiveViewportWidth).coerceAtLeast(0f).toInt()
+
                 // delta.y is typically -1 or 1 per scroll tick
                 // Scroll by scrollSpeed lines * line height (pixels)
-                val scrollAmount = (delta.y * scrollSpeed * lineHeight).toInt()
-                val newScrollY = (scrollOffset.y + scrollAmount).coerceIn(0, maxScrollY)
+                val scrollAmountY = (delta.y * scrollSpeed * lineHeight).toInt()
+                val newScrollY = (scrollOffset.y + scrollAmountY).coerceIn(0, maxScrollY)
+
+                // Horizontal scroll (trackpad horizontal swipe or shift+scroll)
+                val scrollAmountX = (delta.x * scrollSpeed * charWidth).toInt()
+                val newScrollX = (scrollOffset.x + scrollAmountX).coerceIn(0, maxScrollX)
 
                 editorState.setScrollOffset(
                     ai.rever.bosseditor.core.ScrollOffset(
-                        x = scrollOffset.x,
+                        x = newScrollX,
                         y = newScrollY
                     )
                 )

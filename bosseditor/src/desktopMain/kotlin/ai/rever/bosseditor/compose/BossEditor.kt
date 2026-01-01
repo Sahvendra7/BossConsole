@@ -17,16 +17,20 @@ import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.scrollbar.EditorScrollbar
+import ai.rever.bosseditor.scrollbar.HorizontalEditorScrollbar
 import ai.rever.bosseditor.scrollbar.rememberEditorScrollbarAdapter
+import ai.rever.bosseditor.scrollbar.rememberHorizontalEditorScrollbarAdapter
 import ai.rever.bosseditor.theme.EditorColors
 import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -235,13 +239,21 @@ fun BossEditor(
     // Collect scroll offset for scrollbar
     val scrollOffset by state.scrollOffset.collectAsState()
 
-    // Track scroll activity for auto-show scrollbar
-    var scrollTrigger by remember { mutableStateOf(0) }
+    // Track scroll activity for auto-show scrollbars
+    var verticalScrollTrigger by remember { mutableStateOf(0) }
+    var horizontalScrollTrigger by remember { mutableStateOf(0) }
     LaunchedEffect(scrollOffset.y) {
-        scrollTrigger++
+        verticalScrollTrigger++
+    }
+    LaunchedEffect(scrollOffset.x) {
+        horizontalScrollTrigger++
     }
 
-    // Create scrollbar adapter
+    // Get horizontal viewport info
+    val actualViewportWidth = visibleViewport.viewportWidth.takeIf { it > 0 } ?: 0f
+    val actualContentWidth = visibleViewport.contentWidth.takeIf { it > 0 } ?: 0f
+
+    // Create vertical scrollbar adapter
     val scrollbarAdapter = rememberEditorScrollbarAdapter(
         editorScrollOffset = rememberUpdatedState(scrollOffset.y),
         totalLines = { visualLineMapper.visibleLineCount },
@@ -251,6 +263,19 @@ fun BossEditor(
             state.setScrollOffset(ai.rever.bosseditor.core.ScrollOffset(
                 x = scrollOffset.x,
                 y = newScrollY
+            ))
+        }
+    )
+
+    // Create horizontal scrollbar adapter
+    val horizontalScrollbarAdapter = rememberHorizontalEditorScrollbarAdapter(
+        editorScrollOffset = rememberUpdatedState(scrollOffset.x),
+        contentWidth = { actualContentWidth },
+        viewportWidth = { actualViewportWidth },
+        onScroll = { newScrollX ->
+            state.setScrollOffset(ai.rever.bosseditor.core.ScrollOffset(
+                x = newScrollX,
+                y = scrollOffset.y
             ))
         }
     )
@@ -324,7 +349,7 @@ fun BossEditor(
 
     // Provide theme via CompositionLocal
     CompositionLocalProvider(LocalEditorTheme provides theme) {
-        Row(
+        Column(
             modifier = modifier
                 .onKeyEvent { event ->
                     if (!readOnly) {
@@ -335,6 +360,12 @@ fun BossEditor(
                     }
                 }
         ) {
+            // Main content row (editor + minimap)
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
             // Main editor canvas
             Box(
                 modifier = Modifier
@@ -361,7 +392,7 @@ fun BossEditor(
                     onFoldToggle = if (foldingEnabled) handleFoldToggle else null
                 )
 
-                // Scrollbar (right edge of editor canvas)
+                // Vertical Scrollbar (right edge of editor canvas)
                 if (showScrollbar) {
                     EditorScrollbar(
                         adapter = scrollbarAdapter,
@@ -374,7 +405,22 @@ fun BossEditor(
                         trackColor = Color.Transparent,
                         errorMarkerColor = theme.colors.error,
                         warningMarkerColor = theme.colors.warningSquiggle,
-                        userScrollTrigger = rememberUpdatedState(scrollTrigger)
+                        userScrollTrigger = rememberUpdatedState(verticalScrollTrigger)
+                    )
+                }
+
+                // Horizontal Scrollbar (bottom edge of editor canvas, overlays content)
+                if (showScrollbar && actualContentWidth > actualViewportWidth) {
+                    HorizontalEditorScrollbar(
+                        adapter = horizontalScrollbarAdapter,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        thumbColor = if (theme.isDark) {
+                            Color.White.copy(alpha = 0.5f)
+                        } else {
+                            Color.Black.copy(alpha = 0.4f)
+                        },
+                        trackColor = Color.Transparent,
+                        userScrollTrigger = rememberUpdatedState(horizontalScrollTrigger)
                     )
                 }
             }
@@ -427,7 +473,8 @@ fun BossEditor(
                     modifier = Modifier.fillMaxHeight()
                 )
             }
-        }
+            } // End Row
+        } // End Column
     }
 }
 
