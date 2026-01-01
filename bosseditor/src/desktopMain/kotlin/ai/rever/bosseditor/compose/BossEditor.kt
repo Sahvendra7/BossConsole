@@ -16,6 +16,8 @@ import ai.rever.bosseditor.highlight.TokenProvider
 import ai.rever.bosseditor.input.EditorInputHandler
 import ai.rever.bosseditor.rendering.EditorCanvas
 import ai.rever.bosseditor.rendering.EditorToken
+import ai.rever.bosseditor.scrollbar.EditorScrollbar
+import ai.rever.bosseditor.scrollbar.rememberEditorScrollbarAdapter
 import ai.rever.bosseditor.theme.EditorColors
 import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
@@ -27,6 +29,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalDensity
@@ -111,6 +115,7 @@ fun BossEditor(
     filePath: String? = null,
     projectPath: String? = null,
     showMinimap: Boolean = true,
+    showScrollbar: Boolean = true,
     minimapWidth: Int = 80,
     minimapUseEditorColors: Boolean = true,
     minimapBackgroundColor: Color? = null,
@@ -224,12 +229,35 @@ fun BossEditor(
 
     val density = LocalDensity.current
 
+    // Get visual line mapper for fold-aware minimap rendering and scrollbar
+    val visualLineMapper by state.visualLineMapper.collectAsState()
+
+    // Collect scroll offset for scrollbar
+    val scrollOffset by state.scrollOffset.collectAsState()
+
+    // Track scroll activity for auto-show scrollbar
+    var scrollTrigger by remember { mutableStateOf(0) }
+    LaunchedEffect(scrollOffset.y) {
+        scrollTrigger++
+    }
+
+    // Create scrollbar adapter
+    val scrollbarAdapter = rememberEditorScrollbarAdapter(
+        editorScrollOffset = rememberUpdatedState(scrollOffset.y),
+        totalLines = { visualLineMapper.visibleLineCount },
+        viewportHeight = { actualViewportHeight },
+        lineHeight = { actualLineHeight },
+        onScroll = { newScrollY ->
+            state.setScrollOffset(ai.rever.bosseditor.core.ScrollOffset(
+                x = scrollOffset.x,
+                y = newScrollY
+            ))
+        }
+    )
+
     // Get current caret line for minimap current line indicator
     val caretPosition by state.caretPosition.collectAsState()
     val minimapCurrentLine = caretPosition.line
-
-    // Get visual line mapper for fold-aware minimap rendering
-    val visualLineMapper by state.visualLineMapper.collectAsState()
 
     // Convert selection to OffsetRange for minimap
     val selectionValue by state.selection.collectAsState()
@@ -332,6 +360,23 @@ fun BossEditor(
                     onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
                     onFoldToggle = if (foldingEnabled) handleFoldToggle else null
                 )
+
+                // Scrollbar (right edge of editor canvas)
+                if (showScrollbar) {
+                    EditorScrollbar(
+                        adapter = scrollbarAdapter,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        thumbColor = if (theme.isDark) {
+                            Color.White.copy(alpha = 0.5f)
+                        } else {
+                            Color.Black.copy(alpha = 0.4f)
+                        },
+                        trackColor = Color.Transparent,
+                        errorMarkerColor = theme.colors.error,
+                        warningMarkerColor = theme.colors.warningSquiggle,
+                        userScrollTrigger = rememberUpdatedState(scrollTrigger)
+                    )
+                }
             }
 
             // Minimap (right side)
