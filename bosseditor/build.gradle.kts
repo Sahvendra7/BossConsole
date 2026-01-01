@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform")
+    alias(libs.plugins.kotlinSerialization)
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
@@ -46,9 +47,13 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                implementation(compose.material)
+                implementation(compose.materialIconsExtended)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
                 // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)
                 implementation(libs.kotlin.compiler.embeddable)
+                // JSON serialization for settings persistence
+                implementation(libs.kotlinx.serialization.json)
             }
         }
 

@@ -139,8 +139,11 @@ fun EditorGutter(
                 val fold = visualLineMapper.getCollapsedFoldAt(visualLine)
                 if (fold != null) {
                     // Collapsed fold - draw expand icon (▶)
+                    // Center fold icon in the fold area (from lineNumberEndX to size.width)
+                    val foldAreaWidth = size.width - lineNumberEndX
+                    val foldIconX = lineNumberEndX + (foldAreaWidth - foldIconSize) / 2
                     drawFoldIcon(
-                        x = lineNumberEndX + foldIconLeftPadding,
+                        x = foldIconX,
                         y = yOffset + (lineHeightPx - foldIconSize) / 2,
                         size = foldIconSize,
                         isCollapsed = true,

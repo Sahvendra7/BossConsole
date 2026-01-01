@@ -25,6 +25,12 @@ object CodeEditorSettings {
      */
     var useNativeEditor: Boolean = true
 
+    /** Whether to show the minimap (code overview) */
+    var showMinimap: Boolean = false
+
+    /** Minimap width in pixels */
+    var minimapWidth: Int = 80
+
     // Theme colors
     fun getBackgroundColor(): Color = when (theme) {
         "Light" -> Color(0xFF_FFFFFF)
@@ -105,7 +111,9 @@ data class CodeEditorSettingsData(
     val useLigatures: Boolean = true,
     val useAntialiasing: Boolean = true,
     val lineSpacing: Float = 1.2f,
-    val useNativeEditor: Boolean = true
+    val useNativeEditor: Boolean = true,
+    val showMinimap: Boolean = false,
+    val minimapWidth: Int = 80
 )
 
 object CodeEditorSettingsManager {
@@ -137,6 +145,8 @@ object CodeEditorSettingsManager {
                 CodeEditorSettings.useAntialiasing = settings.useAntialiasing
                 CodeEditorSettings.lineSpacing = settings.lineSpacing
                 CodeEditorSettings.useNativeEditor = settings.useNativeEditor
+                CodeEditorSettings.showMinimap = settings.showMinimap
+                CodeEditorSettings.minimapWidth = settings.minimapWidth
             }
         } catch (e: Exception) {
             println("Failed to load code editor settings: ${e.message}")
@@ -152,7 +162,9 @@ object CodeEditorSettingsManager {
                 useLigatures = CodeEditorSettings.useLigatures,
                 useAntialiasing = CodeEditorSettings.useAntialiasing,
                 lineSpacing = CodeEditorSettings.lineSpacing,
-                useNativeEditor = CodeEditorSettings.useNativeEditor
+                useNativeEditor = CodeEditorSettings.useNativeEditor,
+                showMinimap = CodeEditorSettings.showMinimap,
+                minimapWidth = CodeEditorSettings.minimapWidth
             )
 
             val content = json.encodeToString(settings)

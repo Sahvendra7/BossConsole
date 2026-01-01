@@ -23,6 +23,7 @@ import ai.rever.bosseditor.highlight.lexers.*
 import ai.rever.bosseditor.psi.SemanticCache
 import ai.rever.bosseditor.psi.SemanticType
 import ai.rever.bosseditor.rendering.EditorToken
+import ai.rever.bosseditor.settings.EditorSettingsManager
 import ai.rever.bosseditor.theme.EditorTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -87,16 +88,15 @@ fun BossEditorIntegration(
     projectPath: String = "",
     modifier: Modifier = Modifier,
     isReadOnly: Boolean = false,
-    fontSize: Int = CodeEditorSettings.fontSize,
-    fontFamily: String = CodeEditorSettings.fontFamily,
-    lineSpacing: Float = CodeEditorSettings.lineSpacing,
-    theme: String = CodeEditorSettings.theme,
     onCursorPositionChange: (line: Int, column: Int) -> Unit = { _, _ -> },
     onModifiedStateChange: (Boolean) -> Unit = { },
     onRun: (DetectedMainFunction) -> Unit = { },
     onNavigate: (NavigationEvent) -> Unit = { }
 ) {
     val coroutineScope = rememberCoroutineScope()
+
+    // Use BossEditor's unified settings system
+    val editorSettings by EditorSettingsManager.instance.settings.collectAsState()
 
     // Create editor state that persists across recompositions
     val editorState = remember(filePath) {
@@ -189,23 +189,23 @@ fun BossEditorIntegration(
     }
 
     // Map theme name to EditorTheme
-    val editorTheme = remember(theme) {
-        mapBossThemeToEditorTheme(theme)
+    val editorTheme = remember(editorSettings.themeName) {
+        mapBossThemeToEditorTheme(editorSettings.themeName)
     }
 
     // Map font family name to FontFamily using FontManager for proper font loading
-    val composeFontFamily = remember(fontFamily) {
-        FontManager.loadComposeFontFamily(fontFamily)
+    val composeFontFamily = remember(editorSettings.fontFamily) {
+        FontManager.loadComposeFontFamily(editorSettings.fontFamily ?: FontManager.BUNDLED_JETBRAINS_MONO)
     }
 
     // Calculate line height for scrolling (same calculation as EditorCanvas)
     val textMeasurer = rememberTextMeasurer()
-    val lineHeightPx = remember(fontSize, composeFontFamily, lineSpacing) {
+    val lineHeightPx = remember(editorSettings.fontSize, composeFontFamily, editorSettings.lineSpacing) {
         val style = TextStyle(
             fontFamily = composeFontFamily,
-            fontSize = fontSize.sp
+            fontSize = editorSettings.fontSize.sp
         )
-        textMeasurer.measure("M", style).size.height.toFloat() * lineSpacing
+        textMeasurer.measure("M", style).size.height.toFloat() * editorSettings.lineSpacing
     }
 
     // Listen for navigation targets (cursor positioning after navigation)
@@ -302,9 +302,9 @@ fun BossEditorIntegration(
             BossEditorRunGutter(
                 detectedMainFunctions = detectedMainFunctions,
                 editorState = editorState,
-                fontSize = fontSize.toFloat(),
+                fontSize = editorSettings.fontSize,
                 fontFamily = composeFontFamily,
-                lineSpacing = lineSpacing,
+                lineSpacing = editorSettings.lineSpacing,
                 onRun = onRun,
                 modifier = Modifier
                     .width(28.dp)
@@ -313,19 +313,32 @@ fun BossEditorIntegration(
             )
         }
 
+        // Parse minimap custom colors from settings
+        val minimapBgColor = remember(editorSettings.minimapBackgroundColor) {
+            editorSettings.minimapBackgroundColor?.let { parseHexColor(it) }
+        }
+        val minimapFgColor = remember(editorSettings.minimapForegroundColor) {
+            editorSettings.minimapForegroundColor?.let { parseHexColor(it) }
+        }
+
         // Main editor
         BossEditor(
             state = editorState,
             modifier = Modifier.fillMaxSize(),
             theme = editorTheme,
             fontFamily = composeFontFamily,
-            fontSize = fontSize.toFloat(),
-            lineSpacing = lineSpacing,
-            showLineNumbers = true,
-            highlightCurrentLine = true,
+            fontSize = editorSettings.fontSize,
+            lineSpacing = editorSettings.lineSpacing,
+            showLineNumbers = editorSettings.showLineNumbers,
+            highlightCurrentLine = editorSettings.highlightCurrentLine,
             readOnly = isReadOnly,
             filePath = filePath,
             projectPath = projectPath,
+            showMinimap = editorSettings.showMinimap,
+            minimapWidth = editorSettings.minimapWidth,
+            minimapUseEditorColors = editorSettings.minimapUseEditorColors,
+            minimapBackgroundColor = minimapBgColor,
+            minimapForegroundColor = minimapFgColor,
             tokenProvider = tokenProvider,
             onTextChanged = {
                 val newContent = editorState.document.getText()
@@ -565,16 +578,13 @@ private fun BossEditorRunGutter(
 
                 // Only render if within viewport
                 if (yOffsetPx >= -lineHeightPx && yOffsetPx < 2000f) {
-                    // Left margin to position icon away from left edge
-                    val leftMarginPx = with(density) { 4.dp.toPx().toInt() }
-
                     Box(
                         modifier = Modifier
                             // Use pixel-based offset to match EditorCanvas rendering
-                            .offset { IntOffset(leftMarginPx, yOffsetPx.toInt()) }
+                            .offset { IntOffset(0, yOffsetPx.toInt()) }
                             .height(lineHeightDp)
                             .fillMaxWidth(),
-                        contentAlignment = Alignment.CenterStart
+                        contentAlignment = Alignment.Center
                     ) {
                         GutterRunIcon(
                             detected = detected,
@@ -754,4 +764,39 @@ private fun mergeTokens(base: List<Token>, overlay: List<Token>): List<Token> {
     }
 
     return result.sortedBy { it.startOffset }
+}
+
+/**
+ * Parses a hex color string (ARGB format like "FF1E1F22") to a Compose Color.
+ * Returns null if the string is invalid.
+ */
+private fun parseHexColor(hex: String): Color? {
+    return try {
+        val cleanHex = hex.removePrefix("#").removePrefix("0x")
+        when (cleanHex.length) {
+            6 -> {
+                // RGB format - add full alpha
+                val color = cleanHex.toLong(16)
+                Color(
+                    red = ((color shr 16) and 0xFF).toInt() / 255f,
+                    green = ((color shr 8) and 0xFF).toInt() / 255f,
+                    blue = (color and 0xFF).toInt() / 255f,
+                    alpha = 1f
+                )
+            }
+            8 -> {
+                // ARGB format
+                val color = cleanHex.toLong(16)
+                Color(
+                    alpha = ((color shr 24) and 0xFF).toInt() / 255f,
+                    red = ((color shr 16) and 0xFF).toInt() / 255f,
+                    green = ((color shr 8) and 0xFF).toInt() / 255f,
+                    blue = (color and 0xFF).toInt() / 255f
+                )
+            }
+            else -> null
+        }
+    } catch (e: Exception) {
+        null
+    }
 }

@@ -99,6 +99,9 @@ data class EditorColors(
     val minimapWarning: Color,
     val minimapInfo: Color,
     val minimapHint: Color,
+    val minimapCurrentLine: Color,
+    val minimapSliderHover: Color,
+    val minimapBorder: Color,
 
     // Rainbow brackets (4 colors cycling based on nesting depth)
     val rainbowBracket1: Color,
@@ -241,6 +244,16 @@ data class EditorColors(
         TokenType.MODIFICATION -> variable  // Yellow/orange for changes
         TokenType.ESCAPE -> regex      // Same as string escapes
     }
+
+    /**
+     * Gets a slightly dimmed version of the token color for minimap rendering.
+     * This provides visual distinction while keeping syntax highlighting readable.
+     */
+    fun getMinimapTokenColor(tokenType: TokenType): Color {
+        val baseColor = getTokenColor(tokenType)
+        // Reduce saturation and slightly dim for minimap
+        return baseColor.copy(alpha = baseColor.alpha * 0.85f)
+    }
 }
 
 /**
@@ -349,9 +362,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF548AF7),             // #548af7
                 markOccurrences = Color(0xFF32593D),
 
-                // Minimap
-                minimapBackground = Color(0xFF1E1F22).copy(alpha = 0.8f),
-                minimapForeground = Color(0xFF6E737A),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFF1E1F22),  // Same as editor background
+                minimapForeground = Color(0xFFBCBEC4),  // Same as editor text
                 minimapViewport = Color(0xFF3B3D40).copy(alpha = 0.5f),
                 minimapViewportBorder = Color(0xFF6E737A).copy(alpha = 0.7f),
                 minimapSelection = Color(0xFF214283).copy(alpha = 0.5f),
@@ -361,6 +374,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFFFB848),
                 minimapInfo = Color(0xFF548AF7),
                 minimapHint = Color(0xFF6E737A),
+                minimapCurrentLine = Color(0xFF26282E),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF3B3D40).copy(alpha = 0.7f),
+                minimapBorder = Color(0xFF393B40),  // Same as gutterBorder
 
                 // Rainbow brackets - IntelliJ-like colors
                 rainbowBracket1 = Color(0xFFFFD700),  // Gold
@@ -452,9 +468,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF0066CC),
                 markOccurrences = Color(0xFFE8E8E8),
 
-                // Minimap
-                minimapBackground = Color(0xFFF6F8FA),
-                minimapForeground = Color(0xFF6E7681),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFFFFFFFF),  // Same as editor background
+                minimapForeground = Color(0xFF000000),  // Same as editor text
                 minimapViewport = Color(0xFF000000).copy(alpha = 0.1f),
                 minimapViewportBorder = Color(0xFF6E7681).copy(alpha = 0.5f),
                 minimapSelection = Color(0xFFADD6FF).copy(alpha = 0.5f),
@@ -464,6 +480,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFBF8700),
                 minimapInfo = Color(0xFF0066CC),
                 minimapHint = Color(0xFF6E7681),
+                minimapCurrentLine = Color(0xFFFCFCED),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF000000).copy(alpha = 0.15f),
+                minimapBorder = Color(0xFFE0E0E0),  // Same as gutterBorder
 
                 // Rainbow brackets - darker colors for light theme
                 rainbowBracket1 = Color(0xFFB8860B),  // Dark goldenrod
@@ -555,9 +574,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF8BE9FD),
                 markOccurrences = Color(0xFF44475A),
 
-                // Minimap
-                minimapBackground = Color(0xFF21222C).copy(alpha = 0.8f),
-                minimapForeground = Color(0xFF6272A4),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFF282A36),  // Same as editor background
+                minimapForeground = Color(0xFFF8F8F2),  // Same as editor text
                 minimapViewport = Color(0xFF44475A).copy(alpha = 0.5f),
                 minimapViewportBorder = Color(0xFF6272A4).copy(alpha = 0.7f),
                 minimapSelection = Color(0xFF44475A).copy(alpha = 0.5f),
@@ -567,6 +586,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFFFB86C),
                 minimapInfo = Color(0xFF8BE9FD),
                 minimapHint = Color(0xFF6272A4),
+                minimapCurrentLine = Color(0xFF44475A),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF44475A).copy(alpha = 0.7f),
+                minimapBorder = Color(0xFF44475A),  // Same as gutterBorder
 
                 // Rainbow brackets - Dracula palette
                 rainbowBracket1 = Color(0xFFF1FA8C),  // Yellow
@@ -658,9 +680,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF66D9EF),
                 markOccurrences = Color(0xFF49483E),
 
-                // Minimap
-                minimapBackground = Color(0xFF1E1F1C).copy(alpha = 0.8f),
-                minimapForeground = Color(0xFF75715E),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFF272822),  // Same as editor background
+                minimapForeground = Color(0xFFF8F8F2),  // Same as editor text
                 minimapViewport = Color(0xFF49483E).copy(alpha = 0.5f),
                 minimapViewportBorder = Color(0xFF75715E).copy(alpha = 0.7f),
                 minimapSelection = Color(0xFF49483E).copy(alpha = 0.5f),
@@ -670,6 +692,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFFD971F),
                 minimapInfo = Color(0xFF66D9EF),
                 minimapHint = Color(0xFF75715E),
+                minimapCurrentLine = Color(0xFF3E3D32),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF49483E).copy(alpha = 0.7f),
+                minimapBorder = Color(0xFF3E3D32),  // Same as gutterBorder
 
                 // Rainbow brackets - Monokai palette
                 rainbowBracket1 = Color(0xFFE6DB74),  // Yellow
@@ -761,9 +786,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF268BD2),
                 markOccurrences = Color(0xFF073642),
 
-                // Minimap
-                minimapBackground = Color(0xFF073642).copy(alpha = 0.8f),
-                minimapForeground = Color(0xFF586E75),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFF002B36),  // Same as editor background
+                minimapForeground = Color(0xFF839496),  // Same as editor text
                 minimapViewport = Color(0xFF073642).copy(alpha = 0.5f),
                 minimapViewportBorder = Color(0xFF586E75).copy(alpha = 0.7f),
                 minimapSelection = Color(0xFF073642).copy(alpha = 0.5f),
@@ -773,6 +798,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFCB4B16),
                 minimapInfo = Color(0xFF268BD2),
                 minimapHint = Color(0xFF586E75),
+                minimapCurrentLine = Color(0xFF073642),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF073642).copy(alpha = 0.7f),
+                minimapBorder = Color(0xFF073642),  // Same as gutterBorder
 
                 // Rainbow brackets - Solarized palette
                 rainbowBracket1 = Color(0xFFB58900),  // Yellow
@@ -864,9 +892,9 @@ data class EditorTheme(
                 hyperlink = Color(0xFF268BD2),
                 markOccurrences = Color(0xFFEEE8D5),
 
-                // Minimap
-                minimapBackground = Color(0xFFEEE8D5),
-                minimapForeground = Color(0xFF93A1A1),
+                // Minimap - matches editor colors
+                minimapBackground = Color(0xFFFDF6E3),  // Same as editor background
+                minimapForeground = Color(0xFF657B83),  // Same as editor text
                 minimapViewport = Color(0xFF000000).copy(alpha = 0.1f),
                 minimapViewportBorder = Color(0xFF93A1A1).copy(alpha = 0.5f),
                 minimapSelection = Color(0xFFEEE8D5).copy(alpha = 0.5f),
@@ -876,6 +904,9 @@ data class EditorTheme(
                 minimapWarning = Color(0xFFCB4B16),
                 minimapInfo = Color(0xFF268BD2),
                 minimapHint = Color(0xFF93A1A1),
+                minimapCurrentLine = Color(0xFFEEE8D5),  // Same as currentLineHighlight
+                minimapSliderHover = Color(0xFF000000).copy(alpha = 0.12f),
+                minimapBorder = Color(0xFFEEE8D5),  // Same as gutterBorder
 
                 // Rainbow brackets - Solarized palette
                 rainbowBracket1 = Color(0xFFB58900),  // Yellow

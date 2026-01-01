@@ -102,9 +102,6 @@ fun DesktopCodeEditorUI(
                     projectPath = projectPath,
                     modifier = Modifier.fillMaxSize(),
                     isReadOnly = false,
-                    fontSize = CodeEditorSettings.fontSize,
-                    fontFamily = CodeEditorSettings.fontFamily,
-                    theme = CodeEditorSettings.theme,
                     onCursorPositionChange = { line, column ->
                         cursorLine = line
                         cursorColumn = column
