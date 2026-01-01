@@ -41,6 +41,25 @@ enum class NavigationTargetKind {
 }
 
 /**
+ * Information about a definition (class, function, property, etc.).
+ *
+ * @property name Name of the symbol
+ * @property kind Kind of symbol
+ * @property filePath Absolute path to the file containing the definition
+ * @property offset Character offset within the file
+ * @property line Line number (1-based)
+ * @property column Column number (1-based)
+ */
+data class DefinitionInfo(
+    val name: String,
+    val kind: NavigationTargetKind,
+    val filePath: String,
+    val offset: Int,
+    val line: Int,
+    val column: Int
+)
+
+/**
  * Result of a navigation lookup.
  */
 sealed class NavigationResult {
@@ -101,6 +120,100 @@ class NavigationService {
         } catch (e: Exception) {
             NavigationResult.Error(e.message ?: "Unknown error")
         }
+    }
+
+    /**
+     * Check if the element at the given offset is a definition (not a reference).
+     *
+     * A definition is a named declaration like a class, function, property, etc.
+     * This is used to distinguish between clicking on a definition (show usages)
+     * vs clicking on a reference (go to definition).
+     *
+     * @param file The Kotlin PSI file
+     * @param offset Character offset where the user clicked
+     * @return true if the element at offset is a definition
+     */
+    fun isDefinition(file: KtFile, offset: Int): Boolean {
+        val element = file.findElementAt(offset) ?: return false
+        val parent = element.parent
+
+        // Check if parent is a named declaration
+        return when (parent) {
+            is KtClass -> true
+            is KtObjectDeclaration -> true
+            is KtNamedFunction -> true
+            is KtProperty -> {
+                // Only top-level or class member properties, not local variables
+                parent.parent is KtFile || parent.parent is KtClassBody
+            }
+            is KtParameter -> {
+                // Only function parameters with val/var (they become properties)
+                parent.hasValOrVar()
+            }
+            is KtTypeAlias -> true
+            else -> false
+        }
+    }
+
+    /**
+     * Get information about the definition at the given offset.
+     *
+     * @param file The Kotlin PSI file
+     * @param offset Character offset where the user clicked
+     * @param filePath Absolute path of the file
+     * @return DefinitionInfo if the element at offset is a definition, null otherwise
+     */
+    fun getDefinitionInfo(file: KtFile, offset: Int, filePath: String): DefinitionInfo? {
+        val element = file.findElementAt(offset) ?: return null
+        val parent = element.parent
+
+        // Get the named declaration
+        val declaration = when (parent) {
+            is KtClass,
+            is KtObjectDeclaration,
+            is KtNamedFunction,
+            is KtTypeAlias -> parent as KtNamedDeclaration
+            is KtProperty -> {
+                // Only top-level or class member properties
+                if (parent.parent is KtFile || parent.parent is KtClassBody) parent
+                else null
+            }
+            is KtParameter -> {
+                // Only val/var parameters
+                if (parent.hasValOrVar()) parent
+                else null
+            }
+            else -> null
+        } ?: return null
+
+        val name = declaration.name ?: return null
+        val declOffset = declaration.nameIdentifier?.textOffset ?: declaration.textOffset
+
+        // Calculate line and column
+        val text = file.text
+        val line = text.substring(0, declOffset.coerceAtMost(text.length)).count { it == '\n' } + 1
+        val lastNewline = text.lastIndexOf('\n', declOffset - 1)
+        val column = if (lastNewline < 0) declOffset + 1 else declOffset - lastNewline
+
+        // Determine kind
+        val kind = when (declaration) {
+            is KtClass -> if (declaration.isInterface()) NavigationTargetKind.INTERFACE else NavigationTargetKind.CLASS
+            is KtObjectDeclaration -> NavigationTargetKind.OBJECT
+            is KtNamedFunction -> NavigationTargetKind.FUNCTION
+            is KtProperty -> NavigationTargetKind.PROPERTY
+            is KtParameter -> NavigationTargetKind.PARAMETER
+            is KtTypeAlias -> NavigationTargetKind.TYPE_ALIAS
+            else -> NavigationTargetKind.UNKNOWN
+        }
+
+        return DefinitionInfo(
+            name = name,
+            kind = kind,
+            filePath = filePath,
+            offset = declOffset,
+            line = line,
+            column = column
+        )
     }
 
     /**

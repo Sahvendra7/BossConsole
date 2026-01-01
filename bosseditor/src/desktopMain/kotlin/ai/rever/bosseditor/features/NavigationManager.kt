@@ -3,11 +3,14 @@ package ai.rever.bosseditor.features
 import ai.rever.bosseditor.core.EditorDocument
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
+import ai.rever.bosseditor.psi.DefinitionInfo
 import ai.rever.bosseditor.psi.NavigationResult
 import ai.rever.bosseditor.psi.NavigationService
 import ai.rever.bosseditor.psi.PSIBootstrap
 import ai.rever.bosseditor.psi.PSIThreadBridge
 import ai.rever.bosseditor.psi.ProjectIndexer
+import ai.rever.bosseditor.psi.ReferenceLocation
+import ai.rever.bosseditor.psi.ReferenceService
 import ai.rever.bosseditor.psi.SemanticHighlighter
 import kotlinx.coroutines.*
 import org.jetbrains.kotlin.psi.KtFile
@@ -26,6 +29,16 @@ sealed class NavigationOutcome {
         val filePath: String,
         val line: Int,
         val column: Int
+    ) : NavigationOutcome()
+
+    /**
+     * User clicked on a definition - show all usages.
+     * @param references List of places where this symbol is used
+     * @param definition Information about the definition
+     */
+    data class ShowUsages(
+        val references: List<ReferenceLocation>,
+        val definition: DefinitionInfo
     ) : NavigationOutcome()
 
     /**
@@ -60,6 +73,7 @@ class NavigationManager(
 ) {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val navigationService = NavigationService()
+    private val referenceService = ReferenceService()
     private var semanticHighlighter: SemanticHighlighter? = null
     private var projectPath: String? = null
 
@@ -181,6 +195,10 @@ class NavigationManager(
     /**
      * Resolves navigation for a position in the document.
      *
+     * If clicking on a definition (class, function, property), returns ShowUsages
+     * with all references to that symbol.
+     * If clicking on a reference, returns Found with the definition location.
+     *
      * @param position The editor position where user Cmd+Clicked
      * @return NavigationOutcome indicating where to navigate or why navigation failed
      */
@@ -204,7 +222,30 @@ class NavigationManager(
         // Convert position to offset
         val offset = document.positionToOffset(position)
 
-        // Use NavigationService to resolve (within read action)
+        // First check if the clicked element is a definition
+        val isDefinition = PSIThreadBridge.readAction {
+            navigationService.isDefinition(ktFile, offset)
+        }
+        println("[NavigationManager] isDefinition: $isDefinition at offset $offset")
+
+        val definitionInfo = if (isDefinition) {
+            PSIThreadBridge.readAction {
+                navigationService.getDefinitionInfo(ktFile, offset, path)
+            }
+        } else {
+            null
+        }
+        println("[NavigationManager] definitionInfo: $definitionInfo")
+
+        // If it's a definition, find all references
+        if (definitionInfo != null) {
+            println("[NavigationManager] Finding references for: ${definitionInfo.name}")
+            val references = referenceService.findReferences(definitionInfo)
+            println("[NavigationManager] Found ${references.size} references")
+            return NavigationOutcome.ShowUsages(references, definitionInfo)
+        }
+
+        // Otherwise, resolve as a reference to go to definition
         val result = PSIThreadBridge.readAction {
             navigationService.goToDefinition(ktFile, offset, path)
         }

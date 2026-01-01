@@ -13,6 +13,10 @@ import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
 import ai.rever.bosseditor.compose.BossEditor
 import ai.rever.bosseditor.compose.NavigationResolveResult
+import ai.rever.bosseditor.features.UsagesPopup
+import ai.rever.bosseditor.features.UsagesPopupState
+import ai.rever.bosseditor.psi.DefinitionInfo
+import ai.rever.bosseditor.psi.ReferenceLocation
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
@@ -108,6 +112,9 @@ fun BossEditorIntegration(
 
     // State for detected main functions
     var detectedMainFunctions by remember { mutableStateOf<List<DetectedMainFunction>>(emptyList()) }
+
+    // State for usages popup
+    var usagesPopupState by remember { mutableStateOf(UsagesPopupState.Hidden) }
 
     // Create lexer based on language
     val lexer = remember(language) {
@@ -353,13 +360,43 @@ fun BossEditorIntegration(
             onSelectionChanged = { _ ->
                 // Selection changed - could integrate with mark occurrences
             },
-            navigationResolver = navigationResolver,
+            // Don't use custom navigationResolver - let BossEditor use internal NavigationManager
+            // which has ShowUsages support for clicking on definitions
+            navigationResolver = null,
             onNavigate = { navFilePath, line, column ->
                 // Convert to NavigationEvent for BOSS integration
                 println("[Nav] BossEditorIntegration received: $navFilePath:$line")
                 onNavigate(NavigationEvent(navFilePath, line, column))
+            },
+            onShowUsages = { references, definition, clickPosition ->
+                println("[BossEditorIntegration] onShowUsages called: ${definition.name} with ${references.size} references at $clickPosition")
+                // Show usages popup at click position
+                usagesPopupState = UsagesPopupState(
+                    isVisible = true,
+                    references = references,
+                    definition = definition,
+                    anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
+                )
+                println("[BossEditorIntegration] usagesPopupState.isVisible = ${usagesPopupState.isVisible}")
             }
         )
+
+        // Render usages popup if visible
+        if (usagesPopupState.isVisible && usagesPopupState.definition != null) {
+            UsagesPopup(
+                references = usagesPopupState.references,
+                definition = usagesPopupState.definition!!,
+                anchorOffset = usagesPopupState.anchorOffset,
+                onNavigate = { navFilePath, line, column ->
+                    // Navigate to the usage
+                    onNavigate(NavigationEvent(navFilePath, line, column))
+                },
+                onDismiss = {
+                    usagesPopupState = UsagesPopupState.Hidden
+                },
+                theme = editorTheme
+            )
+        }
     }
 }
 

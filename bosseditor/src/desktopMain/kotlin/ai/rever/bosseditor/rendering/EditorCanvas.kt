@@ -82,7 +82,7 @@ fun EditorCanvas(
     getLineTokens: (Int) -> List<EditorToken> = { emptyList() },
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {},
-    onNavigationRequest: ((EditorPosition) -> Unit)? = null,
+    onNavigationRequest: ((EditorPosition, Offset) -> Unit)? = null,
     onFoldToggle: ((Int) -> Unit)? = null // Document line number
 ) {
     val theme = LocalEditorTheme.current
@@ -429,8 +429,8 @@ fun EditorCanvas(
 
                             // Check for Cmd/Ctrl+Click navigation
                             if (isNavigationModifier && onNavigationRequest != null) {
-                                // Navigation click - don't position caret, invoke callback
-                                onNavigationRequest.invoke(editorPosition)
+                                // Navigation click - don't position caret, invoke callback with screen position
+                                onNavigationRequest.invoke(editorPosition, position)
                                 isDragging = false
                             } else {
                                 // Single click - position caret

@@ -4,10 +4,13 @@ import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
 import ai.rever.bosseditor.core.OffsetRange
+import androidx.compose.ui.geometry.Offset
 import ai.rever.bosseditor.features.MinimapCanvas
 import ai.rever.bosseditor.features.MinimapConfig
 import ai.rever.bosseditor.features.NavigationManager
 import ai.rever.bosseditor.features.NavigationOutcome
+import ai.rever.bosseditor.psi.DefinitionInfo
+import ai.rever.bosseditor.psi.ReferenceLocation
 import ai.rever.bosseditor.fold.KotlinFoldParser
 import ai.rever.bosseditor.fold.VisualLineMapper
 import ai.rever.bosseditor.highlight.lexers.KotlinLexer
@@ -97,6 +100,7 @@ sealed class NavigationResolveResult {
  * @param navigationResolver Custom navigation resolver (if provided, uses this instead of internal PSI).
  *                           Takes file content, file path, and click offset; returns resolved target.
  * @param onNavigate Callback for code navigation (Cmd+Click go-to-definition)
+ * @param onShowUsages Callback when clicking on a definition to show all usages
  * @param showMinimap Whether to show the minimap (code overview)
  * @param minimapWidth Width of the minimap in pixels
  */
@@ -130,7 +134,8 @@ fun BossEditor(
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {},
     navigationResolver: (suspend (content: String, filePath: String, offset: Int) -> NavigationResolveResult)? = null,
-    onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null
+    onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null,
+    onShowUsages: ((references: List<ReferenceLocation>, definition: DefinitionInfo, clickPosition: Offset) -> Unit)? = null
 ) {
     // Create input handler
     val inputHandler = remember(state) {
@@ -190,8 +195,8 @@ fun BossEditor(
     val coroutineScope = rememberCoroutineScope()
 
     // Handle navigation request from EditorCanvas
-    val handleNavigationRequest: (EditorPosition) -> Unit = remember(navigationResolver, navigationManager, onNavigate, filePath) {
-        { position ->
+    val handleNavigationRequest: (EditorPosition, Offset) -> Unit = remember(navigationResolver, navigationManager, onNavigate, onShowUsages, filePath) {
+        { position, clickPosition ->
             if (onNavigate != null) {
                 coroutineScope.launch {
                     // Use custom resolver if provided, otherwise fall back to internal NavigationManager
@@ -211,6 +216,10 @@ fun BossEditor(
                             is NavigationOutcome.Found -> {
                                 println("[Nav] -> ${result.filePath}:${result.line}")
                                 onNavigate.invoke(result.filePath, result.line, result.column)
+                            }
+                            is NavigationOutcome.ShowUsages -> {
+                                println("[Nav] Definition: ${result.definition.name}, ${result.references.size} usages")
+                                onShowUsages?.invoke(result.references, result.definition, clickPosition)
                             }
                             is NavigationOutcome.NotFound -> println("[Nav] Not found")
                             is NavigationOutcome.Unavailable -> println("[Nav] Unavailable")
