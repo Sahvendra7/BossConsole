@@ -192,7 +192,7 @@ fun FoldGuides(
                 val endY = endLine * lineHeight + lineHeight / 2
 
                 // X position - use a fixed position relative to indent width
-                // TODO: In future, could use document analysis to determine actual indent level
+                // Note: Using fixed indent for consistent fold guide positioning
                 val x = indentWidth
 
                 drawFoldGuide(

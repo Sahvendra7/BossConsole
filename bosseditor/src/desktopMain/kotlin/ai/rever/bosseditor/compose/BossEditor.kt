@@ -455,6 +455,16 @@ fun BossEditor(
                         .background(theme.colors.gutterBackground)
                 )
 
+                // Convert EditorRange (line/column) to OffsetRange (absolute offsets) for minimap
+                val searchResultsAsOffsets = remember(searchMatches, state.document.documentVersion) {
+                    searchMatches.map { range ->
+                        OffsetRange(
+                            start = state.document.positionToOffset(range.start),
+                            end = state.document.positionToOffset(range.end)
+                        )
+                    }
+                }
+
                 MinimapCanvas(
                     document = state.document,
                     tokenProvider = minimapTokenProvider,
@@ -464,7 +474,7 @@ fun BossEditor(
                     visibleLineCount = visibleLineCount,
                     currentLine = minimapCurrentLine,
                     selection = minimapSelection,
-                    searchResults = emptyList(), // TODO: Convert searchMatches to OffsetRange
+                    searchResults = searchResultsAsOffsets,
                     occurrences = emptyList(),
                     diagnostics = emptyList(),
                     config = minimapConfig,
