@@ -364,20 +364,15 @@ fun BossEditorIntegration(
             // which has ShowUsages support for clicking on definitions
             navigationResolver = null,
             onNavigate = { navFilePath, line, column ->
-                // Convert to NavigationEvent for BOSS integration
-                println("[Nav] BossEditorIntegration received: $navFilePath:$line")
                 onNavigate(NavigationEvent(navFilePath, line, column))
             },
             onShowUsages = { references, definition, clickPosition ->
-                println("[BossEditorIntegration] onShowUsages called: ${definition.name} with ${references.size} references at $clickPosition")
-                // Show usages popup at click position
                 usagesPopupState = UsagesPopupState(
                     isVisible = true,
                     references = references,
                     definition = definition,
                     anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
                 )
-                println("[BossEditorIntegration] usagesPopupState.isVisible = ${usagesPopupState.isVisible}")
             }
         )
 

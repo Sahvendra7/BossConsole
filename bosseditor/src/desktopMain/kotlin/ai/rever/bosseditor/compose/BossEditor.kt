@@ -205,29 +205,24 @@ fun BossEditor(
                         val offset = state.document.positionToOffset(position)
                         when (val result = navigationResolver(content, filePath, offset)) {
                             is NavigationResolveResult.Found -> {
-                                println("[Nav] -> ${result.filePath}:${result.line}")
                                 onNavigate.invoke(result.filePath, result.line, result.column)
                             }
-                            is NavigationResolveResult.NotFound -> println("[Nav] Not found")
+                            is NavigationResolveResult.NotFound -> { /* No target found */ }
                         }
                     } else {
                         // Fall back to internal NavigationManager
                         when (val result = navigationManager.resolveNavigation(position)) {
                             is NavigationOutcome.Found -> {
-                                println("[Nav] -> ${result.filePath}:${result.line}")
                                 onNavigate.invoke(result.filePath, result.line, result.column)
                             }
                             is NavigationOutcome.ShowUsages -> {
-                                println("[Nav] Definition: ${result.definition.name}, ${result.references.size} usages")
                                 onShowUsages?.invoke(result.references, result.definition, clickPosition)
                             }
-                            is NavigationOutcome.NotFound -> println("[Nav] Not found")
-                            is NavigationOutcome.Unavailable -> println("[Nav] Unavailable")
+                            is NavigationOutcome.NotFound -> { /* No target found */ }
+                            is NavigationOutcome.Unavailable -> { /* PSI not ready */ }
                         }
                     }
                 }
-            } else {
-                println("[Nav] onNavigate is null!")
             }
         }
     }

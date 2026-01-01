@@ -226,7 +226,6 @@ class NavigationManager(
         val isDefinition = PSIThreadBridge.readAction {
             navigationService.isDefinition(ktFile, offset)
         }
-        println("[NavigationManager] isDefinition: $isDefinition at offset $offset")
 
         val definitionInfo = if (isDefinition) {
             PSIThreadBridge.readAction {
@@ -235,13 +234,10 @@ class NavigationManager(
         } else {
             null
         }
-        println("[NavigationManager] definitionInfo: $definitionInfo")
 
         // If it's a definition, find all references
         if (definitionInfo != null) {
-            println("[NavigationManager] Finding references for: ${definitionInfo.name}")
             val references = referenceService.findReferences(definitionInfo)
-            println("[NavigationManager] Found ${references.size} references")
             return NavigationOutcome.ShowUsages(references, definitionInfo)
         }
 
