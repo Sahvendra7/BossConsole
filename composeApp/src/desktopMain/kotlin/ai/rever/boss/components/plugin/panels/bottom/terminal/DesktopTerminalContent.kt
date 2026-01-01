@@ -350,7 +350,7 @@ object TabbedTerminalStateRegistry {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
                     if (contains(SIDEBAR_TERMINAL_ID)) {
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("clear && $fullCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
                     }
                 }
             } else {
@@ -363,7 +363,7 @@ object TabbedTerminalStateRegistry {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
                     if (contains(SIDEBAR_TERMINAL_ID)) {
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$fullCommand\n".toByteArray(Charsets.UTF_8))
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("clear && $fullCommand\n".toByteArray(Charsets.UTF_8))
                     }
                 }
             }
