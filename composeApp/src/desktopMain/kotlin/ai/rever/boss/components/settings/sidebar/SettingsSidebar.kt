@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, TERMINAL, RUNNER, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
+    FLUCK, CODE_EDITOR, BOSS_EDITOR, TERMINAL, RUNNER, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
 }
 
 @Composable
@@ -56,9 +56,19 @@ fun SettingsSidebar(
             isSelected = selectedSection == SettingsSection.CODE_EDITOR,
             onClick = { onSectionChange(SettingsSection.CODE_EDITOR) }
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
+        SidebarItem(
+            icon = Icons.Outlined.Edit,
+            title = "BossEditor",
+            subtitle = "Scroll, folding, brackets",
+            isSelected = selectedSection == SettingsSection.BOSS_EDITOR,
+            onClick = { onSectionChange(SettingsSection.BOSS_EDITOR) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         SidebarItem(
             icon = Icons.Outlined.Terminal,
             title = "Terminal",

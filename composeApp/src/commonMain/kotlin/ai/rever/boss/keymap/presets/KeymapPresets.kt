@@ -132,6 +132,55 @@ object KeymapPresets {
                 category = KeymapActions.Categories.WORKSPACE,
                 description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
             ),
+            // Editor
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_SAVE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_REPLACE,
+                key = "H",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_REPLACE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_NEXT,
+                key = "G",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_NEXT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_PREVIOUS,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_PREVIOUS)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_GO_TO_LINE,
+                key = "L",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_GO_TO_LINE)
+            ),
             // Tools
             KeyBinding(
                 actionId = KeymapActions.CODEBASE_OPEN,
@@ -291,10 +340,64 @@ object KeymapPresets {
             KeyBinding(
                 actionId = KeymapActions.WORKSPACE_SAVE,
                 key = "S",
-                modifiers = listOf("Cmd"),
+                modifiers = listOf("Cmd", "Shift"),
                 context = ShortcutContext.WORKSPACE,
                 category = KeymapActions.Categories.WORKSPACE,
                 description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
+            ),
+            // Editor - Cmd+S to save current file
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_SAVE)
+            ),
+            // VS Code uses Cmd+F for Find
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND)
+            ),
+            // VS Code uses Cmd+H for Replace (Alt+Cmd+F is also used)
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_REPLACE,
+                key = "H",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_REPLACE)
+            ),
+            // VS Code uses F3/Cmd+G for Find Next
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_NEXT,
+                key = "G",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_NEXT)
+            ),
+            // VS Code uses Shift+F3/Cmd+Shift+G for Find Previous
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_PREVIOUS,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_PREVIOUS)
+            ),
+            // VS Code uses Ctrl+G for Go to Line
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_GO_TO_LINE,
+                key = "G",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_GO_TO_LINE)
             ),
             // Tools - VS Code uses Cmd+Shift+E for Explorer (sidebar)
             KeyBinding(
@@ -451,14 +554,68 @@ object KeymapPresets {
                 category = KeymapActions.Categories.NAVIGATION,
                 description = KeymapActions.getDescription(KeymapActions.QUICK_SWITCHER_OPEN)
             ),
-            // Workspace - IntelliJ uses Cmd+S for save
+            // Workspace - IntelliJ uses Cmd+Shift+S for save all (workspace)
             KeyBinding(
                 actionId = KeymapActions.WORKSPACE_SAVE,
                 key = "S",
-                modifiers = listOf("Cmd"),
+                modifiers = listOf("Cmd", "Shift"),
                 context = ShortcutContext.WORKSPACE,
                 category = KeymapActions.Categories.WORKSPACE,
                 description = KeymapActions.getDescription(KeymapActions.WORKSPACE_SAVE)
+            ),
+            // Editor - IntelliJ uses Cmd+S for save current file
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_SAVE,
+                key = "S",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_SAVE)
+            ),
+            // IntelliJ uses Cmd+F for Find
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND)
+            ),
+            // IntelliJ uses Cmd+R for Replace (we use Cmd+H to avoid conflict with Run)
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_REPLACE,
+                key = "R",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_REPLACE)
+            ),
+            // IntelliJ uses Cmd+G / F3 for Find Next
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_NEXT,
+                key = "G",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_NEXT)
+            ),
+            // IntelliJ uses Cmd+Shift+G / Shift+F3 for Find Previous
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_FIND_PREVIOUS,
+                key = "G",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_FIND_PREVIOUS)
+            ),
+            // IntelliJ uses Cmd+L for Go to Line
+            KeyBinding(
+                actionId = KeymapActions.EDITOR_GO_TO_LINE,
+                key = "L",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.EDITOR,
+                category = KeymapActions.Categories.EDITOR,
+                description = KeymapActions.getDescription(KeymapActions.EDITOR_GO_TO_LINE)
             ),
             // Tools - IntelliJ uses Cmd+1 for Project tool window
             KeyBinding(
