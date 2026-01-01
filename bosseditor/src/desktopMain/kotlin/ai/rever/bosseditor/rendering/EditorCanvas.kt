@@ -50,7 +50,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
 
 /**
  * Canvas composable for rendering editor content.
@@ -307,7 +306,7 @@ fun EditorCanvas(
         } else 0
 
         val column = ((offset.x - gutterWidth + scrollOffset.x.toFloat()) / charWidth)
-            .roundToInt()
+            .toInt()
             .coerceIn(0, maxColumn)
 
         return EditorPosition(documentLine, column)
@@ -635,10 +634,12 @@ private fun measureCharacterDimensions(
         fontSize = fontSize.sp
     )
 
-    // Use 'M' as reference character (widest in most fonts)
-    val measurement = textMeasurer.measure("M", style)
+    // Measure 100 characters and average to prevent cumulative rounding errors on long lines
+    // This matches BossTerm's approach for accurate click-to-column mapping
+    val sampleString = "W".repeat(100)
+    val measurement = textMeasurer.measure(sampleString, style)
 
-    val charWidth = measurement.size.width.toFloat()
+    val charWidth = measurement.size.width.toFloat() / sampleString.length
     // Apply line spacing multiplier to the natural line height
     val naturalLineHeight = measurement.size.height.toFloat()
     val lineHeight = naturalLineHeight * lineSpacing
@@ -692,7 +693,7 @@ private fun offsetToPosition(
     // Calculate column
     val maxColumn = if (lineCount > 0) getLineLength(line) else 0
     val column = ((offset.x - gutterWidth + scrollOffsetX) / charWidth)
-        .roundToInt()
+        .toInt()
         .coerceIn(0, maxColumn)
 
     return EditorPosition(line, column)
