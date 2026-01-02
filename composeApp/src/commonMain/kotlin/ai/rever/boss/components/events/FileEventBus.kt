@@ -45,6 +45,88 @@ sealed class FileValidationResult {
 }
 
 /**
+ * Parsed file reference with optional line and column numbers.
+ *
+ * @property path The file path (URL-decoded, without line:column suffix)
+ * @property line 1-based line number (0 = not specified)
+ * @property column 1-based column number (0 = not specified)
+ */
+data class ParsedFileReference(
+    val path: String,
+    val line: Int = 0,
+    val column: Int = 0
+)
+
+/**
+ * Parses a file reference that may include line and column numbers.
+ *
+ * Handles formats:
+ * - `/path/to/file.kt` → path only
+ * - `/path/to/file.kt:123` → path + line
+ * - `/path/to/file.kt:123:45` → path + line + column
+ * - `C:\path\file.kt:123` → Windows path + line (drive letter preserved)
+ * - URL-encoded paths (e.g., `%20` for spaces)
+ *
+ * Note: Windows paths with drive letters (e.g., `C:\`) have a colon after
+ * the drive letter which must not be confused with line number separator.
+ *
+ * @param fileUrl The file URL (with or without file: prefix already stripped)
+ * @return ParsedFileReference with path, line, and column
+ */
+fun parseFileReference(fileUrl: String): ParsedFileReference {
+    // URL-decode the path first (handles %20 for spaces, etc.)
+    val decoded = try {
+        java.net.URLDecoder.decode(fileUrl, "UTF-8")
+    } catch (e: Exception) {
+        fileUrl // Fall back to original if decoding fails
+    }
+
+    // Check for Windows drive letter pattern (e.g., C:\)
+    val isWindowsPath = decoded.length >= 2 &&
+        decoded[0].isLetter() &&
+        decoded[1] == ':'
+
+    // Find line:column suffix by looking for :digits pattern from the end
+    // For Windows paths, skip the first colon (drive letter)
+    val startIndex = if (isWindowsPath) 2 else 0
+    val lastColonIndex = decoded.lastIndexOf(':')
+    val secondLastColonIndex = decoded.lastIndexOf(':', lastColonIndex - 1)
+
+    // Check if what's after the last colon looks like a number
+    val afterLastColon = if (lastColonIndex > startIndex) {
+        decoded.substring(lastColonIndex + 1)
+    } else null
+
+    val afterSecondLastColon = if (secondLastColonIndex > startIndex && lastColonIndex > secondLastColonIndex) {
+        decoded.substring(secondLastColonIndex + 1, lastColonIndex)
+    } else null
+
+    return when {
+        // Pattern: path:line:column
+        afterSecondLastColon != null &&
+        afterSecondLastColon.toIntOrNull() != null &&
+        afterLastColon?.toIntOrNull() != null -> {
+            ParsedFileReference(
+                path = decoded.substring(0, secondLastColonIndex),
+                line = afterSecondLastColon.toInt(),
+                column = afterLastColon.toInt()
+            )
+        }
+        // Pattern: path:line
+        afterLastColon?.toIntOrNull() != null && lastColonIndex > startIndex -> {
+            ParsedFileReference(
+                path = decoded.substring(0, lastColonIndex),
+                line = afterLastColon.toInt()
+            )
+        }
+        // Pattern: path only
+        else -> {
+            ParsedFileReference(path = decoded)
+        }
+    }
+}
+
+/**
  * Validates a file path for safety and existence.
  *
  * Checks performed:

@@ -1,12 +1,15 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
+// BossTerm's HyperlinkType enum: HTTP, FILE, FOLDER, EMAIL, FTP, etc.
+// Not to be confused with any local hyperlink types in this codebase
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkType
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
@@ -514,12 +517,16 @@ actual fun resetTerminals() {
  *
  * Issue #346: Terminal link click prompt with remember preference
  *
+ * API Change (BossTerm 1.0.67): The callback signature changed from `(url: String) -> Boolean`
+ * to `(info: HyperlinkInfo) -> Boolean`. All consumers in this file have been updated.
+ * The HyperlinkInfo provides typed hyperlink info including URL and HyperlinkType enum.
+ *
  * Note: This launches coroutines without structured concurrency. If the terminal is closed
  * immediately after a link click, the event might emit after cleanup. This is low-risk
  * because the event bus is fire-and-forget, and BossApp handles stale events gracefully
  * by verifying panel existence before operations.
  *
- * @param info HyperlinkInfo containing URL, type, and metadata
+ * @param info HyperlinkInfo containing URL, type, and metadata (from BossTerm)
  * @param scope CoroutineScope to launch async operations
  * @param terminalId Optional terminal tab ID (for detecting source panel when opening in splits)
  * @return true if handled by BOSS, false to use BossTerm's default behavior
@@ -535,16 +542,28 @@ private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, 
             true // Handled - BOSS manages HTTP links
         }
         HyperlinkType.FILE -> {
-            // Validate file path before routing to event bus
-            // This provides early rejection of invalid paths
+            // Parse file reference (handles URL encoding and line:column suffixes)
+            // Then validate file path before routing to event bus
             scope.launch(Dispatchers.IO) {
-                val filePath = stripFilePrefix(info.url)
-                when (val result = validateFilePath(filePath)) {
+                val rawPath = stripFilePrefix(info.url)
+                val parsed = parseFileReference(rawPath)
+
+                when (val result = validateFilePath(parsed.path)) {
                     is FileValidationResult.Valid -> {
                         // Route valid file links through TerminalLinkEventBus for consistent
                         // dialog/settings behavior (same "where to open" dialog as HTTP links)
-                        // Use the validated canonical path with file: prefix for BossApp
-                        TerminalLinkEventBus.emitLinkClick("file:${result.canonicalPath}", terminalId)
+                        // Encode line:column in URL for BossApp to extract
+                        val urlWithLocation = buildString {
+                            append("file:")
+                            append(result.canonicalPath)
+                            if (parsed.line > 0) {
+                                append(":${parsed.line}")
+                                if (parsed.column > 0) {
+                                    append(":${parsed.column}")
+                                }
+                            }
+                        }
+                        TerminalLinkEventBus.emitLinkClick(urlWithLocation, terminalId)
                     }
                     is FileValidationResult.Invalid -> {
                         println("[Terminal] Cannot open file: ${result.reason}")

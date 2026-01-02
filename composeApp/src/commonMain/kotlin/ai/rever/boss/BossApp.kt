@@ -55,6 +55,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.components.events.ParsedFileReference
+import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalEventBus
@@ -328,8 +330,11 @@ private fun openTerminalLink(
     // For file URLs, perform defensive validation (primary validation happens in DesktopTerminalContent)
     // This protects against race conditions or direct calls to this function
     if (isFile) {
-        val filePath = stripFilePrefix(url)
-        when (val result = validateFilePath(filePath)) {
+        // Parse file reference to extract line:column (e.g., file:/path/file.kt:123:45)
+        val rawPath = stripFilePrefix(url)
+        val parsed = parseFileReference(rawPath)
+
+        when (val result = validateFilePath(parsed.path)) {
             is FileValidationResult.Invalid -> {
                 println("[BossApp] Cannot open file: ${result.reason}")
                 return
@@ -341,7 +346,9 @@ private fun openTerminalLink(
                     mode = mode,
                     splitViewState = splitViewState,
                     validSourcePanelId = validSourcePanelId,
-                    isFile = true
+                    isFile = true,
+                    fileLine = parsed.line,
+                    fileColumn = parsed.column
                 )
             }
         }
@@ -360,16 +367,37 @@ private fun openTerminalLink(
 /**
  * Internal implementation of openTerminalLink after validation.
  * This is separated to avoid code duplication after the file validation branch.
+ *
+ * @param url The URL to open (HTTP or file: URL with canonical path)
+ * @param mode How to open the link (split or new tab)
+ * @param splitViewState The split view state for panel operations
+ * @param validSourcePanelId The validated source panel ID
+ * @param isFile Whether this is a file URL (vs HTTP)
+ * @param fileLine 1-based line number for file navigation (0 = no navigation)
+ * @param fileColumn 1-based column number for file navigation (0 = no navigation)
  */
 private fun openTerminalLinkInternal(
     url: String,
     mode: TerminalLinkOpenMode,
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
     validSourcePanelId: String,
-    isFile: Boolean
+    isFile: Boolean,
+    fileLine: Int = 0,
+    fileColumn: Int = 0
 ) {
     // Helper to create the appropriate tab type
     fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
+
+    // Helper to trigger navigation after opening a file with line:column
+    // Uses GlobalScope since this is fire-and-forget event emission
+    fun navigateToLineIfNeeded() {
+        if (isFile && fileLine > 0) {
+            val cleanPath = stripFilePrefix(url)
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                NavigationTargetBus.navigateTo(cleanPath, fileLine, fileColumn)
+            }
+        }
+    }
 
     when (mode) {
         TerminalLinkOpenMode.EXISTING_SPLIT -> {
@@ -388,6 +416,7 @@ private fun openTerminalLinkInternal(
                 if (tabIndex >= 0) {
                     targetPanel.tabsComponent.selectTab(tabIndex)
                     splitViewState.setActivePanel(targetPanel.id)
+                    navigateToLineIfNeeded()
                 }
             } else {
                 // IMPORTANT: Fallback when user saved EXISTING_SPLIT preference but later closed all splits.
@@ -397,6 +426,7 @@ private fun openTerminalLinkInternal(
                     orientation = SplitOrientation.VERTICAL,
                     tabToMove = createTab()
                 )
+                navigateToLineIfNeeded()
             }
         }
         TerminalLinkOpenMode.VERTICAL_SPLIT, TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
@@ -411,6 +441,7 @@ private fun openTerminalLinkInternal(
                 orientation = orientation,
                 tabToMove = createTab()
             )
+            navigateToLineIfNeeded()
         }
         TerminalLinkOpenMode.NEW_TAB, TerminalLinkOpenMode.ALWAYS_ASK -> {
             // NEW_TAB opens in current panel; ALWAYS_ASK shouldn't reach here but handle gracefully
@@ -419,6 +450,7 @@ private fun openTerminalLinkInternal(
                 val cleanPath = stripFilePrefix(url)
                 val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
                 splitViewState.openFileInActivePanel(cleanPath, fileName)
+                navigateToLineIfNeeded()
             } else {
                 splitViewState.openUrlInActivePanel(url, "Loading...")
             }
