@@ -644,4 +644,147 @@ class EditorDocumentTest {
             doc.positionToOffset(EditorPosition(100, 0))
         }
     }
+
+    // ============================================
+    // Incremental Line Index Update Tests
+    // ============================================
+
+    @Test
+    fun testIncrementalLineIndexInsertMultiLine() {
+        val doc = EditorDocument("Line 1\nLine 2\nLine 3")
+        assertEquals(3, doc.lineCount)
+
+        // Insert 2 lines in the middle (after "Line 1\n")
+        doc.insert(7, "New A\nNew B\n")
+
+        assertEquals(5, doc.lineCount)
+        assertEquals("Line 1", doc.getLineText(0))
+        assertEquals("New A", doc.getLineText(1))
+        assertEquals("New B", doc.getLineText(2))
+        assertEquals("Line 2", doc.getLineText(3))
+        assertEquals("Line 3", doc.getLineText(4))
+    }
+
+    @Test
+    fun testIncrementalLineIndexDeleteMultiLine() {
+        val doc = EditorDocument("A\nB\nC\nD\nE")
+        assertEquals(5, doc.lineCount)
+
+        // Delete lines B and C (offsets 2-6, includes "B\nC\n")
+        doc.delete(2, 6)
+
+        assertEquals(3, doc.lineCount)
+        assertEquals("A", doc.getLineText(0))
+        assertEquals("D", doc.getLineText(1))
+        assertEquals("E", doc.getLineText(2))
+    }
+
+    @Test
+    fun testLineIndexConsistencyAfterManyEdits() {
+        val doc = EditorDocument()
+
+        // Build document with many inserts
+        repeat(100) { i ->
+            doc.insert(doc.length, "Line $i\n")
+        }
+
+        // Verify line index integrity
+        assertEquals(101, doc.lineCount) // 100 lines + trailing empty line
+
+        // Delete some lines from middle
+        val startOffset = doc.getLineStartOffset(50)
+        val endOffset = doc.getLineStartOffset(60)
+        doc.delete(startOffset, endOffset)
+
+        // Verify document is still consistent
+        for (i in 0 until doc.lineCount) {
+            doc.getLineText(i) // Should not throw
+            doc.getLineStartOffset(i) // Should not throw
+        }
+
+        assertEquals(91, doc.lineCount) // 101 - 10 deleted lines
+    }
+
+    @Test
+    fun testInsertNewlinesAtDocumentStart() {
+        val doc = EditorDocument("content")
+        doc.insert(0, "A\nB\n")
+
+        assertEquals(3, doc.lineCount)
+        assertEquals("A", doc.getLineText(0))
+        assertEquals("B", doc.getLineText(1))
+        assertEquals("content", doc.getLineText(2))
+    }
+
+    @Test
+    fun testInsertNewlinesAtDocumentEnd() {
+        val doc = EditorDocument("content")
+        doc.insert(doc.length, "\nA\nB")
+
+        assertEquals(3, doc.lineCount)
+        assertEquals("content", doc.getLineText(0))
+        assertEquals("A", doc.getLineText(1))
+        assertEquals("B", doc.getLineText(2))
+    }
+
+    @Test
+    fun testDeleteEntireDocumentWithMultipleLines() {
+        val doc = EditorDocument("Line1\nLine2\nLine3")
+        assertEquals(3, doc.lineCount)
+
+        doc.delete(0, doc.length)
+
+        assertEquals(1, doc.lineCount) // Empty document has 1 line
+        assertEquals("", doc.getLineText(0))
+    }
+
+    @Test
+    fun testAlternatingInsertDelete() {
+        val doc = EditorDocument("start")
+
+        // Insert newlines
+        doc.insert(5, "\nA\nB")
+        assertEquals(3, doc.lineCount)
+
+        // Delete a line
+        doc.delete(6, 8) // Delete "A\n"
+        assertEquals(2, doc.lineCount)
+
+        // Insert again
+        doc.insert(6, "X\nY\n")
+        assertEquals(4, doc.lineCount)
+
+        assertEquals("start", doc.getLineText(0))
+        assertEquals("X", doc.getLineText(1))
+        assertEquals("Y", doc.getLineText(2))
+        assertEquals("B", doc.getLineText(3))
+    }
+
+    @Test
+    fun testDeleteSingleNewline() {
+        val doc = EditorDocument("A\nB")
+        assertEquals(2, doc.lineCount)
+        assertEquals("A", doc.getLineText(0))
+        assertEquals("B", doc.getLineText(1))
+
+        doc.delete(1, 2) // Delete just the newline
+        assertEquals(1, doc.lineCount)
+        assertEquals("AB", doc.getText())
+    }
+
+    @Test
+    fun testDeleteExactLineRange() {
+        // Verifies correct handling when deletion endpoint coincides with a line start.
+        // A line starting exactly at endOffset should be REMOVED (not just shifted)
+        // because its preceding newline is being deleted, merging it with the previous line.
+        val doc = EditorDocument("A\nB\nC")
+        assertEquals(3, doc.lineCount)
+
+        doc.delete(0, 2) // Delete "A\n" exactly - removes line starting at offset 2
+        // Result: "B\nC" with lineStarts [0, 2]
+        assertEquals(2, doc.lineCount)
+        assertEquals("B\nC", doc.getText())
+        assertEquals("B", doc.getLineText(0))
+        assertEquals("C", doc.getLineText(1))
+    }
 }

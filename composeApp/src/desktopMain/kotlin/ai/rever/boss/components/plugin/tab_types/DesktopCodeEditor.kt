@@ -19,6 +19,29 @@ actual fun readFileContent(filePath: String): String? {
     }
 }
 
+/**
+ * Reads file content with size validation.
+ * Files larger than maxSize will return FileTooLarge instead of loading.
+ */
+actual fun readFileContentSafe(filePath: String, maxSize: Long): FileReadResult {
+    return try {
+        val file = File(filePath)
+        when {
+            !file.exists() || !file.isFile -> FileReadResult.FileNotFound
+            file.length() > maxSize -> FileReadResult.FileTooLarge(file.length(), maxSize)
+            else -> {
+                try {
+                    FileReadResult.Success(file.readText())
+                } catch (e: OutOfMemoryError) {
+                    FileReadResult.Error("File too large to load into memory: ${e.message}")
+                }
+            }
+        }
+    } catch (e: Exception) {
+        FileReadResult.Error(e.message ?: "Unknown error reading file")
+    }
+}
+
 actual fun writeFileContent(filePath: String, content: String): Boolean {
     return try {
         val file = File(filePath)

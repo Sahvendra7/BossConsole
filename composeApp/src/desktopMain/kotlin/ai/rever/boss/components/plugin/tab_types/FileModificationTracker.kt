@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import ai.rever.bosseditor.core.EditorDocument
 import java.io.File
 
 /**
@@ -153,6 +154,12 @@ class FileModificationTracker(
                 val file = File(filePath)
                 if (!file.exists()) {
                     println("[FileModificationTracker] File does not exist: $filePath")
+                    return@withContext false
+                }
+
+                // Check file size before loading to prevent memory issues
+                if (file.length() > EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE) {
+                    println("[FileModificationTracker] File too large to reload: ${file.length()} bytes (max: ${EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE})")
                     return@withContext false
                 }
 
