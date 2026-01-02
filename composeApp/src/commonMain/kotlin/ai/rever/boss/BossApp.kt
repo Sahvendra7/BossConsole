@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
@@ -94,6 +95,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -261,12 +264,35 @@ private fun createBrowserTab(url: String): FluckTabInfo {
 }
 
 /**
+ * Creates an editor tab for the given file path.
+ * Used in openTerminalLink when handling file: URLs.
+ *
+ * @param filePath The file path (may include "file:" prefix, which will be stripped)
+ */
+private fun createEditorTab(filePath: String): EditorTabInfo {
+    val cleanPath = stripFilePrefix(filePath)
+    val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+    return EditorTabInfo(
+        id = "editor-${Random.nextLong()}",
+        typeId = TabTypeId("editor"),
+        title = fileName,
+        icon = Icons.Outlined.Code,
+        filePath = cleanPath
+    )
+}
+
+/**
+ * Checks if a URL is a file URL (starts with "file:").
+ */
+private fun isFileUrl(url: String): Boolean = url.startsWith("file:")
+
+/**
  * Helper function to open a terminal link based on user's selected mode.
- * Handles creating browser tabs and splitting panels as needed.
+ * Handles creating browser tabs (for HTTP) or editor tabs (for file:) and splitting panels.
  *
  * Issue #346: Terminal link click prompt with remember preference
  *
- * @param url The URL to open
+ * @param url The URL to open (HTTP or file: URL)
  * @param mode How to open the link (split or new tab)
  * @param splitViewState The split view state for panel operations
  * @param sourceTerminalId Optional terminal tab ID where the link was clicked (for finding source panel)
@@ -291,6 +317,12 @@ private fun openTerminalLink(
         splitViewState.activePanelId
     }
 
+    // Determine if this is a file URL - file links open in editor, HTTP links open in browser
+    val isFile = isFileUrl(url)
+
+    // Helper to create the appropriate tab type
+    fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
+
     when (mode) {
         TerminalLinkOpenMode.EXISTING_SPLIT -> {
             // Open in existing split panel (not the source panel where terminal is)
@@ -303,8 +335,8 @@ private fun openTerminalLink(
                     splitViewState.getFirstOtherPanelExcluding(validSourcePanelId)
             }
             if (targetPanel != null) {
-                val browserTab = createBrowserTab(url)
-                val tabIndex = targetPanel.tabsComponent.addTab(browserTab)
+                val tab = createTab()
+                val tabIndex = targetPanel.tabsComponent.addTab(tab)
                 if (tabIndex >= 0) {
                     targetPanel.tabsComponent.selectTab(tabIndex)
                     splitViewState.setActivePanel(targetPanel.id)
@@ -315,7 +347,7 @@ private fun openTerminalLink(
                 splitViewState.splitPanel(
                     panelId = validSourcePanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = createBrowserTab(url)
+                    tabToMove = createTab()
                 )
             }
         }
@@ -329,12 +361,19 @@ private fun openTerminalLink(
             splitViewState.splitPanel(
                 panelId = validSourcePanelId,
                 orientation = orientation,
-                tabToMove = createBrowserTab(url)
+                tabToMove = createTab()
             )
         }
         TerminalLinkOpenMode.NEW_TAB, TerminalLinkOpenMode.ALWAYS_ASK -> {
             // NEW_TAB opens in current panel; ALWAYS_ASK shouldn't reach here but handle gracefully
-            splitViewState.openUrlInActivePanel(url, "Loading...")
+            if (isFile) {
+                // For file URLs, use openFileInActivePanel for consistent behavior
+                val cleanPath = stripFilePrefix(url)
+                val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+                splitViewState.openFileInActivePanel(cleanPath, fileName)
+            } else {
+                splitViewState.openUrlInActivePanel(url, "Loading...")
+            }
         }
     }
 }

@@ -3,6 +3,8 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
+import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
+import ai.rever.bossterm.compose.hyperlinks.HyperlinkType
 import ai.rever.bossterm.compose.EmbeddableTerminalState
 import ai.rever.bossterm.compose.TabbedTerminal
 import ai.rever.bossterm.compose.TabbedTerminalState
@@ -152,7 +154,7 @@ actual fun TabbedTerminalContent(
                     }
                 },
                 onShowSettings = onShowSettings,
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope, SIDEBAR_TERMINAL_ID) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -212,7 +214,7 @@ actual fun PersistentTabbedTerminalContent(
                 },
                 onShowSettings = onShowSettings,
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope, terminalId) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -503,9 +505,9 @@ actual fun resetTerminals() {
 }
 
 /**
- * Handles terminal link clicks by emitting HTTP/HTTPS links to TerminalLinkEventBus
- * (for BossApp to handle with user preference) and opening other protocols
- * (file://, mailto:, etc.) in the system default handler.
+ * Handles terminal link clicks by emitting HTTP/HTTPS and FILE links to TerminalLinkEventBus
+ * for BossApp to handle with user preference (dialog or auto-open). Other link types
+ * (FOLDER, EMAIL, etc.) are delegated to BossTerm's default behavior.
  *
  * Issue #346: Terminal link click prompt with remember preference
  *
@@ -514,40 +516,34 @@ actual fun resetTerminals() {
  * because the event bus is fire-and-forget, and BossApp handles stale events gracefully
  * by verifying panel existence before operations.
  *
- * @param url The URL to open
+ * @param info HyperlinkInfo containing URL, type, and metadata
  * @param scope CoroutineScope to launch async operations
  * @param terminalId Optional terminal tab ID (for detecting source panel when opening in splits)
+ * @return true if handled by BOSS, false to use BossTerm's default behavior
  */
-private fun handleTerminalLinkClick(url: String, scope: CoroutineScope, terminalId: String? = null) {
-    if (url.startsWith("http://") || url.startsWith("https://")) {
-        // Emit HTTP/HTTPS links to event bus for BossApp to handle
-        // BossApp will show dialog or auto-open based on user preference
-        scope.launch {
-            TerminalLinkEventBus.emitLinkClick(url, terminalId)
-        }
-    } else {
-        // For other protocols, open in system browser on IO dispatcher
-        // to avoid blocking the UI thread
-        scope.launch(Dispatchers.IO) {
-            try {
-                // Validate URI format first
-                val uri = java.net.URI(url)
-
-                if (java.awt.Desktop.isDesktopSupported()) {
-                    val desktop = java.awt.Desktop.getDesktop()
-                    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
-                        desktop.browse(uri)
-                    } else {
-                        println("Desktop browse action not supported on this system")
-                    }
-                } else {
-                    println("Desktop API not supported on this system")
-                }
-            } catch (e: java.net.URISyntaxException) {
-                println("Invalid URI format: $url - ${e.message}")
-            } catch (e: Exception) {
-                println("Error opening URL in system browser: ${e.message}")
+private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, terminalId: String? = null): Boolean {
+    return when (info.type) {
+        HyperlinkType.HTTP -> {
+            // Emit HTTP/HTTPS links to event bus for BossApp to handle
+            // BossApp will show dialog or auto-open based on user preference
+            scope.launch {
+                TerminalLinkEventBus.emitLinkClick(info.url, terminalId)
             }
+            true // Handled - BOSS manages HTTP links
+        }
+        HyperlinkType.FILE -> {
+            // Route file links through TerminalLinkEventBus for consistent dialog/settings behavior
+            // (same "where to open" dialog as HTTP links)
+            // BossApp will detect file: URL and open in editor instead of browser
+            scope.launch {
+                TerminalLinkEventBus.emitLinkClick(info.url, terminalId)
+            }
+            true // Handled - BOSS opens files in editor with same dialog behavior
+        }
+        else -> {
+            // Let BossTerm handle FOLDER, EMAIL, FTP, and other link types
+            // with its default behavior (open in Finder/browser)
+            false
         }
     }
 }
@@ -609,7 +605,7 @@ actual fun TerminalContent(
                     terminalId?.let { TerminalStateRegistry.remove(it) }
                     onExit()
                 },
-                onLinkClick = { url -> handleTerminalLinkClick(url, scope, terminalId) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
                 modifier = Modifier.fillMaxSize()
             )
         }
