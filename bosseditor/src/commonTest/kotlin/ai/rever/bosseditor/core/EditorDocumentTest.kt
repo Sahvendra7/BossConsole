@@ -332,4 +332,316 @@ class EditorDocumentTest {
         assertTrue(!range1.overlaps(range3)) // Adjacent but not overlapping
         assertTrue(!range1.overlaps(range4))
     }
+
+    // ============================================
+    // Unicode/Emoji Handling Tests
+    // ============================================
+
+    @Test
+    fun testUnicodeBasicMultilingual() {
+        // Basic multilingual plane characters
+        val doc = EditorDocument("café résumé")
+        assertEquals(11, doc.length)
+        assertEquals('é', doc.charAt(3))
+        assertEquals("café", doc.getText(0, 4))
+    }
+
+    @Test
+    fun testUnicodeEmoji() {
+        // Emoji are outside BMP (surrogate pairs in Java/Kotlin)
+        val doc = EditorDocument("Hello 👋 World")
+        // 👋 is a surrogate pair (2 chars in Kotlin String)
+        assertEquals(14, doc.length) // "Hello " (6) + 👋 (2) + " World" (6)
+        assertEquals("Hello 👋 World", doc.getText())
+    }
+
+    @Test
+    fun testUnicodeInsertEmoji() {
+        val doc = EditorDocument("Hello World")
+        doc.insert(6, "👋 ")
+        assertEquals("Hello 👋 World", doc.getText())
+    }
+
+    @Test
+    fun testUnicodeCombiningCharacters() {
+        // e + combining acute accent = é
+        val doc = EditorDocument("caf\u0065\u0301") // cafe with combining accent
+        assertEquals(5, doc.length) // c, a, f, e, combining accent
+        assertEquals("caf\u0065\u0301", doc.getText())
+    }
+
+    @Test
+    fun testUnicodeJapanese() {
+        val doc = EditorDocument("こんにちは") // "Hello" in Japanese
+        assertEquals(5, doc.length)
+        assertEquals('こ', doc.charAt(0))
+        assertEquals("こん", doc.getText(0, 2))
+    }
+
+    @Test
+    fun testUnicodeMixed() {
+        val doc = EditorDocument("Hello 世界 🌍")
+        // "Hello " (6) + "世界" (2) + " " (1) + 🌍 (2 - surrogate pair)
+        assertEquals(11, doc.length)
+    }
+
+    // ============================================
+    // Boundary Condition Tests
+    // ============================================
+
+    @Test
+    fun testInsertEmptyString() {
+        val doc = EditorDocument("hello")
+        doc.insert(3, "")
+        assertEquals("hello", doc.getText())
+        assertEquals(5, doc.length)
+    }
+
+    @Test
+    fun testDeleteEmptyRange() {
+        val doc = EditorDocument("hello")
+        doc.delete(2, 2) // Empty range
+        assertEquals("hello", doc.getText())
+    }
+
+    @Test
+    fun testReplaceWithSameText() {
+        val doc = EditorDocument("hello")
+        doc.replace(0, 5, "hello")
+        assertEquals("hello", doc.getText())
+    }
+
+    @Test
+    fun testDeleteEntireDocument() {
+        val doc = EditorDocument("hello world")
+        doc.delete(0, 11)
+        assertEquals("", doc.getText())
+        assertEquals(0, doc.length)
+        assertEquals(1, doc.lineCount)
+    }
+
+    @Test
+    fun testReplaceEntireDocument() {
+        val doc = EditorDocument("old content")
+        doc.replace(0, 11, "new content here")
+        assertEquals("new content here", doc.getText())
+    }
+
+    @Test
+    fun testInsertAtOffset0EmptyDoc() {
+        val doc = EditorDocument()
+        doc.insert(0, "hello")
+        assertEquals("hello", doc.getText())
+    }
+
+    @Test
+    fun testSingleCharacterOperations() {
+        val doc = EditorDocument()
+        doc.insert(0, "a")
+        assertEquals("a", doc.getText())
+        doc.insert(1, "b")
+        assertEquals("ab", doc.getText())
+        doc.delete(0, 1)
+        assertEquals("b", doc.getText())
+        doc.delete(0, 1)
+        assertEquals("", doc.getText())
+    }
+
+    // ============================================
+    // Large Document Tests
+    // ============================================
+
+    @Test
+    fun testLargeDocument10kLines() {
+        val doc = EditorDocument()
+        val lines = (1..10000).map { "Line $it" }
+        doc.setText(lines.joinToString("\n"))
+
+        assertEquals(10000, doc.lineCount)
+        assertEquals("Line 1", doc.getLineText(0))
+        assertEquals("Line 5000", doc.getLineText(4999))
+        assertEquals("Line 10000", doc.getLineText(9999))
+    }
+
+    @Test
+    fun testLargeDocumentInsertInMiddle() {
+        val doc = EditorDocument()
+        val initialText = "x".repeat(100000)
+        doc.setText(initialText)
+
+        // Insert in the middle (triggers gap movement)
+        doc.insert(50000, "INSERTED")
+
+        assertEquals(100008, doc.length)
+        assertEquals("INSERTED", doc.getText(50000, 50008))
+    }
+
+    @Test
+    fun testRapidSequentialInsertsAtDifferentPositions() {
+        val doc = EditorDocument("0123456789")
+
+        // Insert at alternating positions to stress gap buffer
+        doc.insert(0, "A")  // A0123456789
+        doc.insert(11, "B") // A0123456789B
+        doc.insert(1, "C")  // AC0123456789B
+        doc.insert(12, "D") // AC0123456789DB
+        doc.insert(2, "E")  // ACE0123456789DB
+
+        assertEquals("ACE0123456789DB", doc.getText())
+    }
+
+    @Test
+    fun testManySmallInserts() {
+        val doc = EditorDocument()
+        // 1000 single character inserts
+        for (i in 0 until 1000) {
+            doc.insert(doc.length, (('a'.code + (i % 26)).toChar()).toString())
+        }
+        assertEquals(1000, doc.length)
+    }
+
+    // ============================================
+    // Listener Tests
+    // ============================================
+
+    @Test
+    fun testDocumentListenerCalledOnInsert() {
+        val doc = EditorDocument("hello")
+        var changeReceived: DocumentChange? = null
+
+        doc.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                changeReceived = change
+            }
+        })
+
+        doc.insert(5, " world")
+
+        assertEquals(5, changeReceived?.offset)
+        assertEquals("", changeReceived?.oldText)
+        assertEquals(" world", changeReceived?.newText)
+    }
+
+    @Test
+    fun testDocumentListenerCalledOnDelete() {
+        val doc = EditorDocument("hello world")
+        var changeReceived: DocumentChange? = null
+
+        doc.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                changeReceived = change
+            }
+        })
+
+        doc.delete(5, 11)
+
+        assertEquals(5, changeReceived?.offset)
+        assertEquals(" world", changeReceived?.oldText)
+        assertEquals("", changeReceived?.newText)
+    }
+
+    @Test
+    fun testRemoveDocumentListener() {
+        val doc = EditorDocument("hello")
+        var callCount = 0
+
+        val listener = object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                callCount++
+            }
+        }
+
+        doc.addDocumentListener(listener)
+        doc.insert(5, " world")
+        assertEquals(1, callCount)
+
+        doc.removeDocumentListener(listener)
+        doc.insert(11, "!")
+        assertEquals(1, callCount) // Should not have increased
+    }
+
+    @Test
+    fun testModifyDocumentDuringListenerCallback() {
+        val doc = EditorDocument("hello")
+        var secondChange: DocumentChange? = null
+
+        doc.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                if (change.newText == " world") {
+                    // This is the first change, trigger a second change
+                    doc.insert(doc.length, "!")
+                } else {
+                    secondChange = change
+                }
+            }
+        })
+
+        doc.insert(5, " world")
+
+        // Document should have both changes applied
+        assertEquals("hello world!", doc.getText())
+        assertEquals("!", secondChange?.newText)
+    }
+
+    // ============================================
+    // Edge Case Line Operations
+    // ============================================
+
+    @Test
+    fun testDocumentWithOnlyNewlines() {
+        val doc = EditorDocument("\n\n\n")
+        assertEquals(4, doc.lineCount)
+        assertEquals("", doc.getLineText(0))
+        assertEquals("", doc.getLineText(1))
+        assertEquals("", doc.getLineText(2))
+        assertEquals("", doc.getLineText(3))
+    }
+
+    @Test
+    fun testConsecutiveNewlines() {
+        val doc = EditorDocument("a\n\n\nb")
+        assertEquals(4, doc.lineCount)
+        assertEquals("a", doc.getLineText(0))
+        assertEquals("", doc.getLineText(1))
+        assertEquals("", doc.getLineText(2))
+        assertEquals("b", doc.getLineText(3))
+    }
+
+    @Test
+    fun testLineOperationsAfterLargeInsert() {
+        val doc = EditorDocument("line1\nline2")
+        val largeText = "x".repeat(10000) + "\n"
+        doc.insert(6, largeText) // Insert at start of "line2"
+
+        // Result: "line1\n" + "xxx...xxx\n" + "line2"
+        assertEquals(3, doc.lineCount)
+        assertEquals("line1", doc.getLineText(0))
+        assertEquals("x".repeat(10000), doc.getLineText(1))
+        assertEquals("line2", doc.getLineText(2))
+    }
+
+    @Test
+    fun testGetLineTextOutOfBounds() {
+        val doc = EditorDocument("hello")
+        assertFailsWith<IllegalArgumentException> {
+            doc.getLineText(5) // Only line 0 exists
+        }
+    }
+
+    @Test
+    fun testPositionToOffsetClampsBeyondEnd() {
+        val doc = EditorDocument("hello")
+        // Position beyond document end should clamp
+        val offset = doc.positionToOffset(EditorPosition(0, 100))
+        assertEquals(5, offset) // Clamped to end of line
+    }
+
+    @Test
+    fun testPositionToOffsetThrowsForInvalidLine() {
+        val doc = EditorDocument("hello")
+        // Line beyond document should throw
+        assertFailsWith<IllegalArgumentException> {
+            doc.positionToOffset(EditorPosition(100, 0))
+        }
+    }
 }
