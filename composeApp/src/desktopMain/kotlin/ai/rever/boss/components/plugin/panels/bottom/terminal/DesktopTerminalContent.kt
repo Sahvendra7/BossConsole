@@ -1,5 +1,8 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.components.events.stripFilePrefix
+import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
 import ai.rever.bossterm.compose.EmbeddableTerminal
@@ -532,11 +535,21 @@ private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, 
             true // Handled - BOSS manages HTTP links
         }
         HyperlinkType.FILE -> {
-            // Route file links through TerminalLinkEventBus for consistent dialog/settings behavior
-            // (same "where to open" dialog as HTTP links)
-            // BossApp will detect file: URL and open in editor instead of browser
-            scope.launch {
-                TerminalLinkEventBus.emitLinkClick(info.url, terminalId)
+            // Validate file path before routing to event bus
+            // This provides early rejection of invalid paths
+            scope.launch(Dispatchers.IO) {
+                val filePath = stripFilePrefix(info.url)
+                when (val result = validateFilePath(filePath)) {
+                    is FileValidationResult.Valid -> {
+                        // Route valid file links through TerminalLinkEventBus for consistent
+                        // dialog/settings behavior (same "where to open" dialog as HTTP links)
+                        // Use the validated canonical path with file: prefix for BossApp
+                        TerminalLinkEventBus.emitLinkClick("file:${result.canonicalPath}", terminalId)
+                    }
+                    is FileValidationResult.Invalid -> {
+                        println("[Terminal] Cannot open file: ${result.reason}")
+                    }
+                }
             }
             true // Handled - BOSS opens files in editor with same dialog behavior
         }

@@ -54,7 +54,9 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.FileValidationResult
 import ai.rever.boss.components.events.stripFilePrefix
+import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
@@ -267,7 +269,10 @@ private fun createBrowserTab(url: String): FluckTabInfo {
  * Creates an editor tab for the given file path.
  * Used in openTerminalLink when handling file: URLs.
  *
- * @param filePath The file path (may include "file:" prefix, which will be stripped)
+ * Note: This function assumes the path has already been validated by the caller.
+ * Use [validateFilePath] before calling this function.
+ *
+ * @param filePath The validated file path (may include "file:" prefix, which will be stripped)
  */
 private fun createEditorTab(filePath: String): EditorTabInfo {
     val cleanPath = stripFilePrefix(filePath)
@@ -320,6 +325,49 @@ private fun openTerminalLink(
     // Determine if this is a file URL - file links open in editor, HTTP links open in browser
     val isFile = isFileUrl(url)
 
+    // For file URLs, perform defensive validation (primary validation happens in DesktopTerminalContent)
+    // This protects against race conditions or direct calls to this function
+    if (isFile) {
+        val filePath = stripFilePrefix(url)
+        when (val result = validateFilePath(filePath)) {
+            is FileValidationResult.Invalid -> {
+                println("[BossApp] Cannot open file: ${result.reason}")
+                return
+            }
+            is FileValidationResult.Valid -> {
+                // Continue with validated path - use canonical path for consistency
+                openTerminalLinkInternal(
+                    url = "file:${result.canonicalPath}",
+                    mode = mode,
+                    splitViewState = splitViewState,
+                    validSourcePanelId = validSourcePanelId,
+                    isFile = true
+                )
+            }
+        }
+    } else {
+        // HTTP URLs don't need validation
+        openTerminalLinkInternal(
+            url = url,
+            mode = mode,
+            splitViewState = splitViewState,
+            validSourcePanelId = validSourcePanelId,
+            isFile = false
+        )
+    }
+}
+
+/**
+ * Internal implementation of openTerminalLink after validation.
+ * This is separated to avoid code duplication after the file validation branch.
+ */
+private fun openTerminalLinkInternal(
+    url: String,
+    mode: TerminalLinkOpenMode,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    validSourcePanelId: String,
+    isFile: Boolean
+) {
     // Helper to create the appropriate tab type
     fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
 
