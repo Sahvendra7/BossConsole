@@ -13,6 +13,9 @@ import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
 import ai.rever.bosseditor.compose.BossEditor
 import ai.rever.bosseditor.compose.NavigationResolveResult
+import ai.rever.bosseditor.features.NavigationFailureReason
+import ai.rever.bosseditor.features.NavigationFeedbackPopup
+import ai.rever.bosseditor.features.NavigationFeedbackState
 import ai.rever.bosseditor.features.UsagesPopup
 import ai.rever.bosseditor.features.UsagesPopupState
 import ai.rever.bosseditor.psi.DefinitionInfo
@@ -115,6 +118,9 @@ fun BossEditorIntegration(
 
     // State for usages popup
     var usagesPopupState by remember { mutableStateOf(UsagesPopupState.Hidden) }
+
+    // State for navigation feedback popup
+    var navigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
 
     // Create lexer based on language
     val lexer = remember(language) {
@@ -373,6 +379,13 @@ fun BossEditorIntegration(
                     definition = definition,
                     anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
                 )
+            },
+            onNavigationFailed = { reason, clickPosition ->
+                navigationFeedbackState = NavigationFeedbackState(
+                    isVisible = true,
+                    reason = reason,
+                    anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
+                )
             }
         )
 
@@ -388,6 +401,18 @@ fun BossEditorIntegration(
                 },
                 onDismiss = {
                     usagesPopupState = UsagesPopupState.Hidden
+                },
+                theme = editorTheme
+            )
+        }
+
+        // Render navigation feedback popup if visible
+        if (navigationFeedbackState.isVisible && navigationFeedbackState.reason != null) {
+            NavigationFeedbackPopup(
+                reason = navigationFeedbackState.reason!!,
+                anchorOffset = navigationFeedbackState.anchorOffset,
+                onDismiss = {
+                    navigationFeedbackState = NavigationFeedbackState.Hidden
                 },
                 theme = editorTheme
             )

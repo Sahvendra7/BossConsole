@@ -7,6 +7,7 @@ import ai.rever.bosseditor.core.OffsetRange
 import androidx.compose.ui.geometry.Offset
 import ai.rever.bosseditor.features.MinimapCanvas
 import ai.rever.bosseditor.features.MinimapConfig
+import ai.rever.bosseditor.features.NavigationFailureReason
 import ai.rever.bosseditor.features.NavigationManager
 import ai.rever.bosseditor.features.NavigationOutcome
 import ai.rever.bosseditor.psi.DefinitionInfo
@@ -135,7 +136,8 @@ fun BossEditor(
     onSelectionChanged: (EditorRange?) -> Unit = {},
     navigationResolver: (suspend (content: String, filePath: String, offset: Int) -> NavigationResolveResult)? = null,
     onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null,
-    onShowUsages: ((references: List<ReferenceLocation>, definition: DefinitionInfo, clickPosition: Offset) -> Unit)? = null
+    onShowUsages: ((references: List<ReferenceLocation>, definition: DefinitionInfo, clickPosition: Offset) -> Unit)? = null,
+    onNavigationFailed: ((reason: NavigationFailureReason, clickPosition: Offset) -> Unit)? = null
 ) {
     // Create input handler
     val inputHandler = remember(state) {
@@ -195,7 +197,7 @@ fun BossEditor(
     val coroutineScope = rememberCoroutineScope()
 
     // Handle navigation request from EditorCanvas
-    val handleNavigationRequest: (EditorPosition, Offset) -> Unit = remember(navigationResolver, navigationManager, onNavigate, onShowUsages, filePath) {
+    val handleNavigationRequest: (EditorPosition, Offset) -> Unit = remember(navigationResolver, navigationManager, onNavigate, onShowUsages, onNavigationFailed, filePath) {
         { position, clickPosition ->
             if (onNavigate != null) {
                 coroutineScope.launch {
@@ -207,7 +209,9 @@ fun BossEditor(
                             is NavigationResolveResult.Found -> {
                                 onNavigate.invoke(result.filePath, result.line, result.column)
                             }
-                            is NavigationResolveResult.NotFound -> { /* No target found */ }
+                            is NavigationResolveResult.NotFound -> {
+                                onNavigationFailed?.invoke(NavigationFailureReason.NOT_FOUND, clickPosition)
+                            }
                         }
                     } else {
                         // Fall back to internal NavigationManager
@@ -218,8 +222,12 @@ fun BossEditor(
                             is NavigationOutcome.ShowUsages -> {
                                 onShowUsages?.invoke(result.references, result.definition, clickPosition)
                             }
-                            is NavigationOutcome.NotFound -> { /* No target found */ }
-                            is NavigationOutcome.Unavailable -> { /* PSI not ready */ }
+                            is NavigationOutcome.NotFound -> {
+                                onNavigationFailed?.invoke(NavigationFailureReason.NOT_FOUND, clickPosition)
+                            }
+                            is NavigationOutcome.Unavailable -> {
+                                onNavigationFailed?.invoke(NavigationFailureReason.UNAVAILABLE, clickPosition)
+                            }
                         }
                     }
                 }
