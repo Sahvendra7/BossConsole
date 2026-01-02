@@ -386,6 +386,29 @@ object CodeEditor: TabTypeInfo {
 // Platform-specific file reading
 expect fun readFileContent(filePath: String): String?
 
+/**
+ * Result of attempting to read a file with size validation.
+ */
+sealed class FileReadResult {
+    data class Success(val content: String) : FileReadResult()
+    data class FileTooLarge(val sizeBytes: Long, val maxSizeBytes: Long) : FileReadResult()
+    data class Error(val message: String) : FileReadResult()
+    object FileNotFound : FileReadResult()
+}
+
+/**
+ * Reads file content with size validation.
+ * Files larger than maxSize will return FileTooLarge instead of loading.
+ *
+ * @param filePath Path to the file
+ * @param maxSize Maximum allowed file size in bytes (default: 100MB)
+ * @return FileReadResult indicating success, size limit exceeded, or error
+ */
+expect fun readFileContentSafe(
+    filePath: String,
+    maxSize: Long = 100 * 1024 * 1024 // 100 MB default
+): FileReadResult
+
 // Platform-specific file writing
 expect fun writeFileContent(filePath: String, content: String): Boolean
 

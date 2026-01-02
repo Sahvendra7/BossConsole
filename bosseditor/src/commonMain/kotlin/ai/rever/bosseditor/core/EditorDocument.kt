@@ -409,11 +409,11 @@ class EditorDocument(initialText: String = "") {
     /**
      * Rebuilds the entire line index from scratch.
      *
-     * Performance: O(n) where n is document length. This is called when newlines
-     * are inserted or deleted, as incremental updates are complex for multi-line edits.
+     * Performance: O(n) where n is document length.
      *
-     * For large documents (10k+ lines), consider implementing incremental updates
-     * for better performance on single-line edits with newlines.
+     * Used for full document operations (setText, constructor initialization)
+     * where incremental updates are not applicable. For insert/delete operations,
+     * use the optimized updateLineIndexAfterInsert/Delete methods instead.
      */
     private fun rebuildLineIndex() {
         lineStarts.clear()
@@ -426,38 +426,85 @@ class EditorDocument(initialText: String = "") {
         }
     }
 
+    /**
+     * Updates line index after an insert operation.
+     *
+     * Performance: O(log L + k + m) where:
+     * - L = total line count (binary search)
+     * - k = newlines in inserted text
+     * - m = lines after insertion point (shifting)
+     */
     private fun updateLineIndexAfterInsert(offset: Int, text: String) {
-        // Count newlines in inserted text
-        val newlines = mutableListOf<Int>()
+        if (text.isEmpty()) return
+
+        // Step 1: Collect newline positions in inserted text
+        val newlineOffsets = mutableListOf<Int>()
         for ((i, char) in text.withIndex()) {
             if (char == '\n') {
-                newlines.add(offset + i + 1)
+                newlineOffsets.add(offset + i + 1) // Line starts AFTER the newline
             }
         }
 
-        if (newlines.isEmpty()) {
-            // No newlines: just shift line starts after insertion point
-            for (i in lineStarts.indices) {
-                if (lineStarts[i] > offset) {
-                    lineStarts[i] += text.length
-                }
-            }
-        } else {
-            // Has newlines: need to insert new line entries and shift
-            rebuildLineIndex() // Simpler to rebuild for now
+        // Step 2: Find insertion point using binary search
+        val insertionLine = findLineForOffset(offset)
+        val firstAffectedIndex = insertionLine + 1
+
+        // Step 3: Insert all new line entries at once (already sorted from text iteration)
+        // Do this BEFORE shifting to avoid position calculation issues
+        if (newlineOffsets.isNotEmpty()) {
+            lineStarts.addAll(firstAffectedIndex, newlineOffsets)
+        }
+
+        // Step 4: Shift originally-affected lines (now at higher indices after insertion)
+        val shiftAmount = text.length
+        val shiftStartIndex = firstAffectedIndex + newlineOffsets.size
+        for (i in shiftStartIndex until lineStarts.size) {
+            lineStarts[i] += shiftAmount
         }
     }
 
+    /**
+     * Updates line index after a delete operation.
+     *
+     * Performance: O(log L + k + m) where:
+     * - L = total line count (binary search)
+     * - k = lines deleted
+     * - m = lines after deletion point (shifting)
+     */
     private fun updateLineIndexAfterDelete(offset: Int, deletedText: String) {
+        if (deletedText.isEmpty()) return
+
+        val deletedLength = deletedText.length
+        val endOffset = offset + deletedLength
+
+        // Step 1: Find the range of lines affected
+        val startLine = findLineForOffset(offset)
+
+        // Step 2: Find lines to remove (lines that start within the deleted range)
+        // A line is removed if its start offset is > offset AND <= endOffset.
+        // Note: We use <= (not <) because a line starting exactly at endOffset has its
+        // preceding newline deleted, so it merges with the previous line and must be removed.
         if ('\n' in deletedText) {
-            rebuildLineIndex() // Simpler to rebuild when lines are affected
-        } else {
-            // No newlines deleted: just shift line starts after deletion point
-            for (i in lineStarts.indices) {
-                if (lineStarts[i] > offset) {
-                    lineStarts[i] -= deletedText.length
-                }
+            // Find first line to potentially remove (first line after startLine)
+            var removeStart = startLine + 1
+
+            // Find last line to remove (last line with start offset <= endOffset)
+            var removeEnd = removeStart
+            while (removeEnd < lineStarts.size && lineStarts[removeEnd] <= endOffset) {
+                removeEnd++
             }
+
+            // Remove the line entries if any
+            if (removeEnd > removeStart) {
+                // Bulk removal using subList
+                lineStarts.subList(removeStart, removeEnd).clear()
+            }
+        }
+
+        // Step 3: Shift remaining line starts after the deletion
+        val firstAffectedIndex = startLine + 1
+        for (i in firstAffectedIndex until lineStarts.size) {
+            lineStarts[i] -= deletedLength
         }
     }
 
@@ -466,8 +513,38 @@ class EditorDocument(initialText: String = "") {
         // are added/removed during notification
         val listenersCopy = listeners.toList()
         for (listener in listenersCopy) {
-            listener.documentChanged(change)
+            try {
+                listener.documentChanged(change)
+            } catch (e: Exception) {
+                println("[EditorDocument] ${e::class.simpleName} in listener ${listener::class.simpleName}: ${e.message}")
+            }
         }
+    }
+
+    /**
+     * Binary search to find the line containing the given offset.
+     * Returns the line index (0-based).
+     *
+     * Performance: O(log L) where L is the number of lines.
+     */
+    private fun findLineForOffset(offset: Int): Int {
+        if (lineStarts.size <= 1) return 0
+
+        var low = 0
+        var high = lineStarts.size - 1
+
+        while (low < high) {
+            // The '+ 1' creates a right-biased midpoint, which prevents infinite loops
+            // when low + 1 == high. Without it, mid would equal low, and if the condition
+            // sets low = mid, we'd loop forever. This is standard for "find rightmost" searches.
+            val mid = (low + high + 1) / 2
+            if (lineStarts[mid] <= offset) {
+                low = mid
+            } else {
+                high = mid - 1
+            }
+        }
+        return low
     }
 
     companion object {
@@ -484,6 +561,23 @@ class EditorDocument(initialText: String = "") {
          * memory overhead reasonable.
          */
         private const val MIN_GAP_SIZE = 64
+
+        /**
+         * Maximum document size in bytes (default 100MB).
+         * Files larger than this will be rejected with a clear error message.
+         */
+        const val DEFAULT_MAX_DOCUMENT_SIZE: Long = 100 * 1024 * 1024 // 100 MB
+
+        /**
+         * Threshold for "large document" optimizations (1MB).
+         * Documents above this size may use different rendering strategies.
+         *
+         * TODO: Use this threshold to enable optimizations like:
+         *  - Viewport-based line rendering (only render visible lines)
+         *  - Delayed syntax highlighting
+         *  - Progressive search/replace
+         */
+        const val LARGE_DOCUMENT_THRESHOLD: Long = 1024 * 1024 // 1 MB
     }
 }
 
