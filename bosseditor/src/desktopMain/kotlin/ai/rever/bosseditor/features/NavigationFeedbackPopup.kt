@@ -11,9 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -34,15 +31,17 @@ enum class NavigationFailureReason {
 
 /**
  * State for the navigation feedback popup.
+ * Uses sealed class for type-safe state handling without nullable fields.
  */
-data class NavigationFeedbackState(
-    val isVisible: Boolean = false,
-    val reason: NavigationFailureReason? = null,
-    val anchorOffset: IntOffset = IntOffset.Zero
-) {
-    companion object {
-        val Hidden = NavigationFeedbackState()
-    }
+sealed class NavigationFeedbackState {
+    /** Popup is hidden */
+    data object Hidden : NavigationFeedbackState()
+
+    /** Popup is visible with a reason and position */
+    data class Visible(
+        val reason: NavigationFailureReason,
+        val anchorOffset: IntOffset
+    ) : NavigationFeedbackState()
 }
 
 /**
@@ -78,15 +77,7 @@ fun NavigationFeedbackPopup(
         Surface(
             modifier = Modifier
                 .shadow(4.dp, RoundedCornerShape(6.dp))
-                .clip(RoundedCornerShape(6.dp))
-                .onKeyEvent { event ->
-                    if (event.key == Key.Escape) {
-                        onDismiss()
-                        true
-                    } else {
-                        false
-                    }
-                },
+                .clip(RoundedCornerShape(6.dp)),
             color = colors.background,
             elevation = 4.dp
         ) {

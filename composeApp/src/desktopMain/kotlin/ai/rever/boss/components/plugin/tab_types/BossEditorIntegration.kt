@@ -120,7 +120,7 @@ fun BossEditorIntegration(
     var usagesPopupState by remember { mutableStateOf(UsagesPopupState.Hidden) }
 
     // State for navigation feedback popup
-    var navigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
+    var navigationFeedbackState: NavigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
 
     // Create lexer based on language
     val lexer = remember(language) {
@@ -381,8 +381,7 @@ fun BossEditorIntegration(
                 )
             },
             onNavigationFailed = { reason, clickPosition ->
-                navigationFeedbackState = NavigationFeedbackState(
-                    isVisible = true,
+                navigationFeedbackState = NavigationFeedbackState.Visible(
                     reason = reason,
                     anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
                 )
@@ -407,10 +406,11 @@ fun BossEditorIntegration(
         }
 
         // Render navigation feedback popup if visible
-        if (navigationFeedbackState.isVisible && navigationFeedbackState.reason != null) {
+        val feedbackState = navigationFeedbackState
+        if (feedbackState is NavigationFeedbackState.Visible) {
             NavigationFeedbackPopup(
-                reason = navigationFeedbackState.reason!!,
-                anchorOffset = navigationFeedbackState.anchorOffset,
+                reason = feedbackState.reason,
+                anchorOffset = feedbackState.anchorOffset,
                 onDismiss = {
                     navigationFeedbackState = NavigationFeedbackState.Hidden
                 },
