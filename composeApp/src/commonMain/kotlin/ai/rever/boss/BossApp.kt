@@ -54,6 +54,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.components.events.ParsedFileReference
+import ai.rever.boss.components.events.parseFileReference
+import ai.rever.boss.components.events.stripFilePrefix
+import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
@@ -94,6 +99,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import com.arkivanov.decompose.ComponentContext
 import kotlin.random.Random
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -261,12 +268,38 @@ private fun createBrowserTab(url: String): FluckTabInfo {
 }
 
 /**
+ * Creates an editor tab for the given file path.
+ * Used in openTerminalLink when handling file: URLs.
+ *
+ * Note: This function assumes the path has already been validated by the caller.
+ * Use [validateFilePath] before calling this function.
+ *
+ * @param filePath The validated file path (may include "file:" prefix, which will be stripped)
+ */
+private fun createEditorTab(filePath: String): EditorTabInfo {
+    val cleanPath = stripFilePrefix(filePath)
+    val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+    return EditorTabInfo(
+        id = "editor-${Random.nextLong()}",
+        typeId = TabTypeId("editor"),
+        title = fileName,
+        icon = Icons.Outlined.Code,
+        filePath = cleanPath
+    )
+}
+
+/**
+ * Checks if a URL is a file URL (starts with "file:").
+ */
+private fun isFileUrl(url: String): Boolean = url.startsWith("file:")
+
+/**
  * Helper function to open a terminal link based on user's selected mode.
- * Handles creating browser tabs and splitting panels as needed.
+ * Handles creating browser tabs (for HTTP) or editor tabs (for file:) and splitting panels.
  *
  * Issue #346: Terminal link click prompt with remember preference
  *
- * @param url The URL to open
+ * @param url The URL to open (HTTP or file: URL)
  * @param mode How to open the link (split or new tab)
  * @param splitViewState The split view state for panel operations
  * @param sourceTerminalId Optional terminal tab ID where the link was clicked (for finding source panel)
@@ -291,6 +324,81 @@ private fun openTerminalLink(
         splitViewState.activePanelId
     }
 
+    // Determine if this is a file URL - file links open in editor, HTTP links open in browser
+    val isFile = isFileUrl(url)
+
+    // For file URLs, perform defensive validation (primary validation happens in DesktopTerminalContent)
+    // This protects against race conditions or direct calls to this function
+    if (isFile) {
+        // Parse file reference to extract line:column (e.g., file:/path/file.kt:123:45)
+        val rawPath = stripFilePrefix(url)
+        val parsed = parseFileReference(rawPath)
+
+        when (val result = validateFilePath(parsed.path)) {
+            is FileValidationResult.Invalid -> {
+                println("[BossApp] Cannot open file: ${result.reason}")
+                return
+            }
+            is FileValidationResult.Valid -> {
+                // Continue with validated path - use canonical path for consistency
+                openTerminalLinkInternal(
+                    url = "file:${result.canonicalPath}",
+                    mode = mode,
+                    splitViewState = splitViewState,
+                    validSourcePanelId = validSourcePanelId,
+                    isFile = true,
+                    fileLine = parsed.line,
+                    fileColumn = parsed.column
+                )
+            }
+        }
+    } else {
+        // HTTP URLs don't need validation
+        openTerminalLinkInternal(
+            url = url,
+            mode = mode,
+            splitViewState = splitViewState,
+            validSourcePanelId = validSourcePanelId,
+            isFile = false
+        )
+    }
+}
+
+/**
+ * Internal implementation of openTerminalLink after validation.
+ * This is separated to avoid code duplication after the file validation branch.
+ *
+ * @param url The URL to open (HTTP or file: URL with canonical path)
+ * @param mode How to open the link (split or new tab)
+ * @param splitViewState The split view state for panel operations
+ * @param validSourcePanelId The validated source panel ID
+ * @param isFile Whether this is a file URL (vs HTTP)
+ * @param fileLine 1-based line number for file navigation (0 = no navigation)
+ * @param fileColumn 1-based column number for file navigation (0 = no navigation)
+ */
+private fun openTerminalLinkInternal(
+    url: String,
+    mode: TerminalLinkOpenMode,
+    splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    validSourcePanelId: String,
+    isFile: Boolean,
+    fileLine: Int = 0,
+    fileColumn: Int = 0
+) {
+    // Helper to create the appropriate tab type
+    fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
+
+    // Helper to trigger navigation after opening a file with line:column
+    // Uses GlobalScope since this is fire-and-forget event emission
+    fun navigateToLineIfNeeded() {
+        if (isFile && fileLine > 0) {
+            val cleanPath = stripFilePrefix(url)
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                NavigationTargetBus.navigateTo(cleanPath, fileLine, fileColumn)
+            }
+        }
+    }
+
     when (mode) {
         TerminalLinkOpenMode.EXISTING_SPLIT -> {
             // Open in existing split panel (not the source panel where terminal is)
@@ -303,11 +411,12 @@ private fun openTerminalLink(
                     splitViewState.getFirstOtherPanelExcluding(validSourcePanelId)
             }
             if (targetPanel != null) {
-                val browserTab = createBrowserTab(url)
-                val tabIndex = targetPanel.tabsComponent.addTab(browserTab)
+                val tab = createTab()
+                val tabIndex = targetPanel.tabsComponent.addTab(tab)
                 if (tabIndex >= 0) {
                     targetPanel.tabsComponent.selectTab(tabIndex)
                     splitViewState.setActivePanel(targetPanel.id)
+                    navigateToLineIfNeeded()
                 }
             } else {
                 // IMPORTANT: Fallback when user saved EXISTING_SPLIT preference but later closed all splits.
@@ -315,8 +424,9 @@ private fun openTerminalLink(
                 splitViewState.splitPanel(
                     panelId = validSourcePanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = createBrowserTab(url)
+                    tabToMove = createTab()
                 )
+                navigateToLineIfNeeded()
             }
         }
         TerminalLinkOpenMode.VERTICAL_SPLIT, TerminalLinkOpenMode.HORIZONTAL_SPLIT -> {
@@ -329,12 +439,21 @@ private fun openTerminalLink(
             splitViewState.splitPanel(
                 panelId = validSourcePanelId,
                 orientation = orientation,
-                tabToMove = createBrowserTab(url)
+                tabToMove = createTab()
             )
+            navigateToLineIfNeeded()
         }
         TerminalLinkOpenMode.NEW_TAB, TerminalLinkOpenMode.ALWAYS_ASK -> {
             // NEW_TAB opens in current panel; ALWAYS_ASK shouldn't reach here but handle gracefully
-            splitViewState.openUrlInActivePanel(url, "Loading...")
+            if (isFile) {
+                // For file URLs, use openFileInActivePanel for consistent behavior
+                val cleanPath = stripFilePrefix(url)
+                val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+                splitViewState.openFileInActivePanel(cleanPath, fileName)
+                navigateToLineIfNeeded()
+            } else {
+                splitViewState.openUrlInActivePanel(url, "Loading...")
+            }
         }
     }
 }
