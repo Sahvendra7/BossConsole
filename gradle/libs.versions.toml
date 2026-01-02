@@ -18,7 +18,7 @@ kotlinx-datetime = "0.7.1-0.6.x-compat"
 kotlinx-serialization = "1.9.0"
 ktor = "3.3.3"
 logback = "1.5.23"
-bossterm = "1.0.64"
+bossterm = "1.0.65"
 foundationLayoutAndroid = "1.8.2"
 precompose = "1.6.2"
 slf4j = "2.0.17"
@@ -27,6 +27,11 @@ uiAndroid = "1.8.2"
 zxing = "3.5.4"
 jxbrowser = "8.15.0"
 jxbrowser-gradle-plugin = "2.0.0"
+rsyntaxtextarea = "3.5.4"
+rstaui = "3.3.1"
+autocomplete = "3.3.1"
+# IntelliJ PSI for code navigation
+intellij-platform = "243.21565.199"
 
 [libraries]
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
@@ -38,6 +43,7 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling", version.ref = "compose-ui" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 bossterm-compose = { module = "com.risaboss:bossterm-compose", version.ref = "bossterm" }
@@ -72,6 +78,15 @@ supabase-storage = { module = "io.github.jan-tennert.supabase:storage-kt", versi
 supabase-functions = { module = "io.github.jan-tennert.supabase:functions-kt", version.ref = "supabase" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 zxing-javase = { module = "com.google.zxing:javase", version.ref = "zxing" }
+rsyntaxtextarea = { module = "com.fifesoft:rsyntaxtextarea", version.ref = "rsyntaxtextarea" }
+rstaui = { module = "com.fifesoft:rstaui", version.ref = "rstaui" }
+autocomplete = { module = "com.fifesoft:autocomplete", version.ref = "autocomplete" }
+# IntelliJ PSI dependencies for code navigation
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
+intellij-platform-core = { module = "com.jetbrains.intellij.platform:core", version.ref = "intellij-platform" }
+intellij-platform-core-impl = { module = "com.jetbrains.intellij.platform:core-impl", version.ref = "intellij-platform" }
+intellij-java-psi = { module = "com.jetbrains.intellij.java:java-psi", version.ref = "intellij-platform" }
+intellij-java-psi-impl = { module = "com.jetbrains.intellij.java:java-psi-impl", version.ref = "intellij-platform" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

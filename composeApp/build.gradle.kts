@@ -148,6 +148,9 @@ repositories {
     google()
     mavenCentral()
     maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
+    // JetBrains IntelliJ Platform repositories for PSI code navigation
+    maven("https://www.jetbrains.com/intellij-repository/releases")
+    maven("https://cache-redirector.jetbrains.com/intellij-dependencies")
 }
 
 jxbrowser {
@@ -248,6 +251,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
+            implementation(projects.bosseditor)
             implementation(libs.precompose)
 //            implementation(libs.precompose.molecule)
             implementation(libs.precompose.viewmodel)
@@ -305,6 +309,20 @@ kotlin {
 
             // CLI argument parsing
             implementation("com.github.ajalt.clikt:clikt:5.0.3")
+
+            // RSyntaxTextArea - Advanced code editor with syntax highlighting, code folding, etc.
+            // https://github.com/bobbylight/RSyntaxTextArea
+            implementation(libs.rsyntaxtextarea)
+            // RSTAUI - Search/replace dialogs, Go to Line, Find toolbar
+            implementation(libs.rstaui)
+            // AutoComplete - Code completion with parameter hints
+            implementation(libs.autocomplete)
+
+            // Kotlin PSI - Code navigation with go-to-definition for Kotlin files
+            // Uses kotlin-compiler-embeddable which includes shaded IntelliJ PSI classes
+            // at org.jetbrains.kotlin.com.intellij.* (not com.intellij.*)
+            // Java PSI support can be added later with separate non-conflicting dependencies
+            implementation(libs.kotlin.compiler.embeddable)
         }
 
         desktopTest.dependencies {
@@ -989,7 +1007,10 @@ tasks.register<Jar>("createExecutableJar") {
     dependsOn("desktopJar")
     group = "build"
     description = "Creates an executable JAR with all dependencies"
-    
+
+    // Enable zip64 for JARs with more than 65535 entries
+    isZip64 = true
+
     archiveClassifier.set("all")
     archiveBaseName.set("BOSS")
     archiveVersion.set(appVersion as String)

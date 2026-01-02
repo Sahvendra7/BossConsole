@@ -31,6 +31,15 @@ object KeymapActions {
     // Workspace Actions
     const val WORKSPACE_SAVE = "workspace.save"
 
+    // Editor Actions
+    const val EDITOR_SAVE = "editor.save"
+    const val EDITOR_SAVE_ALL = "editor.save_all"
+    const val EDITOR_FIND = "editor.find"
+    const val EDITOR_REPLACE = "editor.replace"
+    const val EDITOR_FIND_NEXT = "editor.find_next"
+    const val EDITOR_FIND_PREVIOUS = "editor.find_previous"
+    const val EDITOR_GO_TO_LINE = "editor.go_to_line"
+
     // Panel/Tool Actions
     const val CODEBASE_OPEN = "codebase.open"
 
@@ -50,6 +59,7 @@ object KeymapActions {
         const val BROWSER_CONTROLS = "Browser Controls"
         const val NAVIGATION = "Navigation"
         const val WORKSPACE = "Workspace"
+        const val EDITOR = "Editor"
         const val TOOLS = "Tools"
         const val VIEW = "View/UI"
         const val DEBUG = "Debug"
@@ -73,6 +83,13 @@ object KeymapActions {
         PANEL_NAVIGATE_DOWN to "Switch to the next panel (downward)",
         QUICK_SWITCHER_OPEN to "Open quick switcher (Top of Mind)",
         WORKSPACE_SAVE to "Save the current workspace layout",
+        EDITOR_SAVE to "Save the current file",
+        EDITOR_SAVE_ALL to "Save all open files",
+        EDITOR_FIND to "Open find dialog",
+        EDITOR_REPLACE to "Open find and replace dialog",
+        EDITOR_FIND_NEXT to "Find next occurrence",
+        EDITOR_FIND_PREVIOUS to "Find previous occurrence",
+        EDITOR_GO_TO_LINE to "Go to specific line number",
         CODEBASE_OPEN to "Open CodeBase panel",
         FOCUS_MODE_TOGGLE to "Toggle Focus Mode (hide/show UI bars)",
         SETTINGS_OPEN to "Open application settings",
@@ -97,6 +114,13 @@ object KeymapActions {
         PANEL_NAVIGATE_DOWN to Categories.NAVIGATION,
         QUICK_SWITCHER_OPEN to Categories.NAVIGATION,
         WORKSPACE_SAVE to Categories.WORKSPACE,
+        EDITOR_SAVE to Categories.EDITOR,
+        EDITOR_SAVE_ALL to Categories.EDITOR,
+        EDITOR_FIND to Categories.EDITOR,
+        EDITOR_REPLACE to Categories.EDITOR,
+        EDITOR_FIND_NEXT to Categories.EDITOR,
+        EDITOR_FIND_PREVIOUS to Categories.EDITOR,
+        EDITOR_GO_TO_LINE to Categories.EDITOR,
         CODEBASE_OPEN to Categories.TOOLS,
         FOCUS_MODE_TOGGLE to Categories.VIEW,
         SETTINGS_OPEN to Categories.VIEW,
@@ -121,6 +145,13 @@ object KeymapActions {
         PANEL_NAVIGATE_DOWN to ShortcutContext.GLOBAL,
         QUICK_SWITCHER_OPEN to ShortcutContext.GLOBAL,
         WORKSPACE_SAVE to ShortcutContext.WORKSPACE,
+        EDITOR_SAVE to ShortcutContext.EDITOR,
+        EDITOR_SAVE_ALL to ShortcutContext.EDITOR,
+        EDITOR_FIND to ShortcutContext.EDITOR,
+        EDITOR_REPLACE to ShortcutContext.EDITOR,
+        EDITOR_FIND_NEXT to ShortcutContext.EDITOR,
+        EDITOR_FIND_PREVIOUS to ShortcutContext.EDITOR,
+        EDITOR_GO_TO_LINE to ShortcutContext.EDITOR,
         CODEBASE_OPEN to ShortcutContext.GLOBAL,
         FOCUS_MODE_TOGGLE to ShortcutContext.GLOBAL,
         SETTINGS_OPEN to ShortcutContext.GLOBAL,
@@ -136,6 +167,7 @@ object KeymapActions {
         BROWSER_RELOAD, BROWSER_ZOOM_RESET, BROWSER_ZOOM_IN, BROWSER_ZOOM_OUT,
         PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN, QUICK_SWITCHER_OPEN,
         WORKSPACE_SAVE,
+        EDITOR_SAVE, EDITOR_SAVE_ALL, EDITOR_FIND, EDITOR_REPLACE, EDITOR_FIND_NEXT, EDITOR_FIND_PREVIOUS, EDITOR_GO_TO_LINE,
         CODEBASE_OPEN,
         FOCUS_MODE_TOGGLE,
         SETTINGS_OPEN,

@@ -214,7 +214,7 @@ fun CodeEditorUI(
 /**
  * Execute a detected main function by creating a run configuration and sending it to the event bus.
  */
-private suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
+suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
     try {
         val detector = MainFunctionDetectorProvider.get()
         // Find the actual project root for the working directory
@@ -386,6 +386,32 @@ object CodeEditor: TabTypeInfo {
 // Platform-specific file reading
 expect fun readFileContent(filePath: String): String?
 
+/**
+ * Result of attempting to read a file with size validation.
+ */
+sealed class FileReadResult {
+    data class Success(val content: String) : FileReadResult()
+    data class FileTooLarge(val sizeBytes: Long, val maxSizeBytes: Long) : FileReadResult()
+    data class Error(val message: String) : FileReadResult()
+    object FileNotFound : FileReadResult()
+}
+
+/**
+ * Reads file content with size validation.
+ * Files larger than maxSize will return FileTooLarge instead of loading.
+ *
+ * @param filePath Path to the file
+ * @param maxSize Maximum allowed file size in bytes (default: 100MB)
+ * @return FileReadResult indicating success, size limit exceeded, or error
+ */
+expect fun readFileContentSafe(
+    filePath: String,
+    maxSize: Long = 100 * 1024 * 1024 // 100 MB default
+): FileReadResult
+
+// Platform-specific file writing
+expect fun writeFileContent(filePath: String, content: String): Boolean
+
 // Platform-specific settings
 expect fun getCodeEditorFontSize(): Int
 expect fun getCodeEditorFontFamily(): FontFamily
@@ -396,15 +422,38 @@ expect fun getCodeEditorLineNumberBgColor(): Color
 expect fun getCodeEditorKeywordColor(): Color
 expect fun getCodeEditorCommentColor(): Color
 
-// EditorTabInfo to store file path
+/**
+ * Platform-specific code editor UI.
+ * Desktop uses RSyntaxTextArea, other platforms use BasicTextField.
+ */
+@Composable
+expect fun PlatformCodeEditorUI(
+    content: String,
+    onContentChange: (String) -> Unit,
+    language: String,
+    filePath: String,
+    projectPath: String,
+    modifier: Modifier,
+    onModifiedStateChange: (Boolean) -> Unit,
+    onSaveRequested: suspend () -> Boolean
+)
+
+// EditorTabInfo to store file path and modification state
 data class EditorTabInfo(
     override val id: String,
     override val typeId: TabTypeId,
     override val title: String,
     override val icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.Code,
     override val tabIcon: TabIcon? = null,
-    val filePath: String = ""
-) : TabInfo
+    val filePath: String = "",
+    val isModified: Boolean = false
+) : TabInfo {
+    /**
+     * Returns the display title with a modification indicator (*) if modified.
+     */
+    val displayTitle: String
+        get() = if (isModified) "$title *" else title
+}
 
 class CodeEditorTabComponent(
     override val config: TabInfo,
@@ -468,13 +517,15 @@ class CodeEditorTabComponent(
         val currentFilePath = (config as? EditorTabInfo)?.filePath ?: ""
         val projectPath = currentFilePath.substringBeforeLast('/')
 
-        CodeEditorUI(
+        PlatformCodeEditorUI(
             content = currentContent,
             onContentChange = { _content.value = it },
             language = currentLanguage,
             filePath = currentFilePath,
             projectPath = projectPath,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            onModifiedStateChange = { /* TODO: Update EditorTabInfo.isModified */ },
+            onSaveRequested = { writeFileContent(currentFilePath, _content.value) }
         )
     }
 
