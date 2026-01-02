@@ -15,21 +15,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.Icon
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WifiOff
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +46,13 @@ fun OfflineScreen(
     val isAutoRetrying by NetworkMonitorService.isAutoRetrying.collectAsState()
     val nextRetryCountdown by NetworkMonitorService.nextRetryCountdown.collectAsState()
     var isManualRetrying by remember { mutableStateOf(false) }
+
+    // Stop auto-retry when screen is disposed (user goes online)
+    DisposableEffect(Unit) {
+        onDispose {
+            NetworkMonitorService.stopAutoRetry()
+        }
+    }
 
     Box(
         modifier = Modifier

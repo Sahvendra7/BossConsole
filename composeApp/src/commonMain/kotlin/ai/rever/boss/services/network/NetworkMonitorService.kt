@@ -32,8 +32,12 @@ object NetworkMonitorService {
 
     private const val CONNECTIVITY_CHECK_URL = "https://api.risaboss.com/health"
     private const val FALLBACK_CHECK_URL = "https://www.google.com"
-    private const val CONNECTION_TIMEOUT_MS = 5000
+    private const val INITIAL_CONNECTION_TIMEOUT_MS = 10000  // 10s for initial check (slow networks)
+    private const val RETRY_CONNECTION_TIMEOUT_MS = 3000     // 3s for auto-retry (more responsive)
     private const val AUTO_RETRY_INTERVAL_SECONDS = 5
+
+    // Track if this is an auto-retry check (uses shorter timeout)
+    private var isAutoRetryCheck = false
 
     /**
      * Check network connectivity
@@ -69,17 +73,19 @@ object NetworkMonitorService {
     }
 
     private fun performConnectivityCheck(urlString: String): Boolean {
+        val timeoutMs = if (isAutoRetryCheck) RETRY_CONNECTION_TIMEOUT_MS else INITIAL_CONNECTION_TIMEOUT_MS
         return try {
             val url = URL(urlString)
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "HEAD"
-            connection.connectTimeout = CONNECTION_TIMEOUT_MS
-            connection.readTimeout = CONNECTION_TIMEOUT_MS
+            connection.connectTimeout = timeoutMs
+            connection.readTimeout = timeoutMs
             connection.useCaches = false
             val responseCode = connection.responseCode
             connection.disconnect()
             responseCode in 200..399
         } catch (e: Exception) {
+            println("NetworkMonitorService: Connectivity check to $urlString failed: ${e.message}")
             false
         }
     }
@@ -91,6 +97,7 @@ object NetworkMonitorService {
         if (autoRetryJob?.isActive == true) return
 
         _isAutoRetrying.value = true
+        isAutoRetryCheck = true  // Use shorter timeout for retry checks
         autoRetryJob = scope.launch {
             while (isActive && _networkState.value !is NetworkState.Connected) {
                 for (i in AUTO_RETRY_INTERVAL_SECONDS downTo 1) {
@@ -102,6 +109,7 @@ object NetworkMonitorService {
                 val connected = checkConnectivity()
                 if (connected) {
                     _isAutoRetrying.value = false
+                    isAutoRetryCheck = false
                     onConnected()
                     break
                 }
@@ -117,6 +125,7 @@ object NetworkMonitorService {
         autoRetryJob = null
         _isAutoRetrying.value = false
         _nextRetryCountdown.value = 0
+        isAutoRetryCheck = false
     }
 
     /**
@@ -127,8 +136,19 @@ object NetworkMonitorService {
         return checkConnectivity()
     }
 
+    /**
+     * Reset service state
+     */
     fun reset() {
         stopAutoRetry()
         _networkState.value = NetworkState.Checking
+    }
+
+    /**
+     * Cleanup resources - call on application shutdown
+     */
+    fun cleanup() {
+        stopAutoRetry()
+        scope.coroutineContext[Job]?.cancel()
     }
 }
