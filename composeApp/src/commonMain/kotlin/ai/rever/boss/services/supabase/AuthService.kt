@@ -181,6 +181,9 @@ object AuthService {
         object NotAuthenticated : AuthState()
         object Authenticated : AuthState()
         data class Error(val message: String) : AuthState()
+
+        /** Offline - no internet connection during startup */
+        object Offline : AuthState()
     }
 
 }
