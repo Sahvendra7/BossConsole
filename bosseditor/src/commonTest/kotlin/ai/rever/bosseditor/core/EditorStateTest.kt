@@ -636,4 +636,20 @@ class EditorStateTest {
         val state = EditorState("content", filePath = "/path/to/file.kt")
         assertEquals("/path/to/file.kt", state.filePath)
     }
+
+    @Test
+    fun testSetTextRejectsOversizedContent() {
+        val state = EditorState()
+
+        // Create text that exceeds the 100MB limit (100MB / 2 bytes per char = 50M chars)
+        // We use a smaller test value to avoid OOM in tests: ~60MB worth
+        val oversizedText = "x".repeat(60_000_000) // 60M chars = ~120MB in JVM
+
+        val exception = assertFailsWith<IllegalArgumentException> {
+            state.setText(oversizedText)
+        }
+
+        assertTrue(exception.message?.contains("too large") == true)
+        assertTrue(exception.message?.contains("exceeds maximum") == true)
+    }
 }

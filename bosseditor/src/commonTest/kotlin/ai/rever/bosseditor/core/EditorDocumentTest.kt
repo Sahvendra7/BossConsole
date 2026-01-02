@@ -787,4 +787,30 @@ class EditorDocumentTest {
         assertEquals("B", doc.getLineText(0))
         assertEquals("C", doc.getLineText(1))
     }
+
+    @Test
+    fun testListenerExceptionDoesNotBreakOtherListeners() {
+        val doc = EditorDocument("test")
+        var listener1Called = false
+        var listener2Called = false
+
+        doc.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                listener1Called = true
+                throw RuntimeException("Listener 1 failed intentionally")
+            }
+        })
+
+        doc.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(change: DocumentChange) {
+                listener2Called = true
+            }
+        })
+
+        // This should not throw - exceptions in listeners are caught
+        doc.insert(0, "x")
+
+        assertTrue(listener1Called, "First listener should have been called")
+        assertTrue(listener2Called, "Second listener should still be called despite first throwing")
+    }
 }

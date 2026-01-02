@@ -364,8 +364,17 @@ class EditorState(
 
     /**
      * Sets the document text and resets state.
+     * @throws IllegalArgumentException if text exceeds maximum document size
      */
     fun setText(text: String) {
+        // Validate text size before loading (approximate: 2 bytes per char in JVM)
+        val textBytes = text.length.toLong() * 2
+        if (textBytes > EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE) {
+            throw IllegalArgumentException(
+                "Text too large: ${textBytes / (1024 * 1024)}MB exceeds maximum ${EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE / (1024 * 1024)}MB"
+            )
+        }
+
         document.setText(text)
         undoManager.clear()
         _caretPosition.value = EditorPosition.ZERO
