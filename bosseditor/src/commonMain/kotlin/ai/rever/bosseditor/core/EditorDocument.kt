@@ -516,7 +516,7 @@ class EditorDocument(initialText: String = "") {
             try {
                 listener.documentChanged(change)
             } catch (e: Exception) {
-                println("[EditorDocument] Error in document listener: ${e.message}")
+                println("[EditorDocument] ${e::class.simpleName} in listener ${listener::class.simpleName}: ${e.message}")
             }
         }
     }

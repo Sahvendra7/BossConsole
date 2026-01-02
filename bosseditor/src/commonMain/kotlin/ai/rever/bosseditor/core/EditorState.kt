@@ -31,6 +31,14 @@ class EditorState(
     initialText: String = "",
     val filePath: String? = null
 ) {
+    companion object {
+        /**
+         * Maximum document size in characters (50 million ≈ 100MB in UTF-16).
+         * Using character count avoids platform-dependent byte calculations.
+         */
+        const val MAX_DOCUMENT_CHARS = 50_000_000
+    }
+
     // Core document
     val document = EditorDocument(initialText)
 
@@ -364,14 +372,14 @@ class EditorState(
 
     /**
      * Sets the document text and resets state.
-     * @throws IllegalArgumentException if text exceeds maximum document size
+     * @throws IllegalArgumentException if text exceeds maximum character limit
      */
     fun setText(text: String) {
-        // Validate text size before loading (approximate: 2 bytes per char in JVM)
-        val textBytes = text.length.toLong() * 2
-        if (textBytes > EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE) {
+        // Validate text size using character count (50M chars ≈ 100MB in UTF-16)
+        // This avoids platform-dependent byte calculations
+        if (text.length > MAX_DOCUMENT_CHARS) {
             throw IllegalArgumentException(
-                "Text too large: ${textBytes / (1024 * 1024)}MB exceeds maximum ${EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE / (1024 * 1024)}MB"
+                "Text too large: ${text.length} characters exceeds maximum $MAX_DOCUMENT_CHARS characters"
             )
         }
 
