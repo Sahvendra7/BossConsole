@@ -10,13 +10,12 @@ import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.RoleService
+import ai.rever.boss.services.network.NetworkMonitorService
 import ai.rever.boss.utils.VersionVerifier
-import androidx.compose.runtime.mutableStateOf
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.publish
 import kotlin.time.ExperimentalTime
 
 /**
@@ -33,6 +32,9 @@ internal object CoreAuthService {
     private val _isSessionResolved = MutableStateFlow(false)
     val isSessionResolved: StateFlow<Boolean> = _isSessionResolved.asStateFlow()
 
+    // Prevent duplicate initialization attempts (race condition fix)
+    private var isInitializing = false
+
     /**
      * Initialize the auth service and check for existing session
      */
@@ -41,11 +43,44 @@ internal object CoreAuthService {
             // Verify version consistency at startup (Issue #111 fix)
             VersionVerifier.verifyVersionConsistency()
 
+            // Check network connectivity before initializing Supabase
+            authScope.launch {
+                val isConnected = NetworkMonitorService.checkConnectivity()
+                if (!isConnected) {
+                    println("CoreAuthService.initialize: No network connectivity, entering offline state")
+                    handleOfflineStart()
+                    return@launch
+                }
+
+                // Network is available, proceed with normal initialization
+                initializeWithNetwork()
+            }
+        } catch (e: Exception) {
+            AuthStateManager.setAuthState(AuthService.AuthState.Error(e.message ?: "Failed to initialize authentication"))
+        }
+    }
+
+    /**
+     * Initialize authentication with network available
+     * Uses isInitializing flag to prevent duplicate initialization attempts
+     */
+    private fun initializeWithNetwork() {
+        // Prevent duplicate initialization (race condition fix)
+        if (isInitializing) {
+            println("CoreAuthService.initializeWithNetwork: Already initializing, skipping")
+            return
+        }
+        isInitializing = true
+
+        // Stop any running auto-retry since we're now initializing
+        NetworkMonitorService.stopAutoRetry()
+
+        try {
             // Initialize Supabase with build-time configuration
             if (!SupabaseConfig.isInitialized.value) {
                 SupabaseConfig.initializeFromEnvironment()
             }
-            
+
             // Wait for session to load from storage and then set proper state
             authScope.launch {
                 SupabaseConfig.client.auth.sessionStatus.collect { sessionStatus ->
@@ -133,7 +168,35 @@ internal object CoreAuthService {
             AuthStateManager.setAuthState(AuthService.AuthState.Error(e.message ?: "Failed to initialize authentication"))
         }
     }
-    
+
+    /**
+     * Handle offline state at startup
+     * Sets auth state to Offline and starts auto-retry
+     */
+    private fun handleOfflineStart() {
+        _isSessionResolved.value = true
+        AuthStateManager.setAuthState(AuthService.AuthState.Offline)
+
+        // Start auto-retry in background
+        NetworkMonitorService.startAutoRetry {
+            println("CoreAuthService: Network restored, retrying initialization")
+            initializeWithNetwork()
+        }
+    }
+
+    /**
+     * Retry initialization after network is restored
+     * Called from OfflineScreen retry button
+     */
+    suspend fun retryInitialization(): Boolean {
+        val isConnected = NetworkMonitorService.manualRetry()
+        if (isConnected) {
+            println("CoreAuthService.retryInitialization: Network restored, initializing")
+            initializeWithNetwork()
+        }
+        return isConnected
+    }
+
     /**
      * Sign out the current user
      */

@@ -4,6 +4,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import ai.rever.boss.components.auth.LoginScreen
 import ai.rever.boss.components.misc.LoadingScreen
+import ai.rever.boss.components.misc.OfflineScreen
+import ai.rever.boss.services.auth.CoreAuthService
 import ai.rever.boss.services.auth.MagicLinkErrorService
 import ai.rever.boss.services.auth.PasskeySessionEventHandler
 import ai.rever.boss.services.supabase.AuthService
@@ -137,7 +139,17 @@ fun ComponentContext.BossAppWithAuth(
             println("BossAppWithAuth: Showing loading screen")
             LoadingScreen()
         }
-        
+
+        is AuthService.AuthState.Offline -> {
+            // Show offline screen with retry button
+            println("BossAppWithAuth: Showing offline screen")
+            OfflineScreen(
+                onRetry = {
+                    CoreAuthService.retryInitialization()
+                }
+            )
+        }
+
         is AuthService.AuthState.NotAuthenticated,
         is AuthService.AuthState.Error -> {
             // Show login screen (it will handle 2FA verification internally)
@@ -150,7 +162,7 @@ fun ComponentContext.BossAppWithAuth(
                 )
             }
         }
-        
+
         is AuthService.AuthState.Authenticated -> {
             // Show main BOSS app - all auth methods provide inherent 2FA
             BossApp(
