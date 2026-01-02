@@ -197,7 +197,7 @@ fun BossEditor(
     val coroutineScope = rememberCoroutineScope()
 
     // Handle navigation request from EditorCanvas
-    val handleNavigationRequest: (EditorPosition, Offset) -> Unit = remember(navigationResolver, navigationManager, onNavigate, onShowUsages, onNavigationFailed, filePath) {
+    val handleNavigationRequest: (EditorPosition, Offset) -> Unit = remember(navigationResolver, navigationManager, onNavigate, onShowUsages, onNavigationFailed, filePath, coroutineScope) {
         { position, clickPosition ->
             if (onNavigate != null) {
                 coroutineScope.launch {
