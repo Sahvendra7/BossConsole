@@ -513,7 +513,11 @@ class EditorDocument(initialText: String = "") {
         // are added/removed during notification
         val listenersCopy = listeners.toList()
         for (listener in listenersCopy) {
-            listener.documentChanged(change)
+            try {
+                listener.documentChanged(change)
+            } catch (e: Exception) {
+                println("[EditorDocument] ${e::class.simpleName} in listener ${listener::class.simpleName}: ${e.message}")
+            }
         }
     }
 
