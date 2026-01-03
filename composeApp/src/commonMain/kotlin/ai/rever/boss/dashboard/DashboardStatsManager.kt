@@ -2,7 +2,9 @@ package ai.rever.boss.dashboard
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,14 +47,16 @@ data class DashboardStats(
  * Uses StateFlow for reactive UI updates.
  */
 object DashboardStatsManager {
+    private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
     private val settingsFile = File(System.getProperty("user.home"), ".boss/dashboard-stats.json")
     private val json = Json {
-        prettyPrint = true
+        prettyPrint = false
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var saveJob: Job? = null
 
     private val _stats = MutableStateFlow(DashboardStats())
     val stats: StateFlow<DashboardStats> = _stats.asStateFlow()
@@ -87,9 +91,21 @@ object DashboardStatsManager {
     }
 
     /**
-     * Save stats to disk.
+     * Save stats to disk with debouncing.
+     * Cancels any pending save and schedules a new one after SAVE_DEBOUNCE_MS.
      */
-    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+    private fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            saveImmediately()
+        }
+    }
+
+    /**
+     * Immediately save stats to disk (bypasses debounce).
+     */
+    private suspend fun saveImmediately() = withContext(Dispatchers.IO) {
         try {
             settingsFile.parentFile?.mkdirs()
             val content = json.encodeToString(DashboardStats.serializer(), _stats.value)
@@ -111,7 +127,7 @@ object DashboardStatsManager {
             _stats.value = _stats.value.copy(
                 todayActivity = DailyActivity(date = today)
             )
-            scope.launch { saveAsync() }
+            scheduleSave()
         }
     }
 
@@ -127,7 +143,7 @@ object DashboardStatsManager {
                 filesOpened = current.todayActivity.filesOpened + 1
             )
         )
-        scope.launch { saveAsync() }
+        scheduleSave()
     }
 
     /**
@@ -142,7 +158,7 @@ object DashboardStatsManager {
                 pagesVisited = current.todayActivity.pagesVisited + 1
             )
         )
-        scope.launch { saveAsync() }
+        scheduleSave()
     }
 
     /**
@@ -157,7 +173,7 @@ object DashboardStatsManager {
                 terminalSessions = current.todayActivity.terminalSessions + 1
             )
         )
-        scope.launch { saveAsync() }
+        scheduleSave()
     }
 
     /**
@@ -189,6 +205,6 @@ object DashboardStatsManager {
     fun resetStats() {
         _stats.value = DashboardStats()
         _sessionStartTime.value = System.currentTimeMillis()
-        scope.launch { saveAsync() }
+        scheduleSave()
     }
 }

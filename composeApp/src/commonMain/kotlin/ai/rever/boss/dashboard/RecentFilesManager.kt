@@ -2,7 +2,9 @@ package ai.rever.boss.dashboard
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,14 +42,16 @@ data class RecentFilesData(
  */
 object RecentFilesManager {
     private const val MAX_FILES = 20
+    private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
     private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-files.json")
     private val json = Json {
-        prettyPrint = true
+        prettyPrint = false
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var saveJob: Job? = null
 
     private val _recentFiles = MutableStateFlow<List<RecentFile>>(emptyList())
     val recentFiles: StateFlow<List<RecentFile>> = _recentFiles.asStateFlow()
@@ -77,9 +81,21 @@ object RecentFilesManager {
     }
 
     /**
-     * Save recent files to disk.
+     * Save recent files to disk with debouncing.
+     * Cancels any pending save and schedules a new one after SAVE_DEBOUNCE_MS.
      */
-    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+    private fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            saveImmediately()
+        }
+    }
+
+    /**
+     * Immediately save recent files to disk (bypasses debounce).
+     */
+    private suspend fun saveImmediately() = withContext(Dispatchers.IO) {
         try {
             settingsFile.parentFile?.mkdirs()
             val data = RecentFilesData(files = _recentFiles.value)
@@ -115,7 +131,7 @@ object RecentFilesManager {
 
             // Trim to max size
             _recentFiles.value = currentFiles.take(MAX_FILES)
-            saveAsync()
+            scheduleSave()
         }
     }
 
@@ -125,7 +141,7 @@ object RecentFilesManager {
     fun removeFile(filePath: String) {
         scope.launch {
             _recentFiles.value = _recentFiles.value.filter { it.path != filePath }
-            saveAsync()
+            scheduleSave()
         }
     }
 
@@ -135,7 +151,7 @@ object RecentFilesManager {
     fun clearAll() {
         scope.launch {
             _recentFiles.value = emptyList()
-            saveAsync()
+            scheduleSave()
         }
     }
 

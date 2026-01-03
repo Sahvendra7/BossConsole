@@ -2,7 +2,9 @@ package ai.rever.boss.dashboard
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,14 +56,16 @@ private data class BrowserHistoryEntry(
  */
 object RecentBrowserPagesManager {
     private const val MAX_PAGES = 30
+    private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
     private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-browser-pages.json")
     private val json = Json {
-        prettyPrint = true
+        prettyPrint = false
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var saveJob: Job? = null
 
     private val _recentPages = MutableStateFlow<List<RecentBrowserPage>>(emptyList())
     val recentPages: StateFlow<List<RecentBrowserPage>> = _recentPages.asStateFlow()
@@ -250,7 +254,7 @@ object RecentBrowserPagesManager {
 
             if (recentPages.isNotEmpty()) {
                 _recentPages.value = recentPages
-                saveAsync()
+                saveImmediately()
                 println("[RecentBrowserPagesManager] Bootstrapped ${recentPages.size} pages from browser history")
             }
         } catch (e: Exception) {
@@ -259,9 +263,21 @@ object RecentBrowserPagesManager {
     }
 
     /**
-     * Save recent pages to disk.
+     * Save recent pages to disk with debouncing.
+     * Cancels any pending save and schedules a new one after SAVE_DEBOUNCE_MS.
      */
-    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+    private fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            saveImmediately()
+        }
+    }
+
+    /**
+     * Immediately save recent pages to disk (bypasses debounce).
+     */
+    private suspend fun saveImmediately() = withContext(Dispatchers.IO) {
         try {
             settingsFile.parentFile?.mkdirs()
             val data = RecentBrowserPagesData(pages = _recentPages.value)
@@ -315,7 +331,7 @@ object RecentBrowserPagesManager {
 
             // Trim to max size
             _recentPages.value = currentPages.take(MAX_PAGES)
-            saveAsync()
+            scheduleSave()
         }
     }
 
@@ -325,7 +341,7 @@ object RecentBrowserPagesManager {
     fun removePage(url: String) {
         scope.launch {
             _recentPages.value = _recentPages.value.filter { it.url != url }
-            saveAsync()
+            scheduleSave()
         }
     }
 
@@ -335,7 +351,7 @@ object RecentBrowserPagesManager {
     fun clearAll() {
         scope.launch {
             _recentPages.value = emptyList()
-            saveAsync()
+            scheduleSave()
         }
     }
 
