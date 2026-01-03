@@ -31,6 +31,8 @@ class SimpleSpellChecker(
     @Volatile
     private var prefixMap: Map<String, Set<String>> = emptyMap()
     private val customDictionary: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+    // Lock for file I/O operations to prevent concurrent writes
+    private val fileLock = Any()
     @Volatile
     private var currentLanguage: String = "en_US"
     @Volatile
@@ -722,30 +724,36 @@ class SimpleSpellChecker(
     }
 
     private fun loadCustomDictionary() {
-        try {
-            val file = File(customDictionaryPath)
-            if (file.exists()) {
-                file.useLines { lines ->
-                    lines.forEach { line ->
-                        val word = line.trim().lowercase(Locale.US)
-                        if (word.isNotEmpty()) {
-                            customDictionary.add(word)
+        synchronized(fileLock) {
+            try {
+                val file = File(customDictionaryPath)
+                if (file.exists()) {
+                    file.useLines { lines ->
+                        lines.forEach { line ->
+                            val word = line.trim().lowercase(Locale.US)
+                            if (word.isNotEmpty()) {
+                                customDictionary.add(word)
+                            }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                println("[SimpleSpellChecker] Failed to load custom dictionary: ${e.message}")
             }
-        } catch (e: Exception) {
-            println("[SimpleSpellChecker] Failed to load custom dictionary: ${e.message}")
         }
     }
 
     private fun saveCustomDictionary() {
-        try {
-            val file = File(customDictionaryPath)
-            file.parentFile?.mkdirs()
-            file.writeText(customDictionary.sorted().joinToString("\n"))
-        } catch (e: Exception) {
-            println("[SimpleSpellChecker] Failed to save custom dictionary: ${e.message}")
+        synchronized(fileLock) {
+            try {
+                val file = File(customDictionaryPath)
+                file.parentFile?.mkdirs()
+                // Take snapshot of dictionary to avoid holding lock during I/O
+                val words = customDictionary.toList().sorted()
+                file.writeText(words.joinToString("\n"))
+            } catch (e: Exception) {
+                println("[SimpleSpellChecker] Failed to save custom dictionary: ${e.message}")
+            }
         }
     }
 
