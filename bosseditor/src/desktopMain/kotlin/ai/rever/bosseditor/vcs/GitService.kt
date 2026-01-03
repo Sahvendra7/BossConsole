@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /**
@@ -46,15 +47,21 @@ class GitService {
                 redirectErrorStream(true)
             }.start()
 
-            val output = process.inputStream.bufferedReader().use { it.readText() }
+            // Read output asynchronously to prevent deadlock if process hangs
+            // (readText() blocks until EOF, so timeout would never trigger otherwise)
+            val outputFuture = CompletableFuture.supplyAsync {
+                process.inputStream.bufferedReader().use { it.readText() }
+            }
 
             // Wait with timeout to prevent hanging on stuck git processes
             if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                outputFuture.cancel(true)
                 println("[GitService] git blame timed out after ${GIT_TIMEOUT_SECONDS}s")
                 return@withContext null
             }
 
+            val output = outputFuture.get()
             val exitCode = process.exitValue()
             if (exitCode != 0) {
                 println("[GitService] git blame failed with exit code $exitCode")
@@ -91,14 +98,18 @@ class GitService {
                 .redirectErrorStream(true)
                 .start()
 
-            // Drain the input stream to prevent resource leak
-            process.inputStream.bufferedReader().use { it.readText() }
+            // Drain output asynchronously to prevent deadlock if process hangs
+            val outputFuture = CompletableFuture.supplyAsync {
+                process.inputStream.bufferedReader().use { it.readText() }
+            }
 
             // Wait with timeout to prevent hanging
             if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                outputFuture.cancel(true)
                 return@withContext false
             }
+            outputFuture.get() // Ensure stream is fully drained
             process.exitValue() == 0
         } catch (e: CancellationException) {
             // Always rethrow CancellationException per THREADING.md
@@ -121,14 +132,19 @@ class GitService {
                 .redirectErrorStream(true)
                 .start()
 
-            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            // Read output asynchronously to prevent deadlock if process hangs
+            val outputFuture = CompletableFuture.supplyAsync {
+                process.inputStream.bufferedReader().use { it.readText() }
+            }
 
             // Wait with timeout to prevent hanging
             if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                outputFuture.cancel(true)
                 return@withContext null
             }
 
+            val output = outputFuture.get().trim()
             val exitCode = process.exitValue()
             if (exitCode == 0 && output.isNotEmpty()) {
                 File(output)
