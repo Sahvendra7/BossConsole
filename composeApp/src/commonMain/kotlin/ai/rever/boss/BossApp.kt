@@ -785,6 +785,7 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
+    val recentProjects by ProjectState.recentProjects.collectAsState()
 
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -2233,34 +2234,44 @@ fun ComponentContext.BossApp(
                 )
             }
 
-            // Project selection dialog (triggered from File > Open Project menu)
-            if (showProjectDialog) {
-                val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
-                    path?.let {
-                        val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
-                        ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(
-                            ai.rever.boss.components.plugin.panels.left_top.Project(
-                                name = projectName,
-                                path = it
-                            )
+            // Directory picker for project selection (must be outside conditional for Compose)
+            val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
+                path?.let {
+                    val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                    ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(
+                        ai.rever.boss.components.plugin.panels.left_top.Project(
+                            name = projectName,
+                            path = it
                         )
-                        // Show CodeBase panel when project is selected
-                        draggablePanelComponent.setPanelVisible(
-                            ai.rever.boss.components.model.Panel.Companion.left.top,
-                            true
-                        )
-                        // Close the dialog after selection
-                        showProjectDialog = false
-                    }
+                    )
+                    // Show CodeBase panel when project is selected
+                    draggablePanelComponent.setPanelVisible(
+                        ai.rever.boss.components.model.Panel.Companion.left.top,
+                        true
+                    )
+                    // Close the dialog after selection
+                    showProjectDialog = false
                 }
+            }
 
-                ai.rever.boss.components.dialogs.ProjectSelectionDialog(
-                    onDismiss = { showProjectDialog = false },
-                    onOpenDirectoryPicker = {
+            // Project selection dialog (triggered from File > Open Project menu)
+            // If no recent projects, skip dialog and browse directly
+            if (showProjectDialog) {
+                if (recentProjects.isEmpty()) {
+                    // No recent projects - open directory picker directly
+                    LaunchedEffect(Unit) {
                         showProjectDialog = false
                         directoryPicker.pickDirectory()
                     }
-                )
+                } else {
+                    ai.rever.boss.components.dialogs.ProjectSelectionDialog(
+                        onDismiss = { showProjectDialog = false },
+                        onOpenDirectoryPicker = {
+                            showProjectDialog = false
+                            directoryPicker.pickDirectory()
+                        }
+                    )
+                }
             }
             // Save feedback snackbar
             saveMessage?.let { message ->

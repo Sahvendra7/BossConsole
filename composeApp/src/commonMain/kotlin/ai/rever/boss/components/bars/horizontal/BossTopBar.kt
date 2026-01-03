@@ -167,6 +167,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     onShowTopOfMind: (() -> Unit)? = null
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
+    val recentProjects by ProjectState.recentProjects.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     val scope = rememberCoroutineScope()
@@ -234,14 +235,23 @@ fun BossDraggableComponent.BossTopLeftBar(
     }
 
     // Project selection dialog
+    // If no recent projects, skip dialog and browse directly
     if (showProjectDialog) {
-        ProjectSelectionDialog(
-            onDismiss = { showProjectDialog = false },
-            onOpenDirectoryPicker = {
+        if (recentProjects.isEmpty()) {
+            // No recent projects - open directory picker directly
+            LaunchedEffect(Unit) {
                 showProjectDialog = false
                 directoryPicker.pickDirectory()
             }
-        )
+        } else {
+            ProjectSelectionDialog(
+                onDismiss = { showProjectDialog = false },
+                onOpenDirectoryPicker = {
+                    showProjectDialog = false
+                    directoryPicker.pickDirectory()
+                }
+            )
+        }
     }
 
     // Project open mode dialog
