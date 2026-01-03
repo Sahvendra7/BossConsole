@@ -4,7 +4,6 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /**
  * Simple dictionary-based spell checker implementation.
@@ -114,16 +113,9 @@ class SimpleSpellChecker(
                 initLatch.countDown()
             }
         }
-
-        // Wait for initialization to complete (with timeout to prevent deadlock)
-        if (!isInitialized) {
-            try {
-                initLatch.await(5, TimeUnit.SECONDS)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                println("[SimpleSpellChecker] Initialization interrupted")
-            }
-        }
+        // Note: Non-initializer threads block at synchronized() above,
+        // then return early when they see isInitialized = true.
+        // No explicit await needed - the synchronized block handles coordination.
     }
 
     /**
