@@ -43,6 +43,8 @@ object Fluck: TabTypeInfo {
 }
 
 // Mutable tab info for dynamic title and icon updates
+// Thread Safety: Navigation methods (_currentUrl mutations) use @Synchronized for thread-safe access.
+// All callers should ideally be on Main thread, but @Synchronized provides defensive protection.
 data class FluckTabInfo(
     override val id: String,
     override val typeId: TabTypeId,
@@ -50,9 +52,9 @@ data class FluckTabInfo(
     private var _icon: ImageVector = Icons.Outlined.Language,
     private var _tabIcon: TabIcon? = null,
     val url: String = "", // Initial URL
-    private var _currentUrl: String = url, // Current URL being viewed
+    @Volatile private var _currentUrl: String = url, // Current URL being viewed (volatile for visibility)
     val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
-    var historyIndex: Int = -1, // Current position in navigation history
+    @Volatile var historyIndex: Int = -1, // Current position in navigation history
     private var _currentZoomLevel: Double = 1.0, // Current zoom level (1.0 = 100%)
     var faviconCacheKey: String? = null // Cache key for persisted favicon
 ) : TabInfo {
@@ -82,10 +84,11 @@ data class FluckTabInfo(
         return copy(_currentZoomLevel = newLevel)
     }
 
+    @Synchronized
     fun navigateToPage(title: String, url: String) {
         // Update current URL
         _currentUrl = url
-        
+
         // If we're not at the end of history, truncate forward history
         if (historyIndex < navigationHistory.size - 1) {
             // Remove all entries after current index
@@ -93,21 +96,23 @@ data class FluckTabInfo(
                 navigationHistory.removeAt(navigationHistory.size - 1)
             }
         }
-        
+
         // Don't add duplicate consecutive entries
         if (navigationHistory.isEmpty() || navigationHistory.lastOrNull()?.second != url) {
             navigationHistory.add(Pair(title, url))
             historyIndex = navigationHistory.size - 1
         }
     }
-    
+
+    @Synchronized
     fun navigateBack() {
         if (historyIndex > 0) {
             historyIndex--
             _currentUrl = navigationHistory[historyIndex].second
         }
     }
-    
+
+    @Synchronized
     fun navigateForward() {
         if (historyIndex < navigationHistory.size - 1) {
             historyIndex++
