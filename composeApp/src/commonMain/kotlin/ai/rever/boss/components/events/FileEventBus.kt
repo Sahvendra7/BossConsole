@@ -58,6 +58,15 @@ data class ParsedFileReference(
 )
 
 /**
+ * Checks if a string starts with a Windows drive letter pattern (e.g., "C:").
+ *
+ * @receiver The string to check
+ * @return true if the string starts with a drive letter followed by colon
+ */
+private fun String.hasWindowsDriveLetter(): Boolean =
+    length >= 2 && this[0].isLetter() && this[1] == ':'
+
+/**
  * Parses a file reference that may include line and column numbers.
  *
  * Handles formats:
@@ -70,11 +79,14 @@ data class ParsedFileReference(
  * Note: Windows paths with drive letters (e.g., `C:\`) have a colon after
  * the drive letter which must not be confused with line number separator.
  *
+ * JVM-only: Uses java.net.URLDecoder. Desktop target only (see CLAUDE.md).
+ *
  * @param fileUrl The file URL (with or without file: prefix already stripped)
  * @return ParsedFileReference with path, line, and column
  */
 fun parseFileReference(fileUrl: String): ParsedFileReference {
     // URL-decode the path first (handles %20 for spaces, etc.)
+    // JVM-only: Desktop target only (see CLAUDE.md)
     val decoded = try {
         java.net.URLDecoder.decode(fileUrl, "UTF-8")
     } catch (e: Exception) {
@@ -82,9 +94,7 @@ fun parseFileReference(fileUrl: String): ParsedFileReference {
     }
 
     // Check for Windows drive letter pattern (e.g., C:\)
-    val isWindowsPath = decoded.length >= 2 &&
-        decoded[0].isLetter() &&
-        decoded[1] == ':'
+    val isWindowsPath = decoded.hasWindowsDriveLetter()
 
     // Find line:column suffix by looking for :digits pattern from the end
     // For Windows paths, skip the first colon (drive letter)
@@ -139,6 +149,8 @@ fun parseFileReference(fileUrl: String): ParsedFileReference {
  * but we don't restrict which directories can be accessed since the editor
  * operates in user context and should be able to open any file the user can access.
  * The main protection is against non-existent files and directories.
+ *
+ * JVM-only: Uses java.io.File. Desktop target only (see CLAUDE.md).
  *
  * @param filePath The file path to validate (should have file: prefix already stripped)
  * @return FileValidationResult.Valid with canonical path, or FileValidationResult.Invalid with reason

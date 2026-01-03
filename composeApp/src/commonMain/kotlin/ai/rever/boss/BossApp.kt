@@ -105,11 +105,13 @@ import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
@@ -303,12 +305,14 @@ private fun isFileUrl(url: String): Boolean = url.startsWith("file:")
  * @param mode How to open the link (split or new tab)
  * @param splitViewState The split view state for panel operations
  * @param sourceTerminalId Optional terminal tab ID where the link was clicked (for finding source panel)
+ * @param scope CoroutineScope for launching navigation events (structured concurrency)
  */
 private fun openTerminalLink(
     url: String,
     mode: TerminalLinkOpenMode,
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
-    sourceTerminalId: String? = null
+    sourceTerminalId: String? = null,
+    scope: CoroutineScope
 ) {
     // Find the source panel (where the terminal is) to correctly identify "the other" panel
     // This is important because cmd+click doesn't change focus, so activePanelId may not be the terminal panel
@@ -341,6 +345,9 @@ private fun openTerminalLink(
             }
             is FileValidationResult.Valid -> {
                 // Continue with validated path - use canonical path for consistency
+                // TOCTOU note: There's a small window between validation and opening where
+                // the file could be deleted. This is acceptable as the editor handles missing
+                // files gracefully, and fully preventing this race is impractical.
                 openTerminalLinkInternal(
                     url = "file:${result.canonicalPath}",
                     mode = mode,
@@ -348,7 +355,8 @@ private fun openTerminalLink(
                     validSourcePanelId = validSourcePanelId,
                     isFile = true,
                     fileLine = parsed.line,
-                    fileColumn = parsed.column
+                    fileColumn = parsed.column,
+                    scope = scope
                 )
             }
         }
@@ -359,7 +367,8 @@ private fun openTerminalLink(
             mode = mode,
             splitViewState = splitViewState,
             validSourcePanelId = validSourcePanelId,
-            isFile = false
+            isFile = false,
+            scope = scope
         )
     }
 }
@@ -375,6 +384,7 @@ private fun openTerminalLink(
  * @param isFile Whether this is a file URL (vs HTTP)
  * @param fileLine 1-based line number for file navigation (0 = no navigation)
  * @param fileColumn 1-based column number for file navigation (0 = no navigation)
+ * @param scope CoroutineScope for launching navigation events (structured concurrency)
  */
 private fun openTerminalLinkInternal(
     url: String,
@@ -383,17 +393,18 @@ private fun openTerminalLinkInternal(
     validSourcePanelId: String,
     isFile: Boolean,
     fileLine: Int = 0,
-    fileColumn: Int = 0
+    fileColumn: Int = 0,
+    scope: CoroutineScope
 ) {
     // Helper to create the appropriate tab type
     fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
 
     // Helper to trigger navigation after opening a file with line:column
-    // Uses GlobalScope since this is fire-and-forget event emission
+    // Uses structured concurrency - coroutine is cancelled if the composable is disposed
     fun navigateToLineIfNeeded() {
         if (isFile && fileLine > 0) {
             val cleanPath = stripFilePrefix(url)
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            scope.launch(Dispatchers.Main) {
                 NavigationTargetBus.navigateTo(cleanPath, fileLine, fileColumn)
             }
         }
@@ -1163,7 +1174,7 @@ fun ComponentContext.BossApp(
                         showTerminalLinkDialog = true
                     }
                     else -> {
-                        openTerminalLink(event.url, settings.openMode, splitViewState, event.sourceTerminalId)
+                        openTerminalLink(event.url, settings.openMode, splitViewState, event.sourceTerminalId, this)
                     }
                 }
             }
@@ -2169,7 +2180,7 @@ fun ComponentContext.BossApp(
                         }
 
                         // Open the link using helper function
-                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId)
+                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId, coroutineScope)
                         pendingTerminalLinkUrl = ""
                         pendingTerminalSourceId = null
                     }
