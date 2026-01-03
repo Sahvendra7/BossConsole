@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class FocusModeSettings(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     val autoRevealEnabled: Boolean = true,
     val revealOffsetPx: Float = 10f
 )
