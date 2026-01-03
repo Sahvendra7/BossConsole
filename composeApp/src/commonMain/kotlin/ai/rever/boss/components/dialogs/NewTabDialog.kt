@@ -41,6 +41,7 @@ import ai.rever.boss.components.plugin.panels.left_top.FileNode
 import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
 import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
+import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -469,6 +471,37 @@ fun NewTabDialog(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        // Helper function to find node by path in tree
+                        fun findNodeByPath(root: FileNode?, targetPath: String): FileNode? {
+                            if (root == null) return null
+                            if (root.path == targetPath) return root
+                            for (child in root.children) {
+                                val found = findNodeByPath(child, targetPath)
+                                if (found != null) return found
+                            }
+                            return null
+                        }
+
+                        // Helper function to update node at path with new data
+                        fun updateNodeAtPath(
+                            root: FileNode,
+                            targetPath: String,
+                            update: (FileNode) -> FileNode
+                        ): FileNode {
+                            if (root.path == targetPath) {
+                                return update(root)
+                            }
+                            return root.copy(
+                                children = root.children.map { child ->
+                                    if (targetPath.startsWith(child.path + "/") || targetPath == child.path) {
+                                        updateNodeAtPath(child, targetPath, update)
+                                    } else {
+                                        child
+                                    }
+                                }
+                            )
+                        }
+
                         // File tree browser
                         if (selectedProject.path.isNotEmpty()) {
                             Card(
@@ -503,10 +536,50 @@ fun NewTabDialog(
                                                 level = 0,
                                                 expandedPaths = expandedPaths,
                                                 onToggleExpanded = { path ->
-                                                    expandedPaths = if (expandedPaths.contains(path)) {
-                                                        expandedPaths - path
+                                                    if (expandedPaths.contains(path)) {
+                                                        // Collapse - just remove from expanded set
+                                                        expandedPaths = expandedPaths - path
                                                     } else {
-                                                        expandedPaths + path
+                                                        // Expand - add to expanded set and load children
+                                                        expandedPaths = expandedPaths + path
+
+                                                        // Load children if needed
+                                                        val currentTree = fileTree
+                                                        if (currentTree != null) {
+                                                            val targetNode = findNodeByPath(currentTree, path)
+                                                            if (targetNode?.isDirectory == true && targetNode.children.isEmpty()) {
+                                                                // Need to load children
+                                                                coroutineScope.launch {
+                                                                    try {
+                                                                        val scannedNode = withContext(Dispatchers.IO) {
+                                                                            scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
+                                                                        }
+                                                                        if (scannedNode != null) {
+                                                                            val loadedChildren = scannedNode.children.map { child ->
+                                                                                if (child.isDirectory) {
+                                                                                    val hasKids = try {
+                                                                                        directoryHasChildren(child.path)
+                                                                                    } catch (e: Exception) {
+                                                                                        false
+                                                                                    }
+                                                                                    child.copy(hasChildren = hasKids)
+                                                                                } else {
+                                                                                    child
+                                                                                }
+                                                                            }
+                                                                            fileTree = updateNodeAtPath(currentTree, path) { existingNode ->
+                                                                                existingNode.copy(
+                                                                                    children = loadedChildren,
+                                                                                    hasChildren = loadedChildren.isNotEmpty()
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    } catch (e: Exception) {
+                                                                        println("[NewTabDialog] Error loading folder children: ${e.message}")
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 },
                                                 onFileClick = { file ->
@@ -623,13 +696,13 @@ fun NewTabDialog(
                             },
                             label = {
                                 Text(
-                                    "Enter URL (e.g., https://example.com)",
+                                    "Enter URL or search term",
                                     color = Color(0xFF999999)
                                 )
                             },
                             placeholder = {
                                 Text(
-                                    "https://",
+                                    "https://example.com or search...",
                                     color = Color(0xFF666666)
                                 )
                             },
