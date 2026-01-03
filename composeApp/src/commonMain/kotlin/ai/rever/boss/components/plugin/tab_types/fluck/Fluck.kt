@@ -43,6 +43,8 @@ object Fluck: TabTypeInfo {
 }
 
 // Mutable tab info for dynamic title and icon updates
+// Thread Safety: Navigation methods (_currentUrl mutations) use @Synchronized for thread-safe access.
+// All callers should ideally be on Main thread, but @Synchronized provides defensive protection.
 data class FluckTabInfo(
     override val id: String,
     override val typeId: TabTypeId,
@@ -50,16 +52,16 @@ data class FluckTabInfo(
     private var _icon: ImageVector = Icons.Outlined.Language,
     private var _tabIcon: TabIcon? = null,
     val url: String = "", // Initial URL
-    private var _currentUrl: String = url, // Current URL being viewed
+    @Volatile private var _currentUrl: String = url, // Current URL being viewed (volatile for visibility)
     val navigationHistory: MutableList<Pair<String, String>> = mutableListOf(), // List of (title, url) pairs
-    var historyIndex: Int = -1, // Current position in navigation history
+    @Volatile var historyIndex: Int = -1, // Current position in navigation history
     private var _currentZoomLevel: Double = 1.0, // Current zoom level (1.0 = 100%)
     var faviconCacheKey: String? = null // Cache key for persisted favicon
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
     override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
-    val currentUrl: String get() = _currentUrl
+    val currentUrl: String @Synchronized get() = _currentUrl
     val currentZoomLevel: Double get() = _currentZoomLevel
     
     fun updateTitle(newTitle: String): FluckTabInfo {
@@ -82,10 +84,11 @@ data class FluckTabInfo(
         return copy(_currentZoomLevel = newLevel)
     }
 
+    @Synchronized
     fun navigateToPage(title: String, url: String) {
         // Update current URL
         _currentUrl = url
-        
+
         // If we're not at the end of history, truncate forward history
         if (historyIndex < navigationHistory.size - 1) {
             // Remove all entries after current index
@@ -93,21 +96,23 @@ data class FluckTabInfo(
                 navigationHistory.removeAt(navigationHistory.size - 1)
             }
         }
-        
+
         // Don't add duplicate consecutive entries
         if (navigationHistory.isEmpty() || navigationHistory.lastOrNull()?.second != url) {
             navigationHistory.add(Pair(title, url))
             historyIndex = navigationHistory.size - 1
         }
     }
-    
+
+    @Synchronized
     fun navigateBack() {
         if (historyIndex > 0) {
             historyIndex--
             _currentUrl = navigationHistory[historyIndex].second
         }
     }
-    
+
+    @Synchronized
     fun navigateForward() {
         if (historyIndex < navigationHistory.size - 1) {
             historyIndex++
@@ -192,10 +197,16 @@ open class FluckTabComponent(
     private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
-    // Store the URL to load - use currentUrl if available (for split tabs), otherwise initial url
-    private val initialUrl = (config as? FluckTabInfo)?.let {
-        it.currentUrl.ifEmpty { it.url }
-    } ?: "https://www.risalabs.ai"
+    // Cache the FluckTabInfo cast to avoid repeated casting during recompositions
+    private val fluckTabInfo: FluckTabInfo? = config as? FluckTabInfo
+
+    // Dynamically get the URL to load - use currentUrl if available, otherwise initial url
+    // This must be a computed property (not val) to reflect navigation changes for recovery/reload
+    // Issue #379: Previously was a val, causing stale URL on browser recovery
+    private val currentUrlForBrowser: String
+        get() = fluckTabInfo?.let {
+            it.currentUrl.ifEmpty { it.url }
+        } ?: "https://www.risalabs.ai"
 
     // Browser state will be initialized lazily in Content() - NOT during construction
     // This prevents blocking the UI thread during window initialization
@@ -354,7 +365,7 @@ open class FluckTabComponent(
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
                     // onBrowserClosed triggers recovery when browser is closed (event-driven, no polling)
                     val state = getBrowserState(
-                        url = initialUrl,
+                        url = currentUrlForBrowser,
                         onOpenInNewTab = onOpenInNewTab,
                         onBrowserClosed = {
                             // Browser was closed - trigger recovery only if tab is not being disposed
@@ -453,7 +464,7 @@ open class FluckTabComponent(
                     // Show error message instead of browser with retry/reset options (Issue #162)
                     BrowserErrorView(
                         error = browserError!!,
-                        url = initialUrl,
+                        url = currentUrlForBrowser,
                         retryCount = retryCount,
                         maxRetries = maxRetries,
                         onRetry = {
@@ -504,7 +515,7 @@ open class FluckTabComponent(
                     key(browser) {
                         FluckView(
                             fileId = config.id,
-                            content = initialUrl,
+                            content = currentUrlForBrowser,
                             browser = browser,
                             browserViewState = browserViewState,
                             browserLock = browserLock,
@@ -544,7 +555,7 @@ open class FluckTabComponent(
                     if (browserError != null) {
                         BrowserErrorView(
                             error = browserError!!,
-                            url = initialUrl,
+                            url = currentUrlForBrowser,
                             retryCount = maxRecoveryAttempts,
                             maxRetries = maxRecoveryAttempts,
                             onReset = {
@@ -556,7 +567,7 @@ open class FluckTabComponent(
                             }
                         )
                     } else {
-                        BrowserRecoveryView(url = initialUrl)
+                        BrowserRecoveryView(url = currentUrlForBrowser)
                     }
                 }
                 else -> {
@@ -621,7 +632,7 @@ open class FluckTabComponent(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = initialUrl.ifEmpty { "New Tab" },
+                                    text = currentUrlForBrowser.ifEmpty { "New Tab" },
                                     fontSize = 13.sp,
                                     color = Color(0xFFAAAAAA),
                                     maxLines = 1
