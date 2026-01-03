@@ -160,42 +160,73 @@ fun Dashboard(
                 showSections = showSections
             )
 
-            // Recent Projects Section
+            // Recent Projects Section (or Open Project button for new users)
             AnimatedVisibility(
-                visible = showSections && recentProjects.isNotEmpty(),
+                visible = showSections,
                 enter = fadeIn(tween(300, delayMillis = 100)) + slideInVertically(
                     tween(300, delayMillis = 100)
                 ) { it / 2 }
             ) {
-                DashboardSection(
-                    title = "Recent Projects",
-                    actionText = "Open Project",
-                    onAction = onOpenProjectDialog
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .horizontalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp, horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                if (recentProjects.isNotEmpty()) {
+                    DashboardSection(
+                        title = "Recent Projects",
+                        actionText = "Open Project",
+                        onAction = onOpenProjectDialog
                     ) {
-                        recentProjects.take(20).forEach { project ->
-                            ProjectCard(
-                                project = project,
-                                onClick = {
-                                    // Only show dialog if a project is already selected
-                                    val currentProject = ProjectState.selectedProject.value
-                                    if (currentProject.path.isNotEmpty()) {
-                                        projectToOpen = project
-                                    } else {
-                                        // No project selected, open directly in current window
-                                        onOpenProject(project)
-                                        dialogScope.launch {
-                                            PanelEventBus.openPanel(CodeBaseInfo.id)
-                                            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 4.dp, horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            recentProjects.take(20).forEach { project ->
+                                ProjectCard(
+                                    project = project,
+                                    onClick = {
+                                        // Only show dialog if a project is already selected
+                                        val currentProject = ProjectState.selectedProject.value
+                                        if (currentProject.path.isNotEmpty()) {
+                                            projectToOpen = project
+                                        } else {
+                                            // No project selected, open directly in current window
+                                            onOpenProject(project)
+                                            dialogScope.launch {
+                                                PanelEventBus.openPanel(CodeBaseInfo.id)
+                                                PanelEventBus.openPanel(RunConfigurationsInfo.id)
+                                            }
                                         }
-                                    }
-                                },
-                                onRemove = { ProjectState.removeRecentProject(project.path) }
+                                    },
+                                    onRemove = { ProjectState.removeRecentProject(project.path) }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // New user: Show centered "Open Project" button
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material.Button(
+                            onClick = onOpenProjectDialog,
+                            colors = androidx.compose.material.ButtonDefaults.buttonColors(
+                                backgroundColor = Color(0xFF4A9EFF),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(
+                                text = "Open Project",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -518,7 +549,7 @@ private fun DashboardHeader(
     ) {
         Column {
             Text(
-                text = "Welcome back!",
+                text = "Welcome To Boss Console",
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold
