@@ -16,11 +16,17 @@ import kotlin.time.measureTime
 class EditorDocumentBenchmarkTest {
 
     companion object {
-        // Performance thresholds in milliseconds
-        private const val MULTI_LINE_OPERATION_THRESHOLD_MS = 100L
-        private const val SINGLE_CHAR_EDIT_THRESHOLD_MS = 200L
-        private const val SEQUENTIAL_EDIT_THRESHOLD_MS = 500L
-        private const val MIXED_OPERATION_THRESHOLD_MS = 200L
+        // Detect if running on CI (GitHub Actions sets this)
+        private val isCI = System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true"
+
+        // CI multiplier - CI runners are slower and more variable
+        private val CI_MULTIPLIER = if (isCI) 10 else 1
+
+        // Performance thresholds in milliseconds (relaxed on CI)
+        private val MULTI_LINE_OPERATION_THRESHOLD_MS = 100L * CI_MULTIPLIER
+        private val SINGLE_CHAR_EDIT_THRESHOLD_MS = 200L * CI_MULTIPLIER
+        private val SEQUENTIAL_EDIT_THRESHOLD_MS = 500L * CI_MULTIPLIER
+        private val MIXED_OPERATION_THRESHOLD_MS = 200L * CI_MULTIPLIER
     }
 
     @Test

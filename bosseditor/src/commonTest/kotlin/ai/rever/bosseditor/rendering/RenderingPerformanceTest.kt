@@ -48,6 +48,7 @@ class RenderingPerformanceTest {
         private val INDENT_GUIDES_MS = 50L * CI_MULTIPLIER
         private val SCROLL_FRAME_AVG_MS = 16L * CI_MULTIPLIER
         private val SCROLL_FRAME_P99_MS = 33L * CI_MULTIPLIER
+        private val FAST_OPERATION_MS = 50L * CI_MULTIPLIER      // For quick operations
 
         // JVM warmup iterations to stabilize JIT compilation
         private const val WARMUP_ITERATIONS = 5
@@ -268,7 +269,7 @@ class RenderingPerformanceTest {
 
         println("Mark occurrences (visible range only): ${duration.inWholeMilliseconds}ms")
         assertTrue(
-            duration.inWholeMilliseconds < 5L,
+            duration.inWholeMilliseconds < TOKEN_RETRIEVAL_50_LINES_MS,
             "Visible-only mark occurrences should be very fast"
         )
     }
@@ -316,8 +317,8 @@ class RenderingPerformanceTest {
 
         println("Rainbow brackets filter for 100 lines: ${duration.inWholeMilliseconds}ms")
         assertTrue(
-            duration.inWholeMilliseconds < 50L,
-            "Per-line bracket filtering should be <50ms, took ${duration.inWholeMilliseconds}ms"
+            duration.inWholeMilliseconds < FAST_OPERATION_MS,
+            "Per-line bracket filtering should be <${FAST_OPERATION_MS}ms, took ${duration.inWholeMilliseconds}ms"
         )
     }
 
@@ -365,8 +366,8 @@ class RenderingPerformanceTest {
 
         println("Indent guides filter for 100 ranges: ${duration.inWholeMilliseconds}ms")
         assertTrue(
-            duration.inWholeMilliseconds < 50L,
-            "Range-based guide filtering should be <50ms, took ${duration.inWholeMilliseconds}ms"
+            duration.inWholeMilliseconds < FAST_OPERATION_MS,
+            "Range-based guide filtering should be <${FAST_OPERATION_MS}ms, took ${duration.inWholeMilliseconds}ms"
         )
     }
 
@@ -516,7 +517,7 @@ class RenderingPerformanceTest {
 
         println("10x retrieval of 1000 cached lines: ${duration.inWholeMilliseconds}ms")
         assertTrue(
-            duration.inWholeMilliseconds < 50L,
+            duration.inWholeMilliseconds < FAST_OPERATION_MS,
             "Cached retrieval should be very fast"
         )
 
