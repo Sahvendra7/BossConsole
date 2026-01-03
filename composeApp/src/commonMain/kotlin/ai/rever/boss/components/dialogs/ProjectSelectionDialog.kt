@@ -2,7 +2,6 @@ package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,7 +11,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,9 +27,8 @@ fun ProjectSelectionDialog(
     onDismiss: () -> Unit,
     onOpenDirectoryPicker: () -> Unit = {}
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Recent, 1 = Browse
     val recentProjects by ProjectState.recentProjects.collectAsState()
-    
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -46,8 +43,8 @@ fun ProjectSelectionDialog(
         ) {
             Card(
                 modifier = Modifier
-                    .width(600.dp)
-                    .height(500.dp)
+                    .width(500.dp)
+                    .heightIn(min = 200.dp, max = 450.dp)
                     .onKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                             onDismiss()
@@ -65,134 +62,88 @@ fun ProjectSelectionDialog(
                 ) {
                     // Title
                     Text(
-                        text = "Select Project",
+                        text = "Open Project",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
-                    
-                    // Tab selector
-                    TabRow(
-                        selectedTabIndex = selectedTab,
-                        backgroundColor = Color(0xFF2B2D30),
-                        contentColor = Color.White
-                    ) {
-                        Tab(
-                            selected = selectedTab == 0,
-                            onClick = { 
-                                selectedTab = 0 
-                            },
-                            text = { Text("Recent Projects") },
-                            icon = { Icon(Icons.Outlined.History, contentDescription = "Recent") }
+
+                    // Recent projects list
+                    if (recentProjects.isNotEmpty()) {
+                        Text(
+                            text = "Recent Projects",
+                            fontSize = 12.sp,
+                            color = Color(0xFF999999),
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
-                        Tab(
-                            selected = selectedTab == 1,
-                            onClick = { 
-                                selectedTab = 1
-                            },
-                            text = { Text("Browse") },
-                            icon = { Icon(Icons.Outlined.FolderOpen, contentDescription = "Browse") }
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    
-                    // Content based on selected tab
-                    when (selectedTab) {
-                        0 -> {
-                            // Recent projects list
-                            LazyColumn(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth()
-                            ) {
-                                items(recentProjects) { project ->
-                                    ProjectListItem(
-                                        project = project,
-                                        onClick = {
-                                            ProjectState.selectProject(project)
-                                            onDismiss()
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        1 -> {
-                            // Browse for project
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.FolderOpen,
-                                        contentDescription = "Select Folder",
-                                        tint = Color(0xFF6B9EFF),
-                                        modifier = Modifier.size(64.dp)
-                                    )
-                                    
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    
-                                    Text(
-                                        text = "Select a project folder",
-                                        fontSize = 16.sp,
-                                        color = Color.White
-                                    )
-                                    
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    
-                                    Text(
-                                        text = "Click the button below to choose a project directory",
-                                        fontSize = 14.sp,
-                                        color = Color(0xFF999999)
-                                    )
-                                    
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    
-                                    Button(
-                                        onClick = {
-                                            onOpenDirectoryPicker()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            backgroundColor = Color(0xFF4A9EFF),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Folder,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Browse...")
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .fillMaxWidth()
+                        ) {
+                            items(recentProjects) { project ->
+                                ProjectListItem(
+                                    project = project,
+                                    onClick = {
+                                        ProjectState.selectProject(project)
+                                        onDismiss()
                                     }
-                                }
+                                )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                    } else {
+                        // No recent projects - show message
+                        Box(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .fillMaxWidth()
+                                .heightIn(min = 80.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No recent projects",
+                                fontSize = 14.sp,
+                                color = Color(0xFF666666)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Close button
+
+                    // Browse button and Close button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Button(
+                            onClick = { onOpenDirectoryPicker() },
+                            colors = ButtonDefaults.buttonColors(
+                                backgroundColor = Color(0xFF4A9EFF),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Browse...")
+                        }
+
                         TextButton(
                             onClick = onDismiss,
                             colors = ButtonDefaults.textButtonColors(
                                 contentColor = Color(0xFF999999)
                             )
                         ) {
-                            Text("Close")
+                            Text("Cancel")
                         }
                     }
                 }
@@ -224,7 +175,7 @@ private fun ProjectListItem(
             Icon(
                 imageVector = Icons.Outlined.Folder,
                 contentDescription = "Project",
-                tint = Color(0xFF90A4AE),
+                tint = Color(0xFF6B9EFF),
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
