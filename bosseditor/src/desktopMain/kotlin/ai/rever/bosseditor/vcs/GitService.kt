@@ -193,7 +193,13 @@ class GitService {
                         continue
                     }
                     currentCommit = parts[0]
-                    currentLine = parts[2].toIntOrNull()?.minus(1) ?: 0 // Convert to 0-indexed
+                    // Convert to 0-indexed; skip entry if parsing fails to avoid incorrect attribution
+                    val parsedLine = parts[2].toIntOrNull()?.minus(1)
+                    if (parsedLine == null) {
+                        i++
+                        continue
+                    }
+                    currentLine = parsedLine
 
                     // Check if we have cached info for this commit
                     val cached = commitCache[currentCommit]

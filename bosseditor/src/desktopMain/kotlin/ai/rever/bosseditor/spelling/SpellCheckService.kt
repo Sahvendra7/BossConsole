@@ -144,11 +144,10 @@ class SpellCheckService(
             if (word.length < 2) return@forEach
 
             // Split CamelCase and check each part
-            val parts = splitCamelCase(word)
-            if (parts.size > 1) {
+            val partsWithOffsets = splitCamelCaseWithOffsets(word)
+            if (partsWithOffsets.size > 1) {
                 // Check each CamelCase part separately
-                var partOffset = 0
-                for (part in parts) {
+                for ((part, partOffset) in partsWithOffsets) {
                     if (part.length >= 2 && !spellChecker.check(part)) {
                         val startOffset = tokenOffset + match.range.first + partOffset
                         val endOffset = startOffset + part.length
@@ -162,7 +161,6 @@ class SpellCheckService(
                             )
                         )
                     }
-                    partOffset += part.length
                 }
             } else {
                 // Single word
@@ -207,15 +205,20 @@ class SpellCheckService(
     }
 
     /**
-     * Splits a CamelCase word into parts.
-     * "camelCase" -> ["camel", "Case"]
-     * "HTMLParser" -> ["HTML", "Parser"]
+     * Splits a CamelCase word into parts with their offsets in the original string.
+     * Returns list of (part, startOffset) pairs for accurate error positioning.
+     *
+     * Examples:
+     * - "camelCase" -> [("camel", 0), ("Case", 5)]
+     * - "HTMLParser" -> [("HTML", 0), ("Parser", 4)]
+     * - "XMLHttpRequest" -> [("XML", 0), ("Http", 3), ("Request", 7)]
      */
-    private fun splitCamelCase(word: String): List<String> {
-        if (word.length < 2) return listOf(word)
+    private fun splitCamelCaseWithOffsets(word: String): List<Pair<String, Int>> {
+        if (word.length < 2) return listOf(word to 0)
 
-        val parts = mutableListOf<String>()
+        val parts = mutableListOf<Pair<String, Int>>()
         val current = StringBuilder()
+        var partStart = 0
 
         for (i in word.indices) {
             val char = word[i]
@@ -232,11 +235,14 @@ class SpellCheckService(
                 if (isUpperToLower || isLowerToUpper) {
                     if (isUpperToLower && current.length > 1) {
                         // Move current char to next part
-                        parts.add(current.substring(0, current.length - 1))
+                        val partContent = current.substring(0, current.length - 1)
+                        parts.add(partContent to partStart)
+                        partStart = i  // New part starts at current character position
                         current.clear()
                         current.append(char)
                     } else {
-                        parts.add(current.toString())
+                        parts.add(current.toString() to partStart)
+                        partStart = i + 1  // New part starts after this character
                         current.clear()
                     }
                 }
@@ -244,7 +250,7 @@ class SpellCheckService(
         }
 
         if (current.isNotEmpty()) {
-            parts.add(current.toString())
+            parts.add(current.toString() to partStart)
         }
 
         return parts

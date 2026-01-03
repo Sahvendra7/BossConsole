@@ -28,6 +28,8 @@ class SimpleSpellChecker(
     companion object {
         /** Maximum number of words allowed in custom dictionary to prevent memory leak */
         private const val MAX_CUSTOM_DICTIONARY_SIZE = 10_000
+        /** Maximum length of a single word to prevent OOM from malicious files */
+        private const val MAX_WORD_LENGTH = 50
     }
 
     // Thread-safe initialization state using CountDownLatch for proper synchronization
@@ -195,13 +197,24 @@ class SimpleSpellChecker(
             try {
                 val file = File(customDictionaryPath)
                 if (file.exists()) {
+                    var skippedCount = 0
                     file.useLines { lines ->
                         lines.forEach { line ->
+                            // Security: Check size limit during load to prevent bypass
+                            if (customDictionary.size >= MAX_CUSTOM_DICTIONARY_SIZE) {
+                                return@forEach
+                            }
                             val word = line.trim().lowercase(Locale.US)
-                            if (word.isNotEmpty()) {
+                            // Security: Validate word length to prevent OOM from malicious files
+                            if (word.isNotEmpty() && word.length <= MAX_WORD_LENGTH) {
                                 customDictionary.add(word)
+                            } else if (word.length > MAX_WORD_LENGTH) {
+                                skippedCount++
                             }
                         }
+                    }
+                    if (skippedCount > 0) {
+                        println("[SimpleSpellChecker] Skipped $skippedCount words exceeding max length ($MAX_WORD_LENGTH chars)")
                     }
                 }
             } catch (e: Exception) {
@@ -362,6 +375,11 @@ class SimpleSpellChecker(
     override fun addToDictionary(word: String) {
         val normalized = word.lowercase(Locale.US)
         if (normalized.isNotBlank()) {
+            // Security: Validate word length to prevent OOM
+            if (normalized.length > MAX_WORD_LENGTH) {
+                println("[SimpleSpellChecker] Word exceeds max length ($MAX_WORD_LENGTH chars): '${normalized.take(20)}...'")
+                return
+            }
             val shouldSave: Boolean
             // Synchronize to fix TOCTOU race condition between size check and add
             synchronized(dictionaryLock) {
@@ -416,4 +434,21 @@ class SimpleSpellChecker(
     }
 
     override fun getAvailableLanguages(): List<String> = listOf("en_US", "en_GB")
+
+    /**
+     * Shuts down the background I/O executor.
+     * Should be called when the spell checker is no longer needed to prevent resource leaks.
+     * Waits up to 5 seconds for pending operations to complete before forcing shutdown.
+     */
+    fun shutdown() {
+        ioExecutor.shutdown()
+        try {
+            if (!ioExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                ioExecutor.shutdownNow()
+            }
+        } catch (e: InterruptedException) {
+            ioExecutor.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
+    }
 }
