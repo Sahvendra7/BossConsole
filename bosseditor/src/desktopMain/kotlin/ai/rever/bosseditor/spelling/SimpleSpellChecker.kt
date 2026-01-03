@@ -2,6 +2,7 @@ package ai.rever.bosseditor.spelling
 
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Simple dictionary-based spell checker implementation.
@@ -13,6 +14,7 @@ import java.util.Locale
  * - Loads word lists from resources or files
  * - Supports custom user dictionary
  * - Provides basic suggestions using edit distance
+ * - Thread-safe lazy initialization
  *
  * JVM-only: Desktop target only (see CLAUDE.md).
  */
@@ -21,9 +23,16 @@ class SimpleSpellChecker(
     private val customDictionaryPath: String = System.getProperty("user.home") + "/.boss/spelling/custom.txt"
 ) : SpellChecker {
 
+    // Thread-safe initialization state
+    private val isInitializing = AtomicBoolean(false)
+    @Volatile
     private var dictionary: Set<String> = emptySet()
-    private val customDictionary: MutableSet<String> = mutableSetOf()
+    @Volatile
+    private var prefixMap: Map<String, Set<String>> = emptyMap()
+    private val customDictionary: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
+    @Volatile
     private var currentLanguage: String = "en_US"
+    @Volatile
     private var isInitialized: Boolean = false
 
     // Common programming terms to always accept
@@ -44,25 +53,53 @@ class SimpleSpellChecker(
         "localhost", "webhook", "callback", "frontend", "backend"
     )
 
-    init {
-        initialize()
+    /**
+     * Ensures the spell checker is initialized.
+     * Uses atomic flag to prevent multiple concurrent initializations.
+     * Safe to call from any thread.
+     */
+    private fun ensureInitialized() {
+        if (isInitialized) return
+
+        // Use atomic compare-and-set to ensure only one thread initializes
+        if (isInitializing.compareAndSet(false, true)) {
+            try {
+                // Load main dictionary
+                val words = loadMainDictionary()
+                dictionary = words
+
+                // Build prefix map for efficient suggestions (O(1) lookup by prefix)
+                prefixMap = buildPrefixMap(words)
+
+                // Load custom dictionary
+                loadCustomDictionary()
+
+                isInitialized = true
+            } catch (e: Exception) {
+                println("[SimpleSpellChecker] Failed to initialize: ${e.message}")
+                // Fall back to empty dictionary
+                dictionary = emptySet()
+                prefixMap = emptyMap()
+                isInitialized = true
+            } finally {
+                isInitializing.set(false)
+            }
+        } else {
+            // Another thread is initializing, wait for it
+            while (!isInitialized && isInitializing.get()) {
+                Thread.yield()
+            }
+        }
     }
 
-    private fun initialize() {
-        try {
-            // Load main dictionary
-            dictionary = loadMainDictionary()
-
-            // Load custom dictionary
-            loadCustomDictionary()
-
-            isInitialized = true
-        } catch (e: Exception) {
-            println("[SimpleSpellChecker] Failed to initialize: ${e.message}")
-            // Fall back to empty dictionary
-            dictionary = emptySet()
-            isInitialized = true
-        }
+    /**
+     * Builds a prefix map for efficient suggestion lookups.
+     * Groups words by their first 2 characters.
+     */
+    private fun buildPrefixMap(words: Set<String>): Map<String, Set<String>> {
+        return words.groupBy { word ->
+            if (word.length >= 2) word.substring(0, 2) else word
+        }.mapValues { it.value.toSet() }
     }
 
     private fun loadMainDictionary(): Set<String> {
@@ -170,6 +207,9 @@ class SimpleSpellChecker(
     override fun check(word: String): Boolean {
         if (word.isBlank()) return true
 
+        // Ensure dictionary is loaded (lazy initialization)
+        ensureInitialized()
+
         val normalized = word.lowercase(Locale.US)
 
         // Skip checking for:
@@ -201,12 +241,39 @@ class SimpleSpellChecker(
     override fun suggest(word: String): List<String> {
         if (word.isBlank()) return emptyList()
 
+        // Ensure dictionary is loaded (lazy initialization)
+        ensureInitialized()
+
         val normalized = word.lowercase(Locale.US)
         val suggestions = mutableListOf<Pair<String, Int>>()
 
-        // Find words with small edit distance
-        val allWords = dictionary + customDictionary
-        for (dictWord in allWords) {
+        // Use prefix map for efficient candidate lookup instead of O(n) scan
+        // Check words with same prefix and similar prefixes (off-by-one first char)
+        val candidatePrefixes = mutableSetOf<String>()
+        if (normalized.length >= 2) {
+            candidatePrefixes.add(normalized.substring(0, 2))
+            // Add adjacent prefixes for typos in first two characters
+            val firstChar = normalized[0]
+            val secondChar = normalized[1]
+            for (c in listOf(firstChar - 1, firstChar + 1)) {
+                if (c.isLetter()) {
+                    candidatePrefixes.add("$c$secondChar")
+                }
+            }
+            for (c in listOf(secondChar - 1, secondChar + 1)) {
+                if (c.isLetter()) {
+                    candidatePrefixes.add("$firstChar$c")
+                }
+            }
+        }
+
+        // Get candidate words from prefix map (much smaller set than full dictionary)
+        val candidates = candidatePrefixes.flatMap { prefix ->
+            prefixMap[prefix] ?: emptySet()
+        }.toSet() + customDictionary
+
+        // Find words with small edit distance from candidates only
+        for (dictWord in candidates) {
             if (dictWord.length in (normalized.length - 2)..(normalized.length + 2)) {
                 val distance = levenshteinDistance(normalized, dictWord)
                 if (distance <= 2) {

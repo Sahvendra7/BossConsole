@@ -23,6 +23,26 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
 /**
+ * Constants for lightbulb gutter dimensions and colors.
+ */
+private object LightbulbGutterConstants {
+    /** Width of the lightbulb gutter column */
+    const val GUTTER_WIDTH_DP = 20
+
+    /** Size of the lightbulb icon in dp */
+    const val ICON_SIZE_DP = 14
+
+    /** Color for yellow/gold lightbulb (standard fixes) */
+    val LIGHTBULB_YELLOW = Color(0xFFFFD700)
+
+    /** Color for blue lightbulb (spelling fixes) */
+    val LIGHTBULB_BLUE = Color(0xFF548AF7)
+
+    /** Color for gray base of lightbulb */
+    val LIGHTBULB_BASE_GRAY = Color(0xFF808080)
+}
+
+/**
  * Lightbulb gutter showing quick fix indicators.
  *
  * Displays a yellow lightbulb icon on lines that have available quick fixes.
@@ -50,7 +70,7 @@ fun LightbulbGutter(
 
     Canvas(
         modifier = modifier
-            .width(20.dp)
+            .width(LightbulbGutterConstants.GUTTER_WIDTH_DP.dp)
             .fillMaxHeight()
             .background(colors.gutterBackground)
             .pointerInput(quickFixLines) {
@@ -66,7 +86,7 @@ fun LightbulbGutter(
                 }
             }
     ) {
-        val iconSize = 14.dp.toPx()
+        val iconSize = LightbulbGutterConstants.ICON_SIZE_DP.dp.toPx()
         val centerX = size.width / 2
 
         for (fixLine in quickFixLines) {
@@ -86,7 +106,7 @@ fun LightbulbGutter(
             val lightbulbColor = when {
                 fixLine.hasErrorFix -> colors.gutterError
                 fixLine.hasWarningFix -> colors.gutterWarning
-                else -> Color(0xFFFFD700) // Yellow/Gold for regular fixes
+                else -> LightbulbGutterConstants.LIGHTBULB_YELLOW
             }
 
             drawLightbulb(
@@ -157,7 +177,7 @@ private fun DrawScope.drawLightbulb(
     val baseWidth = bulbRadius * 0.6f
 
     drawRoundRect(
-        color = Color(0xFF808080), // Gray base
+        color = LightbulbGutterConstants.LIGHTBULB_BASE_GRAY,
         topLeft = Offset(centerX - baseWidth, baseTop),
         size = Size(baseWidth * 2, baseHeight),
         cornerRadius = CornerRadius(2f)
@@ -170,6 +190,6 @@ private fun DrawScope.drawLightbulb(
 fun getLightbulbColor(kind: QuickFixKind, colors: EditorColors): Color = when (kind) {
     QuickFixKind.ERROR_FIX -> colors.gutterError
     QuickFixKind.WARNING_FIX -> colors.gutterWarning
-    QuickFixKind.SPELLING -> Color(0xFF548AF7)  // Blue for spelling
-    else -> Color(0xFFFFD700)  // Yellow/Gold for others
+    QuickFixKind.SPELLING -> LightbulbGutterConstants.LIGHTBULB_BLUE
+    else -> LightbulbGutterConstants.LIGHTBULB_YELLOW
 }

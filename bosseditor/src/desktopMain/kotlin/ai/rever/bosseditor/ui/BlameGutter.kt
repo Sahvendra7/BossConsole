@@ -27,6 +27,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
+ * Constants for blame gutter dimensions and formatting.
+ */
+private object BlameGutterConstants {
+    /** Maximum length for truncated author name */
+    const val MAX_AUTHOR_LENGTH = 12
+
+    /** Width for author name column in pixels */
+    const val AUTHOR_COLUMN_WIDTH = 100f
+
+    /** Width for commit hash column in pixels */
+    const val HASH_COLUMN_WIDTH = 60f
+
+    /** Left padding for blame text */
+    const val LEFT_PADDING = 8f
+
+    /** Gap between author and hash columns */
+    const val COLUMN_GAP = 5f
+}
+
+/**
  * Git blame gutter showing author and commit info for each line.
  *
  * Displays blame annotations with:
@@ -107,9 +127,9 @@ fun BlameGutter(
 
                 if (showFullInfo) {
                     // Draw author name
-                    var xOffset = 8f
+                    var xOffset = BlameGutterConstants.LEFT_PADDING
                     if (showAuthor) {
-                        val authorText = truncateAuthor(blame.author, 12)
+                        val authorText = truncateAuthor(blame.author, BlameGutterConstants.MAX_AUTHOR_LENGTH)
                         drawBlameText(
                             textMeasurer = textMeasurer,
                             text = authorText,
@@ -117,9 +137,9 @@ fun BlameGutter(
                             y = yOffset,
                             lineHeight = lineHeight,
                             textStyle = textStyle.copy(color = textColor),
-                            maxWidth = 100f
+                            maxWidth = BlameGutterConstants.AUTHOR_COLUMN_WIDTH
                         )
-                        xOffset += 105f
+                        xOffset += BlameGutterConstants.AUTHOR_COLUMN_WIDTH + BlameGutterConstants.COLUMN_GAP
                     }
 
                     // Draw commit hash
@@ -131,15 +151,15 @@ fun BlameGutter(
                             y = yOffset,
                             lineHeight = lineHeight,
                             textStyle = textStyle.copy(color = textColor.copy(alpha = 0.7f)),
-                            maxWidth = 60f
+                            maxWidth = BlameGutterConstants.HASH_COLUMN_WIDTH
                         )
                     }
                 } else {
                     // Draw continuation indicator (subtle line or dots)
                     drawRect(
                         color = textColor.copy(alpha = 0.2f),
-                        topLeft = Offset(8f, yOffset + lineHeight / 2 - 0.5f),
-                        size = Size(width - 16f, 1f)
+                        topLeft = Offset(BlameGutterConstants.LEFT_PADDING, yOffset + lineHeight / 2 - 0.5f),
+                        size = Size(width - BlameGutterConstants.LEFT_PADDING * 2, 1f)
                     )
                 }
             }

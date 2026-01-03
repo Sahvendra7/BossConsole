@@ -151,34 +151,52 @@ data class QuickFixLine(
 /**
  * Manages quick fixes for the editor.
  * Provides efficient lookup of fixes by line and position.
+ *
+ * Fixes are stored pre-sorted by priority to avoid sorting on every lookup.
  */
 class QuickFixManager {
+    // Stores fixes pre-sorted by priority
     private val fixesByLine = mutableMapOf<Int, MutableList<QuickFix>>()
+    // Cache for QuickFixLine objects to avoid recreating on every call
+    private var quickFixLinesCache: List<QuickFixLine>? = null
 
     /**
      * Adds a quick fix for a specific line.
+     * Maintains sorted order by priority.
      */
     fun addFix(line: Int, fix: QuickFix) {
-        fixesByLine.getOrPut(line) { mutableListOf() }.add(fix)
+        val fixes = fixesByLine.getOrPut(line) { mutableListOf() }
+        // Insert in sorted position (binary search)
+        val insertIndex = fixes.binarySearch { it.priority.compareTo(fix.priority) }
+            .let { if (it < 0) -it - 1 else it }
+        fixes.add(insertIndex, fix)
+        invalidateCache()
     }
 
     /**
      * Adds multiple quick fixes for a specific line.
+     * Maintains sorted order by priority.
      */
     fun addFixes(line: Int, fixes: List<QuickFix>) {
         if (fixes.isEmpty()) return
-        fixesByLine.getOrPut(line) { mutableListOf() }.addAll(fixes)
+        val lineList = fixesByLine.getOrPut(line) { mutableListOf() }
+        lineList.addAll(fixes)
+        // Sort once after adding all
+        lineList.sortBy { it.priority }
+        invalidateCache()
     }
 
     /**
      * Sets all fixes for a line, replacing existing ones.
+     * Sorts the fixes by priority.
      */
     fun setFixes(line: Int, fixes: List<QuickFix>) {
         if (fixes.isEmpty()) {
             fixesByLine.remove(line)
         } else {
-            fixesByLine[line] = fixes.toMutableList()
+            fixesByLine[line] = fixes.sortedBy { it.priority }.toMutableList()
         }
+        invalidateCache()
     }
 
     /**
@@ -186,6 +204,7 @@ class QuickFixManager {
      */
     fun clearLine(line: Int) {
         fixesByLine.remove(line)
+        invalidateCache()
     }
 
     /**
@@ -193,20 +212,22 @@ class QuickFixManager {
      */
     fun clear() {
         fixesByLine.clear()
+        invalidateCache()
     }
 
     /**
      * Gets quick fixes for a specific line.
+     * Returns already-sorted list (no sorting overhead).
      */
     fun getFixesForLine(line: Int): List<QuickFix> {
-        return fixesByLine[line]?.sortedBy { it.priority } ?: emptyList()
+        return fixesByLine[line] ?: emptyList()
     }
 
     /**
      * Checks if a line has any quick fixes.
      */
     fun hasFixesOnLine(line: Int): Boolean {
-        return fixesByLine.containsKey(line) && fixesByLine[line]?.isNotEmpty() == true
+        return fixesByLine[line]?.isNotEmpty() == true
     }
 
     /**
@@ -216,13 +237,20 @@ class QuickFixManager {
 
     /**
      * Gets quick fix lines for rendering lightbulb icons.
+     * Uses caching to avoid recreating list on every call.
      */
     fun getQuickFixLines(): List<QuickFixLine> {
+        return quickFixLinesCache ?: buildQuickFixLines().also { quickFixLinesCache = it }
+    }
+
+    private fun buildQuickFixLines(): List<QuickFixLine> {
         return fixesByLine
             .filter { it.value.isNotEmpty() }
-            .map { (line, fixes) ->
-                QuickFixLine(line, fixes.sortedBy { it.priority })
-            }
+            .map { (line, fixes) -> QuickFixLine(line, fixes) }
+    }
+
+    private fun invalidateCache() {
+        quickFixLinesCache = null
     }
 
     /**

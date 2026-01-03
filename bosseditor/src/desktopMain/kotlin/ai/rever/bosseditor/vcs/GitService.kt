@@ -37,7 +37,7 @@ class GitService {
                 redirectErrorStream(true)
             }.start()
 
-            val output = process.inputStream.bufferedReader().readText()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
             val exitCode = process.waitFor()
 
             if (exitCode != 0) {
@@ -64,6 +64,8 @@ class GitService {
                 .redirectErrorStream(true)
                 .start()
 
+            // Drain the input stream to prevent resource leak
+            process.inputStream.bufferedReader().use { it.readText() }
             process.waitFor() == 0
         } catch (e: Exception) {
             false
@@ -80,7 +82,7 @@ class GitService {
                 .redirectErrorStream(true)
                 .start()
 
-            val output = process.inputStream.bufferedReader().readText().trim()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
             val exitCode = process.waitFor()
 
             if (exitCode == 0 && output.isNotEmpty()) {
@@ -135,8 +137,13 @@ class GitService {
                 // New commit line: <sha1> <orig-line> <final-line> [<num-lines>]
                 line.matches(Regex("^[0-9a-f]{40} \\d+ \\d+.*")) -> {
                     val parts = line.split(" ")
+                    // Safety check: ensure parts has at least 3 elements
+                    if (parts.size < 3) {
+                        i++
+                        continue
+                    }
                     currentCommit = parts[0]
-                    currentLine = parts[2].toInt() - 1 // Convert to 0-indexed
+                    currentLine = parts[2].toIntOrNull()?.minus(1) ?: 0 // Convert to 0-indexed
 
                     // Check if we have cached info for this commit
                     val cached = commitCache[currentCommit]
