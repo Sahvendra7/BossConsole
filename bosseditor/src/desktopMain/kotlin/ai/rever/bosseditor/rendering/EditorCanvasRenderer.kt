@@ -11,6 +11,7 @@ import ai.rever.bosseditor.features.InlayHint
 import ai.rever.bosseditor.features.InlayHintKind
 import ai.rever.bosseditor.features.InlayHintPosition
 import ai.rever.bosseditor.features.RainbowBracket
+import ai.rever.bosseditor.features.SpellingError
 import ai.rever.bosseditor.fold.FoldType
 import ai.rever.bosseditor.highlight.TokenType
 import ai.rever.bosseditor.theme.EditorColors
@@ -807,6 +808,11 @@ object EditorCanvasRenderer {
             drawDiagnostics(ctx)
         }
 
+        // Draw spelling error squiggles (blue underlines for misspelled words)
+        if (ctx.spellCheckEnabled && ctx.spellingErrors.isNotEmpty()) {
+            drawSpellingErrors(ctx)
+        }
+
         // Draw hyperlink underlines
         if (ctx.hyperlinks.isNotEmpty() && ctx.hyperlinkUnderlineVisible) {
             drawHyperlinks(ctx)
@@ -852,6 +858,39 @@ object EditorCanvasRenderer {
 
                 drawSquiggleLine(xStart, y, width, color)
             }
+        }
+    }
+
+    // ========== Spelling Error Squiggles ==========
+
+    /**
+     * Draws spelling error squiggle underlines (blue, like IDE spell check).
+     * Uses visual line mapping to properly handle collapsed folds.
+     */
+    private fun DrawScope.drawSpellingErrors(ctx: EditorRenderingContext) {
+        // Use hintSquiggle color (blue) for spelling errors
+        val color = ctx.colors.hintSquiggle
+
+        for (spellingError in ctx.spellingErrors) {
+            val docLine = spellingError.line
+
+            // Convert document line to visual line
+            val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
+            if (visualLine < 0) continue // Line is hidden (folded)
+            if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
+
+            // Calculate column positions from offset range
+            val lineStartOffset = ctx.getLineStartOffset(docLine)
+            val startCol = spellingError.startOffset - lineStartOffset
+            val endCol = spellingError.endOffset - lineStartOffset
+
+            if (startCol >= endCol || startCol < 0) continue
+
+            val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
+            val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+            val width = (endCol - startCol) * ctx.charWidth
+
+            drawSquiggleLine(xStart, y, width, color)
         }
     }
 

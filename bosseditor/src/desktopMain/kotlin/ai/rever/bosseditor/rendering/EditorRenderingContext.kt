@@ -10,7 +10,9 @@ import ai.rever.bosseditor.features.GutterIcon
 import ai.rever.bosseditor.features.Hyperlink
 import ai.rever.bosseditor.features.IndentGuide
 import ai.rever.bosseditor.features.InlayHint
+import ai.rever.bosseditor.features.QuickFixLine
 import ai.rever.bosseditor.features.RainbowBracket
+import ai.rever.bosseditor.features.SpellingError
 import ai.rever.bosseditor.fold.FoldRegion
 import ai.rever.bosseditor.fold.VisualLineMapper
 import ai.rever.bosseditor.highlight.Token
@@ -121,6 +123,13 @@ data class EditorRenderingContext(
     val indentGuidesEnabled: Boolean,
     val tabSize: Int,
 
+    // Spelling errors (Phase 19) - misspelled words in comments/strings
+    val spellingErrors: List<SpellingError>,
+    val spellCheckEnabled: Boolean,
+
+    // Quick fixes (Phase 19) - lightbulb actions for fixing issues
+    val quickFixLines: List<QuickFixLine>,
+
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
@@ -171,6 +180,9 @@ data class EditorRenderingContext(
             activeIndentGuide: IndentGuide? = null,
             indentGuidesEnabled: Boolean = true,
             tabSize: Int = 4,
+            spellingErrors: List<SpellingError> = emptyList(),
+            spellCheckEnabled: Boolean = true,
+            quickFixLines: List<QuickFixLine> = emptyList(),
             offsetToPosition: ((Int) -> EditorPosition)? = null
         ): EditorRenderingContext {
             // Create the visual line mapper (needed for visible line calculation)
@@ -232,6 +244,9 @@ data class EditorRenderingContext(
                 activeIndentGuide = activeIndentGuide,
                 indentGuidesEnabled = indentGuidesEnabled,
                 tabSize = tabSize,
+                spellingErrors = spellingErrors,
+                spellCheckEnabled = spellCheckEnabled,
+                quickFixLines = quickFixLines,
                 offsetToPosition = offsetToPosition ?: { offset -> document.offsetToPosition(offset) }
             )
         }
