@@ -1744,9 +1744,12 @@ fun ComponentContext.BossApp(
         ai.rever.boss.window.MenuActionsHandler.splitVerticallyEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
+                    // Copy the active tab to the new panel to prevent empty panel auto-close
+                    val currentTab = splitViewState.getActiveTabsComponent()?.getCurrentTab()
                     splitViewState.splitPanel(
                         panelId = splitViewState.activePanelId,
-                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL
+                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                        tabToMove = currentTab
                     )
                 }
             }
@@ -1757,9 +1760,12 @@ fun ComponentContext.BossApp(
         ai.rever.boss.window.MenuActionsHandler.splitHorizontallyEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
+                    // Copy the active tab to the new panel to prevent empty panel auto-close
+                    val currentTab = splitViewState.getActiveTabsComponent()?.getCurrentTab()
                     splitViewState.splitPanel(
                         panelId = splitViewState.activePanelId,
-                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL
+                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+                        tabToMove = currentTab
                     )
                 }
             }

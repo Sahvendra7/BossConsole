@@ -856,6 +856,12 @@ class BossTabsComponent(
     fun getComponentById(tabId: String): TabComponentWithUI? {
         return tabComponents[tabId]
     }
+
+
+    // Get the currently selected tab
+    fun getCurrentTab(): TabInfo? {
+        return tabsState.value.activeTab
+    }
     
     // Clear all tabs safely
     fun clearAllTabs() {
