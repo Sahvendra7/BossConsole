@@ -2,6 +2,7 @@ package ai.rever.bosseditor.vcs
 
 import ai.rever.bosseditor.features.BlameInfo
 import ai.rever.bosseditor.features.FileBlameInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,6 +62,9 @@ class GitService {
             }
 
             parseBlameOutput(output, filePath)
+        } catch (e: CancellationException) {
+            // Always rethrow CancellationException per THREADING.md
+            throw e
         } catch (e: Exception) {
             println("[GitService] Error running git blame: ${e.message}")
             null
@@ -96,6 +100,9 @@ class GitService {
                 return@withContext false
             }
             process.exitValue() == 0
+        } catch (e: CancellationException) {
+            // Always rethrow CancellationException per THREADING.md
+            throw e
         } catch (e: Exception) {
             false
         } finally {
@@ -128,6 +135,9 @@ class GitService {
             } else {
                 null
             }
+        } catch (e: CancellationException) {
+            // Always rethrow CancellationException per THREADING.md
+            throw e
         } catch (e: Exception) {
             null
         } finally {
