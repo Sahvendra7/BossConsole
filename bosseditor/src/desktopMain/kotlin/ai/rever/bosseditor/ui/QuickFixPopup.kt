@@ -71,7 +71,7 @@ fun QuickFixPopup(
         offset = position,
         onDismissRequest = onDismiss,
         properties = PopupProperties(
-            focusable = false,
+            focusable = true,  // Enable focus for keyboard navigation
             dismissOnBackPress = true,
             dismissOnClickOutside = true
         )

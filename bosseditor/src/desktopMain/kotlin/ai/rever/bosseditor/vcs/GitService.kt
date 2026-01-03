@@ -28,6 +28,7 @@ class GitService {
      * @return FileBlameInfo if successful, null if file is not in a git repo or error
      */
     suspend fun blame(filePath: String): FileBlameInfo? = withContext(Dispatchers.IO) {
+        var process: Process? = null
         try {
             val file = File(filePath)
             if (!file.exists()) return@withContext null
@@ -36,8 +37,9 @@ class GitService {
             if (!isGitRepository(directory)) return@withContext null
 
             // Run git blame with porcelain format for easy parsing
-            val process = ProcessBuilder(
-                "git", "blame", "--porcelain", file.name
+            // Use "--" separator to prevent filenames starting with "-" from being interpreted as options
+            process = ProcessBuilder(
+                "git", "blame", "--porcelain", "--", file.name
             ).apply {
                 directory(directory)
                 redirectErrorStream(true)
@@ -62,6 +64,13 @@ class GitService {
         } catch (e: Exception) {
             println("[GitService] Error running git blame: ${e.message}")
             null
+        } finally {
+            // Ensure process is cleaned up even if exception occurs during waitFor
+            process?.let {
+                if (it.isAlive) {
+                    it.destroyForcibly()
+                }
+            }
         }
     }
 
@@ -71,8 +80,9 @@ class GitService {
     suspend fun isGitRepository(directory: File?): Boolean = withContext(Dispatchers.IO) {
         if (directory == null || !directory.exists()) return@withContext false
 
+        var process: Process? = null
         try {
-            val process = ProcessBuilder("git", "rev-parse", "--git-dir")
+            process = ProcessBuilder("git", "rev-parse", "--git-dir")
                 .directory(directory)
                 .redirectErrorStream(true)
                 .start()
@@ -88,6 +98,8 @@ class GitService {
             process.exitValue() == 0
         } catch (e: Exception) {
             false
+        } finally {
+            process?.let { if (it.isAlive) it.destroyForcibly() }
         }
     }
 
@@ -95,8 +107,9 @@ class GitService {
      * Gets the repository root directory.
      */
     suspend fun getRepositoryRoot(directory: File): File? = withContext(Dispatchers.IO) {
+        var process: Process? = null
         try {
-            val process = ProcessBuilder("git", "rev-parse", "--show-toplevel")
+            process = ProcessBuilder("git", "rev-parse", "--show-toplevel")
                 .directory(directory)
                 .redirectErrorStream(true)
                 .start()
@@ -117,6 +130,8 @@ class GitService {
             }
         } catch (e: Exception) {
             null
+        } finally {
+            process?.let { if (it.isAlive) it.destroyForcibly() }
         }
     }
 
