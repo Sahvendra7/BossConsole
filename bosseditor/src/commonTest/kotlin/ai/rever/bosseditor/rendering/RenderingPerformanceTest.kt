@@ -32,16 +32,22 @@ import kotlin.time.measureTime
 class RenderingPerformanceTest {
 
     companion object {
-        // Performance thresholds in milliseconds
-        private const val FRAME_BUDGET_MS = 16L           // 60fps target
-        private const val TOKEN_RETRIEVAL_50_LINES_MS = 5L
-        private const val VISUAL_LINE_LOOKUP_MS = 5L
-        private const val BRACKET_MATCH_MS = 10L
-        private const val MARK_OCCURRENCES_MS = 50L
-        private const val RAINBOW_BRACKETS_MS = 100L
-        private const val INDENT_GUIDES_MS = 50L
-        private const val SCROLL_FRAME_AVG_MS = 16L
-        private const val SCROLL_FRAME_P99_MS = 33L
+        // Detect if running on CI (GitHub Actions sets this)
+        private val isCI = System.getenv("CI") == "true" || System.getenv("GITHUB_ACTIONS") == "true"
+
+        // CI multiplier - CI runners are slower and more variable
+        private val CI_MULTIPLIER = if (isCI) 10 else 1
+
+        // Performance thresholds in milliseconds (relaxed on CI)
+        private val FRAME_BUDGET_MS = 16L * CI_MULTIPLIER        // 60fps target
+        private val TOKEN_RETRIEVAL_50_LINES_MS = 5L * CI_MULTIPLIER
+        private val VISUAL_LINE_LOOKUP_MS = 5L * CI_MULTIPLIER
+        private val BRACKET_MATCH_MS = 10L * CI_MULTIPLIER
+        private val MARK_OCCURRENCES_MS = 50L * CI_MULTIPLIER
+        private val RAINBOW_BRACKETS_MS = 100L * CI_MULTIPLIER
+        private val INDENT_GUIDES_MS = 50L * CI_MULTIPLIER
+        private val SCROLL_FRAME_AVG_MS = 16L * CI_MULTIPLIER
+        private val SCROLL_FRAME_P99_MS = 33L * CI_MULTIPLIER
 
         // JVM warmup iterations to stabilize JIT compilation
         private const val WARMUP_ITERATIONS = 5
