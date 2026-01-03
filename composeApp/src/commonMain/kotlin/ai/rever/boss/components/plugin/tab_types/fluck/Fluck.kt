@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
+import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -102,6 +103,9 @@ data class FluckTabInfo(
             navigationHistory.add(Pair(title, url))
             historyIndex = navigationHistory.size - 1
         }
+
+        // Track page visit in dashboard
+        RecentBrowserPagesManager.recordPageVisit(url, title, faviconCacheKey)
     }
 
     @Synchronized

@@ -105,6 +105,7 @@ import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
+import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -153,6 +154,9 @@ import ai.rever.boss.performance.PerformanceState
 import ai.rever.boss.performance.BrowserTabInfo
 import ai.rever.boss.performance.TerminalInfo
 import ai.rever.boss.performance.EditorTabResourceInfo
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -515,6 +519,29 @@ fun ComponentContext.BossApp(
                 if (index >= 0) {
                     activePanel.tabsComponent.selectTab(index)
                 }
+            }
+        }
+    }
+
+    // Open CodeBase and RunConfigurations panels if a project is selected at startup
+    LaunchedEffect(Unit) {
+        val selectedProject = ProjectState.selectedProject.value
+        if (selectedProject.path.isNotEmpty()) {
+            println("BossApp: Project '${selectedProject.name}' selected at startup, opening panels")
+            PanelEventBus.openPanel(CodeBaseInfo.id)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+        }
+    }
+
+    // Apply default workspace when project is selected
+    val selectedProject by ProjectState.selectedProject.collectAsState()
+    LaunchedEffect(selectedProject.path) {
+        if (selectedProject.path.isNotEmpty()) {
+            val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
+            if (defaultWorkspace != null) {
+                println("BossApp: Applying default workspace '${defaultWorkspace.name}' for project '${selectedProject.name}'")
+                applyWorkspace(defaultWorkspace, splitViewState)
+                workspaceManager.loadWorkspace(defaultWorkspace)
             }
         }
     }
@@ -1947,7 +1974,9 @@ fun ComponentContext.BossApp(
                             tabDragComponent = tabDragComponent,
                             onTabDropResult = { result ->
                                 handleTabDropResult(result, splitViewState)
-                            }
+                            },
+                            onShowSettings = { showSettingsDialog = true },
+                            onOpenProjectDialog = { showProjectDialog = true }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation

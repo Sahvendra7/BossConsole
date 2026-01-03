@@ -4,7 +4,9 @@ import BossDarkBorder
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -46,6 +48,7 @@ data class ContextMenuItem(
     val secondaryTrailingIcon: ImageVector? = null,
     val secondaryTrailingIconColor: Color? = null,
     val onSecondaryTrailingClick: (() -> Unit)? = null,
+    val subMenu: List<ContextMenuItem>? = null, // Submenu items
     val onClick: () -> Unit = {}
 )
 
@@ -70,29 +73,69 @@ fun ContextMenu(
         offset = offset,
         properties = PopupProperties(focusable = true)
     ) {
-        Column(
-            modifier = modifier
-                .background(
-                    color = BossDarkBorder,
-                    shape = RoundedCornerShape(4.dp)
+        ContextMenuContent(
+            items = items,
+            modifier = modifier,
+            onDismissRequest = onDismissRequest
+        )
+    }
+}
+
+@Composable
+private fun ContextMenuContent(
+    items: List<ContextMenuItem>,
+    modifier: Modifier = Modifier,
+    onDismissRequest: () -> Unit
+) {
+    var expandedSubMenuIndex by remember { mutableStateOf<Int?>(null) }
+    var isSubMenuHovered by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .background(
+                color = BossDarkBorder,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .padding(vertical = 4.dp)
+            .width(IntrinsicSize.Max)
+    ) {
+        items.forEachIndexed { index, item ->
+            if (item.isDivider) {
+                Divider(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    color = Color(0xFF444444),
+                    thickness = 1.dp
                 )
-                .padding(vertical = 4.dp)
-                .width(IntrinsicSize.Max)
-        ) {
-            items.forEach { item ->
-                if (item.isDivider) {
-                    Divider(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        color = Color(0xFF444444),
-                        thickness = 1.dp
-                    )
-                } else {
+            } else {
+                val interactionSource = remember { MutableInteractionSource() }
+                val isHovered by interactionSource.collectIsHoveredAsState()
+                val hasSubMenu = !item.subMenu.isNullOrEmpty()
+
+                // Update expanded submenu on hover - only close if hovering a different item
+                LaunchedEffect(isHovered) {
+                    if (isHovered) {
+                        if (hasSubMenu) {
+                            expandedSubMenuIndex = index
+                        } else {
+                            // Hovering a non-submenu item, close any open submenu
+                            expandedSubMenuIndex = null
+                        }
+                    }
+                }
+
+                Box {
                     Row(
                         modifier = Modifier
-                            .clickable {
-                                item.onClick()
-                                onDismissRequest()
-                            }
+                            .hoverable(interactionSource)
+                            .then(
+                                if (hasSubMenu) Modifier else Modifier.clickable {
+                                    item.onClick()
+                                    onDismissRequest()
+                                }
+                            )
+                            .background(
+                                if (isHovered) Color(0xFF3A3D40) else Color.Transparent
+                            )
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -113,26 +156,41 @@ fun ContextMenu(
                             modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
                                 .padding(bottom = 4.dp)
                         )
-                        // Primary trailing icon (e.g., play/stop button)
-                        if (item.trailingIcon != null && item.onTrailingClick != null) {
+
+                        // Show arrow for submenu
+                        if (hasSubMenu) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "›",
+                                color = Color(0xFF888888),
+                                fontSize = 16.sp
+                            )
+                        }
+
+                        // Primary trailing icon (e.g., play/stop button or status indicator)
+                        if (item.trailingIcon != null) {
                             Spacer(modifier = Modifier.width(12.dp))
                             Box(
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        item.onTrailingClick.invoke()
-                                        onDismissRequest()
-                                    },
+                                    .then(
+                                        if (item.onTrailingClick != null) {
+                                            Modifier.clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                item.onTrailingClick.invoke()
+                                                onDismissRequest()
+                                            }
+                                        } else Modifier
+                                    ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = item.trailingIcon,
                                     contentDescription = "Action",
                                     tint = item.trailingIconColor ?: Color(0xFF888888),
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(if (item.onTrailingClick != null) 16.dp else 8.dp) // Smaller for indicator dots
                                 )
                             }
                         }
@@ -156,6 +214,31 @@ fun ContextMenu(
                                     contentDescription = "Delete",
                                     tint = item.secondaryTrailingIconColor ?: Color(0xFF888888),
                                     modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Render submenu
+                    if (hasSubMenu && expandedSubMenuIndex == index) {
+                        val subMenuInteractionSource = remember { MutableInteractionSource() }
+                        val subMenuHovered by subMenuInteractionSource.collectIsHoveredAsState()
+
+                        // Track submenu hover state
+                        LaunchedEffect(subMenuHovered) {
+                            isSubMenuHovered = subMenuHovered
+                        }
+
+                        Popup(
+                            alignment = Alignment.TopEnd,
+                            offset = IntOffset(4, 0) // Small offset to create overlap for smooth transition
+                        ) {
+                            Box(
+                                modifier = Modifier.hoverable(subMenuInteractionSource)
+                            ) {
+                                ContextMenuContent(
+                                    items = item.subMenu!!,
+                                    onDismissRequest = onDismissRequest
                                 )
                             }
                         }

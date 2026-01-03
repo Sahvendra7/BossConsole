@@ -13,7 +13,9 @@ data class TabConfig(
     val title: String,
     val url: String? = null, // For browser tabs
     val filePath: String? = null, // For editor tabs
-    val faviconCacheKey: String? = null // Cache key for browser tab favicon
+    val faviconCacheKey: String? = null, // Cache key for browser tab favicon
+    val initialCommand: String? = null, // For terminal tabs - command to run on start
+    val workingDirectory: String? = null // For terminal tabs - working directory
 )
 
 /**
@@ -98,11 +100,268 @@ data class LayoutWorkspace(
 }
 
 /**
- * Predefined workspaces
+ * Predefined workspaces matching the split templates.
+ * Uses placeholders that are resolved at runtime:
+ * - {projectPath}: Current project directory
+ * - {gitRemoteUrl}: Git remote origin URL
  */
 object PredefinedWorkspaces {
-    // No predefined workspaces - all workspaces will be user-created
-    val allWorkspaces = listOf<LayoutWorkspace>()
+    private fun generatePanelId() = "panel-${System.currentTimeMillis()}-${(Math.random() * 10000).toInt()}"
+
+    val allWorkspaces = listOf(
+        // Claude Code: Terminal + Browser
+        LayoutWorkspace(
+            id = "workspace-claude-code",
+            name = "Claude Code",
+            description = "Terminal with Claude CLI + Browser with GitHub",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Claude Code",
+                                initialCommand = "cd {projectPath} && claude --dangerously-skip-permissions",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "browser",
+                                title = "GitHub",
+                                url = "{gitRemoteUrl}"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // Code Review: Editor (left) + Browser (right) + Terminal (bottom)
+        LayoutWorkspace(
+            id = "workspace-code-review",
+            name = "Code Review",
+            description = "README + GitHub + Claude Code",
+            layout = SplitConfig.HorizontalSplit(
+                top = SplitConfig.VerticalSplit(
+                    left = SplitConfig.SinglePanel(
+                        PanelConfig(
+                            id = generatePanelId(),
+                            tabs = listOf(
+                                TabConfig(
+                                    type = "editor",
+                                    title = "README.md",
+                                    filePath = "{projectPath}/README.md"
+                                )
+                            )
+                        )
+                    ),
+                    right = SplitConfig.SinglePanel(
+                        PanelConfig(
+                            id = generatePanelId(),
+                            tabs = listOf(
+                                TabConfig(
+                                    type = "browser",
+                                    title = "GitHub",
+                                    url = "{gitRemoteUrl}"
+                                )
+                            )
+                        )
+                    )
+                ),
+                bottom = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Claude Code",
+                                initialCommand = "cd {projectPath} && claude --dangerously-skip-permissions",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // Gemini: Terminal + Browser
+        LayoutWorkspace(
+            id = "workspace-gemini",
+            name = "Gemini",
+            description = "Gemini CLI + GitHub",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Gemini",
+                                initialCommand = "cd {projectPath} && gemini",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "browser",
+                                title = "GitHub",
+                                url = "{gitRemoteUrl}"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // Codex: Terminal + Browser
+        LayoutWorkspace(
+            id = "workspace-codex",
+            name = "Codex",
+            description = "OpenAI Codex CLI + GitHub",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Codex",
+                                initialCommand = "cd {projectPath} && codex",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "browser",
+                                title = "GitHub",
+                                url = "{gitRemoteUrl}"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // OpenCode: Terminal + Browser
+        LayoutWorkspace(
+            id = "workspace-opencode",
+            name = "OpenCode",
+            description = "OpenCode AI CLI + GitHub",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "OpenCode",
+                                initialCommand = "cd {projectPath} && opencode",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "browser",
+                                title = "GitHub",
+                                url = "{gitRemoteUrl}"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // Terminal + Browser
+        LayoutWorkspace(
+            id = "workspace-terminal-browser",
+            name = "Terminal + Browser",
+            description = "Terminal on left, Browser on right",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Terminal",
+                                initialCommand = "cd {projectPath}",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "browser",
+                                title = "Google",
+                                url = "https://google.com"
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+
+        // Dual Terminal
+        LayoutWorkspace(
+            id = "workspace-dual-terminal",
+            name = "Dual Terminal",
+            description = "Two terminals side by side",
+            layout = SplitConfig.VerticalSplit(
+                left = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Terminal 1",
+                                initialCommand = "cd {projectPath}",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                ),
+                right = SplitConfig.SinglePanel(
+                    PanelConfig(
+                        id = generatePanelId(),
+                        tabs = listOf(
+                            TabConfig(
+                                type = "terminal",
+                                title = "Terminal 2",
+                                initialCommand = "cd {projectPath}",
+                                workingDirectory = "{projectPath}"
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
 }
 
 /**

@@ -1,0 +1,376 @@
+package ai.rever.boss.dashboard
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
+
+/**
+ * Data class representing a recently visited browser page.
+ */
+@Serializable
+data class RecentBrowserPage(
+    val url: String,
+    val title: String,
+    val lastVisited: Long,
+    val faviconCacheKey: String? = null,
+    val visitCount: Int = 1
+)
+
+/**
+ * Container for recent browser pages data with serialization support.
+ */
+@Serializable
+data class RecentBrowserPagesData(
+    val pages: List<RecentBrowserPage> = emptyList()
+)
+
+/**
+ * Entry format from existing browser history (UrlHistoryManager).
+ * Used for bootstrapping when no recent pages data exists.
+ */
+@Serializable
+private data class BrowserHistoryEntry(
+    val url: String,
+    val title: String,
+    val domain: String = "",
+    val visitCount: Int = 1,
+    val lastVisited: Long = 0
+)
+
+/**
+ * Manages recently visited browser pages for the Dashboard.
+ * Persists to ~/.boss/recent-browser-pages.json
+ *
+ * Thread-safe: All file I/O operations run on Dispatchers.IO.
+ * Uses StateFlow for reactive UI updates.
+ */
+object RecentBrowserPagesManager {
+    private const val MAX_PAGES = 30
+    private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-browser-pages.json")
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val _recentPages = MutableStateFlow<List<RecentBrowserPage>>(emptyList())
+    val recentPages: StateFlow<List<RecentBrowserPage>> = _recentPages.asStateFlow()
+
+    // Popular developer websites for suggestions
+    private val POPULAR_DEV_SITES = listOf(
+        RecentBrowserPage(
+            url = "https://risalabs.ai",
+            title = "Risa Labs",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://github.com/risa-labs-inc/BOSS-Releases",
+            title = "BOSS Releases",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://formulae.brew.sh/cask/boss",
+            title = "BOSS - Homebrew",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://github.com/kshivang/BossTerm",
+            title = "BossTerm",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://chat.openai.com",
+            title = "ChatGPT",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://claude.ai",
+            title = "Claude",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://grok.com",
+            title = "Grok",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://gemini.google.com",
+            title = "Gemini",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://console.cloud.google.com/vertex-ai",
+            title = "Vertex AI",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://github.com",
+            title = "GitHub",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://stackoverflow.com",
+            title = "Stack Overflow",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://developer.mozilla.org",
+            title = "MDN Web Docs",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://docs.github.com",
+            title = "GitHub Docs",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://npmjs.com",
+            title = "npm",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://crates.io",
+            title = "Crates.io",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://docs.python.org",
+            title = "Python Docs",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        ),
+        RecentBrowserPage(
+            url = "https://golang.org",
+            title = "Go",
+            lastVisited = 0L,
+            faviconCacheKey = null,
+            visitCount = 0
+        )
+    )
+
+    init {
+        scope.launch {
+            loadAsync()
+        }
+    }
+
+    /**
+     * Load recent pages from disk asynchronously.
+     * If no data exists, bootstraps from existing browser history.
+     */
+    private suspend fun loadAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+
+            if (settingsFile.exists()) {
+                val content = settingsFile.readText()
+                val data = json.decodeFromString<RecentBrowserPagesData>(content)
+                _recentPages.value = data.pages
+                println("[RecentBrowserPagesManager] Loaded ${data.pages.size} recent pages")
+            } else {
+                // Bootstrap from existing browser history if available
+                bootstrapFromBrowserHistory()
+            }
+        } catch (e: Exception) {
+            println("[RecentBrowserPagesManager] Error loading: ${e.message}")
+            // Try to bootstrap even on error
+            bootstrapFromBrowserHistory()
+        }
+    }
+
+    /**
+     * Bootstrap recent pages from existing browser history file.
+     * This provides initial data when no recent pages have been recorded yet.
+     */
+    private suspend fun bootstrapFromBrowserHistory() = withContext(Dispatchers.IO) {
+        try {
+            val browserHistoryFile = File(System.getProperty("user.home"), ".boss/browser-history.json")
+            if (!browserHistoryFile.exists()) return@withContext
+
+            val content = browserHistoryFile.readText()
+            if (content.isEmpty()) return@withContext
+
+            // Parse browser history entries
+            val entries = json.decodeFromString<List<BrowserHistoryEntry>>(content)
+
+            // Convert to RecentBrowserPage, sorted by lastVisited, take top MAX_PAGES
+            val recentPages = entries
+                .sortedByDescending { it.lastVisited }
+                .take(MAX_PAGES)
+                .map { entry ->
+                    RecentBrowserPage(
+                        url = entry.url,
+                        title = entry.title,
+                        lastVisited = entry.lastVisited,
+                        faviconCacheKey = null, // Will be populated on next visit
+                        visitCount = entry.visitCount
+                    )
+                }
+
+            if (recentPages.isNotEmpty()) {
+                _recentPages.value = recentPages
+                saveAsync()
+                println("[RecentBrowserPagesManager] Bootstrapped ${recentPages.size} pages from browser history")
+            }
+        } catch (e: Exception) {
+            println("[RecentBrowserPagesManager] Error bootstrapping from browser history: ${e.message}")
+        }
+    }
+
+    /**
+     * Save recent pages to disk.
+     */
+    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+            val data = RecentBrowserPagesData(pages = _recentPages.value)
+            val content = json.encodeToString(RecentBrowserPagesData.serializer(), data)
+            settingsFile.writeText(content)
+        } catch (e: Exception) {
+            println("[RecentBrowserPagesManager] Error saving: ${e.message}")
+        }
+    }
+
+    /**
+     * Record a page visit.
+     * Updates visit count if already present, otherwise adds new entry.
+     * Maintains max page limit.
+     *
+     * @param url The URL of the page
+     * @param title The page title
+     * @param faviconCacheKey Optional favicon cache key for display
+     */
+    fun recordPageVisit(url: String, title: String, faviconCacheKey: String? = null) {
+        // Skip internal URLs and empty titles
+        if (url.isBlank() || title.isBlank()) return
+        if (url.startsWith("about:") || url.startsWith("chrome:") || url.startsWith("data:")) return
+
+        scope.launch {
+            val currentPages = _recentPages.value.toMutableList()
+            val existingIndex = currentPages.indexOfFirst { it.url == url }
+
+            val newPage = if (existingIndex >= 0) {
+                // Update existing entry
+                val existing = currentPages.removeAt(existingIndex)
+                existing.copy(
+                    title = title,
+                    lastVisited = System.currentTimeMillis(),
+                    faviconCacheKey = faviconCacheKey ?: existing.faviconCacheKey,
+                    visitCount = existing.visitCount + 1
+                )
+            } else {
+                // Create new entry
+                RecentBrowserPage(
+                    url = url,
+                    title = title,
+                    lastVisited = System.currentTimeMillis(),
+                    faviconCacheKey = faviconCacheKey,
+                    visitCount = 1
+                )
+            }
+
+            // Add to front (most recent)
+            currentPages.add(0, newPage)
+
+            // Trim to max size
+            _recentPages.value = currentPages.take(MAX_PAGES)
+            saveAsync()
+        }
+    }
+
+    /**
+     * Remove a specific page from recent history.
+     */
+    fun removePage(url: String) {
+        scope.launch {
+            _recentPages.value = _recentPages.value.filter { it.url != url }
+            saveAsync()
+        }
+    }
+
+    /**
+     * Clear all recent pages.
+     */
+    fun clearAll() {
+        scope.launch {
+            _recentPages.value = emptyList()
+            saveAsync()
+        }
+    }
+
+    /**
+     * Get the domain from a URL for display purposes.
+     */
+    fun getDomain(url: String): String {
+        return try {
+            val withoutProtocol = url.removePrefix("https://").removePrefix("http://")
+            withoutProtocol.substringBefore('/').substringBefore('?')
+        } catch (e: Exception) {
+            url
+        }
+    }
+
+    /**
+     * Get suggestions combining recent pages with popular dev sites.
+     * Returns recent pages first, then fills remaining slots with popular sites not yet visited.
+     */
+    fun getSuggestions(limit: Int = 8): List<RecentBrowserPage> {
+        val recent = _recentPages.value
+        val recentUrls = recent.map { it.url }.toSet()
+
+        // Combine recent pages with popular sites not in recent history
+        val suggestions = mutableListOf<RecentBrowserPage>()
+
+        // Add recent pages first
+        suggestions.addAll(recent.take(limit))
+
+        // Fill remaining slots with popular sites
+        if (suggestions.size < limit) {
+            val popular = POPULAR_DEV_SITES.filter { !recentUrls.contains(it.url) }
+            suggestions.addAll(popular.take(limit - suggestions.size))
+        }
+
+        return suggestions.take(limit)
+    }
+}

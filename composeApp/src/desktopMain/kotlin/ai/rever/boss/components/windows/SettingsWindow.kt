@@ -98,6 +98,7 @@ private fun SettingsContent(initialSection: String? = null) {
                         SettingsSection.BOSS_EDITOR -> BossEditorSettings()
                         SettingsSection.TERMINAL -> TerminalSettings()
                         SettingsSection.RUNNER -> RunnerSettings()
+                        SettingsSection.WORKSPACE -> WorkspaceSettings()
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                         SettingsSection.UPDATES -> UpdatesSettings()
                         SettingsSection.SECURITY -> SecuritySettings()

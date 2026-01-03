@@ -1,0 +1,194 @@
+package ai.rever.boss.dashboard
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+/**
+ * Data class for daily activity tracking.
+ */
+@Serializable
+data class DailyActivity(
+    val date: String = LocalDate.now().format(DateTimeFormatter.ISO_DATE),
+    val filesOpened: Int = 0,
+    val pagesVisited: Int = 0,
+    val terminalSessions: Int = 0
+)
+
+/**
+ * Data class for overall dashboard statistics.
+ */
+@Serializable
+data class DashboardStats(
+    val totalFilesOpened: Int = 0,
+    val totalBrowserPagesVisited: Int = 0,
+    val totalTerminalSessions: Int = 0,
+    val todayActivity: DailyActivity = DailyActivity(),
+    val sessionStartTime: Long = System.currentTimeMillis()
+)
+
+/**
+ * Manages dashboard statistics and activity tracking.
+ * Persists to ~/.boss/dashboard-stats.json
+ *
+ * Thread-safe: All file I/O operations run on Dispatchers.IO.
+ * Uses StateFlow for reactive UI updates.
+ */
+object DashboardStatsManager {
+    private val settingsFile = File(System.getProperty("user.home"), ".boss/dashboard-stats.json")
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val _stats = MutableStateFlow(DashboardStats())
+    val stats: StateFlow<DashboardStats> = _stats.asStateFlow()
+
+    private val _sessionStartTime = MutableStateFlow(System.currentTimeMillis())
+    val sessionStartTime: StateFlow<Long> = _sessionStartTime.asStateFlow()
+
+    init {
+        scope.launch {
+            loadAsync()
+            // Reset daily activity if it's a new day
+            checkAndResetDailyActivity()
+        }
+    }
+
+    /**
+     * Load stats from disk asynchronously.
+     */
+    private suspend fun loadAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+
+            if (settingsFile.exists()) {
+                val content = settingsFile.readText()
+                val data = json.decodeFromString<DashboardStats>(content)
+                _stats.value = data
+                println("[DashboardStatsManager] Loaded stats")
+            }
+        } catch (e: Exception) {
+            println("[DashboardStatsManager] Error loading: ${e.message}")
+        }
+    }
+
+    /**
+     * Save stats to disk.
+     */
+    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+            val content = json.encodeToString(DashboardStats.serializer(), _stats.value)
+            settingsFile.writeText(content)
+        } catch (e: Exception) {
+            println("[DashboardStatsManager] Error saving: ${e.message}")
+        }
+    }
+
+    /**
+     * Check if it's a new day and reset daily activity if needed.
+     */
+    private fun checkAndResetDailyActivity() {
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+        val currentActivity = _stats.value.todayActivity
+
+        if (currentActivity.date != today) {
+            // New day - reset daily activity
+            _stats.value = _stats.value.copy(
+                todayActivity = DailyActivity(date = today)
+            )
+            scope.launch { saveAsync() }
+        }
+    }
+
+    /**
+     * Record a file open event.
+     */
+    fun recordFileOpen() {
+        checkAndResetDailyActivity()
+        val current = _stats.value
+        _stats.value = current.copy(
+            totalFilesOpened = current.totalFilesOpened + 1,
+            todayActivity = current.todayActivity.copy(
+                filesOpened = current.todayActivity.filesOpened + 1
+            )
+        )
+        scope.launch { saveAsync() }
+    }
+
+    /**
+     * Record a browser page visit.
+     */
+    fun recordPageVisit() {
+        checkAndResetDailyActivity()
+        val current = _stats.value
+        _stats.value = current.copy(
+            totalBrowserPagesVisited = current.totalBrowserPagesVisited + 1,
+            todayActivity = current.todayActivity.copy(
+                pagesVisited = current.todayActivity.pagesVisited + 1
+            )
+        )
+        scope.launch { saveAsync() }
+    }
+
+    /**
+     * Record a terminal session start.
+     */
+    fun recordTerminalSession() {
+        checkAndResetDailyActivity()
+        val current = _stats.value
+        _stats.value = current.copy(
+            totalTerminalSessions = current.totalTerminalSessions + 1,
+            todayActivity = current.todayActivity.copy(
+                terminalSessions = current.todayActivity.terminalSessions + 1
+            )
+        )
+        scope.launch { saveAsync() }
+    }
+
+    /**
+     * Get the current session duration in milliseconds.
+     */
+    fun getSessionDurationMs(): Long {
+        return System.currentTimeMillis() - _sessionStartTime.value
+    }
+
+    /**
+     * Format session duration as human-readable string.
+     */
+    fun formatSessionDuration(): String {
+        val durationMs = getSessionDurationMs()
+        val seconds = (durationMs / 1000) % 60
+        val minutes = (durationMs / (1000 * 60)) % 60
+        val hours = durationMs / (1000 * 60 * 60)
+
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m"
+            minutes > 0 -> "${minutes}m ${seconds}s"
+            else -> "${seconds}s"
+        }
+    }
+
+    /**
+     * Reset all statistics.
+     */
+    fun resetStats() {
+        _stats.value = DashboardStats()
+        _sessionStartTime.value = System.currentTimeMillis()
+        scope.launch { saveAsync() }
+    }
+}

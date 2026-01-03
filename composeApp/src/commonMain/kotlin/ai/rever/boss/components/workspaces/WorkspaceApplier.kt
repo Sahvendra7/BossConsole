@@ -12,6 +12,7 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitOrientation
+import ai.rever.boss.dashboard.SplitTemplatesManager
 import kotlin.random.Random
 import kotlin.time.Clock
 
@@ -164,36 +165,62 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
 }
 
 private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
+    // Get current project path for placeholder resolution
+    val projectPath = ProjectState.selectedProject.value.path.ifEmpty {
+        System.getProperty("user.home") ?: ""
+    }
+
     return when (tabConfig.type) {
         "browser" -> {
             // Load favicon from cache if available (Issue #160)
             val cachedFavicon = loadFaviconFromCache(tabConfig.faviconCacheKey)
+
+            // Process URL placeholders
+            val processedUrl = tabConfig.url?.let {
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            } ?: "about:blank"
 
             FluckTabInfo(
                 id = "browser-${Random.nextLong()}",
                 typeId = Fluck.typeId,
                 _title = tabConfig.title,
                 _tabIcon = cachedFavicon,
-                url = tabConfig.url ?: "about:blank",
+                url = processedUrl,
                 faviconCacheKey = tabConfig.faviconCacheKey
             )
         }
         "terminal" -> {
-            // Get current project path for terminal working directory
-            val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+            // Process working directory placeholder
+            val workingDir = tabConfig.workingDirectory?.let {
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            } ?: projectPath.ifEmpty { null }
+
+            // Process initial command placeholder
+            val initialCmd = tabConfig.initialCommand?.let {
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            }
+
             TerminalTabInfo(
                 id = "terminal-${Random.nextLong()}",
                 typeId = TerminalTab.typeId,
                 title = tabConfig.title,
-                workingDirectory = projectPath.ifEmpty { null }
+                workingDirectory = workingDir,
+                initialCommand = initialCmd
             )
         }
-        "editor" -> EditorTabInfo(
-            id = "editor-${Random.nextLong()}",
-            typeId = CodeEditor.typeId,
-            title = tabConfig.title,
-            filePath = tabConfig.filePath ?: ""
-        )
+        "editor" -> {
+            // Process file path placeholder
+            val filePath = tabConfig.filePath?.let {
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            } ?: ""
+
+            EditorTabInfo(
+                id = "editor-${Random.nextLong()}",
+                typeId = CodeEditor.typeId,
+                title = tabConfig.title,
+                filePath = filePath
+            )
+        }
         else -> throw IllegalArgumentException("Unknown tab type: ${tabConfig.type}")
     }
 }

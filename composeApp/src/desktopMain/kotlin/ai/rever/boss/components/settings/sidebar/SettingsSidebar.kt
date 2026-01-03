@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, BOSS_EDITOR, TERMINAL, RUNNER, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
+    FLUCK, CODE_EDITOR, BOSS_EDITOR, TERMINAL, RUNNER, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
 }
 
 @Composable
@@ -85,6 +85,16 @@ fun SettingsSidebar(
             subtitle = "Run/stop, terminal target",
             isSelected = selectedSection == SettingsSection.RUNNER,
             onClick = { onSectionChange(SettingsSection.RUNNER) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.GridView,
+            title = "Workspace",
+            subtitle = "Default layout, templates",
+            isSelected = selectedSection == SettingsSection.WORKSPACE,
+            onClick = { onSectionChange(SettingsSection.WORKSPACE) }
         )
 
         Spacer(modifier = Modifier.height(8.dp))

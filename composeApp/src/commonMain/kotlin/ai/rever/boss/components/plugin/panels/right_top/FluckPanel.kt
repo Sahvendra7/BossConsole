@@ -19,15 +19,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SmartToy
 import com.arkivanov.decompose.ComponentContext
-import compose.icons.FontAwesomeIcons
-import compose.icons.fontawesomeicons.Brands
-import compose.icons.fontawesomeicons.brands.Chrome
 
 object FluckPanelInfo : PanelInfo {
     override val id = PanelId("fluck", 15)
-    override val displayName = "Fluck"
-    override val icon = FontAwesomeIcons.Brands.Chrome
+    override val displayName = "ChatGPT"
+    override val icon = Icons.Outlined.SmartToy
     override val defaultSlotPosition = right.top.top
 }
 
@@ -77,7 +76,7 @@ class FluckPanelComponent(
                 browser != null && browserViewState != null -> {
                     FluckView(
                         fileId = "fluck_panel",
-                        content = "https://www.google.com", // Default URL
+                        content = "https://chat.openai.com", // Default URL
                         browser = browser,
                         browserViewState = browserViewState,
                         onContentChange = { }, // Not used for browser

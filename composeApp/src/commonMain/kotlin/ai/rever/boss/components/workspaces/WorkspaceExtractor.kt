@@ -41,7 +41,9 @@ private fun extractSplitConfig(node: SplitNode): SplitConfig {
                     )
                     is TerminalTabInfo -> TabConfig(
                         type = "terminal",
-                        title = tab.title
+                        title = tab.title,
+                        initialCommand = tab.initialCommand,
+                        workingDirectory = tab.workingDirectory
                     )
                     is EditorTabInfo -> TabConfig(
                         type = "editor",

@@ -203,22 +203,37 @@ object ProjectState {
     }
 
     fun selectProject(project: Project) {
-        _selectedProject.value = project
+        // Update timestamp when project is selected
+        val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
+        _selectedProject.value = updatedProject
 
         // Update recent projects list with LRU behavior
         val updated = _recentProjects.value.toMutableList()
 
         // Remove if already exists
-        updated.removeAll { it.path == project.path }
+        updated.removeAll { it.path == updatedProject.path }
 
         // Add to front - being at position 0 means most recently used
-        updated.add(0, project)
+        updated.add(0, updatedProject)
 
         // Keep only MAX_RECENT_PROJECTS
         while (updated.size > MAX_RECENT_PROJECTS) {
             updated.removeLast()
         }
 
+        _recentProjects.value = updated
+
+        // Save to disk (async)
+        ioScope.launch {
+            saveRecentProjects()
+        }
+    }
+
+    /**
+     * Remove a project from the recent projects list.
+     */
+    fun removeRecentProject(projectPath: String) {
+        val updated = _recentProjects.value.filter { it.path != projectPath }
         _recentProjects.value = updated
 
         // Save to disk (async)

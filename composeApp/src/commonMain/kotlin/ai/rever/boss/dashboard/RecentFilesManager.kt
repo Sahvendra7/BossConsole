@@ -1,0 +1,148 @@
+package ai.rever.boss.dashboard
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
+
+/**
+ * Data class representing a recently opened file.
+ */
+@Serializable
+data class RecentFile(
+    val path: String,
+    val name: String,
+    val lastOpened: Long,
+    val projectPath: String? = null
+)
+
+/**
+ * Container for recent files data with serialization support.
+ */
+@Serializable
+data class RecentFilesData(
+    val files: List<RecentFile> = emptyList()
+)
+
+/**
+ * Manages recently opened files for the Dashboard.
+ * Persists to ~/.boss/recent-files.json
+ *
+ * Thread-safe: All file I/O operations run on Dispatchers.IO.
+ * Uses StateFlow for reactive UI updates.
+ */
+object RecentFilesManager {
+    private const val MAX_FILES = 20
+    private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-files.json")
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val _recentFiles = MutableStateFlow<List<RecentFile>>(emptyList())
+    val recentFiles: StateFlow<List<RecentFile>> = _recentFiles.asStateFlow()
+
+    init {
+        scope.launch {
+            loadAsync()
+        }
+    }
+
+    /**
+     * Load recent files from disk asynchronously.
+     */
+    private suspend fun loadAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+
+            if (settingsFile.exists()) {
+                val content = settingsFile.readText()
+                val data = json.decodeFromString<RecentFilesData>(content)
+                _recentFiles.value = data.files
+                println("[RecentFilesManager] Loaded ${data.files.size} recent files")
+            }
+        } catch (e: Exception) {
+            println("[RecentFilesManager] Error loading: ${e.message}")
+        }
+    }
+
+    /**
+     * Save recent files to disk.
+     */
+    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+            val data = RecentFilesData(files = _recentFiles.value)
+            val content = json.encodeToString(RecentFilesData.serializer(), data)
+            settingsFile.writeText(content)
+        } catch (e: Exception) {
+            println("[RecentFilesManager] Error saving: ${e.message}")
+        }
+    }
+
+    /**
+     * Record a file open event.
+     * Moves the file to the top if already present, otherwise adds it.
+     * Maintains max file limit.
+     *
+     * @param filePath Absolute path to the file
+     * @param projectPath Optional project path the file belongs to
+     */
+    fun recordFileOpen(filePath: String, projectPath: String? = null) {
+        scope.launch {
+            val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
+            val newFile = RecentFile(
+                path = filePath,
+                name = fileName,
+                lastOpened = System.currentTimeMillis(),
+                projectPath = projectPath
+            )
+
+            // Remove existing entry for this path and add to front
+            val currentFiles = _recentFiles.value.toMutableList()
+            currentFiles.removeAll { it.path == filePath }
+            currentFiles.add(0, newFile)
+
+            // Trim to max size
+            _recentFiles.value = currentFiles.take(MAX_FILES)
+            saveAsync()
+        }
+    }
+
+    /**
+     * Remove a specific file from recent history.
+     */
+    fun removeFile(filePath: String) {
+        scope.launch {
+            _recentFiles.value = _recentFiles.value.filter { it.path != filePath }
+            saveAsync()
+        }
+    }
+
+    /**
+     * Clear all recent files.
+     */
+    fun clearAll() {
+        scope.launch {
+            _recentFiles.value = emptyList()
+            saveAsync()
+        }
+    }
+
+    /**
+     * Check if a file still exists on disk.
+     */
+    fun fileExists(filePath: String): Boolean {
+        return File(filePath).exists()
+    }
+}

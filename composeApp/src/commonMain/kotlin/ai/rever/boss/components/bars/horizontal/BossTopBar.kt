@@ -31,10 +31,12 @@ import ai.rever.boss.components.workspaces.WorkspaceButton
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
+import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
+import ai.rever.boss.window.WindowOperations
 import kotlinx.coroutines.launch
 
 
@@ -120,10 +122,10 @@ fun BossActionButtonWithLogo(
 
 @Composable
 fun BossDraggableComponent.getProjectSelectContextMenuItems(
-    showProjectDialog: () -> Unit
+    showProjectDialog: () -> Unit,
+    onProjectSelected: (Project) -> Unit
 ): List<ContextMenuItem> {
     val recentProjects by ProjectState.recentProjects.collectAsState()
-    val scope = rememberCoroutineScope()
 
     return buildList {
         // Recent projects
@@ -131,21 +133,14 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
             ContextMenuItem(
                 text = project.name,
                 icon = Icons.Outlined.Folder,
-                onClick = {
-                    ProjectState.selectProject(project)
-                    // Show CodeBase and Run Configurations panels when project is selected
-                    scope.launch {
-                        PanelEventBus.openPanel(CodeBaseInfo.id)
-                        PanelEventBus.openPanel(RunConfigurationsInfo.id)
-                    }
-                }
+                onClick = { onProjectSelected(project) }
             )
         })
-        
+
         if (recentProjects.isNotEmpty()) {
             add(ContextMenuItem(isDivider = true))
         }
-        
+
         // Add option to open a new project
         add(ContextMenuItem(
             text = "Open Project...",
@@ -173,12 +168,32 @@ fun BossDraggableComponent.BossTopLeftBar(
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
+    var projectToOpen by remember { mutableStateOf<Project?>(null) }
     val scope = rememberCoroutineScope()
-    
+
+    // Helper function to open project in current window
+    fun openProjectInCurrentWindow(project: Project) {
+        ProjectState.selectProject(project)
+        // Show CodeBase and Run Configurations panels when project is selected
+        scope.launch {
+            PanelEventBus.openPanel(CodeBaseInfo.id)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+        }
+    }
+
     BossActionButtonWithLogo(
         text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
-            showProjectDialog = { showProjectDialog = true }
+            showProjectDialog = { showProjectDialog = true },
+            onProjectSelected = { project ->
+                // Only show dialog if a project is already selected
+                if (selectedProject.path.isNotEmpty()) {
+                    projectToOpen = project
+                } else {
+                    // No project selected, open directly in current window
+                    openProjectInCurrentWindow(project)
+                }
+            }
         ),
         hintText = if (selectedProject.path.isEmpty()) "Click to open a project" else "Current Project: ${selectedProject.path}"
     )
@@ -190,7 +205,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     //     contextMenuItems = gitContextMenuItems,
     //     hintText = "Current Git Branch: main"
     // )
-    
+
     // Workspace button
     if (workspaceManager != null && onApplyWorkspace != null) {
         WorkspaceButton(
@@ -200,27 +215,24 @@ fun BossDraggableComponent.BossTopLeftBar(
             onShowTopOfMind = onShowTopOfMind
         )
     }
-    
+
     // Directory picker for native file selection
     val directoryPicker = rememberDirectoryPicker { path ->
         path?.let {
             val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
-            ProjectState.selectProject(
-                Project(
-                    name = projectName,
-                    path = it
-                )
-            )
-            // Show CodeBase and Run Configurations panels when project is selected
-            scope.launch {
-                PanelEventBus.openPanel(CodeBaseInfo.id)
-                PanelEventBus.openPanel(RunConfigurationsInfo.id)
-            }
-            // Close the dialog after selection
+            val project = Project(name = projectName, path = it)
+            // Close the selection dialog
             showProjectDialog = false
+            // Only show dialog if a project is already selected
+            if (selectedProject.path.isNotEmpty()) {
+                projectToOpen = project
+            } else {
+                // No project selected, open directly in current window
+                openProjectInCurrentWindow(project)
+            }
         }
     }
-    
+
     // Project selection dialog
     if (showProjectDialog) {
         ProjectSelectionDialog(
@@ -228,6 +240,24 @@ fun BossDraggableComponent.BossTopLeftBar(
             onOpenDirectoryPicker = {
                 showProjectDialog = false
                 directoryPicker.pickDirectory()
+            }
+        )
+    }
+
+    // Project open mode dialog
+    projectToOpen?.let { project ->
+        ProjectOpenModeDialog(
+            project = project,
+            onDismiss = { projectToOpen = null },
+            onOpenInCurrentWindow = { selectedProj ->
+                openProjectInCurrentWindow(selectedProj)
+                projectToOpen = null
+            },
+            onOpenInNewWindow = { selectedProj ->
+                // Create new window first, then select project (project state is global)
+                WindowOperations.createNewWindow()
+                openProjectInCurrentWindow(selectedProj)
+                projectToOpen = null
             }
         )
     }

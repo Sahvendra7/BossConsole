@@ -1161,14 +1161,18 @@ fun SplitViewPanel(
     splitViewState: SplitViewState,
     modifier: Modifier = Modifier,
     tabDragComponent: TabDraggableComponent? = null,
-    onTabDropResult: (TabDropResult) -> Unit = {}
+    onTabDropResult: (TabDropResult) -> Unit = {},
+    onShowSettings: (() -> Unit)? = null,
+    onOpenProjectDialog: (() -> Unit)? = null
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         RenderSplitNode(
             node = splitViewState.rootNode,
             splitViewState = splitViewState,
             tabDragComponent = tabDragComponent,
-            onTabDropResult = onTabDropResult
+            onTabDropResult = onTabDropResult,
+            onShowSettings = onShowSettings,
+            onOpenProjectDialog = onOpenProjectDialog
         )
     }
 }
@@ -1178,7 +1182,9 @@ private fun RenderSplitNode(
     node: SplitNode,
     splitViewState: SplitViewState,
     tabDragComponent: TabDraggableComponent? = null,
-    onTabDropResult: (TabDropResult) -> Unit = {}
+    onTabDropResult: (TabDropResult) -> Unit = {},
+    onShowSettings: (() -> Unit)? = null,
+    onOpenProjectDialog: (() -> Unit)? = null
 ) {
     when (node) {
         is SplitNode.Panel -> {
@@ -1234,7 +1240,9 @@ private fun RenderSplitNode(
                         splitViewState = splitViewState,
                         currentPanelId = node.id,
                         tabDragComponent = tabDragComponent,
-                        onTabDropResult = onTabDropResult
+                        onTabDropResult = onTabDropResult,
+                        onShowSettings = onShowSettings,
+                        onOpenProjectDialog = onOpenProjectDialog
                     )
 
                     // Show drop zone highlights when dragging over this panel
@@ -1260,7 +1268,9 @@ private fun RenderSplitNode(
                         node = node.left,
                         splitViewState = splitViewState,
                         tabDragComponent = tabDragComponent,
-                        onTabDropResult = onTabDropResult
+                        onTabDropResult = onTabDropResult,
+                        onShowSettings = onShowSettings,
+                        onOpenProjectDialog = onOpenProjectDialog
                     )
                 },
                 sideContent = {
@@ -1268,7 +1278,9 @@ private fun RenderSplitNode(
                         node = node.right,
                         splitViewState = splitViewState,
                         tabDragComponent = tabDragComponent,
-                        onTabDropResult = onTabDropResult
+                        onTabDropResult = onTabDropResult,
+                        onShowSettings = onShowSettings,
+                        onOpenProjectDialog = onOpenProjectDialog
                     )
                 }
             )
@@ -1286,7 +1298,9 @@ private fun RenderSplitNode(
                         node = node.top,
                         splitViewState = splitViewState,
                         tabDragComponent = tabDragComponent,
-                        onTabDropResult = onTabDropResult
+                        onTabDropResult = onTabDropResult,
+                        onShowSettings = onShowSettings,
+                        onOpenProjectDialog = onOpenProjectDialog
                     )
                 },
                 sideContent = {
@@ -1294,7 +1308,9 @@ private fun RenderSplitNode(
                         node = node.bottom,
                         splitViewState = splitViewState,
                         tabDragComponent = tabDragComponent,
-                        onTabDropResult = onTabDropResult
+                        onTabDropResult = onTabDropResult,
+                        onShowSettings = onShowSettings,
+                        onOpenProjectDialog = onOpenProjectDialog
                     )
                 }
             )

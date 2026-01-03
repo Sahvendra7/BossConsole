@@ -1,0 +1,413 @@
+package ai.rever.boss.dashboard
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+
+/**
+ * Configuration for a panel in a split template.
+ */
+@Serializable
+data class TemplatePanelContent(
+    val command: String? = null,      // For terminal: command to run
+    val url: String? = null,          // For browser: URL to open
+    val filePath: String? = null      // For editor: file to open
+)
+
+/**
+ * Panel configuration within a split template.
+ */
+@Serializable
+data class TemplatePanelConfig(
+    val type: String,                 // "terminal", "browser", "editor"
+    val position: String,             // "left", "right", "top", "bottom"
+    val content: TemplatePanelContent
+)
+
+/**
+ * A split template definition.
+ */
+@Serializable
+data class SplitTemplate(
+    val id: String,
+    val name: String,
+    val description: String,
+    val icon: String,                 // Icon identifier
+    val isBuiltIn: Boolean = true,
+    val panels: List<TemplatePanelConfig>
+)
+
+/**
+ * Container for custom split templates data.
+ */
+@Serializable
+data class CustomTemplatesData(
+    val templates: List<SplitTemplate> = emptyList()
+)
+
+/**
+ * Manages split templates for quick workspace setup.
+ * Built-in templates are always available.
+ * Custom templates persist to ~/.boss/split-templates.json
+ *
+ * Thread-safe: All file I/O operations run on Dispatchers.IO.
+ * Uses StateFlow for reactive UI updates.
+ */
+object SplitTemplatesManager {
+    private val settingsFile = File(System.getProperty("user.home"), ".boss/split-templates.json")
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Built-in templates that are always available
+    private val builtInTemplates = listOf(
+        SplitTemplate(
+            id = "claude-code",
+            name = "Claude Code",
+            description = "Terminal with Claude CLI + Browser with GitHub",
+            icon = "terminal-browser",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath} && claude --dangerously-skip-permissions"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "{gitRemoteUrl}"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "code-review",
+            name = "Code Review",
+            description = "README + GitHub + Claude Code",
+            icon = "git-pull-request",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "editor",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        filePath = "{projectPath}/README.md"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "{gitRemoteUrl}"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "bottom",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath} && claude --dangerously-skip-permissions"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "gemini",
+            name = "Gemini",
+            description = "Gemini CLI + GitHub",
+            icon = "terminal-browser",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath} && gemini"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "{gitRemoteUrl}"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "codex",
+            name = "Codex",
+            description = "OpenAI Codex CLI + GitHub",
+            icon = "terminal-browser",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath} && codex"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "{gitRemoteUrl}"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "opencode",
+            name = "OpenCode",
+            description = "OpenCode AI CLI + GitHub",
+            icon = "terminal-browser",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath} && opencode"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "{gitRemoteUrl}"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "terminal-browser",
+            name = "Terminal + Browser",
+            description = "Terminal on left, Browser on right",
+            icon = "layout-split",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath}"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "browser",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        url = "https://google.com"
+                    )
+                )
+            )
+        ),
+        SplitTemplate(
+            id = "dual-terminal",
+            name = "Dual Terminal",
+            description = "Two terminals side by side",
+            icon = "terminal-dual",
+            isBuiltIn = true,
+            panels = listOf(
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "left",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath}"
+                    )
+                ),
+                TemplatePanelConfig(
+                    type = "terminal",
+                    position = "right",
+                    content = TemplatePanelContent(
+                        command = "cd {projectPath}"
+                    )
+                )
+            )
+        )
+    )
+
+    private val _customTemplates = MutableStateFlow<List<SplitTemplate>>(emptyList())
+    val customTemplates: StateFlow<List<SplitTemplate>> = _customTemplates.asStateFlow()
+
+    // Combined templates: built-in + custom
+    private val _allTemplates = MutableStateFlow<List<SplitTemplate>>(builtInTemplates)
+    val allTemplates: StateFlow<List<SplitTemplate>> = _allTemplates.asStateFlow()
+
+    init {
+        scope.launch {
+            loadAsync()
+        }
+    }
+
+    /**
+     * Load custom templates from disk asynchronously.
+     */
+    private suspend fun loadAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+
+            if (settingsFile.exists()) {
+                val content = settingsFile.readText()
+                val data = json.decodeFromString<CustomTemplatesData>(content)
+                _customTemplates.value = data.templates
+                updateAllTemplates()
+                println("[SplitTemplatesManager] Loaded ${data.templates.size} custom templates")
+            }
+        } catch (e: Exception) {
+            println("[SplitTemplatesManager] Error loading: ${e.message}")
+        }
+    }
+
+    /**
+     * Save custom templates to disk.
+     */
+    private suspend fun saveAsync() = withContext(Dispatchers.IO) {
+        try {
+            settingsFile.parentFile?.mkdirs()
+            val data = CustomTemplatesData(templates = _customTemplates.value)
+            val content = json.encodeToString(CustomTemplatesData.serializer(), data)
+            settingsFile.writeText(content)
+        } catch (e: Exception) {
+            println("[SplitTemplatesManager] Error saving: ${e.message}")
+        }
+    }
+
+    private fun updateAllTemplates() {
+        _allTemplates.value = builtInTemplates + _customTemplates.value
+    }
+
+    /**
+     * Get a template by ID.
+     */
+    fun getTemplate(id: String): SplitTemplate? {
+        return _allTemplates.value.find { it.id == id }
+    }
+
+    /**
+     * Add a custom template.
+     */
+    fun addCustomTemplate(template: SplitTemplate) {
+        val customTemplate = template.copy(isBuiltIn = false)
+        _customTemplates.value = _customTemplates.value + customTemplate
+        updateAllTemplates()
+        scope.launch { saveAsync() }
+    }
+
+    /**
+     * Remove a custom template.
+     */
+    fun removeCustomTemplate(id: String) {
+        _customTemplates.value = _customTemplates.value.filter { it.id != id }
+        updateAllTemplates()
+        scope.launch { saveAsync() }
+    }
+
+    /**
+     * Process placeholders in template content.
+     *
+     * Available placeholders:
+     * - {projectPath}: Current project directory path
+     * - {gitRemoteUrl}: Git remote origin URL converted to web URL
+     * - {currentFile}: Currently open file path
+     *
+     * @param content The content string with placeholders
+     * @param projectPath The current project path
+     * @param currentFile The currently open file (optional)
+     * @return The content with placeholders replaced
+     */
+    fun processPlaceholders(
+        content: String,
+        projectPath: String?,
+        currentFile: String? = null
+    ): String {
+        var result = content
+
+        // Replace project path
+        if (projectPath != null) {
+            result = result.replace("{projectPath}", projectPath)
+        } else {
+            result = result.replace("{projectPath}", System.getProperty("user.home"))
+        }
+
+        // Replace git remote URL
+        val gitUrl = projectPath?.let { getGitRemoteUrl(it) } ?: "https://google.com"
+        result = result.replace("{gitRemoteUrl}", gitUrl)
+
+        // Replace current file
+        if (currentFile != null) {
+            result = result.replace("{currentFile}", currentFile)
+        }
+
+        return result
+    }
+
+    /**
+     * Get the Git remote origin URL for a project and convert it to a web URL.
+     */
+    private fun getGitRemoteUrl(projectPath: String): String {
+        return try {
+            val process = ProcessBuilder("git", "remote", "get-url", "origin")
+                .directory(File(projectPath))
+                .redirectErrorStream(true)
+                .start()
+
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val url = reader.readLine()?.trim() ?: return "https://google.com"
+            process.waitFor()
+
+            // Convert SSH URL to HTTPS if needed
+            convertGitUrlToWebUrl(url)
+        } catch (e: Exception) {
+            println("[SplitTemplatesManager] Error getting git remote: ${e.message}")
+            "https://google.com"
+        }
+    }
+
+    /**
+     * Convert a Git URL (SSH or HTTPS) to a web URL.
+     * Examples:
+     * - git@github.com:user/repo.git -> https://github.com/user/repo
+     * - https://github.com/user/repo.git -> https://github.com/user/repo
+     */
+    private fun convertGitUrlToWebUrl(gitUrl: String): String {
+        var url = gitUrl.trim()
+
+        // Handle SSH format: git@github.com:user/repo.git
+        if (url.startsWith("git@")) {
+            url = url.removePrefix("git@")
+            url = url.replace(":", "/")
+            url = "https://$url"
+        }
+
+        // Remove .git suffix
+        if (url.endsWith(".git")) {
+            url = url.removeSuffix(".git")
+        }
+
+        return url
+    }
+
+    /**
+     * Get built-in templates only.
+     */
+    fun getBuiltInTemplates(): List<SplitTemplate> = builtInTemplates
+}
