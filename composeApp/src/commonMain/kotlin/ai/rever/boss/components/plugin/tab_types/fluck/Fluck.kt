@@ -192,10 +192,13 @@ open class FluckTabComponent(
     private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
-    // Store the URL to load - use currentUrl if available (for split tabs), otherwise initial url
-    private val initialUrl = (config as? FluckTabInfo)?.let {
-        it.currentUrl.ifEmpty { it.url }
-    } ?: "https://www.risalabs.ai"
+    // Dynamically get the URL to load - use currentUrl if available, otherwise initial url
+    // This must be a computed property (not val) to reflect navigation changes for recovery/reload
+    // Issue #379: Previously was a val, causing stale URL on browser recovery
+    private val currentUrlForBrowser: String
+        get() = (config as? FluckTabInfo)?.let {
+            it.currentUrl.ifEmpty { it.url }
+        } ?: "https://www.risalabs.ai"
 
     // Browser state will be initialized lazily in Content() - NOT during construction
     // This prevents blocking the UI thread during window initialization
@@ -354,7 +357,7 @@ open class FluckTabComponent(
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
                     // onBrowserClosed triggers recovery when browser is closed (event-driven, no polling)
                     val state = getBrowserState(
-                        url = initialUrl,
+                        url = currentUrlForBrowser,
                         onOpenInNewTab = onOpenInNewTab,
                         onBrowserClosed = {
                             // Browser was closed - trigger recovery only if tab is not being disposed
@@ -453,7 +456,7 @@ open class FluckTabComponent(
                     // Show error message instead of browser with retry/reset options (Issue #162)
                     BrowserErrorView(
                         error = browserError!!,
-                        url = initialUrl,
+                        url = currentUrlForBrowser,
                         retryCount = retryCount,
                         maxRetries = maxRetries,
                         onRetry = {
@@ -504,7 +507,7 @@ open class FluckTabComponent(
                     key(browser) {
                         FluckView(
                             fileId = config.id,
-                            content = initialUrl,
+                            content = currentUrlForBrowser,
                             browser = browser,
                             browserViewState = browserViewState,
                             browserLock = browserLock,
@@ -544,7 +547,7 @@ open class FluckTabComponent(
                     if (browserError != null) {
                         BrowserErrorView(
                             error = browserError!!,
-                            url = initialUrl,
+                            url = currentUrlForBrowser,
                             retryCount = maxRecoveryAttempts,
                             maxRetries = maxRecoveryAttempts,
                             onReset = {
@@ -556,7 +559,7 @@ open class FluckTabComponent(
                             }
                         )
                     } else {
-                        BrowserRecoveryView(url = initialUrl)
+                        BrowserRecoveryView(url = currentUrlForBrowser)
                     }
                 }
                 else -> {
@@ -621,7 +624,7 @@ open class FluckTabComponent(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = initialUrl.ifEmpty { "New Tab" },
+                                    text = currentUrlForBrowser.ifEmpty { "New Tab" },
                                     fontSize = 13.sp,
                                     color = Color(0xFFAAAAAA),
                                     maxLines = 1
