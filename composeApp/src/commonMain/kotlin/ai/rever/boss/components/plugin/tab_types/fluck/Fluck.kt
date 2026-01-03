@@ -61,7 +61,7 @@ data class FluckTabInfo(
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
     override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
-    val currentUrl: String get() = _currentUrl
+    val currentUrl: String @Synchronized get() = _currentUrl
     val currentZoomLevel: Double get() = _currentZoomLevel
     
     fun updateTitle(newTitle: String): FluckTabInfo {
@@ -197,11 +197,14 @@ open class FluckTabComponent(
     private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
 
+    // Cache the FluckTabInfo cast to avoid repeated casting during recompositions
+    private val fluckTabInfo: FluckTabInfo? = config as? FluckTabInfo
+
     // Dynamically get the URL to load - use currentUrl if available, otherwise initial url
     // This must be a computed property (not val) to reflect navigation changes for recovery/reload
     // Issue #379: Previously was a val, causing stale URL on browser recovery
     private val currentUrlForBrowser: String
-        get() = (config as? FluckTabInfo)?.let {
+        get() = fluckTabInfo?.let {
             it.currentUrl.ifEmpty { it.url }
         } ?: "https://www.risalabs.ai"
 
