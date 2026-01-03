@@ -77,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -130,10 +131,10 @@ fun Dashboard(
         showSections = true
     }
 
-    // Session duration update
+    // Session duration update (with isActive check to prevent memory leak on disposal)
     var sessionDuration by remember { mutableStateOf(DashboardStatsManager.formatSessionDuration()) }
     LaunchedEffect(Unit) {
-        while (true) {
+        while (isActive) {
             delay(1000)
             sessionDuration = DashboardStatsManager.formatSessionDuration()
         }

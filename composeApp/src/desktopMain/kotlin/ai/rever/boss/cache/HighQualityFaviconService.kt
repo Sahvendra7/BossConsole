@@ -3,13 +3,19 @@ package ai.rever.boss.cache
 import ai.rever.boss.components.registery.TabIcon
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import javax.imageio.ImageIO
 
@@ -19,19 +25,38 @@ import javax.imageio.ImageIO
  * Falls back to standard favicon cache if high-quality version unavailable.
  *
  * Performance optimizations:
+ * - Async HTTP with Ktor client (non-blocking)
  * - Reduced timeouts (2.5s) for faster failure detection
  * - Concurrency limit (3 simultaneous fetches) to prevent network flooding
+ * - LRU cache eviction to prevent unbounded growth
  * - Cache-first approach to minimize network requests
  */
 object HighQualityFaviconService {
     private const val HQ_CACHE_DIR_NAME = "favicon-hq-cache"
     private const val ICON_SIZE = 128 // Request 128px icons from Google
-    private const val CONNECTION_TIMEOUT_MS = 2500 // Reduced from 5000ms
-    private const val READ_TIMEOUT_MS = 2500 // Reduced from 5000ms
+    private const val REQUEST_TIMEOUT_MS = 2500L
     private const val MAX_CONCURRENT_FETCHES = 3
+    private const val MAX_CACHE_SIZE = 200 // Maximum number of cached favicons
+    private const val CACHE_EVICTION_COUNT = 50 // Number of items to evict when limit reached
 
     // Semaphore to limit concurrent network requests
     private val fetchSemaphore = Semaphore(MAX_CONCURRENT_FETCHES)
+
+    // Mutex for thread-safe cache operations
+    private val cacheMutex = Mutex()
+
+    // Ktor HTTP client with connection pooling
+    private val httpClient by lazy {
+        HttpClient(CIO) {
+            engine {
+                requestTimeout = REQUEST_TIMEOUT_MS
+                endpoint {
+                    connectTimeout = REQUEST_TIMEOUT_MS
+                    socketTimeout = REQUEST_TIMEOUT_MS
+                }
+            }
+        }
+    }
 
     private val cacheDir: File by lazy {
         val dir = File(System.getProperty("user.home"), ".boss/cache/$HQ_CACHE_DIR_NAME")
@@ -84,8 +109,8 @@ object HighQualityFaviconService {
      */
     private fun extractDomain(url: String): String? {
         return try {
-            val uri = URL(url)
-            uri.host?.removePrefix("www.")
+            val withoutProtocol = url.removePrefix("https://").removePrefix("http://")
+            withoutProtocol.substringBefore('/').substringBefore('?').removePrefix("www.")
         } catch (e: Exception) {
             null
         }
@@ -102,12 +127,16 @@ object HighQualityFaviconService {
 
     /**
      * Load favicon from HQ cache.
+     * Updates file access time for LRU tracking.
      */
     private fun loadFromCache(cacheKey: String): TabIcon.Image? {
         val cacheFile = File(cacheDir, "$cacheKey.png")
         if (!cacheFile.exists()) return null
 
         return try {
+            // Touch file to update access time for LRU
+            cacheFile.setLastModified(System.currentTimeMillis())
+
             val bufferedImage = ImageIO.read(cacheFile) ?: return null
             val imageBitmap = bufferedImage.toComposeImageBitmap()
             TabIcon.Image(BitmapPainter(imageBitmap))
@@ -117,22 +146,27 @@ object HighQualityFaviconService {
     }
 
     /**
-     * Fetch high-quality favicon from Google's service.
+     * Fetch high-quality favicon from Google's service using async Ktor client.
      * URL format: https://www.google.com/s2/favicons?domain=example.com&sz=128
      */
-    private fun fetchFromGoogle(domain: String, cacheKey: String): TabIcon.Image? {
+    private suspend fun fetchFromGoogle(domain: String, cacheKey: String): TabIcon.Image? {
         val googleUrl = "https://www.google.com/s2/favicons?domain=$domain&sz=$ICON_SIZE"
 
         return try {
-            val connection = URL(googleUrl).openConnection() as HttpURLConnection
-            connection.connectTimeout = CONNECTION_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            val response = httpClient.get(googleUrl) {
+                headers {
+                    append(HttpHeaders.UserAgent, "Mozilla/5.0")
+                }
+            }
 
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val bufferedImage = ImageIO.read(connection.inputStream)
+            if (response.status == HttpStatusCode.OK) {
+                val bytes = response.readBytes()
+                val bufferedImage = ImageIO.read(ByteArrayInputStream(bytes))
+
                 if (bufferedImage != null && bufferedImage.width >= 32) {
+                    // Evict old entries if cache is full
+                    evictIfNeeded()
+
                     // Save to cache
                     val cacheFile = File(cacheDir, "$cacheKey.png")
                     ImageIO.write(bufferedImage, "PNG", cacheFile)
@@ -149,6 +183,33 @@ object HighQualityFaviconService {
         } catch (e: Exception) {
             println("[HQFavicon] Failed to fetch from Google for $domain: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * Evict oldest entries if cache exceeds MAX_CACHE_SIZE.
+     * Uses file modification time for LRU ordering.
+     */
+    private suspend fun evictIfNeeded() {
+        cacheMutex.withLock {
+            val files = cacheDir.listFiles() ?: return
+
+            if (files.size >= MAX_CACHE_SIZE) {
+                // Sort by last modified (oldest first) and delete oldest entries
+                val toDelete = files
+                    .sortedBy { it.lastModified() }
+                    .take(CACHE_EVICTION_COUNT)
+
+                toDelete.forEach { file ->
+                    try {
+                        file.delete()
+                    } catch (e: Exception) {
+                        // Ignore deletion errors
+                    }
+                }
+
+                println("[HQFavicon] Evicted ${toDelete.size} old cache entries")
+            }
         }
     }
 
@@ -177,5 +238,12 @@ object HighQualityFaviconService {
     fun getCacheStats(): Pair<Int, Long> {
         val files = cacheDir.listFiles() ?: return Pair(0, 0L)
         return Pair(files.size, files.sumOf { it.length() })
+    }
+
+    /**
+     * Cleanup resources when no longer needed.
+     */
+    fun close() {
+        httpClient.close()
     }
 }

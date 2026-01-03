@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -117,62 +118,78 @@ object DashboardStatsManager {
 
     /**
      * Check if it's a new day and reset daily activity if needed.
+     * Uses atomic update to prevent race conditions.
      */
     private fun checkAndResetDailyActivity() {
         val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
-        val currentActivity = _stats.value.todayActivity
-
-        if (currentActivity.date != today) {
-            // New day - reset daily activity
-            _stats.value = _stats.value.copy(
-                todayActivity = DailyActivity(date = today)
-            )
-            scheduleSave()
+        _stats.update { current ->
+            if (current.todayActivity.date != today) {
+                // New day - reset daily activity
+                scheduleSave()
+                current.copy(todayActivity = DailyActivity(date = today))
+            } else {
+                current
+            }
         }
     }
 
     /**
      * Record a file open event.
+     * Uses atomic update to prevent race conditions from rapid calls.
      */
     fun recordFileOpen() {
-        checkAndResetDailyActivity()
-        val current = _stats.value
-        _stats.value = current.copy(
-            totalFilesOpened = current.totalFilesOpened + 1,
-            todayActivity = current.todayActivity.copy(
-                filesOpened = current.todayActivity.filesOpened + 1
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+        _stats.update { current ->
+            val activity = if (current.todayActivity.date != today) {
+                DailyActivity(date = today, filesOpened = 1)
+            } else {
+                current.todayActivity.copy(filesOpened = current.todayActivity.filesOpened + 1)
+            }
+            current.copy(
+                totalFilesOpened = current.totalFilesOpened + 1,
+                todayActivity = activity
             )
-        )
+        }
         scheduleSave()
     }
 
     /**
      * Record a browser page visit.
+     * Uses atomic update to prevent race conditions from rapid calls.
      */
     fun recordPageVisit() {
-        checkAndResetDailyActivity()
-        val current = _stats.value
-        _stats.value = current.copy(
-            totalBrowserPagesVisited = current.totalBrowserPagesVisited + 1,
-            todayActivity = current.todayActivity.copy(
-                pagesVisited = current.todayActivity.pagesVisited + 1
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+        _stats.update { current ->
+            val activity = if (current.todayActivity.date != today) {
+                DailyActivity(date = today, pagesVisited = 1)
+            } else {
+                current.todayActivity.copy(pagesVisited = current.todayActivity.pagesVisited + 1)
+            }
+            current.copy(
+                totalBrowserPagesVisited = current.totalBrowserPagesVisited + 1,
+                todayActivity = activity
             )
-        )
+        }
         scheduleSave()
     }
 
     /**
      * Record a terminal session start.
+     * Uses atomic update to prevent race conditions from rapid calls.
      */
     fun recordTerminalSession() {
-        checkAndResetDailyActivity()
-        val current = _stats.value
-        _stats.value = current.copy(
-            totalTerminalSessions = current.totalTerminalSessions + 1,
-            todayActivity = current.todayActivity.copy(
-                terminalSessions = current.todayActivity.terminalSessions + 1
+        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
+        _stats.update { current ->
+            val activity = if (current.todayActivity.date != today) {
+                DailyActivity(date = today, terminalSessions = 1)
+            } else {
+                current.todayActivity.copy(terminalSessions = current.todayActivity.terminalSessions + 1)
+            }
+            current.copy(
+                totalTerminalSessions = current.totalTerminalSessions + 1,
+                todayActivity = activity
             )
-        )
+        }
         scheduleSave()
     }
 

@@ -523,18 +523,21 @@ fun ComponentContext.BossApp(
         }
     }
 
+    // Collect project state reactively (used by multiple effects below)
+    val selectedProject by ProjectState.selectedProject.collectAsState()
+
     // Open CodeBase and RunConfigurations panels if a project is selected at startup
     LaunchedEffect(Unit) {
-        val selectedProject = ProjectState.selectedProject.value
-        if (selectedProject.path.isNotEmpty()) {
-            println("BossApp: Project '${selectedProject.name}' selected at startup, opening panels")
+        // Use snapshotFlow to reactively check the initial project state
+        val initialProject = ProjectState.selectedProject.value
+        if (initialProject.path.isNotEmpty()) {
+            println("BossApp: Project '${initialProject.name}' selected at startup, opening panels")
             PanelEventBus.openPanel(CodeBaseInfo.id)
             PanelEventBus.openPanel(RunConfigurationsInfo.id)
         }
     }
 
     // Apply default workspace when project is selected
-    val selectedProject by ProjectState.selectedProject.collectAsState()
     LaunchedEffect(selectedProject.path) {
         if (selectedProject.path.isNotEmpty()) {
             val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
