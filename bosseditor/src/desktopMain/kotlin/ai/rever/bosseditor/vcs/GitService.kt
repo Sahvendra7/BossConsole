@@ -5,6 +5,7 @@ import ai.rever.bosseditor.features.FileBlameInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Service for interacting with Git.
@@ -15,6 +16,11 @@ import java.io.File
  * JVM-only: Desktop target only (see CLAUDE.md).
  */
 class GitService {
+    companion object {
+        /** Timeout for git operations in seconds */
+        private const val GIT_TIMEOUT_SECONDS = 30L
+    }
+
     /**
      * Gets blame information for a file.
      *
@@ -38,8 +44,15 @@ class GitService {
             }.start()
 
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            val exitCode = process.waitFor()
 
+            // Wait with timeout to prevent hanging on stuck git processes
+            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                println("[GitService] git blame timed out after ${GIT_TIMEOUT_SECONDS}s")
+                return@withContext null
+            }
+
+            val exitCode = process.exitValue()
             if (exitCode != 0) {
                 println("[GitService] git blame failed with exit code $exitCode")
                 return@withContext null
@@ -66,7 +79,13 @@ class GitService {
 
             // Drain the input stream to prevent resource leak
             process.inputStream.bufferedReader().use { it.readText() }
-            process.waitFor() == 0
+
+            // Wait with timeout to prevent hanging
+            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@withContext false
+            }
+            process.exitValue() == 0
         } catch (e: Exception) {
             false
         }
@@ -83,8 +102,14 @@ class GitService {
                 .start()
 
             val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-            val exitCode = process.waitFor()
 
+            // Wait with timeout to prevent hanging
+            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@withContext null
+            }
+
+            val exitCode = process.exitValue()
             if (exitCode == 0 && output.isNotEmpty()) {
                 File(output)
             } else {

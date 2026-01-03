@@ -133,6 +133,14 @@ data class EditorRenderingContext(
     // Helper for offset to position conversion (cached from document)
     val offsetToPosition: (Int) -> EditorPosition
 ) {
+    /**
+     * Lazy-computed index of spelling errors by line for efficient rendering.
+     * Only errors for visible lines need to be rendered, so this avoids O(n) iteration.
+     */
+    val spellingErrorsByLine: Map<Int, List<SpellingError>> by lazy {
+        spellingErrors.groupBy { it.line }
+    }
+
     companion object {
         /**
          * Creates a rendering context from an EditorState.

@@ -252,7 +252,7 @@ class QuickFixPopupState(
         private set
 
     val selectedFix: QuickFix?
-        get() = fixes.getOrNull(selectedIndex)
+        get() = if (fixes.isEmpty()) null else fixes.getOrNull(selectedIndex.coerceIn(fixes.indices))
 
     val hasFixes: Boolean
         get() = fixes.isNotEmpty()

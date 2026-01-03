@@ -866,31 +866,36 @@ object EditorCanvasRenderer {
     /**
      * Draws spelling error squiggle underlines (blue, like IDE spell check).
      * Uses visual line mapping to properly handle collapsed folds.
+     *
+     * Optimized to iterate only visible lines and lookup errors from line index,
+     * avoiding O(n) iteration through all errors.
      */
     private fun DrawScope.drawSpellingErrors(ctx: EditorRenderingContext) {
         // Use hintSquiggle color (blue) for spelling errors
         val color = ctx.colors.hintSquiggle
 
-        for (spellingError in ctx.spellingErrors) {
-            val docLine = spellingError.line
+        // Iterate only visible visual lines and lookup errors by document line
+        for (visualLine in ctx.visibleLineRange) {
+            val docLine = ctx.visualLineMapper.visualToDocument(visualLine)
+            if (docLine < 0) continue // Should not happen for visible lines
 
-            // Convert document line to visual line
-            val visualLine = ctx.visualLineMapper.documentToVisual(docLine)
-            if (visualLine < 0) continue // Line is hidden (folded)
-            if (visualLine !in ctx.visibleLineRange) continue // Line is off-screen
+            // Efficient lookup by line - only process errors on this line
+            val lineErrors = ctx.spellingErrorsByLine[docLine] ?: continue
 
-            // Calculate column positions from offset range
-            val lineStartOffset = ctx.getLineStartOffset(docLine)
-            val startCol = spellingError.startOffset - lineStartOffset
-            val endCol = spellingError.endOffset - lineStartOffset
+            for (spellingError in lineErrors) {
+                // Calculate column positions from offset range
+                val lineStartOffset = ctx.getLineStartOffset(docLine)
+                val startCol = spellingError.startOffset - lineStartOffset
+                val endCol = spellingError.endOffset - lineStartOffset
 
-            if (startCol >= endCol || startCol < 0) continue
+                if (startCol >= endCol || startCol < 0) continue
 
-            val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
-            val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
-            val width = (endCol - startCol) * ctx.charWidth
+                val y = visualLine * ctx.lineHeight - ctx.scrollOffsetY + ctx.lineHeight - 2f // 2px from bottom
+                val xStart = ctx.gutterWidth + startCol * ctx.charWidth - ctx.scrollOffsetX
+                val width = (endCol - startCol) * ctx.charWidth
 
-            drawSquiggleLine(xStart, y, width, color)
+                drawSquiggleLine(xStart, y, width, color)
+            }
         }
     }
 

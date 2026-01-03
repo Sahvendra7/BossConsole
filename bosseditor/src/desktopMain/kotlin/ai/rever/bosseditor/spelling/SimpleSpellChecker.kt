@@ -2,7 +2,8 @@ package ai.rever.bosseditor.spelling
 
 import java.io.File
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Simple dictionary-based spell checker implementation.
@@ -23,8 +24,8 @@ class SimpleSpellChecker(
     private val customDictionaryPath: String = System.getProperty("user.home") + "/.boss/spelling/custom.txt"
 ) : SpellChecker {
 
-    // Thread-safe initialization state
-    private val isInitializing = AtomicBoolean(false)
+    // Thread-safe initialization state using CountDownLatch for proper synchronization
+    private val initLatch = CountDownLatch(1)
     @Volatile
     private var dictionary: Set<String> = emptySet()
     @Volatile
@@ -55,14 +56,20 @@ class SimpleSpellChecker(
 
     /**
      * Ensures the spell checker is initialized.
-     * Uses atomic flag to prevent multiple concurrent initializations.
+     * Uses CountDownLatch for proper thread synchronization without busy-wait.
      * Safe to call from any thread.
      */
     private fun ensureInitialized() {
         if (isInitialized) return
 
-        // Use atomic compare-and-set to ensure only one thread initializes
-        if (isInitializing.compareAndSet(false, true)) {
+        // Fast path: check if already initialized
+        if (initLatch.count == 0L) return
+
+        // Try to be the initializer thread
+        synchronized(this) {
+            if (isInitialized) return
+            if (initLatch.count == 0L) return
+
             try {
                 // Load main dictionary
                 val words = loadMainDictionary()
@@ -82,12 +89,18 @@ class SimpleSpellChecker(
                 prefixMap = emptyMap()
                 isInitialized = true
             } finally {
-                isInitializing.set(false)
+                // Signal all waiting threads that initialization is complete
+                initLatch.countDown()
             }
-        } else {
-            // Another thread is initializing, wait for it
-            while (!isInitialized && isInitializing.get()) {
-                Thread.yield()
+        }
+
+        // Wait for initialization to complete (with timeout to prevent deadlock)
+        if (!isInitialized) {
+            try {
+                initLatch.await(5, TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                println("[SimpleSpellChecker] Initialization interrupted")
             }
         }
     }
