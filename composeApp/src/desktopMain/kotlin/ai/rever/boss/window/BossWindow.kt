@@ -193,6 +193,10 @@ fun ApplicationScope.BossWindow(
                     }
                 )
                 Item(
+                    "New Window",
+                    onClick = { WindowOperations.createNewWindow() }
+                )
+                Item(
                     "Open Project...",
                     onClick = {
                         MenuActionsHandler.triggerOpenProject(windowState.id)
@@ -392,13 +396,6 @@ fun ApplicationScope.BossWindow(
 
             // Window Menu
             Menu("Window") {
-                Item(
-                    "New Window",
-                    onClick = { WindowOperations.createNewWindow() }
-                )
-
-                Separator()
-
                 Item(
                     "Close Tab",
                     onClick = {
