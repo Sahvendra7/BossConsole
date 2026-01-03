@@ -126,6 +126,12 @@ fun main(args: Array<String>) {
         } catch (e: Exception) {
             println("Error shutting down PSI: ${e.message}")
         }
+        try {
+            // Close HTTP client for high-quality favicon service
+            ai.rever.boss.cache.HighQualityFaviconService.close()
+        } catch (e: Exception) {
+            println("Error closing favicon HTTP client: ${e.message}")
+        }
         SingleInstanceManager.release()
     })
 
