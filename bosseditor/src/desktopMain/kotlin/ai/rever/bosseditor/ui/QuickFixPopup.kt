@@ -17,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontFamily
@@ -57,12 +59,18 @@ fun QuickFixPopup(
     val theme = LocalEditorTheme.current
     val colors = theme.colors
     val listState = rememberLazyListState()
+    val focusRequester = remember { FocusRequester() }
 
     // Scroll to selected item when selection changes
     LaunchedEffect(selectedIndex) {
         if (fixes.isNotEmpty() && selectedIndex in fixes.indices) {
             listState.animateScrollToItem(selectedIndex)
         }
+    }
+
+    // Request focus when popup appears for immediate keyboard navigation
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
     }
 
     if (fixes.isEmpty()) return
@@ -80,6 +88,7 @@ fun QuickFixPopup(
             modifier = modifier
                 .width(400.dp)
                 .heightIn(max = (maxVisibleItems * 28 + 16).dp)
+                .focusRequester(focusRequester)
                 .background(colors.gutterBackground, RoundedCornerShape(4.dp))
                 .border(1.dp, colors.gutterBorder, RoundedCornerShape(4.dp))
                 .onKeyEvent { event ->

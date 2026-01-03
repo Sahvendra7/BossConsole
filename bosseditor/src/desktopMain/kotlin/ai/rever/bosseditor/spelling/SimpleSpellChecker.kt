@@ -88,22 +88,24 @@ class SimpleSpellChecker(
             if (initLatch.count == 0L) return
 
             try {
-                // Load main dictionary
+                // Load and build all data structures BEFORE updating shared state
+                // to prevent readers from seeing inconsistent state
                 val words = loadMainDictionary()
-                dictionary = words
+                val newPrefixMap = buildPrefixMap(words)
 
-                // Build prefix map for efficient suggestions (O(1) lookup by prefix)
-                prefixMap = buildPrefixMap(words)
-
-                // Load custom dictionary
+                // Load custom dictionary (updates customDictionary under its own lock)
                 loadCustomDictionary()
 
+                // Update shared state atomically (all assignments together)
+                dictionary = words
+                prefixMap = newPrefixMap
                 isInitialized = true
                 initializationError = null
             } catch (e: Exception) {
                 val errorMsg = "Failed to initialize: ${e.message}"
                 println("[SimpleSpellChecker] $errorMsg")
                 // Fall back to empty dictionary but track the error
+                // Update all shared state together
                 dictionary = emptySet()
                 prefixMap = emptyMap()
                 initializationError = errorMsg
@@ -367,14 +369,14 @@ class SimpleSpellChecker(
     override fun addToDictionary(word: String) {
         val normalized = word.lowercase(Locale.US)
         if (normalized.isNotBlank()) {
-            // Security: Validate word length to prevent OOM
-            if (normalized.length > MAX_WORD_LENGTH) {
-                println("[SimpleSpellChecker] Word exceeds max length ($MAX_WORD_LENGTH chars): '${normalized.take(20)}...'")
-                return
-            }
             val shouldSave: Boolean
-            // Synchronize to fix TOCTOU race condition between size check and add
+            // All validation inside synchronized block for consistent state checking
             synchronized(dictionaryLock) {
+                // Security: Validate word length to prevent OOM
+                if (normalized.length > MAX_WORD_LENGTH) {
+                    println("[SimpleSpellChecker] Word exceeds max length ($MAX_WORD_LENGTH chars): '${normalized.take(20)}...'")
+                    return
+                }
                 // Prevent unbounded dictionary growth to avoid memory leak
                 if (customDictionary.size >= MAX_CUSTOM_DICTIONARY_SIZE) {
                     println("[SimpleSpellChecker] Custom dictionary limit reached ($MAX_CUSTOM_DICTIONARY_SIZE words). Cannot add '$normalized'.")

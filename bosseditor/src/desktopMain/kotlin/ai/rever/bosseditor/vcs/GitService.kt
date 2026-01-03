@@ -29,59 +29,67 @@ class GitService {
      * @param filePath The absolute path to the file
      * @return FileBlameInfo if successful, null if file is not in a git repo or error
      */
-    suspend fun blame(filePath: String): FileBlameInfo? = withContext(Dispatchers.IO) {
-        var process: Process? = null
-        try {
-            val file = File(filePath)
-            if (!file.exists()) return@withContext null
+    suspend fun blame(filePath: String): FileBlameInfo? {
+        // Run git command on IO dispatcher (process/file operations)
+        val output = withContext(Dispatchers.IO) {
+            var process: Process? = null
+            try {
+                val file = File(filePath)
+                if (!file.exists()) return@withContext null
 
-            val directory = file.parentFile
-            if (!isGitRepository(directory)) return@withContext null
+                val directory = file.parentFile
+                if (!isGitRepository(directory)) return@withContext null
 
-            // Run git blame with porcelain format for easy parsing
-            // Use "--" separator to prevent filenames starting with "-" from being interpreted as options
-            process = ProcessBuilder(
-                "git", "blame", "--porcelain", "--", file.name
-            ).apply {
-                directory(directory)
-                redirectErrorStream(true)
-            }.start()
+                // Run git blame with porcelain format for easy parsing
+                // Use "--" separator to prevent filenames starting with "-" from being interpreted as options
+                process = ProcessBuilder(
+                    "git", "blame", "--porcelain", "--", file.name
+                ).apply {
+                    directory(directory)
+                    redirectErrorStream(true)
+                }.start()
 
-            // Read output asynchronously to prevent deadlock if process hangs
-            // (readText() blocks until EOF, so timeout would never trigger otherwise)
-            val outputFuture = CompletableFuture.supplyAsync {
-                process.inputStream.bufferedReader().use { it.readText() }
-            }
+                // Read output asynchronously to prevent deadlock if process hangs
+                // (readText() blocks until EOF, so timeout would never trigger otherwise)
+                val outputFuture = CompletableFuture.supplyAsync {
+                    process.inputStream.bufferedReader().use { it.readText() }
+                }
 
-            // Wait with timeout to prevent hanging on stuck git processes
-            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                outputFuture.cancel(true)
-                println("[GitService] git blame timed out after ${GIT_TIMEOUT_SECONDS}s")
-                return@withContext null
-            }
+                // Wait with timeout to prevent hanging on stuck git processes
+                if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    process.destroyForcibly()
+                    outputFuture.cancel(true)
+                    println("[GitService] git blame timed out after ${GIT_TIMEOUT_SECONDS}s")
+                    return@withContext null
+                }
 
-            val output = outputFuture.get()
-            val exitCode = process.exitValue()
-            if (exitCode != 0) {
-                println("[GitService] git blame failed with exit code $exitCode")
-                return@withContext null
-            }
+                val gitOutput = outputFuture.get()
+                val exitCode = process.exitValue()
+                if (exitCode != 0) {
+                    println("[GitService] git blame failed with exit code $exitCode")
+                    return@withContext null
+                }
 
-            parseBlameOutput(output, filePath)
-        } catch (e: CancellationException) {
-            // Always rethrow CancellationException per THREADING.md
-            throw e
-        } catch (e: Exception) {
-            println("[GitService] Error running git blame: ${e.message}")
-            null
-        } finally {
-            // Ensure process is cleaned up even if exception occurs during waitFor
-            process?.let {
-                if (it.isAlive) {
-                    it.destroyForcibly()
+                gitOutput
+            } catch (e: CancellationException) {
+                // Always rethrow CancellationException per THREADING.md
+                throw e
+            } catch (e: Exception) {
+                println("[GitService] Error running git blame: ${e.message}")
+                null
+            } finally {
+                // Ensure process is cleaned up even if exception occurs during waitFor
+                process?.let {
+                    if (it.isAlive) {
+                        it.destroyForcibly()
+                    }
                 }
             }
+        } ?: return null
+
+        // Parse on Default dispatcher (CPU-bound string processing per CLAUDE.md)
+        return withContext(Dispatchers.Default) {
+            parseBlameOutput(output, filePath)
         }
     }
 
