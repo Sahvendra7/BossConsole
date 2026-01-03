@@ -24,8 +24,18 @@ data class QuickFix(
 ) {
     /**
      * Executes the quick fix action.
+     *
+     * @return true if the action executed successfully, false if an error occurred
      */
-    fun execute() = actionHandler()
+    fun execute(): Boolean {
+        return try {
+            actionHandler()
+            true
+        } catch (e: Exception) {
+            println("[QuickFix] Error executing '$title': ${e.message}")
+            false
+        }
+    }
 
     companion object {
         /**

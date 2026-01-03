@@ -24,6 +24,11 @@ class SimpleSpellChecker(
     private val customDictionaryPath: String = System.getProperty("user.home") + "/.boss/spelling/custom.txt"
 ) : SpellChecker {
 
+    companion object {
+        /** Maximum number of words allowed in custom dictionary to prevent memory leak */
+        private const val MAX_CUSTOM_DICTIONARY_SIZE = 10_000
+    }
+
     // Thread-safe initialization state using CountDownLatch for proper synchronization
     private val initLatch = CountDownLatch(1)
     @Volatile
@@ -884,8 +889,14 @@ class SimpleSpellChecker(
     override fun addToDictionary(word: String) {
         val normalized = word.lowercase(Locale.US)
         if (normalized.isNotBlank()) {
-            customDictionary.add(normalized)
-            saveCustomDictionary()
+            // Prevent unbounded dictionary growth to avoid memory leak
+            if (customDictionary.size >= MAX_CUSTOM_DICTIONARY_SIZE) {
+                println("[SimpleSpellChecker] Custom dictionary limit reached ($MAX_CUSTOM_DICTIONARY_SIZE words). Cannot add '$normalized'.")
+                return
+            }
+            if (customDictionary.add(normalized)) {
+                saveCustomDictionary()
+            }
         }
     }
 
