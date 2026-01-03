@@ -21,6 +21,8 @@ class GitService {
     companion object {
         /** Timeout for git operations in seconds */
         private const val GIT_TIMEOUT_SECONDS = 30L
+        /** Maximum reasonable line number to accept (sanity check for malformed output) */
+        private const val MAX_LINE_NUMBER = 1_000_000
     }
 
     /**
@@ -219,7 +221,9 @@ class GitService {
                     currentCommit = parts[0]
                     // Convert to 0-indexed; skip entry if parsing fails to avoid incorrect attribution
                     val parsedLine = parts[2].toIntOrNull()?.minus(1)
-                    if (parsedLine == null) {
+                    // Bounds check: null (parse failure), negative, or unreasonably large
+                    if (parsedLine == null || parsedLine < 0 || parsedLine > MAX_LINE_NUMBER) {
+                        println("[GitService] Invalid line number in blame output: ${parts[2]}")
                         i++
                         continue
                     }

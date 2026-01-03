@@ -68,6 +68,16 @@ class SpellCheckServiceTest {
     }
 
     @Test
+    fun testSplitCamelCaseTwoCharEdgeCase() {
+        // Edge case: minimal camelCase "aB" should split into ["a", "B"]
+        val result = splitCamelCaseWithOffsets("aB")
+
+        assertEquals(2, result.size)
+        assertEquals("a" to 0, result[0])
+        assertEquals("B" to 1, result[1])
+    }
+
+    @Test
     fun testSplitCamelCaseEmpty() {
         val result = splitCamelCaseWithOffsets("")
 
