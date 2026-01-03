@@ -126,6 +126,7 @@ class SpellCheckServiceTest {
             override fun getLanguage() = "en_US"
             override fun setLanguage(languageCode: String) = true
             override fun getAvailableLanguages() = listOf("en_US")
+            override fun close() {}
         }
 
         val service = SpellCheckService(spellChecker)

@@ -436,6 +436,14 @@ class SimpleSpellChecker(
     override fun getAvailableLanguages(): List<String> = listOf("en_US", "en_GB")
 
     /**
+     * Closes the spell checker and releases resources.
+     * Implements [Closeable.close] for use with `use {}` blocks.
+     */
+    override fun close() {
+        shutdown()
+    }
+
+    /**
      * Shuts down the background I/O executor.
      * Should be called when the spell checker is no longer needed to prevent resource leaks.
      * Waits up to 5 seconds for pending operations to complete before forcing shutdown.

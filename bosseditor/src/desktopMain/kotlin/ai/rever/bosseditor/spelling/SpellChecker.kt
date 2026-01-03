@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.spelling
 
+import java.io.Closeable
+
 /**
  * Interface for spell checking functionality.
  *
@@ -8,9 +10,11 @@ package ai.rever.bosseditor.spelling
  * - LanguageTool
  * - Custom dictionary-based
  *
+ * Implements [Closeable] for proper resource cleanup (e.g., background executors).
+ *
  * JVM-only: Desktop target only (see CLAUDE.md).
  */
-interface SpellChecker {
+interface SpellChecker : Closeable {
     /**
      * Checks if a word is spelled correctly.
      *
