@@ -1,8 +1,11 @@
 package ai.rever.boss.window
 
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Handler for menu actions that need to be processed by BossApp.
@@ -60,6 +63,31 @@ object MenuActionsHandler {
 
     private val _revealPluginEvents = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 10)
     val revealPluginEvents: SharedFlow<Pair<String, String>> = _revealPluginEvents.asSharedFlow()
+
+    // State for enabling/disabling split menu items per window (windowId -> hasActiveTabs)
+    private val _splitEnabledState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val splitEnabledState: StateFlow<Map<String, Boolean>> = _splitEnabledState.asStateFlow()
+
+    /**
+     * Update whether split is enabled for a window.
+     * Split should be enabled when there are tabs in the active panel.
+     *
+     * @param windowId The window ID
+     * @param enabled Whether split should be enabled
+     */
+    fun updateSplitEnabled(windowId: String, enabled: Boolean) {
+        _splitEnabledState.value = _splitEnabledState.value + (windowId to enabled)
+    }
+
+    /**
+     * Check if split is enabled for a window.
+     *
+     * @param windowId The window ID
+     * @return True if split is enabled (has active tabs), false otherwise
+     */
+    fun isSplitEnabled(windowId: String): Boolean {
+        return _splitEnabledState.value[windowId] ?: false
+    }
 
     /**
      * Trigger a "New Tab" action for the specified window.

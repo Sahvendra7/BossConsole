@@ -1772,6 +1772,14 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Track whether split is enabled (has tabs in active panel)
+    val activePanelId by splitViewState.activePanelIdState
+    val activeTabsComponent = splitViewState.getActiveTabsComponent()
+    val hasActiveTabs = activeTabsComponent?.tabsState?.value?.tabs?.isNotEmpty() == true
+    LaunchedEffect(windowId, activePanelId, hasActiveTabs) {
+        ai.rever.boss.window.MenuActionsHandler.updateSplitEnabled(windowId, hasActiveTabs)
+    }
+
     // Handle Plugin menu events
     LaunchedEffect(windowId) {
         ai.rever.boss.window.MenuActionsHandler.revealPluginEvents

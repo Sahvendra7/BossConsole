@@ -155,6 +155,10 @@ fun ApplicationScope.BossWindow(
         val workspaces by workspaceManager.workspaces.collectAsState()
         val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
 
+        // Get split enabled state (whether there are tabs to split)
+        val splitEnabledMap by MenuActionsHandler.splitEnabledState.collectAsState()
+        val isSplitEnabled = splitEnabledMap[windowState.id] ?: false
+
         // Get registered plugins for Plugin menu
         val panelRegistry = remember { PanelRegistry() }
         var registeredPluginsVersion by remember { mutableStateOf(0) }
@@ -300,13 +304,15 @@ fun ApplicationScope.BossWindow(
                     "Split Vertically",
                     onClick = {
                         MenuActionsHandler.triggerSplitVertically(windowState.id)
-                    }
+                    },
+                    enabled = isSplitEnabled
                 )
                 Item(
                     "Split Horizontally",
                     onClick = {
                         MenuActionsHandler.triggerSplitHorizontally(windowState.id)
-                    }
+                    },
+                    enabled = isSplitEnabled
                 )
 
                 Separator()
