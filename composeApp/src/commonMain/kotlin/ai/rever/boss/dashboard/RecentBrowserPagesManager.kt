@@ -80,8 +80,8 @@ object RecentBrowserPagesManager {
             visitCount = 0
         ),
         RecentBrowserPage(
-            url = "https://github.com/risa-labs-inc/BOSS-Releases",
-            title = "BOSS Releases",
+            url = "https://github.com/risa-labs-inc/BossConsole-Releases",
+            title = "BossConsole Releases",
             lastVisited = 0L,
             faviconCacheKey = null,
             visitCount = 0

@@ -10,14 +10,14 @@ brew install --cask boss
 ```
 
 ### Manual Installation
-1. Download the latest `BOSS-x.x.x-Universal.dmg` from [Releases](https://github.com/risa-labs-inc/BOSS-Releases/releases)
+1. Download the latest `BOSS-x.x.x-Universal.dmg` from [Releases](https://github.com/risa-labs-inc/BossConsole-Releases/releases)
 2. Open the DMG and drag BOSS to Applications
 3. Launch BOSS from Applications
 
 ## Windows
 
 ### MSI Installer
-1. Download the latest `BOSS-x.x.x.msi` from [Releases](https://github.com/risa-labs-inc/BOSS-Releases/releases)
+1. Download the latest `BOSS-x.x.x.msi` from [Releases](https://github.com/risa-labs-inc/BossConsole-Releases/releases)
 2. Run the installer and follow the prompts
 3. Launch BOSS from the Start Menu
 
@@ -26,36 +26,36 @@ brew install --cask boss
 ### Debian/Ubuntu (DEB)
 ```bash
 # Download and install the latest DEB package (amd64)
-curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4) -o boss.deb
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4) -o boss.deb
 sudo dpkg -i boss.deb
 sudo apt-get install -f  # Fix dependencies if needed
 
 # For ARM64:
-curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*arm64.deb" | cut -d '"' -f 4) -o boss.deb
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases/latest | grep "browser_download_url.*arm64.deb" | cut -d '"' -f 4) -o boss.deb
 sudo dpkg -i boss.deb
 sudo apt-get install -f
 ```
 
-Or download manually from the [Releases page](https://github.com/risa-labs-inc/BOSS-Releases/releases/latest).
+Or download manually from the [Releases page](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest).
 
 ### Fedora/RHEL (RPM)
 ```bash
 # Download and install the latest RPM package (x86_64)
-curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*x86_64.rpm" | cut -d '"' -f 4) -o boss.rpm
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases/latest | grep "browser_download_url.*x86_64.rpm" | cut -d '"' -f 4) -o boss.rpm
 sudo dnf install -y ./boss.rpm  # Or: sudo rpm -i boss.rpm
 
 # For ARM64 (aarch64):
-curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*aarch64.rpm" | cut -d '"' -f 4) -o boss.rpm
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases/latest | grep "browser_download_url.*aarch64.rpm" | cut -d '"' -f 4) -o boss.rpm
 sudo dnf install -y ./boss.rpm
 ```
 
-Or download manually from the [Releases page](https://github.com/risa-labs-inc/BOSS-Releases/releases/latest).
+Or download manually from the [Releases page](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest).
 
 ### JAR (Universal)
 For distributions without DEB/RPM support or custom installations:
 ```bash
 # Requires Java 17+
-curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases/latest | grep "browser_download_url.*\.jar" | head -1 | cut -d '"' -f 4) -o boss.jar
+curl -sL $(curl -s https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases/latest | grep "browser_download_url.*\.jar" | head -1 | cut -d '"' -f 4) -o boss.jar
 java -jar boss.jar
 ```
 

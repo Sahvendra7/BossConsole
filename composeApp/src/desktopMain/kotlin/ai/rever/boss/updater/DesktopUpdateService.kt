@@ -60,7 +60,7 @@ actual class UpdateService {
     
     companion object {
         private const val GITHUB_API_BASE = "https://api.github.com"
-        private const val RELEASES_REPO = "risa-labs-inc/BOSS-Releases"
+        private const val RELEASES_REPO = "risa-labs-inc/BossConsole-Releases"
         private const val RELEASES_ENDPOINT = "$GITHUB_API_BASE/repos/$RELEASES_REPO/releases"
     }
     

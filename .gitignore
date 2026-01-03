@@ -34,8 +34,8 @@ BOSS-Standalone-*/
 zulu-jdk-*/
 jdk-*/
 
-# BOSS-Releases public repository
-BOSS-Releases/
+# BossConsole-Releases public repository
+BossConsole-Releases/
 
 # Homebrew tap repository
 homebrew/

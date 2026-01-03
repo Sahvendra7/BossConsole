@@ -8,7 +8,7 @@ The BOSS application now includes a comprehensive auto-update system that automa
 
 - **Automatic Update Checks**: Checks for updates every 6 hours in the background
 - **Multiple Distribution Support**: Handles DMG (macOS), MSI (Windows), and JAR (cross-platform)
-- **GitHub Integration**: Uses GitHub Releases API from `risa-labs-inc/BOSS-Releases`
+- **GitHub Integration**: Uses GitHub Releases API from `risa-labs-inc/BossConsole-Releases`
 - **Progress Tracking**: Shows download progress with visual indicators
 - **Non-Intrusive UI**: Update banners appear only when needed
 - **Settings Integration**: Update controls in Settings → Updates section
@@ -21,7 +21,7 @@ The BOSS application now includes a comprehensive auto-update system that automa
 - Version comparison logic handles `major.minor.patch[-prerelease]` format
 
 ### 2. **Update Checking**
-- Fetches latest release from GitHub API: `https://api.github.com/repos/risa-labs-inc/BOSS-Releases/releases`
+- Fetches latest release from GitHub API: `https://api.github.com/repos/risa-labs-inc/BossConsole-Releases/releases`
 - Compares current version with latest release
 - Filters out drafts and pre-releases for stable updates
 - Background checks every 6 hours, manual checks available
@@ -81,7 +81,7 @@ val CURRENT = Version(8, 9, 0) // Example: next version
 ```
 
 ### GitHub Repository
-- Source: `risa-labs-inc/BOSS-Releases`
+- Source: `risa-labs-inc/BossConsole-Releases`
 - Expected assets:
   - `BOSS-{version}-Universal.dmg` (macOS)
   - `BOSS-{version}.msi` (Windows)

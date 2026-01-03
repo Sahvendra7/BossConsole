@@ -38,17 +38,17 @@ The `generateVersionConstants` Gradle task was not running reliably before compi
 ### Prerequisites
 
 - GitHub CLI (`gh`) installed and authenticated
-- Admin access to BOSS-Releases repository
+- Admin access to BossConsole-Releases repository
 - All fixes from this PR merged to main branch
 
 ### Step 1: Delete Bad v8.12.18 Release
 
 ```bash
 # List current releases to verify v8.12.18 exists
-gh release list --repo risa-labs-inc/BOSS-Releases
+gh release list --repo risa-labs-inc/BossConsole-Releases
 
 # Delete the v8.12.18 release (keeps the tag)
-gh release delete v8.12.18 --repo risa-labs-inc/BOSS-Releases --yes
+gh release delete v8.12.18 --repo risa-labs-inc/BossConsole-Releases --yes
 
 # Delete the v8.12.18 tag
 git push --delete origin v8.12.18
@@ -131,7 +131,7 @@ gh run view <run-id> --log --repo risa-labs-inc/BOSS-Kotlin
 
 ```bash
 # Download and verify artifacts
-gh release download v8.12.18 --repo risa-labs-inc/BOSS-Releases
+gh release download v8.12.18 --repo risa-labs-inc/BossConsole-Releases
 
 # macOS: Mount DMG and check version
 hdiutil attach BOSS-8.12.18-Universal.dmg
@@ -190,7 +190,7 @@ These fixes ensure Issue #111 cannot happen again:
 
 **Solution**:
 - Verify GitHub CLI authentication: `gh auth status`
-- Ensure you have admin access to BOSS-Releases repository
+- Ensure you have admin access to BossConsole-Releases repository
 - Try using GitHub web UI as alternative
 
 **Problem**: Users still reporting downgrade
