@@ -169,6 +169,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     val selectedProject by ProjectState.selectedProject.collectAsState()
     val recentProjects by ProjectState.recentProjects.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
+    var triggerDirectoryPicker by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -185,7 +186,13 @@ fun BossDraggableComponent.BossTopLeftBar(
     BossActionButtonWithLogo(
         text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
-            showProjectDialog = { showProjectDialog = true },
+            showProjectDialog = {
+                if (recentProjects.isEmpty()) {
+                    triggerDirectoryPicker = true
+                } else {
+                    showProjectDialog = true
+                }
+            },
             onProjectSelected = { project ->
                 // Only show dialog if a project is already selected
                 if (selectedProject.path.isNotEmpty()) {
@@ -234,24 +241,23 @@ fun BossDraggableComponent.BossTopLeftBar(
         }
     }
 
+    // Handle direct directory picker trigger (when no recent projects)
+    LaunchedEffect(triggerDirectoryPicker) {
+        if (triggerDirectoryPicker) {
+            triggerDirectoryPicker = false
+            directoryPicker.pickDirectory()
+        }
+    }
+
     // Project selection dialog
-    // If no recent projects, skip dialog and browse directly
     if (showProjectDialog) {
-        if (recentProjects.isEmpty()) {
-            // No recent projects - open directory picker directly
-            LaunchedEffect(Unit) {
+        ProjectSelectionDialog(
+            onDismiss = { showProjectDialog = false },
+            onOpenDirectoryPicker = {
                 showProjectDialog = false
                 directoryPicker.pickDirectory()
             }
-        } else {
-            ProjectSelectionDialog(
-                onDismiss = { showProjectDialog = false },
-                onOpenDirectoryPicker = {
-                    showProjectDialog = false
-                    directoryPicker.pickDirectory()
-                }
-            )
-        }
+        )
     }
 
     // Project open mode dialog

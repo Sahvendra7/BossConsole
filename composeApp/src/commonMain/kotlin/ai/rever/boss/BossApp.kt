@@ -785,6 +785,7 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
+    var triggerDirectoryPicker by remember { mutableStateOf(false) }
     val recentProjects by ProjectState.recentProjects.collectAsState()
 
     // State for save feedback
@@ -1674,7 +1675,12 @@ fun ComponentContext.BossApp(
         ai.rever.boss.window.MenuActionsHandler.openProjectEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    showProjectDialog = true
+                    // Check if there are recent projects before showing dialog
+                    if (recentProjects.isEmpty()) {
+                        triggerDirectoryPicker = true
+                    } else {
+                        showProjectDialog = true
+                    }
                 }
             }
             .launchIn(this)
@@ -1980,7 +1986,13 @@ fun ComponentContext.BossApp(
                                 handleTabDropResult(result, splitViewState)
                             },
                             onShowSettings = { showSettingsDialog = true },
-                            onOpenProjectDialog = { showProjectDialog = true }
+                            onOpenProjectDialog = {
+                                if (recentProjects.isEmpty()) {
+                                    triggerDirectoryPicker = true
+                                } else {
+                                    showProjectDialog = true
+                                }
+                            }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation
@@ -2254,24 +2266,23 @@ fun ComponentContext.BossApp(
                 }
             }
 
+            // Handle direct directory picker trigger (when no recent projects)
+            LaunchedEffect(triggerDirectoryPicker) {
+                if (triggerDirectoryPicker) {
+                    triggerDirectoryPicker = false
+                    directoryPicker.pickDirectory()
+                }
+            }
+
             // Project selection dialog (triggered from File > Open Project menu)
-            // If no recent projects, skip dialog and browse directly
             if (showProjectDialog) {
-                if (recentProjects.isEmpty()) {
-                    // No recent projects - open directory picker directly
-                    LaunchedEffect(Unit) {
+                ai.rever.boss.components.dialogs.ProjectSelectionDialog(
+                    onDismiss = { showProjectDialog = false },
+                    onOpenDirectoryPicker = {
                         showProjectDialog = false
                         directoryPicker.pickDirectory()
                     }
-                } else {
-                    ai.rever.boss.components.dialogs.ProjectSelectionDialog(
-                        onDismiss = { showProjectDialog = false },
-                        onOpenDirectoryPicker = {
-                            showProjectDialog = false
-                            directoryPicker.pickDirectory()
-                        }
-                    )
-                }
+                )
             }
             // Save feedback snackbar
             saveMessage?.let { message ->

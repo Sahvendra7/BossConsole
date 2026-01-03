@@ -220,7 +220,7 @@ fun Dashboard(
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.FolderOpen,
-                                contentDescription = null,
+                                contentDescription = "Open Project Folder",
                                 modifier = Modifier.padding(end = 8.dp)
                             )
                             Text(
