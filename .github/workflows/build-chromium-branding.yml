@@ -69,14 +69,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Download JxBrowser Chromium via Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          # Create a project that initializes JxBrowser to download Chromium
-          mkdir -p jxbrowser-download
-          cd jxbrowser-download
+          mkdir -p chromium-download
+          cd chromium-download
 
+          # Create minimal Gradle project to download Chromium
           cat > settings.gradle.kts << 'SETTINGS'
           rootProject.name = "chromium-download"
           SETTINGS
@@ -84,19 +87,16 @@ jobs:
           cat > build.gradle.kts << GRADLE
           plugins {
               kotlin("jvm") version "1.9.22"
-              id("me.friwi.jxbrowser-gradle") version "1.1.1"
+              application
           }
           repositories {
               mavenCentral()
           }
-          jxbrowser {
-              version = "$JXBROWSER_VERSION"
-          }
           dependencies {
-              implementation(jxbrowser.mac.arm)
+              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
+              implementation("com.teamdev.jxbrowser:jxbrowser-mac-arm:$JXBROWSER_VERSION")
           }
-          tasks.register<JavaExec>("downloadChromium") {
-              classpath = sourceSets["main"].runtimeClasspath
+          application {
               mainClass.set("DownloadKt")
           }
           GRADLE
@@ -109,85 +109,112 @@ jobs:
           import java.nio.file.Paths
 
           fun main() {
-              val chromiumDir = Paths.get(System.getProperty("user.home"), ".jxbrowser-chromium")
-              println("Downloading Chromium to: \$chromiumDir")
+              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
+              println("Downloading Chromium to: $chromiumDir")
 
-              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY") ?: error("License key required")
+              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
+                  ?: error("JXBROWSER_LICENSE_KEY not set")
 
-              val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                  .licenseKey(licenseKey)
-                  .chromiumDir(chromiumDir)
-                  .build()
+              try {
+                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+                      .licenseKey(licenseKey)
+                      .chromiumDir(chromiumDir)
+                      .build()
 
-              val engine = Engine.newInstance(options)
-              println("Chromium downloaded successfully!")
-              engine.close()
+                  println("Creating engine (this triggers Chromium download)...")
+                  val engine = Engine.newInstance(options)
+                  println("Chromium downloaded successfully!")
+                  engine.close()
+              } catch (e: Exception) {
+                  println("Error: ${e.message}")
+                  e.printStackTrace()
+                  System.exit(1)
+              }
           }
           KOTLIN
 
-          # Run to download Chromium
-          ./gradlew downloadChromium || {
-            echo "Download via code failed, checking if binaries exist..."
-          }
+          # Generate wrapper and run
+          gradle wrapper --no-daemon
+          ./gradlew run --no-daemon
 
-          # Find downloaded Chromium
-          CHROMIUM_DIR="$HOME/.jxbrowser-chromium"
-          if [ -d "$CHROMIUM_DIR" ]; then
-            echo "Chromium found at: $CHROMIUM_DIR"
-            ls -la "$CHROMIUM_DIR"
-          else
-            echo "Chromium not found, checking Gradle cache..."
-            find ~/.gradle -name "*.app" -type d 2>/dev/null | head -5
-          fi
+          # Verify download
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+          echo "Chromium directory contents:"
+          ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
+
+      - name: Import Code Signing Certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > certificate.p12
+
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+          rm certificate.p12
 
       - name: Apply BOSS Branding
         env:
           MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
           MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
         run: |
-          CHROMIUM_DIR="$HOME/.jxbrowser-chromium"
+          CHROMIUM_DIR="$HOME/chromium-binaries"
 
           if [ ! -d "$CHROMIUM_DIR" ] || [ -z "$(ls -A $CHROMIUM_DIR 2>/dev/null)" ]; then
-            echo "::warning::Chromium binaries not downloaded. Creating placeholder."
-            mkdir -p output
-            echo "boss-browser" > output/executable.name
-            echo "Placeholder - branded Chromium not built" > output/README.txt
-          else
-            mkdir -p output
-
-            # Copy branding config
-            cp -r chromium-branding/* .
-
-            # Update params.json with actual values
-            sed -i '' "s/\${MACOS_DEVELOPER_ID}/$MACOS_DEVELOPER_ID/g" params.json
-            sed -i '' "s/\${MACOS_TEAM_ID}/$MACOS_TEAM_ID/g" params.json
-
-            # Run branding tool
-            ./tools/chromium_branding_macos_arm64 \
-              -p params.json \
-              -b "$CHROMIUM_DIR" \
-              -o output 2>&1 || {
-                echo "Branding tool failed, copying original binaries"
-                cp -r "$CHROMIUM_DIR"/* output/ || true
-                echo "boss-browser" > output/executable.name
-              }
+            echo "::error::Chromium binaries not found at $CHROMIUM_DIR"
+            exit 1
           fi
 
-          echo "Output directory contents:"
-          ls -la output/ || echo "Output directory empty"
+          echo "Chromium binaries found:"
+          ls -la "$CHROMIUM_DIR"
+
+          # Copy branding config and assets
+          cp chromium-branding/params.json .
+          cp -r chromium-branding/assets .
+          cp -r chromium-branding/entitlements .
+
+          # Replace placeholders in params.json
+          sed -i '' "s|\${MACOS_DEVELOPER_ID}|$MACOS_DEVELOPER_ID|g" params.json
+          sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" params.json
+
+          echo "params.json content:"
+          cat params.json
+
+          mkdir -p output
+
+          # Run branding tool
+          echo "Running branding tool..."
+          ./tools/chromium_branding_macos_arm64 \
+            -p params.json \
+            -b "$CHROMIUM_DIR" \
+            -o output
+
+          echo "Branding complete. Output:"
+          ls -la output/
+
+      - name: Verify executable.name
+        run: |
+          if [ -f "output/executable.name" ]; then
+            echo "executable.name content:"
+            cat output/executable.name
+          else
+            echo "::error::executable.name not found - branding may have failed"
+            exit 1
+          fi
 
       - name: Create Archive
         run: |
-          if [ -d "output" ] && [ -n "$(ls -A output 2>/dev/null)" ]; then
-            cd output
-            zip -r ../boss-chromium-macos-arm64.zip .
-          else
-            echo "No output to archive, creating minimal placeholder"
-            mkdir -p output
-            echo "boss-browser" > output/executable.name
-            cd output
-            zip -r ../boss-chromium-macos-arm64.zip .
-          fi
+          cd output
+          zip -r ../boss-chromium-macos-arm64.zip .
+          cd ..
+          echo "Archive created:"
+          ls -la boss-chromium-macos-arm64.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -209,12 +236,141 @@ jobs:
           name: branding-tool
           path: tools
 
-      - name: Create Placeholder Archive
+      - name: Make tool executable
+        run: chmod +x tools/chromium_branding_macos_x64
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          # macOS x64 is less common, create placeholder for now
+          mkdir -p chromium-download
+          cd chromium-download
+
+          cat > settings.gradle.kts << 'SETTINGS'
+          rootProject.name = "chromium-download"
+          SETTINGS
+
+          cat > build.gradle.kts << GRADLE
+          plugins {
+              kotlin("jvm") version "1.9.22"
+              application
+          }
+          repositories {
+              mavenCentral()
+          }
+          dependencies {
+              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
+              implementation("com.teamdev.jxbrowser:jxbrowser-mac:$JXBROWSER_VERSION")
+          }
+          application {
+              mainClass.set("DownloadKt")
+          }
+          GRADLE
+
+          mkdir -p src/main/kotlin
+          cat > src/main/kotlin/Download.kt << 'KOTLIN'
+          import com.teamdev.jxbrowser.engine.Engine
+          import com.teamdev.jxbrowser.engine.EngineOptions
+          import com.teamdev.jxbrowser.engine.RenderingMode
+          import java.nio.file.Paths
+
+          fun main() {
+              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
+              println("Downloading Chromium to: $chromiumDir")
+
+              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
+                  ?: error("JXBROWSER_LICENSE_KEY not set")
+
+              try {
+                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+                      .licenseKey(licenseKey)
+                      .chromiumDir(chromiumDir)
+                      .build()
+
+                  println("Creating engine (this triggers Chromium download)...")
+                  val engine = Engine.newInstance(options)
+                  println("Chromium downloaded successfully!")
+                  engine.close()
+              } catch (e: Exception) {
+                  println("Error: ${e.message}")
+                  e.printStackTrace()
+                  System.exit(1)
+              }
+          }
+          KOTLIN
+
+          gradle wrapper --no-daemon
+          ./gradlew run --no-daemon
+
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+          echo "Chromium directory contents:"
+          ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
+
+      - name: Import Code Signing Certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > certificate.p12
+
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+          rm certificate.p12
+
+      - name: Apply BOSS Branding
+        env:
+          MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          if [ ! -d "$CHROMIUM_DIR" ] || [ -z "$(ls -A $CHROMIUM_DIR 2>/dev/null)" ]; then
+            echo "::error::Chromium binaries not found at $CHROMIUM_DIR"
+            exit 1
+          fi
+
+          cp chromium-branding/params.json .
+          cp -r chromium-branding/assets .
+          cp -r chromium-branding/entitlements .
+
+          sed -i '' "s|\${MACOS_DEVELOPER_ID}|$MACOS_DEVELOPER_ID|g" params.json
+          sed -i '' "s|\${MACOS_TEAM_ID}|$MACOS_TEAM_ID|g" params.json
+
           mkdir -p output
-          echo "boss-browser" > output/executable.name
-          echo "macOS x64 placeholder - use ARM64 build on Apple Silicon" > output/README.txt
+
+          ./tools/chromium_branding_macos_x64 \
+            -p params.json \
+            -b "$CHROMIUM_DIR" \
+            -o output
+
+          ls -la output/
+
+      - name: Verify executable.name
+        run: |
+          if [ -f "output/executable.name" ]; then
+            cat output/executable.name
+          else
+            echo "::error::executable.name not found"
+            exit 1
+          fi
+
+      - name: Create Archive
+        run: |
           cd output
           zip -r ../boss-chromium-macos-x64.zip .
 
@@ -244,14 +400,119 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Create Placeholder Archive
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         shell: pwsh
         run: |
-          # Windows build - create placeholder for now
-          # Full branding requires Windows SDK setup
+          New-Item -ItemType Directory -Force -Path chromium-download
+          Set-Location chromium-download
+
+          @"
+          rootProject.name = "chromium-download"
+          "@ | Out-File -FilePath settings.gradle.kts -Encoding utf8
+
+          @"
+          plugins {
+              kotlin("jvm") version "1.9.22"
+              application
+          }
+          repositories {
+              mavenCentral()
+          }
+          dependencies {
+              implementation("com.teamdev.jxbrowser:jxbrowser:$env:JXBROWSER_VERSION")
+              implementation("com.teamdev.jxbrowser:jxbrowser-win64:$env:JXBROWSER_VERSION")
+          }
+          application {
+              mainClass.set("DownloadKt")
+          }
+          "@ | Out-File -FilePath build.gradle.kts -Encoding utf8
+
+          New-Item -ItemType Directory -Force -Path src/main/kotlin
+
+          @"
+          import com.teamdev.jxbrowser.engine.Engine
+          import com.teamdev.jxbrowser.engine.EngineOptions
+          import com.teamdev.jxbrowser.engine.RenderingMode
+          import java.nio.file.Paths
+
+          fun main() {
+              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
+              println("Downloading Chromium to: `$chromiumDir")
+
+              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
+                  ?: error("JXBROWSER_LICENSE_KEY not set")
+
+              try {
+                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+                      .licenseKey(licenseKey)
+                      .chromiumDir(chromiumDir)
+                      .build()
+
+                  println("Creating engine (this triggers Chromium download)...")
+                  val engine = Engine.newInstance(options)
+                  println("Chromium downloaded successfully!")
+                  engine.close()
+              } catch (e: Exception) {
+                  println("Error: `${e.message}")
+                  e.printStackTrace()
+                  System.exit(1)
+              }
+          }
+          "@ | Out-File -FilePath src/main/kotlin/Download.kt -Encoding utf8
+
+          # Generate Gradle wrapper
+          gradle wrapper --no-daemon
+
+          ./gradlew.bat run --no-daemon
+
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
+          Write-Host "Chromium directory contents:"
+          Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
+
+      - name: Apply BOSS Branding
+        shell: pwsh
+        run: |
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
+
+          if (-not (Test-Path $chromiumDir)) {
+            Write-Error "Chromium binaries not found at $chromiumDir"
+            exit 1
+          }
+
+          Copy-Item chromium-branding/params.json .
+          Copy-Item -Recurse chromium-branding/assets .
+
+          # No signing for now - Windows signing requires DigiCert setup
+          # Remove signCommand from params to avoid signing attempts
+          $params = Get-Content params.json | ConvertFrom-Json
+          $params.win.PSObject.Properties.Remove('signCommand')
+          $params | ConvertTo-Json -Depth 10 | Out-File params.json -Encoding utf8
+
           New-Item -ItemType Directory -Force -Path output
-          Set-Content -Path output/executable.name -Value "boss-browser.exe"
-          Set-Content -Path output/README.txt -Value "Windows placeholder - branded Chromium not yet built"
+
+          Write-Host "Running branding tool..."
+          ./tools/chromium_branding_windows.exe -p params.json -b $chromiumDir -o output
+
+          Get-ChildItem output
+
+      - name: Verify executable.name
+        shell: pwsh
+        run: |
+          if (Test-Path "output/executable.name") {
+            Get-Content "output/executable.name"
+          } else {
+            Write-Error "executable.name not found"
+            exit 1
+          }
+
+      - name: Create Archive
+        shell: pwsh
+        run: |
           Compress-Archive -Path output/* -DestinationPath boss-chromium-windows-x64.zip
 
       - name: Upload Artifact
@@ -283,12 +544,108 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Create Placeholder Archive
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          # Linux build - create placeholder for now
+          mkdir -p chromium-download
+          cd chromium-download
+
+          cat > settings.gradle.kts << 'SETTINGS'
+          rootProject.name = "chromium-download"
+          SETTINGS
+
+          cat > build.gradle.kts << GRADLE
+          plugins {
+              kotlin("jvm") version "1.9.22"
+              application
+          }
+          repositories {
+              mavenCentral()
+          }
+          dependencies {
+              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
+              implementation("com.teamdev.jxbrowser:jxbrowser-linux64:$JXBROWSER_VERSION")
+          }
+          application {
+              mainClass.set("DownloadKt")
+          }
+          GRADLE
+
+          mkdir -p src/main/kotlin
+          cat > src/main/kotlin/Download.kt << 'KOTLIN'
+          import com.teamdev.jxbrowser.engine.Engine
+          import com.teamdev.jxbrowser.engine.EngineOptions
+          import com.teamdev.jxbrowser.engine.RenderingMode
+          import java.nio.file.Paths
+
+          fun main() {
+              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
+              println("Downloading Chromium to: $chromiumDir")
+
+              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
+                  ?: error("JXBROWSER_LICENSE_KEY not set")
+
+              try {
+                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+                      .licenseKey(licenseKey)
+                      .chromiumDir(chromiumDir)
+                      .build()
+
+                  println("Creating engine (this triggers Chromium download)...")
+                  val engine = Engine.newInstance(options)
+                  println("Chromium downloaded successfully!")
+                  engine.close()
+              } catch (e: Exception) {
+                  println("Error: ${e.message}")
+                  e.printStackTrace()
+                  System.exit(1)
+              }
+          }
+          KOTLIN
+
+          gradle wrapper --no-daemon
+          ./gradlew run --no-daemon
+
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+          echo "Chromium directory contents:"
+          ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
+
+      - name: Apply BOSS Branding
+        run: |
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          if [ ! -d "$CHROMIUM_DIR" ] || [ -z "$(ls -A $CHROMIUM_DIR 2>/dev/null)" ]; then
+            echo "::error::Chromium binaries not found at $CHROMIUM_DIR"
+            exit 1
+          fi
+
+          cp chromium-branding/params.json .
+
           mkdir -p output
-          echo "boss-browser" > output/executable.name
-          echo "Linux placeholder - branded Chromium not yet built" > output/README.txt
+
+          echo "Running branding tool..."
+          ./tools/chromium_branding_linux \
+            -p params.json \
+            -b "$CHROMIUM_DIR" \
+            -o output
+
+          ls -la output/
+
+      - name: Verify executable.name
+        run: |
+          if [ -f "output/executable.name" ]; then
+            cat output/executable.name
+          else
+            echo "::error::executable.name not found"
+            exit 1
+          fi
+
+      - name: Create Archive
+        run: |
           cd output
           zip -r ../boss-chromium-linux-x64.zip .
 
@@ -301,7 +658,7 @@ jobs:
   # Upload to BossConsole-Releases
   upload-to-releases:
     needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-linux-x64]
-    if: always()
+    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-linux-x64.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Download All Artifacts
@@ -312,7 +669,7 @@ jobs:
       - name: List artifacts
         run: |
           echo "Downloaded artifacts:"
-          find artifacts -type f -name "*.zip"
+          find artifacts -type f -name "*.zip" -exec ls -la {} \;
 
       - name: Upload to BossConsole-Releases
         env:
@@ -320,7 +677,12 @@ jobs:
         run: |
           TAG="chromium-v${{ env.JXBROWSER_VERSION }}"
 
-          # Create release (or update if exists)
+          # Delete existing release if present
+          gh release delete "$TAG" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            --yes 2>/dev/null || true
+
+          # Create new release
           gh release create "$TAG" \
             --repo risa-labs-inc/BossConsole-Releases \
             --title "BOSS Chromium v${{ env.JXBROWSER_VERSION }}" \
@@ -332,21 +694,23 @@ jobs:
           - \`boss-chromium-windows-x64.zip\` - Windows 64-bit
           - \`boss-chromium-linux-x64.zip\` - Linux 64-bit
 
-          ## Note
-          Initial release with placeholders. Full branded binaries coming soon.
+          ## Changes
+          - Process name shows as 'BOSS' in Task Manager/Activity Monitor
+          - Custom BOSS icons
+          - Signed binaries (macOS)
 
           ## Usage
-          Extract and place in app's chromium directory.
-          The \`executable.name\` file must be preserved for JxBrowser." \
-            2>/dev/null || echo "Release may already exist"
+          These binaries are automatically bundled with BOSS releases.
+          The \`executable.name\` file must be preserved for JxBrowser."
 
           # Upload all artifacts
           for zip in artifacts/*/boss-chromium-*.zip; do
             if [ -f "$zip" ]; then
+              echo "Uploading: $zip"
               gh release upload "$TAG" "$zip" \
                 --repo risa-labs-inc/BossConsole-Releases \
                 --clobber || echo "Failed to upload $zip"
             fi
           done
 
-          echo "✅ Uploaded to: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"
+          echo "Release URL: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"
