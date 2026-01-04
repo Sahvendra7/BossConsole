@@ -19,14 +19,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SmartToy
 import com.arkivanov.decompose.ComponentContext
+import compose.icons.SimpleIcons
+import compose.icons.simpleicons.Openai
 
 object FluckPanelInfo : PanelInfo {
     override val id = PanelId("fluck", 15)
     override val displayName = "ChatGPT"
-    override val icon = Icons.Outlined.SmartToy
+    override val icon = SimpleIcons.Openai // OpenAI brand icon
     override val defaultSlotPosition = right.top.top
 }
 

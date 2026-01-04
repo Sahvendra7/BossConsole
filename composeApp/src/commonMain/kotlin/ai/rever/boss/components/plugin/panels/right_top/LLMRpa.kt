@@ -28,9 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
-import compose.icons.FontAwesomeIcons
-import compose.icons.fontawesomeicons.Brands
-import compose.icons.fontawesomeicons.brands.Hotjar
+import androidx.compose.material.icons.outlined.AutoAwesome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -41,7 +39,7 @@ import kotlinx.serialization.Serializable
 object LLMRpaInfo : PanelInfo {
     override val id = PanelId("llm_rpa", 18)
     override val displayName = "LLM RPA"
-    override val icon = FontAwesomeIcons.Brands.Hotjar
+    override val icon = Icons.Outlined.AutoAwesome // Sparkles icon for AI-powered RPA
     override val defaultSlotPosition = right.top.top
 }
 
@@ -274,7 +272,7 @@ open class LLMRpaComponent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    FontAwesomeIcons.Brands.Hotjar,
+                    Icons.Outlined.AutoAwesome,
                     contentDescription = "LLM RPA",
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colors.primary
