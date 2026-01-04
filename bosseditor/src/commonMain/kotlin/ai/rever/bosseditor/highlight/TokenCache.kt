@@ -15,6 +15,10 @@ import ai.rever.bosseditor.core.EditorDocument
  *
  * The cache listens to document changes and invalidates affected lines.
  * Lines following a change are also invalidated if their start state might change.
+ *
+ * **Note**: This class uses JVM-specific `synchronized()` for thread safety.
+ * While placed in commonMain for code organization, this is desktop-only
+ * as BOSS targets only desktop platforms (macOS, Windows, Linux).
  */
 class TokenCache(
     private val document: EditorDocument,

@@ -34,6 +34,9 @@ kotlin {
 
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
+
+                // JSON serialization for LSP protocol
+                implementation(libs.kotlinx.serialization.json)
             }
         }
 
@@ -52,8 +55,6 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
                 // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)
                 implementation(libs.kotlin.compiler.embeddable)
-                // JSON serialization for settings persistence
-                implementation(libs.kotlinx.serialization.json)
             }
         }
 
