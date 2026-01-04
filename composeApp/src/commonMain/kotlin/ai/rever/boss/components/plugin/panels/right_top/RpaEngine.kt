@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.*
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Cpu
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,7 +45,7 @@ import kotlinx.serialization.Serializable
 object RpaEngineInfo : PanelInfo {
     override val id = PanelId(panelId = "rpa_engine", defaultOrder = 20)
     override val displayName = "RPA Engine"
-    override val icon = Icons.Default.SmartToy // Robot icon for automation
+    override val icon = FeatherIcons.Cpu // CPU icon for automation engine
     override val defaultSlotPosition = right.top.top
 }
 
@@ -208,7 +210,7 @@ open class RpaEngineComponent(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.SmartToy,
+                        FeatherIcons.Cpu,
                         contentDescription = "RPA Engine",
                         modifier = Modifier.size(24.dp),
                         tint = when (executionStatus) {
