@@ -87,14 +87,17 @@ jobs:
           cat > build.gradle.kts << GRADLE
           plugins {
               kotlin("jvm") version "1.9.22"
+              id("com.teamdev.jxbrowser") version "2.0.0"
               application
           }
           repositories {
               mavenCentral()
           }
+          jxbrowser {
+              version = "$JXBROWSER_VERSION"
+          }
           dependencies {
-              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
-              implementation("com.teamdev.jxbrowser:jxbrowser-mac-arm:$JXBROWSER_VERSION")
+              implementation(jxbrowser.mac.arm)
           }
           application {
               mainClass.set("DownloadKt")
@@ -262,14 +265,17 @@ jobs:
           cat > build.gradle.kts << GRADLE
           plugins {
               kotlin("jvm") version "1.9.22"
+              id("com.teamdev.jxbrowser") version "2.0.0"
               application
           }
           repositories {
               mavenCentral()
           }
+          jxbrowser {
+              version = "$JXBROWSER_VERSION"
+          }
           dependencies {
-              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
-              implementation("com.teamdev.jxbrowser:jxbrowser-mac:$JXBROWSER_VERSION")
+              implementation(jxbrowser.mac)
           }
           application {
               mainClass.set("DownloadKt")
@@ -418,14 +424,17 @@ jobs:
           @"
           plugins {
               kotlin("jvm") version "1.9.22"
+              id("com.teamdev.jxbrowser") version "2.0.0"
               application
           }
           repositories {
               mavenCentral()
           }
+          jxbrowser {
+              version = "$env:JXBROWSER_VERSION"
+          }
           dependencies {
-              implementation("com.teamdev.jxbrowser:jxbrowser:$env:JXBROWSER_VERSION")
-              implementation("com.teamdev.jxbrowser:jxbrowser-win64:$env:JXBROWSER_VERSION")
+              implementation(jxbrowser.win64)
           }
           application {
               mainClass.set("DownloadKt")
@@ -561,14 +570,17 @@ jobs:
           cat > build.gradle.kts << GRADLE
           plugins {
               kotlin("jvm") version "1.9.22"
+              id("com.teamdev.jxbrowser") version "2.0.0"
               application
           }
           repositories {
               mavenCentral()
           }
+          jxbrowser {
+              version = "$JXBROWSER_VERSION"
+          }
           dependencies {
-              implementation("com.teamdev.jxbrowser:jxbrowser:$JXBROWSER_VERSION")
-              implementation("com.teamdev.jxbrowser:jxbrowser-linux64:$JXBROWSER_VERSION")
+              implementation(jxbrowser.linux64)
           }
           application {
               mainClass.set("DownloadKt")
