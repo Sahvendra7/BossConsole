@@ -141,6 +141,7 @@ object FluckEngine {
         try {
             // Use explicit paths for more precise matching (security: avoid killing unrelated processes)
             val bossChromiumDir = "$userHome/.boss/jxbrowser-chromium"
+            val bossBrandedChromiumDir = "$userHome/.boss/boss-chromium"
             val bossProfileDir = "$userHome/.boss/browser-profile"
             val currentPid = ProcessHandle.current().pid()
             val currentTimeMs = System.currentTimeMillis()
@@ -160,7 +161,9 @@ object FluckEngine {
                         // Security: Then check if it's from our JxBrowser installation
                         // Use explicit full paths to avoid false positives
                         val isFromBossDir = command.contains(bossChromiumDir) ||
+                                command.contains(bossBrandedChromiumDir) ||
                                 commandLine.contains(bossChromiumDir) ||
+                                commandLine.contains(bossBrandedChromiumDir) ||
                                 commandLine.contains(bossProfileDir)
 
                         val isJxBrowserChromium = isChromiumExecutable && isFromBossDir
@@ -421,7 +424,7 @@ object FluckEngine {
 
         // Get user's home directory dynamically
         val userHome = System.getProperty("user.home")
-        val chromiumDir = Paths.get(userHome, ".boss", "jxbrowser-chromium")
+        val chromiumDir = getChromiumDir(userHome)
 
         // Create directories if they don't exist
         chromiumDir.toFile().mkdirs()
@@ -431,6 +434,112 @@ object FluckEngine {
 
         // Try to create engine with profile handling
         return createEngineWithProfile(chromiumDir, userHome)
+    }
+
+    /**
+     * Get the Chromium directory to use, with priority:
+     * 1. Bundled BOSS-branded Chromium (in app resources)
+     * 2. Cached BOSS-branded Chromium (~/.boss/boss-chromium/)
+     * 3. Fallback to default JxBrowser Chromium (~/.boss/jxbrowser-chromium/)
+     */
+    private fun getChromiumDir(userHome: String): java.nio.file.Path {
+        // Priority 1: Bundled BOSS-branded Chromium (in app resources)
+        val bundledDir = getBundledChromiumPath()
+        if (bundledDir != null && isValidChromiumDir(bundledDir)) {
+            println("Using bundled BOSS-branded Chromium: $bundledDir")
+            return bundledDir
+        }
+
+        // Priority 2: Cached BOSS-branded Chromium
+        val cachedBrandedDir = Paths.get(userHome, ".boss", "boss-chromium")
+        if (isValidChromiumDir(cachedBrandedDir)) {
+            println("Using cached BOSS-branded Chromium: $cachedBrandedDir")
+            return cachedBrandedDir
+        }
+
+        // Priority 3: Fallback to default JxBrowser Chromium
+        val defaultDir = Paths.get(userHome, ".boss", "jxbrowser-chromium")
+        println("Using default JxBrowser Chromium: $defaultDir")
+        return defaultDir
+    }
+
+    /**
+     * Check if a Chromium directory is valid (contains executable.name file).
+     * The executable.name file is critical for JxBrowser to locate the branded binary.
+     */
+    private fun isValidChromiumDir(dir: java.nio.file.Path): Boolean {
+        if (!dir.toFile().exists()) return false
+        val executableNameFile = dir.resolve("executable.name").toFile()
+        return executableNameFile.exists()
+    }
+
+    /**
+     * Get the path to bundled BOSS-branded Chromium based on platform.
+     * Returns null if no bundled Chromium is found.
+     */
+    private fun getBundledChromiumPath(): java.nio.file.Path? {
+        val osName = System.getProperty("os.name").lowercase()
+        return when {
+            osName.contains("mac") -> getMacOSBundledChromiumPath()
+            osName.contains("win") -> getWindowsBundledChromiumPath()
+            else -> getLinuxBundledChromiumPath()
+        }
+    }
+
+    /**
+     * macOS: Look for bundled Chromium in BOSS.app/Contents/Resources/chromium/
+     */
+    private fun getMacOSBundledChromiumPath(): java.nio.file.Path? {
+        // Java home is typically: BOSS.app/Contents/runtime/Contents/Home
+        // So app bundle root is 4 levels up
+        val javaHome = System.getProperty("java.home") ?: return null
+        val javaHomePath = Paths.get(javaHome)
+
+        // Navigate from runtime to app bundle: runtime/Contents/Home -> app/Contents/Resources/chromium
+        val appContents = javaHomePath.parent?.parent?.parent ?: return null
+        val chromiumPath = appContents.resolve("Resources").resolve("chromium")
+
+        return if (chromiumPath.toFile().exists()) chromiumPath else null
+    }
+
+    /**
+     * Windows: Look for bundled Chromium in app installation directory/chromium/
+     */
+    private fun getWindowsBundledChromiumPath(): java.nio.file.Path? {
+        // Try relative to app installation directory
+        val userDir = System.getProperty("user.dir")
+        val chromiumPath = Paths.get(userDir, "chromium")
+
+        if (chromiumPath.toFile().exists()) return chromiumPath
+
+        // Also try relative to Java home for installed apps
+        val javaHome = System.getProperty("java.home") ?: return null
+        val javaHomePath = Paths.get(javaHome)
+        val appChromiumPath = javaHomePath.parent?.resolve("chromium")
+
+        return if (appChromiumPath?.toFile()?.exists() == true) appChromiumPath else null
+    }
+
+    /**
+     * Linux: Look for bundled Chromium in standard installation directories
+     */
+    private fun getLinuxBundledChromiumPath(): java.nio.file.Path? {
+        // Check common Linux installation paths
+        val paths = listOf(
+            "/opt/boss/chromium",
+            "/usr/share/boss/chromium",
+            "/usr/local/share/boss/chromium"
+        )
+
+        for (pathStr in paths) {
+            val path = Paths.get(pathStr)
+            if (path.toFile().exists()) return path
+        }
+
+        // Also try relative to user.dir (for portable installations)
+        val userDir = System.getProperty("user.dir")
+        val chromiumPath = Paths.get(userDir, "chromium")
+        return if (chromiumPath.toFile().exists()) chromiumPath else null
     }
     
     /**

@@ -232,20 +232,95 @@ jobs:
           fi
 
 
-      - name: 🏗️ Build macOS DMG
+      - name: 📥 Download Branded Chromium (macOS)
+        run: |
+          echo "📥 Downloading BOSS-branded Chromium for macOS..."
+
+          # Determine architecture
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "arm64" ]]; then
+            CHROMIUM_ARCHIVE="boss-chromium-macos-arm64.zip"
+          else
+            CHROMIUM_ARCHIVE="boss-chromium-macos-x64.zip"
+          fi
+
+          # Try to download from BOSS-Chromium releases
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/$CHROMIUM_ARCHIVE"
+
+          mkdir -p branded-chromium
+          if curl -L --fail -o "branded-chromium/$CHROMIUM_ARCHIVE" "$CHROMIUM_URL"; then
+            echo "✅ Downloaded branded Chromium: $CHROMIUM_ARCHIVE"
+            unzip -o "branded-chromium/$CHROMIUM_ARCHIVE" -d branded-chromium/
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Branded Chromium not available yet (repository may need initial release)"
+            echo "   App will fall back to default JxBrowser Chromium"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
+          fi
+
+      - name: 🏗️ Build macOS App Bundle
         env:
           DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
         run: |
-          echo "🏗️ Building macOS DMG with integrated PTY4J signing..."
+          echo "🏗️ Building macOS app bundle..."
 
-          # Debug environment variables
-          echo "DISABLE_MACOS_SIGNING: $DISABLE_MACOS_SIGNING"
-
-          # Make gradlew executable
           chmod +x ./gradlew
 
-          # The Gradle build now automatically handles PTY4J signing
-          # The signPty4jBinaries task will run automatically when needed
+          # First create the distributable app bundle
+          ./gradlew createDistributable
+
+          echo "✅ macOS app bundle created successfully"
+
+      - name: 📦 Bundle Branded Chromium
+        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
+        run: |
+          echo "📦 Bundling BOSS-branded Chromium into app..."
+
+          # Find the app bundle
+          APP_PATH=$(find composeApp/build/compose/binaries/main/app -name "*.app" -type d | head -1)
+
+          if [[ -n "$APP_PATH" && -d "$APP_PATH" ]]; then
+            echo "Found app bundle: $APP_PATH"
+
+            # Create chromium directory in app resources
+            CHROMIUM_DIR="$APP_PATH/Contents/Resources/chromium"
+            mkdir -p "$CHROMIUM_DIR"
+
+            # Copy branded Chromium files (excluding the zip)
+            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
+            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
+            ls -la "$CHROMIUM_DIR"
+          else
+            echo "⚠️ App bundle not found, skipping Chromium bundling"
+          fi
+
+      - name: 🔐 Sign Bundled Chromium
+        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true' && env.DISABLE_MACOS_SIGNING != 'true'
+        run: |
+          echo "🔐 Signing bundled Chromium binaries..."
+
+          APP_PATH=$(find composeApp/build/compose/binaries/main/app -name "*.app" -type d | head -1)
+          CHROMIUM_DIR="$APP_PATH/Contents/Resources/chromium"
+
+          if [[ -d "$CHROMIUM_DIR" ]]; then
+            # Sign all executables in Chromium directory
+            find "$CHROMIUM_DIR" -type f -perm +111 -exec \
+              codesign --force --options runtime \
+              --entitlements composeApp/src/desktopMain/resources/BOSS.entitlements \
+              --sign "$MACOS_DEVELOPER_ID" {} \; 2>/dev/null || true
+
+            echo "✅ Chromium binaries signed"
+          fi
+
+      - name: 🏗️ Package macOS DMG
+        env:
+          DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
+        run: |
+          echo "🏗️ Packaging macOS DMG..."
+
+          # Package the DMG using the already-created app bundle
           ./gradlew packageDmg
 
           echo "✅ macOS DMG build completed successfully"
@@ -399,6 +474,23 @@ jobs:
           # Verify version consistency
           ./gradlew showVersion
 
+      - name: 📥 Download Branded Chromium (Linux)
+        run: |
+          echo "📥 Downloading BOSS-branded Chromium for Linux..."
+
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/boss-chromium-linux-x64.zip"
+
+          mkdir -p branded-chromium
+          if curl -L --fail -o branded-chromium/boss-chromium-linux-x64.zip "$CHROMIUM_URL"; then
+            echo "✅ Downloaded branded Chromium"
+            unzip -o branded-chromium/boss-chromium-linux-x64.zip -d branded-chromium/
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Branded Chromium not available yet"
+            echo "   Linux packages will use runtime Chromium download fallback"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
+          fi
+
       - name: 🏗️ Build Linux Packages (AMD64)
         run: |
           echo "🏗️ Building Linux AMD64 packages..."
@@ -410,6 +502,25 @@ jobs:
           # Create executable JAR for universal Linux distribution
           ./gradlew :composeApp:createExecutableJar
           echo "✅ Executable JAR created successfully"
+
+      - name: 📦 Bundle Branded Chromium (Linux)
+        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
+        run: |
+          echo "📦 Creating bundled Chromium archive for Linux..."
+
+          # For Linux, we create a separate chromium archive that can be manually installed
+          # The app will detect it at /opt/boss/chromium or ~/.boss/boss-chromium
+          mkdir -p linux-chromium-bundle
+          cp -r branded-chromium/* linux-chromium-bundle/ 2>/dev/null || true
+          rm -f linux-chromium-bundle/*.zip 2>/dev/null || true
+
+          # Create a tar.gz for easy installation
+          cd linux-chromium-bundle
+          tar -czvf ../boss-chromium-linux-amd64.tar.gz .
+          cd ..
+
+          echo "✅ Linux Chromium bundle created: boss-chromium-linux-amd64.tar.gz"
+          ls -la boss-chromium-linux-amd64.tar.gz
 
       - name: 🔍 Verify Built Version (Linux AMD64)
         run: |
@@ -638,17 +749,63 @@ jobs:
         run: |
           echo "🔧 Setting up build environment for Windows"
           echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-          
+
           # Verify version consistency
           ./gradlew showVersion
 
-      - name: 🏗️ Build Windows MSI
+      - name: 📥 Download Branded Chromium (Windows)
+        shell: bash
         run: |
-          echo "🏗️ Building Windows MSI..."
+          echo "📥 Downloading BOSS-branded Chromium for Windows..."
 
-          # Make gradlew executable and build
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/boss-chromium-windows-x64.zip"
+
+          mkdir -p branded-chromium
+          if curl -L --fail -o branded-chromium/boss-chromium-windows-x64.zip "$CHROMIUM_URL"; then
+            echo "✅ Downloaded branded Chromium"
+            unzip -o branded-chromium/boss-chromium-windows-x64.zip -d branded-chromium/
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Branded Chromium not available yet"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
+          fi
+
+      - name: 🏗️ Build Windows App
+        run: |
+          echo "🏗️ Building Windows app..."
+          ./gradlew createDistributable
+          echo "✅ Windows app build completed"
+
+      - name: 📦 Bundle Branded Chromium (Windows)
+        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
+        shell: bash
+        run: |
+          echo "📦 Bundling BOSS-branded Chromium into Windows app..."
+
+          # Find the app directory
+          APP_DIR=$(find composeApp/build/compose/binaries/main/app -type d -name "BOSS" | head -1)
+
+          if [[ -n "$APP_DIR" && -d "$APP_DIR" ]]; then
+            echo "Found app directory: $APP_DIR"
+
+            # Create chromium directory alongside the app
+            CHROMIUM_DIR="$APP_DIR/chromium"
+            mkdir -p "$CHROMIUM_DIR"
+
+            # Copy branded Chromium files
+            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
+            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
+            ls -la "$CHROMIUM_DIR"
+          else
+            echo "⚠️ App directory not found, skipping Chromium bundling"
+          fi
+
+      - name: 🏗️ Package Windows MSI
+        run: |
+          echo "🏗️ Packaging Windows MSI..."
           ./gradlew packageMsi
-
           echo "✅ Windows MSI build completed successfully"
 
       - name: 🔍 Verify Built Version (Windows)
