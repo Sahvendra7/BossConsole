@@ -245,7 +245,7 @@ jobs:
           fi
 
           # Try to download from BOSS-Chromium releases
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/$CHROMIUM_ARCHIVE"
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/$CHROMIUM_ARCHIVE"
 
           mkdir -p branded-chromium
           if curl -L --fail -o "branded-chromium/$CHROMIUM_ARCHIVE" "$CHROMIUM_URL"; then
@@ -478,7 +478,7 @@ jobs:
         run: |
           echo "📥 Downloading BOSS-branded Chromium for Linux..."
 
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/boss-chromium-linux-x64.zip"
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/boss-chromium-linux-x64.zip"
 
           mkdir -p branded-chromium
           if curl -L --fail -o branded-chromium/boss-chromium-linux-x64.zip "$CHROMIUM_URL"; then
@@ -758,7 +758,7 @@ jobs:
         run: |
           echo "📥 Downloading BOSS-branded Chromium for Windows..."
 
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BOSS-Chromium/releases/latest/download/boss-chromium-windows-x64.zip"
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/boss-chromium-windows-x64.zip"
 
           mkdir -p branded-chromium
           if curl -L --fail -o branded-chromium/boss-chromium-windows-x64.zip "$CHROMIUM_URL"; then
