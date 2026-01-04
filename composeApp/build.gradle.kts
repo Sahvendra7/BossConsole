@@ -1130,3 +1130,22 @@ tasks.register("createExecutableJarWithIncrement") {
 
     finalizedBy("createExecutableJar")
 }
+
+// Task to download Chromium binaries for branding
+tasks.register<JavaExec>("downloadChromium") {
+    group = "jxbrowser"
+    description = "Downloads JxBrowser Chromium binaries to a specified directory"
+
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("ai.rever.boss.ChromiumDownloaderKt")
+
+    // Output directory can be configured via -PchromiumDir=<path>
+    val chromiumDir = project.findProperty("chromiumDir")?.toString()
+        ?: "${System.getProperty("user.home")}/chromium-binaries"
+
+    args = listOf(chromiumDir)
+
+    doFirst {
+        println("Downloading Chromium to: $chromiumDir")
+    }
+}

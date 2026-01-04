@@ -76,72 +76,11 @@ jobs:
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          mkdir -p chromium-download
-          cd chromium-download
-
-          # Create minimal Gradle project to download Chromium
-          cat > settings.gradle.kts << 'SETTINGS'
-          rootProject.name = "chromium-download"
-          SETTINGS
-
-          cat > build.gradle.kts << GRADLE
-          plugins {
-              kotlin("jvm") version "1.9.22"
-              id("com.teamdev.jxbrowser") version "2.0.0"
-              application
-          }
-          repositories {
-              mavenCentral()
-          }
-          jxbrowser {
-              version = "$JXBROWSER_VERSION"
-          }
-          dependencies {
-              implementation(jxbrowser.mac.arm)
-          }
-          application {
-              mainClass.set("DownloadKt")
-          }
-          GRADLE
-
-          mkdir -p src/main/kotlin
-          cat > src/main/kotlin/Download.kt << 'KOTLIN'
-          import com.teamdev.jxbrowser.engine.Engine
-          import com.teamdev.jxbrowser.engine.EngineOptions
-          import com.teamdev.jxbrowser.engine.RenderingMode
-          import java.nio.file.Paths
-
-          fun main() {
-              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
-              println("Downloading Chromium to: $chromiumDir")
-
-              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
-                  ?: error("JXBROWSER_LICENSE_KEY not set")
-
-              try {
-                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                      .licenseKey(licenseKey)
-                      .chromiumDir(chromiumDir)
-                      .build()
-
-                  println("Creating engine (this triggers Chromium download)...")
-                  val engine = Engine.newInstance(options)
-                  println("Chromium downloaded successfully!")
-                  engine.close()
-              } catch (e: Exception) {
-                  println("Error: ${e.message}")
-                  e.printStackTrace()
-                  System.exit(1)
-              }
-          }
-          KOTLIN
-
-          # Generate wrapper and run
-          gradle wrapper --no-daemon
-          ./gradlew run --no-daemon
-
-          # Verify download
           CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
 
@@ -255,69 +194,11 @@ jobs:
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          mkdir -p chromium-download
-          cd chromium-download
-
-          cat > settings.gradle.kts << 'SETTINGS'
-          rootProject.name = "chromium-download"
-          SETTINGS
-
-          cat > build.gradle.kts << GRADLE
-          plugins {
-              kotlin("jvm") version "1.9.22"
-              id("com.teamdev.jxbrowser") version "2.0.0"
-              application
-          }
-          repositories {
-              mavenCentral()
-          }
-          jxbrowser {
-              version = "$JXBROWSER_VERSION"
-          }
-          dependencies {
-              implementation(jxbrowser.mac)
-          }
-          application {
-              mainClass.set("DownloadKt")
-          }
-          GRADLE
-
-          mkdir -p src/main/kotlin
-          cat > src/main/kotlin/Download.kt << 'KOTLIN'
-          import com.teamdev.jxbrowser.engine.Engine
-          import com.teamdev.jxbrowser.engine.EngineOptions
-          import com.teamdev.jxbrowser.engine.RenderingMode
-          import java.nio.file.Paths
-
-          fun main() {
-              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
-              println("Downloading Chromium to: $chromiumDir")
-
-              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
-                  ?: error("JXBROWSER_LICENSE_KEY not set")
-
-              try {
-                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                      .licenseKey(licenseKey)
-                      .chromiumDir(chromiumDir)
-                      .build()
-
-                  println("Creating engine (this triggers Chromium download)...")
-                  val engine = Engine.newInstance(options)
-                  println("Chromium downloaded successfully!")
-                  engine.close()
-              } catch (e: Exception) {
-                  println("Error: ${e.message}")
-                  e.printStackTrace()
-                  System.exit(1)
-              }
-          }
-          KOTLIN
-
-          gradle wrapper --no-daemon
-          ./gradlew run --no-daemon
-
           CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
 
@@ -414,72 +295,11 @@ jobs:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path chromium-download
-          Set-Location chromium-download
-
-          @"
-          rootProject.name = "chromium-download"
-          "@ | Out-File -FilePath settings.gradle.kts -Encoding utf8
-
-          @"
-          plugins {
-              kotlin("jvm") version "1.9.22"
-              id("com.teamdev.jxbrowser") version "2.0.0"
-              application
-          }
-          repositories {
-              mavenCentral()
-          }
-          jxbrowser {
-              version = "$env:JXBROWSER_VERSION"
-          }
-          dependencies {
-              implementation(jxbrowser.win64)
-          }
-          application {
-              mainClass.set("DownloadKt")
-          }
-          "@ | Out-File -FilePath build.gradle.kts -Encoding utf8
-
-          New-Item -ItemType Directory -Force -Path src/main/kotlin
-
-          @"
-          import com.teamdev.jxbrowser.engine.Engine
-          import com.teamdev.jxbrowser.engine.EngineOptions
-          import com.teamdev.jxbrowser.engine.RenderingMode
-          import java.nio.file.Paths
-
-          fun main() {
-              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
-              println("Downloading Chromium to: `$chromiumDir")
-
-              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
-                  ?: error("JXBROWSER_LICENSE_KEY not set")
-
-              try {
-                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                      .licenseKey(licenseKey)
-                      .chromiumDir(chromiumDir)
-                      .build()
-
-                  println("Creating engine (this triggers Chromium download)...")
-                  val engine = Engine.newInstance(options)
-                  println("Chromium downloaded successfully!")
-                  engine.close()
-              } catch (e: Exception) {
-                  println("Error: `${e.message}")
-                  e.printStackTrace()
-                  System.exit(1)
-              }
-          }
-          "@ | Out-File -FilePath src/main/kotlin/Download.kt -Encoding utf8
-
-          # Generate Gradle wrapper
-          gradle wrapper --no-daemon
-
-          ./gradlew.bat run --no-daemon
-
           $chromiumDir = "$env:USERPROFILE\chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" --no-daemon
+
           Write-Host "Chromium directory contents:"
           Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
 
@@ -560,69 +380,11 @@ jobs:
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         run: |
-          mkdir -p chromium-download
-          cd chromium-download
-
-          cat > settings.gradle.kts << 'SETTINGS'
-          rootProject.name = "chromium-download"
-          SETTINGS
-
-          cat > build.gradle.kts << GRADLE
-          plugins {
-              kotlin("jvm") version "1.9.22"
-              id("com.teamdev.jxbrowser") version "2.0.0"
-              application
-          }
-          repositories {
-              mavenCentral()
-          }
-          jxbrowser {
-              version = "$JXBROWSER_VERSION"
-          }
-          dependencies {
-              implementation(jxbrowser.linux64)
-          }
-          application {
-              mainClass.set("DownloadKt")
-          }
-          GRADLE
-
-          mkdir -p src/main/kotlin
-          cat > src/main/kotlin/Download.kt << 'KOTLIN'
-          import com.teamdev.jxbrowser.engine.Engine
-          import com.teamdev.jxbrowser.engine.EngineOptions
-          import com.teamdev.jxbrowser.engine.RenderingMode
-          import java.nio.file.Paths
-
-          fun main() {
-              val chromiumDir = Paths.get(System.getProperty("user.home"), "chromium-binaries")
-              println("Downloading Chromium to: $chromiumDir")
-
-              val licenseKey = System.getenv("JXBROWSER_LICENSE_KEY")
-                  ?: error("JXBROWSER_LICENSE_KEY not set")
-
-              try {
-                  val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
-                      .licenseKey(licenseKey)
-                      .chromiumDir(chromiumDir)
-                      .build()
-
-                  println("Creating engine (this triggers Chromium download)...")
-                  val engine = Engine.newInstance(options)
-                  println("Chromium downloaded successfully!")
-                  engine.close()
-              } catch (e: Exception) {
-                  println("Error: ${e.message}")
-                  e.printStackTrace()
-                  System.exit(1)
-              }
-          }
-          KOTLIN
-
-          gradle wrapper --no-daemon
-          ./gradlew run --no-daemon
-
           CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
 
