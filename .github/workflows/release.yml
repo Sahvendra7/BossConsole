@@ -232,6 +232,13 @@ jobs:
           fi
 
 
+      - name: 🔍 Get JxBrowser Version
+        run: |
+          # Extract JxBrowser version from libs.versions.toml for Chromium URL
+          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "JxBrowser version: $JXBROWSER_VERSION"
+          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+
       - name: 📥 Download Branded Chromium (macOS)
         run: |
           echo "📥 Downloading BOSS-branded Chromium for macOS..."
@@ -244,8 +251,8 @@ jobs:
             CHROMIUM_ARCHIVE="boss-chromium-macos-x64.zip"
           fi
 
-          # Try to download from BOSS-Chromium releases
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/$CHROMIUM_ARCHIVE"
+          # Try to download from BOSS-Chromium releases (version from libs.versions.toml)
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/$CHROMIUM_ARCHIVE"
 
           mkdir -p branded-chromium
           if curl -L --fail -o "branded-chromium/$CHROMIUM_ARCHIVE" "$CHROMIUM_URL"; then
@@ -474,11 +481,18 @@ jobs:
           # Verify version consistency
           ./gradlew showVersion
 
+      - name: 🔍 Get JxBrowser Version
+        run: |
+          # Extract JxBrowser version from libs.versions.toml for Chromium URL
+          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "JxBrowser version: $JXBROWSER_VERSION"
+          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+
       - name: 📥 Download Branded Chromium (Linux)
         run: |
           echo "📥 Downloading BOSS-branded Chromium for Linux..."
 
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/boss-chromium-linux-x64.zip"
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-linux-x64.zip"
 
           mkdir -p branded-chromium
           if curl -L --fail -o branded-chromium/boss-chromium-linux-x64.zip "$CHROMIUM_URL"; then
@@ -753,12 +767,20 @@ jobs:
           # Verify version consistency
           ./gradlew showVersion
 
+      - name: 🔍 Get JxBrowser Version
+        shell: bash
+        run: |
+          # Extract JxBrowser version from libs.versions.toml for Chromium URL
+          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "JxBrowser version: $JXBROWSER_VERSION"
+          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+
       - name: 📥 Download Branded Chromium (Windows)
         shell: bash
         run: |
           echo "📥 Downloading BOSS-branded Chromium for Windows..."
 
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v8.15.0/boss-chromium-windows-x64.zip"
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-windows-x64.zip"
 
           mkdir -p branded-chromium
           if curl -L --fail -o branded-chromium/boss-chromium-windows-x64.zip "$CHROMIUM_URL"; then
