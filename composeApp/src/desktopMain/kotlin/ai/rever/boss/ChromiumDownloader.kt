@@ -25,11 +25,22 @@ fun main(args: Array<String>) {
         ?: System.getProperty("jxbrowser.license.key")
         ?: error("JXBROWSER_LICENSE_KEY environment variable or jxbrowser.license.key property not set")
 
+    // Check if we should disable sandbox (needed on Linux CI where user namespaces aren't available)
+    val disableSandbox = System.getenv("JXBROWSER_DISABLE_SANDBOX")?.toBoolean() ?: false
+    val isLinux = System.getProperty("os.name").lowercase().contains("linux")
+
     try {
-        val options = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
+        val optionsBuilder = EngineOptions.newBuilder(RenderingMode.OFF_SCREEN)
             .licenseKey(licenseKey)
             .chromiumDir(chromiumDir)
-            .build()
+
+        // Disable sandbox on Linux CI environments where user namespaces aren't supported
+        if (disableSandbox || (isLinux && System.getenv("CI") != null)) {
+            println("ChromiumDownloader: Disabling Chromium sandbox for CI environment")
+            optionsBuilder.disableSandbox()
+        }
+
+        val options = optionsBuilder.build()
 
         println("ChromiumDownloader: Creating engine (this triggers download)...")
         val engine = Engine.newInstance(options)
