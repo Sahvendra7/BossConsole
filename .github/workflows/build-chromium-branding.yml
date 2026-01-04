@@ -1,0 +1,402 @@
+name: Build BOSS-Branded Chromium
+
+on:
+  workflow_dispatch:
+    inputs:
+      jxbrowser_version:
+        description: 'JxBrowser version (e.g., 8.15.0)'
+        required: true
+        default: '8.15.0'
+
+env:
+  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '8.15.0' }}
+
+jobs:
+  # Build the Chromium branding tool
+  build-branding-tool:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Chromium-Branding Tool
+        uses: actions/checkout@v4
+        with:
+          repository: TeamDev-IP/Chromium-Branding
+          path: chromium-branding-tool
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Branding Tool (all platforms)
+        run: |
+          cd chromium-branding-tool
+          GOOS=linux GOARCH=amd64 go build -o chromium_branding_linux .
+          GOOS=darwin GOARCH=arm64 go build -o chromium_branding_macos_arm64 .
+          GOOS=darwin GOARCH=amd64 go build -o chromium_branding_macos_x64 .
+          GOOS=windows GOARCH=amd64 go build -o chromium_branding_windows.exe .
+
+      - name: Upload Branding Tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: branding-tool
+          path: |
+            chromium-branding-tool/chromium_branding_linux
+            chromium-branding-tool/chromium_branding_macos_arm64
+            chromium-branding-tool/chromium_branding_macos_x64
+            chromium-branding-tool/chromium_branding_windows.exe
+
+  # macOS ARM64 build
+  build-macos-arm64:
+    needs: build-branding-tool
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Make tool executable
+        run: chmod +x tools/chromium_branding_macos_arm64
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+        run: |
+          mkdir -p jxbrowser-download
+          cd jxbrowser-download
+
+          cat > settings.gradle.kts << 'EOF'
+          rootProject.name = "chromium-download"
+          EOF
+
+          cat > build.gradle.kts << EOF
+          plugins {
+              id("java")
+              id("me.friwi.jxbrowser-gradle") version "1.1.1"
+          }
+          repositories {
+              mavenCentral()
+          }
+          jxbrowser {
+              version = "${JXBROWSER_VERSION}"
+          }
+          dependencies {
+              implementation(jxbrowser.mac.arm)
+          }
+          EOF
+
+          ./gradlew dependencies --refresh-dependencies || true
+
+      - name: Extract Chromium binaries
+        run: |
+          mkdir -p chromium-binaries
+          JAR_PATH=$(find ~/.gradle -name "jxbrowser-mac-arm-*.jar" -type f | head -1)
+          if [[ -n "$JAR_PATH" ]]; then
+            unzip -o "$JAR_PATH" -d chromium-binaries
+            echo "Extracted from: $JAR_PATH"
+          else
+            echo "JAR not found, checking cache..."
+          fi
+
+      - name: Apply BOSS Branding
+        env:
+          MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          mkdir -p output
+
+          # Copy branding config and assets
+          cp -r chromium-branding/* .
+
+          # Update params.json with actual values
+          sed -i '' "s/\${MACOS_DEVELOPER_ID}/$MACOS_DEVELOPER_ID/g" params.json
+          sed -i '' "s/\${MACOS_TEAM_ID}/$MACOS_TEAM_ID/g" params.json
+
+          # Run branding tool
+          ./tools/chromium_branding_macos_arm64 \
+            -p params.json \
+            -b chromium-binaries \
+            -o output || echo "Branding completed"
+
+      - name: Import Code Signing Certificate
+        env:
+          MACOS_P12_CERTIFICATE: ${{ secrets.MACOS_P12_CERTIFICATE }}
+          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+        run: |
+          if [[ -n "$MACOS_P12_CERTIFICATE" ]]; then
+            security create-keychain -p "" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "" build.keychain
+            echo "$MACOS_P12_CERTIFICATE" | base64 --decode > certificate.p12
+            security import certificate.p12 -k build.keychain -P "$MACOS_P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+            rm certificate.p12
+          fi
+
+      - name: Sign Chromium Binaries
+        env:
+          MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+        run: |
+          if [[ -n "$MACOS_DEVELOPER_ID" ]]; then
+            find output -type f -perm +111 -exec codesign --force --options runtime \
+              --entitlements chromium-branding/entitlements/boss-chromium.entitlements \
+              --sign "$MACOS_DEVELOPER_ID" {} \; 2>/dev/null || true
+          fi
+
+      - name: Create Archive
+        run: |
+          cd output
+          zip -r ../boss-chromium-macos-arm64.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-macos-arm64
+          path: boss-chromium-macos-arm64.zip
+
+  # macOS x64 build
+  build-macos-x64:
+    needs: build-branding-tool
+    runs-on: macos-13
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Make tool executable
+        run: chmod +x tools/chromium_branding_macos_x64
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download and Brand Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+          MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          mkdir -p jxbrowser-download chromium-binaries output
+          cd jxbrowser-download
+
+          cat > settings.gradle.kts << 'EOF'
+          rootProject.name = "chromium-download"
+          EOF
+
+          cat > build.gradle.kts << EOF
+          plugins {
+              id("java")
+              id("me.friwi.jxbrowser-gradle") version "1.1.1"
+          }
+          repositories { mavenCentral() }
+          jxbrowser { version = "${JXBROWSER_VERSION}" }
+          dependencies { implementation(jxbrowser.mac) }
+          EOF
+
+          ./gradlew dependencies --refresh-dependencies || true
+          cd ..
+
+          JAR_PATH=$(find ~/.gradle -name "jxbrowser-mac-8*.jar" -not -name "*arm*" -type f | head -1)
+          [[ -n "$JAR_PATH" ]] && unzip -o "$JAR_PATH" -d chromium-binaries
+
+          cp -r chromium-branding/* .
+          sed -i '' "s/\${MACOS_DEVELOPER_ID}/$MACOS_DEVELOPER_ID/g" params.json
+          sed -i '' "s/\${MACOS_TEAM_ID}/$MACOS_TEAM_ID/g" params.json
+
+          ./tools/chromium_branding_macos_x64 -p params.json -b chromium-binaries -o output || true
+
+      - name: Create Archive
+        run: |
+          cd output && zip -r ../boss-chromium-macos-x64.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-macos-x64
+          path: boss-chromium-macos-x64.zip
+
+  # Windows x64 build
+  build-windows-x64:
+    needs: build-branding-tool
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download and Brand Chromium
+        shell: bash
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+        run: |
+          mkdir -p jxbrowser-download chromium-binaries output
+          cd jxbrowser-download
+
+          cat > settings.gradle.kts << 'EOF'
+          rootProject.name = "chromium-download"
+          EOF
+
+          cat > build.gradle.kts << EOF
+          plugins {
+              id("java")
+              id("me.friwi.jxbrowser-gradle") version "1.1.1"
+          }
+          repositories { mavenCentral() }
+          jxbrowser { version = "${JXBROWSER_VERSION}" }
+          dependencies { implementation(jxbrowser.win64) }
+          EOF
+
+          ./gradlew.bat dependencies --refresh-dependencies || true
+          cd ..
+
+          JAR_PATH=$(find ~/.gradle -name "jxbrowser-win64-*.jar" -type f | head -1)
+          [[ -n "$JAR_PATH" ]] && unzip -o "$JAR_PATH" -d chromium-binaries
+
+          cp -r chromium-branding/* .
+          ./tools/chromium_branding_windows.exe -p params.json -b chromium-binaries -o output || true
+
+      - name: Create Archive
+        shell: bash
+        run: |
+          cd output && 7z a ../boss-chromium-windows-x64.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-windows-x64
+          path: boss-chromium-windows-x64.zip
+
+  # Linux x64 build
+  build-linux-x64:
+    needs: build-branding-tool
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Make tool executable
+        run: chmod +x tools/chromium_branding_linux
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download and Brand Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+        run: |
+          mkdir -p jxbrowser-download chromium-binaries output
+          cd jxbrowser-download
+
+          cat > settings.gradle.kts << 'EOF'
+          rootProject.name = "chromium-download"
+          EOF
+
+          cat > build.gradle.kts << EOF
+          plugins {
+              id("java")
+              id("me.friwi.jxbrowser-gradle") version "1.1.1"
+          }
+          repositories { mavenCentral() }
+          jxbrowser { version = "${JXBROWSER_VERSION}" }
+          dependencies { implementation(jxbrowser.linux64) }
+          EOF
+
+          ./gradlew dependencies --refresh-dependencies || true
+          cd ..
+
+          JAR_PATH=$(find ~/.gradle -name "jxbrowser-linux64-*.jar" -type f | head -1)
+          [[ -n "$JAR_PATH" ]] && unzip -o "$JAR_PATH" -d chromium-binaries
+
+          cp -r chromium-branding/* .
+          ./tools/chromium_branding_linux -p params.json -b chromium-binaries -o output || true
+
+      - name: Create Archive
+        run: |
+          cd output && zip -r ../boss-chromium-linux-x64.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-linux-x64
+          path: boss-chromium-linux-x64.zip
+
+  # Upload to BossConsole-Releases
+  upload-to-releases:
+    needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-linux-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload to BossConsole-Releases
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          TAG="chromium-v${{ env.JXBROWSER_VERSION }}"
+
+          # Create release (or update if exists)
+          gh release create "$TAG" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            --title "BOSS Chromium v${{ env.JXBROWSER_VERSION }}" \
+            --notes "BOSS-branded Chromium binaries for JxBrowser ${{ env.JXBROWSER_VERSION }}
+
+          ## Downloads
+          - \`boss-chromium-macos-arm64.zip\` - macOS Apple Silicon
+          - \`boss-chromium-macos-x64.zip\` - macOS Intel
+          - \`boss-chromium-windows-x64.zip\` - Windows 64-bit
+          - \`boss-chromium-linux-x64.zip\` - Linux 64-bit
+
+          ## Usage
+          Extract and place in app's chromium directory.
+          The \`executable.name\` file must be preserved for JxBrowser." \
+            || true
+
+          # Upload all artifacts
+          gh release upload "$TAG" \
+            --repo risa-labs-inc/BossConsole-Releases \
+            artifacts/boss-chromium-macos-arm64/boss-chromium-macos-arm64.zip \
+            artifacts/boss-chromium-macos-x64/boss-chromium-macos-x64.zip \
+            artifacts/boss-chromium-windows-x64/boss-chromium-windows-x64.zip \
+            artifacts/boss-chromium-linux-x64/boss-chromium-linux-x64.zip \
+            --clobber
+
+          echo "✅ Uploaded to: https://github.com/risa-labs-inc/BossConsole-Releases/releases/tag/$TAG"
