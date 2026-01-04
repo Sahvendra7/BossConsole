@@ -198,16 +198,10 @@ jobs:
   # macOS x64 build
   build-macos-x64:
     needs: build-branding-tool
-    runs-on: macos-13
-    continue-on-error: true
+    runs-on: macos-15-large
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Note about deprecated runner
-        run: |
-          echo "::warning::macOS-13 runner is being deprecated. Build may fail."
-          echo "See: https://github.com/actions/runner-images/issues/13046"
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v4
