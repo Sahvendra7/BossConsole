@@ -785,8 +785,6 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
-    var triggerDirectoryPicker by remember { mutableStateOf(false) }
-    val recentProjects by ProjectState.recentProjects.collectAsState()
 
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -1675,12 +1673,7 @@ fun ComponentContext.BossApp(
         ai.rever.boss.window.MenuActionsHandler.openProjectEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    // Check if there are recent projects before showing dialog
-                    if (recentProjects.isEmpty()) {
-                        triggerDirectoryPicker = true
-                    } else {
-                        showProjectDialog = true
-                    }
+                    showProjectDialog = true
                 }
             }
             .launchIn(this)
@@ -1986,13 +1979,7 @@ fun ComponentContext.BossApp(
                                 handleTabDropResult(result, splitViewState)
                             },
                             onShowSettings = { showSettingsDialog = true },
-                            onOpenProjectDialog = {
-                                if (recentProjects.isEmpty()) {
-                                    triggerDirectoryPicker = true
-                                } else {
-                                    showProjectDialog = true
-                                }
-                            }
+                            onOpenProjectDialog = { showProjectDialog = true }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation
@@ -2266,15 +2253,8 @@ fun ComponentContext.BossApp(
                 }
             }
 
-            // Handle direct directory picker trigger (when no recent projects)
-            LaunchedEffect(triggerDirectoryPicker) {
-                if (triggerDirectoryPicker) {
-                    triggerDirectoryPicker = false
-                    directoryPicker.pickDirectory()
-                }
-            }
-
             // Project selection dialog (triggered from File > Open Project menu)
+            // Note: Dialog handles empty recentProjects case internally by opening directory picker directly
             if (showProjectDialog) {
                 ai.rever.boss.components.dialogs.ProjectSelectionDialog(
                     onDismiss = { showProjectDialog = false },

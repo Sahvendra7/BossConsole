@@ -167,9 +167,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     onShowTopOfMind: (() -> Unit)? = null
 ) {
     val selectedProject by ProjectState.selectedProject.collectAsState()
-    val recentProjects by ProjectState.recentProjects.collectAsState()
     var showProjectDialog by remember { mutableStateOf(false) }
-    var triggerDirectoryPicker by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -186,13 +184,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     BossActionButtonWithLogo(
         text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
-            showProjectDialog = {
-                if (recentProjects.isEmpty()) {
-                    triggerDirectoryPicker = true
-                } else {
-                    showProjectDialog = true
-                }
-            },
+            showProjectDialog = { showProjectDialog = true },
             onProjectSelected = { project ->
                 // Only show dialog if a project is already selected
                 if (selectedProject.path.isNotEmpty()) {
@@ -241,15 +233,8 @@ fun BossDraggableComponent.BossTopLeftBar(
         }
     }
 
-    // Handle direct directory picker trigger (when no recent projects)
-    LaunchedEffect(triggerDirectoryPicker) {
-        if (triggerDirectoryPicker) {
-            triggerDirectoryPicker = false
-            directoryPicker.pickDirectory()
-        }
-    }
-
     // Project selection dialog
+    // Note: Dialog handles empty recentProjects case internally by opening directory picker directly
     if (showProjectDialog) {
         ProjectSelectionDialog(
             onDismiss = { showProjectDialog = false },

@@ -22,12 +22,27 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
+/**
+ * Project selection dialog that shows recent projects and allows browsing for new ones.
+ *
+ * If no recent projects exist, this dialog automatically opens the directory picker
+ * and dismisses itself, avoiding showing an empty dialog to the user.
+ */
 @Composable
 fun ProjectSelectionDialog(
     onDismiss: () -> Unit,
     onOpenDirectoryPicker: () -> Unit = {}
 ) {
     val recentProjects by ProjectState.recentProjects.collectAsState()
+
+    // If no recent projects, skip dialog and open directory picker directly
+    if (recentProjects.isEmpty()) {
+        LaunchedEffect(Unit) {
+            onDismiss()
+            onOpenDirectoryPicker()
+        }
+        return
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -70,49 +85,30 @@ fun ProjectSelectionDialog(
                     )
 
                     // Recent projects list
-                    if (recentProjects.isNotEmpty()) {
-                        Text(
-                            text = "Recent Projects",
-                            fontSize = 12.sp,
-                            color = Color(0xFF999999),
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                    Text(
+                        text = "Recent Projects",
+                        fontSize = 12.sp,
+                        color = Color(0xFF999999),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
 
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .fillMaxWidth()
-                        ) {
-                            items(recentProjects) { project ->
-                                ProjectListItem(
-                                    project = project,
-                                    onClick = {
-                                        ProjectState.selectProject(project)
-                                        onDismiss()
-                                    }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                    } else {
-                        // No recent projects - show message
-                        Box(
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .fillMaxWidth()
-                                .heightIn(min = 80.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No recent projects",
-                                fontSize = 14.sp,
-                                color = Color(0xFF666666)
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                    ) {
+                        items(recentProjects) { project ->
+                            ProjectListItem(
+                                project = project,
+                                onClick = {
+                                    ProjectState.selectProject(project)
+                                    onDismiss()
+                                }
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Browse button and Close button
                     Row(
