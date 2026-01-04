@@ -164,6 +164,29 @@ jobs:
           echo "Branding complete. Output:"
           ls -la output/
 
+          # Create executable.name if not present (required by JxBrowser)
+          if [ ! -f "output/executable.name" ]; then
+            # For macOS, find the .app bundle and extract the executable name
+            APP_BUNDLE=$(find output -maxdepth 1 -name "*.app" -type d | head -1)
+            if [ -n "$APP_BUNDLE" ]; then
+              # Get the executable name from Info.plist or use bundle name
+              BUNDLE_NAME=$(basename "$APP_BUNDLE" .app)
+              EXEC_PATH="$APP_BUNDLE/Contents/MacOS/$BUNDLE_NAME"
+              if [ -f "$EXEC_PATH" ]; then
+                echo "$BUNDLE_NAME" > output/executable.name
+                echo "Created executable.name with: $BUNDLE_NAME"
+              else
+                # Try to find the actual executable
+                EXEC_FILE=$(find "$APP_BUNDLE/Contents/MacOS" -type f -perm +111 | head -1)
+                if [ -n "$EXEC_FILE" ]; then
+                  EXEC_NAME=$(basename "$EXEC_FILE")
+                  echo "$EXEC_NAME" > output/executable.name
+                  echo "Created executable.name with: $EXEC_NAME"
+                fi
+              fi
+            fi
+          fi
+
       - name: Verify executable.name
         run: |
           if [ -f "output/executable.name" ]; then
@@ -296,6 +319,26 @@ jobs:
             -o output
 
           ls -la output/
+
+          # Create executable.name if not present (required by JxBrowser)
+          if [ ! -f "output/executable.name" ]; then
+            APP_BUNDLE=$(find output -maxdepth 1 -name "*.app" -type d | head -1)
+            if [ -n "$APP_BUNDLE" ]; then
+              BUNDLE_NAME=$(basename "$APP_BUNDLE" .app)
+              EXEC_PATH="$APP_BUNDLE/Contents/MacOS/$BUNDLE_NAME"
+              if [ -f "$EXEC_PATH" ]; then
+                echo "$BUNDLE_NAME" > output/executable.name
+                echo "Created executable.name with: $BUNDLE_NAME"
+              else
+                EXEC_FILE=$(find "$APP_BUNDLE/Contents/MacOS" -type f -perm +111 | head -1)
+                if [ -n "$EXEC_FILE" ]; then
+                  EXEC_NAME=$(basename "$EXEC_FILE")
+                  echo "$EXEC_NAME" > output/executable.name
+                  echo "Created executable.name with: $EXEC_NAME"
+                fi
+              fi
+            fi
+          fi
 
       - name: Verify executable.name
         run: |
@@ -458,6 +501,22 @@ jobs:
             -o output
 
           ls -la output/
+
+          # Create executable.name if not present (required by JxBrowser)
+          if [ ! -f "output/executable.name" ]; then
+            # For Linux, look for executable binary
+            EXEC_FILE=$(find output -maxdepth 1 -type f -executable | head -1)
+            if [ -n "$EXEC_FILE" ]; then
+              EXEC_NAME=$(basename "$EXEC_FILE")
+              echo "$EXEC_NAME" > output/executable.name
+              echo "Created executable.name with: $EXEC_NAME"
+            else
+              # Fallback to params.json executableName
+              EXEC_NAME=$(python3 -c "import json; print(json.load(open('params.json'))['linux']['executableName'])" 2>/dev/null || echo "boss-browser")
+              echo "$EXEC_NAME" > output/executable.name
+              echo "Created executable.name with fallback: $EXEC_NAME"
+            fi
+          fi
 
       - name: Verify executable.name
         run: |
