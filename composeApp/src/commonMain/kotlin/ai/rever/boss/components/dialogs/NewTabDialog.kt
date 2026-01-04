@@ -366,110 +366,130 @@ fun NewTabDialog(
                             }
                         }
 
-                        // Folder selector dropdown
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = { showFolderDropdown = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    backgroundColor = Color(0xFF1E1F22),
-                                    contentColor = Color.White
-                                ),
-                                border = ButtonDefaults.outlinedBorder.copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
-                                ),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Folder,
-                                    contentDescription = "Folder",
-                                    tint = Color(0xFF6B9EFF),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (selectedProject.path.isNotEmpty())
-                                        selectedProject.name
-                                    else
-                                        "Select folder...",
-                                    color = if (selectedProject.path.isNotEmpty())
-                                        Color.White
-                                    else
-                                        Color(0xFF999999),
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = "Expand",
-                                    tint = Color(0xFF999999)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = showFolderDropdown,
-                                onDismissRequest = { showFolderDropdown = false },
+                        // Show "Open Project" button when no project is selected
+                        if (selectedProject.path.isEmpty()) {
+                            Box(
                                 modifier = Modifier
-                                    .width(450.dp)
-                                    .background(Color(0xFF2B2D30))
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                // Recent projects
-                                if (recentProjects.isNotEmpty()) {
-                                    recentProjects.forEach { project ->
-                                        DropdownMenuItem(
-                                            onClick = {
-                                                ProjectState.selectProject(project)
-                                                expandedPaths = emptySet()
-                                                showFolderDropdown = false
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Folder,
-                                                contentDescription = null,
-                                                tint = Color(0xFF6B9EFF),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Column {
-                                                Text(
-                                                    text = project.name,
-                                                    color = Color.White,
-                                                    fontSize = 14.sp
-                                                )
-                                                Text(
-                                                    text = project.path,
-                                                    color = Color(0xFF999999),
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Divider(color = Color(0xFF555555))
-                                }
-
-                                // Browse option
-                                DropdownMenuItem(
-                                    onClick = {
-                                        showFolderDropdown = false
-                                        directoryPicker.pickDirectory()
-                                    }
+                                Button(
+                                    onClick = { directoryPicker.pickDirectory() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        backgroundColor = Color(0xFF4A9EFF),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.FolderOpen,
                                         contentDescription = null,
-                                        tint = Color(0xFF999999),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Open Project")
+                                }
+                            }
+                        } else {
+                            // Folder selector dropdown
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { showFolderDropdown = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        backgroundColor = Color(0xFF1E1F22),
+                                        contentColor = Color.White
+                                    ),
+                                    border = ButtonDefaults.outlinedBorder.copy(
+                                        brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
+                                    ),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Folder,
+                                        contentDescription = "Folder",
+                                        tint = Color(0xFF6B9EFF),
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Browse...",
+                                        text = selectedProject.name,
                                         color = Color.White,
-                                        fontSize = 14.sp
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "Expand",
+                                        tint = Color(0xFF999999)
                                     )
                                 }
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                                DropdownMenu(
+                                    expanded = showFolderDropdown,
+                                    onDismissRequest = { showFolderDropdown = false },
+                                    modifier = Modifier
+                                        .width(450.dp)
+                                        .background(Color(0xFF2B2D30))
+                                ) {
+                                    // Recent projects
+                                    if (recentProjects.isNotEmpty()) {
+                                        recentProjects.forEach { project ->
+                                            DropdownMenuItem(
+                                                onClick = {
+                                                    ProjectState.selectProject(project)
+                                                    expandedPaths = emptySet()
+                                                    showFolderDropdown = false
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Folder,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF6B9EFF),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = project.name,
+                                                        color = Color.White,
+                                                        fontSize = 14.sp
+                                                    )
+                                                    Text(
+                                                        text = project.path,
+                                                        color = Color(0xFF999999),
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Divider(color = Color(0xFF555555))
+                                    }
+
+                                    // Browse option
+                                    DropdownMenuItem(
+                                        onClick = {
+                                            showFolderDropdown = false
+                                            directoryPicker.pickDirectory()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.FolderOpen,
+                                            contentDescription = null,
+                                            tint = Color(0xFF999999),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Browse...",
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
 
                         // Helper function to find node by path in tree
                         fun findNodeByPath(root: FileNode?, targetPath: String): FileNode? {
@@ -503,129 +523,127 @@ fun NewTabDialog(
                         }
 
                         // File tree browser
-                        if (selectedProject.path.isNotEmpty()) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp),
-                                backgroundColor = Color(0xFF1E1F22),
-                                shape = RoundedCornerShape(4.dp),
-                                elevation = 0.dp
-                            ) {
-                                if (isLoadingTree) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp),
-                                            color = Color(0xFF4A9EFF),
-                                            strokeWidth = 2.dp
-                                        )
-                                    }
-                                } else if (fileTree != null && fileTree?.children?.isNotEmpty() == true) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .verticalScroll(rememberScrollState())
-                                            .padding(4.dp)
-                                    ) {
-                                        fileTree?.children?.forEach { node ->
-                                            DialogFileTreeItem(
-                                                node = node,
-                                                level = 0,
-                                                expandedPaths = expandedPaths,
-                                                onToggleExpanded = { path ->
-                                                    if (expandedPaths.contains(path)) {
-                                                        // Collapse - just remove from expanded set
-                                                        expandedPaths = expandedPaths - path
-                                                    } else {
-                                                        // Expand - add to expanded set and load children
-                                                        expandedPaths = expandedPaths + path
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
+                            backgroundColor = Color(0xFF1E1F22),
+                            shape = RoundedCornerShape(4.dp),
+                            elevation = 0.dp
+                        ) {
+                            if (isLoadingTree) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = Color(0xFF4A9EFF),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            } else if (fileTree != null && fileTree?.children?.isNotEmpty() == true) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(4.dp)
+                                ) {
+                                    fileTree?.children?.forEach { node ->
+                                        DialogFileTreeItem(
+                                            node = node,
+                                            level = 0,
+                                            expandedPaths = expandedPaths,
+                                            onToggleExpanded = { path ->
+                                                if (expandedPaths.contains(path)) {
+                                                    // Collapse - just remove from expanded set
+                                                    expandedPaths = expandedPaths - path
+                                                } else {
+                                                    // Expand - add to expanded set and load children
+                                                    expandedPaths = expandedPaths + path
 
-                                                        // Load children if needed
-                                                        val currentTree = fileTree
-                                                        if (currentTree != null) {
-                                                            val targetNode = findNodeByPath(currentTree, path)
-                                                            if (targetNode?.isDirectory == true && targetNode.children.isEmpty()) {
-                                                                // Need to load children
-                                                                coroutineScope.launch {
-                                                                    try {
-                                                                        val scannedNode = withContext(Dispatchers.IO) {
-                                                                            scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
-                                                                        }
-                                                                        if (scannedNode != null) {
-                                                                            val loadedChildren = scannedNode.children.map { child ->
-                                                                                if (child.isDirectory) {
-                                                                                    val hasKids = try {
-                                                                                        directoryHasChildren(child.path)
-                                                                                    } catch (e: Exception) {
-                                                                                        false
-                                                                                    }
-                                                                                    child.copy(hasChildren = hasKids)
-                                                                                } else {
-                                                                                    child
-                                                                                }
-                                                                            }
-                                                                            fileTree = updateNodeAtPath(currentTree, path) { existingNode ->
-                                                                                existingNode.copy(
-                                                                                    children = loadedChildren,
-                                                                                    hasChildren = loadedChildren.isNotEmpty()
-                                                                                )
-                                                                            }
-                                                                        }
-                                                                    } catch (e: Exception) {
-                                                                        println("[NewTabDialog] Error loading folder children: ${e.message}")
+                                                    // Load children if needed
+                                                    val currentTree = fileTree
+                                                    if (currentTree != null) {
+                                                        val targetNode = findNodeByPath(currentTree, path)
+                                                        if (targetNode?.isDirectory == true && targetNode.children.isEmpty()) {
+                                                            // Need to load children
+                                                            coroutineScope.launch {
+                                                                try {
+                                                                    val scannedNode = withContext(Dispatchers.IO) {
+                                                                        scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
                                                                     }
+                                                                    if (scannedNode != null) {
+                                                                        val loadedChildren = scannedNode.children.map { child ->
+                                                                            if (child.isDirectory) {
+                                                                                val hasKids = try {
+                                                                                    directoryHasChildren(child.path)
+                                                                                } catch (e: Exception) {
+                                                                                    false
+                                                                                }
+                                                                                child.copy(hasChildren = hasKids)
+                                                                            } else {
+                                                                                child
+                                                                            }
+                                                                        }
+                                                                        fileTree = updateNodeAtPath(currentTree, path) { existingNode ->
+                                                                            existingNode.copy(
+                                                                                children = loadedChildren,
+                                                                                hasChildren = loadedChildren.isNotEmpty()
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    println("[NewTabDialog] Error loading folder children: ${e.message}")
                                                                 }
                                                             }
                                                         }
                                                     }
-                                                },
-                                                onFileClick = { file ->
-                                                    inputText = file.path
-                                                    fileText = file.path
                                                 }
-                                            )
-                                        }
-                                    }
-                                } else if (fileTree != null && fileTree?.children?.isEmpty() == true) {
-                                    // Empty folder (hidden files like .git are excluded)
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Text(
-                                                text = "No visible files",
-                                                color = Color(0xFF999999),
-                                                fontSize = 13.sp
-                                            )
-                                            Text(
-                                                text = "(hidden files and build folders are excluded)",
-                                                color = Color(0xFF666666),
-                                                fontSize = 11.sp
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "Unable to load files",
-                                            color = Color(0xFF999999),
-                                            fontSize = 13.sp
+                                            },
+                                            onFileClick = { file ->
+                                                inputText = file.path
+                                                fileText = file.path
+                                            }
                                         )
                                     }
                                 }
+                            } else if (fileTree != null && fileTree?.children?.isEmpty() == true) {
+                                // Empty folder (hidden files like .git are excluded)
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "No visible files",
+                                            color = Color(0xFF999999),
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = "(hidden files and build folders are excluded)",
+                                            color = Color(0xFF666666),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Unable to load files",
+                                        color = Color(0xFF999999),
+                                        fontSize = 13.sp
+                                    )
+                                }
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // File input with browse button
                         Row(
@@ -685,6 +703,7 @@ fun NewTabDialog(
                                     tint = Color(0xFF999999)
                                 )
                             }
+                        }
                         }
                     } else {
                         // URL input
