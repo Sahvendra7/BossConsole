@@ -122,7 +122,7 @@ object PredefinedWorkspaces {
                             TabConfig(
                                 type = "terminal",
                                 title = "Claude Code",
-                                initialCommand = "cd {projectPath} && clear && claude --continue --dangerously-skip-permissions",
+                                initialCommand = "cd {projectPath} && clear && claude --dangerously-skip-permissions",
                                 workingDirectory = "{projectPath}"
                             )
                         )
@@ -182,7 +182,7 @@ object PredefinedWorkspaces {
                             TabConfig(
                                 type = "terminal",
                                 title = "Claude Code",
-                                initialCommand = "cd {projectPath} && clear && claude --continue --dangerously-skip-permissions",
+                                initialCommand = "cd {projectPath} && clear && claude --dangerously-skip-permissions",
                                 workingDirectory = "{projectPath}"
                             )
                         )
