@@ -107,7 +107,7 @@ class GroovyLexer : BaseLexer() {
 
                         // Single-quoted string
                         char == '\'' -> {
-                            val endPos = readStringLiteral(line, pos)
+                            val endPos = readSingleQuotedString(line, pos)
                             tokens.add(Token(pos, endPos, TokenType.STRING))
                             pos = endPos
                         }
@@ -306,6 +306,24 @@ class GroovyLexer : BaseLexer() {
             pos++
         }
         return line.length to false
+    }
+
+    /**
+     * Reads a single-quoted string in Groovy.
+     * Unlike Java, Groovy single-quoted strings can contain multiple characters.
+     */
+    private fun readSingleQuotedString(text: String, start: Int): Int {
+        if (start >= text.length || text[start] != '\'') return start + 1
+
+        var pos = start + 1
+        while (pos < text.length) {
+            when (text[pos]) {
+                '\'' -> return pos + 1
+                '\\' -> pos += 2 // Skip escape sequence
+                else -> pos++
+            }
+        }
+        return pos // Unterminated - return end of line
     }
 
     private fun canStartSlashyString(line: String, pos: Int): Boolean {

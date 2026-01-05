@@ -72,8 +72,11 @@ class ReferenceService {
             }
         }
 
-        // Sort by file path, then by line number
-        return references.sortedWith(compareBy({ it.filePath }, { it.line }))
+        // Deduplicate and sort by file path, then by line number
+        // Duplicates can occur when the same reference is found through multiple code paths
+        return references
+            .distinctBy { "${it.filePath}:${it.line}:${it.column}" }
+            .sortedWith(compareBy({ it.filePath }, { it.line }))
     }
 
     /**
@@ -194,31 +197,36 @@ class ReferenceService {
     }
 
     /**
-     * Get all indexed Kotlin file paths.
+     * Get all indexed Kotlin file paths from all indexed directories.
      */
     private fun getIndexedKotlinFiles(indexer: ProjectIndexer): List<String> {
-        // Get files from the project indexer's source file list
-        val projectPath = indexer.projectPath
-        val projectDir = File(projectPath)
+        val allFiles = mutableListOf<String>()
 
-        if (!projectDir.exists() || !projectDir.isDirectory) {
-            return emptyList()
+        // Get all indexed directories (main project + any additionally indexed projects)
+        val indexedDirs = indexer.getIndexedDirectories()
+
+        for (dirPath in indexedDirs) {
+            val dir = File(dirPath)
+            if (!dir.exists() || !dir.isDirectory) {
+                continue
+            }
+
+            dir.walkTopDown()
+                .filter { file ->
+                    file.isFile && file.extension.lowercase() == "kt"
+                }
+                .filter { file ->
+                    // Skip build directories and hidden files
+                    val relativePath = file.relativeTo(dir).path
+                    !relativePath.contains("/build/") &&
+                        !relativePath.contains("/.") &&
+                        !relativePath.startsWith("build/") &&
+                        !relativePath.startsWith(".")
+                }
+                .forEach { allFiles.add(it.absolutePath) }
         }
 
-        return projectDir.walkTopDown()
-            .filter { file ->
-                file.isFile && file.extension.lowercase() == "kt"
-            }
-            .filter { file ->
-                // Skip build directories and hidden files
-                val relativePath = file.relativeTo(projectDir).path
-                !relativePath.contains("/build/") &&
-                    !relativePath.contains("/.") &&
-                    !relativePath.startsWith("build/") &&
-                    !relativePath.startsWith(".")
-            }
-            .map { it.absolutePath }
-            .toList()
+        return allFiles
     }
 
     companion object {

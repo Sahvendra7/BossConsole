@@ -216,6 +216,13 @@ class NavigationManager(
             return NavigationOutcome.Unavailable
         }
 
+        // Ensure the current file's project is indexed for cross-file navigation
+        // This handles the case where user opens a file from a different project
+        ProjectIndexer.current?.let { indexer ->
+            val indexingJob = indexer.ensureFileProjectIndexed(path)
+            indexingJob?.join() // Wait for indexing to complete
+        }
+
         // Parse the file
         val ktFile = parseKotlinFile() ?: return NavigationOutcome.Unavailable
 

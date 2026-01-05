@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.lsp.server
 
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,6 +30,8 @@ import java.util.concurrent.TimeUnit
  * ```
  */
 class ServerDiscovery {
+
+    private val logger = LspLogger.forComponent("ServerDiscovery")
 
     companion object {
         /**
@@ -71,7 +75,7 @@ class ServerDiscovery {
     fun isCommandAvailable(command: String, useCache: Boolean = true): Boolean {
         // Validate command name before searching
         if (!isValidCommandName(command)) {
-            println("[ServerDiscovery] Invalid command name rejected: $command")
+            logger.warn(LogCategory.SERVER, "Invalid command name rejected", data = mapOf("command" to command))
             return false
         }
 
@@ -208,11 +212,11 @@ class ServerDiscovery {
     ): String? = withContext(Dispatchers.IO) {
         // Validate command and flag before executing
         if (!isValidCommandName(command)) {
-            println("[ServerDiscovery] Invalid command name for version check: $command")
+            logger.warn(LogCategory.SERVER, "Invalid command name for version check", data = mapOf("command" to command))
             return@withContext null
         }
         if (!isValidArgument(versionFlag)) {
-            println("[ServerDiscovery] Invalid version flag rejected: $versionFlag")
+            logger.warn(LogCategory.SERVER, "Invalid version flag rejected", data = mapOf("flag" to versionFlag))
             return@withContext null
         }
 

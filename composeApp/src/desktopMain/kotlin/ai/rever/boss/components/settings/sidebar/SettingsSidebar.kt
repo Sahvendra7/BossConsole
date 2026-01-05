@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, BOSS_EDITOR, TERMINAL, RUNNER, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
+    FLUCK, CODE_EDITOR, BOSS_EDITOR, LANGUAGE_SERVERS, TERMINAL, RUNNER, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
 }
 
 @Composable
@@ -65,6 +65,16 @@ fun SettingsSidebar(
             subtitle = "Scroll, folding, brackets",
             isSelected = selectedSection == SettingsSection.BOSS_EDITOR,
             onClick = { onSectionChange(SettingsSection.BOSS_EDITOR) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.Hub,
+            title = "Language Servers",
+            subtitle = "LSP, completions, diagnostics",
+            isSelected = selectedSection == SettingsSection.LANGUAGE_SERVERS,
+            onClick = { onSectionChange(SettingsSection.LANGUAGE_SERVERS) }
         )
 
         Spacer(modifier = Modifier.height(8.dp))

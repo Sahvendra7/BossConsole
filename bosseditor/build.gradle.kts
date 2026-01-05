@@ -55,6 +55,8 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
                 // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)
                 implementation(libs.kotlin.compiler.embeddable)
+                // Structured logging
+                implementation(libs.slf4j.api)
             }
         }
 

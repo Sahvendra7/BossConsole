@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.lsp.client
 
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
 import ai.rever.bosseditor.lsp.protocol.*
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.*
@@ -29,6 +31,8 @@ class LspTransport(
     private val output: OutputStream,
     private val config: LspClientConfig = LspClientConfig()
 ) {
+    private val logger = LspLogger.forComponent("LspTransport")
+
     companion object {
         /** Buffer capacity for notification SharedFlow */
         private const val NOTIFICATION_BUFFER_CAPACITY = 64
@@ -91,7 +95,7 @@ class LspTransport(
                 readLoop()
             } catch (e: Exception) {
                 if (isRunning) {
-                    println("[LspTransport] Read error: ${e.message}")
+                    logger.error(LogCategory.TRANSPORT, "Read error", error = e)
                 }
             }
         }
@@ -122,7 +126,7 @@ class LspTransport(
                 }
             }
         } catch (e: Exception) {
-            println("[LspTransport] Error canceling pending requests: ${e.message}")
+            logger.warn(LogCategory.TRANSPORT, "Error canceling pending requests", error = e)
         }
 
         scope.cancel()
@@ -133,12 +137,12 @@ class LspTransport(
             try {
                 input.close()
             } catch (e: Exception) {
-                println("[LspTransport] Error closing input stream: ${e.message}")
+                logger.warn(LogCategory.TRANSPORT, "Error closing input stream", error = e)
             }
             try {
                 output.close()
             } catch (e: Exception) {
-                println("[LspTransport] Error closing output stream: ${e.message}")
+                logger.warn(LogCategory.TRANSPORT, "Error closing output stream", error = e)
             }
         }
     }
@@ -228,7 +232,7 @@ class LspTransport(
             val bytes = content.toByteArray(StandardCharsets.UTF_8)
 
             if (config.traceMessages) {
-                println("[LspTransport] >>> $content")
+                logger.trace(LogCategory.PROTOCOL, ">>> $content")
             }
 
             val header = "Content-Length: ${bytes.size}\r\n\r\n"
@@ -263,7 +267,7 @@ class LspTransport(
 
                 val jsonString = String(content)
                 if (config.traceMessages) {
-                    println("[LspTransport] <<< $jsonString")
+                    logger.trace(LogCategory.PROTOCOL, "<<< $jsonString")
                 }
 
                 val jsonElement = json.parseToJsonElement(jsonString)
@@ -277,11 +281,15 @@ class LspTransport(
             } catch (e: Exception) {
                 if (isRunning) {
                     consecutiveErrors++
-                    println("[LspTransport] Read error ($consecutiveErrors/$MAX_CONSECUTIVE_ERRORS): ${e.message}")
+                    logger.warn(
+                        LogCategory.TRANSPORT,
+                        "Read error ($consecutiveErrors/$MAX_CONSECUTIVE_ERRORS)",
+                        error = e
+                    )
 
                     // Exponential backoff for consecutive errors
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        println("[LspTransport] Too many consecutive errors, stopping transport")
+                        logger.error(LogCategory.TRANSPORT, "Too many consecutive errors, stopping transport")
                         isRunning = false
                         break
                     }
@@ -338,7 +346,7 @@ class LspTransport(
                     }
                 }
             } catch (e: Exception) {
-                println("[LspTransport] Error processing message: ${e.message}")
+                logger.error(LogCategory.PROTOCOL, "Error processing message", error = e)
             }
         }
     }
@@ -401,7 +409,11 @@ class LspTransport(
         val notification = json.decodeFromJsonElement<NotificationMessage>(message)
         val emitted = _notifications.tryEmit(notification.method to notification.params)
         if (!emitted) {
-            println("[LspTransport] Warning: notification buffer full, dropping: ${notification.method}")
+            logger.warn(
+                LogCategory.PROTOCOL,
+                "Notification buffer full, dropping notification",
+                data = mapOf("method" to notification.method)
+            )
         }
     }
 }

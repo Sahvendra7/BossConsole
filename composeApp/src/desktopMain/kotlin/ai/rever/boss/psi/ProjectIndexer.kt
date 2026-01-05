@@ -231,27 +231,43 @@ class ProjectIndexer(val projectPath: String) {
     private val indexedDirectories = mutableSetOf<String>()
 
     /**
+     * Track pending indexing jobs per directory for awaiting completion.
+     */
+    private val pendingIndexingJobs = mutableMapOf<String, Job>()
+
+    /**
+     * Lock for thread-safe access to pendingIndexingJobs.
+     */
+    private val jobsLock = Any()
+
+    /**
      * Extend the index with files from an additional directory.
      * This allows multi-project support by indexing files from projects
      * that weren't in the original index path.
      *
      * @param directoryPath Path to the directory to add
      * @param progressCallback Optional progress callback
+     * @return Job for the indexing operation, or null if already indexed
      */
-    fun addDirectory(directoryPath: String, progressCallback: IndexingProgressCallback? = null) {
+    fun addDirectory(directoryPath: String, progressCallback: IndexingProgressCallback? = null): Job? {
         // Normalize the path
         val normalizedPath = File(directoryPath).canonicalPath
 
-        // Skip if already indexed
-        if (normalizedPath in indexedDirectories) {
-            println("[Indexer] Directory already indexed: $normalizedPath")
-            return
+        // Check if already indexed or indexing in progress
+        synchronized(jobsLock) {
+            if (normalizedPath in indexedDirectories) {
+                println("[Indexer] Directory already indexed: $normalizedPath")
+                // Return existing job if still running
+                return pendingIndexingJobs[normalizedPath]?.takeIf { it.isActive }
+            }
         }
 
-        indexScope.launch {
+        val job = indexScope.launch {
             try {
                 println("[Indexer] Adding directory to index: $normalizedPath")
-                indexedDirectories.add(normalizedPath)
+                synchronized(jobsLock) {
+                    indexedDirectories.add(normalizedPath)
+                }
 
                 // Find source files in this directory
                 val dir = File(normalizedPath)
@@ -289,7 +305,75 @@ class ProjectIndexer(val projectPath: String) {
 
             } catch (e: Exception) {
                 println("[Indexer] Error adding directory: ${e.message}")
+            } finally {
+                // Remove from pending jobs when done
+                synchronized(jobsLock) {
+                    pendingIndexingJobs.remove(normalizedPath)
+                }
             }
+        }
+
+        // Track the job
+        synchronized(jobsLock) {
+            pendingIndexingJobs[normalizedPath] = job
+        }
+
+        return job
+    }
+
+    /**
+     * Await completion of indexing for a specific directory.
+     *
+     * @param directoryPath Path to the directory
+     * @return true if indexing completed, false if no indexing was in progress
+     */
+    suspend fun awaitDirectoryIndexing(directoryPath: String): Boolean {
+        val normalizedPath = File(directoryPath).canonicalPath
+        val job = synchronized(jobsLock) {
+            pendingIndexingJobs[normalizedPath]
+        }
+        return if (job != null) {
+            job.join()
+            true
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Check if indexing is in progress for a directory.
+     *
+     * @param directoryPath Path to the directory
+     * @return true if indexing is in progress
+     */
+    fun isDirectoryIndexing(directoryPath: String): Boolean {
+        val normalizedPath = File(directoryPath).canonicalPath
+        return synchronized(jobsLock) {
+            pendingIndexingJobs[normalizedPath]?.isActive == true
+        }
+    }
+
+    /**
+     * Check if a directory has been indexed (either completed or in progress).
+     *
+     * @param directoryPath Path to the directory
+     * @return true if the directory is indexed or being indexed
+     */
+    fun isDirectoryIndexed(directoryPath: String): Boolean {
+        val normalizedPath = File(directoryPath).canonicalPath
+        return synchronized(jobsLock) {
+            normalizedPath in indexedDirectories
+        }
+    }
+
+    /**
+     * Get all indexed directories including the main project path.
+     *
+     * @return Set of all indexed directory paths
+     */
+    fun getIndexedDirectories(): Set<String> {
+        return synchronized(jobsLock) {
+            indexedDirectories.toSet()
         }
     }
 
@@ -298,13 +382,14 @@ class ProjectIndexer(val projectPath: String) {
      * Automatically detects the project root and indexes the entire project.
      *
      * @param filePath Path to a file that might be from an unindexed project
+     * @return Job for the indexing operation, or null if already indexed or no project found
      */
-    fun ensureFileProjectIndexed(filePath: String) {
+    fun ensureFileProjectIndexed(filePath: String): Job? {
         println("[Indexer] ensureFileProjectIndexed called for: $filePath")
         val file = File(filePath)
         if (!file.exists()) {
             println("[Indexer] File does not exist: $filePath")
-            return
+            return null
         }
 
         // Find the project root (look for build.gradle.kts, settings.gradle.kts, or src directory)
@@ -326,15 +411,16 @@ class ProjectIndexer(val projectPath: String) {
             val normalizedRoot = projectRoot.canonicalPath
             val mainProjectPath = File(projectPath).canonicalPath
             println("[Indexer] Found project root: $normalizedRoot (main: $mainProjectPath)")
-            println("[Indexer] Already indexed: ${indexedDirectories.contains(normalizedRoot)}, is main: ${normalizedRoot == mainProjectPath}")
+            println("[Indexer] Already indexed: ${isDirectoryIndexed(normalizedRoot)}, is main: ${normalizedRoot == mainProjectPath}")
 
-            if (normalizedRoot !in indexedDirectories && normalizedRoot != mainProjectPath) {
+            if (!isDirectoryIndexed(normalizedRoot) && normalizedRoot != mainProjectPath) {
                 println("[Indexer] Detected new project root: $normalizedRoot")
-                addDirectory(normalizedRoot)
+                return addDirectory(normalizedRoot)
             }
         } else {
             println("[Indexer] No project root found for: $filePath")
         }
+        return null
     }
 
     /**

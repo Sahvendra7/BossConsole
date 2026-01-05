@@ -4,6 +4,8 @@ import ai.rever.bosseditor.lsp.client.DesktopLspClient
 import ai.rever.bosseditor.lsp.client.LspClient
 import ai.rever.bosseditor.lsp.client.LspClientConfig
 import ai.rever.bosseditor.lsp.client.LspClientState
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
 import ai.rever.bosseditor.lsp.protocol.InitializeResult
 import ai.rever.bosseditor.lsp.protocol.WorkspaceFolder
 import kotlinx.coroutines.*
@@ -44,6 +46,8 @@ class LanguageServerManager(
     private val clientConfig: LspClientConfig = LspClientConfig(),
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
+    private val logger = LspLogger.forComponent("LanguageServerManager")
+
     companion object {
         /** Interval for server health monitoring in milliseconds */
         private const val HEALTH_CHECK_INTERVAL_MS = 5000L
@@ -296,7 +300,12 @@ class LanguageServerManager(
                 emitEvent(ServerEvent.ServerStopped(server.config, unexpected = false))
             } catch (e: Exception) {
                 // Log but continue
-                println("[LanguageServerManager] Error stopping ${server.config.displayName}: ${e.message}")
+                logger.warn(
+                    LogCategory.SERVER,
+                    "Error stopping server",
+                    languageId = server.config.languageId,
+                    error = e
+                )
             }
         }
     }
@@ -376,7 +385,7 @@ class LanguageServerManager(
             try {
                 stopAll()
             } catch (e: Exception) {
-                println("LSP LanguageServerManager dispose error: ${e.message}")
+                logger.error(LogCategory.SERVER, "Dispose error", error = e)
             }
         }
     }

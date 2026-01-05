@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.lsp.client
 
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
 import ai.rever.bosseditor.lsp.protocol.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.encodeToString
@@ -17,6 +19,8 @@ class DesktopLspClient(
     private val environment: Map<String, String> = emptyMap(),
     private val config: LspClientConfig = LspClientConfig()
 ) : LspClient {
+
+    private val logger = LspLogger.forComponent("DesktopLspClient")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -79,7 +83,7 @@ class DesktopLspClient(
                 proc.waitFor()  // Wait indefinitely - this is a monitor, not a shutdown
                 if (state != LspClientState.DISCONNECTED) {
                     state = LspClientState.ERROR
-                    println("[DesktopLspClient] Language server process exited unexpectedly")
+                    logger.error(LogCategory.SERVER, "Language server process exited unexpectedly")
                 }
             }
 
@@ -158,7 +162,7 @@ class DesktopLspClient(
         try {
             request(LspMethods.SHUTDOWN, null)
         } catch (e: Exception) {
-            println("[DesktopLspClient] Shutdown error: ${e.message}")
+            logger.warn(LogCategory.SERVER, "Shutdown error", error = e)
         }
     }
 
@@ -193,7 +197,7 @@ class DesktopLspClient(
                         proc.destroyForcibly()
                     }
                 } catch (e: Exception) {
-                    println("[DesktopLspClient] Process disposal error: ${e.message}")
+                    logger.warn(LogCategory.SERVER, "Process disposal error", error = e)
                 }
             }
         }
@@ -209,7 +213,7 @@ class DesktopLspClient(
             try {
                 handler(method, params)
             } catch (e: Exception) {
-                println("[DesktopLspClient] Notification handler error: ${e.message}")
+                logger.error(LogCategory.PROTOCOL, "Notification handler error", data = mapOf("method" to method), error = e)
             }
         }
 
@@ -218,7 +222,7 @@ class DesktopLspClient(
             try {
                 handler(method, params)
             } catch (e: Exception) {
-                println("[DesktopLspClient] Notification handler error: ${e.message}")
+                logger.error(LogCategory.PROTOCOL, "Notification handler error", data = mapOf("method" to method), error = e)
             }
         }
     }

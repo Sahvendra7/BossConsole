@@ -1,5 +1,8 @@
 package ai.rever.bosseditor.lsp.server
 
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
+
 /**
  * Registry of known language server configurations.
  *
@@ -34,6 +37,8 @@ package ai.rever.bosseditor.lsp.server
  * ```
  */
 object LanguageServerRegistry {
+
+    private val logger = LspLogger.forComponent("LanguageServerRegistry")
 
     /**
      * Map of language ID to server configuration.
@@ -323,7 +328,11 @@ object LanguageServerRegistry {
         // Validate command to prevent shell injection
         val validation = LanguageServerConfig.validateCommand(config.command)
         if (validation is CommandValidationResult.Invalid) {
-            println("[LanguageServerRegistry] Rejecting config '${config.id}': ${validation.reason}")
+            logger.warn(
+                LogCategory.SERVER,
+                "Rejecting config: ${validation.reason}",
+                data = mapOf("configId" to config.id)
+            )
             throw IllegalArgumentException(
                 "Invalid language server command for '${config.id}': ${validation.reason}"
             )
@@ -434,5 +443,116 @@ object LanguageServerRegistry {
      */
     fun hasServerForExtension(extension: String): Boolean {
         return configsByExtension[extension.lowercase()]?.any { it.enabled } == true
+    }
+
+    /**
+     * Apply configuration from LspSettingsManager.
+     *
+     * This should be called when the configuration changes to update:
+     * - Disabled built-in servers
+     * - Custom servers
+     * - Per-language settings
+     *
+     * @param disabledServers Set of language IDs for disabled built-in servers
+     * @param customServers List of custom server configurations to register
+     */
+    fun applyConfiguration(
+        disabledServers: Set<String>,
+        customServers: List<ai.rever.bosseditor.lsp.config.CustomLanguageServer>
+    ) {
+        logger.info(
+            LogCategory.SERVER,
+            "Applying configuration",
+            data = mapOf(
+                "disabledCount" to disabledServers.size,
+                "customCount" to customServers.size
+            )
+        )
+
+        // Update enabled status for built-in servers
+        configsByLanguage.forEach { (languageId, config) ->
+            if (!config.id.endsWith("-custom")) { // Don't modify custom servers here
+                val shouldBeDisabled = disabledServers.contains(languageId)
+                if (config.enabled == shouldBeDisabled) {
+                    configsByLanguage[languageId] = config.copy(enabled = !shouldBeDisabled)
+                }
+            }
+        }
+
+        // Remove old custom servers
+        val customServerIds = configsByLanguage.values
+            .filter { it.id.endsWith("-custom") || it.id.startsWith("custom-") }
+            .map { it.languageId }
+
+        customServerIds.forEach { languageId ->
+            unregister(languageId)
+        }
+
+        // Register new custom servers
+        customServers.filter { it.enabled }.forEach { customServer ->
+            val config = LanguageServerConfig(
+                id = customServer.id,
+                displayName = customServer.displayName,
+                languageId = customServer.languageId,
+                command = customServer.command,
+                fileExtensions = customServer.fileExtensions,
+                rootIndicators = customServer.rootMarkers,
+                enabled = true
+            )
+
+            try {
+                register(config, override = true)
+                logger.info(
+                    LogCategory.SERVER,
+                    "Registered custom server",
+                    languageId = customServer.languageId,
+                    data = mapOf("id" to customServer.id)
+                )
+            } catch (e: IllegalArgumentException) {
+                logger.error(
+                    LogCategory.SERVER,
+                    "Failed to register custom server",
+                    languageId = customServer.languageId,
+                    error = e
+                )
+            }
+        }
+    }
+
+    /**
+     * Enable a built-in language server.
+     *
+     * @param languageId The language ID to enable
+     */
+    fun enableServer(languageId: String) {
+        configsByLanguage[languageId]?.let { config ->
+            if (!config.enabled) {
+                configsByLanguage[languageId] = config.copy(enabled = true)
+                logger.info(LogCategory.SERVER, "Enabled server", languageId = languageId)
+            }
+        }
+    }
+
+    /**
+     * Disable a built-in language server.
+     *
+     * @param languageId The language ID to disable
+     */
+    fun disableServer(languageId: String) {
+        configsByLanguage[languageId]?.let { config ->
+            if (config.enabled) {
+                configsByLanguage[languageId] = config.copy(enabled = false)
+                logger.info(LogCategory.SERVER, "Disabled server", languageId = languageId)
+            }
+        }
+    }
+
+    /**
+     * Get all language IDs that have servers registered.
+     *
+     * @return Set of language IDs
+     */
+    fun getRegisteredLanguages(): Set<String> {
+        return configsByLanguage.keys.toSet()
     }
 }
