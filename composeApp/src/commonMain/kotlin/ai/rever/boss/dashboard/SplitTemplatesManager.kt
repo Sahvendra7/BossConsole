@@ -357,6 +357,10 @@ object SplitTemplatesManager {
             result = result.replace("{currentFile}", currentFile)
         }
 
+        // Replace Claude continue flag based on session existence
+        val claudeFlag = getClaudeContinueFlag(projectPath)
+        result = result.replace("{claudeContinueFlag}", claudeFlag)
+
         return result
     }
 
@@ -404,6 +408,42 @@ object SplitTemplatesManager {
         }
 
         return url
+    }
+
+    /**
+     * Check if a valid Claude session exists for the given project.
+     * Valid sessions are non-empty .jsonl files that are not agent sub-sessions.
+     */
+    private fun checkClaudeSessionExists(projectPath: String): Boolean {
+        return try {
+            val userHome = System.getProperty("user.home")
+            val encodedPath = projectPath.replace("/", "-").replace("\\", "-")
+            val claudeProjectDir = File("$userHome/.claude/projects/$encodedPath")
+
+            if (!claudeProjectDir.exists() || !claudeProjectDir.isDirectory) {
+                return false
+            }
+
+            // Look for non-empty .jsonl files that are not agent sessions
+            claudeProjectDir.listFiles()?.any { file ->
+                file.isFile &&
+                file.name.endsWith(".jsonl") &&
+                !file.name.startsWith("agent-") &&
+                file.length() > 0
+            } ?: false
+        } catch (e: Exception) {
+            println("[SplitTemplatesManager] Error checking Claude session: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Get the appropriate Claude CLI flags based on session existence.
+     * Returns "--continue" if a valid session exists, empty string otherwise.
+     */
+    private fun getClaudeContinueFlag(projectPath: String?): String {
+        if (projectPath == null) return ""
+        return if (checkClaudeSessionExists(projectPath)) "--continue" else ""
     }
 
     /**
