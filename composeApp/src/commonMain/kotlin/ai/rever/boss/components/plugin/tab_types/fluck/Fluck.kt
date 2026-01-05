@@ -43,26 +43,8 @@ object Fluck: TabTypeInfo {
     override val icon = Icons.Outlined.Language
 }
 
-// Mutable tab info for dynamic title and icon updates.
-//
-// ARCHITECTURE NOTE - Mixed Mutability Pattern:
-// This class intentionally uses two update patterns:
-//
-// 1. IMMUTABLE updates (return copy()): updateTitle(), updateIcon(), updateTabIcon(), updateFaviconCacheKey()
-//    - These properties are displayed in the parent tab bar UI
-//    - Returning a new copy allows parent.updateTab() to trigger recomposition
-//    - The parent component manages these via tabsState
-//
-// 2. MUTABLE updates (direct mutation): navigateToPage(), navigateBack(), navigateForward()
-//    - Navigation state (_currentUrl, navigationHistory) is internal to the browser component
-//    - Direct mutation ensures FluckTabComponent's cached reference stays in sync
-//    - No need to notify parent since these don't affect tab bar UI
-//
-// IMPORTANT: FluckTabComponent caches this object at construction (fluckTabInfo = config).
-// Navigation updates MUST mutate the original object, not a copy from tabsState,
-// to ensure currentUrlForBrowser reads the correct URL during browser recovery.
-//
-// Thread Safety: Navigation methods use @Synchronized for thread-safe access.
+// Mutable tab info for dynamic title and icon updates
+// Thread Safety: Navigation methods (_currentUrl mutations) use @Synchronized for thread-safe access.
 // All callers should ideally be on Main thread, but @Synchronized provides defensive protection.
 data class FluckTabInfo(
     override val id: String,
@@ -1039,15 +1021,18 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
             }
         },
         onNavigationUpdate = { title, url ->
-            // Update the original tabInfo object directly (not the one from tabsState)
-            // This ensures FluckTabComponent.fluckTabInfo stays in sync since it caches
-            // config (tabInfo) at construction time. If we looked up from tabsState,
-            // copy() calls (from title/icon updates) would cause object divergence.
-            if (tabInfo is FluckTabInfo) {
-                tabInfo.navigateToPage(title, url)
-            } else {
-                // This should never happen since we're registered for Fluck tab type
-                println("⚠️ [Fluck] onNavigationUpdate called with non-FluckTabInfo: ${tabInfo::class.simpleName}")
+            // Update navigation history
+            parentComponent?.let { parent ->
+                val tabs = parent.tabsState.value.tabs
+                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
+
+                if (tabIndex >= 0) {
+                    val currentTab = tabs[tabIndex]
+                    if (currentTab is FluckTabInfo) {
+                        // Navigate to page
+                        currentTab.navigateToPage(title, url)
+                    }
+                }
             }
         },
         onFaviconCacheKeyUpdate = { newCacheKey ->
