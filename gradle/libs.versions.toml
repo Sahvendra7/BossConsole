@@ -27,7 +27,7 @@ uiAndroid = "1.8.2"
 zxing = "3.5.4"
 jxbrowser = "8.15.0"
 jxbrowser-gradle-plugin = "2.0.0"
-rsyntaxtextarea = "3.5.4"
+rsyntaxtextarea = "3.6.1"
 rstaui = "3.3.1"
 autocomplete = "3.3.1"
 # IntelliJ PSI for code navigation
