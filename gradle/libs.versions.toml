@@ -29,7 +29,7 @@ jxbrowser = "8.15.0"
 jxbrowser-gradle-plugin = "2.0.0"
 rsyntaxtextarea = "3.6.1"
 rstaui = "3.3.1"
-autocomplete = "3.3.1"
+autocomplete = "3.3.3"
 # IntelliJ PSI for code navigation
 intellij-platform = "243.21565.199"
 
