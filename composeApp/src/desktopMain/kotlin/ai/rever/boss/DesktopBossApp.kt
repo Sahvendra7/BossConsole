@@ -1,5 +1,6 @@
 package ai.rever.boss
 
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
@@ -30,4 +31,16 @@ actual fun setupDownloadTabCloseCallback(splitViewState: SplitViewState) {
  */
 actual fun consumePendingInitialTab(windowId: String): TabInfo? {
     return WindowManager.consumePendingTab(windowId)
+}
+
+/**
+ * Desktop-specific implementation for consuming pending initial project for a window.
+ * When a window is created with a project via "Open in New Window", the project
+ * is stored as pending and consumed here when the window's BossApp initializes.
+ *
+ * @param windowId The window ID to get the pending project for
+ * @return The pending Project if one exists, null otherwise
+ */
+actual fun consumePendingInitialProject(windowId: String): Project? {
+    return WindowManager.consumePendingProject(windowId)
 }

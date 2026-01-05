@@ -1,5 +1,6 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
 
 /**
@@ -44,6 +45,16 @@ expect object WindowOperations {
      * On mobile/web: May do nothing
      */
     fun createNewWindow()
+
+    /**
+     * Create a new window with an initial project
+     *
+     * On desktop: Creates a new window and opens the project in it
+     * On mobile/web: May do nothing
+     *
+     * @param project The project to open in the new window
+     */
+    fun createNewWindowWithProject(project: Project)
 
     /**
      * Force close a window by ID

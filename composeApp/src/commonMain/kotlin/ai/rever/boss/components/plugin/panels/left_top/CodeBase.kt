@@ -242,6 +242,35 @@ object ProjectState {
         }
     }
 
+    /**
+     * Update recent projects list without changing the global selected project.
+     * Called by per-window project states when they select a project.
+     */
+    fun updateRecentProjects(project: Project) {
+        val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
+
+        // Update recent projects list with LRU behavior
+        val updated = _recentProjects.value.toMutableList()
+
+        // Remove if already exists
+        updated.removeAll { it.path == updatedProject.path }
+
+        // Add to front - being at position 0 means most recently used
+        updated.add(0, updatedProject)
+
+        // Keep only MAX_RECENT_PROJECTS
+        while (updated.size > MAX_RECENT_PROJECTS) {
+            updated.removeLast()
+        }
+
+        _recentProjects.value = updated
+
+        // Save to disk (async)
+        ioScope.launch {
+            saveRecentProjects()
+        }
+    }
+
     private fun getRecentProjectsFile(): java.io.File {
         val userHome = System.getProperty("user.home")
         val bossDir = java.io.File(userHome, ".boss")
@@ -272,6 +301,31 @@ object ProjectState {
             println("Failed to save recent projects: ${e.message}")
         }
     }
+}
+
+/**
+ * Per-window project state.
+ * Each window maintains its own selected project while sharing global recent projects.
+ */
+class WindowProjectState(val windowId: String) {
+    private val _selectedProject = MutableStateFlow(
+        Project(
+            name = "No Project",
+            path = "",
+            lastOpened = 0L
+        )
+    )
+    val selectedProject: StateFlow<Project> = _selectedProject.asStateFlow()
+
+    fun selectProject(project: Project) {
+        val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
+        _selectedProject.value = updatedProject
+        // Update global recent projects list (shared across all windows)
+        ProjectState.updateRecentProjects(updatedProject)
+        println("WindowProjectState[$windowId]: Selected project '${project.name}' at ${project.path}")
+    }
+
+    fun currentProject(): Project = _selectedProject.value
 }
 
 class CodeBaseComponent(

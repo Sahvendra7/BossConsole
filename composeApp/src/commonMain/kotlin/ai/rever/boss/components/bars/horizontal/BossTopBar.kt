@@ -7,6 +7,7 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.LocalWindowProjectState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -166,14 +167,18 @@ fun BossDraggableComponent.BossTopLeftBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null
 ) {
-    val selectedProject by ProjectState.selectedProject.collectAsState()
+    // Use per-window project state for independent project per window
+    val windowProjectState = LocalWindowProjectState.current
+    val selectedProject by windowProjectState?.selectedProject?.collectAsState()
+        ?: ProjectState.selectedProject.collectAsState() // Fallback to global if not provided
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     val scope = rememberCoroutineScope()
 
     // Helper function to open project in current window
     fun openProjectInCurrentWindow(project: Project) {
-        ProjectState.selectProject(project)
+        // Use window-specific project state if available, otherwise fallback to global
+        windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
         // Show CodeBase and Run Configurations panels when project is selected
         scope.launch {
             PanelEventBus.openPanel(CodeBaseInfo.id)
@@ -255,9 +260,8 @@ fun BossDraggableComponent.BossTopLeftBar(
                 projectToOpen = null
             },
             onOpenInNewWindow = { selectedProj ->
-                // Create new window first, then select project (project state is global)
-                WindowOperations.createNewWindow()
-                openProjectInCurrentWindow(selectedProj)
+                // Create new window with the project - each window has independent project state
+                WindowOperations.createNewWindowWithProject(selectedProj)
                 projectToOpen = null
             }
         )

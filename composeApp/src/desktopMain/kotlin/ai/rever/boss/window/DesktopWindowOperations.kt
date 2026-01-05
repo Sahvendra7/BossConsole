@@ -1,5 +1,6 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
 
 /**
@@ -45,6 +46,19 @@ actual object WindowOperations {
      */
     actual fun createNewWindow() {
         WindowManager.createNewWindow()
+    }
+
+    /**
+     * Create a new window with an initial project
+     *
+     * Creates a new window and stores the project as a pending initial project.
+     * The new window's BossApp will consume the pending project during initialization.
+     *
+     * @param project The project to open in the new window
+     */
+    actual fun createNewWindowWithProject(project: Project) {
+        println("Creating new window with project: ${project.name}")
+        WindowManager.createNewWindowWithProject(project)
     }
 
     /**

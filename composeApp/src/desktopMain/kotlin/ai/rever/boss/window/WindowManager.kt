@@ -1,5 +1,6 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,14 @@ object WindowManager {
      * Key: windowId, Value: TabInfo to open
      */
     private val pendingInitialTabs = ConcurrentHashMap<String, TabInfo>()
+
+    /**
+     * Map of pending initial projects for new windows.
+     * When a window is created with an initial project, the project is stored here
+     * and consumed by BossApp when the window initializes.
+     * Key: windowId, Value: Project to open
+     */
+    private val pendingInitialProjects = ConcurrentHashMap<String, Project>()
 
     /**
      * Read-only access to the list of windows
@@ -106,6 +115,38 @@ object WindowManager {
     fun consumePendingTab(windowId: String): TabInfo? {
         return pendingInitialTabs.remove(windowId)?.also {
             println("Consumed pending tab '${it.title}' for window: $windowId")
+        }
+    }
+
+    /**
+     * Create a new window with an initial project
+     *
+     * @param project The project to open in the new window
+     * @param position Window position (null for default cascade)
+     * @param windowType Type of window (determines adaptive sizing)
+     * @return The newly created window state
+     */
+    fun createNewWindowWithProject(
+        project: Project,
+        position: WindowPosition? = null,
+        windowType: WindowType = WindowType.MAIN
+    ): BossWindowState {
+        val windowState = createNewWindow(position, windowType)
+        // Store the pending project for this window
+        pendingInitialProjects[windowState.id] = project
+        println("Stored pending project '${project.name}' for new window: ${windowState.id}")
+        return windowState
+    }
+
+    /**
+     * Get and consume the pending initial project for a window
+     *
+     * @param windowId The window ID to get the pending project for
+     * @return The pending Project, or null if none
+     */
+    fun consumePendingProject(windowId: String): Project? {
+        return pendingInitialProjects.remove(windowId)?.also {
+            println("Consumed pending project '${it.name}' for window: $windowId")
         }
     }
 

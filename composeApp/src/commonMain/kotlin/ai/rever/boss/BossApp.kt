@@ -30,6 +30,9 @@ import ai.rever.boss.components.window_panel.components.main_window_panels.BossT
 import ai.rever.boss.components.window_panel.rememberSplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
+import ai.rever.boss.window.WindowProjectStateRegistry
+import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -119,6 +122,7 @@ import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import ai.rever.boss.components.windows.SettingsWindow
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.updater.UpdateBanner
@@ -155,6 +159,7 @@ import ai.rever.boss.performance.BrowserTabInfo
 import ai.rever.boss.performance.TerminalInfo
 import ai.rever.boss.performance.EditorTabResourceInfo
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 
@@ -164,6 +169,16 @@ expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
 // Platform-specific function to consume pending initial tab for a window
 // Returns the TabInfo if there's a pending tab for this window, null otherwise
 expect fun consumePendingInitialTab(windowId: String): TabInfo?
+
+/**
+ * Platform-specific function to consume pending initial project for a window.
+ * When a window is created with a project via "Open in New Window", the project
+ * is stored as pending and consumed here when the window initializes.
+ *
+ * @param windowId The window ID to get the pending project for
+ * @return The pending Project if one exists, null otherwise
+ */
+expect fun consumePendingInitialProject(windowId: String): Project?
 
 /**
  * Handle the result of a tab drop operation.
@@ -523,15 +538,32 @@ fun ComponentContext.BossApp(
         }
     }
 
-    // Collect project state reactively (used by multiple effects below)
-    val selectedProject by ProjectState.selectedProject.collectAsState()
+    // Create per-window project state (each window has independent project)
+    val windowProjectState = remember(windowId) {
+        WindowProjectStateRegistry.getOrCreate(windowId)
+    }
+
+    // Consume any pending initial project for this window (from "Open in New Window" context menu)
+    LaunchedEffect(windowId, windowProjectState) {
+        val pendingProject = consumePendingInitialProject(windowId)
+        if (pendingProject != null) {
+            println("BossApp: Consuming pending project '${pendingProject.name}' for window: $windowId")
+            windowProjectState.selectProject(pendingProject)
+            PanelEventBus.openPanel(CodeBaseInfo.id)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+        }
+    }
+
+    // Collect window-specific project state reactively (used by multiple effects below)
+    val selectedProject by windowProjectState.selectedProject.collectAsState()
 
     // Open CodeBase and RunConfigurations panels if a project is selected at startup
-    LaunchedEffect(Unit) {
-        // Use snapshotFlow to reactively check the initial project state
-        val initialProject = ProjectState.selectedProject.value
+    // Note: Pending project is handled in the LaunchedEffect above, this handles
+    // existing window project state (e.g., when restored from workspace)
+    LaunchedEffect(windowProjectState) {
+        val initialProject = windowProjectState.selectedProject.value
         if (initialProject.path.isNotEmpty()) {
-            println("BossApp: Project '${initialProject.name}' selected at startup, opening panels")
+            println("BossApp: Project '${initialProject.name}' already selected at startup, opening panels")
             PanelEventBus.openPanel(CodeBaseInfo.id)
             PanelEventBus.openPanel(RunConfigurationsInfo.id)
         }
@@ -936,6 +968,9 @@ fun ComponentContext.BossApp(
 
             // Unregister this window's state from the global registry
             SplitViewStateRegistry.unregister(windowId)
+
+            // Unregister this window's project state from the registry
+            WindowProjectStateRegistry.unregister(windowId)
         }
     }
     
@@ -1307,8 +1342,8 @@ fun ComponentContext.BossApp(
                                 left.bottom -> bottom
                                 left.top.top -> left.top
                                 right.top.top -> right.top
-                                left.top.bottom -> left.bottom
-                                right.top.bottom -> right.bottom
+                                left.top.bottom -> left.top
+                                right.top.bottom -> right.top
                                 else -> null
                             }
 
@@ -1826,7 +1861,8 @@ fun ComponentContext.BossApp(
         BossTheme {
             CompositionLocalProvider(
                 LocalSplitViewState provides splitViewState,
-                LocalWorkspaceManager provides workspaceManager
+                LocalWorkspaceManager provides workspaceManager,
+                LocalWindowProjectState provides windowProjectState
             ) {
                 Box(modifier = Modifier
                 .fillMaxSize()
