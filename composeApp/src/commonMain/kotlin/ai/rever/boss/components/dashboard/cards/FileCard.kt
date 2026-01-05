@@ -111,7 +111,7 @@ fun FileCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(14.dp),
+                    .height(16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (parentFolder.isNotEmpty()) {

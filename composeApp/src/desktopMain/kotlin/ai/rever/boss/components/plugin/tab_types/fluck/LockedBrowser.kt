@@ -34,6 +34,22 @@ class LockedBrowser(
 ) {
     fun url(): String = lock.read { browser.url() }
 
+    /**
+     * Safe URL accessor that returns empty string if browser is closed.
+     * Use this for Compose remember dependencies to prevent ObjectClosedException.
+     *
+     * Note: The isClosed check is an optimization to avoid exceptions in the common case.
+     * The try-catch is the real protection against the race condition where disposal
+     * could complete between the check and the url() call.
+     */
+    fun urlOrEmpty(): String = try {
+        lock.read {
+            if (browser.isClosed) "" else browser.url()
+        }
+    } catch (e: Exception) {
+        ""
+    }
+
     fun title(): String = lock.read { browser.title() }
 
     val isClosed: Boolean

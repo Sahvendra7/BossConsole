@@ -244,11 +244,11 @@ fun JxBrowserCompose(
     }
 
     // Create TabConfig for current page
-    val currentTabConfig = remember(browser.url(), currentTitle, currentFaviconKey) {
+    val currentTabConfig = remember(browser.urlOrEmpty(), currentTitle, currentFaviconKey) {
         TabConfig(
             type = "browser",
             title = currentTitle,
-            url = browser.url(),
+            url = browser.urlOrEmpty(),
             faviconCacheKey = currentFaviconKey
         )
     }

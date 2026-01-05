@@ -369,19 +369,27 @@ object RecentBrowserPagesManager {
 
     /**
      * Get suggestions combining recent pages with popular dev sites.
-     * Returns recent pages first, then fills remaining slots with popular sites not yet visited.
+     * Uses hybrid ranking: visit count weighted heavily + recency decay.
+     * Popular dev sites fill remaining slots if history has fewer entries.
      */
     fun getSuggestions(limit: Int = 8): List<RecentBrowserPage> {
         val recent = _recentPages.value
         val recentUrls = recent.map { it.url }.toSet()
+        val now = System.currentTimeMillis()
 
-        // Combine recent pages with popular sites not in recent history
+        // Hybrid ranking: combine visit count with recency
+        // - visitCount weighted heavily (multiply by 1000)
+        // - recency normalized to hours for reasonable decay
+        val rankedRecent = recent.sortedByDescending { page ->
+            val hoursAgo = (now - page.lastVisited) / (1000.0 * 60 * 60)
+            val recencyScore = maxOf(0.0, 100 - hoursAgo) // Decays over ~4 days
+            (page.visitCount * 1000.0) + recencyScore
+        }
+
         val suggestions = mutableListOf<RecentBrowserPage>()
+        suggestions.addAll(rankedRecent.take(limit))
 
-        // Add recent pages first
-        suggestions.addAll(recent.take(limit))
-
-        // Fill remaining slots with popular sites
+        // Fill remaining slots with popular sites not in history
         if (suggestions.size < limit) {
             val popular = POPULAR_DEV_SITES.filter { !recentUrls.contains(it.url) }
             suggestions.addAll(popular.take(limit - suggestions.size))
