@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsSection {
-    FLUCK, CODE_EDITOR, BOSS_EDITOR, LANGUAGE_SERVERS, TERMINAL, RUNNER, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
+    FLUCK, CODE_EDITOR, BOSS_EDITOR, LANGUAGE_SERVERS, TERMINAL, RUNNER, AI_ASSISTANTS, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
 }
 
 @Composable
@@ -95,6 +95,16 @@ fun SettingsSidebar(
             subtitle = "Run/stop, terminal target",
             isSelected = selectedSection == SettingsSection.RUNNER,
             onClick = { onSectionChange(SettingsSection.RUNNER) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        SidebarItem(
+            icon = Icons.Outlined.SmartToy,
+            title = "AI Assistants",
+            subtitle = "Claude, Codex, Gemini",
+            isSelected = selectedSection == SettingsSection.AI_ASSISTANTS,
+            onClick = { onSectionChange(SettingsSection.AI_ASSISTANTS) }
         )
 
         Spacer(modifier = Modifier.height(8.dp))

@@ -50,6 +50,12 @@ object KeymapActions {
     // Test/Debug Actions
     const val TEST_EXTERNAL_LINK = "test.external_link"
 
+    // AI Assistant Actions (Issue #445)
+    const val AI_CLAUDE = "ai.claude"
+    const val AI_CODEX = "ai.codex"
+    const val AI_GEMINI = "ai.gemini"
+    const val AI_OPENCODE = "ai.opencode"
+
     /**
      * Category definitions for organizing shortcuts in the UI.
      */
@@ -63,6 +69,7 @@ object KeymapActions {
         const val TOOLS = "Tools"
         const val VIEW = "View/UI"
         const val DEBUG = "Debug"
+        const val AI_ASSISTANTS = "AI Assistants"
     }
 
     /**
@@ -93,7 +100,11 @@ object KeymapActions {
         CODEBASE_OPEN to "Open CodeBase panel",
         FOCUS_MODE_TOGGLE to "Toggle Focus Mode (hide/show UI bars)",
         SETTINGS_OPEN to "Open application settings",
-        TEST_EXTERNAL_LINK to "Test external link handling (debug)"
+        TEST_EXTERNAL_LINK to "Test external link handling (debug)",
+        AI_CLAUDE to "Launch Claude Code in terminal",
+        AI_CODEX to "Launch Codex in terminal",
+        AI_GEMINI to "Launch Gemini CLI in terminal",
+        AI_OPENCODE to "Launch OpenCode in terminal"
     )
 
     /**
@@ -124,7 +135,11 @@ object KeymapActions {
         CODEBASE_OPEN to Categories.TOOLS,
         FOCUS_MODE_TOGGLE to Categories.VIEW,
         SETTINGS_OPEN to Categories.VIEW,
-        TEST_EXTERNAL_LINK to Categories.DEBUG
+        TEST_EXTERNAL_LINK to Categories.DEBUG,
+        AI_CLAUDE to Categories.AI_ASSISTANTS,
+        AI_CODEX to Categories.AI_ASSISTANTS,
+        AI_GEMINI to Categories.AI_ASSISTANTS,
+        AI_OPENCODE to Categories.AI_ASSISTANTS
     )
 
     /**
@@ -155,7 +170,11 @@ object KeymapActions {
         CODEBASE_OPEN to ShortcutContext.GLOBAL,
         FOCUS_MODE_TOGGLE to ShortcutContext.GLOBAL,
         SETTINGS_OPEN to ShortcutContext.GLOBAL,
-        TEST_EXTERNAL_LINK to ShortcutContext.GLOBAL
+        TEST_EXTERNAL_LINK to ShortcutContext.GLOBAL,
+        AI_CLAUDE to ShortcutContext.TERMINAL,
+        AI_CODEX to ShortcutContext.TERMINAL,
+        AI_GEMINI to ShortcutContext.TERMINAL,
+        AI_OPENCODE to ShortcutContext.TERMINAL
     )
 
     /**
@@ -171,7 +190,8 @@ object KeymapActions {
         CODEBASE_OPEN,
         FOCUS_MODE_TOGGLE,
         SETTINGS_OPEN,
-        TEST_EXTERNAL_LINK
+        TEST_EXTERNAL_LINK,
+        AI_CLAUDE, AI_CODEX, AI_GEMINI, AI_OPENCODE
     )
 
     /**

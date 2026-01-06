@@ -11,6 +11,8 @@ import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.focusmode.FocusModeSettingsManager
+import ai.rever.boss.aiassistant.AIAssistant
+import ai.rever.boss.aiassistant.AIAssistantEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,6 +55,10 @@ class BossActionHandler(
             KeymapActions.FOCUS_MODE_TOGGLE -> handleFocusModeToggle()
             KeymapActions.SETTINGS_OPEN -> handleSettingsOpen()
             KeymapActions.TEST_EXTERNAL_LINK -> handleTestExternalLink()
+            KeymapActions.AI_CLAUDE -> handleAIAssistant(AIAssistant.CLAUDE_CODE)
+            KeymapActions.AI_CODEX -> handleAIAssistant(AIAssistant.CODEX)
+            KeymapActions.AI_GEMINI -> handleAIAssistant(AIAssistant.GEMINI_CLI)
+            KeymapActions.AI_OPENCODE -> handleAIAssistant(AIAssistant.OPENCODE)
             else -> false
         }
     }
@@ -264,6 +270,14 @@ class BossActionHandler(
                 "Google"
             )
         }
+        return true
+    }
+
+    // AI Assistant Actions (Issue #445)
+
+    private fun handleAIAssistant(assistant: AIAssistant): Boolean {
+        // Emit event to be handled by terminal content
+        AIAssistantEventBus.tryRequestLaunch(assistant)
         return true
     }
 }

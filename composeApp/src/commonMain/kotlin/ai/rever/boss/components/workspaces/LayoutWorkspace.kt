@@ -1,5 +1,6 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.aiassistant.AIAssistant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -67,6 +68,44 @@ fun SplitConfig.extractPanels(prefix: String = ""): List<Pair<String, String>> {
             top.extractPanels("${prefix}Top ") + bottom.extractPanels("${prefix}Bottom ")
         }
     }
+}
+
+/**
+ * Detect which AI assistant a TabConfig requires based on its initial command.
+ * Returns null if no AI assistant is detected.
+ */
+fun TabConfig.getRequiredAssistant(): AIAssistant? {
+    if (type != "terminal") return null
+    val cmd = initialCommand ?: return null
+    return when {
+        cmd.contains("claude") -> AIAssistant.CLAUDE_CODE
+        cmd.contains("gemini") -> AIAssistant.GEMINI_CLI
+        cmd.contains("codex") -> AIAssistant.CODEX
+        cmd.contains("opencode") -> AIAssistant.OPENCODE
+        else -> null
+    }
+}
+
+/**
+ * Recursively find the first AI assistant required by any terminal tab in this split config.
+ * Returns null if no AI assistant is required.
+ */
+fun SplitConfig.findRequiredAssistant(): AIAssistant? {
+    return when (this) {
+        is SplitConfig.SinglePanel -> panel.tabs.firstNotNullOfOrNull { it.getRequiredAssistant() }
+        is SplitConfig.VerticalSplit -> left.findRequiredAssistant() ?: right.findRequiredAssistant()
+        is SplitConfig.HorizontalSplit -> top.findRequiredAssistant() ?: bottom.findRequiredAssistant()
+    }
+}
+
+/**
+ * Detect which AI assistant this workspace requires based on its terminal commands.
+ * Returns null if no AI assistant is required.
+ *
+ * Issue #445: Auto-install AI assistants for workspaces
+ */
+fun LayoutWorkspace.getRequiredAssistant(): AIAssistant? {
+    return layout.findRequiredAssistant()
 }
 
 /**

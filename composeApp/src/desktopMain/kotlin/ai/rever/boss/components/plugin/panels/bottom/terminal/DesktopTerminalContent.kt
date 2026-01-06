@@ -1,11 +1,15 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.aiassistant.AIAssistantContextMenu
+import ai.rever.boss.aiassistant.AIAssistantDetector
+import ai.rever.boss.aiassistant.AIAssistantEventBus
 import ai.rever.boss.components.events.FileValidationResult
 import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
+import ai.rever.bossterm.compose.ContextMenuElement
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
 // BossTerm's HyperlinkType enum: HTTP, FILE, FOLDER, EMAIL, FTP, etc.
@@ -23,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -110,6 +115,30 @@ actual fun TabbedTerminalContent(
         TerminalSettingsOverride(alwaysShowTabBar = true)
     }
 
+    // AI Assistant context menu integration (Issue #445)
+    val aiStatuses by AIAssistantDetector.installationStatuses.collectAsState()
+    val effectiveWorkingDir = pendingCommand?.workingDirectory ?: workingDirectory
+    val contextMenuItems: List<ContextMenuElement> = remember(aiStatuses, effectiveWorkingDir) {
+        AIAssistantContextMenu.buildItems(
+            workingDirectory = effectiveWorkingDir,
+            onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) },
+            onCreateTab = { cmd -> state.createTab(initialCommand = cmd) },
+            scope = scope,
+            installationStatuses = aiStatuses
+        )
+    }
+
+    // Handle AI Assistant keyboard shortcut events (Issue #445)
+    LaunchedEffect(Unit) {
+        AIAssistantEventBus.launchRequests.collect { request ->
+            AIAssistantContextMenu.launchAssistantDirect(
+                assistant = request.assistant,
+                workingDirectory = effectiveWorkingDir,
+                onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) }
+            )
+        }
+    }
+
     // Register the first tab's ID using session listener (callback-based, no polling)
     androidx.compose.runtime.DisposableEffect(pendingCommand?.configId) {
         if (pendingCommand?.configId != null) {
@@ -142,7 +171,7 @@ actual fun TabbedTerminalContent(
                 state = state,
                 // Pass pending command for first render (runs in default tab)
                 initialCommand = pendingCommand?.command,
-                workingDirectory = pendingCommand?.workingDirectory ?: workingDirectory,
+                workingDirectory = effectiveWorkingDir,
                 settingsOverride = sidebarSettings,
                 onExit = {
                     TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
@@ -161,6 +190,7 @@ actual fun TabbedTerminalContent(
                 },
                 onShowSettings = onShowSettings,
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID) },
+                contextMenuItems = contextMenuItems,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -197,6 +227,22 @@ actual fun PersistentTabbedTerminalContent(
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
 
+    // AI Assistant context menu integration (Issue #445)
+    val aiStatuses by AIAssistantDetector.installationStatuses.collectAsState()
+    val effectiveWorkingDir = if (isNew) workingDirectory else null
+    val contextMenuItems: List<ContextMenuElement> = remember(aiStatuses, effectiveWorkingDir) {
+        AIAssistantContextMenu.buildItems(
+            workingDirectory = effectiveWorkingDir,
+            onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) },
+            onCreateTab = { cmd -> state.createTab(initialCommand = cmd) },
+            scope = scope,
+            installationStatuses = aiStatuses
+        )
+    }
+
+    // NOTE: AI Assistant keyboard shortcut handling is done in TabbedTerminalContent (sidebar)
+    // to avoid duplicate launches when multiple terminals are rendered (Issue #445)
+
     DisposableEffect(terminalId) {
         onDispose {
             // Don't remove from registry here - cleanup happens when tab is closed
@@ -213,7 +259,7 @@ actual fun PersistentTabbedTerminalContent(
                 state = state,
                 // Only send initial command and working directory for newly created terminals
                 initialCommand = if (isNew) initialCommand else null,
-                workingDirectory = if (isNew) workingDirectory else null,
+                workingDirectory = effectiveWorkingDir,
                 onExit = {
                     TabbedTerminalStateRegistry.remove(terminalId)
                     onExit()
@@ -221,6 +267,7 @@ actual fun PersistentTabbedTerminalContent(
                 onShowSettings = onShowSettings,
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
+                contextMenuItems = contextMenuItems,
                 modifier = Modifier.fillMaxSize()
             )
         }

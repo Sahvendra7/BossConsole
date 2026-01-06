@@ -1,5 +1,6 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.aiassistant.AIAssistant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +55,26 @@ data class SplitTemplate(
 data class CustomTemplatesData(
     val templates: List<SplitTemplate> = emptyList()
 )
+
+/**
+ * Detect which AI assistant a SplitTemplate requires based on its terminal commands.
+ * Returns null if no AI assistant is required.
+ *
+ * Issue #445: Auto-install AI assistants for workspaces
+ */
+fun SplitTemplate.getRequiredAssistant(): AIAssistant? {
+    return panels.firstNotNullOfOrNull { panel ->
+        if (panel.type != "terminal") return@firstNotNullOfOrNull null
+        val cmd = panel.content.command ?: return@firstNotNullOfOrNull null
+        when {
+            cmd.contains("claude") -> AIAssistant.CLAUDE_CODE
+            cmd.contains("gemini") -> AIAssistant.GEMINI_CLI
+            cmd.contains("codex") -> AIAssistant.CODEX
+            cmd.contains("opencode") -> AIAssistant.OPENCODE
+            else -> null
+        }
+    }
+}
 
 /**
  * Manages split templates for quick workspace setup.

@@ -1,5 +1,8 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.aiassistant.AIAssistant
+import ai.rever.boss.aiassistant.AIAssistantChecker
+import ai.rever.boss.aiassistant.AIAssistantInstallDialog
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import androidx.compose.foundation.layout.Box
@@ -17,10 +20,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Briefcase
+import kotlinx.coroutines.launch
 
 /**
  * Platform-specific function to open workspace directory
@@ -35,7 +40,8 @@ fun WorkspaceButton(
     onOpenWorkspace: (LayoutWorkspace) -> Unit,
     workspaceManager: WorkspaceManager = remember { WorkspaceManager() },
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
-    onShowTopOfMind: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null,
+    onInstallAssistant: ((AIAssistant) -> Unit)? = null
 ) {
     val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
     val workspaces by workspaceManager.workspaces.collectAsState()
@@ -43,6 +49,13 @@ fun WorkspaceButton(
     var showSaveDialog by remember { mutableStateOf(false) }
     var showOpenDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // State for AI assistant install dialog (Issue #445)
+    var showAIAssistantInstallDialog by remember { mutableStateOf(false) }
+    var pendingWorkspace by remember { mutableStateOf<LayoutWorkspace?>(null) }
+    var pendingAssistant by remember { mutableStateOf<AIAssistant?>(null) }
+
+    val scope = rememberCoroutineScope()
 
     // Build options submenu items
     val optionsSubMenu = buildList {
@@ -129,8 +142,24 @@ fun WorkspaceButton(
                 trailingIcon = if (isCurrentWorkspace) Icons.Filled.Circle else null,
                 trailingIconColor = if (isCurrentWorkspace) Color(0xFF4CAF50) else null, // Green color
                 onClick = {
+                    // Always apply the workspace first (Issue #445)
+                    // This ensures terminal + browser both open in split view
                     workspaceManager.loadWorkspace(workspace)
                     onOpenWorkspace(workspace)
+
+                    // Check if workspace requires an AI assistant and show install dialog if not installed
+                    val requiredAssistant = workspace.getRequiredAssistant()
+                    if (requiredAssistant != null) {
+                        scope.launch {
+                            val isInstalled = AIAssistantChecker.isInstalled(requiredAssistant)
+                            if (!isInstalled) {
+                                // Show install dialog after workspace is applied
+                                pendingWorkspace = workspace
+                                pendingAssistant = requiredAssistant
+                                showAIAssistantInstallDialog = true
+                            }
+                        }
+                    }
                 }
             ))
         }
@@ -200,6 +229,38 @@ fun WorkspaceButton(
             onDelete = { workspaceName ->
                 workspaceManager.deleteWorkspace(workspaceName)
                 showDeleteDialog = false
+            }
+        )
+    }
+
+    // AI Assistant Install Dialog (Issue #445)
+    if (showAIAssistantInstallDialog && pendingAssistant != null && pendingWorkspace != null) {
+        val assistant = pendingAssistant!!
+        val workspace = pendingWorkspace!!
+
+        AIAssistantInstallDialog(
+            assistant = assistant,
+            workspaceName = workspace.name,
+            onInstall = {
+                // Invoke the install callback if provided
+                onInstallAssistant?.invoke(assistant)
+
+                // Reset dialog state
+                showAIAssistantInstallDialog = false
+                pendingWorkspace = null
+                pendingAssistant = null
+            },
+            onSkip = {
+                // Workspace already applied, just close the dialog
+                showAIAssistantInstallDialog = false
+                pendingWorkspace = null
+                pendingAssistant = null
+            },
+            onCancel = {
+                // Workspace already applied, just close the dialog
+                showAIAssistantInstallDialog = false
+                pendingWorkspace = null
+                pendingAssistant = null
             }
         )
     }

@@ -215,6 +215,39 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.DEBUG,
                 description = KeymapActions.getDescription(KeymapActions.TEST_EXTERNAL_LINK)
+            ),
+            // AI Assistants (Issue #445)
+            KeyBinding(
+                actionId = KeymapActions.AI_CLAUDE,
+                key = "One",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.TERMINAL,
+                category = KeymapActions.Categories.AI_ASSISTANTS,
+                description = KeymapActions.getDescription(KeymapActions.AI_CLAUDE)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.AI_CODEX,
+                key = "Two",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.TERMINAL,
+                category = KeymapActions.Categories.AI_ASSISTANTS,
+                description = KeymapActions.getDescription(KeymapActions.AI_CODEX)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.AI_GEMINI,
+                key = "Three",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.TERMINAL,
+                category = KeymapActions.Categories.AI_ASSISTANTS,
+                description = KeymapActions.getDescription(KeymapActions.AI_GEMINI)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.AI_OPENCODE,
+                key = "Four",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.TERMINAL,
+                category = KeymapActions.Categories.AI_ASSISTANTS,
+                description = KeymapActions.getDescription(KeymapActions.AI_OPENCODE)
             )
         )
 
