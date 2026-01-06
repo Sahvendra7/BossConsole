@@ -285,8 +285,24 @@ object ProjectState {
             if (file.exists()) {
                 val json = file.readText()
                 val projects = kotlinx.serialization.json.Json.decodeFromString<List<Project>>(json)
-                _recentProjects.value = projects
-                println("Loaded ${projects.size} recent projects from disk")
+
+                // Filter out projects whose directories no longer exist
+                val validProjects = projects.filter { project ->
+                    val projectDir = java.io.File(project.path)
+                    val exists = projectDir.exists() && projectDir.isDirectory
+                    if (!exists) {
+                        println("Removing deleted project from recent: ${project.name} (${project.path})")
+                    }
+                    exists
+                }
+
+                _recentProjects.value = validProjects
+                println("Loaded ${validProjects.size} recent projects from disk (${projects.size - validProjects.size} removed)")
+
+                // Save cleaned list if any projects were removed
+                if (validProjects.size < projects.size) {
+                    saveRecentProjects()
+                }
             }
         } catch (e: Exception) {
             println("Failed to load recent projects: ${e.message}")
