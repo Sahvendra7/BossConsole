@@ -20,23 +20,31 @@ import kotlin.time.Clock
 
 /**
  * Applies a layout workspace to the split view
+ * @param workspace The workspace to apply
+ * @param splitViewState The split view state to apply the workspace to
+ * @param restoreProject Whether to restore the project from the workspace. Set to false when
+ *                       applying workspace due to project selection change (to avoid overwriting
+ *                       the user's project selection).
  */
 suspend fun applyWorkspace(
     workspace: LayoutWorkspace,
-    splitViewState: SplitViewState
+    splitViewState: SplitViewState,
+    restoreProject: Boolean = true
 ) {
     // Generate ID if missing
     val workspaceId = workspace.id.ifEmpty { LayoutWorkspace.generateId() }
 
-    // Restore project if workspace has one
-    workspace.projectPath?.let { path ->
-        if (path.isNotEmpty()) {
-            val projectName = path.trimEnd('/').substringAfterLast('/').ifEmpty { "Project" }
-            ProjectState.selectProject(Project(
-                name = projectName,
-                path = path,
-                lastOpened = Clock.System.now().toEpochMilliseconds()
-            ))
+    // Restore project if workspace has one and restoreProject is true
+    if (restoreProject) {
+        workspace.projectPath?.let { path ->
+            if (path.isNotEmpty()) {
+                val projectName = path.trimEnd('/').substringAfterLast('/').ifEmpty { "Project" }
+                ProjectState.selectProject(Project(
+                    name = projectName,
+                    path = path,
+                    lastOpened = Clock.System.now().toEpochMilliseconds()
+                ))
+            }
         }
     }
 

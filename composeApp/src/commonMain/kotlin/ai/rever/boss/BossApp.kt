@@ -579,7 +579,8 @@ fun ComponentContext.BossApp(
             val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
             if (defaultWorkspace != null) {
                 println("BossApp: Applying default workspace '${defaultWorkspace.name}' for project '${selectedProject.name}'")
-                applyWorkspace(defaultWorkspace, splitViewState)
+                // Don't restore project from workspace - user just selected a project, don't override it
+                applyWorkspace(defaultWorkspace, splitViewState, restoreProject = false)
                 workspaceManager.loadWorkspace(defaultWorkspace)
             }
         }
