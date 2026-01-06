@@ -191,6 +191,29 @@ actual fun TabbedTerminalContent(
                 onShowSettings = onShowSettings,
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID) },
                 contextMenuItems = contextMenuItems,
+                // BossTerm 1.0.73: Async callback that waits before showing context menu
+                // This ensures fresh AI assistant status is displayed on the current right-click
+                onContextMenuOpenAsync = {
+                    try {
+                        AIAssistantDetector.refreshIfStale()
+                    } catch (e: Exception) {
+                        println("[SidebarTerminal] Error refreshing AI assistant statuses: ${e.message}")
+                    }
+                },
+                // BossTerm 1.0.72: Detect when initial command completes (requires OSC 133 shell integration)
+                // Only refresh on success (exitCode == 0) to avoid unnecessary refreshes for failed commands
+                onInitialCommandComplete = { success, exitCode ->
+                    println("[SidebarTerminal] Initial command completed: success=$success, exitCode=$exitCode")
+                    if (success) {
+                        scope.launch {
+                            try {
+                                AIAssistantDetector.refreshIfStale()
+                            } catch (e: Exception) {
+                                println("[SidebarTerminal] Error refreshing AI assistant statuses: ${e.message}")
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -268,6 +291,29 @@ actual fun PersistentTabbedTerminalContent(
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
                 contextMenuItems = contextMenuItems,
+                // BossTerm 1.0.73: Async callback that waits before showing context menu
+                // This ensures fresh AI assistant status is displayed on the current right-click
+                onContextMenuOpenAsync = {
+                    try {
+                        AIAssistantDetector.refreshIfStale()
+                    } catch (e: Exception) {
+                        println("[Terminal:$terminalId] Error refreshing AI assistant statuses: ${e.message}")
+                    }
+                },
+                // BossTerm 1.0.72: Detect when initial command completes
+                // Only refresh on success (exitCode == 0) to avoid unnecessary refreshes for failed commands
+                onInitialCommandComplete = { success, exitCode ->
+                    println("[Terminal:$terminalId] Initial command completed: success=$success, exitCode=$exitCode")
+                    if (success) {
+                        scope.launch {
+                            try {
+                                AIAssistantDetector.refreshIfStale()
+                            } catch (e: Exception) {
+                                println("[Terminal:$terminalId] Error refreshing AI assistant statuses: ${e.message}")
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }

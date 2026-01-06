@@ -30,7 +30,11 @@ object AIAssistantInstaller {
      */
     fun getInstallCommand(assistant: AIAssistant): String {
         return when (assistant) {
-            AIAssistant.CLAUDE_CODE, AIAssistant.OPENCODE -> {
+            AIAssistant.CLAUDE_CODE -> {
+                // Prefer npm for Claude Code (more reliable than curl|bash script)
+                getNpmInstallCommandWithNodeCheck(assistant)
+            }
+            AIAssistant.OPENCODE -> {
                 // Native script available - no npm needed
                 getNativeInstallCommand(assistant)
             }
