@@ -131,11 +131,14 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
     val recentProjects by ProjectState.recentProjects.collectAsState()
 
     return buildList {
-        // Recent projects
+        // Recent projects with remove button
         addAll(recentProjects.map { project ->
             ContextMenuItem(
                 text = project.name,
                 icon = Icons.Outlined.Folder,
+                trailingIcon = Icons.Outlined.Close,
+                trailingIconColor = androidx.compose.ui.graphics.Color.Gray,
+                onTrailingClick = { ProjectState.removeRecentProject(project.path) },
                 onClick = { onProjectSelected(project) }
             )
         })
