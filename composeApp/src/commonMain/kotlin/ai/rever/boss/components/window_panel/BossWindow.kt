@@ -25,7 +25,8 @@ fun BossDraggableComponent.BossWindow(
     tabDragComponent: TabDraggableComponent? = null,
     onTabDropResult: (TabDropResult) -> Unit = {},
     onShowSettings: (() -> Unit)? = null,
-    onOpenProjectDialog: (() -> Unit)? = null
+    onOpenProjectDialog: (() -> Unit)? = null,
+    onNewProject: (() -> Unit)? = null
 ) {
     // State for split panels - use provided or create new
     val actualSplitViewState = splitViewState ?: rememberSplitViewState(
@@ -81,7 +82,8 @@ fun BossDraggableComponent.BossWindow(
                     tabDragComponent = tabDragComponent,
                     onTabDropResult = onTabDropResult,
                     onShowSettings = onShowSettings,
-                    onOpenProjectDialog = onOpenProjectDialog
+                    onOpenProjectDialog = onOpenProjectDialog,
+                    onNewProject = onNewProject
                 )
             }
         }

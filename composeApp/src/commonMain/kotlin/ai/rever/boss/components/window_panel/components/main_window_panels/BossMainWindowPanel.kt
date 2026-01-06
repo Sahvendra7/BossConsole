@@ -29,6 +29,7 @@ import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
+import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
@@ -509,11 +510,13 @@ fun BossTabsComponent.BossMainTabBar(
                     TabType.FILE -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val fileIconInfo = FileIcons.forFile(fileName)
                         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                             id = "editor-$timestamp",
                             title = fileName,
                             typeId = CodeEditor.typeId,
-                            icon = CodeEditor.icon,
+                            icon = fileIconInfo.icon,
+                            tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                             filePath = path
                         )
                         val tabIndex = addTab(editorTab)
@@ -610,7 +613,8 @@ fun BossTabsComponent.BossMainPanel(
     tabDragComponent: TabDraggableComponent? = null,
     onTabDropResult: (TabDropResult) -> Unit = {},
     onShowSettings: (() -> Unit)? = null,
-    onOpenProjectDialog: (() -> Unit)? = null
+    onOpenProjectDialog: (() -> Unit)? = null,
+    onNewProject: (() -> Unit)? = null
 ) {
     val focusRequester = remember { FocusRequester() }
     val isFocused = remember { mutableStateOf(false) }
@@ -654,7 +658,8 @@ fun BossTabsComponent.BossMainPanel(
             splitViewState = splitViewState,
             currentPanelId = currentPanelId,
             onShowSettings = onShowSettings,
-            onOpenProjectDialog = onOpenProjectDialog
+            onOpenProjectDialog = onOpenProjectDialog,
+            onNewProject = onNewProject
         )
     }
 }
@@ -668,7 +673,8 @@ fun BossTabsComponent.BossMainPanelContent(
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null,
     currentPanelId: String? = null,
     onShowSettings: (() -> Unit)? = null,
-    onOpenProjectDialog: (() -> Unit)? = null
+    onOpenProjectDialog: (() -> Unit)? = null,
+    onNewProject: (() -> Unit)? = null
 ) {
     // Subscribe to tab state changes to trigger recomposition
     val tabsState = tabsState.subscribeAsState()
@@ -758,7 +764,8 @@ fun BossTabsComponent.BossMainPanelContent(
                     // Dashboard displays available plugins but activation uses existing sidebar UI
                     println("[Dashboard] Plugin activation requested: $pluginId")
                 },
-                onShowSettings = onShowSettings
+                onShowSettings = onShowSettings,
+                onNewProject = { onNewProject?.invoke() }
             )
         }
     }
@@ -789,11 +796,13 @@ fun BossTabsComponent.BossMainPanelContent(
                     TabType.FILE -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val fileIconInfo = FileIcons.forFile(fileName)
                         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                             id = "editor-$timestamp",
                             title = fileName,
                             typeId = CodeEditor.typeId,
-                            icon = CodeEditor.icon,
+                            icon = fileIconInfo.icon,
+                            tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                             filePath = path
                         )
                         val tabIndex = addTab(editorTab)
@@ -918,11 +927,13 @@ private fun createTabFromConfig(
             }
             if (filePath != null) {
                 val fileName = filePath.substringAfterLast('/').ifEmpty { "untitled" }
+                val fileIconInfo = FileIcons.forFile(fileName)
                 EditorTabInfo(
                     id = "editor-$timestamp",
                     title = fileName,
                     typeId = CodeEditor.typeId,
-                    icon = CodeEditor.icon,
+                    icon = fileIconInfo.icon,
+                    tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                     filePath = filePath
                 )
             } else null

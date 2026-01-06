@@ -289,7 +289,16 @@ fun BossTabButton(
                             modifier = Modifier.size(14.dp)
                         )
                     }
-                    // For vector icons, use Icon with tint
+                    // For vector icons with custom tint (file type icons)
+                    tabIcon is TabIcon.Vector && tabIcon.tint != null && painter != null -> {
+                        Icon(
+                            painter = painter,
+                            contentDescription = fileName,
+                            modifier = Modifier.size(14.dp),
+                            tint = tabIcon.tint
+                        )
+                    }
+                    // For vector icons without tint, use default
                     painter != null -> {
                         Icon(
                             painter = painter,

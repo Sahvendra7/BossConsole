@@ -2,6 +2,7 @@ package ai.rever.boss.components.bars.horizontal
 
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.icons.LanguageIcons
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.RunConfiguration
@@ -266,19 +267,17 @@ private fun RunConfigurationSelector(
 
 /**
  * Get the appropriate icon for a programming language.
- * Using Material Icons since SimpleIcons are not available in this project.
+ * Uses official brand icons from LanguageIcons.
  */
 private fun getLanguageIcon(language: Language): ImageVector {
-    // Use generic code icon for all languages since language-specific icons aren't available
-    // This could be enhanced later by adding a custom icon set
     return when (language) {
-        Language.KOTLIN -> Icons.Outlined.Code
-        Language.JAVA -> Icons.Outlined.Code
-        Language.PYTHON -> Icons.Outlined.Code
-        Language.JAVASCRIPT -> Icons.Outlined.Code
-        Language.TYPESCRIPT -> Icons.Outlined.Code
-        Language.GO -> Icons.Outlined.Code
-        Language.RUST -> Icons.Outlined.Code
+        Language.KOTLIN -> LanguageIcons.kotlin
+        Language.JAVA -> LanguageIcons.java
+        Language.PYTHON -> LanguageIcons.python
+        Language.JAVASCRIPT -> LanguageIcons.javascript
+        Language.TYPESCRIPT -> LanguageIcons.typescript
+        Language.GO -> LanguageIcons.go
+        Language.RUST -> LanguageIcons.rust
         Language.UNKNOWN -> FeatherIcons.Terminal
     }
 }

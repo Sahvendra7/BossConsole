@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.left_bottom
 
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.icons.LanguageIcons
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -478,26 +479,26 @@ private fun RunConfigurationItem(
 
 private fun getLanguageIcon(language: Language): ImageVector {
     return when (language) {
-        Language.KOTLIN -> Icons.Outlined.Code
-        Language.JAVA -> Icons.Outlined.Code
-        Language.PYTHON -> Icons.Outlined.Code
-        Language.JAVASCRIPT -> Icons.Outlined.Code
-        Language.TYPESCRIPT -> Icons.Outlined.Code
-        Language.GO -> Icons.Outlined.Code
-        Language.RUST -> Icons.Outlined.Code
+        Language.KOTLIN -> LanguageIcons.kotlin
+        Language.JAVA -> LanguageIcons.java
+        Language.PYTHON -> LanguageIcons.python
+        Language.JAVASCRIPT -> LanguageIcons.javascript
+        Language.TYPESCRIPT -> LanguageIcons.typescript
+        Language.GO -> LanguageIcons.go
+        Language.RUST -> LanguageIcons.rust
         Language.UNKNOWN -> FeatherIcons.Terminal
     }
 }
 
 private fun getLanguageColor(language: Language): Color {
     return when (language) {
-        Language.KOTLIN -> Color(0xFFA97BFF)  // Kotlin purple
-        Language.JAVA -> Color(0xFFE76F00)   // Java orange
-        Language.PYTHON -> Color(0xFF3776AB)  // Python blue
-        Language.JAVASCRIPT -> Color(0xFFF7DF1E)  // JS yellow
-        Language.TYPESCRIPT -> Color(0xFF3178C6)  // TS blue
-        Language.GO -> Color(0xFF00ADD8)      // Go cyan
-        Language.RUST -> Color(0xFFDEA584)    // Rust orange
+        Language.KOTLIN -> LanguageIcons.Colors.kotlin
+        Language.JAVA -> LanguageIcons.Colors.java
+        Language.PYTHON -> LanguageIcons.Colors.python
+        Language.JAVASCRIPT -> LanguageIcons.Colors.javascript
+        Language.TYPESCRIPT -> LanguageIcons.Colors.typescript
+        Language.GO -> LanguageIcons.Colors.go
+        Language.RUST -> LanguageIcons.Colors.rust
         Language.UNKNOWN -> Color.Gray
     }
 }

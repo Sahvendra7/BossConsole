@@ -22,6 +22,8 @@ import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.components.dialogs.NewProjectWizardDialog
+import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
@@ -300,11 +302,13 @@ private fun createBrowserTab(url: String): FluckTabInfo {
 private fun createEditorTab(filePath: String): EditorTabInfo {
     val cleanPath = stripFilePrefix(filePath)
     val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+    val fileIconInfo = FileIcons.forFile(fileName)
     return EditorTabInfo(
         id = "editor-${Random.nextLong()}",
         typeId = TabTypeId("editor"),
         title = fileName,
-        icon = Icons.Outlined.Code,
+        icon = fileIconInfo.icon,
+        tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
         filePath = cleanPath
     )
 }
@@ -817,6 +821,7 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
+    var showNewProjectDialog by remember { mutableStateOf(false) }
 
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -1977,6 +1982,9 @@ fun ComponentContext.BossApp(
                                 },
                                 onShowSettings = {
                                     showSettingsDialog = true
+                                },
+                                onNewProject = {
+                                    showNewProjectDialog = true
                                 }
                             )
                         }
@@ -2015,7 +2023,8 @@ fun ComponentContext.BossApp(
                                 handleTabDropResult(result, splitViewState)
                             },
                             onShowSettings = { showSettingsDialog = true },
-                            onOpenProjectDialog = { showProjectDialog = true }
+                            onOpenProjectDialog = { showProjectDialog = true },
+                            onNewProject = { showNewProjectDialog = true }
                         )
 
                         // Right sidebar - hidden in focus mode with smooth expand/shrink animation
@@ -2164,10 +2173,13 @@ fun ComponentContext.BossApp(
                             }
                             TabType.FILE -> {
                                 val fileName = path.substringAfterLast('/')
+                                val fileIconInfo = FileIcons.forFile(fileName)
                                 val tab = EditorTabInfo(
                                     id = "editor-${Random.nextLong()}",
                                     typeId = TabTypeId("editor"),
                                     title = fileName,
+                                    icon = fileIconInfo.icon,
+                                    tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                                     filePath = path
                                 )
                                 targetComponent.addTab(tab)
@@ -2300,6 +2312,23 @@ fun ComponentContext.BossApp(
                     }
                 )
             }
+
+            // New project wizard dialog (Issue #436)
+            if (showNewProjectDialog) {
+                NewProjectWizardDialog(
+                    onDismiss = {
+                        showNewProjectDialog = false
+                        focusRequester.requestFocus()
+                    },
+                    onProjectCreated = { project ->
+                        // Use window-specific project state if available, otherwise fallback to global
+                        windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+                        showNewProjectDialog = false
+                        focusRequester.requestFocus()
+                    }
+                )
+            }
+
             // Save feedback snackbar
             saveMessage?.let { message ->
                 Box(

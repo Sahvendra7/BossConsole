@@ -3,6 +3,7 @@ package ai.rever.boss.components.dashboard.cards
 import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.dashboard.RecentFile
+import ai.rever.boss.icons.FileIcons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -24,11 +25,6 @@ import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.InsertDriveFile
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -37,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +58,7 @@ fun FileCard(
     )
 
     val backgroundColor = if (isHovered) Color(0xFF2A2D30) else BossDarkSurface
-    val (icon, iconColor) = getFileIconAndColor(file.name)
+    val fileIconInfo = FileIcons.forFile(file.name)
     val cardShape = RoundedCornerShape(12.dp)
 
     Box(
@@ -82,9 +77,9 @@ fun FileCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Icon(
-                imageVector = icon,
+                imageVector = fileIconInfo.icon,
                 contentDescription = file.name,
-                tint = iconColor,
+                tint = fileIconInfo.color,
                 modifier = Modifier.size(32.dp)
             )
 
@@ -152,43 +147,3 @@ fun FileCard(
     }
 }
 
-/**
- * Get appropriate icon and color for a file based on its extension.
- */
-private fun getFileIconAndColor(fileName: String): Pair<ImageVector, Color> {
-    val extension = fileName.substringAfterLast('.', "").lowercase()
-
-    return when (extension) {
-        // Code files
-        "kt", "kts", "java", "scala" -> Icons.Outlined.Code to Color(0xFFB877DB)
-        "js", "ts", "jsx", "tsx" -> Icons.Outlined.Code to Color(0xFFF7DF1E)
-        "py" -> Icons.Outlined.Code to Color(0xFF3776AB)
-        "rs" -> Icons.Outlined.Code to Color(0xFFDEA584)
-        "go" -> Icons.Outlined.Code to Color(0xFF00ADD8)
-        "rb" -> Icons.Outlined.Code to Color(0xFFCC342D)
-        "swift" -> Icons.Outlined.Code to Color(0xFFFA7343)
-        "c", "cpp", "h", "hpp" -> Icons.Outlined.Code to Color(0xFF00599C)
-        "cs" -> Icons.Outlined.Code to Color(0xFF239120)
-        "php" -> Icons.Outlined.Code to Color(0xFF777BB4)
-
-        // Web files
-        "html", "htm" -> Icons.Outlined.Code to Color(0xFFE34F26)
-        "css", "scss", "sass", "less" -> Icons.Outlined.Code to Color(0xFF1572B6)
-
-        // Config/Data files
-        "json", "yaml", "yml", "toml" -> Icons.Outlined.Settings to Color(0xFF8BC34A)
-        "xml" -> Icons.Outlined.Settings to Color(0xFFFF9800)
-        "gradle" -> Icons.Outlined.Settings to Color(0xFF02303A)
-        "properties" -> Icons.Outlined.Settings to Color(0xFF607D8B)
-
-        // Documentation
-        "md", "markdown", "txt", "doc", "docx" -> Icons.Outlined.Description to Color(0xFF42A5F5)
-        "pdf" -> Icons.Outlined.Description to Color(0xFFE53935)
-
-        // Images
-        "png", "jpg", "jpeg", "gif", "svg", "ico", "webp" -> Icons.Outlined.Image to Color(0xFF66BB6A)
-
-        // Default
-        else -> Icons.Outlined.InsertDriveFile to Color(0xFF78909C)
-    }
-}

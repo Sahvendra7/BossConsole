@@ -9,7 +9,9 @@ import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -213,11 +215,14 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
             val filePath = tabConfig.filePath?.let {
                 SplitTemplatesManager.processPlaceholders(it, projectPath, null)
             } ?: ""
+            val fileIconInfo = FileIcons.forFile(tabConfig.title)
 
             EditorTabInfo(
                 id = "editor-${Random.nextLong()}",
                 typeId = CodeEditor.typeId,
                 title = tabConfig.title,
+                icon = fileIconInfo.icon,
+                tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                 filePath = filePath
             )
         }

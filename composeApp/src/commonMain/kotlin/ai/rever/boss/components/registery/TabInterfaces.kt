@@ -1,6 +1,7 @@
 package ai.rever.boss.components.registery
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -13,9 +14,12 @@ data class TabTypeId(
 
 // Wrapper for tab icons that can be either vector or bitmap
 sealed class TabIcon {
-    data class Vector(val imageVector: ImageVector) : TabIcon()
+    data class Vector(
+        val imageVector: ImageVector,
+        val tint: Color? = null  // Optional tint color for file type icons
+    ) : TabIcon()
     data class Image(val painter: Painter) : TabIcon()
-    
+
     @Composable
     fun asPainter(): Painter = when (this) {
         is Vector -> rememberVectorPainter(imageVector)

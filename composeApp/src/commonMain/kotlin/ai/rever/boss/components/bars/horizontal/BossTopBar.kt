@@ -47,7 +47,8 @@ fun BossDraggableComponent.BossTopBar(
     onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
-    onShowSettings: (() -> Unit)? = null
+    onShowSettings: (() -> Unit)? = null,
+    onNewProject: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -67,7 +68,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind)
+            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
             BossTopRunBar()
@@ -124,6 +125,7 @@ fun BossActionButtonWithLogo(
 @Composable
 fun BossDraggableComponent.getProjectSelectContextMenuItems(
     showProjectDialog: () -> Unit,
+    showNewProjectDialog: () -> Unit,
     onProjectSelected: (Project) -> Unit
 ): List<ContextMenuItem> {
     val recentProjects by ProjectState.recentProjects.collectAsState()
@@ -142,7 +144,14 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
             add(ContextMenuItem(isDivider = true))
         }
 
-        // Add option to open a new project
+        // Add option to create a new project
+        add(ContextMenuItem(
+            text = "New Project...",
+            icon = Icons.Outlined.CreateNewFolder,
+            onClick = showNewProjectDialog
+        ))
+
+        // Add option to open an existing project
         add(ContextMenuItem(
             text = "Open Project...",
             icon = Icons.Filled.Add,
@@ -165,7 +174,8 @@ fun BossDraggableComponent.BossTopLeftBar(
     workspaceManager: WorkspaceManager? = null,
     onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
-    onShowTopOfMind: (() -> Unit)? = null
+    onShowTopOfMind: (() -> Unit)? = null,
+    onNewProject: (() -> Unit)? = null
 ) {
     // Use per-window project state for independent project per window
     val windowProjectState = LocalWindowProjectState.current
@@ -190,6 +200,7 @@ fun BossDraggableComponent.BossTopLeftBar(
         text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
             showProjectDialog = { showProjectDialog = true },
+            showNewProjectDialog = { onNewProject?.invoke() },
             onProjectSelected = { project ->
                 // Only show dialog if a project is already selected
                 if (selectedProject.path.isNotEmpty()) {

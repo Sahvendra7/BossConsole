@@ -4,6 +4,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -955,21 +956,16 @@ fun FileTreeItem(
 
             Spacer(modifier = Modifier.width(4.dp))
 
-            // File/folder icon
+            // File/folder icon - use centralized FileIcons
+            val iconInfo = if (node.isDirectory) {
+                FileIcons.forFolder(isExpanded)
+            } else {
+                FileIcons.forFile(node.name)
+            }
             Icon(
-                imageVector = when {
-                    node.isDirectory -> if (isExpanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
-                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Icons.Outlined.Code
-                    node.name.endsWith(".md") -> Icons.Outlined.Description
-                    node.name.endsWith(".gradle") || node.name.endsWith(".xml") -> Icons.Outlined.Settings
-                    else -> Icons.AutoMirrored.Outlined.InsertDriveFile
-                },
+                imageVector = iconInfo.icon,
                 contentDescription = if (node.isDirectory) "Folder" else "File",
-                tint = when {
-                    node.isDirectory -> Color(0xFF90A4AE)
-                    node.name.endsWith(".kt") || node.name.endsWith(".kts") -> Color(0xFFE57373)
-                    else -> Color(0xFF90A4AE)
-                },
+                tint = iconInfo.color,
                 modifier = Modifier.size(16.dp)
             )
 

@@ -61,6 +61,7 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -105,6 +106,7 @@ fun Dashboard(
     onNewWindow: () -> Unit,
     onOpenProjectDialog: () -> Unit,
     onOpenFileDialog: () -> Unit,
+    onNewProject: () -> Unit,
     onApplySplitTemplate: (SplitTemplate) -> Unit,
     onActivatePlugin: (String) -> Unit,
     onShowSettings: (() -> Unit)? = null,
@@ -341,6 +343,11 @@ fun Dashboard(
                             title = "Open File",
                             shortcut = "Cmd+O",
                             onClick = onOpenFileDialog
+                        )
+                        ActionCard(
+                            icon = Icons.Outlined.CreateNewFolder,
+                            title = "New Project",
+                            onClick = onNewProject
                         )
                         ActionCard(
                             icon = Icons.Outlined.Add,
