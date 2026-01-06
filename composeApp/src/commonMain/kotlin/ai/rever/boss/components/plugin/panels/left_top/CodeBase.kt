@@ -321,8 +321,8 @@ class WindowProjectState(val windowId: String) {
     fun selectProject(project: Project) {
         val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
         _selectedProject.value = updatedProject
-        // Update global recent projects list (shared across all windows)
-        ProjectState.updateRecentProjects(updatedProject)
+        // Update global project state so all panels see the new project
+        ProjectState.selectProject(updatedProject)
         println("WindowProjectState[$windowId]: Selected project '${project.name}' at ${project.path}")
     }
 
