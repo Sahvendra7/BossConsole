@@ -38,7 +38,10 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.TextButton
 import kotlinx.coroutines.launch
+import java.io.File
 
 
 @Composable
@@ -186,6 +189,7 @@ fun BossDraggableComponent.BossTopLeftBar(
         ?: ProjectState.selectedProject.collectAsState() // Fallback to global if not provided
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
+    var deletedProjectName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // Helper function to open project in current window
@@ -199,23 +203,45 @@ fun BossDraggableComponent.BossTopLeftBar(
         }
     }
 
+    // Helper function to validate and handle project selection
+    fun handleProjectSelection(project: Project) {
+        val projectDir = File(project.path)
+        if (!projectDir.exists() || !projectDir.isDirectory) {
+            // Project folder was deleted - show message and remove from list
+            deletedProjectName = project.name
+            ProjectState.removeRecentProject(project.path)
+        } else if (selectedProject.path.isNotEmpty()) {
+            // Project exists and another project is already open - show dialog
+            projectToOpen = project
+        } else {
+            // Project exists and no project selected - open directly
+            openProjectInCurrentWindow(project)
+        }
+    }
+
     BossActionButtonWithLogo(
         text = if (selectedProject.path.isEmpty()) "Open Project" else selectedProject.name,
         contextMenuItems = getProjectSelectContextMenuItems(
             showProjectDialog = { showProjectDialog = true },
             showNewProjectDialog = { onNewProject?.invoke() },
-            onProjectSelected = { project ->
-                // Only show dialog if a project is already selected
-                if (selectedProject.path.isNotEmpty()) {
-                    projectToOpen = project
-                } else {
-                    // No project selected, open directly in current window
-                    openProjectInCurrentWindow(project)
-                }
-            }
+            onProjectSelected = { project -> handleProjectSelection(project) }
         ),
         hintText = if (selectedProject.path.isEmpty()) "Click to open a project" else "Current Project: ${selectedProject.path}"
     )
+
+    // Deleted project dialog
+    deletedProjectName?.let { projectName ->
+        AlertDialog(
+            onDismissRequest = { deletedProjectName = null },
+            title = { Text("Project Not Found") },
+            text = { Text("The project \"$projectName\" no longer exists. It has been removed from the recent projects list.") },
+            confirmButton = {
+                TextButton(onClick = { deletedProjectName = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
     // TODO: #90 - Implement Git integration
     // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
     // BossActionButton(
