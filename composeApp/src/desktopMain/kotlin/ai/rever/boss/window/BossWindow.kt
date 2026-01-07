@@ -15,6 +15,8 @@ import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import ai.rever.boss.components.plugin.panels.bottom.terminal.resetAllTerminalStates
+import ai.rever.bossterm.compose.onboarding.OnboardingWizard
+import ai.rever.bossterm.compose.settings.SettingsManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -115,6 +117,9 @@ fun ApplicationScope.BossWindow(
         // State for Reset Terminal dialog
         var showResetTerminalDialog by remember { mutableStateOf(false) }
         var resetTerminalResult by remember { mutableStateOf<Boolean?>(null) }
+
+        // State for Welcome Wizard dialog
+        var showWelcomeWizard by remember { mutableStateOf(false) }
 
         DisposableEffect(window, globalInterceptor) {
             globalInterceptor.attach(window)
@@ -460,6 +465,15 @@ fun ApplicationScope.BossWindow(
             // Help Menu
             Menu("Help") {
                 Item(
+                    "Welcome Wizard...",
+                    onClick = {
+                        showWelcomeWizard = true
+                    }
+                )
+
+                Separator()
+
+                Item(
                     "Check for Updates...",
                     onClick = {
                         menuScope.launch {
@@ -712,6 +726,15 @@ fun ApplicationScope.BossWindow(
                         }
                     }
                 }
+            )
+        }
+
+        // Welcome Wizard Dialog
+        if (showWelcomeWizard) {
+            OnboardingWizard(
+                onDismiss = { showWelcomeWizard = false },
+                onComplete = { showWelcomeWizard = false },
+                settingsManager = SettingsManager.instance
             )
         }
     }

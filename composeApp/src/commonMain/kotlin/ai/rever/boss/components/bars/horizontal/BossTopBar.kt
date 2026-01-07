@@ -38,7 +38,6 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
-import ai.rever.boss.aiassistant.AIAssistant
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.TextButton
 import kotlinx.coroutines.launch
@@ -52,8 +51,7 @@ fun BossDraggableComponent.BossTopBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
     onShowSettings: (() -> Unit)? = null,
-    onNewProject: (() -> Unit)? = null,
-    onInstallAssistant: ((AIAssistant) -> Unit)? = null
+    onNewProject: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -73,7 +71,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject, onInstallAssistant)
+            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
             BossTopRunBar()
@@ -183,8 +181,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
-    onNewProject: (() -> Unit)? = null,
-    onInstallAssistant: ((AIAssistant) -> Unit)? = null
+    onNewProject: (() -> Unit)? = null
 ) {
     // Use per-window project state for independent project per window
     val windowProjectState = LocalWindowProjectState.current
@@ -260,8 +257,7 @@ fun BossDraggableComponent.BossTopLeftBar(
             onOpenWorkspace = onApplyWorkspace,
             workspaceManager = workspaceManager,
             getCurrentWorkspace = getCurrentWorkspace,
-            onShowTopOfMind = onShowTopOfMind,
-            onInstallAssistant = onInstallAssistant
+            onShowTopOfMind = onShowTopOfMind
         )
     }
 

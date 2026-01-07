@@ -76,8 +76,6 @@ import ai.rever.boss.run.RunnerSettingsManager
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.run.RunnerTerminalTarget
 import ai.rever.boss.startup.StartupSettingsManager
-import ai.rever.boss.aiassistant.AIAssistantChecker
-import ai.rever.boss.aiassistant.AIAssistantInstallDialog
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import androidx.compose.ui.Modifier
@@ -110,7 +108,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.components.workspaces.LayoutWorkspace
-import ai.rever.boss.components.workspaces.getRequiredAssistant
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
@@ -576,9 +573,8 @@ fun ComponentContext.BossApp(
         }
     }
 
-    // NOTE: Default workspace application is handled in a LaunchedEffect
-    // after state variable declarations (see "Apply default workspace when project is selected" below)
-    // This ensures pendingProjectWorkspace, pendingProjectAssistant, showProjectAIAssistantDialog are in scope
+    // NOTE: Default workspace application is handled in a LaunchedEffect below
+    // (see "Apply default workspace when project is selected")
 
     // Register resource count providers for performance monitoring
     // Use DisposableEffect to clean up on disposal and prevent memory leaks
@@ -830,35 +826,15 @@ fun ComponentContext.BossApp(
     var pendingTerminalLinkUrl by remember { mutableStateOf("") }
     var pendingTerminalSourceId by remember { mutableStateOf<String?>(null) }
 
-    // State for AI assistant install dialog on project selection (Issue #445)
-    var showProjectAIAssistantDialog by remember { mutableStateOf(false) }
-    var pendingProjectWorkspace by remember { mutableStateOf<ai.rever.boss.components.workspaces.LayoutWorkspace?>(null) }
-    var pendingProjectAssistant by remember { mutableStateOf<ai.rever.boss.aiassistant.AIAssistant?>(null) }
-
-    // Apply default workspace when project is selected (Issue #445)
-    // Must be after state variable declarations for showProjectAIAssistantDialog
+    // Apply default workspace when project is selected
     LaunchedEffect(selectedProject.path) {
         if (selectedProject.path.isNotEmpty()) {
             val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
             if (defaultWorkspace != null) {
-                // Always apply the workspace first
-                // This ensures terminal + browser both open in split view
+                // Apply the workspace
                 println("BossApp: Applying default workspace '${defaultWorkspace.name}' for project '${selectedProject.name}'")
                 applyWorkspace(defaultWorkspace, splitViewState)
                 workspaceManager.loadWorkspace(defaultWorkspace)
-
-                // Check if workspace requires an AI assistant and show install dialog if not installed
-                val requiredAssistant = defaultWorkspace.getRequiredAssistant()
-                if (requiredAssistant != null) {
-                    val isInstalled = AIAssistantChecker.isInstalled(requiredAssistant)
-                    if (!isInstalled) {
-                        // Show install dialog after workspace is applied
-                        println("BossApp: ${requiredAssistant.displayName} is not installed, showing install dialog")
-                        pendingProjectWorkspace = defaultWorkspace
-                        pendingProjectAssistant = requiredAssistant
-                        showProjectAIAssistantDialog = true
-                    }
-                }
             }
         }
     }
@@ -2013,11 +1989,6 @@ fun ComponentContext.BossApp(
                                 },
                                 onNewProject = {
                                     showNewProjectDialog = true
-                                },
-                                onInstallAssistant = { assistant ->
-                                    // Open terminal with install command (Issue #445)
-                                    val installCommand = AIAssistantChecker.getInstallCommand(assistant)
-                                    splitViewState.openTerminalInActivePanel(installCommand)
                                 }
                             )
                         }
@@ -2310,39 +2281,6 @@ fun ComponentContext.BossApp(
                         openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId, coroutineScope)
                         pendingTerminalLinkUrl = ""
                         pendingTerminalSourceId = null
-                    }
-                )
-            }
-
-            // AI Assistant install dialog on project selection (Issue #445)
-            if (showProjectAIAssistantDialog && pendingProjectAssistant != null && pendingProjectWorkspace != null) {
-                val assistant = pendingProjectAssistant!!
-                val workspace = pendingProjectWorkspace!!
-
-                AIAssistantInstallDialog(
-                    assistant = assistant,
-                    workspaceName = workspace.name,
-                    onInstall = {
-                        // Open terminal with install command
-                        val installCommand = AIAssistantChecker.getInstallCommand(assistant)
-                        splitViewState.openTerminalInActivePanel(installCommand)
-
-                        // Reset dialog state
-                        showProjectAIAssistantDialog = false
-                        pendingProjectWorkspace = null
-                        pendingProjectAssistant = null
-                    },
-                    onSkip = {
-                        // Workspace already applied, just close the dialog
-                        showProjectAIAssistantDialog = false
-                        pendingProjectWorkspace = null
-                        pendingProjectAssistant = null
-                    },
-                    onCancel = {
-                        // Workspace already applied, just close the dialog
-                        showProjectAIAssistantDialog = false
-                        pendingProjectWorkspace = null
-                        pendingProjectAssistant = null
                     }
                 )
             }

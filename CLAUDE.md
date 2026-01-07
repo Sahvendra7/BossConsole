@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 BOSS (Business Operating System Service) is a desktop application built with Kotlin Multiplatform and Compose Multiplatform. It features:
 - Sophisticated WebAuthn/passkey authentication
 - Integrated browser (JxBrowser) with default browser support
-- Terminal integration (PTY4J)
+- Terminal integration (BossTerm library)
 - Customizable keyboard shortcuts
 - Workspace management
 - Role-based access control (RBAC)
@@ -326,6 +326,7 @@ detekt --input composeApp/src --report txt:detekt-report.txt --report html:detek
 
 ### Resolved Issues
 - ✅ Issue #75: Passkey refresh token bug (Fixed in PR #78)
+- ✅ Issue #445: AI Assistant context menu moved to BossTerm library (PR #456)
 
 ### Known Issues
 - Issue #33: Remove hardcoded credential fallbacks after testing
@@ -368,6 +369,23 @@ BOSS uses [BossTerm](https://github.com/kshivang/BossTerm) for terminal integrat
 2. Or create a PR for the issue using `gh pr create --repo kshivang/BossTerm`
 
 This ensures proper tracking and review of changes to the shared library.
+
+**BossTerm Features Used**:
+- `TabbedTerminal` - Multi-tab terminal with splits for sidebar panel
+- `EmbeddableTerminal` - Single terminal instance for embedded use
+- `TabbedTerminalState` / `EmbeddableTerminalState` - State persistence across composition changes
+- `OnboardingWizard` - First-launch welcome wizard for terminal setup
+- `SettingsManager` - Terminal settings (stored in `~/.bossterm/settings.json`)
+
+**AI Assistant Integration** (Issue #445):
+- AI coding assistant context menu (Claude Code, GitHub Copilot, Cursor, etc.) is handled by BossTerm
+- BOSS Console passes `onShowWelcomeWizard` callback to add "Welcome Wizard..." to context menu
+- First-launch detection: checks `settings.onboardingCompleted` and auto-shows wizard
+- Help menu also has "Welcome Wizard..." option for manual access
+
+**Key Terminal Files**:
+- `DesktopTerminalContent.kt` - Desktop terminal implementations with Welcome Wizard integration
+- `Terminal.kt` - Common terminal panel component (expect/actual pattern)
 
 ## Additional Documentation
 

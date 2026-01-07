@@ -1,15 +1,11 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
-import ai.rever.boss.aiassistant.AIAssistantContextMenu
-import ai.rever.boss.aiassistant.AIAssistantDetector
-import ai.rever.boss.aiassistant.AIAssistantEventBus
 import ai.rever.boss.components.events.FileValidationResult
 import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
-import ai.rever.bossterm.compose.ContextMenuElement
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
 // BossTerm's HyperlinkType enum: HTTP, FILE, FOLDER, EMAIL, FTP, etc.
@@ -23,6 +19,7 @@ import ai.rever.bossterm.compose.rememberEmbeddableTerminalState
 import ai.rever.bossterm.compose.settings.SettingsManager
 import ai.rever.bossterm.compose.settings.TerminalSettings
 import ai.rever.bossterm.compose.settings.TerminalSettingsOverride
+import ai.rever.bossterm.compose.onboarding.OnboardingWizard
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
@@ -31,7 +28,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import ai.rever.boss.run.ShellUtils
@@ -115,27 +114,15 @@ actual fun TabbedTerminalContent(
         TerminalSettingsOverride(alwaysShowTabBar = true)
     }
 
-    // AI Assistant context menu integration (Issue #445)
-    val aiStatuses by AIAssistantDetector.installationStatuses.collectAsState()
     val effectiveWorkingDir = pendingCommand?.workingDirectory ?: workingDirectory
-    val contextMenuItems: List<ContextMenuElement> = remember(aiStatuses, effectiveWorkingDir) {
-        AIAssistantContextMenu.buildItems(
-            workingDirectory = effectiveWorkingDir,
-            onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) },
-            onCreateTab = { cmd -> state.createTab(initialCommand = cmd) },
-            scope = scope,
-            installationStatuses = aiStatuses
-        )
-    }
 
-    // Handle AI Assistant keyboard shortcut events (Issue #445)
-    LaunchedEffect(Unit) {
-        AIAssistantEventBus.launchRequests.collect { request ->
-            AIAssistantContextMenu.launchAssistantDirect(
-                assistant = request.assistant,
-                workingDirectory = effectiveWorkingDir,
-                onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) }
-            )
+    // Welcome Wizard support - show on first launch when onboarding not completed
+    var showWelcomeWizard by remember { mutableStateOf(false) }
+
+    // Check if onboarding should be shown on first launch
+    LaunchedEffect(settings.onboardingCompleted) {
+        if (!settings.onboardingCompleted) {
+            showWelcomeWizard = true
         }
     }
 
@@ -189,34 +176,20 @@ actual fun TabbedTerminalContent(
                     }
                 },
                 onShowSettings = onShowSettings,
+                onShowWelcomeWizard = { showWelcomeWizard = true },
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID) },
-                contextMenuItems = contextMenuItems,
-                // BossTerm 1.0.73: Async callback that waits before showing context menu
-                // This ensures fresh AI assistant status is displayed on the current right-click
-                onContextMenuOpenAsync = {
-                    try {
-                        AIAssistantDetector.refreshIfStale()
-                    } catch (e: Exception) {
-                        println("[SidebarTerminal] Error refreshing AI assistant statuses: ${e.message}")
-                    }
-                },
-                // BossTerm 1.0.72: Detect when initial command completes (requires OSC 133 shell integration)
-                // Only refresh on success (exitCode == 0) to avoid unnecessary refreshes for failed commands
-                onInitialCommandComplete = { success, exitCode ->
-                    println("[SidebarTerminal] Initial command completed: success=$success, exitCode=$exitCode")
-                    if (success) {
-                        scope.launch {
-                            try {
-                                AIAssistantDetector.refreshIfStale()
-                            } catch (e: Exception) {
-                                println("[SidebarTerminal] Error refreshing AI assistant statuses: ${e.message}")
-                            }
-                        }
-                    }
-                },
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+
+    // Welcome Wizard dialog
+    if (showWelcomeWizard) {
+        OnboardingWizard(
+            onDismiss = { showWelcomeWizard = false },
+            onComplete = { showWelcomeWizard = false },
+            settingsManager = SettingsManager.instance
+        )
     }
 }
 
@@ -249,22 +222,17 @@ actual fun PersistentTabbedTerminalContent(
     val state = remember(terminalId, resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
-
-    // AI Assistant context menu integration (Issue #445)
-    val aiStatuses by AIAssistantDetector.installationStatuses.collectAsState()
     val effectiveWorkingDir = if (isNew) workingDirectory else null
-    val contextMenuItems: List<ContextMenuElement> = remember(aiStatuses, effectiveWorkingDir) {
-        AIAssistantContextMenu.buildItems(
-            workingDirectory = effectiveWorkingDir,
-            onLaunchCommand = { cmd -> state.sendInput("$cmd\n".toByteArray(Charsets.UTF_8)) },
-            onCreateTab = { cmd -> state.createTab(initialCommand = cmd) },
-            scope = scope,
-            installationStatuses = aiStatuses
-        )
-    }
 
-    // NOTE: AI Assistant keyboard shortcut handling is done in TabbedTerminalContent (sidebar)
-    // to avoid duplicate launches when multiple terminals are rendered (Issue #445)
+    // Welcome Wizard support - show on first launch when onboarding not completed
+    var showWelcomeWizard by remember { mutableStateOf(false) }
+
+    // Check if onboarding should be shown on first launch
+    LaunchedEffect(settings.onboardingCompleted) {
+        if (!settings.onboardingCompleted) {
+            showWelcomeWizard = true
+        }
+    }
 
     DisposableEffect(terminalId) {
         onDispose {
@@ -288,35 +256,21 @@ actual fun PersistentTabbedTerminalContent(
                     onExit()
                 },
                 onShowSettings = onShowSettings,
+                onShowWelcomeWizard = { showWelcomeWizard = true },
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
-                contextMenuItems = contextMenuItems,
-                // BossTerm 1.0.73: Async callback that waits before showing context menu
-                // This ensures fresh AI assistant status is displayed on the current right-click
-                onContextMenuOpenAsync = {
-                    try {
-                        AIAssistantDetector.refreshIfStale()
-                    } catch (e: Exception) {
-                        println("[Terminal:$terminalId] Error refreshing AI assistant statuses: ${e.message}")
-                    }
-                },
-                // BossTerm 1.0.72: Detect when initial command completes
-                // Only refresh on success (exitCode == 0) to avoid unnecessary refreshes for failed commands
-                onInitialCommandComplete = { success, exitCode ->
-                    println("[Terminal:$terminalId] Initial command completed: success=$success, exitCode=$exitCode")
-                    if (success) {
-                        scope.launch {
-                            try {
-                                AIAssistantDetector.refreshIfStale()
-                            } catch (e: Exception) {
-                                println("[Terminal:$terminalId] Error refreshing AI assistant statuses: ${e.message}")
-                            }
-                        }
-                    }
-                },
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+
+    // Welcome Wizard dialog
+    if (showWelcomeWizard) {
+        OnboardingWizard(
+            onDismiss = { showWelcomeWizard = false },
+            onComplete = { showWelcomeWizard = false },
+            settingsManager = SettingsManager.instance
+        )
     }
 }
 

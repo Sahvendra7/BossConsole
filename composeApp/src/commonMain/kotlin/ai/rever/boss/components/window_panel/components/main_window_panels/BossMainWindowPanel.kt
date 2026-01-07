@@ -43,10 +43,6 @@ import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
-import ai.rever.boss.dashboard.getRequiredAssistant
-import ai.rever.boss.aiassistant.AIAssistant
-import ai.rever.boss.aiassistant.AIAssistantChecker
-import ai.rever.boss.aiassistant.AIAssistantInstallDialog
 import ai.rever.boss.run.RUNNER_TERMINAL_PREFIX
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.window.WindowOperations
@@ -687,11 +683,6 @@ fun BossTabsComponent.BossMainPanelContent(
     var showNewTabDialog by remember { mutableStateOf(false) }
     var selectedTabType by remember { mutableStateOf<TabType?>(null) }
 
-    // State for AI assistant install dialog (Issue #445)
-    var showAIAssistantInstallDialog by remember { mutableStateOf(false) }
-    var pendingTemplate by remember { mutableStateOf<SplitTemplate?>(null) }
-    var pendingAssistant by remember { mutableStateOf<AIAssistant?>(null) }
-
     // Coroutine scope for async operations
     val scope = rememberCoroutineScope()
 
@@ -767,20 +758,6 @@ fun BossTabsComponent.BossMainPanelContent(
                     } else {
                         applySplitTemplate(template, splitViewState, currentPanelId)
                     }
-
-                    // Check if template requires an AI assistant and show install dialog if not installed
-                    val requiredAssistant = template.getRequiredAssistant()
-                    if (requiredAssistant != null) {
-                        scope.launch {
-                            val isInstalled = AIAssistantChecker.isInstalled(requiredAssistant)
-                            if (!isInstalled) {
-                                // Show install dialog after workspace is applied
-                                pendingTemplate = template
-                                pendingAssistant = requiredAssistant
-                                showAIAssistantInstallDialog = true
-                            }
-                        }
-                    }
                 },
                 onActivatePlugin = { pluginId ->
                     // Plugin activation is handled via sidebar panels
@@ -851,51 +828,6 @@ fun BossTabsComponent.BossMainPanelContent(
                         }
                     }
                 }
-            }
-        )
-    }
-
-    // AI Assistant Install Dialog (Issue #445)
-    if (showAIAssistantInstallDialog && pendingAssistant != null && pendingTemplate != null) {
-        val assistant = pendingAssistant!!
-        val template = pendingTemplate!!
-
-        AIAssistantInstallDialog(
-            assistant = assistant,
-            workspaceName = template.name,
-            onInstall = {
-                // Open a terminal with the install command
-                val timestamp = Clock.System.now().toEpochMilliseconds()
-                val installCommand = AIAssistantChecker.getInstallCommand(assistant)
-                val terminalTab = TerminalTabInfo(
-                    id = "terminal-install-$timestamp",
-                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
-                    title = "Install ${assistant.displayName}",
-                    icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
-                    initialCommand = installCommand,
-                    workingDirectory = null
-                )
-                val tabIndex = addTab(terminalTab)
-                if (tabIndex >= 0) {
-                    selectTab(tabIndex)
-                }
-
-                // Reset dialog state
-                showAIAssistantInstallDialog = false
-                pendingTemplate = null
-                pendingAssistant = null
-            },
-            onSkip = {
-                // Workspace already applied, just close the dialog
-                showAIAssistantInstallDialog = false
-                pendingTemplate = null
-                pendingAssistant = null
-            },
-            onCancel = {
-                // Workspace already applied, just close the dialog
-                showAIAssistantInstallDialog = false
-                pendingTemplate = null
-                pendingAssistant = null
             }
         )
     }

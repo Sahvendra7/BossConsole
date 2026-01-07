@@ -99,7 +99,6 @@ private fun SettingsContent(initialSection: String? = null) {
                         SettingsSection.LANGUAGE_SERVERS -> LspSettings()
                         SettingsSection.TERMINAL -> TerminalSettings()
                         SettingsSection.RUNNER -> RunnerSettings()
-                        SettingsSection.AI_ASSISTANTS -> AIAssistantSettings()
                         SettingsSection.WORKSPACE -> WorkspaceSettings()
                         SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                         SettingsSection.UPDATES -> UpdatesSettings()
