@@ -553,12 +553,15 @@ jobs:
           name: branding-tool
           path: tools
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+
       - name: Build Branding Tool for ARM64
         run: |
           # The pre-built tool is for x64, need to build for ARM64
-          sudo apt-get update
-          sudo apt-get install -y golang-go
-
           git clone https://github.com/TeamDev-IP/Chromium-Branding.git chromium-branding-tool
           cd chromium-branding-tool
           go build -o ../tools/chromium_branding_linux_arm64 .
