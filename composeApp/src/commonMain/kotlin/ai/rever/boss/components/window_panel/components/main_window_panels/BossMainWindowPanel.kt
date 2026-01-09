@@ -40,6 +40,7 @@ import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.dashboard.Dashboard
+import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -686,6 +687,11 @@ fun BossTabsComponent.BossMainPanelContent(
     // Coroutine scope for async operations
     val scope = rememberCoroutineScope()
 
+    // Per-window project state for Dashboard
+    val windowProjectState = LocalWindowProjectState.current
+    val selectedProject by windowProjectState?.selectedProject?.collectAsState()
+        ?: ProjectState.selectedProject.collectAsState()
+
     Box(modifier = modifier) {
         val activeTab = tabsState.value.activeTab
         val activeComponent = getActiveComponent()
@@ -709,8 +715,9 @@ fun BossTabsComponent.BossMainPanelContent(
                     splitViewState?.openUrlInActivePanel(url, "Loading...")
                 },
                 onOpenProject = { project ->
-                    ProjectState.selectProject(project)
+                    windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
                 },
+                selectedProject = selectedProject,
                 onNewTab = {
                     selectedTabType = null
                     showNewTabDialog = true

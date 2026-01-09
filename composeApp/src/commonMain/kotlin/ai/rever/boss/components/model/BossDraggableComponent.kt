@@ -93,8 +93,8 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
             left.bottom -> toggleVisibility(bottom)
             left.top.top -> toggleVisibility(left.top)
             right.top.top -> toggleVisibility(right.top)
-            left.top.bottom -> toggleVisibility(left.top)
-            right.top.bottom -> toggleVisibility(right.top)
+            left.top.bottom -> toggleVisibility(left.bottom)
+            right.top.bottom -> toggleVisibility(right.bottom)
         }
     }
 

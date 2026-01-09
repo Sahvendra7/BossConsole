@@ -34,13 +34,9 @@ import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
 import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.services.supabase.AuthService
-import ai.rever.boss.components.events.PanelEventBus
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.TextButton
-import kotlinx.coroutines.launch
 import java.io.File
 
 
@@ -190,17 +186,12 @@ fun BossDraggableComponent.BossTopLeftBar(
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     var deletedProjectName by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
 
     // Helper function to open project in current window
     fun openProjectInCurrentWindow(project: Project) {
         // Use window-specific project state if available, otherwise fallback to global
+        // Panels are opened automatically by BossApp's LaunchedEffect
         windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
-        // Show CodeBase and Run Configurations panels when project is selected
-        scope.launch {
-            PanelEventBus.openPanel(CodeBaseInfo.id)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id)
-        }
     }
 
     // Helper function to validate and handle project selection

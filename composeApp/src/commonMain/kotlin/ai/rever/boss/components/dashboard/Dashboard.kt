@@ -101,6 +101,7 @@ fun Dashboard(
     onOpenFile: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     onOpenProject: (Project) -> Unit,
+    selectedProject: Project = Project("No Project", "", 0L),
     onNewTab: () -> Unit,
     onNewTerminal: () -> Unit,
     onNewWindow: () -> Unit,
@@ -185,17 +186,13 @@ fun Dashboard(
                                 ProjectCard(
                                     project = project,
                                     onClick = {
-                                        // Only show dialog if a project is already selected
-                                        val currentProject = ProjectState.selectedProject.value
-                                        if (currentProject.path.isNotEmpty()) {
+                                        // Only show dialog if a project is already selected in this window
+                                        if (selectedProject.path.isNotEmpty()) {
                                             projectToOpen = project
                                         } else {
                                             // No project selected, open directly in current window
+                                            // Panels are opened automatically by BossApp's LaunchedEffect
                                             onOpenProject(project)
-                                            dialogScope.launch {
-                                                PanelEventBus.openPanel(CodeBaseInfo.id)
-                                                PanelEventBus.openPanel(RunConfigurationsInfo.id)
-                                            }
                                         }
                                     },
                                     onRemove = { ProjectState.removeRecentProject(project.path) }
@@ -509,23 +506,15 @@ fun Dashboard(
             project = project,
             onDismiss = { projectToOpen = null },
             onOpenInCurrentWindow = { selectedProject ->
+                // Panels are opened automatically by BossApp's LaunchedEffect
                 onOpenProject(selectedProject)
-                // Open CodeBase and RunConfigurations panels
-                dialogScope.launch {
-                    PanelEventBus.openPanel(CodeBaseInfo.id)
-                    PanelEventBus.openPanel(RunConfigurationsInfo.id)
-                }
                 projectToOpen = null
             },
             onOpenInNewWindow = { selectedProject ->
                 // Create new window first, then select project (project state is global)
+                // Panels are opened automatically by BossApp's LaunchedEffect in the new window
                 WindowOperations.createNewWindow()
                 onOpenProject(selectedProject)
-                // Open CodeBase and RunConfigurations panels in the new window
-                dialogScope.launch {
-                    PanelEventBus.openPanel(CodeBaseInfo.id)
-                    PanelEventBus.openPanel(RunConfigurationsInfo.id)
-                }
                 projectToOpen = null
             }
         )

@@ -839,6 +839,14 @@ fun ComponentContext.BossApp(
         }
     }
 
+    // Open CodeBase and RunConfigurations panels when project is selected (reactive architecture)
+    LaunchedEffect(selectedProject.path) {
+        if (selectedProject.path.isNotEmpty()) {
+            PanelEventBus.openPanel(CodeBaseInfo.id)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+        }
+    }
+
     // Action handler for keyboard shortcuts
     val actionHandler = remember(
         splitViewState,
