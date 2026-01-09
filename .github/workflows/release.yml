@@ -509,32 +509,33 @@ jobs:
         run: |
           echo "🏗️ Building Linux AMD64 packages..."
 
-          # Create DEB and RPM packages
-          ./gradlew :composeApp:packageDistributionForCurrentOS
+          # Step 1: Create distributable (unpacked app structure)
+          ./gradlew :composeApp:createDistributable
+          echo "✅ Distributable created"
+
+          # Step 2: Bundle Chromium into the app structure if available
+          if [[ "$BRANDED_CHROMIUM_AVAILABLE" == "true" ]]; then
+            APP_DIR="composeApp/build/compose/binaries/main/app/BOSS"
+            CHROMIUM_DIR="$APP_DIR/lib/chromium"
+
+            echo "📦 Bundling Chromium into Linux app at: $CHROMIUM_DIR"
+            mkdir -p "$CHROMIUM_DIR"
+            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
+            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            echo "✅ Chromium bundled into app structure"
+            ls -la "$CHROMIUM_DIR"
+          else
+            echo "⚠️ Branded Chromium not available, app will use auto-download fallback"
+          fi
+
+          # Step 3: Create DEB and RPM from the modified distributable
+          ./gradlew :composeApp:packageDeb :composeApp:packageRpm
           echo "✅ Linux native packages (DEB, RPM) created successfully"
 
           # Create executable JAR for universal Linux distribution
           ./gradlew :composeApp:createExecutableJar
           echo "✅ Executable JAR created successfully"
-
-      - name: 📦 Bundle Branded Chromium (Linux)
-        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
-        run: |
-          echo "📦 Creating bundled Chromium archive for Linux..."
-
-          # For Linux, we create a separate chromium archive that can be manually installed
-          # The app will detect it at /opt/boss/chromium or ~/.boss/boss-chromium
-          mkdir -p linux-chromium-bundle
-          cp -r branded-chromium/* linux-chromium-bundle/ 2>/dev/null || true
-          rm -f linux-chromium-bundle/*.zip 2>/dev/null || true
-
-          # Create a tar.gz for easy installation
-          cd linux-chromium-bundle
-          tar -czvf ../boss-chromium-linux-amd64.tar.gz .
-          cd ..
-
-          echo "✅ Linux Chromium bundle created: boss-chromium-linux-amd64.tar.gz"
-          ls -la boss-chromium-linux-amd64.tar.gz
 
       - name: 🔍 Verify Built Version (Linux AMD64)
         run: |
@@ -653,12 +654,56 @@ jobs:
           fakeroot --version || echo "fakeroot not found"
           rpm --version || echo "rpm not found"
 
+      - name: 🔍 Get JxBrowser Version
+        run: |
+          # Extract JxBrowser version from libs.versions.toml for Chromium URL
+          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "JxBrowser version: $JXBROWSER_VERSION"
+          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+
+      - name: 📥 Download Branded Chromium (Linux ARM64)
+        run: |
+          echo "📥 Downloading BOSS-branded Chromium for Linux ARM64..."
+
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-linux-arm64.zip"
+
+          mkdir -p branded-chromium
+          if curl -L --fail -o branded-chromium/boss-chromium-linux-arm64.zip "$CHROMIUM_URL"; then
+            echo "✅ Downloaded branded Chromium"
+            unzip -o branded-chromium/boss-chromium-linux-arm64.zip -d branded-chromium/
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Branded Chromium not available yet"
+            echo "   Linux ARM64 packages will use runtime Chromium download fallback"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
+          fi
+
       - name: 🏗️ Build Linux Packages (ARM64)
         run: |
           echo "🏗️ Building Linux ARM64 packages..."
 
-          # Create DEB and RPM packages
-          ./gradlew :composeApp:packageDistributionForCurrentOS
+          # Step 1: Create distributable (unpacked app structure)
+          ./gradlew :composeApp:createDistributable
+          echo "✅ Distributable created"
+
+          # Step 2: Bundle Chromium into the app structure if available
+          if [[ "$BRANDED_CHROMIUM_AVAILABLE" == "true" ]]; then
+            APP_DIR="composeApp/build/compose/binaries/main/app/BOSS"
+            CHROMIUM_DIR="$APP_DIR/lib/chromium"
+
+            echo "📦 Bundling Chromium into Linux app at: $CHROMIUM_DIR"
+            mkdir -p "$CHROMIUM_DIR"
+            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
+            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            echo "✅ Chromium bundled into app structure"
+            ls -la "$CHROMIUM_DIR"
+          else
+            echo "⚠️ Branded Chromium not available, app will use auto-download fallback"
+          fi
+
+          # Step 3: Create DEB and RPM from the modified distributable
+          ./gradlew :composeApp:packageDeb :composeApp:packageRpm
           echo "✅ Linux native packages (DEB, RPM) created successfully"
 
           # Create executable JAR for ARM64 Linux distribution

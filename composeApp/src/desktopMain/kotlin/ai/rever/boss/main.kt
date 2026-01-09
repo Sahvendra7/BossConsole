@@ -2,6 +2,13 @@ package ai.rever.boss
 
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.cli.CLICommandHandler
+import ai.rever.boss.config.ChromiumAutoDownloader
+import ai.rever.boss.components.dialogs.ChromiumDownloadDialog
+import BossTheme
+import BossDarkBackground
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import ai.rever.boss.psi.PSIBootstrap
 import ai.rever.boss.psi.PSIThreadBridge
 import ai.rever.boss.psi.ProjectIndexer
@@ -13,7 +20,16 @@ import ai.rever.boss.window.BossWindow
 import ai.rever.boss.components.plugin.panels.bottom.console.GlobalLogCapture
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.unit.dp
 import com.github.ajalt.clikt.core.main
 import java.io.File
 import kotlin.system.exitProcess
@@ -252,41 +268,120 @@ fun main(args: Array<String>) {
     
     println("===========================================")
 
+    // Check if Chromium needs to be downloaded (for debug/dev builds)
+    val chromiumNeedsDownload = !ChromiumAutoDownloader.isChromiumInstalled()
+    if (chromiumNeedsDownload) {
+        println("BOSS-branded Chromium not found. Will prompt for download...")
+    }
+
     // Create initial window BEFORE application{} to prevent auto-recreation
     // This runs once on startup, not during recomposition
-    WindowManager.createNewWindow()
+    // Note: Window creation is deferred if Chromium download is needed
+    if (!chromiumNeedsDownload) {
+        WindowManager.createNewWindow()
+    }
 
     application {
-        // Initialize CLI handler once app is running
-        LaunchedEffect(Unit) {
-            CLICommandHandler.getInstance().initialize(
-                windowManager = WindowManager,
-                getSplitViewState = {
-                    // Workspace loading now handled via WorkspaceManager from BossApp
-                    // No need to expose SplitViewState to CLI handler
-                    null
-                }
-            )
+        // State for Chromium download
+        var isDownloadingChromium by remember { mutableStateOf(chromiumNeedsDownload) }
+        var downloadProgress by remember {
+            mutableStateOf(ChromiumAutoDownloader.DownloadProgress(0, 0))
         }
 
-        // Render each window with stable identity via key()
-        // This prevents re-composition of existing windows when new windows are added
-        //
-        // IMPORTANT: No auto-creation logic here!
-        // When all windows close, app stays running (standard macOS behavior)
-        // User can create new windows via UI elements (+ button, File menu, etc.)
-        WindowManager.windows.forEach { windowState ->
-            key(windowState.id) {
-                BossWindow(
-                    windowState = windowState,
-                    onCloseRequest = {
-                        WindowManager.closeWindow(windowState.id)
-                        ai.rever.boss.utils.WindowFocusManager.unregisterWindow(windowState.id)
-                        // Don't call exitApplication - keep app running (macOS style)
-                        // When window count reaches 0, app stays in Dock
-                        // User can quit via Cmd+Q or right-click Dock → Quit
+        // Show Chromium download dialog if needed
+        if (isDownloadingChromium) {
+            val downloadWindowState = rememberWindowState(
+                position = WindowPosition.Aligned(Alignment.Center),
+                width = 500.dp,
+                height = 220.dp
+            )
+
+            Window(
+                onCloseRequest = { exitApplication() },
+                state = downloadWindowState,
+                title = "BOSS - Setup",
+                resizable = false
+            ) {
+                // Start download when dialog opens
+                LaunchedEffect(Unit) {
+                    ChromiumAutoDownloader.downloadChromium { progress ->
+                        downloadProgress = progress
+                        if (progress.isComplete) {
+                            // Download complete - create window and proceed
+                            WindowManager.createNewWindow()
+                            isDownloadingChromium = false
+                        }
+                    }
+                }
+
+                BossTheme {
+                    Box(
+                        modifier = androidx.compose.ui.Modifier
+                            .fillMaxSize()
+                            .background(BossDarkBackground)
+                    ) {
+                        ChromiumDownloadDialog(
+                            progress = downloadProgress.progressFraction,
+                            downloadedMB = downloadProgress.downloadedMB,
+                            totalMB = downloadProgress.totalMB,
+                            status = when {
+                                downloadProgress.isExtracting -> "Extracting files..."
+                                downloadProgress.totalBytes > 0 -> "Downloading BOSS-branded Chromium..."
+                                else -> "Connecting to download server..."
+                            },
+                            error = downloadProgress.error,
+                            onCancel = { exitApplication() },
+                            onRetry = {
+                                // Reset progress and retry
+                                downloadProgress = ChromiumAutoDownloader.DownloadProgress(0, 0)
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    ChromiumAutoDownloader.downloadChromium { progress ->
+                                        downloadProgress = progress
+                                        if (progress.isComplete) {
+                                            WindowManager.createNewWindow()
+                                            isDownloadingChromium = false
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Initialize CLI handler once app is running (only after Chromium is ready)
+        if (!isDownloadingChromium) {
+            LaunchedEffect(Unit) {
+                CLICommandHandler.getInstance().initialize(
+                    windowManager = WindowManager,
+                    getSplitViewState = {
+                        // Workspace loading now handled via WorkspaceManager from BossApp
+                        // No need to expose SplitViewState to CLI handler
+                        null
                     }
                 )
+            }
+
+            // Render each window with stable identity via key()
+            // This prevents re-composition of existing windows when new windows are added
+            //
+            // IMPORTANT: No auto-creation logic here!
+            // When all windows close, app stays running (standard macOS behavior)
+            // User can create new windows via UI elements (+ button, File menu, etc.)
+            WindowManager.windows.forEach { windowState ->
+                key(windowState.id) {
+                    BossWindow(
+                        windowState = windowState,
+                        onCloseRequest = {
+                            WindowManager.closeWindow(windowState.id)
+                            ai.rever.boss.utils.WindowFocusManager.unregisterWindow(windowState.id)
+                            // Don't call exitApplication - keep app running (macOS style)
+                            // When window count reaches 0, app stays in Dock
+                            // User can quit via Cmd+Q or right-click Dock → Quit
+                        }
+                    )
+                }
             }
         }
     }

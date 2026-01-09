@@ -458,8 +458,8 @@ object FluckEngine {
 
         // No fallback - BOSS-branded Chromium is required
         throw IllegalStateException(
-            "BOSS-branded Chromium not found. Please ensure boss-chromium is installed in " +
-            "either the app bundle or ~/.boss/boss-chromium/"
+            "BOSS-branded Chromium not found. Please restart the app to trigger auto-download, " +
+            "or manually install to ~/.boss/boss-chromium/"
         )
     }
 
@@ -526,6 +526,7 @@ object FluckEngine {
     private fun getLinuxBundledChromiumPath(): java.nio.file.Path? {
         // Check common Linux installation paths
         val paths = listOf(
+            "/opt/boss/lib/chromium",  // Bundled in lib directory (new packaging)
             "/opt/boss/chromium",
             "/usr/share/boss/chromium",
             "/usr/local/share/boss/chromium"

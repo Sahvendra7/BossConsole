@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
+import com.teamdev.jxbrowser.navigation.event.FrameLoadFailed
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
@@ -594,6 +595,27 @@ fun JxBrowserCompose(
             }
         }
 
+        // Handle navigation failures to reset loading state
+        subscriptions += browser.unsafe().navigation().on(FrameLoadFailed::class.java) { event ->
+            // Only handle main frame failures
+            if (!event.frame().isMain) return@on
+            if (!isBrowserEnvironmentValid()) return@on
+
+            coroutineScope.launch(Dispatchers.Main) {
+                if (!isBrowserEnvironmentValid()) return@launch
+
+                try {
+                    isLoading = false
+                    canGoBack = browser.navigation().canGoBack()
+                    canGoForward = browser.navigation().canGoForward()
+                } catch (e: Exception) {
+                    if (e.message?.contains("closed object") == true) {
+                        isComposableDisposed.value = true
+                    }
+                }
+            }
+        }
+
         // Listen for favicon changes (using JxBrowser's native API)
         subscriptions += browser.unsafe().on(FaviconChanged::class.java) { event ->
             // Check if browser environment is still valid before accessing
@@ -907,6 +929,9 @@ fun JxBrowserCompose(
                         onClick = {
                             if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goBack()
+                                // Immediately update state to prevent button desync during rapid clicks
+                                canGoBack = browser.navigation().canGoBack()
+                                canGoForward = browser.navigation().canGoForward()
                                 onNavigationStateChange?.invoke(true)
                             }
                         },
@@ -925,6 +950,9 @@ fun JxBrowserCompose(
                         onClick = {
                             if (isBrowserEnvironmentValid()) {
                                 browser.navigation().goForward()
+                                // Immediately update state to prevent button desync during rapid clicks
+                                canGoBack = browser.navigation().canGoBack()
+                                canGoForward = browser.navigation().canGoForward()
                                 onNavigationStateChange?.invoke(false)
                             }
                         },
@@ -944,6 +972,7 @@ fun JxBrowserCompose(
                             if (isLoading) {
                                 // Stop the current navigation
                                 if (isBrowserEnvironmentValid()) browser.navigation().stop()
+                                isLoading = false  // Immediately reset loading state
                             } else {
                                 // Reload/navigate to URL
                                 val urlToLoad = if (autocompleteSuggestion != null &&
