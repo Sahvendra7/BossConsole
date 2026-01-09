@@ -538,10 +538,113 @@ jobs:
           name: boss-chromium-linux-x64
           path: boss-chromium-linux-x64.zip
 
+  # Linux ARM64 build
+  build-linux-arm64:
+    needs: build-branding-tool
+    runs-on: linux_arm64
+    continue-on-error: true  # Graceful failure if ARM runners unavailable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Build Branding Tool for ARM64
+        run: |
+          # The pre-built tool is for x64, need to build for ARM64
+          sudo apt-get update
+          sudo apt-get install -y golang-go
+
+          git clone https://github.com/TeamDev-IP/Chromium-Branding.git chromium-branding-tool
+          cd chromium-branding-tool
+          go build -o ../tools/chromium_branding_linux_arm64 .
+          cd ..
+          chmod +x tools/chromium_branding_linux_arm64
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+        run: |
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+
+          echo "Chromium directory contents:"
+          ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
+
+      - name: Apply BOSS Branding
+        run: |
+          CHROMIUM_DIR="$HOME/chromium-binaries"
+
+          if [ ! -d "$CHROMIUM_DIR" ] || [ -z "$(ls -A $CHROMIUM_DIR 2>/dev/null)" ]; then
+            echo "::error::Chromium binaries not found at $CHROMIUM_DIR"
+            exit 1
+          fi
+
+          cp chromium-branding/params.json .
+
+          mkdir -p output
+
+          echo "Running branding tool..."
+          ./tools/chromium_branding_linux_arm64 \
+            -p params.json \
+            -b "$CHROMIUM_DIR" \
+            -o output
+
+          ls -la output/
+
+          # Create executable.name if not present (required by JxBrowser)
+          if [ ! -f "output/executable.name" ]; then
+            EXEC_FILE=$(find output -maxdepth 1 -type f -executable | head -1)
+            if [ -n "$EXEC_FILE" ]; then
+              EXEC_NAME=$(basename "$EXEC_FILE")
+              echo "$EXEC_NAME" > output/executable.name
+              echo "Created executable.name with: $EXEC_NAME"
+            else
+              EXEC_NAME=$(python3 -c "import json; print(json.load(open('params.json'))['linux']['executableName'])" 2>/dev/null || echo "boss-browser")
+              echo "$EXEC_NAME" > output/executable.name
+              echo "Created executable.name with fallback: $EXEC_NAME"
+            fi
+          fi
+
+      - name: Verify executable.name
+        run: |
+          if [ -f "output/executable.name" ]; then
+            cat output/executable.name
+          else
+            echo "::error::executable.name not found"
+            exit 1
+          fi
+
+      - name: Create Archive
+        run: |
+          cd output
+          zip -r ../boss-chromium-linux-arm64.zip .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-linux-arm64
+          path: boss-chromium-linux-arm64.zip
+
   # Upload to BossConsole-Releases
   upload-to-releases:
-    needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-linux-x64]
-    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-linux-x64.result == 'success')
+    needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-linux-x64, build-linux-arm64]
+    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Download All Artifacts
@@ -575,7 +678,8 @@ jobs:
           - \`boss-chromium-macos-arm64.zip\` - macOS Apple Silicon
           - \`boss-chromium-macos-x64.zip\` - macOS Intel
           - \`boss-chromium-windows-x64.zip\` - Windows 64-bit
-          - \`boss-chromium-linux-x64.zip\` - Linux 64-bit
+          - \`boss-chromium-linux-x64.zip\` - Linux x64
+          - \`boss-chromium-linux-arm64.zip\` - Linux ARM64
 
           ## Changes
           - Process name shows as 'BOSS' in Task Manager/Activity Monitor
