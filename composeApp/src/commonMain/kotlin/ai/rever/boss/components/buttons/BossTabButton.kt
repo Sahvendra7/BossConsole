@@ -240,9 +240,9 @@ fun BossTabButton(
                             onDragStart = { offset ->
                                 // Calculate absolute position for drag start
                                 val absolutePosition = windowPosition + offset
-                                tabDragComponent!!.startDragging(
-                                    tabInfo = tabInfo!!,
-                                    panelId = panelId!!,
+                                tabDragComponent.startDragging(
+                                    tabInfo = tabInfo,
+                                    panelId = panelId,
                                     index = tabIndex,
                                     startPosition = absolutePosition
                                 )
@@ -250,13 +250,13 @@ fun BossTabButton(
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                                tabDragComponent!!.updateDrag(dragAmount)
+                                tabDragComponent.updateDrag(dragAmount)
                             },
                             onDragEnd = {
                                 onDragEnd()
                             },
                             onDragCancel = {
-                                tabDragComponent!!.cancelDrag()
+                                tabDragComponent.cancelDrag()
                             }
                         )
                     }

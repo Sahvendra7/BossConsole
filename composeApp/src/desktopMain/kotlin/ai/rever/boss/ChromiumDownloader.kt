@@ -67,7 +67,7 @@ fun main(args: Array<String>) {
         if (hasChromium && isLinux) {
             println("ChromiumDownloader: Engine failed to start but binaries were downloaded!")
             println("ChromiumDownloader: Directory contents:")
-            files?.forEach { println("  - ${it.name}") }
+            files.forEach { println("  - ${it.name}") }
             println("ChromiumDownloader: Done (download-only mode on Linux CI)")
         } else {
             System.err.println("ChromiumDownloader: Error - ${e.message}")

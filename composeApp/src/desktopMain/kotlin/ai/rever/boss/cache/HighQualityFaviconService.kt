@@ -160,7 +160,7 @@ object HighQualityFaviconService {
             }
 
             if (response.status == HttpStatusCode.OK) {
-                val bytes = response.readBytes()
+                val bytes = response.readRawBytes()
                 val bufferedImage = ImageIO.read(ByteArrayInputStream(bytes))
 
                 if (bufferedImage != null && bufferedImage.width >= 32) {

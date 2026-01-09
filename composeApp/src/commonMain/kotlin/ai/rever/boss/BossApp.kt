@@ -592,11 +592,14 @@ fun ComponentContext.BossApp(
         fun getCachedPanels(): List<SplitNode.Panel> {
             synchronized(cacheLock) {
                 val now = System.currentTimeMillis()
-                if (cachedPanels == null || now - cacheTimestamp > cacheTtlMs) {
-                    cachedPanels = splitViewState.getAllPanels()
+                val cached = cachedPanels
+                if (cached == null || now - cacheTimestamp > cacheTtlMs) {
+                    val newPanels = splitViewState.getAllPanels()
+                    cachedPanels = newPanels
                     cacheTimestamp = now
+                    return newPanels
                 }
-                return cachedPanels!!
+                return cached
             }
         }
 
@@ -1421,7 +1424,7 @@ fun ComponentContext.BossApp(
         // Handle new terminal events
         DashboardEventBus.newTerminalEvents
             .onEach {
-                val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                val timestamp = System.currentTimeMillis()
                 val projectPath = windowProjectState.selectedProject.value.path
                 val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                     id = "terminal-$timestamp",
@@ -2485,7 +2488,7 @@ private fun createTabFromTemplateConfig(
     panelConfig: ai.rever.boss.dashboard.TemplatePanelConfig,
     projectPath: String
 ): ai.rever.boss.components.registery.TabInfo? {
-    val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+    val timestamp = System.currentTimeMillis()
 
     return when (panelConfig.type) {
         "terminal" -> {

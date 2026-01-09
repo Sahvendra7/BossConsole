@@ -211,8 +211,8 @@ fun BossTabsComponent.BossMainTabBar(
 
                     // Show reorder indicator before this tab if it's the drop target
                     val showIndicatorBefore = dropTarget is TabDropTarget.Reorder &&
-                        (dropTarget as TabDropTarget.Reorder).panelId == currentPanelId &&
-                        (dropTarget as TabDropTarget.Reorder).targetIndex == index
+                        dropTarget.panelId == currentPanelId &&
+                        dropTarget.targetIndex == index
 
                     if (showIndicatorBefore) {
                         Box(
@@ -374,8 +374,8 @@ fun BossTabsComponent.BossMainTabBar(
                     val isLastTab = index == tabsState.value.tabs.size - 1
                     val showIndicatorAfter = isLastTab &&
                         dropTarget is TabDropTarget.Reorder &&
-                        (dropTarget as TabDropTarget.Reorder).panelId == currentPanelId &&
-                        (dropTarget as TabDropTarget.Reorder).targetIndex == tabsState.value.tabs.size
+                        dropTarget.panelId == currentPanelId &&
+                        dropTarget.targetIndex == tabsState.value.tabs.size
 
                     if (showIndicatorAfter) {
                         Box(

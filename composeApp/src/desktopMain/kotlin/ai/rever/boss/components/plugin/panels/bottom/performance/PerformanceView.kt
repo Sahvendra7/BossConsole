@@ -57,7 +57,7 @@ import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.ViewSidebar
+import androidx.compose.material.icons.automirrored.outlined.ViewSidebar
 import androidx.compose.material.icons.outlined.Web
 import androidx.compose.material.icons.outlined.Window
 import androidx.compose.runtime.Composable
@@ -302,7 +302,7 @@ private fun OverviewTab(
                             modifier = Modifier.weight(1f),
                             label = "Panels",
                             count = snapshot.resources.panelCount,
-                            icon = Icons.Outlined.ViewSidebar,
+                            icon = Icons.AutoMirrored.Outlined.ViewSidebar,
                             color = Color(0xFF9C27B0)
                         )
                         ResourceCard(
@@ -689,7 +689,7 @@ private fun ResourcesTab(snapshot: PerformanceSnapshot?) {
                         label = "Open Panels",
                         count = snapshot.resources.panelCount,
                         maxCount = maxOf(10, totalResources),
-                        icon = Icons.Outlined.ViewSidebar,
+                        icon = Icons.AutoMirrored.Outlined.ViewSidebar,
                         color = Color(0xFF9C27B0)
                     )
                     Spacer(modifier = Modifier.height(8.dp))

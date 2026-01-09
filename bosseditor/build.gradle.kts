@@ -10,6 +10,11 @@ plugins {
 group = "ai.rever.bosseditor"
 
 kotlin {
+    // Suppress expect/actual classes beta warning (KT-61573)
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     jvmToolchain(17)
 
     // Desktop JVM target

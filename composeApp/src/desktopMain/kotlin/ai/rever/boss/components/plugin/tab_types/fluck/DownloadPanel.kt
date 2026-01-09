@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -151,7 +153,7 @@ private fun DownloadItemRow(download: DownloadItem, downloadManager: DownloadMan
                 download.status == DownloadStatus.FAILED -> Icons.Default.Error
                 download.status == DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
                 download.status == DownloadStatus.PAUSED -> Icons.Default.Pause
-                else -> Icons.Default.InsertDriveFile
+                else -> Icons.AutoMirrored.Default.InsertDriveFile
             },
             contentDescription = download.status.name,
             tint = when {
@@ -289,7 +291,7 @@ private fun DownloadItemRow(download: DownloadItem, downloadManager: DownloadMan
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.OpenInNew,
+                            imageVector = Icons.AutoMirrored.Default.OpenInNew,
                             contentDescription = "Open",
                             tint = Color.White
                         )

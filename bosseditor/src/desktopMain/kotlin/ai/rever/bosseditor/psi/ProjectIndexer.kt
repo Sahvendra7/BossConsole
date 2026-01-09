@@ -669,10 +669,8 @@ class ProjectIndexer(val projectPath: String) {
                         // Parse and index the file
                         PSIThreadBridge.readAction {
                             val psiFile = PSIBootstrap.parseKotlinFile(fileName, content)
-                            if (psiFile != null) {
-                                index.indexFile(psiFile, virtualPath, isLibrary = true)
-                                filesIndexed++
-                            }
+                            index.indexFile(psiFile, virtualPath, isLibrary = true)
+                            filesIndexed++
                         }
 
                         // Yield periodically to avoid blocking

@@ -296,7 +296,7 @@ object PerformanceMonitor {
 
     private fun collectCpuMetrics(): CpuMetrics {
         val processLoad = sunOSBean?.processCpuLoad ?: -1.0
-        val systemLoad = sunOSBean?.systemCpuLoad ?: osMXBean.systemLoadAverage
+        val systemLoad = sunOSBean?.cpuLoad ?: osMXBean.systemLoadAverage
 
         // Collect thread details - top 20 by CPU time
         val threadIds = threadMXBean.allThreadIds

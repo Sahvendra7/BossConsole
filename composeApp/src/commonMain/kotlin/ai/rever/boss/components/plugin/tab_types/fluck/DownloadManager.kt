@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -14,6 +15,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * Uses internal Map for fast lookups and exposes throttled List for UI consumption.
  */
+@OptIn(FlowPreview::class)
 class DownloadManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()

@@ -39,7 +39,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.res.painterResource
+import org.jetbrains.compose.resources.painterResource
+import boss_kotlin.composeapp.generated.resources.Res
+import boss_kotlin.composeapp.generated.resources.boss_icon
 import androidx.compose.ui.window.*
 import java.awt.Color
 import java.awt.Frame
@@ -86,7 +88,7 @@ fun ApplicationScope.BossWindow(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
         state = composeWindowState,
-        icon = painterResource("boss_icon.png")
+        icon = painterResource(Res.drawable.boss_icon)
     ) {
         // Set window appearance properties
         window.background = Color(BossDarkSurface.value.toInt())

@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.outlined.ViewColumn
@@ -93,7 +93,7 @@ fun TerminalLinkOpenDialog(
                 // Options - show "Existing Split" first when splits exist (smart default)
                 if (hasSplits) {
                     LinkOpenOption(
-                        icon = Icons.Outlined.OpenInNew,
+                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
                         title = "Existing Split",
                         description = "Open in other panel",
                         onClick = { onOpenLink(TerminalLinkOpenMode.EXISTING_SPLIT, rememberChoice) }

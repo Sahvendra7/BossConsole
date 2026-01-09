@@ -225,8 +225,6 @@ class DLexer : BaseLexer() {
                         }
                     }
                 }
-
-                else -> pos++
             }
         }
 

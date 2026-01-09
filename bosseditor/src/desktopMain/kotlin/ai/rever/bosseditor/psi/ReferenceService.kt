@@ -106,9 +106,7 @@ class ReferenceService {
 
         PSIThreadBridge.readAction {
             val ktFile = PSIBootstrap.parseKotlinFile(filePath, content)
-            if (ktFile != null) {
-                findReferencesInPsi(ktFile, content, filePath, definitionInfo, references)
-            }
+            findReferencesInPsi(ktFile, content, filePath, definitionInfo, references)
         }
 
         return references

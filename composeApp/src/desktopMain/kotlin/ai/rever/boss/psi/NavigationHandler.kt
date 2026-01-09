@@ -160,7 +160,7 @@ class NavigationHandler(
      * Handle navigation on Cmd+Click.
      */
     private fun handleNavigation(e: MouseEvent) {
-        val offset = textArea.viewToModel2D(e.point).toInt()
+        val offset = textArea.viewToModel2D(e.point)
         if (offset < 0) return
 
         println("[Navigation] Cmd+Click at offset $offset in file: $currentFilePath")
@@ -218,7 +218,7 @@ class NavigationHandler(
      * Handle hover for highlighting.
      */
     private fun handleHover(e: MouseEvent) {
-        val offset = textArea.viewToModel2D(e.point).toInt()
+        val offset = textArea.viewToModel2D(e.point)
         if (offset < 0) {
             highlighter.clearHighlight()
             return

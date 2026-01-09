@@ -37,6 +37,7 @@ actual object WindowOperations {
      * @param windowId The window ID to potentially close
      */
     @Deprecated("Tabs are managed by BossApp/SplitViewState, not WindowManager")
+    @Suppress("DEPRECATION")
     actual fun closeWindowIfEmpty(windowId: String) {
         WindowManager.closeWindowIfEmpty(windowId)
     }

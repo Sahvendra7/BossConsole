@@ -198,7 +198,7 @@ object FileEventBus {
         val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
 
         // Track file open in dashboard
-        RecentFilesManager.recordFileOpen(cleanPath, ProjectState.selectedProject.value?.path)
+        RecentFilesManager.recordFileOpen(cleanPath, ProjectState.selectedProject.value.path)
 
         println("[FileEventBus] openFile: $cleanPath:$line:$column")
         _fileOpenEvents.emit(FileOpenEvent(cleanPath, fileName, line, column))

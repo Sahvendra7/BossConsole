@@ -237,7 +237,7 @@ private fun ContextMenuContent(
                                 modifier = Modifier.hoverable(subMenuInteractionSource)
                             ) {
                                 ContextMenuContent(
-                                    items = item.subMenu!!,
+                                    items = item.subMenu,
                                     onDismissRequest = onDismissRequest
                                 )
                             }

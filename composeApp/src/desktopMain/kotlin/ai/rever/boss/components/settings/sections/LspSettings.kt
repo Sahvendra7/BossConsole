@@ -653,7 +653,7 @@ private fun AddEditServerDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Template selection
-    var showTemplates by remember { mutableStateOf(!isEdit && server == null) }
+    var showTemplates by remember { mutableStateOf(!isEdit) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(

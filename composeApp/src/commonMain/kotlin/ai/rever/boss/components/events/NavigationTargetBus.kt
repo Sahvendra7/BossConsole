@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -52,6 +53,7 @@ object NavigationTargetBus {
      * Clear the replay cache. Call when navigation is complete to avoid
      * stale targets being replayed to new editors.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun clearCache() {
         _targets.resetReplayCache()
     }

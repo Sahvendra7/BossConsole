@@ -134,11 +134,7 @@ class SemanticHighlighter(
                 // Parse and analyze in PSI thread
                 val elements = PSIThreadBridge.readAction {
                     val ktFile = PSIBootstrap.parseKotlinFile(fileName, content)
-                    if (ktFile != null) {
-                        analyzeKotlinFile(ktFile)
-                    } else {
-                        emptyList()
-                    }
+                    analyzeKotlinFile(ktFile)
                 }
 
                 // Store in global cache

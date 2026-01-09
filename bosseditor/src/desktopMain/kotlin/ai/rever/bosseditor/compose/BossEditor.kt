@@ -314,8 +314,8 @@ fun BossEditor(
                 override val languageId = "kotlin"
                 override val fileExtensions = listOf("kt", "kts")
                 private val lexer = KotlinLexer()
-                override fun tokenizeLine(text: String, lineNumber: Int, startState: LexerState) =
-                    lexer.tokenizeLine(text, lineNumber, startState)
+                override fun tokenizeLine(line: String, lineNumber: Int, startState: LexerState) =
+                    lexer.tokenizeLine(line, lineNumber, startState)
             }
         } else {
             null

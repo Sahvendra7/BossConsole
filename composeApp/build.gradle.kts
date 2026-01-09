@@ -159,6 +159,11 @@ jxbrowser {
 }
 
 kotlin {
+    // Suppress expect/actual classes beta warning (KT-61573)
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     // Android target disabled for desktop-focused development
     /*
     androidTarget {
@@ -194,7 +199,6 @@ kotlin {
     sourceSets.all {
         languageSettings.optIn("kotlin.time.ExperimentalTime")
         languageSettings.optIn("kotlin.ExperimentalMultiplatform")
-        languageSettings.optIn("kotlin.ExperimentalMultiplatformApi")
     }
 
     // WASM targets disabled for desktop-focused development
@@ -347,18 +351,29 @@ compose.desktop {
         // Falls back to current JVM's home directory
         javaHome = System.getenv("JAVA_HOME") ?: System.getProperty("java.home")
         
-        // JVM arguments optimized for Apple Silicon and hardened runtime
-        jvmArgs(
-            // JCEF arguments
-            "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-            // Linux X11 WM_CLASS access for desktop integration
-            "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED",
-            "-Dapple.awt.application.appearance=system",
-            // Apple Silicon JIT compatibility flags
-            "-XX:+IgnoreUnrecognizedVMOptions"
-        )
+        // JVM arguments optimized for platform-specific runtime
+        // Build platform-specific args to avoid warnings about non-existent packages
+        val currentOs = System.getProperty("os.name").lowercase()
+        val platformJvmArgs = buildList {
+            // Common JCEF argument
+            add("--add-opens=java.desktop/sun.awt=ALL-UNNAMED")
+
+            // macOS-specific: lwawt packages only exist on macOS
+            if (currentOs.contains("mac")) {
+                add("--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED")
+                add("--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
+                add("-Dapple.awt.application.appearance=system")
+            }
+
+            // Linux-specific: X11 WM_CLASS access for desktop integration
+            if (currentOs.contains("linux")) {
+                add("--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED")
+            }
+
+            // Apple Silicon JIT compatibility flags (harmless on other platforms)
+            add("-XX:+IgnoreUnrecognizedVMOptions")
+        }
+        jvmArgs(*platformJvmArgs.toTypedArray())
         
         nativeDistributions {
             targetFormats(

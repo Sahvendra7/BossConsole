@@ -180,8 +180,6 @@ class JspLexer : BaseLexer() {
                         }
                     }
                 }
-
-                else -> pos++
             }
         }
 

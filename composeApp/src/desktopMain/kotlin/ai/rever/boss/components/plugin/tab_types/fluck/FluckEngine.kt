@@ -440,7 +440,6 @@ object FluckEngine {
      * Get the Chromium directory to use, with priority:
      * 1. Bundled BOSS-branded Chromium (in app resources)
      * 2. Cached BOSS-branded Chromium (~/.boss/boss-chromium/)
-     * 3. Fallback to default JxBrowser Chromium (~/.boss/jxbrowser-chromium/)
      */
     private fun getChromiumDir(userHome: String): java.nio.file.Path {
         // Priority 1: Bundled BOSS-branded Chromium (in app resources)
@@ -457,10 +456,11 @@ object FluckEngine {
             return cachedBrandedDir
         }
 
-        // Priority 3: Fallback to default JxBrowser Chromium
-        val defaultDir = Paths.get(userHome, ".boss", "jxbrowser-chromium")
-        println("Using default JxBrowser Chromium: $defaultDir")
-        return defaultDir
+        // No fallback - BOSS-branded Chromium is required
+        throw IllegalStateException(
+            "BOSS-branded Chromium not found. Please ensure boss-chromium is installed in " +
+            "either the app bundle or ~/.boss/boss-chromium/"
+        )
     }
 
     /**

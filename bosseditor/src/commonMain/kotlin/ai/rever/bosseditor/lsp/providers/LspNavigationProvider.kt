@@ -322,7 +322,6 @@ class LspNavigationProvider(
                 }
                 Pair(parts.joinToString("\n\n---\n\n"), true)
             }
-            else -> Pair("", false)
         }
     }
 

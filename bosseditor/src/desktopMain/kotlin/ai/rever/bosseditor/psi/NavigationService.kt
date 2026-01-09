@@ -226,7 +226,7 @@ class NavigationService {
     private fun findNavigationTarget(element: PsiElement, sourceFile: KtFile, sourceFilePath: String): NavigationTarget? {
         // Try to resolve reference via PSI (works for same-file navigation)
         val reference = element.reference
-            ?: (element.parent as? PsiElement)?.reference
+            ?: element.parent?.reference
 
         if (reference != null) {
             val resolved = reference.resolve()
@@ -503,8 +503,8 @@ class NavigationService {
             is KtProperty -> (element.name ?: "<anonymous>") to NavigationTargetKind.PROPERTY
             is KtParameter -> (element.name ?: "<anonymous>") to NavigationTargetKind.PARAMETER
             is KtTypeAlias -> (element.name ?: "<anonymous>") to NavigationTargetKind.TYPE_ALIAS
-            is KtPrimaryConstructor -> (element.getContainingClassOrObject()?.name ?: "<constructor>") to NavigationTargetKind.CONSTRUCTOR
-            is KtSecondaryConstructor -> (element.getContainingClassOrObject()?.name ?: "<constructor>") to NavigationTargetKind.CONSTRUCTOR
+            is KtPrimaryConstructor -> (element.getContainingClassOrObject().name ?: "<constructor>") to NavigationTargetKind.CONSTRUCTOR
+            is KtSecondaryConstructor -> (element.getContainingClassOrObject().name ?: "<constructor>") to NavigationTargetKind.CONSTRUCTOR
 
             // Generic named element
             is PsiNamedElement -> (element.name ?: "<unknown>") to NavigationTargetKind.UNKNOWN
@@ -526,7 +526,7 @@ class NavigationService {
 
         // Check if there's a reference via PSI
         if (element.reference?.resolve() != null) return true
-        if ((element.parent as? PsiElement)?.reference?.resolve() != null) return true
+        if (element.parent?.reference?.resolve() != null) return true
 
         // For Kotlin references
         val parent = element.parent
@@ -580,7 +580,7 @@ class NavigationService {
                 if (hasReference || inIndex) parent else null
             }
             element.reference != null -> element
-            (element.parent as? PsiElement)?.reference != null -> element.parent
+            element.parent?.reference != null -> element.parent
             else -> null
         }
 

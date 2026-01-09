@@ -167,31 +167,27 @@ fun BossEditorIntegration(
                     val ktFile = PSIThreadBridge.readAction {
                         PSIBootstrap.parseKotlinFile(fileName, content)
                     }
-                    if (ktFile == null) {
-                        NavigationResolveResult.NotFound
-                    } else {
-                        val result = PSIThreadBridge.readAction {
-                            navigationService.goToDefinition(ktFile, offset, currentFilePath)
+                    val result = PSIThreadBridge.readAction {
+                        navigationService.goToDefinition(ktFile, offset, currentFilePath)
+                    }
+                    when (result) {
+                        is NavigationResult.Found -> {
+                            NavigationResolveResult.Found(
+                                filePath = result.target.filePath,
+                                line = result.target.line,
+                                column = result.target.column
+                            )
                         }
-                        when (result) {
-                            is NavigationResult.Found -> {
+                        is NavigationResult.MultipleTargets -> {
+                            result.targets.firstOrNull()?.let { target ->
                                 NavigationResolveResult.Found(
-                                    filePath = result.target.filePath,
-                                    line = result.target.line,
-                                    column = result.target.column
+                                    filePath = target.filePath,
+                                    line = target.line,
+                                    column = target.column
                                 )
-                            }
-                            is NavigationResult.MultipleTargets -> {
-                                result.targets.firstOrNull()?.let { target ->
-                                    NavigationResolveResult.Found(
-                                        filePath = target.filePath,
-                                        line = target.line,
-                                        column = target.column
-                                    )
-                                } ?: NavigationResolveResult.NotFound
-                            }
-                            else -> NavigationResolveResult.NotFound
+                            } ?: NavigationResolveResult.NotFound
                         }
+                        else -> NavigationResolveResult.NotFound
                     }
                 } catch (e: Exception) {
                     println("[BossEditorIntegration] Navigation error: ${e.message}")
