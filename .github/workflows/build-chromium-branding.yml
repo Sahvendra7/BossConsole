@@ -635,6 +635,7 @@ jobs:
 
       - name: Create Archive
         run: |
+          sudo apt-get update && sudo apt-get install -y zip
           cd output
           zip -r ../boss-chromium-linux-arm64.zip .
 
