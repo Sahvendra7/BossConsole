@@ -8,6 +8,7 @@ import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Divider
@@ -191,7 +192,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     fun openProjectInCurrentWindow(project: Project) {
         // Use window-specific project state if available, otherwise fallback to global
         // Panels are opened automatically by BossApp's LaunchedEffect
-        windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+        selectProjectInWindow(windowProjectState, project)
     }
 
     // Helper function to validate and handle project selection

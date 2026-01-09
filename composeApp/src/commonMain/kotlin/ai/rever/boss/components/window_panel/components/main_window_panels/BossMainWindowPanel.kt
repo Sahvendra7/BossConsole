@@ -41,6 +41,7 @@ import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -715,7 +716,7 @@ fun BossTabsComponent.BossMainPanelContent(
                     splitViewState?.openUrlInActivePanel(url, "Loading...")
                 },
                 onOpenProject = { project ->
-                    windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+                    selectProjectInWindow(windowProjectState, project)
                 },
                 selectedProject = selectedProject,
                 onNewTab = {

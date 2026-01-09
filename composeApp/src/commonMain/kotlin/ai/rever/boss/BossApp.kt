@@ -34,6 +34,7 @@ import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.window.WindowProjectStateRegistry
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +71,7 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
 import ai.rever.boss.components.events.NavigationTargetBus
+import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.run.RunExecutionService
 import ai.rever.boss.run.RunnerSettingsManager
@@ -1390,6 +1392,115 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Listen for Dashboard events from Fluck tabs (when Dashboard is shown in empty browser tabs)
+    LaunchedEffect(splitViewState) {
+        // Handle file open events
+        DashboardEventBus.openFileEvents
+            .onEach { filePath ->
+                splitViewState.openFileInActivePanel(
+                    filePath,
+                    filePath.substringAfterLast('/').ifEmpty { "untitled" }
+                )
+            }
+            .launchIn(this)
+
+        // Handle URL open in new tab events
+        DashboardEventBus.openUrlInNewTabEvents
+            .onEach { url ->
+                splitViewState.openUrlInActivePanel(url, "Loading...")
+            }
+            .launchIn(this)
+
+        // Handle new tab events
+        DashboardEventBus.newTabEvents
+            .onEach {
+                showNewTabDialog = true
+            }
+            .launchIn(this)
+
+        // Handle new terminal events
+        DashboardEventBus.newTerminalEvents
+            .onEach {
+                val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+                val projectPath = windowProjectState.selectedProject.value.path
+                val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                    id = "terminal-$timestamp",
+                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                    title = "Terminal",
+                    icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                    workingDirectory = projectPath.ifEmpty { null }
+                )
+                splitViewState.getActiveTabsComponent()?.addTab(terminalTab)
+            }
+            .launchIn(this)
+
+        // Handle project dialog events
+        DashboardEventBus.showProjectDialogEvents
+            .onEach {
+                showProjectDialog = true
+            }
+            .launchIn(this)
+
+        // Handle file dialog events
+        DashboardEventBus.showFileDialogEvents
+            .onEach {
+                // File dialog is typically handled by a system file chooser
+                // For now, show new tab dialog with file option
+                showNewTabDialog = true
+            }
+            .launchIn(this)
+
+        // Handle new project events
+        DashboardEventBus.showNewProjectEvents
+            .onEach {
+                showNewProjectDialog = true
+            }
+            .launchIn(this)
+
+        // Handle split template events
+        DashboardEventBus.applySplitTemplateEvents
+            .onEach { template ->
+                // Split templates from Fluck Dashboard - apply using active panel
+                val activeComponent = splitViewState.getActiveTabsComponent()
+                if (activeComponent != null) {
+                    val activePanelId = splitViewState.activePanelId
+                    val projectPath = windowProjectState.selectedProject.value.path.ifEmpty {
+                        System.getProperty("user.home")
+                    }
+                    // Create tabs from template panels
+                    val leftPanelConfig = template.panels.find { it.position == "left" }
+                    val rightPanelConfig = template.panels.find { it.position == "right" }
+
+                    leftPanelConfig?.let { config ->
+                        createTabFromTemplateConfig(config, projectPath)?.let { tab ->
+                            activeComponent.addTab(tab)
+                            if (rightPanelConfig != null) {
+                                createTabFromTemplateConfig(rightPanelConfig, projectPath)?.let { rightTab ->
+                                    splitViewState.splitPanel(
+                                        panelId = activePanelId,
+                                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                                        tabToMove = rightTab
+                                    )
+                                }
+                            }
+                        }
+                    } ?: rightPanelConfig?.let { config ->
+                        createTabFromTemplateConfig(config, projectPath)?.let { tab ->
+                            activeComponent.addTab(tab)
+                        }
+                    }
+                }
+            }
+            .launchIn(this)
+
+        // Handle plugin activation events
+        DashboardEventBus.activatePluginEvents
+            .onEach { pluginId ->
+                draggablePanelComponent.activatePlugin(pluginId)
+            }
+            .launchIn(this)
+    }
+
     // Separate effect to handle session resolution AFTER Last Session may have loaded
     // This ensures terminal handler is marked ready even if session resolves late
     LaunchedEffect(isSessionResolved, workspaceManager.currentWorkspace.value) {
@@ -2333,8 +2444,7 @@ fun ComponentContext.BossApp(
                         focusRequester.requestFocus()
                     },
                     onProjectCreated = { project ->
-                        // Use window-specific project state if available, otherwise fallback to global
-                        windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+                        selectProjectInWindow(windowProjectState, project)
                         showNewProjectDialog = false
                         focusRequester.requestFocus()
                     }
@@ -2367,9 +2477,54 @@ fun ComponentContext.BossApp(
     }
 }
 
+/**
+ * Create a tab from template panel configuration.
+ * Used by DashboardEventBus handlers for split template events from Fluck Dashboard.
+ */
+private fun createTabFromTemplateConfig(
+    panelConfig: ai.rever.boss.dashboard.TemplatePanelConfig,
+    projectPath: String
+): ai.rever.boss.components.registery.TabInfo? {
+    val timestamp = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
 
-
-
+    return when (panelConfig.type) {
+        "terminal" -> {
+            val command = panelConfig.content.command?.let {
+                ai.rever.boss.dashboard.SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            }
+            ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                id = "terminal-$timestamp",
+                typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                title = command?.substringBefore(" ")?.substringAfterLast("/") ?: "Terminal",
+                icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                workingDirectory = projectPath,
+                initialCommand = command
+            )
+        }
+        "browser" -> {
+            val url = panelConfig.content.url ?: ""
+            ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+                id = "fluck-$timestamp",
+                typeId = ai.rever.boss.components.plugin.tab_types.fluck.Fluck.typeId,
+                _title = "Loading...",
+                url = url
+            )
+        }
+        "editor" -> {
+            val filePath = panelConfig.content.filePath?.let {
+                ai.rever.boss.dashboard.SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+            } ?: return null
+            ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+                id = "editor-$timestamp",
+                typeId = ai.rever.boss.components.plugin.tab_types.CodeEditor.typeId,
+                title = filePath.substringAfterLast('/'),
+                icon = ai.rever.boss.components.plugin.tab_types.CodeEditor.icon,
+                filePath = filePath
+            )
+        }
+        else -> null
+    }
+}
 
 
 

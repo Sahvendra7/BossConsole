@@ -4,12 +4,15 @@ import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
 import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.InfoDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
+import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.overlays.contextMenu
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
@@ -17,6 +20,9 @@ import ai.rever.boss.components.events.KeyboardEventBus
 import ai.rever.boss.components.events.KeyEventSource
 import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.WindowOperations
+import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1201,82 +1207,133 @@ fun JxBrowserCompose(
             }
         }
 
-        // Browser content using native Compose BrowserView with custom context menu
-        BrowserView(
-            state = browserViewState,
-            modifier = Modifier
-                .fillMaxSize()
-                .onPointerEvent(PointerEventType.Press) { event ->
-                    // Access native AWT MouseEvent for extended button detection (Issue #325)
-                    val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
+        // Content area: Show Dashboard for about:blank, otherwise show browser
+        val currentUrl = urlInput.text
+        val showDashboard = currentUrl.isEmpty() || currentUrl == "about:blank"
 
-                    // Handle middle-click - close tab (Issue #328)
-                    if (awtEvent?.button == 2) {
-                        onCloseTab?.invoke()
-                        event.changes.forEach { it.consume() }
-                        return@onPointerEvent
+        if (showDashboard) {
+            // Dashboard for empty/about:blank URLs
+            val windowProjectState = LocalWindowProjectState.current
+            val selectedProject by windowProjectState?.selectedProject?.collectAsState()
+                ?: ProjectState.selectedProject.collectAsState()
+
+            Dashboard(
+                onOpenFile = { path ->
+                    coroutineScope.launch { DashboardEventBus.openFile(path) }
+                },
+                onOpenUrl = { url ->
+                    // Navigate browser to the URL
+                    if (isBrowserEnvironmentValid()) {
+                        browser.navigation().loadUrl(url)
                     }
-
-                    // Handle mouse back button - navigate back
-                    // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
-                    if (awtEvent?.button in listOf(4, 6, 8)) {
-                        if (isBrowserEnvironmentValid() && browser.navigation().canGoBack()) {
-                            browser.navigation().goBack()
-                        }
-                        event.changes.forEach { it.consume() }
-                        return@onPointerEvent
-                    }
-
-                    // Handle mouse forward button - navigate forward
-                    // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
-                    if (awtEvent?.button in listOf(5, 7, 9)) {
-                        if (isBrowserEnvironmentValid() && browser.navigation().canGoForward()) {
-                            browser.navigation().goForward()
-                        }
-                        event.changes.forEach { it.consume() }
-                        return@onPointerEvent
-                    }
-
-                    // Handle right-click for context menu
-                    if (event.button == PointerButton.Secondary) {
-                        // Store the click position
-                        val change = event.changes.firstOrNull()
-                        if (change != null) {
-                            rightClickPosition = change.position
-
-                            // Check for form fields first (Issue #56 - Secret integration)
-                            coroutineScope.launch {
-                                focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
-                            }
-
-                            // Get the right-clicked link URL, selected text, and check for video
-                            browser.mainFrame().ifPresent { frame ->
-                                // Get the right-clicked link URL
-                                val linkUrl = frame.executeJavaScript<String?>(BrowserJavaScripts.getRightClickedLinkUrl)
-
-                                coroutineScope.launch(Dispatchers.Main) {
-                                    rightClickedLinkUrl = linkUrl
-                                }
-
-                                // Get selected text (Issue #159 - Copy text context menu)
-                                val selection = frame.executeJavaScript<String?>(BrowserJavaScripts.getSelectedText)
-
-                                coroutineScope.launch(Dispatchers.Main) {
-                                    selectedText = if (!selection.isNullOrBlank()) selection else null
-                                }
-
-                                // Check if there's a video element on the page
-                                val hasVideo = frame.executeJavaScript<Boolean>(BrowserJavaScripts.hasVideoElements)
-
-                                coroutineScope.launch(Dispatchers.Main) {
-                                    hasVideoAtClick = hasVideo ?: false
-                                }
-                            }
-                        }
-                    }
+                },
+                onOpenProject = { project ->
+                    selectProjectInWindow(windowProjectState, project)
+                },
+                selectedProject = selectedProject,
+                onNewTab = {
+                    coroutineScope.launch { DashboardEventBus.newTab() }
+                },
+                onNewTerminal = {
+                    coroutineScope.launch { DashboardEventBus.newTerminal() }
+                },
+                onNewWindow = {
+                    WindowOperations.createNewWindow()
+                },
+                onOpenProjectDialog = {
+                    coroutineScope.launch { DashboardEventBus.showProjectDialog() }
+                },
+                onOpenFileDialog = {
+                    coroutineScope.launch { DashboardEventBus.showFileDialog() }
+                },
+                onNewProject = {
+                    coroutineScope.launch { DashboardEventBus.showNewProject() }
+                },
+                onApplySplitTemplate = { template ->
+                    coroutineScope.launch { DashboardEventBus.applySplitTemplate(template) }
+                },
+                onActivatePlugin = { pluginId ->
+                    coroutineScope.launch { DashboardEventBus.activatePlugin(pluginId) }
                 }
-                .contextMenu(items = contextMenuItems)
-        )
+            )
+        } else {
+            // Browser content using native Compose BrowserView with custom context menu
+            BrowserView(
+                state = browserViewState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onPointerEvent(PointerEventType.Press) { event ->
+                        // Access native AWT MouseEvent for extended button detection (Issue #325)
+                        val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
+
+                        // Handle middle-click - close tab (Issue #328)
+                        if (awtEvent?.button == 2) {
+                            onCloseTab?.invoke()
+                            event.changes.forEach { it.consume() }
+                            return@onPointerEvent
+                        }
+
+                        // Handle mouse back button - navigate back
+                        // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
+                        if (awtEvent?.button in listOf(4, 6, 8)) {
+                            if (isBrowserEnvironmentValid() && browser.navigation().canGoBack()) {
+                                browser.navigation().goBack()
+                            }
+                            event.changes.forEach { it.consume() }
+                            return@onPointerEvent
+                        }
+
+                        // Handle mouse forward button - navigate forward
+                        // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
+                        if (awtEvent?.button in listOf(5, 7, 9)) {
+                            if (isBrowserEnvironmentValid() && browser.navigation().canGoForward()) {
+                                browser.navigation().goForward()
+                            }
+                            event.changes.forEach { it.consume() }
+                            return@onPointerEvent
+                        }
+
+                        // Handle right-click for context menu
+                        if (event.button == PointerButton.Secondary) {
+                            // Store the click position
+                            val change = event.changes.firstOrNull()
+                            if (change != null) {
+                                rightClickPosition = change.position
+
+                                // Check for form fields first (Issue #56 - Secret integration)
+                                coroutineScope.launch {
+                                    focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
+                                }
+
+                                // Get the right-clicked link URL, selected text, and check for video
+                                browser.mainFrame().ifPresent { frame ->
+                                    // Get the right-clicked link URL
+                                    val linkUrl = frame.executeJavaScript<String?>(BrowserJavaScripts.getRightClickedLinkUrl)
+
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        rightClickedLinkUrl = linkUrl
+                                    }
+
+                                    // Get selected text (Issue #159 - Copy text context menu)
+                                    val selection = frame.executeJavaScript<String?>(BrowserJavaScripts.getSelectedText)
+
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        selectedText = if (!selection.isNullOrBlank()) selection else null
+                                    }
+
+                                    // Check if there's a video element on the page
+                                    val hasVideo = frame.executeJavaScript<Boolean>(BrowserJavaScripts.hasVideoElements)
+
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        hasVideoAtClick = hasVideo ?: false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .contextMenu(items = contextMenuItems)
+            )
+        }
         }
         
         // Floating dropdown overlay

@@ -1,8 +1,21 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
+
+/**
+ * Helper function to select a project using window-specific state if available,
+ * falling back to global ProjectState otherwise.
+ *
+ * This eliminates the repeated pattern:
+ * `windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)`
+ */
+fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Project) {
+    windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+}
 
 /**
  * CompositionLocal to provide WindowProjectState to descendant composables.
