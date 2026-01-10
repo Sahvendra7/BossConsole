@@ -646,13 +646,14 @@ jobs:
         run: |
           echo "📦 Installing dependencies required for jpackage..."
           sudo apt-get update
-          sudo apt-get install -y fakeroot dpkg rpm
+          sudo apt-get install -y fakeroot dpkg rpm unzip
 
           # Verify installations
           echo "✅ Installed packages:"
           dpkg-deb --version || echo "dpkg-deb not found"
           fakeroot --version || echo "fakeroot not found"
           rpm --version || echo "rpm not found"
+          unzip -v | head -1 || echo "unzip not found"
 
       - name: 🔍 Get JxBrowser Version
         run: |

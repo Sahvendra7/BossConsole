@@ -74,6 +74,17 @@ object ChromiumAutoDownloader {
             return false
         }
 
+        // On macOS, verify the executable has proper permissions
+        // This catches cached Chromium from older versions that didn't set execute bit correctly
+        if (System.getProperty("os.name").lowercase().contains("mac")) {
+            val executableName = executableNameFile.readText().trim()
+            val executablePath = dir.resolve("$executableName/Contents/MacOS/BOSS").toFile()
+            if (executablePath.exists() && !executablePath.canExecute()) {
+                println("Chromium executable missing execute permission, will re-download: $executablePath")
+                return false
+            }
+        }
+
         return true
     }
 
@@ -257,8 +268,21 @@ object ChromiumAutoDownloader {
                     // Preserve executable bit on Unix
                     if (!System.getProperty("os.name").lowercase().contains("win")) {
                         val name = entry.name.lowercase()
-                        if (name.contains("chromium") || name.endsWith(".so") ||
-                            !name.contains(".") || name.endsWith(".sh")) {
+                        // Check if this is an executable file:
+                        // - Files inside macOS .app/Contents/MacOS/ directories
+                        // - Files containing "chromium" in the name
+                        // - Shared libraries (.so files)
+                        // - Shell scripts (.sh files)
+                        // - Files without extensions (common for Unix executables)
+                        val isMacOSExecutable = name.contains(".app/contents/macos/")
+                        val isChromium = name.contains("chromium") || name.contains("boss")
+                        val isSharedLib = name.endsWith(".so")
+                        val isShellScript = name.endsWith(".sh")
+                        // For "no extension" check, only look at the filename not the full path
+                        val fileName = targetPath.fileName.toString()
+                        val hasNoExtension = !fileName.contains(".")
+
+                        if (isMacOSExecutable || isChromium || isSharedLib || isShellScript || hasNoExtension) {
                             targetPath.toFile().setExecutable(true)
                         }
                     }
