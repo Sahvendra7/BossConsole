@@ -164,6 +164,17 @@ jobs:
           echo "Branding complete. Output:"
           ls -la output/
 
+          # Replace product_logo_32.png in Chromium Framework (used for notifications)
+          # The branding tool doesn't replace this, causing Chrome icon in notifications
+          FRAMEWORK_RESOURCES="output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Resources"
+          if [ -f "$FRAMEWORK_RESOURCES/product_logo_32.png" ]; then
+            echo "Replacing product_logo_32.png with BOSS icon..."
+            cp assets/product_logo_32.png "$FRAMEWORK_RESOURCES/product_logo_32.png"
+            echo "product_logo_32.png replaced successfully"
+          else
+            echo "::warning::product_logo_32.png not found at expected location"
+          fi
+
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
             # For macOS, find the .app bundle and extract the executable name
@@ -319,6 +330,17 @@ jobs:
             -o output
 
           ls -la output/
+
+          # Replace product_logo_32.png in Chromium Framework (used for notifications)
+          # The branding tool doesn't replace this, causing Chrome icon in notifications
+          FRAMEWORK_RESOURCES="output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Resources"
+          if [ -f "$FRAMEWORK_RESOURCES/product_logo_32.png" ]; then
+            echo "Replacing product_logo_32.png with BOSS icon..."
+            cp assets/product_logo_32.png "$FRAMEWORK_RESOURCES/product_logo_32.png"
+            echo "product_logo_32.png replaced successfully"
+          else
+            echo "::warning::product_logo_32.png not found at expected location"
+          fi
 
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
