@@ -528,6 +528,16 @@ fun ComponentContext.BossApp(
         setupDownloadTabCloseCallback(splitViewState)
     }
 
+    // Cancel any active drag when window loses focus (prevents stuck ghost)
+    LaunchedEffect(tabDragComponent, windowId) {
+        WindowFocusManager.focusedWindowFlow.collect { focusedWindowId ->
+            // If this window lost focus and there's an active drag, cancel it
+            if (focusedWindowId != windowId && tabDragComponent.isDragging) {
+                tabDragComponent.cancelDrag()
+            }
+        }
+    }
+
     // Consume any pending initial tab for this window (from "Open in New Window" context menu)
     LaunchedEffect(windowId, splitViewState) {
         val pendingTab = consumePendingInitialTab(windowId)

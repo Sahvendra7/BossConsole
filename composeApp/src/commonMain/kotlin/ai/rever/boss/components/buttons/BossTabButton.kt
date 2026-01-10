@@ -4,6 +4,7 @@ import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.components.model.TabDraggableComponent
+import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.overlays.ContextMenuItem
@@ -77,7 +78,7 @@ fun BossTabButton(
     panelId: String? = null,
     tabIndex: Int = -1,
     onDragStart: () -> Unit = {},
-    onDragEnd: () -> Unit = {}
+    onDragEnd: (TabDropResult?) -> Unit = {}
 ) {
     // Determine which icon to use
     val painter = when {
@@ -157,7 +158,8 @@ fun BossTabButton(
     var windowPosition by remember { mutableStateOf(Offset.Zero) }
 
     // Register tab bounds for drag system
-    val compositeTabId = if (panelId != null && tabInfo != null) "$panelId:${tabInfo.id}" else null
+    // Include tabIndex >= 0 check to avoid creating invalid composite IDs with index -1
+    val compositeTabId = if (panelId != null && tabInfo != null && tabIndex >= 0) "$panelId:${tabInfo.id}" else null
     DisposableEffect(compositeTabId) {
         onDispose {
             compositeTabId?.let { tabDragComponent?.unregisterTabBounds(it) }
@@ -203,10 +205,10 @@ fun BossTabButton(
                     coordinates.size.width,
                     coordinates.size.height
                 )
-                // Register bounds for drag system
-                if (compositeTabId != null && tabDragComponent != null) {
+                // Register bounds for drag system (include actual index for LazyRow virtualization)
+                if (compositeTabId != null && tabDragComponent != null && tabIndex >= 0) {
                     val bounds = coordinates.boundsInWindow()
-                    tabDragComponent.registerTabBounds(compositeTabId, bounds)
+                    tabDragComponent.registerTabBounds(compositeTabId, bounds, tabIndex)
                 }
             }
             .pointerInput(contextMenuItems) {
@@ -253,7 +255,9 @@ fun BossTabButton(
                                 tabDragComponent.updateDrag(dragAmount)
                             },
                             onDragEnd = {
-                                onDragEnd()
+                                // Always clean up drag state first to prevent stuck ghost
+                                val result = tabDragComponent.endDrag()
+                                onDragEnd(result)
                             },
                             onDragCancel = {
                                 tabDragComponent.cancelDrag()

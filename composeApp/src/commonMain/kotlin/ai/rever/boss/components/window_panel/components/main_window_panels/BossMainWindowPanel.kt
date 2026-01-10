@@ -10,6 +10,7 @@ import ai.rever.boss.components.bars.horizontal.HorizontalBarRow
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.buttons.BossTabButton
 import ai.rever.boss.components.common.rememberFaviconLoader
+import ai.rever.boss.components.model.ScrollDirection
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
@@ -65,6 +66,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ViewColumn
 import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.runtime.*
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
@@ -102,7 +104,7 @@ private fun BossTabButtonWithFavicon(
     tabDragComponent: TabDraggableComponent? = null,
     panelId: String? = null,
     tabIndex: Int = -1,
-    onDragEnd: () -> Unit = {}
+    onDragEnd: (TabDropResult?) -> Unit = {}
 ) {
     // Load favicon using shared composable (with error handling and caching)
     val loadedFavicon = rememberFaviconLoader(config)
@@ -157,6 +159,46 @@ fun BossTabsComponent.BossMainTabBar(
     val isScrollable by remember {
         derivedStateOf {
             listState.canScrollForward || listState.canScrollBackward
+        }
+    }
+
+    // Coroutine scope for edge scroll animation
+    val edgeScrollScope = rememberCoroutineScope()
+
+    // Set up edge scroll handler for drag-and-drop
+    // Each panel registers its own callback to avoid race conditions with multiple panels
+    DisposableEffect(tabDragComponent, currentPanelId) {
+        if (tabDragComponent != null && currentPanelId != null) {
+            tabDragComponent.registerEdgeScrollCallback(currentPanelId) { direction ->
+                edgeScrollScope.launch {
+                    val layoutInfo = listState.layoutInfo
+                    val visibleItems = layoutInfo.visibleItemsInfo
+
+                    when (direction) {
+                        ScrollDirection.LEFT -> {
+                            // Scroll to previous item
+                            val firstVisible = visibleItems.firstOrNull()?.index ?: 0
+                            if (firstVisible > 0) {
+                                listState.animateScrollToItem(firstVisible - 1)
+                            }
+                        }
+                        ScrollDirection.RIGHT -> {
+                            // Scroll to next item
+                            val lastVisible = visibleItems.lastOrNull()?.index ?: 0
+                            val totalItems = tabsState.value.tabs.size
+                            if (lastVisible < totalItems - 1) {
+                                listState.animateScrollToItem(lastVisible + 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        onDispose {
+            // Unregister this panel's callback to prevent memory leaks
+            if (tabDragComponent != null && currentPanelId != null) {
+                tabDragComponent.unregisterEdgeScrollCallback(currentPanelId)
+            }
         }
     }
 
@@ -244,11 +286,9 @@ fun BossTabsComponent.BossMainTabBar(
                         tabDragComponent = tabDragComponent,
                         panelId = currentPanelId,
                         tabIndex = index,
-                        onDragEnd = {
-                            // Handle drop result
-                            tabDragComponent?.endDrag()?.let { result ->
-                                onTabDropResult(result)
-                            }
+                        onDragEnd = { result ->
+                            // endDrag() already called in BossTabButton, just handle result
+                            result?.let { onTabDropResult(it) }
                         },
                         contextMenuItems = buildList {
                             // Track interaction when context menu is opened

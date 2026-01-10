@@ -13,6 +13,20 @@ import androidx.compose.ui.geometry.Rect
 import java.util.concurrent.atomic.AtomicLong
 
 /**
+ * Information about a tab's bounds and its actual index in the tab list.
+ * Used for proper reorder calculation when LazyRow virtualizes tabs.
+ */
+data class TabBoundInfo(
+    val bounds: Rect,
+    val actualIndex: Int
+)
+
+/**
+ * Direction for auto-scroll during tab drag when ghost reaches edge.
+ */
+enum class ScrollDirection { LEFT, RIGHT }
+
+/**
  * Information about a tab being dragged.
  */
 data class DraggingTabInfo(
@@ -161,9 +175,9 @@ class TabDraggableComponent {
 
     /**
      * Track tab bounds for reorder detection within a tab bar.
-     * Key: tabId (format: "panelId:tabId"), Value: bounds in window coordinates
+     * Key: tabId (format: "panelId:tabId"), Value: bounds and actual index
      */
-    val tabBounds = mutableStateMapOf<String, Rect>()
+    val tabBounds = mutableStateMapOf<String, TabBoundInfo>()
 
     /**
      * Track tab bar bounds for each panel.
@@ -197,6 +211,53 @@ class TabDraggableComponent {
     private val dropTargetUpdateInterval = 16L
 
     /**
+     * Distance from tab bar edge (in pixels) to trigger auto-scroll.
+     * When drag position is within this threshold of the left or right edge,
+     * auto-scroll will be triggered.
+     */
+    private val edgeScrollThreshold = 60f
+
+    /**
+     * Edge scroll interval in milliseconds.
+     * Prevents excessive scroll animations by throttling callback invocations.
+     */
+    private val edgeScrollInterval = 150L
+
+    /**
+     * Timestamp of last edge scroll callback invocation for throttling.
+     * Prevents multiple simultaneous scroll animations.
+     */
+    private val lastEdgeScrollTime = AtomicLong(0L)
+
+    /**
+     * Map of edge scroll callbacks keyed by panelId.
+     * Each panel registers its own callback to handle scroll in its tab bar.
+     * This avoids the race condition where multiple panels would overwrite a single callback.
+     */
+    private val edgeScrollCallbacks = mutableStateMapOf<String, (ScrollDirection) -> Unit>()
+
+    /**
+     * Register an edge scroll callback for a specific panel.
+     * Called when a panel's tab bar is composed.
+     *
+     * @param panelId The unique identifier for the panel
+     * @param callback Callback invoked with scroll direction when drag reaches edge
+     */
+    fun registerEdgeScrollCallback(panelId: String, callback: (ScrollDirection) -> Unit) {
+        edgeScrollCallbacks[panelId] = callback
+    }
+
+    /**
+     * Unregister the edge scroll callback for a specific panel.
+     * Called when a panel's tab bar is disposed.
+     *
+     * @param panelId The unique identifier for the panel
+     */
+    fun unregisterEdgeScrollCallback(panelId: String) {
+        edgeScrollCallbacks.remove(panelId)
+    }
+
+    /**
      * Start dragging a tab.
      */
     fun startDragging(
@@ -221,7 +282,7 @@ class TabDraggableComponent {
 
     /**
      * Update the drag delta during a drag gesture.
-     * Throttled to ~60fps to avoid excessive drop target calculations.
+     * Throttled to ~60fps to avoid excessive drop target and edge scroll calculations.
      */
     fun updateDrag(delta: Offset) {
         if (draggingTab == null || dragStartPosition == null) return
@@ -234,6 +295,7 @@ class TabDraggableComponent {
             // Use compareAndSet to avoid race conditions
             if (lastDropTargetUpdateTime.compareAndSet(lastUpdate, now)) {
                 updateDropTarget()
+                checkEdgeScroll()  // Check if we should trigger auto-scroll
             }
         }
     }
@@ -304,24 +366,26 @@ class TabDraggableComponent {
 
     /**
      * Calculate the index where a tab would be inserted during reorder.
+     * Uses the actual tab index stored in TabBoundInfo to handle LazyRow virtualization.
      */
     private fun calculateReorderIndex(panelId: String, position: Offset): Int {
         val relevantTabs = tabBounds.entries
             .filter { (tabId, _) -> tabId.startsWith("$panelId:") }
-            .sortedBy { it.value.left }
+            .sortedBy { it.value.bounds.left }
 
         if (relevantTabs.isEmpty()) return 0
 
-        for ((index, entry) in relevantTabs.withIndex()) {
-            val bounds = entry.value
-            val midpoint = bounds.left + bounds.width / 2
+        for (entry in relevantTabs) {
+            val info = entry.value
+            val midpoint = info.bounds.left + info.bounds.width / 2
 
             if (position.x < midpoint) {
-                return index
+                return info.actualIndex  // Use actual tab index, not loop index
             }
         }
 
-        return relevantTabs.size
+        // Return index after the last visible tab
+        return relevantTabs.lastOrNull()?.value?.actualIndex?.plus(1) ?: 0
     }
 
     /**
@@ -392,11 +456,50 @@ class TabDraggableComponent {
     }
 
     /**
+     * Check if drag position is near tab bar edge and trigger auto-scroll.
+     * Called from updateDrag() at throttled intervals (~60fps).
+     * Additional throttling (150ms) is applied to the scroll callback itself
+     * to prevent multiple simultaneous scroll animations.
+     */
+    private fun checkEdgeScroll() {
+        val currentPosition = getCurrentPosition() ?: return
+        val dragging = draggingTab ?: return
+        val barBounds = tabBarBounds[dragging.sourcePanelId] ?: return
+
+        // Check if within vertical bounds of tab bar
+        if (currentPosition.y < barBounds.top || currentPosition.y > barBounds.bottom) return
+
+        val leftEdge = barBounds.left + edgeScrollThreshold
+        val rightEdge = barBounds.right - edgeScrollThreshold
+
+        // Determine scroll direction based on position
+        val direction: ScrollDirection? = when {
+            currentPosition.x < leftEdge -> ScrollDirection.LEFT
+            currentPosition.x > rightEdge -> ScrollDirection.RIGHT
+            else -> null
+        }
+
+        // If at an edge, trigger scroll with throttling
+        if (direction != null) {
+            val now = System.currentTimeMillis()
+            val lastScroll = lastEdgeScrollTime.get()
+            if (now - lastScroll >= edgeScrollInterval) {
+                if (lastEdgeScrollTime.compareAndSet(lastScroll, now)) {
+                    edgeScrollCallbacks[dragging.sourcePanelId]?.invoke(direction)
+                }
+            }
+        }
+    }
+
+    /**
      * Register tab bounds for a specific tab.
      * The tabId should be in the format "panelId:tabId" for proper grouping.
+     * @param compositeTabId Format: "panelId:tabId"
+     * @param bounds The tab's bounds in window coordinates
+     * @param actualIndex The tab's actual index in the tab list (important for LazyRow)
      */
-    fun registerTabBounds(compositeTabId: String, bounds: Rect) {
-        tabBounds[compositeTabId] = bounds
+    fun registerTabBounds(compositeTabId: String, bounds: Rect, actualIndex: Int) {
+        tabBounds[compositeTabId] = TabBoundInfo(bounds, actualIndex)
     }
 
     /**
