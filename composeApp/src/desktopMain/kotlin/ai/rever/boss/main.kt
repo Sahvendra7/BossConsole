@@ -425,30 +425,59 @@ private fun setupNativeLibraryPaths() {
 
 private fun extractPty4jNatives(targetDir: File) {
     try {
+        val osName = System.getProperty("os.name").lowercase()
+        val osArch = System.getProperty("os.arch").lowercase()
+
+        // Determine platform and library name
+        val (platformPath, libName) = when {
+            osName.contains("mac") || osName.contains("darwin") -> "darwin" to "libpty.dylib"
+            osName.contains("linux") -> {
+                val arch = when {
+                    osArch == "aarch64" || osArch == "arm64" -> "aarch64"
+                    osArch == "amd64" || osArch == "x86_64" -> "x86-64"
+                    osArch.startsWith("arm") -> "arm"
+                    osArch == "ppc64le" -> "ppc64le"
+                    osArch == "mips64el" -> "mips64el"
+                    osArch == "riscv64" -> "riscv64"
+                    osArch.contains("86") -> "x86"
+                    else -> osArch
+                }
+                "linux/$arch" to "libpty.so"
+            }
+            osName.contains("freebsd") -> {
+                val arch = if (osArch == "amd64" || osArch == "x86_64") "x86-64" else "x86"
+                "freebsd/$arch" to "libpty.so"
+            }
+            else -> {
+                println("Warning: Unsupported platform for PTY4J: $osName/$osArch")
+                return
+            }
+        }
+
         // Create platform-specific directory
-        val platformDir = File(targetDir, "darwin")
+        val platformDir = File(targetDir, platformPath)
         if (!platformDir.exists()) {
             platformDir.mkdirs()
         }
-        
-        // Check if libpty.dylib already exists
-        val libptyFile = File(platformDir, "libpty.dylib")
+
+        // Check if native library already exists
+        val libptyFile = File(platformDir, libName)
         if (libptyFile.exists() && libptyFile.length() > 0) {
-            println("PTY4J natives already extracted")
+            println("PTY4J natives already extracted for $platformPath")
             return
         }
-        
+
         // Find PTY4J jar in classpath
         val classLoader = Thread.currentThread().contextClassLoader
-        
+
         // Search for native resources - PTY4J stores them under resources/com/pty4j/native/
         val nativeResources = listOf(
-            "com/pty4j/native/darwin/libpty.dylib",
-            "resources/com/pty4j/native/darwin/libpty.dylib",
-            "darwin/libpty.dylib",
-            "native/darwin/libpty.dylib"
+            "com/pty4j/native/$platformPath/$libName",
+            "resources/com/pty4j/native/$platformPath/$libName",
+            "$platformPath/$libName",
+            "native/$platformPath/$libName"
         )
-        
+
         var extracted = false
         for (resource in nativeResources) {
             try {
@@ -460,7 +489,7 @@ private fun extractPty4jNatives(targetDir: File) {
                         }
                     }
                     libptyFile.setExecutable(true)
-                    println("Extracted PTY4J native from: $resource")
+                    println("Extracted PTY4J native from: $resource to ${libptyFile.absolutePath}")
                     extracted = true
                     break
                 }
@@ -468,9 +497,10 @@ private fun extractPty4jNatives(targetDir: File) {
                 // Try next resource
             }
         }
-        
+
         if (!extracted) {
-            println("Warning: Could not extract PTY4J native libraries")
+            println("Warning: Could not extract PTY4J native libraries for $platformPath")
+            println("Searched for: $nativeResources")
         }
     } catch (e: Exception) {
         println("Error extracting PTY4J natives: ${e.message}")
