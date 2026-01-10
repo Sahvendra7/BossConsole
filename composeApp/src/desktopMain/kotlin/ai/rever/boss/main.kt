@@ -3,7 +3,7 @@ package ai.rever.boss
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.cli.CLICommandHandler
 import ai.rever.boss.config.ChromiumAutoDownloader
-import ai.rever.boss.components.dialogs.ChromiumDownloadDialog
+import ai.rever.boss.components.dialogs.ChromiumDownloadContent
 import BossTheme
 import BossDarkBackground
 import androidx.compose.foundation.background
@@ -320,7 +320,7 @@ fun main(args: Array<String>) {
                             .fillMaxSize()
                             .background(BossDarkBackground)
                     ) {
-                        ChromiumDownloadDialog(
+                        ChromiumDownloadContent(
                             progress = downloadProgress.progressFraction,
                             downloadedMB = downloadProgress.downloadedMB,
                             totalMB = downloadProgress.totalMB,
