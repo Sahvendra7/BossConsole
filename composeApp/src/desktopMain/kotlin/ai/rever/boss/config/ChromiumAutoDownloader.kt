@@ -171,6 +171,11 @@ object ChromiumAutoDownloader {
                     // Clean up old JxBrowser default Chromium directory if it exists
                     cleanupOldChromium()
 
+                    // Small delay after extraction to let file system sync
+                    // This helps avoid a race condition in JxBrowser's IPC layer
+                    // that can cause crashes on first launch after extraction
+                    kotlinx.coroutines.delay(500)
+
                     println("BOSS-branded Chromium installed successfully to: $targetDir")
                     onProgress(DownloadProgress(0, 0, isComplete = true))
                     Result.success(targetDir)
