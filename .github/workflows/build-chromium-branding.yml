@@ -175,6 +175,35 @@ jobs:
             echo "::warning::product_logo_32.png not found at expected location"
           fi
 
+          # Fix notification icon: Remove Assets.car and CFBundleIconName
+          # Assets.car contains compiled AppIcon that overrides app.icns
+          # CFBundleIconName tells macOS to look in Asset Catalog instead of app.icns
+          echo "Fixing notification icon..."
+
+          # Delete all Assets.car files
+          find output/BOSS.app -name "Assets.car" -type f -delete
+          echo "Deleted all Assets.car files"
+
+          # Remove CFBundleIconName from Alerts helper Info.plist
+          ALERTS_PLIST="output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers/BOSS Helper (Alerts).app/Contents/Info.plist"
+          if [ -f "$ALERTS_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$ALERTS_PLIST" 2>/dev/null || true
+            echo "Removed CFBundleIconName from Alerts helper"
+          fi
+
+          # Re-sign all helpers after modifications
+          echo "Re-signing helpers..."
+          for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
+            if [ -d "$helper" ]; then
+              codesign --force --sign - "$helper" 2>/dev/null || true
+            fi
+          done
+
+          # Re-sign framework and main app
+          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
+          echo "Re-signing complete"
+
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
             # For macOS, find the .app bundle and extract the executable name
@@ -341,6 +370,35 @@ jobs:
           else
             echo "::warning::product_logo_32.png not found at expected location"
           fi
+
+          # Fix notification icon: Remove Assets.car and CFBundleIconName
+          # Assets.car contains compiled AppIcon that overrides app.icns
+          # CFBundleIconName tells macOS to look in Asset Catalog instead of app.icns
+          echo "Fixing notification icon..."
+
+          # Delete all Assets.car files
+          find output/BOSS.app -name "Assets.car" -type f -delete
+          echo "Deleted all Assets.car files"
+
+          # Remove CFBundleIconName from Alerts helper Info.plist
+          ALERTS_PLIST="output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers/BOSS Helper (Alerts).app/Contents/Info.plist"
+          if [ -f "$ALERTS_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$ALERTS_PLIST" 2>/dev/null || true
+            echo "Removed CFBundleIconName from Alerts helper"
+          fi
+
+          # Re-sign all helpers after modifications
+          echo "Re-signing helpers..."
+          for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
+            if [ -d "$helper" ]; then
+              codesign --force --sign - "$helper" 2>/dev/null || true
+            fi
+          done
+
+          # Re-sign framework and main app
+          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
+          echo "Re-signing complete"
 
           # Create executable.name if not present (required by JxBrowser)
           if [ ! -f "output/executable.name" ]; then
