@@ -212,6 +212,8 @@ fun JxBrowserCompose(
     var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
+    var isNavigating by remember { mutableStateOf(false) }  // Prevent rapid navigation
+    var lastNavigationTime by remember { mutableStateOf(0L) }  // Debounce tracking
     var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hasVideoAtClick by remember { mutableStateOf(false) }
     var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
@@ -476,6 +478,7 @@ fun JxBrowserCompose(
 
                 try {
                     isLoading = false
+                    isNavigating = false  // Allow new navigation after load completes
                     canGoBack = browser.navigation().canGoBack()
                     canGoForward = browser.navigation().canGoForward()
 
@@ -606,6 +609,7 @@ fun JxBrowserCompose(
 
                 try {
                     isLoading = false
+                    isNavigating = false  // Allow new navigation after load fails
                     canGoBack = browser.navigation().canGoBack()
                     canGoForward = browser.navigation().canGoForward()
                 } catch (e: Exception) {
@@ -782,12 +786,16 @@ fun JxBrowserCompose(
                         text = "Back",
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         onClick = {
-                            if (isBrowserEnvironmentValid()) {
+                            val now = System.currentTimeMillis()
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
                                 try {
+                                    lastNavigationTime = now
+                                    isNavigating = true
                                     browser.navigation().goBack()
                                     onNavigationStateChange?.invoke(true)
                                 } catch (e: Exception) {
                                     // Issue #255: Browser closed during navigation
+                                    isNavigating = false
                                 }
                             }
                         }
@@ -799,12 +807,16 @@ fun JxBrowserCompose(
                         text = "Forward",
                         icon = Icons.AutoMirrored.Filled.ArrowForward,
                         onClick = {
-                            if (isBrowserEnvironmentValid()) {
+                            val now = System.currentTimeMillis()
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
                                 try {
+                                    lastNavigationTime = now
+                                    isNavigating = true
                                     browser.navigation().goForward()
                                     onNavigationStateChange?.invoke(false)
                                 } catch (e: Exception) {
                                     // Issue #255: Browser closed during navigation
+                                    isNavigating = false
                                 }
                             }
                         }
@@ -927,15 +939,17 @@ fun JxBrowserCompose(
                     // Back button
                     IconButton(
                         onClick = {
-                            if (isBrowserEnvironmentValid()) {
+                            val now = System.currentTimeMillis()
+                            // Debounce: require 100ms between navigations and not already navigating
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                                lastNavigationTime = now
+                                isNavigating = true
                                 browser.navigation().goBack()
-                                // Immediately update state to prevent button desync during rapid clicks
-                                canGoBack = browser.navigation().canGoBack()
-                                canGoForward = browser.navigation().canGoForward()
+                                // Let event handlers update canGoBack/canGoForward - don't query immediately
                                 onNavigationStateChange?.invoke(true)
                             }
                         },
-                        enabled = canGoBack,
+                        enabled = canGoBack && !isNavigating,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -948,15 +962,17 @@ fun JxBrowserCompose(
                     // Forward button
                     IconButton(
                         onClick = {
-                            if (isBrowserEnvironmentValid()) {
+                            val now = System.currentTimeMillis()
+                            // Debounce: require 100ms between navigations and not already navigating
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                                lastNavigationTime = now
+                                isNavigating = true
                                 browser.navigation().goForward()
-                                // Immediately update state to prevent button desync during rapid clicks
-                                canGoBack = browser.navigation().canGoBack()
-                                canGoForward = browser.navigation().canGoForward()
+                                // Let event handlers update canGoBack/canGoForward - don't query immediately
                                 onNavigationStateChange?.invoke(false)
                             }
                         },
-                        enabled = canGoForward,
+                        enabled = canGoForward && !isNavigating,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -973,6 +989,7 @@ fun JxBrowserCompose(
                                 // Stop the current navigation
                                 if (isBrowserEnvironmentValid()) browser.navigation().stop()
                                 isLoading = false  // Immediately reset loading state
+                                isNavigating = false  // Reset navigation lock so buttons work again
                             } else {
                                 // Reload/navigate to URL
                                 val urlToLoad = if (autocompleteSuggestion != null &&
@@ -985,6 +1002,7 @@ fun JxBrowserCompose(
                                 // Clear editing state to allow URL bar updates during navigation
                                 isUserEditingUrl = false
                                 lastUserEditTime = 0L
+                                isNavigating = true  // Set navigation lock when starting navigation
                                 if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
                                 autocompleteSuggestion = null
                                 showDropdown = false
@@ -1305,7 +1323,10 @@ fun JxBrowserCompose(
                         // Handle mouse back button - navigate back
                         // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
                         if (awtEvent?.button in listOf(4, 6, 8)) {
-                            if (isBrowserEnvironmentValid() && browser.navigation().canGoBack()) {
+                            val now = System.currentTimeMillis()
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100 && browser.navigation().canGoBack()) {
+                                lastNavigationTime = now
+                                isNavigating = true
                                 browser.navigation().goBack()
                             }
                             event.changes.forEach { it.consume() }
@@ -1315,7 +1336,10 @@ fun JxBrowserCompose(
                         // Handle mouse forward button - navigate forward
                         // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
                         if (awtEvent?.button in listOf(5, 7, 9)) {
-                            if (isBrowserEnvironmentValid() && browser.navigation().canGoForward()) {
+                            val now = System.currentTimeMillis()
+                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100 && browser.navigation().canGoForward()) {
+                                lastNavigationTime = now
+                                isNavigating = true
                                 browser.navigation().goForward()
                             }
                             event.changes.forEach { it.consume() }
