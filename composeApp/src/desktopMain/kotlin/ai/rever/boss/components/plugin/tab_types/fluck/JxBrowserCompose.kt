@@ -212,8 +212,7 @@ fun JxBrowserCompose(
     var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
-    var isNavigating by remember { mutableStateOf(false) }  // Prevent rapid navigation
-    var lastNavigationTime by remember { mutableStateOf(0L) }  // Debounce tracking
+    var lastNavigationTime by remember { mutableStateOf(0L) }  // Debounce rapid clicks (100ms)
     var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hasVideoAtClick by remember { mutableStateOf(false) }
     var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
@@ -306,36 +305,8 @@ fun JxBrowserCompose(
         }
     }
 
-    // Track if this composable is being disposed to prevent race conditions with browser closure
-    val isComposableDisposed = remember { mutableStateOf(false) }
-
-    // Helper function to check if browser environment is still valid
-    fun isBrowserEnvironmentValid(): Boolean {
-        return !isComposableDisposed.value &&
-               !browser.isClosed &&
-               try {
-                   // Check if any window is still valid by checking AWT window list
-                   val windows = java.awt.Window.getWindows()
-                   windows.any { window ->
-                       try {
-                           window.isDisplayable && window.isShowing
-                       } catch (e: Exception) {
-                           false
-                       }
-                   }
-               } catch (e: Exception) {
-                   false
-               }
-    }
-
-    // Dispose effect for browser lifecycle coordination
-    DisposableEffect(browser) {
-        onDispose {
-            // Signal that composable is being disposed
-            isComposableDisposed.value = true
-            // Coroutines will detect this flag and exit gracefully via isBrowserEnvironmentValid()
-        }
-    }
+    // Helper function to check if browser environment is still valid for operations
+    fun isBrowserEnvironmentValid(): Boolean = !browser.isClosed
 
     // Set up browser navigation listeners
     LaunchedEffect(browser, initialUrl) {
@@ -387,11 +358,7 @@ fun JxBrowserCompose(
                     canGoBack = browser.navigation().canGoBack()
                     canGoForward = browser.navigation().canGoForward()
                 } catch (e: Exception) {
-                    // Browser was closed during operation - this is expected during disposal
-                    // Issue #255: Gracefully handle "closed object" exceptions
-                    if (e.message?.contains("closed object") == true) {
-                        isComposableDisposed.value = true
-                    }
+                    // Issue #255: Browser was closed during operation - silently ignore
                 }
             }
         }
@@ -449,20 +416,12 @@ fun JxBrowserCompose(
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    // Browser was closed during delayed title check - this is expected
-                                    // Issue #255: Gracefully handle "closed object" exceptions
-                                    if (e.message?.contains("closed object") == true) {
-                                        isComposableDisposed.value = true
-                                    }
+                                    // Issue #255: Browser was closed during delayed title check - silently ignore
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        // Browser was closed during operation - this is expected during disposal
-                        // Issue #255: Gracefully handle "closed object" exceptions
-                        if (e.message?.contains("closed object") == true) {
-                            isComposableDisposed.value = true
-                        }
+                        // Issue #255: Browser was closed during operation - silently ignore
                     }
                 }
             }
@@ -478,7 +437,6 @@ fun JxBrowserCompose(
 
                 try {
                     isLoading = false
-                    isNavigating = false  // Allow new navigation after load completes
                     canGoBack = browser.navigation().canGoBack()
                     canGoForward = browser.navigation().canGoForward()
 
@@ -589,11 +547,7 @@ fun JxBrowserCompose(
                     // Note: Favicon is now handled by FaviconChanged event listener below
                     // No longer calling onIconChange here to avoid overriding the favicon
                 } catch (e: Exception) {
-                    // Browser was closed during operation - this is expected during disposal
-                    // Issue #255: Gracefully handle "closed object" exceptions
-                    if (e.message?.contains("closed object") == true) {
-                        isComposableDisposed.value = true
-                    }
+                    // Issue #255: Browser was closed during operation - silently ignore
                 }
             }
         }
@@ -609,13 +563,10 @@ fun JxBrowserCompose(
 
                 try {
                     isLoading = false
-                    isNavigating = false  // Allow new navigation after load fails
                     canGoBack = browser.navigation().canGoBack()
                     canGoForward = browser.navigation().canGoForward()
                 } catch (e: Exception) {
-                    if (e.message?.contains("closed object") == true) {
-                        isComposableDisposed.value = true
-                    }
+                    // Issue #255: Browser was closed during operation - silently ignore
                 }
             }
         }
@@ -651,11 +602,8 @@ fun JxBrowserCompose(
                         onTabIconUpdate(tabIcon)
                     }
                 } catch (e: Exception) {
-                    // Issue #255: Handle both favicon conversion errors and "closed object" exceptions
-                    if (e.message?.contains("closed object") == true) {
-                        // Browser was closed during favicon processing
-                        isComposableDisposed.value = true
-                    } else {
+                    // Issue #255: Handle favicon conversion errors (ignore "closed object" exceptions)
+                    if (e.message?.contains("closed object") != true) {
                         println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
                         // Set default Language icon on error
                         onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
@@ -787,15 +735,13 @@ fun JxBrowserCompose(
                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                         onClick = {
                             val now = System.currentTimeMillis()
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100) {
                                 try {
                                     lastNavigationTime = now
-                                    isNavigating = true
                                     browser.navigation().goBack()
                                     onNavigationStateChange?.invoke(true)
                                 } catch (e: Exception) {
                                     // Issue #255: Browser closed during navigation
-                                    isNavigating = false
                                 }
                             }
                         }
@@ -808,15 +754,13 @@ fun JxBrowserCompose(
                         icon = Icons.AutoMirrored.Filled.ArrowForward,
                         onClick = {
                             val now = System.currentTimeMillis()
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100) {
                                 try {
                                     lastNavigationTime = now
-                                    isNavigating = true
                                     browser.navigation().goForward()
                                     onNavigationStateChange?.invoke(false)
                                 } catch (e: Exception) {
                                     // Issue #255: Browser closed during navigation
-                                    isNavigating = false
                                 }
                             }
                         }
@@ -940,16 +884,14 @@ fun JxBrowserCompose(
                     IconButton(
                         onClick = {
                             val now = System.currentTimeMillis()
-                            // Debounce: require 100ms between navigations and not already navigating
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                            // Debounce: require 100ms between navigations to prevent race conditions
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100) {
                                 lastNavigationTime = now
-                                isNavigating = true
                                 browser.navigation().goBack()
-                                // Let event handlers update canGoBack/canGoForward - don't query immediately
                                 onNavigationStateChange?.invoke(true)
                             }
                         },
-                        enabled = canGoBack && !isNavigating,
+                        enabled = canGoBack,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -963,16 +905,14 @@ fun JxBrowserCompose(
                     IconButton(
                         onClick = {
                             val now = System.currentTimeMillis()
-                            // Debounce: require 100ms between navigations and not already navigating
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100) {
+                            // Debounce: require 100ms between navigations to prevent race conditions
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100) {
                                 lastNavigationTime = now
-                                isNavigating = true
                                 browser.navigation().goForward()
-                                // Let event handlers update canGoBack/canGoForward - don't query immediately
                                 onNavigationStateChange?.invoke(false)
                             }
                         },
-                        enabled = canGoForward && !isNavigating,
+                        enabled = canGoForward,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -989,7 +929,6 @@ fun JxBrowserCompose(
                                 // Stop the current navigation
                                 if (isBrowserEnvironmentValid()) browser.navigation().stop()
                                 isLoading = false  // Immediately reset loading state
-                                isNavigating = false  // Reset navigation lock so buttons work again
                             } else {
                                 // Reload/navigate to URL
                                 val urlToLoad = if (autocompleteSuggestion != null &&
@@ -1002,7 +941,6 @@ fun JxBrowserCompose(
                                 // Clear editing state to allow URL bar updates during navigation
                                 isUserEditingUrl = false
                                 lastUserEditTime = 0L
-                                isNavigating = true  // Set navigation lock when starting navigation
                                 if (isBrowserEnvironmentValid()) browser.navigation().loadUrl(urlToLoad)
                                 autocompleteSuggestion = null
                                 showDropdown = false
@@ -1324,9 +1262,8 @@ fun JxBrowserCompose(
                         // Windows/macOS: awtButton=4, Linux: awtButton=6 or 8 (varies by mouse)
                         if (awtEvent?.button in listOf(4, 6, 8)) {
                             val now = System.currentTimeMillis()
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100 && browser.navigation().canGoBack()) {
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100 && browser.navigation().canGoBack()) {
                                 lastNavigationTime = now
-                                isNavigating = true
                                 browser.navigation().goBack()
                             }
                             event.changes.forEach { it.consume() }
@@ -1337,9 +1274,8 @@ fun JxBrowserCompose(
                         // Windows/macOS: awtButton=5, Linux: awtButton=7 or 9 (varies by mouse)
                         if (awtEvent?.button in listOf(5, 7, 9)) {
                             val now = System.currentTimeMillis()
-                            if (isBrowserEnvironmentValid() && !isNavigating && (now - lastNavigationTime) > 100 && browser.navigation().canGoForward()) {
+                            if (isBrowserEnvironmentValid() && (now - lastNavigationTime) > 100 && browser.navigation().canGoForward()) {
                                 lastNavigationTime = now
-                                isNavigating = true
                                 browser.navigation().goForward()
                             }
                             event.changes.forEach { it.consume() }
