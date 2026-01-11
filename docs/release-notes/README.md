@@ -13,6 +13,7 @@ This directory contains detailed release notes for each version of BOSS.
 | Version | Date | Summary |
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
+| [v8.12.23](v8.12.23.md) | 2024-10 | Critical browser stability fixes: resolved JxBrowser SIGSEGV crashes and auto-window creation bug on macOS |
 | [v8.12.24](v8.12.24.md) | 2024-12 | Native macOS MenuBar integration for improved platform-native look and feel |
 | [v8.12.26](v8.12.26.md) | 2025-12 | Interactive home screen with actionable tip cards and URL event bus for proper external link handling |
 | [v8.12.25](v8.12.25.md) | 2025-12 | Plugin lifecycle system with reset functionality and tab cloning fix |
