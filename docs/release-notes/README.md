@@ -13,6 +13,7 @@ This directory contains detailed release notes for each version of BOSS.
 | Version | Date | Summary |
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
+| [v8.8.0-windows-msi](v8.8.0-windows-msi.md) | 2024-10 | Windows-specific release adding professional MSI installer and standalone distribution packaging with icon support and comprehensive build tooling |
 | [v8.11.4](v8.11.4.md) | 2024-10 | Critical stability fix for Apple Silicon users and improvements to GitHub Actions release workflow automation |
 | [v8.9.8](v8.9.8.md) | 2024-10 | Maintenance release with GitHub Actions workflow improvements for release asset synchronization and repository cleanup |
 | [v8.9.7](v8.9.7.md) | 2024-10 | Maintenance release with GitHub Actions workflow improvements for release asset synchronization and repository cleanup |
