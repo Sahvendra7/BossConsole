@@ -18,6 +18,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.30](v8.13.30.md) | 2025-12 | Terminal tab title sync, Linux dock icon fix, configurable title bar, and macOS menu hang fix |
 | [v8.13.23](v8.13.23.md) | 2024-12 | Dependency updates including Clikt 5.0, JUnit 6.0, Kotlin 2.3.0-RC, and Ktor 3.3.2 |
 | [v8.12.32](v8.12.32.md) | 2025-12 | Browser usability improvements with enhanced context menu, better URL bar interaction, and improved window focus handling |
+| [v8.12.20](v8.12.20.md) | 2024-12 | Fixed critical version downgrade bug with build system improvements and CI/CD verification |
 <!-- RELEASE_INDEX_END -->
 
 ## Commit Conventions
