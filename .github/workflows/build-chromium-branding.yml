@@ -547,13 +547,13 @@ jobs:
           cache: false
 
       - name: Build Branding Tool for ARM64
-        shell: bash
+        shell: powershell
         run: |
           # The pre-built tool is for x64, need to build for ARM64
           git clone https://github.com/TeamDev-IP/Chromium-Branding.git chromium-branding-tool
-          cd chromium-branding-tool
+          Set-Location chromium-branding-tool
           go build -o ../tools/chromium_branding_windows_arm64.exe .
-          cd ..
+          Set-Location ..
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -567,56 +567,58 @@ jobs:
       - name: Download JxBrowser Chromium
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
-        shell: bash
+        shell: powershell
         run: |
-          CHROMIUM_DIR="$USERPROFILE/chromium-binaries"
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$CHROMIUM_DIR" --no-daemon
+          .\gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" --no-daemon
 
-          echo "Chromium directory contents:"
-          ls -la "$CHROMIUM_DIR" || echo "Directory not found"
+          Write-Host "Chromium directory contents:"
+          Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
 
       - name: Apply BOSS Branding
-        shell: bash
+        shell: powershell
         run: |
-          CHROMIUM_DIR="$USERPROFILE/chromium-binaries"
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
-          if [ ! -d "$CHROMIUM_DIR" ] || [ -z "$(ls -A "$CHROMIUM_DIR" 2>/dev/null)" ]; then
-            echo "::error::Chromium binaries not found at $CHROMIUM_DIR"
+          if (-not (Test-Path $chromiumDir)) {
+            Write-Error "Chromium binaries not found at $chromiumDir"
             exit 1
-          fi
+          }
 
-          cp chromium-branding/params.json .
-          cp -r chromium-branding/assets .
+          Copy-Item chromium-branding/params.json .
+          Copy-Item -Recurse chromium-branding/assets .
 
           # No signing for now - Windows signing requires DigiCert setup
           # Remove signCommand from params to avoid signing attempts
-          # Use sed to remove the signCommand line from the JSON
-          sed -i 's/"signCommand"[^,]*,//g' params.json
+          $params = Get-Content params.json | ConvertFrom-Json
+          if ($params.win.PSObject.Properties['signCommand']) {
+            $params.win.PSObject.Properties.Remove('signCommand')
+          }
+          $params | ConvertTo-Json -Depth 10 | Out-File params.json -Encoding utf8
 
-          mkdir -p output
+          New-Item -ItemType Directory -Force -Path output
 
-          echo "Running branding tool..."
-          ./tools/chromium_branding_windows_arm64.exe -p params.json -b "$CHROMIUM_DIR" -o output
+          Write-Host "Running branding tool..."
+          .\tools\chromium_branding_windows_arm64.exe -p params.json -b $chromiumDir -o output
 
-          ls -la output/
+          Get-ChildItem output
 
       - name: Verify executable.name
-        shell: bash
+        shell: powershell
         run: |
-          if [ -f "output/executable.name" ]; then
-            cat "output/executable.name"
-          else
-            echo "::error::executable.name not found"
+          if (Test-Path "output/executable.name") {
+            Get-Content "output/executable.name"
+          } else {
+            Write-Error "executable.name not found"
             exit 1
-          fi
+          }
 
       - name: Create Archive
-        shell: bash
+        shell: powershell
         run: |
-          cd output
-          zip -r ../boss-chromium-windows-arm64.zip .
+          Compress-Archive -Path output\* -DestinationPath boss-chromium-windows-arm64.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
