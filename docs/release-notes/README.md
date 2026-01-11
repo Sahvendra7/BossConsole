@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.12.12](v8.12.12.md) | 2024-10 | Secret management with user-level viewing, role-based sharing with audit trails, and database migration consolidation |
+| [v8.12.6](v8.12.6.md) | 2024-10 | Removed unused Supabase demo UI components and settings dialogs while preserving all core Supabase functionality |
 | [v8.12.11](v8.12.11.md) | 2024-10 | Fixed bottom bar to correctly display and update with active tabs, and cleaned up top bar by hiding unimplemented components |
 | [v8.12.10](v8.12.10.md) | 2024-10 | Plugin architecture cleanup and database schema consolidation with critical security fixes |
 | [v8.12.9](v8.12.9.md) | 2024-10 | Secret Manager admin plugin with server-side encryption and critical RBAC fixes |
