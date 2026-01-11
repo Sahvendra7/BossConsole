@@ -1094,7 +1094,7 @@ jobs:
           if ($content -match 'jxbrowser = "([^"]+)"') {
             $JXBROWSER_VERSION = $matches[1]
             Write-Host "JxBrowser version: $JXBROWSER_VERSION"
-            echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $env:GITHUB_ENV
+            Add-Content $env:GITHUB_ENV "JXBROWSER_VERSION=$JXBROWSER_VERSION"
           }
 
       - name: 📥 Download Branded Chromium (Windows ARM64)
@@ -1109,10 +1109,10 @@ jobs:
             Invoke-WebRequest -Uri $CHROMIUM_URL -OutFile "branded-chromium/boss-chromium-windows-arm64.zip" -ErrorAction Stop
             Write-Host "✅ Downloaded branded Chromium"
             Expand-Archive -Path "branded-chromium/boss-chromium-windows-arm64.zip" -DestinationPath "branded-chromium" -Force
-            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $env:GITHUB_ENV
+            Add-Content $env:GITHUB_ENV "BRANDED_CHROMIUM_AVAILABLE=true"
           } catch {
             Write-Host "⚠️ Branded Chromium not available yet"
-            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $env:GITHUB_ENV
+            Add-Content $env:GITHUB_ENV "BRANDED_CHROMIUM_AVAILABLE=false"
           }
 
       - name: 🏗️ Build Windows ARM64 App
