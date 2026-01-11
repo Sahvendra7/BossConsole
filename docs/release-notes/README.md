@@ -17,6 +17,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.14.9](v8.14.9.md) | 2025-12 | New Dashboard feature with recent items and templates, HTTP client memory leak fix, and performance optimizations |
 | [v8.14.8](v8.14.8.md) | 2025-12 | BossEditor Phase 19 polish, terminal file hyperlink line:column navigation, browser URL recovery fixes, and focus mode default changes |
 | [v8.14.7](v8.14.7.md) | 2026-01 | Maintenance release with no functional changes |
+| [v8.14.6](v8.14.6.md) | 2025-12 | Offline screen with retry functionality on startup and terminal integration updates |
 | [keylocker-tools](vkeylocker-tools.md) | 2025-07-28 | CI/CD workflow improvements and repository cleanup |
 | [v8.15.8](v8.15.8.md) | 2026-01-07 | Browser navigation stability, Linux ARM64 support, UI improvements, and 139 build warnings resolved |
 | [v8.15.7](v8.15.7.md) | 2026-01-06 | Fixed sidebar panel positioning for bottom slots |
