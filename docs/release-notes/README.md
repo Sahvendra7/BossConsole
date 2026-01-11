@@ -19,6 +19,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.12.4](v8.12.4.md) | 2024-10 | Role-Based Access Control (RBAC) system with Supabase Custom Claims integration and JWT-based authentication for both magic link and passkey flows |
 | [v8.12.3](v8.12.3.md) | 2024-10 | Configuration system refactored to workspaces with automatic tab cleanup when workspaces are deleted |
 | [v8.12.2](v8.12.2.md) | 2024-10 | Passkey authentication fixes with proper rpId configuration, magic link deep linking support, and dependency updates |
+| [v8.12.1](v8.12.1.md) | 2024-10 | Critical macOS code signing and notarization fixes to ensure proper distribution and security compliance |
 | [v8.12.11](v8.12.11.md) | 2024-10 | Fixed bottom bar to correctly display and update with active tabs, and cleaned up top bar by hiding unimplemented components |
 | [v8.12.10](v8.12.10.md) | 2024-10 | Plugin architecture cleanup and database schema consolidation with critical security fixes |
 | [v8.12.9](v8.12.9.md) | 2024-10 | Secret Manager admin plugin with server-side encryption and critical RBAC fixes |
