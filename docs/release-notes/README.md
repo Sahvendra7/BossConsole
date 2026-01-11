@@ -17,6 +17,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.11.3](v8.11.3.md) | 2024-10 | Maintenance release with no functional changes |
 | [v8.11.2](v8.11.2.md) | 2024-10 | Major authentication system overhaul with complete Supabase integration, enhanced macOS code signing for notarization compliance, and framework updates |
 | [v8.10.1](v8.10.1.md) | 2024-10 | Linux packaging support with optimized distribution formats, streamlined GitHub Actions workflows, and dependency updates |
+| [v8.10.0](v8.10.0.md) | 2024-10 | Windows code signing infrastructure with DigiCert KeyLocker integration, streamlined GitHub Actions workflows, and comprehensive CI/CD reliability improvements |
 | [v8.12.12](v8.12.12.md) | 2024-10 | Secret management with user-level viewing, role-based sharing with audit trails, and database migration consolidation |
 | [v8.12.6](v8.12.6.md) | 2024-10 | Removed unused Supabase demo UI components and settings dialogs while preserving all core Supabase functionality |
 | [v8.12.5](v8.12.5.md) | 2024-10 | Admin Role Management plugin with user management, server-side search, pagination, role assignment/removal, and user deletion |
