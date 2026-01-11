@@ -102,17 +102,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          allowed_tools: |
-            Read
-            Write
-            Edit
-            Glob
-            Grep
-            Bash(git log:*)
-            Bash(git show:*)
-            Bash(git diff:*)
-            Bash(cat:*)
-            Bash(ls:*)
+          claude_args: "--allowedTools 'Bash(git:*)' 'Bash(cat:*)' 'Bash(ls:*)' 'Read' 'Write' 'Edit' 'Glob' 'Grep'"
           prompt: |
             Generate release notes for BOSS version ${{ steps.release-info.outputs.version }}.
 
@@ -138,7 +128,6 @@ jobs:
             - Use conventional commit scopes: browser, terminal, tabs, panel, etc.
             - Link PR numbers: (#123)
             - Omit empty sections
-          timeout_minutes: 10
 
       - name: 📤 Commit and Push
         if: steps.check-existing.outputs.exists != 'true'
