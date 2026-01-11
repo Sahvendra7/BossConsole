@@ -1056,6 +1056,23 @@ fun JxBrowserCompose(
                                         }
                                         true
                                     }
+                                    keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.DirectionRight -> {
+                                        // Accept inline autocomplete when cursor is at the end of input
+                                        if (autocompleteSuggestion != null &&
+                                            urlInput.selection.collapsed &&
+                                            urlInput.selection.start == urlInput.text.length) {
+                                            urlInput = TextFieldValue(
+                                                autocompleteSuggestion!!,
+                                                TextRange(autocompleteSuggestion!!.length)
+                                            )
+                                            autocompleteSuggestion = null
+                                            showDropdown = false
+                                            selectedDropdownIndex = -1
+                                            true
+                                        } else {
+                                            false // Let text field handle normal cursor movement
+                                        }
+                                    }
                                     keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Escape -> {
                                         autocompleteSuggestion = null
                                         showDropdown = false
