@@ -17,6 +17,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.12.11](v8.12.11.md) | 2024-10 | Fixed bottom bar to correctly display and update with active tabs, and cleaned up top bar by hiding unimplemented components |
 | [v8.12.10](v8.12.10.md) | 2024-10 | Plugin architecture cleanup and database schema consolidation with critical security fixes |
 | [v8.12.9](v8.12.9.md) | 2024-10 | Secret Manager admin plugin with server-side encryption and critical RBAC fixes |
+| [v8.12.8](v8.12.8.md) | 2024-10 | Dynamic RBAC system with runtime role/permission management, ENUM-to-table migration, and passkey refresh token fix |
 | [v8.12.16](v8.12.16.md) | 2024-10 | Fixed critical macOS update installation failure and hardened update script security against command injection vulnerabilities |
 | [v8.12.15](v8.12.15.md) | 2024-10 | User feedback for expired and already-used magic links, eliminating silent authentication failures |
 | [v8.12.14](v8.12.14.md) | 2024-10 | Fixed embedded browser for Settings passkey registration and added auto-click capability |
