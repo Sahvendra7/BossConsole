@@ -579,11 +579,13 @@ jobs:
 
           # No signing for now - Windows signing requires DigiCert setup
           # Remove signCommand from params to avoid signing attempts
-          $params = Get-Content params.json | ConvertFrom-Json
+          $params = Get-Content params.json -Raw | ConvertFrom-Json
           if ($params.win.PSObject.Properties['signCommand']) {
             $params.win.PSObject.Properties.Remove('signCommand')
           }
-          $params | ConvertTo-Json -Depth 10 | Out-File params.json -Encoding utf8
+          # Write without BOM (Out-File adds BOM which breaks JSON parsing)
+          $json = $params | ConvertTo-Json -Depth 10
+          [System.IO.File]::WriteAllText("$PWD\params.json", $json)
 
           New-Item -ItemType Directory -Force -Path output
 
