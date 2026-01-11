@@ -13,6 +13,7 @@ This directory contains detailed release notes for each version of BOSS.
 | Version | Date | Summary |
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
+| [v8.12.16](v8.12.16.md) | 2024-10 | Fixed critical macOS update installation failure and hardened update script security against command injection vulnerabilities |
 | [v8.12.19](v8.12.19.md) | 2024-10 | Cross-platform default browser support allowing BOSS to be set as the system's default web browser with automatic URL handling |
 | [v8.12.18](v8.12.18.md) | 2025-10 | Multiple window support with independent instances, browser-standard keyboard shortcuts, and event-driven focus management |
 | [v8.12.17](v8.12.17.md) | 2025-10 | Optional automatic update checking with configurable intervals and improved time display accuracy |
