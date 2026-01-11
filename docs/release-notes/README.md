@@ -13,6 +13,7 @@ This directory contains detailed release notes for each version of BOSS.
 | Version | Date | Summary |
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
+| [v8.13.32](v8.13.32.md) | 2025-12 | Performance monitoring system, IntelliJ-style run configurations with smart detection, and project persistence across sessions |
 | [v8.13.36](v8.13.36.md) | 2025-12 | Drag-and-drop support for tabs: reorder within windows and move between windows, with improved lifecycle management |
 | [v8.13.35](v8.13.35.md) | 2025-12 | Fixed critical context menu actions bug in tabs caused by trailing lambda parameter ordering issue |
 | [v8.13.34](v8.13.34.md) | 2025-12 | Browser stability improvements with automatic recovery, configurable settings, and terminal project folder support |
