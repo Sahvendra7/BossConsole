@@ -49,6 +49,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.22](v8.13.22.md) | 2024-12 | Window management enhancements with title bar double-click maximize and panel minimum size constraints |
 | [v8.13.21](v8.13.21.md) | 2024-12 | Fixed critical JxBrowser 'closed object' crash with thread-safe disposal mechanism |
 | [v8.13.20](v8.13.20.md) | 2024-12 | Download management with auto-closing redirect tabs and Kotlin compiler deprecation warnings resolved |
+| [v8.13.19](v8.13.19.md) | 2024-12 | Gradle configuration cache compatibility enabled for 10-50% faster builds with proper task input/output tracking |
 | [v8.12.32](v8.12.32.md) | 2025-12 | Browser usability improvements with enhanced context menu, better URL bar interaction, and improved window focus handling |
 | [v8.12.20](v8.12.20.md) | 2024-12 | Fixed critical version downgrade bug with build system improvements and CI/CD verification |
 <!-- RELEASE_INDEX_END -->
