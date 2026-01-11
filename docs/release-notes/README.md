@@ -19,6 +19,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.15.6](v8.15.6.md) | 2026-01-06 | AI integration: BossTerm AI Assistant with Welcome Wizard and terminal context menu for AI coding assistants |
 | [v8.15.5](v8.15.5.md) | 2026-01-06 | Project creation wizard with templates, improved deleted project handling, and terminal AI assistant context menu |
 | [v8.15.4](v8.15.4.md) | 2026-01-05 | Browser URL recovery revert, dashboard improvements, and text editor dependency updates |
+| [v8.15.3](v8.15.3.md) | 2026-01-05 | Fixed browser URL recovery crash caused by stale object reference |
 | [v8.13.30](v8.13.30.md) | 2025-12 | Terminal tab title sync, Linux dock icon fix, configurable title bar, and macOS menu hang fix |
 | [v8.13.23](v8.13.23.md) | 2024-12 | Dependency updates including Clikt 5.0, JUnit 6.0, Kotlin 2.3.0-RC, and Ktor 3.3.2 |
 | [v8.12.32](v8.12.32.md) | 2025-12 | Browser usability improvements with enhanced context menu, better URL bar interaction, and improved window focus handling |
