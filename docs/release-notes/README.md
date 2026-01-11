@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.11.4](v8.11.4.md) | 2024-10 | Critical stability fix for Apple Silicon users and improvements to GitHub Actions release workflow automation |
+| [v8.9.8](v8.9.8.md) | 2024-10 | Maintenance release with GitHub Actions workflow improvements for release asset synchronization and repository cleanup |
 | [v8.11.3](v8.11.3.md) | 2024-10 | Maintenance release with no functional changes |
 | [v8.11.2](v8.11.2.md) | 2024-10 | Major authentication system overhaul with complete Supabase integration, enhanced macOS code signing for notarization compliance, and framework updates |
 | [v8.10.1](v8.10.1.md) | 2024-10 | Linux packaging support with optimized distribution formats, streamlined GitHub Actions workflows, and dependency updates |
