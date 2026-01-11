@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.11](v8.15.11.md) | 2026-01-11 | Browser zoom controls, Git integration in top bar, enhanced URL bar autocomplete, and Windows ARM64 Chromium branding support |
 | [v8.15.10](v8.15.10.md) | 2026-01-11 | Chromium notification branding fixes and Linux/FreeBSD terminal support improvements |
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.8.0](v8.8.0.md) | 2024-10 | Initial public release with integrated Fluck browser, terminal support, multi-panel layouts, and LLM-powered RPA automation |
