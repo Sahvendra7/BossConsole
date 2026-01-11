@@ -13,6 +13,7 @@ This directory contains detailed release notes for each version of BOSS.
 | Version | Date | Summary |
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
+| [v8.12.19](v8.12.19.md) | 2024-10 | Cross-platform default browser support allowing BOSS to be set as the system's default web browser with automatic URL handling |
 | [v8.12.23](v8.12.23.md) | 2024-10 | Critical browser stability fixes: resolved JxBrowser SIGSEGV crashes and auto-window creation bug on macOS |
 | [v8.12.22](v8.12.22.md) | 2024-12 | Terminal rendering improvements and deep link handler fixes: resolved blank display bug, empty line rendering, and external URL handling when BOSS is set as default browser |
 | [v8.12.21](v8.12.21.md) | 2024-10 | Secret Auto-Fill Integration with Fluck browser, enabling seamless credential management with real-time synchronization across all components |
