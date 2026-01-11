@@ -452,184 +452,6 @@ jobs:
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
           retention-days: 30
 
-  build-macos-x64:
-    needs: prepare-version
-    if: needs.prepare-version.outputs.should-build == 'true'
-    runs-on: macos-13  # Intel runner
-
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare-version.outputs.updated-sha }}
-
-      - name: ☕ Setup JDK
-        uses: actions/setup-java@v5
-        with:
-          java-version: '17'
-          distribution: 'microsoft'  # Temurin doesn't have JDK 17 for Intel macOS
-
-      - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          cache-read-only: false
-
-      - name: 🔧 Setup Build Environment
-        shell: bash
-        run: |
-          echo "🔧 Setting up build environment for macOS x64"
-          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
-          ./gradlew showVersion
-
-      - name: 🍎 Setup macOS Environment
-        run: |
-          brew install --quiet create-dmg || true
-          xcode-select --print-path
-
-          if [[ -n "${{ secrets.MACOS_P12_CERTIFICATE }}" ]]; then
-            echo "🔐 Setting up macOS code signing with P12 certificate..."
-            echo "${{ secrets.MACOS_P12_CERTIFICATE }}" | base64 --decode > certificate.p12
-
-            security create-keychain -p temp_password temp_keychain
-            security default-keychain -s temp_keychain
-            security unlock-keychain -p temp_password temp_keychain
-            security set-keychain-settings -lut 3600 temp_keychain
-            security import certificate.p12 -k temp_keychain -P "${{ secrets.MACOS_P12_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/security
-            security set-key-partition-list -S apple-tool:,apple: -s -k temp_password temp_keychain
-            security list-keychains -s temp_keychain
-
-            echo "DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
-            echo "MACOS_DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
-            echo "TEAM_ID=${{ secrets.MACOS_TEAM_ID }}" >> $GITHUB_ENV
-            echo "APPLE_ID=${{ secrets.MACOS_APPLE_ID }}" >> $GITHUB_ENV
-            echo "APP_PASSWORD=${{ secrets.MACOS_APP_PASSWORD }}" >> $GITHUB_ENV
-            echo "DISABLE_MACOS_SIGNING=false" >> $GITHUB_ENV
-
-            rm certificate.p12
-            security find-identity -v -p codesigning temp_keychain
-            echo "✅ macOS code signing configured"
-          else
-            echo "⚠️ MACOS_P12_CERTIFICATE not found, creating unsigned DMG"
-            echo "DISABLE_MACOS_SIGNING=true" >> $GITHUB_ENV
-          fi
-
-      - name: 🔍 Get JxBrowser Version
-        run: |
-          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
-          echo "JxBrowser version: $JXBROWSER_VERSION"
-          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
-
-      - name: 📥 Download Branded Chromium (macOS x64)
-        run: |
-          echo "📥 Downloading BOSS-branded Chromium for macOS x64..."
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-macos-x64.zip"
-
-          mkdir -p branded-chromium
-          if curl -L --fail -o "branded-chromium/boss-chromium-macos-x64.zip" "$CHROMIUM_URL"; then
-            echo "✅ Downloaded branded Chromium"
-            unzip -o "branded-chromium/boss-chromium-macos-x64.zip" -d branded-chromium/
-            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
-          else
-            echo "⚠️ Branded Chromium not available, using fallback"
-            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
-          fi
-
-      - name: 🏗️ Build macOS App Bundle
-        env:
-          DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
-        run: |
-          echo "🏗️ Building macOS x64 app bundle..."
-          chmod +x ./gradlew
-          ./gradlew createDistributable
-          echo "✅ macOS x64 app bundle created"
-
-      - name: 📦 Bundle Branded Chromium
-        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
-        run: |
-          APP_PATH=$(find composeApp/build/compose/binaries/main/app -name "*.app" -type d | head -1)
-          if [[ -n "$APP_PATH" && -d "$APP_PATH" ]]; then
-            CHROMIUM_DIR="$APP_PATH/Contents/Resources/chromium"
-            mkdir -p "$CHROMIUM_DIR"
-            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
-            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
-            echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
-          fi
-
-      - name: 🔐 Sign Bundled Chromium
-        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true' && env.DISABLE_MACOS_SIGNING != 'true'
-        run: |
-          APP_PATH=$(find composeApp/build/compose/binaries/main/app -name "*.app" -type d | head -1)
-          CHROMIUM_DIR="$APP_PATH/Contents/Resources/chromium"
-          if [[ -d "$CHROMIUM_DIR" ]]; then
-            find "$CHROMIUM_DIR" -type f -perm +111 -exec \
-              codesign --force --options runtime \
-              --entitlements composeApp/src/desktopMain/resources/BOSS.entitlements \
-              --sign "$MACOS_DEVELOPER_ID" {} \; 2>/dev/null || true
-            echo "✅ Chromium binaries signed"
-          fi
-
-      - name: 🏗️ Package macOS DMG
-        env:
-          DISABLE_MACOS_SIGNING: ${{ env.DISABLE_MACOS_SIGNING }}
-        run: |
-          ./gradlew packageDmg
-          echo "✅ macOS x64 DMG created"
-
-      - name: 🔍 Verify Built Version
-        run: |
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
-          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
-          if [[ -f "$GENERATED_FILE" ]]; then
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
-              echo "❌ VERSION MISMATCH: Expected $EXPECTED_VERSION, Built $BUILT_VERSION"
-              exit 1
-            fi
-            echo "✅ Version verification passed: $BUILT_VERSION"
-          fi
-
-      - name: 🍎 Notarize macOS DMG
-        if: env.DISABLE_MACOS_SIGNING != 'true'
-        run: |
-          DMG_PATH=$(find composeApp/build/compose/binaries/main/dmg -name "*.dmg" | head -1)
-          if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
-            echo "🔐 Submitting DMG for notarization..."
-            NOTARIZATION_OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-              --apple-id "$APPLE_ID" \
-              --password "$APP_PASSWORD" \
-              --team-id "${{ secrets.MACOS_TEAM_ID }}" \
-              --wait 2>&1)
-            echo "$NOTARIZATION_OUTPUT"
-
-            if echo "$NOTARIZATION_OUTPUT" | grep -q "status: Accepted"; then
-              xcrun stapler staple "$DMG_PATH"
-              echo "✅ Notarization completed"
-            else
-              echo "❌ Notarization failed"
-              exit 1
-            fi
-          fi
-
-      - name: 📊 Verify Build Artifacts
-        run: |
-          if ls composeApp/build/compose/binaries/main/dmg/*.dmg 1> /dev/null 2>&1; then
-            echo "✅ DMG found!"
-            ls -la composeApp/build/compose/binaries/main/dmg/
-          else
-            echo "❌ DMG not found!"
-            exit 1
-          fi
-
-      - name: 📤 Upload macOS DMG (x64)
-        uses: actions/upload-artifact@v6
-        with:
-          name: boss-macos-x64-${{ needs.prepare-version.outputs.version }}
-          path: composeApp/build/compose/binaries/main/dmg/*.dmg
-          retention-days: 30
-
   build-linux-amd64:
     needs: prepare-version
     if: needs.prepare-version.outputs.should-build == 'true'
@@ -1395,13 +1217,12 @@ jobs:
           retention-days: 30
 
   create-release:
-    needs: [prepare-version, build-macos-arm64, build-macos-x64, build-linux-amd64, build-linux-arm64, build-windows, build-windows-arm64]
+    needs: [prepare-version, build-macos-arm64, build-linux-amd64, build-linux-arm64, build-windows, build-windows-arm64]
     # Run if required builds succeed, even if ARM64 fails/is cancelled (ARM64 is optional)
     if: |
       always() &&
       needs.prepare-version.outputs.should-build == 'true' &&
       needs.build-macos-arm64.result == 'success' &&
-      needs.build-macos-x64.result == 'success' &&
       needs.build-linux-amd64.result == 'success' &&
       needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
@@ -1425,17 +1246,8 @@ jobs:
           # Copy and rename artifacts with consistent naming
           VERSION="${{ needs.prepare-version.outputs.version }}"
 
-          # macOS ARM64 (Apple Silicon)
-          find ./artifacts -name "*.dmg" -path "*macos-arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-arm64.dmg \; 2>/dev/null || true
-
-          # macOS x64 (Intel)
-          find ./artifacts -name "*.dmg" -path "*macos-x64*" -exec cp {} ./release-assets/BOSS-${VERSION}-x64.dmg \; 2>/dev/null || true
-
-          # macOS Universal (copy of ARM64 for backward compatibility with existing auto-updater)
-          if [[ -f ./release-assets/BOSS-${VERSION}-arm64.dmg ]]; then
-            cp ./release-assets/BOSS-${VERSION}-arm64.dmg ./release-assets/BOSS-${VERSION}-Universal.dmg
-            echo "✅ Created Universal.dmg (copy of arm64 for backward compat)"
-          fi
+          # macOS Universal (ARM64, works on Intel via Rosetta 2)
+          find ./artifacts -name "*.dmg" -path "*macos-arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \; 2>/dev/null || true
 
           # Windows x64
           find ./artifacts -name "*.msi" -path "*boss-windows-$VERSION*" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \; 2>/dev/null || true
@@ -1470,9 +1282,7 @@ jobs:
 
           | Platform | Architecture | Package |
           |----------|--------------|---------|
-          | **macOS** | Apple Silicon (M1/M2/M3) | \`BOSS-${VERSION}-arm64.dmg\` |
-          | **macOS** | Intel | \`BOSS-${VERSION}-x64.dmg\` |
-          | **macOS** | Universal (for existing installs) | \`BOSS-${VERSION}-Universal.dmg\` |
+          | **macOS** | Universal (Apple Silicon + Intel via Rosetta) | \`BOSS-${VERSION}-Universal.dmg\` |
           | **Windows** | x64 | \`BOSS-${VERSION}.msi\` |
           | **Windows** | ARM64 | \`BOSS-${VERSION}-arm64.msi\` |
           | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.deb\` |
@@ -1498,17 +1308,11 @@ jobs:
           ## 🛠️ Installation
 
           ### macOS
-          **Apple Silicon (M1/M2/M3):**
-          1. Download \`BOSS-${VERSION}-arm64.dmg\`
+          1. Download \`BOSS-${VERSION}-Universal.dmg\`
           2. Open the DMG and drag BOSS to Applications
           3. Launch from Applications folder
 
-          **Intel:**
-          1. Download \`BOSS-${VERSION}-x64.dmg\`
-          2. Open the DMG and drag BOSS to Applications
-          3. Launch from Applications folder
-
-          > **Note:** \`BOSS-${VERSION}-Universal.dmg\` is provided for backward compatibility with existing installations.
+          > Works on both Apple Silicon and Intel Macs (Intel via Rosetta 2)
 
           ### Windows (x64)
           1. Download \`BOSS-${VERSION}.msi\`
