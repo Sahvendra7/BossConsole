@@ -17,6 +17,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.9](v8.13.9.md) | 2025-11 | CI/CD reliability improvements: prevented race conditions in tagging and consolidated workflow to eliminate duplicate runs |
 | [v8.13.8](v8.13.8.md) | 2025-11 | Maintenance release with no functional changes |
 | [v8.13.7](v8.13.7.md) | 2025-11 | Fixed critical macOS notarization issue that prevented proper app signing and distribution |
+| [v8.13.6](v8.13.6.md) | 2025-11 | Comprehensive CLI functionality with Homebrew installation support, smart argument detection, and automatic version management |
 | [v8.13.18](v8.13.18.md) | 2024-12 | Fixed browser URL bar regression where Enter key navigated to autocomplete suggestion instead of typed text |
 | [v8.13.17](v8.13.17.md) | 2024-12 | Build system stability fixes, browser URL bar usability improvements, and macOS build dependency resolution |
 | [v8.13.14](v8.13.14.md) | 2024-12 | Browser usability enhancements with favicons in quick switcher, faster link clicks, URL bar text fixes, and authentication infrastructure cleanup |
