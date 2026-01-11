@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.13.10](v8.13.10.md) | 2025-11 | CI/CD reliability improvements with fixed duplicate tag creation in release workflow |
+| [v8.13.9](v8.13.9.md) | 2025-11 | CI/CD reliability improvements: prevented race conditions in tagging and consolidated workflow to eliminate duplicate runs |
 | [v8.13.18](v8.13.18.md) | 2024-12 | Fixed browser URL bar regression where Enter key navigated to autocomplete suggestion instead of typed text |
 | [v8.13.17](v8.13.17.md) | 2024-12 | Build system stability fixes, browser URL bar usability improvements, and macOS build dependency resolution |
 | [v8.13.14](v8.13.14.md) | 2024-12 | Browser usability enhancements with favicons in quick switcher, faster link clicks, URL bar text fixes, and authentication infrastructure cleanup |
