@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.12.31](v8.12.31.md) | 2025-12 | Browser tab state management and favicon loading reliability improvements with URL bar isolation and enhanced caching |
+| [v8.12.30](v8.12.30.md) | 2025-12 | Console panel improvements with complete log history, Fluck-style UI, multi-line text selection, and Terminal emoji support |
 | [v8.13.0](v8.13.0.md) | 2025-11 | Complete Bookmarks Plugin with favorites, collections, search, multi-workspace targeting, and comprehensive context menus |
 | [v8.13.2](v8.13.2.md) | 2025-11 | Intelligent popup handling for OAuth and mail links with smart detection and proper window management |
 | [v8.13.1](v8.13.1.md) | 2025-11 | Fixed tab bar layout to span full width of main panel |
