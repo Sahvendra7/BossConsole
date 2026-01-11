@@ -1256,108 +1256,116 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: 🔧 Setup Build Environment
+        shell: pwsh
         run: |
-          echo "🔧 Setting up build environment for Windows ARM64"
-          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+          Write-Host "🔧 Setting up build environment for Windows ARM64"
+          Write-Host "📦 Version: ${{ needs.prepare-version.outputs.version }}"
 
           # Verify version consistency
           ./gradlew showVersion
 
       - name: 🔍 Get JxBrowser Version
-        shell: bash
+        shell: pwsh
         run: |
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
-          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
-          echo "JxBrowser version: $JXBROWSER_VERSION"
-          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+          $content = Get-Content "gradle/libs.versions.toml" -Raw
+          if ($content -match 'jxbrowser = "([^"]+)"') {
+            $JXBROWSER_VERSION = $matches[1]
+            Write-Host "JxBrowser version: $JXBROWSER_VERSION"
+            echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $env:GITHUB_ENV
+          }
 
       - name: 📥 Download Branded Chromium (Windows ARM64)
-        shell: bash
+        shell: pwsh
         run: |
-          echo "📥 Downloading BOSS-branded Chromium for Windows ARM64..."
+          Write-Host "📥 Downloading BOSS-branded Chromium for Windows ARM64..."
 
-          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-windows-arm64.zip"
+          $CHROMIUM_URL = "https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$env:JXBROWSER_VERSION/boss-chromium-windows-arm64.zip"
 
-          mkdir -p branded-chromium
-          if curl -L --fail -o branded-chromium/boss-chromium-windows-arm64.zip "$CHROMIUM_URL"; then
-            echo "✅ Downloaded branded Chromium"
-            unzip -o branded-chromium/boss-chromium-windows-arm64.zip -d branded-chromium/
-            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
-          else
-            echo "⚠️ Branded Chromium not available yet"
-            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
-          fi
+          New-Item -ItemType Directory -Force -Path "branded-chromium" | Out-Null
+          try {
+            Invoke-WebRequest -Uri $CHROMIUM_URL -OutFile "branded-chromium/boss-chromium-windows-arm64.zip" -ErrorAction Stop
+            Write-Host "✅ Downloaded branded Chromium"
+            Expand-Archive -Path "branded-chromium/boss-chromium-windows-arm64.zip" -DestinationPath "branded-chromium" -Force
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $env:GITHUB_ENV
+          } catch {
+            Write-Host "⚠️ Branded Chromium not available yet"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $env:GITHUB_ENV
+          }
 
       - name: 🏗️ Build Windows ARM64 App
+        shell: pwsh
         run: |
-          echo "🏗️ Building Windows ARM64 app..."
+          Write-Host "🏗️ Building Windows ARM64 app..."
           ./gradlew createDistributable
-          echo "✅ Windows ARM64 app build completed"
+          Write-Host "✅ Windows ARM64 app build completed"
 
       - name: 📦 Bundle Branded Chromium (Windows ARM64)
         if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
-        shell: bash
+        shell: pwsh
         run: |
-          echo "📦 Bundling BOSS-branded Chromium into Windows ARM64 app..."
+          Write-Host "📦 Bundling BOSS-branded Chromium into Windows ARM64 app..."
 
           # Find the app directory
-          APP_DIR=$(find composeApp/build/compose/binaries/main/app -type d -name "BOSS" | head -1)
+          $APP_DIR = Get-ChildItem -Path "composeApp/build/compose/binaries/main/app" -Directory -Recurse | Where-Object { $_.Name -eq "BOSS" } | Select-Object -First 1
 
-          if [[ -n "$APP_DIR" && -d "$APP_DIR" ]]; then
-            echo "Found app directory: $APP_DIR"
+          if ($APP_DIR) {
+            Write-Host "Found app directory: $($APP_DIR.FullName)"
 
             # Create chromium directory alongside the app
-            CHROMIUM_DIR="$APP_DIR/chromium"
-            mkdir -p "$CHROMIUM_DIR"
+            $CHROMIUM_DIR = Join-Path $APP_DIR.FullName "chromium"
+            New-Item -ItemType Directory -Force -Path $CHROMIUM_DIR | Out-Null
 
             # Copy branded Chromium files
-            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
-            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+            Copy-Item -Path "branded-chromium/*" -Destination $CHROMIUM_DIR -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$CHROMIUM_DIR/*.zip" -Force -ErrorAction SilentlyContinue
 
-            echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
-            ls -la "$CHROMIUM_DIR"
-          else
-            echo "⚠️ App directory not found, skipping Chromium bundling"
-          fi
+            Write-Host "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
+            Get-ChildItem $CHROMIUM_DIR
+          } else {
+            Write-Host "⚠️ App directory not found, skipping Chromium bundling"
+          }
 
       - name: 🏗️ Package Windows ARM64 MSI
+        shell: pwsh
         run: |
-          echo "🏗️ Packaging Windows ARM64 MSI..."
+          Write-Host "🏗️ Packaging Windows ARM64 MSI..."
           ./gradlew packageMsi
-          echo "✅ Windows ARM64 MSI build completed successfully"
+          Write-Host "✅ Windows ARM64 MSI build completed successfully"
 
       - name: 🔍 Verify Built Version (Windows ARM64)
+        shell: pwsh
         run: |
-          echo "🔍 Verifying version inside built artifacts..."
+          Write-Host "🔍 Verifying version inside built artifacts..."
 
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
-          echo "Expected version: $EXPECTED_VERSION"
+          $EXPECTED_VERSION = "${{ needs.prepare-version.outputs.version }}"
+          Write-Host "Expected version: $EXPECTED_VERSION"
 
           # Check generated VersionConstants.kt
-          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
-          if [ -f "$GENERATED_FILE" ]; then
-            echo "Checking generated VersionConstants.kt..."
+          $GENERATED_FILE = "composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if (Test-Path $GENERATED_FILE) {
+            Write-Host "Checking generated VersionConstants.kt..."
 
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            $content = Get-Content $GENERATED_FILE -Raw
+            $MAJOR = if ($content -match 'const val MAJOR = (\d+)') { $matches[1] } else { "" }
+            $MINOR = if ($content -match 'const val MINOR = (\d+)') { $matches[1] } else { "" }
+            $PATCH = if ($content -match 'const val PATCH = (\d+)') { $matches[1] } else { "" }
 
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+            $BUILT_VERSION = "$MAJOR.$MINOR.$PATCH"
+            Write-Host "Built version (from VersionConstants.kt): $BUILT_VERSION"
 
-            if [ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]; then
-              echo "❌ VERSION MISMATCH DETECTED!"
-              echo "   Expected: $EXPECTED_VERSION"
-              echo "   Built: $BUILT_VERSION"
+            if ($BUILT_VERSION -ne $EXPECTED_VERSION) {
+              Write-Host "❌ VERSION MISMATCH DETECTED!"
+              Write-Host "   Expected: $EXPECTED_VERSION"
+              Write-Host "   Built: $BUILT_VERSION"
               exit 1
-            else
-              echo "✅ Version verification passed: $BUILT_VERSION"
-            fi
-          else
-            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            } else {
+              Write-Host "✅ Version verification passed: $BUILT_VERSION"
+            }
+          } else {
+            Write-Host "⚠️ VersionConstants.kt not found - this indicates build issue"
             exit 1
-          fi
-        shell: bash
+          }
 
       - name: 📊 Verify Build Artifacts (Windows ARM64)
         run: |
