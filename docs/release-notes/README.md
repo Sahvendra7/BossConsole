@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 <!-- RELEASE_INDEX_END -->
 
 ## Commit Conventions
