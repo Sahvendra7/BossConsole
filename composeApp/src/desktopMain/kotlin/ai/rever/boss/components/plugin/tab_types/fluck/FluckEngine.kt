@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.platform.FileNameSanitizer
+import ai.rever.boss.platform.MacOSScreenCapture
 import ai.rever.boss.platform.FileSystemUtils
 import ai.rever.boss.platform.pickSaveFile
 import com.teamdev.jxbrowser.browser.callback.StartDownloadCallback
@@ -12,6 +13,7 @@ import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.engine.UserDataDirectoryAlreadyInUseException
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
+import com.teamdev.jxbrowser.browser.callback.StartCaptureSessionCallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -422,6 +424,14 @@ object FluckEngine {
     private fun initializeEngine(): Engine {
         attemptCount++
 
+        // Request screen capture permission proactively on macOS
+        // This ensures permission is granted before user tries to screen share,
+        // preventing repeated permission dialogs while still allowing native picker
+        if (!MacOSScreenCapture.hasPermission()) {
+            println("Requesting screen capture permission proactively...")
+            MacOSScreenCapture.requestPermission()
+        }
+
         // Get user's home directory dynamically
         val userHome = System.getProperty("user.home")
         val chromiumDir = getChromiumDir(userHome)
@@ -804,6 +814,50 @@ object FluckEngine {
                         // For other permissions, auto-grant as well
                         action.grant()
                     }
+                }
+            }
+        })
+    }
+
+    /**
+     * Sets up screen capture session handler for a browser.
+     * This intercepts screen share requests and shows a custom picker dialog for tabs.
+     * User can choose to use native picker for windows/screens.
+     */
+    fun setupCaptureSessionHandler(browser: com.teamdev.jxbrowser.browser.Browser) {
+        browser.set(StartCaptureSessionCallback::class.java, StartCaptureSessionCallback { params, tell ->
+            // On macOS, check and request screen recording permission
+            if (!MacOSScreenCapture.hasPermission()) {
+                println("Screen capture permission not granted, requesting...")
+                val granted = MacOSScreenCapture.requestPermission()
+                if (!granted) {
+                    println("Screen capture permission denied by user")
+                    tell.cancel()
+                    return@StartCaptureSessionCallback
+                }
+            }
+
+            val sources = params.sources()
+
+            // Log available sources for debugging
+            println("Screen capture requested - Screens: ${sources.screens().size}, Windows: ${sources.applicationWindows().size}, Browsers: ${sources.browsers().size}")
+
+            // Generate unique request ID
+            val requestId = java.util.UUID.randomUUID().toString()
+
+            // Emit to UI for user selection
+            ScreenCaptureNotifier.requestCapture(
+                requestId = requestId,
+                sources = sources,
+                tell = tell
+            )
+
+            // Set 60-second timeout - if user doesn't respond, cancel
+            CoroutineScope(Dispatchers.Default).launch {
+                delay(60_000)
+                if (ScreenCaptureNotifier.hasPendingRequest(requestId)) {
+                    println("Screen capture request timed out after 60 seconds")
+                    ScreenCaptureNotifier.cancel(requestId)
                 }
             }
         })

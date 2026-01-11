@@ -302,7 +302,11 @@ kotlin {
             implementation(jxbrowser.currentPlatform)
             implementation(jxbrowser.compose)
             implementation(jxbrowser.swing)
-            
+
+            // JNA for native platform API access (macOS screen capture permissions)
+            implementation(libs.jna)
+            implementation(libs.jna.platform)
+
             // JavaCV for video recording - removed due to notarization issues
             // implementation("org.bytedeco:javacv-platform:1.5.11")
             

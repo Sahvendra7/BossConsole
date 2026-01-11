@@ -27,6 +27,7 @@ uiAndroid = "1.8.2"
 zxing = "3.5.4"
 jxbrowser = "8.15.0"
 jxbrowser-gradle-plugin = "2.0.0"
+jna = "5.14.0"
 rsyntaxtextarea = "3.6.1"
 rstaui = "3.3.2"
 autocomplete = "3.3.3"
@@ -79,6 +80,8 @@ supabase-storage = { module = "io.github.jan-tennert.supabase:storage-kt", versi
 supabase-functions = { module = "io.github.jan-tennert.supabase:functions-kt", version.ref = "supabase" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 zxing-javase = { module = "com.google.zxing:javase", version.ref = "zxing" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 rsyntaxtextarea = { module = "com.fifesoft:rsyntaxtextarea", version.ref = "rsyntaxtextarea" }
 rstaui = { module = "com.fifesoft:rstaui", version.ref = "rstaui" }
 autocomplete = { module = "com.fifesoft:autocomplete", version.ref = "autocomplete" }

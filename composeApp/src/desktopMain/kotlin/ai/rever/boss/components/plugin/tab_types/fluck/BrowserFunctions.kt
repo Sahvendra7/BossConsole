@@ -333,6 +333,8 @@ actual fun createBrowser(): Any {
     val browser = FluckEngine.engine.newBrowser()
     // Register download callback on this browser
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
+    // Register screen capture handler to prevent repeated permission dialogs on macOS
+    FluckEngine.setupCaptureSessionHandler(browser as com.teamdev.jxbrowser.browser.Browser)
     return browser
 }
 

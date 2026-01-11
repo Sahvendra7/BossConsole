@@ -1,0 +1,192 @@
+package ai.rever.boss.components.plugin.tab_types.fluck
+
+import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.components.window_panel.SplitViewStateRegistry
+import com.teamdev.jxbrowser.browser.callback.StartCaptureSessionCallback
+import com.teamdev.jxbrowser.capture.AudioCaptureMode
+import com.teamdev.jxbrowser.capture.CaptureSources
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Event bus for screen capture requests.
+ * Bridges JxBrowser's StartCaptureSessionCallback with Compose UI.
+ *
+ * Shows a custom picker with Tab/Window/Screen tabs.
+ */
+object ScreenCaptureNotifier {
+
+    /**
+     * Wrapper for a capture source with display info
+     */
+    data class CaptureSourceItem(
+        val name: String,
+        val category: Category,
+        val index: Int,  // Index in the original JxBrowser list for selection
+        val tabInfo: TabInfo? = null,  // Reference to internal tab for favicon loading (browser tabs only)
+        val url: String? = null  // URL for high-quality favicon loading (browser tabs only)
+    ) {
+        enum class Category {
+            SCREEN,
+            WINDOW,
+            BROWSER_TAB
+        }
+
+        /** Unique identifier for stable comparison */
+        val uniqueId: String
+            get() = "${category.name}_$index"
+    }
+
+    /**
+     * Represents a pending screen capture request
+     */
+    data class CaptureRequest(
+        val requestId: String,
+        val screens: List<CaptureSourceItem>,
+        val windows: List<CaptureSourceItem>,
+        val browsers: List<CaptureSourceItem>
+    )
+
+    // Internal storage for callback and sources
+    private data class PendingRequest(
+        val tell: StartCaptureSessionCallback.Action,
+        val sources: CaptureSources
+    )
+
+    private val _captureRequest = MutableStateFlow<CaptureRequest?>(null)
+    val captureRequest: StateFlow<CaptureRequest?> = _captureRequest.asStateFlow()
+
+    private val pendingRequests = ConcurrentHashMap<String, PendingRequest>()
+
+    /**
+     * Called by JxBrowser callback to request screen capture.
+     * Shows full picker with Tab/Window/Screen tabs.
+     */
+    fun requestCapture(
+        requestId: String,
+        sources: CaptureSources,
+        tell: StartCaptureSessionCallback.Action
+    ) {
+        pendingRequests[requestId] = PendingRequest(tell, sources)
+
+        val totalScreens = sources.screens().size
+        val screens = sources.screens().mapIndexed { index, screen ->
+            val rawName = screen.name()
+            // Replace generic "Screen N" names with friendlier labels
+            val displayName = when {
+                rawName.isBlank() || rawName.matches(Regex("(?i)screen\\s*\\d+")) -> {
+                    if (totalScreens == 1) "Entire Screen"
+                    else if (index == 0) "Primary Display"
+                    else "Secondary Display${if (totalScreens > 2) " ${index + 1}" else ""}"
+                }
+                else -> rawName
+            }
+            CaptureSourceItem(
+                name = displayName,
+                category = CaptureSourceItem.Category.SCREEN,
+                index = index
+            )
+        }
+
+        val windows = sources.applicationWindows().mapIndexed { index, window ->
+            CaptureSourceItem(
+                name = window.name().ifBlank { "Window ${index + 1}" },
+                category = CaptureSourceItem.Category.WINDOW,
+                index = index
+            )
+        }
+
+        // Collect all internal tabs using TopOfMind pattern for favicon/title enrichment
+        val allInternalTabs = mutableListOf<FluckTabInfo>()
+        try {
+            SplitViewStateRegistry.getAllStates().forEach { (windowId, state) ->
+                state.collectAllActiveTabs(null, windowId)
+                    .filter { it.tabInfo is FluckTabInfo }
+                    .forEach { allInternalTabs.add(it.tabInfo as FluckTabInfo) }
+            }
+        } catch (e: Exception) {
+            println("ScreenCaptureNotifier: Failed to collect internal tabs: ${e.message}")
+        }
+
+        val browsers = sources.browsers().mapIndexed { index, browserSource ->
+            val rawName = browserSource.name()
+
+            // Match by title (JxBrowser returns page title as name)
+            val matchingTab = allInternalTabs.find { it.title == rawName }
+
+            val tabName = when {
+                matchingTab != null -> matchingTab.title
+                rawName.isBlank() -> "Loading..."
+                rawName.equals("about:blank", ignoreCase = true) -> "New Tab"
+                rawName.equals("new tab", ignoreCase = true) -> "New Tab"
+                else -> rawName
+            }
+
+            CaptureSourceItem(
+                name = tabName,
+                category = CaptureSourceItem.Category.BROWSER_TAB,
+                index = index,
+                tabInfo = matchingTab,
+                url = matchingTab?.currentUrl
+            )
+        }
+
+        println("ScreenCaptureNotifier: Full picker - Screens: ${screens.size}, Windows: ${windows.size}, Browsers: ${browsers.size}")
+
+        _captureRequest.value = CaptureRequest(
+            requestId = requestId,
+            screens = screens,
+            windows = windows,
+            browsers = browsers
+        )
+    }
+
+    /**
+     * Called by UI when user selects a source.
+     */
+    fun selectSource(requestId: String, source: CaptureSourceItem, audioMode: AudioCaptureMode = AudioCaptureMode.CAPTURE) {
+        val pending = pendingRequests.remove(requestId)
+        if (pending != null) {
+            println("ScreenCaptureNotifier: User selected '${source.name}' (${source.category})")
+
+            when (source.category) {
+                CaptureSourceItem.Category.BROWSER_TAB -> {
+                    val browser = pending.sources.browsers()[source.index]
+                    pending.tell.selectSource(browser, audioMode)
+                }
+                CaptureSourceItem.Category.WINDOW -> {
+                    val window = pending.sources.applicationWindows()[source.index]
+                    pending.tell.selectSource(window, audioMode)
+                }
+                CaptureSourceItem.Category.SCREEN -> {
+                    val screen = pending.sources.screens()[source.index]
+                    pending.tell.selectSource(screen, audioMode)
+                }
+            }
+        } else {
+            println("ScreenCaptureNotifier: No pending request for requestId=$requestId")
+        }
+        _captureRequest.value = null
+    }
+
+    /**
+     * Called by UI when user cancels the capture request.
+     */
+    fun cancel(requestId: String) {
+        val pending = pendingRequests.remove(requestId)
+        if (pending != null) {
+            println("ScreenCaptureNotifier: User cancelled capture request")
+            pending.tell.cancel()
+        }
+        _captureRequest.value = null
+    }
+
+    /**
+     * Check if there's a pending request
+     */
+    fun hasPendingRequest(requestId: String): Boolean {
+        return pendingRequests.containsKey(requestId)
+    }
+}
