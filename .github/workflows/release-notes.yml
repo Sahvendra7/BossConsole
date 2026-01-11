@@ -24,6 +24,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: release-notes
+  cancel-in-progress: false
+
 jobs:
   generate-release-notes:
     if: |
@@ -138,13 +142,26 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           if git diff --quiet docs/release-notes/; then
+            echo "No changes to commit"
             exit 0
           fi
 
           git add docs/release-notes/
           git commit -m "📝 Add release notes for v${VERSION}" \
                      -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
-          git push origin HEAD:main
+
+          # Retry push with rebase up to 5 times
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "✅ Push successful"
+              exit 0
+            fi
+            echo "⚠️ Push failed, attempt $i/5. Pulling and rebasing..."
+            git pull --rebase origin main
+            sleep $((i * 2))
+          done
+          echo "❌ Push failed after 5 attempts"
+          exit 1
 
       - name: 🏷️ Update GitHub Release Body (Private Repo)
         if: steps.check-existing.outputs.exists != 'true'
