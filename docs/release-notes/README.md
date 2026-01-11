@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.12.12](v8.12.12.md) | 2024-10 | Secret management with user-level viewing, role-based sharing with audit trails, and database migration consolidation |
+| [v8.12.11](v8.12.11.md) | 2024-10 | Fixed bottom bar to correctly display and update with active tabs, and cleaned up top bar by hiding unimplemented components |
 | [v8.12.16](v8.12.16.md) | 2024-10 | Fixed critical macOS update installation failure and hardened update script security against command injection vulnerabilities |
 | [v8.12.15](v8.12.15.md) | 2024-10 | User feedback for expired and already-used magic links, eliminating silent authentication failures |
 | [v8.12.14](v8.12.14.md) | 2024-10 | Fixed embedded browser for Settings passkey registration and added auto-click capability |
