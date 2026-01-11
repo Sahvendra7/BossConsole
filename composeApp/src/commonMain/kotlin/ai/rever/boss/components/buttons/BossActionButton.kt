@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -72,6 +73,7 @@ fun BossActionButton(
     color: Color = BossDarkTextPrimary,
     iconColor: Color? = null, // Optional separate icon color (defaults to color if null)
     iconSize: Dp = 20.dp, // Icon size for imageVector mode
+    maxTextWidth: Dp? = null, // Optional max width for text (truncates with ellipsis)
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(2.dp),
     isSelected: Boolean = false,
@@ -220,6 +222,9 @@ fun BossActionButton(
             fontSize = fontSize,
             fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (maxTextWidth != null) Modifier.widthIn(max = maxTextWidth) else Modifier
         )
     }
 

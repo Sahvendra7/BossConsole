@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.components.plugin.panels.bottom.console.registerConsole
+import ai.rever.boss.components.plugin.panels.bottom.git.registerGitLog
+import ai.rever.boss.components.plugin.panels.bottom.git.registerGitStatus
 import ai.rever.boss.components.plugin.panels.bottom.performance.registerPerformance
 import ai.rever.boss.components.plugin.panels.bottom.terminal.registerTerminal
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.registerTopOfMind
@@ -41,6 +43,8 @@ class DefaultPlugin(
         registerTerminal()
         registerConsole()
         registerPerformance()
+        registerGitStatus()
+        registerGitLog()
         registerTopOfMind()
         registerRunConfigurations()
 

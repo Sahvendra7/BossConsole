@@ -1,0 +1,399 @@
+package ai.rever.boss.git
+
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Information about a Git branch.
+ *
+ * @param name The branch name (e.g., "main", "origin/main")
+ * @param isCurrent Whether this is the currently checked out branch
+ * @param isRemote Whether this is a remote tracking branch
+ */
+data class GitBranchInfo(
+    val name: String,
+    val isCurrent: Boolean = false,
+    val isRemote: Boolean = false
+)
+
+/**
+ * Result of a Git operation.
+ */
+sealed class GitOperationResult {
+    data class Success(val message: String = "") : GitOperationResult()
+    data class Error(val message: String, val exitCode: Int = -1) : GitOperationResult()
+}
+
+/**
+ * Type of file status in Git.
+ */
+enum class GitFileStatusType {
+    MODIFIED,
+    ADDED,
+    DELETED,
+    RENAMED,
+    COPIED,
+    UNTRACKED,
+    IGNORED,
+    UNMERGED
+}
+
+/**
+ * Information about a file's Git status.
+ *
+ * @param path The relative path to the file
+ * @param indexStatus Status in the index (staged area)
+ * @param workTreeStatus Status in the working tree
+ * @param isStaged Whether the file has staged changes
+ * @param isUnstaged Whether the file has unstaged changes
+ * @param originalPath For renames/copies, the original file path
+ */
+data class GitFileStatus(
+    val path: String,
+    val indexStatus: GitFileStatusType?,
+    val workTreeStatus: GitFileStatusType?,
+    val isStaged: Boolean,
+    val isUnstaged: Boolean,
+    val originalPath: String? = null
+)
+
+/**
+ * Information about a Git commit.
+ *
+ * @param hash Full commit hash
+ * @param shortHash Short commit hash (7 chars)
+ * @param author Author name
+ * @param authorEmail Author email
+ * @param date Commit timestamp (epoch seconds)
+ * @param subject First line of commit message
+ * @param body Rest of commit message (may be null)
+ * @param refs Branch/tag names pointing to this commit
+ * @param parentHashes Parent commit hashes
+ */
+data class GitCommitInfo(
+    val hash: String,
+    val shortHash: String,
+    val author: String,
+    val authorEmail: String,
+    val date: Long,
+    val subject: String,
+    val body: String? = null,
+    val refs: List<String> = emptyList(),
+    val parentHashes: List<String> = emptyList()
+)
+
+/**
+ * Information about a Git stash entry.
+ *
+ * @param index Stash index (0, 1, 2, etc.)
+ * @param message Stash message
+ * @param branch Branch the stash was created on
+ */
+data class GitStashInfo(
+    val index: Int,
+    val message: String,
+    val branch: String?
+)
+
+/**
+ * Service for Git operations.
+ *
+ * Uses git CLI for all operations - requires git to be installed on the system.
+ * Follows the expect/actual pattern for platform abstraction.
+ *
+ * Issue #90: Git Integration for Top Bar
+ */
+expect object GitService {
+    /**
+     * Current branch name, or null if not a Git repository or in detached HEAD state.
+     * In detached HEAD state, this will contain the short SHA.
+     */
+    val currentBranch: StateFlow<String?>
+
+    /**
+     * Whether the current project is a Git repository.
+     */
+    val isGitRepository: StateFlow<Boolean>
+
+    /**
+     * List of local branches.
+     * The current branch (if any) will have isCurrent = true.
+     */
+    val localBranches: StateFlow<List<GitBranchInfo>>
+
+    /**
+     * List of remote tracking branches (e.g., origin/main).
+     */
+    val remoteBranches: StateFlow<List<GitBranchInfo>>
+
+    /**
+     * Whether Git is available on the system.
+     */
+    val isGitAvailable: StateFlow<Boolean>
+
+    /**
+     * Whether a Git operation is in progress.
+     */
+    val isLoading: StateFlow<Boolean>
+
+    /**
+     * Last error message, if any.
+     */
+    val lastError: StateFlow<String?>
+
+    /**
+     * Initialize/refresh Git state for a project path.
+     * Should be called when project changes.
+     *
+     * @param projectPath The root path of the project
+     */
+    suspend fun refresh(projectPath: String)
+
+    /**
+     * Checkout an existing branch.
+     * Works for both local and remote branches.
+     * When checking out a remote branch (e.g., origin/feature), git will create
+     * a local tracking branch automatically.
+     *
+     * @param branchName The branch name to checkout
+     * @return Result indicating success or failure
+     */
+    suspend fun checkout(branchName: String): GitOperationResult
+
+    /**
+     * Create a new branch.
+     *
+     * @param branchName The new branch name
+     * @param checkout If true, checkout the new branch immediately
+     * @return Result indicating success or failure
+     */
+    suspend fun createBranch(branchName: String, checkout: Boolean = true): GitOperationResult
+
+    /**
+     * Pull changes from remote.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun pull(): GitOperationResult
+
+    /**
+     * Push changes to remote.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun push(): GitOperationResult
+
+    /**
+     * Get the URL for creating a pull request in the browser.
+     * Returns the GitHub/GitLab PR creation URL based on the remote origin.
+     *
+     * @return The PR creation URL, or null if not a supported remote
+     */
+    suspend fun getCreatePRUrl(): String?
+
+    /**
+     * Merge a branch into the current branch.
+     *
+     * @param branchName The branch to merge into current
+     * @return Result indicating success or failure
+     */
+    suspend fun merge(branchName: String): GitOperationResult
+
+    /**
+     * Rebase current branch onto another branch.
+     *
+     * @param branchName The branch to rebase onto
+     * @return Result indicating success or failure
+     */
+    suspend fun rebase(branchName: String): GitOperationResult
+
+    /**
+     * Clear Git state (when no project is selected).
+     */
+    fun clear()
+
+    // ===== File Status & Staging =====
+
+    /**
+     * List of files with their Git status (staged, unstaged, untracked).
+     */
+    val fileStatus: StateFlow<List<GitFileStatus>>
+
+    /**
+     * Get current file status (refreshes the fileStatus StateFlow).
+     *
+     * @return List of files with their status
+     */
+    suspend fun getStatus(): List<GitFileStatus>
+
+    /**
+     * Stage a file for commit.
+     *
+     * @param filePath Path to the file (relative to project root)
+     * @return Result indicating success or failure
+     */
+    suspend fun stage(filePath: String): GitOperationResult
+
+    /**
+     * Stage all modified files.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun stageAll(): GitOperationResult
+
+    /**
+     * Unstage a file.
+     *
+     * @param filePath Path to the file (relative to project root)
+     * @return Result indicating success or failure
+     */
+    suspend fun unstage(filePath: String): GitOperationResult
+
+    /**
+     * Unstage all staged files.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun unstageAll(): GitOperationResult
+
+    /**
+     * Discard changes to a file in the working tree.
+     *
+     * @param filePath Path to the file (relative to project root)
+     * @return Result indicating success or failure
+     */
+    suspend fun discardChanges(filePath: String): GitOperationResult
+
+    // ===== Commit =====
+
+    /**
+     * Commit staged changes.
+     *
+     * @param message Commit message
+     * @param amend Whether to amend the previous commit
+     * @return Result indicating success or failure
+     */
+    suspend fun commit(message: String, amend: Boolean = false): GitOperationResult
+
+    /**
+     * Get the last commit message (for amending).
+     *
+     * @return Last commit message, or null if no commits
+     */
+    suspend fun getLastCommitMessage(): String?
+
+    // ===== Commit Log =====
+
+    /**
+     * List of recent commits.
+     */
+    val commitLog: StateFlow<List<GitCommitInfo>>
+
+    /**
+     * Get commit log (refreshes the commitLog StateFlow).
+     *
+     * @param limit Maximum number of commits to retrieve
+     * @return List of commits
+     */
+    suspend fun getLog(limit: Int = 100): List<GitCommitInfo>
+
+    /**
+     * Cherry-pick a commit onto the current branch.
+     *
+     * @param commitHash The commit hash to cherry-pick
+     * @return Result indicating success or failure
+     */
+    suspend fun cherryPick(commitHash: String): GitOperationResult
+
+    /**
+     * Revert a commit.
+     *
+     * @param commitHash The commit hash to revert
+     * @return Result indicating success or failure
+     */
+    suspend fun revert(commitHash: String): GitOperationResult
+
+    // ===== Stash =====
+
+    /**
+     * List of stash entries.
+     */
+    val stashList: StateFlow<List<GitStashInfo>>
+
+    /**
+     * Stash current changes.
+     *
+     * @param message Optional stash message
+     * @param includeUntracked Whether to include untracked files
+     * @return Result indicating success or failure
+     */
+    suspend fun stash(message: String? = null, includeUntracked: Boolean = false): GitOperationResult
+
+    /**
+     * Pop the latest stash (apply and delete).
+     *
+     * @param index Stash index to pop (default 0 = latest)
+     * @return Result indicating success or failure
+     */
+    suspend fun stashPop(index: Int = 0): GitOperationResult
+
+    /**
+     * Apply a stash without deleting it.
+     *
+     * @param index Stash index to apply (default 0 = latest)
+     * @return Result indicating success or failure
+     */
+    suspend fun stashApply(index: Int = 0): GitOperationResult
+
+    /**
+     * Drop (delete) a stash entry.
+     *
+     * @param index Stash index to drop
+     * @return Result indicating success or failure
+     */
+    suspend fun stashDrop(index: Int): GitOperationResult
+
+    /**
+     * Refresh stash list.
+     *
+     * @return List of stash entries
+     */
+    suspend fun refreshStashList(): List<GitStashInfo>
+
+    // ===== Terminal Integration =====
+
+    /**
+     * Run git pull in the terminal (for real-time output).
+     */
+    suspend fun pullInTerminal()
+
+    /**
+     * Run git push in the terminal (for real-time output).
+     */
+    suspend fun pushInTerminal()
+
+    /**
+     * Run git merge in the terminal (for real-time output).
+     *
+     * @param branchName Branch to merge
+     */
+    suspend fun mergeInTerminal(branchName: String)
+
+    /**
+     * Run git rebase in the terminal (for real-time output).
+     *
+     * @param branchName Branch to rebase onto
+     */
+    suspend fun rebaseInTerminal(branchName: String)
+
+    /**
+     * Run a custom git command in the terminal.
+     *
+     * @param args Git command arguments (without 'git' prefix)
+     */
+    suspend fun runInTerminal(vararg args: String)
+
+    /**
+     * Get the current project path (for terminal commands).
+     */
+    fun getCurrentProjectPath(): String?
+}

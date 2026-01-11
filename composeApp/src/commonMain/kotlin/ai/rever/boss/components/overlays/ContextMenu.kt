@@ -8,7 +8,11 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Divider
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
@@ -18,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -123,6 +128,11 @@ private fun ContextMenuContent(
                     }
                 }
 
+                var rowWidth by remember { mutableStateOf(0) }
+
+                // Keep parent highlighted when submenu is open
+                val isHighlighted = isHovered || (hasSubMenu && expandedSubMenuIndex == index)
+
                 Box {
                     Row(
                         modifier = Modifier
@@ -134,10 +144,13 @@ private fun ContextMenuContent(
                                 }
                             )
                             .background(
-                                if (isHovered) Color(0xFF3A3D40) else Color.Transparent
+                                if (isHighlighted) Color(0xFF3A3D40) else Color.Transparent
                             )
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coordinates ->
+                                rowWidth = coordinates.size.width
+                            },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (item.icon != null) {
@@ -219,7 +232,7 @@ private fun ContextMenuContent(
                         }
                     }
 
-                    // Render submenu
+                    // Render submenu with scroll support - positioned to the right of parent menu
                     if (hasSubMenu && expandedSubMenuIndex == index) {
                         val subMenuInteractionSource = remember { MutableInteractionSource() }
                         val subMenuHovered by subMenuInteractionSource.collectIsHoveredAsState()
@@ -230,15 +243,169 @@ private fun ContextMenuContent(
                         }
 
                         Popup(
-                            alignment = Alignment.TopEnd,
-                            offset = IntOffset(4, 0) // Small offset to create overlap for smooth transition
+                            alignment = Alignment.TopStart,
+                            offset = IntOffset(rowWidth, 0) // Position to the right of parent menu item
                         ) {
-                            Box(
-                                modifier = Modifier.hoverable(subMenuInteractionSource)
+                            val scrollState = rememberScrollState()
+                            val needsScrollbar = scrollState.maxValue > 0
+
+                            Row(
+                                modifier = Modifier
+                                    .hoverable(subMenuInteractionSource)
+                                    .heightIn(max = 400.dp)
+                                    .background(
+                                        color = BossDarkBorder,
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
                             ) {
-                                ContextMenuContent(
-                                    items = item.subMenu,
+                                Column(
+                                    modifier = Modifier
+                                        .padding(vertical = 4.dp)
+                                        .widthIn(min = 150.dp)
+                                        .width(IntrinsicSize.Max)
+                                        .verticalScroll(scrollState)
+                                ) {
+                                    SubMenuContent(
+                                        items = item.subMenu!!,
+                                        onDismissRequest = onDismissRequest
+                                    )
+                                }
+                                // Only show scrollbar when content overflows
+                                if (needsScrollbar) {
+                                    VerticalScrollbar(
+                                        modifier = Modifier
+                                            .padding(vertical = 4.dp, horizontal = 2.dp),
+                                        adapter = rememberScrollbarAdapter(scrollState)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Recursive submenu content that supports nested submenus.
+ */
+@Composable
+private fun SubMenuContent(
+    items: List<ContextMenuItem>,
+    onDismissRequest: () -> Unit
+) {
+    var expandedSubMenuIndex by remember { mutableStateOf<Int?>(null) }
+
+    items.forEachIndexed { index, subItem ->
+        if (subItem.isDivider) {
+            Divider(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                color = Color(0xFF444444),
+                thickness = 1.dp
+            )
+        } else {
+            val subInteractionSource = remember { MutableInteractionSource() }
+            val subIsHovered by subInteractionSource.collectIsHoveredAsState()
+            val hasNestedSubMenu = !subItem.subMenu.isNullOrEmpty()
+
+            // Update expanded submenu on hover
+            LaunchedEffect(subIsHovered) {
+                if (subIsHovered) {
+                    if (hasNestedSubMenu) {
+                        expandedSubMenuIndex = index
+                    } else {
+                        expandedSubMenuIndex = null
+                    }
+                }
+            }
+
+            var rowWidth by remember { mutableStateOf(0) }
+
+            // Keep parent highlighted when nested submenu is open
+            val isHighlighted = subIsHovered || (hasNestedSubMenu && expandedSubMenuIndex == index)
+
+            Box {
+                Row(
+                    modifier = Modifier
+                        .hoverable(subInteractionSource)
+                        .then(
+                            if (hasNestedSubMenu) Modifier else Modifier.clickable {
+                                subItem.onClick()
+                                onDismissRequest()
+                            }
+                        )
+                        .background(
+                            if (isHighlighted) Color(0xFF3A3D40) else Color.Transparent
+                        )
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coordinates ->
+                            rowWidth = coordinates.size.width
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (subItem.icon != null) {
+                        Icon(
+                            imageVector = subItem.icon,
+                            contentDescription = subItem.text,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = subItem.text,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+
+                    // Show arrow for nested submenu
+                    if (hasNestedSubMenu) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "›",
+                            color = Color(0xFF888888),
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+
+                // Render nested submenu
+                if (hasNestedSubMenu && expandedSubMenuIndex == index) {
+                    Popup(
+                        alignment = Alignment.TopStart,
+                        offset = IntOffset(rowWidth, 0)
+                    ) {
+                        val scrollState = rememberScrollState()
+                        val needsScrollbar = scrollState.maxValue > 0
+
+                        Row(
+                            modifier = Modifier
+                                .heightIn(max = 400.dp)
+                                .background(
+                                    color = BossDarkBorder,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .widthIn(min = 150.dp)
+                                    .width(IntrinsicSize.Max)
+                                    .verticalScroll(scrollState)
+                            ) {
+                                SubMenuContent(
+                                    items = subItem.subMenu!!,
                                     onDismissRequest = onDismissRequest
+                                )
+                            }
+                            if (needsScrollbar) {
+                                VerticalScrollbar(
+                                    modifier = Modifier
+                                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                                    adapter = rememberScrollbarAdapter(scrollState)
                                 )
                             }
                         }

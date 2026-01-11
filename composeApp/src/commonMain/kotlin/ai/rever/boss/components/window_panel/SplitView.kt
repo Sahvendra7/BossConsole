@@ -624,6 +624,13 @@ class SplitViewState(
     fun hasSplits(): Boolean = getAllPanels().size > 1
 
     /**
+     * Check if any tabs exist in any panel.
+     */
+    fun hasTabs(): Boolean = getAllPanels().any { panel ->
+        panel.tabsComponent.tabsState.value.tabs.isNotEmpty()
+    }
+
+    /**
      * Get the first panel that is not the currently active panel.
      * Useful for opening content in an existing split.
      */

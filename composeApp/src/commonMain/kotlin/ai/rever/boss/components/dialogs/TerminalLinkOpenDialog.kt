@@ -30,6 +30,7 @@ import androidx.compose.ui.window.DialogProperties
  * Issue #346: Terminal link click prompt with remember preference
  *
  * @param url The URL that was clicked
+ * @param hasTabs Whether any tabs exist (shows split options only if true)
  * @param hasSplits Whether splits already exist (shows "Existing Split" option first if true)
  * @param onDismiss Called when dialog is dismissed without selection
  * @param onOpenLink Called when user selects an option. Receives the mode and whether to remember the choice.
@@ -37,6 +38,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun TerminalLinkOpenDialog(
     url: String,
+    hasTabs: Boolean,
     hasSplits: Boolean,
     onDismiss: () -> Unit,
     onOpenLink: (mode: TerminalLinkOpenMode, rememberChoice: Boolean) -> Unit
@@ -90,35 +92,38 @@ fun TerminalLinkOpenDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Options - show "Existing Split" first when splits exist (smart default)
-                if (hasSplits) {
+                // Options - show split options only when tabs exist
+                if (hasTabs) {
+                    // Show "Existing Split" first when splits exist (smart default)
+                    if (hasSplits) {
+                        LinkOpenOption(
+                            icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                            title = "Existing Split",
+                            description = "Open in other panel",
+                            onClick = { onOpenLink(TerminalLinkOpenMode.EXISTING_SPLIT, rememberChoice) }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
                     LinkOpenOption(
-                        icon = Icons.AutoMirrored.Outlined.OpenInNew,
-                        title = "Existing Split",
-                        description = "Open in other panel",
-                        onClick = { onOpenLink(TerminalLinkOpenMode.EXISTING_SPLIT, rememberChoice) }
+                        icon = Icons.Outlined.ViewColumn,
+                        title = if (hasSplits) "New Vertical Split" else "Vertical Split",
+                        description = "Open alongside current tab",
+                        onClick = { onOpenLink(TerminalLinkOpenMode.VERTICAL_SPLIT, rememberChoice) }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LinkOpenOption(
+                        icon = Icons.Outlined.ViewAgenda,
+                        title = if (hasSplits) "New Horizontal Split" else "Horizontal Split",
+                        description = "Open below current tab",
+                        onClick = { onOpenLink(TerminalLinkOpenMode.HORIZONTAL_SPLIT, rememberChoice) }
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
                 }
-
-                LinkOpenOption(
-                    icon = Icons.Outlined.ViewColumn,
-                    title = if (hasSplits) "New Vertical Split" else "Vertical Split",
-                    description = "Open alongside terminal",
-                    onClick = { onOpenLink(TerminalLinkOpenMode.VERTICAL_SPLIT, rememberChoice) }
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LinkOpenOption(
-                    icon = Icons.Outlined.ViewAgenda,
-                    title = if (hasSplits) "New Horizontal Split" else "Horizontal Split",
-                    description = "Open below terminal",
-                    onClick = { onOpenLink(TerminalLinkOpenMode.HORIZONTAL_SPLIT, rememberChoice) }
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 LinkOpenOption(
                     icon = Icons.Outlined.Tab,

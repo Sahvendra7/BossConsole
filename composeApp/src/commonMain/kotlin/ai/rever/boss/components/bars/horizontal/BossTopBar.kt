@@ -19,12 +19,18 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.GitBranch
+import ai.rever.boss.git.GitService
+import ai.rever.boss.git.GitBranchInfo
+import ai.rever.boss.git.GitOperationResult
+import ai.rever.boss.git.GitStashInfo
+import ai.rever.boss.components.dialogs.CommitDialog
 import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.windows.SettingsWindow
@@ -35,6 +41,10 @@ import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.dialogs.LogoutConfirmationDialog
 import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.components.events.TerminalLinkEventBus
+import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.TextButton
@@ -163,14 +173,180 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
     }
 }
 
-// TODO: #90 - Git integration helper (currently disabled)
-// See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
-// val gitContextMenuItems get() = listOf(
-//     ContextMenuItem(
-//         text = "dev",
-//         onClick = { /* Handle branch 1 action */ }
-//     )
-// )
+/**
+ * Build context menu items for Git branch operations.
+ * Issue #90: Git Integration for Top Bar
+ *
+ * @param currentBranch The current branch name (or null if detached/error)
+ * @param localBranches List of local branches
+ * @param remoteBranches List of remote tracking branches
+ * @param stashList List of stash entries
+ * @param isLoading Whether git data is currently being fetched
+ * @param onCheckout Callback when a branch is selected for checkout
+ * @param onCreateBranch Callback to show create branch dialog
+ * @param onCommit Callback to show commit dialog
+ * @param onPullInTerminal Callback to run git pull in terminal
+ * @param onPushInTerminal Callback to run git push in terminal
+ * @param onStash Callback to stash changes
+ * @param onStashPop Callback to pop a stash
+ * @param onRefresh Callback to refresh Git state
+ */
+@Composable
+private fun getGitContextMenuItems(
+    currentBranch: String?,
+    localBranches: List<GitBranchInfo>,
+    remoteBranches: List<GitBranchInfo>,
+    stashList: List<GitStashInfo>,
+    isLoading: Boolean,
+    onCheckout: (String) -> Unit,
+    onMerge: (String) -> Unit,
+    onRebase: (String) -> Unit,
+    onCreateBranch: () -> Unit,
+    onCommit: () -> Unit,
+    onPull: () -> Unit,
+    onPush: () -> Unit,
+    onCreatePR: (() -> Unit)?,
+    onStash: () -> Unit,
+    onStashPop: (Int) -> Unit,
+    onRefresh: () -> Unit
+): List<ContextMenuItem> {
+    // Helper to create branch action submenu
+    fun createBranchActions(branch: GitBranchInfo): List<ContextMenuItem> = listOf(
+        ContextMenuItem(
+            text = "Checkout",
+            icon = Icons.Outlined.Check,
+            onClick = { onCheckout(branch.name) }
+        ),
+        ContextMenuItem(
+            text = "Merge into current",
+            icon = Icons.Outlined.MergeType,
+            onClick = { onMerge(branch.name) }
+        ),
+        ContextMenuItem(
+            text = "Rebase onto this",
+            icon = Icons.Outlined.Replay,
+            onClick = { onRebase(branch.name) }
+        )
+    )
+
+    return buildList {
+        // Current branch header (info only)
+        add(ContextMenuItem(
+            text = "On branch: ${currentBranch ?: "unknown"}",
+            icon = FeatherIcons.GitBranch,
+            onClick = {} // Info only, no action
+        ))
+
+        add(ContextMenuItem(isDivider = true))
+
+        // Commit
+        add(ContextMenuItem(
+            text = "Commit...",
+            icon = Icons.Outlined.Check,
+            onClick = onCommit
+        ))
+
+        add(ContextMenuItem(isDivider = true))
+
+        // Pull and Push actions (run in terminal)
+        add(ContextMenuItem(
+            text = "Pull",
+            icon = Icons.Outlined.ArrowDownward,
+            onClick = onPull
+        ))
+
+        add(ContextMenuItem(
+            text = "Push",
+            icon = Icons.Outlined.ArrowUpward,
+            onClick = onPush
+        ))
+
+        // Create PR (only if supported remote detected)
+        if (onCreatePR != null) {
+            add(ContextMenuItem(
+                text = "Create Pull Request...",
+                icon = Icons.Outlined.OpenInNew,
+                onClick = onCreatePR
+            ))
+        }
+
+        add(ContextMenuItem(isDivider = true))
+
+        // Stash submenu
+        add(ContextMenuItem(
+            text = "Stash",
+            icon = Icons.Outlined.Archive,
+            subMenu = buildList {
+                add(ContextMenuItem(
+                    text = "Stash Changes",
+                    icon = Icons.Outlined.Archive,
+                    onClick = onStash
+                ))
+                if (stashList.isNotEmpty()) {
+                    add(ContextMenuItem(isDivider = true))
+                    stashList.forEach { stash ->
+                        add(ContextMenuItem(
+                            text = "stash@{${stash.index}}: ${stash.message.take(40)}${if (stash.message.length > 40) "..." else ""}",
+                            onClick = { onStashPop(stash.index) }
+                        ))
+                    }
+                }
+            }
+        ))
+
+        add(ContextMenuItem(isDivider = true))
+
+        if (isLoading) {
+            // Show loading state
+            add(ContextMenuItem(
+                text = "Loading branches...",
+                icon = Icons.Outlined.Refresh,
+                onClick = {} // No action while loading
+            ))
+        } else {
+            // Local branches submenu - each branch has checkout/merge/rebase options
+            add(ContextMenuItem(
+                text = "Local Branches${if (localBranches.isEmpty()) " (none)" else ""}",
+                icon = Icons.Outlined.AccountTree,
+                subMenu = if (localBranches.isEmpty()) null else localBranches.map { branch ->
+                    ContextMenuItem(
+                        text = branch.name,
+                        icon = if (branch.isCurrent) Icons.Outlined.Check else null,
+                        subMenu = if (branch.isCurrent) null else createBranchActions(branch)
+                    )
+                }
+            ))
+
+            // Remote branches submenu - each branch has checkout/merge/rebase options
+            add(ContextMenuItem(
+                text = "Remote Branches${if (remoteBranches.isEmpty()) " (none)" else ""}",
+                icon = Icons.Outlined.Cloud,
+                subMenu = if (remoteBranches.isEmpty()) null else remoteBranches.map { branch ->
+                    ContextMenuItem(
+                        text = branch.name,
+                        subMenu = createBranchActions(branch)
+                    )
+                }
+            ))
+        }
+
+        add(ContextMenuItem(isDivider = true))
+
+        // Create new branch
+        add(ContextMenuItem(
+            text = "Create Branch...",
+            icon = Icons.Filled.Add,
+            onClick = onCreateBranch
+        ))
+
+        // Refresh
+        add(ContextMenuItem(
+            text = "Refresh",
+            icon = Icons.Outlined.Refresh,
+            onClick = onRefresh
+        ))
+    }
+}
 
 @Composable
 fun BossDraggableComponent.BossTopLeftBar(
@@ -187,6 +363,41 @@ fun BossDraggableComponent.BossTopLeftBar(
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     var deletedProjectName by remember { mutableStateOf<String?>(null) }
+
+    // Git state collection (Issue #90)
+    val isGitRepo by GitService.isGitRepository.collectAsState()
+    val currentBranch by GitService.currentBranch.collectAsState()
+    val localBranches by GitService.localBranches.collectAsState()
+    val remoteBranches by GitService.remoteBranches.collectAsState()
+    val stashList by GitService.stashList.collectAsState()
+    val isGitLoading by GitService.isLoading.collectAsState()
+    val isGitAvailable by GitService.isGitAvailable.collectAsState()
+    var showCreateBranchDialog by remember { mutableStateOf(false) }
+    var showCommitDialog by remember { mutableStateOf(false) }
+    var gitErrorMessage by remember { mutableStateOf<String?>(null) }
+    var gitSuccessMessage by remember { mutableStateOf<String?>(null) }
+    var createPRUrl by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Refresh Git state when project changes
+    LaunchedEffect(selectedProject) {
+        if (selectedProject.path.isNotEmpty()) {
+            GitService.refresh(selectedProject.path)
+            // Also fetch the PR URL and stash list
+            createPRUrl = GitService.getCreatePRUrl()
+            GitService.refreshStashList()
+        } else {
+            GitService.clear()
+            createPRUrl = null
+        }
+    }
+
+    // Update PR URL when branch changes
+    LaunchedEffect(currentBranch) {
+        if (isGitRepo && currentBranch != null) {
+            createPRUrl = GitService.getCreatePRUrl()
+        }
+    }
 
     // Helper function to open project in current window
     fun openProjectInCurrentWindow(project: Project) {
@@ -234,14 +445,133 @@ fun BossDraggableComponent.BossTopLeftBar(
             }
         )
     }
-    // TODO: #90 - Implement Git integration
-    // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/90
-    // BossActionButton(
-    //     leftIcon = FeatherIcons.GitBranch,
-    //     text = "main",
-    //     contextMenuItems = gitContextMenuItems,
-    //     hintText = "Current Git Branch: main"
-    // )
+    // Git branch button (Issue #90)
+    // Only show when git is available and project is a git repository
+    if (isGitAvailable && isGitRepo) {
+        BossActionButton(
+            leftIcon = FeatherIcons.GitBranch,
+            text = if (isGitLoading) "..." else (currentBranch ?: "detached"),
+            maxTextWidth = 120.dp, // Truncate long branch names with ellipsis
+            contextMenuItems = getGitContextMenuItems(
+                currentBranch = currentBranch,
+                localBranches = localBranches,
+                remoteBranches = remoteBranches,
+                stashList = stashList,
+                isLoading = isGitLoading,
+                onCheckout = { branchName ->
+                    scope.launch {
+                        val result = GitService.checkout(branchName)
+                        when (result) {
+                            is GitOperationResult.Success -> gitSuccessMessage = "Switched to '$branchName'"
+                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                        }
+                    }
+                },
+                onMerge = { branchName ->
+                    scope.launch { GitService.mergeInTerminal(branchName) }
+                },
+                onRebase = { branchName ->
+                    scope.launch { GitService.rebaseInTerminal(branchName) }
+                },
+                onCreateBranch = { showCreateBranchDialog = true },
+                onCommit = { showCommitDialog = true },
+                onPull = {
+                    scope.launch { GitService.pullInTerminal() }
+                },
+                onPush = {
+                    scope.launch { GitService.pushInTerminal() }
+                },
+                onCreatePR = createPRUrl?.let { url ->
+                    {
+                        // Show terminal link dialog for opening PR URL
+                        scope.launch {
+                            TerminalLinkEventBus.emitLinkClick(url, sourceTerminalId = null)
+                        }
+                    }
+                },
+                onStash = {
+                    scope.launch {
+                        val result = GitService.stash()
+                        when (result) {
+                            is GitOperationResult.Success -> gitSuccessMessage = result.message
+                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                        }
+                    }
+                },
+                onStashPop = { index ->
+                    scope.launch {
+                        val result = GitService.stashPop(index)
+                        when (result) {
+                            is GitOperationResult.Success -> gitSuccessMessage = result.message
+                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                        }
+                    }
+                },
+                onRefresh = {
+                    scope.launch {
+                        GitService.refresh(selectedProject.path)
+                        createPRUrl = GitService.getCreatePRUrl()
+                        GitService.refreshStashList()
+                    }
+                }
+            ),
+            hintText = "Git Branch: ${currentBranch ?: "unknown"}"
+        )
+    }
+
+    // Git error dialog
+    gitErrorMessage?.let { errorMsg ->
+        AlertDialog(
+            onDismissRequest = { gitErrorMessage = null },
+            title = { Text("Git Error") },
+            text = { Text(errorMsg) },
+            confirmButton = {
+                TextButton(onClick = { gitErrorMessage = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // Git success dialog
+    gitSuccessMessage?.let { successMsg ->
+        AlertDialog(
+            onDismissRequest = { gitSuccessMessage = null },
+            title = { Text("Git Operation Successful") },
+            text = { Text(successMsg) },
+            confirmButton = {
+                TextButton(onClick = { gitSuccessMessage = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // Create branch dialog
+    if (showCreateBranchDialog) {
+        CreateBranchDialog(
+            onDismiss = { showCreateBranchDialog = false },
+            onCreate = { branchName ->
+                scope.launch {
+                    val result = GitService.createBranch(branchName, checkout = true)
+                    if (result is GitOperationResult.Error) {
+                        gitErrorMessage = result.message
+                    }
+                }
+                showCreateBranchDialog = false
+            }
+        )
+    }
+
+    // Commit dialog
+    if (showCommitDialog) {
+        CommitDialog(
+            onDismiss = { showCommitDialog = false },
+            onCommitSuccess = { message ->
+                gitSuccessMessage = "Committed: ${message.lines().first().take(50)}${if (message.length > 50) "..." else ""}"
+            }
+        )
+    }
 
     // Workspace button
     if (workspaceManager != null && onApplyWorkspace != null) {
@@ -415,4 +745,70 @@ fun BossTopRightBar(
             onDismiss = { showLogoutDialog = false }
         )
     }
+}
+
+/**
+ * Dialog for creating a new Git branch.
+ * Issue #90: Git Integration for Top Bar
+ *
+ * @param onDismiss Called when dialog is dismissed
+ * @param onCreate Called with branch name when user clicks Create
+ */
+@Composable
+private fun CreateBranchDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+    var branchName by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create New Branch") },
+        text = {
+            Column {
+                androidx.compose.material.OutlinedTextField(
+                    value = branchName,
+                    onValueChange = {
+                        branchName = it
+                        // Basic validation - no spaces or special chars except - and _
+                        error = if (it.contains(Regex("[\\s~^:?*\\[\\\\]"))) {
+                            "Branch name contains invalid characters"
+                        } else {
+                            null
+                        }
+                    },
+                    label = { Text("Branch name") },
+                    singleLine = true,
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let {
+                    Text(
+                        text = it,
+                        color = androidx.compose.material.MaterialTheme.colors.error,
+                        style = androidx.compose.material.MaterialTheme.typography.caption,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (branchName.isNotBlank() && error == null) {
+                        onCreate(branchName.trim())
+                    }
+                },
+                enabled = branchName.isNotBlank() && error == null
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

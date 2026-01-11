@@ -69,7 +69,9 @@ import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.components.events.GitTerminalEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
+import ai.rever.boss.git.GitTerminalService
 import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.components.events.DashboardEventBus
 import ai.rever.boss.run.RunConfigurationManager
@@ -1254,6 +1256,31 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Listen for Git terminal events (opens git commands in sidebar terminal)
+    LaunchedEffect(splitViewState) {
+        GitTerminalEventBus.openEvents
+            .onEach { event ->
+                println("[BossApp] Git terminal event: ${event.operationName} - ${event.command}")
+
+                // Open the terminal panel if not already open
+                PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
+
+                // Create a new tab in the sidebar terminal with the git command
+                val success = GitTerminalService.openInSidebarTerminal(
+                    command = event.command,
+                    workingDirectory = event.workingDirectory,
+                    operationName = event.operationName
+                )
+
+                if (success) {
+                    println("[BossApp] Git command opened in sidebar terminal: ${event.operationName}")
+                } else {
+                    println("[BossApp] Failed to open git command in sidebar terminal")
+                }
+            }
+            .launchIn(this)
+    }
+
     // Listen for terminal link click events (Issue #346)
     // Shows dialog or auto-opens based on user preference
     // Note: We collect linkClickEvents directly (not with combine()) to avoid
@@ -2393,6 +2420,7 @@ fun ComponentContext.BossApp(
             if (showTerminalLinkDialog) {
                 TerminalLinkOpenDialog(
                     url = pendingTerminalLinkUrl,
+                    hasTabs = splitViewState.hasTabs(),
                     hasSplits = splitViewState.hasSplits(),
                     onDismiss = {
                         showTerminalLinkDialog = false
