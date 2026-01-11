@@ -17,6 +17,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.17](v8.13.17.md) | 2024-12 | Build system stability fixes, browser URL bar usability improvements, and macOS build dependency resolution |
 | [v8.13.14](v8.13.14.md) | 2024-12 | Browser usability enhancements with favicons in quick switcher, faster link clicks, URL bar text fixes, and authentication infrastructure cleanup |
 | [v8.13.12](v8.13.12.md) | 2024-12 | Focus Mode with keyboard shortcuts for distraction-free work by hiding UI panels |
+| [v8.13.11](v8.13.11.md) | 2024-12 | Authentication stability, adaptive window sizing for laptops, standardized search bars, and CLI improvements |
 | [v8.13.32](v8.13.32.md) | 2025-12 | Performance monitoring system, IntelliJ-style run configurations with smart detection, and project persistence across sessions |
 | [v8.13.36](v8.13.36.md) | 2025-12 | Drag-and-drop support for tabs: reorder within windows and move between windows, with improved lifecycle management |
 | [v8.13.35](v8.13.35.md) | 2025-12 | Fixed critical context menu actions bug in tabs caused by trailing lambda parameter ordering issue |
