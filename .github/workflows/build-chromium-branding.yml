@@ -545,8 +545,8 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'  # Java 17 not available for Windows ARM64
+          distribution: 'microsoft'  # Microsoft OpenJDK has ARM64 builds
+          java-version: '17'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
