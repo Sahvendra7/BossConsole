@@ -377,6 +377,12 @@ compose.desktop {
 
             // Apple Silicon JIT compatibility flags (harmless on other platforms)
             add("-XX:+IgnoreUnrecognizedVMOptions")
+
+            // Prevent C2 JIT crash during JxBrowser native library loading on macOS ARM64
+            // The C2 compiler conflicts with Rust allocator in libipc.dylib, causing crashes
+            // at startup (see issue #476). Using C1-only is ~10-20% slower but stable.
+            // This flag is safe on all platforms - C1 is fast enough for a GUI app.
+            add("-XX:TieredStopAtLevel=3")
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
         
