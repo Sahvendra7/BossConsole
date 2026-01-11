@@ -83,7 +83,8 @@ jobs:
                        -m "Auto-increment version for release build" \
                        -m "🤖 Automated by release workflow"
 
-            # Push changes
+            # Pull any remote changes and rebase, then push
+            git pull --rebase origin main || true
             git push
 
             # DO NOT create tag here - will be created after successful builds
