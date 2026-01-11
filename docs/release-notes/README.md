@@ -16,6 +16,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.36](v8.13.36.md) | 2025-12 | Drag-and-drop support for tabs: reorder within windows and move between windows, with improved lifecycle management |
 | [v8.13.35](v8.13.35.md) | 2025-12 | Fixed critical context menu actions bug in tabs caused by trailing lambda parameter ordering issue |
 | [v8.13.34](v8.13.34.md) | 2025-12 | Browser stability improvements with automatic recovery, configurable settings, and terminal project folder support |
+| [v8.13.33](v8.13.33.md) | 2025-12 | Critical browser stability improvements: Reset Browser feature, thread safety fixes, and streamlined Linux update authentication |
 | [v8.14.10](v8.14.10.md) | 2025-12 | Improved new user experience with better project selection workflows and updated plugin icons |
 | [v8.14.9](v8.14.9.md) | 2025-12 | New Dashboard feature with recent items and templates, HTTP client memory leak fix, and performance optimizations |
 | [v8.14.8](v8.14.8.md) | 2025-12 | BossEditor Phase 19 polish, terminal file hyperlink line:column navigation, browser URL recovery fixes, and focus mode default changes |
