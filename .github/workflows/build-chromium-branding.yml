@@ -542,6 +542,31 @@ jobs:
 
       # Note: ARM64 binary is already built in build-branding-tool job via cross-compilation
 
+      - name: Install Windows SDK
+        shell: powershell
+        run: |
+          Write-Host "Installing Windows SDK..."
+          # Download Windows SDK installer
+          $sdkUrl = "https://go.microsoft.com/fwlink/?linkid=2272610"  # Windows SDK 10.0.26100
+          $installerPath = "$env:TEMP\winsdksetup.exe"
+          Invoke-WebRequest -Uri $sdkUrl -OutFile $installerPath
+
+          # Install SDK (only the tools we need for branding)
+          Write-Host "Running SDK installer..."
+          Start-Process -FilePath $installerPath -ArgumentList "/features OptionId.DesktopCPPx64 OptionId.DesktopCPParm64 /quiet /norestart" -Wait
+
+          Write-Host "Windows SDK installation complete"
+
+          # Verify installation
+          $sdkPath = "C:\Program Files (x86)\Windows Kits\10"
+          if (Test-Path $sdkPath) {
+            Write-Host "SDK installed at: $sdkPath"
+            Get-ChildItem "$sdkPath\bin" -Directory | Select-Object -First 3
+          } else {
+            Write-Error "SDK installation failed"
+            exit 1
+          }
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
