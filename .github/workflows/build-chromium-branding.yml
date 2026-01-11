@@ -546,7 +546,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'  # Java 17 not available for Windows ARM64
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
