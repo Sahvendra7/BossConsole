@@ -23,6 +23,9 @@ import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.selectProjectInWindow
+import ai.rever.boss.utils.MacOSGestureHandler
+import java.awt.Window
+import javax.swing.JFrame
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,10 +72,13 @@ import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
+import com.teamdev.jxbrowser.zoom.ZoomLevel
+import com.teamdev.jxbrowser.browser.callback.input.MoveMouseWheelCallback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
@@ -231,6 +237,72 @@ fun JxBrowserCompose(
     var focusedFieldInfo by remember { mutableStateOf<FormFieldDetector.FormFieldInfo?>(null) }
     var showSecretContextMenu by remember { mutableStateOf(false) }
 
+    // Zoom state management
+    var currentZoomLevel by remember { mutableStateOf(1.0) }
+    val zoomLevels = listOf(0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.0, 1.10, 1.25, 1.50, 1.75, 2.0, 2.50, 3.0)
+
+    // Zoom control functions with per-domain persistence
+    // All browser operations run on IO dispatcher to avoid blocking UI thread (THREADING.md compliance)
+    fun performZoomIn() {
+        coroutineScope.launch(Dispatchers.IO) {
+            if (!browser.isClosed) {
+                val current = try { browser.zoom().level().value() } catch (e: Exception) { 1.0 }
+                // Epsilon 0.001 for floating-point comparison to find next zoom level above current
+                val newLevel = zoomLevels.firstOrNull { it > current + 0.001 } ?: zoomLevels.last()
+                browser.zoom().level(ZoomLevel.of(newLevel))
+
+                val domain = BrowserZoomSettingsManager.extractDomain(browser.url())
+                domain?.let {
+                    BrowserZoomSettingsManager.setZoomForDomain(it, newLevel)
+                    BrowserZoomSettingsManager.saveSettings()
+                }
+
+                withContext(Dispatchers.Main) {
+                    currentZoomLevel = newLevel
+                }
+            }
+        }
+    }
+
+    fun performZoomOut() {
+        coroutineScope.launch(Dispatchers.IO) {
+            if (!browser.isClosed) {
+                val current = try { browser.zoom().level().value() } catch (e: Exception) { 1.0 }
+                // Epsilon 0.001 for floating-point comparison to find next zoom level below current
+                val newLevel = zoomLevels.lastOrNull { it < current - 0.001 } ?: zoomLevels.first()
+                browser.zoom().level(ZoomLevel.of(newLevel))
+
+                val domain = BrowserZoomSettingsManager.extractDomain(browser.url())
+                domain?.let {
+                    BrowserZoomSettingsManager.setZoomForDomain(it, newLevel)
+                    BrowserZoomSettingsManager.saveSettings()
+                }
+
+                withContext(Dispatchers.Main) {
+                    currentZoomLevel = newLevel
+                }
+            }
+        }
+    }
+
+    fun performZoomReset() {
+        coroutineScope.launch(Dispatchers.IO) {
+            if (!browser.isClosed) {
+                browser.zoom().level(ZoomLevel.P_100)
+
+                val domain = BrowserZoomSettingsManager.extractDomain(browser.url())
+                domain?.let {
+                    BrowserZoomSettingsManager.clearDomainZoom(it)
+                    BrowserZoomSettingsManager.saveSettings()
+                }
+
+                withContext(Dispatchers.Main) {
+                    currentZoomLevel = 1.0
+                }
+            }
+        }
+    }
+
     // Bookmark state management
     val collections by bookmarkManager.collections.collectAsState()
     var currentTitle by remember { mutableStateOf(initialUrl) }
@@ -329,6 +401,8 @@ fun JxBrowserCompose(
                 canGoForward = browser.navigation().canGoForward()
                 val url = browser.url()
                 urlInput = TextFieldValue(url, TextRange(url.length))
+                // Initialize zoom level from browser
+                currentZoomLevel = browser.zoom().level().value()
             } catch (e: Exception) {
                 // Browser might be disposed
                 return@LaunchedEffect
@@ -402,6 +476,22 @@ fun JxBrowserCompose(
 
                             // Also update navigation state
                             onNavigationUpdate?.invoke(displayTitle, newUrl)
+
+                            // Apply saved zoom for this domain (per-domain zoom persistence)
+                            BrowserZoomSettingsManager.extractDomain(newUrl)?.let { domain ->
+                                val savedZoom = BrowserZoomSettingsManager.getZoomForDomain(domain)
+                                val currentBrowserZoom = browser.zoom().level().value()
+                                // Only apply if different from current zoom
+                                if (kotlin.math.abs(savedZoom - currentBrowserZoom) > 0.001) {
+                                    browser.zoom().level(ZoomLevel.of(savedZoom))
+                                    currentZoomLevel = savedZoom
+                                } else {
+                                    currentZoomLevel = currentBrowserZoom
+                                }
+                            } ?: run {
+                                // No domain extracted, just sync current zoom
+                                currentZoomLevel = browser.zoom().level().value()
+                            }
 
                             // Schedule a delayed title check for SPAs that update title dynamically
                             launch {
@@ -688,7 +778,70 @@ fun JxBrowserCompose(
             }
         }
     }
-    
+
+    // Periodic zoom level sync to catch keyboard shortcut changes
+    // 2000ms interval balances responsiveness with CPU overhead (blocking RPC calls)
+    LaunchedEffect(browser) {
+        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
+
+        while (isBrowserEnvironmentValid()) {
+            delay(2000)
+            if (!isBrowserEnvironmentValid()) break
+
+            try {
+                // Run browser RPC call on IO to avoid blocking UI thread
+                val browserZoom = withContext(Dispatchers.IO) {
+                    browser.zoom().level().value()
+                }
+                // Epsilon 0.001 accounts for floating-point comparison imprecision
+                if (kotlin.math.abs(browserZoom - currentZoomLevel) > 0.001) {
+                    currentZoomLevel = browserZoom
+                }
+            } catch (e: Exception) {
+                // Browser might be closed
+                break
+            }
+        }
+    }
+
+    // Set up pinch-to-zoom gesture handling
+    // 1. JxBrowser callback for Ctrl+Scroll (standard zoom on Windows/Linux)
+    // 2. macOS native gesture handler for trackpad pinch (macOS only)
+    LaunchedEffect(browser) {
+        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
+
+        // Set up JxBrowser callback for Ctrl+Scroll zoom
+        browser.unsafe().set(MoveMouseWheelCallback::class.java, MoveMouseWheelCallback { params ->
+            val event = params.event()
+            val isCtrlDown = event.keyModifiers().isControlDown
+
+            if (isCtrlDown) {
+                // This is a zoom gesture (Ctrl+Wheel)
+                val deltaY = event.deltaY()
+                if (deltaY < 0) {
+                    performZoomIn()
+                } else if (deltaY > 0) {
+                    performZoomOut()
+                }
+                MoveMouseWheelCallback.Response.suppress()
+            } else {
+                MoveMouseWheelCallback.Response.proceed()
+            }
+        })
+
+        // Set up macOS native trackpad pinch gesture handler
+        if (MacOSGestureHandler.isSupported()) {
+            val window = Window.getWindows().firstOrNull { it.isDisplayable && it.isShowing }
+            if (window is JFrame) {
+                MacOSGestureHandler.addMagnificationListener(
+                    component = window.contentPane,
+                    onZoomIn = { performZoomIn() },
+                    onZoomOut = { performZoomOut() }
+                )
+            }
+        }
+    }
+
     // Create context menu items dynamically based on browser state
     val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, selectedText, focusedFieldInfo, secretViewModel.state) {
         // Issue #56: If form field is focused, show secret context menu
@@ -1195,6 +1348,18 @@ fun JxBrowserCompose(
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
+
+                                // Zoom level indicator (only shown when not at 100%)
+                                if (kotlin.math.abs(currentZoomLevel - 1.0) > 0.001) {
+                                    Text(
+                                        text = "${(currentZoomLevel * 100).toInt()}%",
+                                        style = MaterialTheme.typography.caption,
+                                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .padding(start = 4.dp)
+                                            .clickable { performZoomReset() }
+                                    )
+                                }
                             }
                         }
                     )
@@ -1260,6 +1425,7 @@ fun JxBrowserCompose(
             )
         } else {
             // Browser content using native Compose BrowserView with custom context menu
+            // Note: Pinch-to-zoom gestures are handled via JxBrowser's MoveMouseWheelCallback
             BrowserView(
                 state = browserViewState,
                 modifier = Modifier

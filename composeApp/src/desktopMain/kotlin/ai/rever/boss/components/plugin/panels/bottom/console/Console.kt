@@ -17,10 +17,10 @@ import com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks
  * Displays captured stdout/stderr logs in a side panel
  */
 object ConsoleInfo : PanelInfo {
-    override val id = PanelId("console", 14) // ID 14 (Terminal is 13)
+    override val id = PanelId("console", 16) // After Git Log (15)
     override val displayName = "Console"
     override val icon = Icons.Outlined.Info
-    override val defaultSlotPosition = left.bottom // Same area as Terminal
+    override val defaultSlotPosition = left.bottom
 }
 
 /**

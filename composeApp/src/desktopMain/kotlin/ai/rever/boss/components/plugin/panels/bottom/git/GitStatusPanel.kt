@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
  * Displays changed, staged, and untracked files with staging controls
  */
 object GitStatusInfo : PanelInfo {
-    override val id = PanelId("git-status", 15)
+    override val id = PanelId("git-status", 14) // After Terminal (13), before Git Log (15)
     override val displayName = "Git Changes"
     override val icon = FeatherIcons.GitCommit
     override val defaultSlotPosition = left.bottom

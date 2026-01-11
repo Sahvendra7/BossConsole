@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arkivanov.decompose.ComponentContext
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.GitCommit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,9 +52,9 @@ import java.util.*
  * Displays commit history with graph visualization
  */
 object GitLogInfo : PanelInfo {
-    override val id = PanelId("git-log", 16)
+    override val id = PanelId("git-log", 15) // After Git Status (14), before Console (16)
     override val displayName = "Git Log"
-    override val icon = FeatherIcons.GitCommit
+    override val icon = FeatherIcons.GitBranch
     override val defaultSlotPosition = left.bottom
 }
 
@@ -261,7 +262,7 @@ private fun CommitRow(
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.width(56.dp)
+                modifier = Modifier.width(62.dp)
             )
 
             Spacer(modifier = Modifier.width(8.dp))

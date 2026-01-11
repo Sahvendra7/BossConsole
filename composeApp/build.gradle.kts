@@ -366,6 +366,7 @@ compose.desktop {
             if (currentOs.contains("mac")) {
                 add("--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED")
                 add("--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
+                add("--add-opens=java.desktop/com.apple.eawt.event=ALL-UNNAMED")
                 add("-Dapple.awt.application.appearance=system")
             }
 
