@@ -39,6 +39,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.15.2](v8.15.2.md) | 2026-01-05 | Per-window project isolation and panel mapping fixes |
 | [v8.15.1](v8.15.1.md) | 2026-01-05 | Added {claudeContinueFlag} placeholder for conditional Claude Code continuation flags in workspace configurations |
 | [v8.15.0](v8.15.0.md) | 2026-01-02 | BOSS-branded Chromium support and complete LSP integration for BossEditor |
+| [v8.13.31](v8.13.31.md) | 2025-12 | Terminal links open in BOSS browser, Linux browser session persistence fix, and enhanced Linux package installation |
 | [v8.13.30](v8.13.30.md) | 2025-12 | Terminal tab title sync, Linux dock icon fix, configurable title bar, and macOS menu hang fix |
 | [v8.13.23](v8.13.23.md) | 2024-12 | Dependency updates including Clikt 5.0, JUnit 6.0, Kotlin 2.3.0-RC, and Ktor 3.3.2 |
 | [v8.12.32](v8.12.32.md) | 2025-12 | Browser usability improvements with enhanced context menu, better URL bar interaction, and improved window focus handling |
