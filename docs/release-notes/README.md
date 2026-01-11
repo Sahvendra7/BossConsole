@@ -22,6 +22,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.14.4](v8.14.4.md) | 2025-12 | BossEditor enabled by default with complete custom editor implementation: LSP integration, code completion, multi-caret editing, minimap, rainbow brackets, and 40+ syntax lexers |
 | [v8.14.3](v8.14.3.md) | 2025-12 | Enhanced terminal link handling with new "Existing Split" option for opening links in specific split locations |
 | [v8.14.2](v8.14.2.md) | 2025-12 | Browser stability improvements: BOSS-styled JavaScript dialogs, file:// URL support, and fixed mouse button handling |
+| [v8.14.1](v8.14.1.md) | 2025-12 | Terminal link click prompts with preferences, Reset Terminal feature, enhanced New Tab Dialog with file browsing, and browser error handling improvements |
 | [keylocker-tools](vkeylocker-tools.md) | 2025-07-28 | CI/CD workflow improvements and repository cleanup |
 | [v8.15.8](v8.15.8.md) | 2026-01-07 | Browser navigation stability, Linux ARM64 support, UI improvements, and 139 build warnings resolved |
 | [v8.15.7](v8.15.7.md) | 2026-01-06 | Fixed sidebar panel positioning for bottom slots |
