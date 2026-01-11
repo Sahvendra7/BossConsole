@@ -14,6 +14,7 @@ This directory contains detailed release notes for each version of BOSS.
 |---------|------|---------|
 | [v8.15.9](v8.15.9.md) | 2026-01-09 | Tab management improvements: fixed drag reorder positioning, added auto-scroll, and resolved macOS Chromium permissions |
 | [v8.12.26](v8.12.26.md) | 2025-12 | Interactive home screen with actionable tip cards and URL event bus for proper external link handling |
+| [v8.12.25](v8.12.25.md) | 2025-12 | Plugin lifecycle system with reset functionality and tab cloning fix |
 | [v8.12.29](v8.12.29.md) | 2025-12 | Enhanced form autofill with React 16+ compatibility and proper event dispatching |
 | [v8.12.28](v8.12.28.md) | 2025-12 | Network reliability improvements with separate HttpClient configurations for API calls and downloads with optimized timeouts |
 | [v8.12.27](v8.12.27.md) | 2025-12 | Fixed hyperlinks opening in detached OS windows by intercepting popups to open as BOSS tabs instead |
