@@ -1078,7 +1078,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: 🔧 Setup Build Environment
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "🔧 Setting up build environment for Windows ARM64"
           Write-Host "📦 Version: ${{ needs.prepare-version.outputs.version }}"
@@ -1087,7 +1087,7 @@ jobs:
           ./gradlew showVersion
 
       - name: 🔍 Get JxBrowser Version
-        shell: pwsh
+        shell: powershell
         run: |
           # Extract JxBrowser version from libs.versions.toml for Chromium URL
           $content = Get-Content "gradle/libs.versions.toml" -Raw
@@ -1098,7 +1098,7 @@ jobs:
           }
 
       - name: 📥 Download Branded Chromium (Windows ARM64)
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "📥 Downloading BOSS-branded Chromium for Windows ARM64..."
 
@@ -1116,7 +1116,7 @@ jobs:
           }
 
       - name: 🏗️ Build Windows ARM64 App
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "🏗️ Building Windows ARM64 app..."
           ./gradlew createDistributable
@@ -1124,7 +1124,7 @@ jobs:
 
       - name: 📦 Bundle Branded Chromium (Windows ARM64)
         if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "📦 Bundling BOSS-branded Chromium into Windows ARM64 app..."
 
@@ -1149,14 +1149,14 @@ jobs:
           }
 
       - name: 🏗️ Package Windows ARM64 MSI
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "🏗️ Packaging Windows ARM64 MSI..."
           ./gradlew packageMsi
           Write-Host "✅ Windows ARM64 MSI build completed successfully"
 
       - name: 🔍 Verify Built Version (Windows ARM64)
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "🔍 Verifying version inside built artifacts..."
 
