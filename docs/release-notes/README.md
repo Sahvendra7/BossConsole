@@ -44,6 +44,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.13.29](v8.13.29.md) | 2025-12 | Fixed missing packaging dependencies for ARM64 Linux builds and updated BossTerm to 1.0.48 |
 | [v8.13.28](v8.13.28.md) | 2025-12 | Terminal tab management with state persistence, background color fixes, and dependency updates (Kotlin 2.3.0, Logback 1.5.23) |
 | [v8.13.27](v8.13.27.md) | 2025-12 | JxBrowser update to 8.15.0 with version consistency fixes and banner styling improvements |
+| [v8.13.26](v8.13.26.md) | 2025-12 | Terminal migration to BossTerm library, ARM64 Linux support, native binary signing for macOS, and window maximized by default |
 | [v8.13.23](v8.13.23.md) | 2024-12 | Dependency updates including Clikt 5.0, JUnit 6.0, Kotlin 2.3.0-RC, and Ktor 3.3.2 |
 | [v8.12.32](v8.12.32.md) | 2025-12 | Browser usability improvements with enhanced context menu, better URL bar interaction, and improved window focus handling |
 | [v8.12.20](v8.12.20.md) | 2024-12 | Fixed critical version downgrade bug with build system improvements and CI/CD verification |
