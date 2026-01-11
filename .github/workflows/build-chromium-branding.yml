@@ -550,7 +550,10 @@ jobs:
         shell: powershell
         run: |
           # The pre-built tool is for x64, need to build for ARM64
-          git clone https://github.com/TeamDev-IP/Chromium-Branding.git chromium-branding-tool
+          # Download source as zip (git not available on this runner)
+          Invoke-WebRequest -Uri "https://github.com/TeamDev-IP/Chromium-Branding/archive/refs/heads/main.zip" -OutFile chromium-branding-tool.zip
+          Expand-Archive -Path chromium-branding-tool.zip -DestinationPath .
+          Rename-Item -Path "Chromium-Branding-main" -NewName "chromium-branding-tool"
           Set-Location chromium-branding-tool
           go build -o ../tools/chromium_branding_windows_arm64.exe .
           Set-Location ..
