@@ -35,6 +35,7 @@ jobs:
           GOOS=darwin GOARCH=arm64 go build -o chromium_branding_macos_arm64 .
           GOOS=darwin GOARCH=amd64 go build -o chromium_branding_macos_x64 .
           GOOS=windows GOARCH=amd64 go build -o chromium_branding_windows.exe .
+          GOOS=windows GOARCH=arm64 go build -o chromium_branding_windows_arm64.exe .
 
       - name: Upload Branding Tool
         uses: actions/upload-artifact@v4
@@ -45,6 +46,7 @@ jobs:
             chromium-branding-tool/chromium_branding_macos_arm64
             chromium-branding-tool/chromium_branding_macos_x64
             chromium-branding-tool/chromium_branding_windows.exe
+            chromium-branding-tool/chromium_branding_windows_arm64.exe
 
   # macOS ARM64 build
   build-macos-arm64:
@@ -523,6 +525,105 @@ jobs:
           name: boss-chromium-windows-x64
           path: boss-chromium-windows-x64.zip
 
+  # Windows ARM64 build
+  build-windows-arm64:
+    needs: build-branding-tool
+    runs-on: windows_arm64
+    continue-on-error: true  # Graceful failure if ARM runners unavailable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Branding Tool
+        uses: actions/download-artifact@v4
+        with:
+          name: branding-tool
+          path: tools
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+
+      - name: Build Branding Tool for ARM64
+        shell: pwsh
+        run: |
+          # The pre-built tool is for x64, need to build for ARM64
+          git clone https://github.com/TeamDev-IP/Chromium-Branding.git chromium-branding-tool
+          Set-Location chromium-branding-tool
+          go build -o ../tools/chromium_branding_windows_arm64.exe .
+          Set-Location ..
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download JxBrowser Chromium
+        env:
+          JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
+        shell: pwsh
+        run: |
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
+
+          # Use the main project's downloadChromium task (has proper license)
+          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" --no-daemon
+
+          Write-Host "Chromium directory contents:"
+          Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
+
+      - name: Apply BOSS Branding
+        shell: pwsh
+        run: |
+          $chromiumDir = "$env:USERPROFILE\chromium-binaries"
+
+          if (-not (Test-Path $chromiumDir)) {
+            Write-Error "Chromium binaries not found at $chromiumDir"
+            exit 1
+          }
+
+          Copy-Item chromium-branding/params.json .
+          Copy-Item -Recurse chromium-branding/assets .
+
+          # No signing for now - Windows signing requires DigiCert setup
+          # Remove signCommand from params to avoid signing attempts
+          $params = Get-Content params.json | ConvertFrom-Json
+          $params.win.PSObject.Properties.Remove('signCommand')
+          $params | ConvertTo-Json -Depth 10 | Out-File params.json -Encoding utf8
+
+          New-Item -ItemType Directory -Force -Path output
+
+          Write-Host "Running branding tool..."
+          ./tools/chromium_branding_windows_arm64.exe -p params.json -b $chromiumDir -o output
+
+          Get-ChildItem output
+
+      - name: Verify executable.name
+        shell: pwsh
+        run: |
+          if (Test-Path "output/executable.name") {
+            Get-Content "output/executable.name"
+          } else {
+            Write-Error "executable.name not found"
+            exit 1
+          }
+
+      - name: Create Archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path output/* -DestinationPath boss-chromium-windows-arm64.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-chromium-windows-arm64
+          path: boss-chromium-windows-arm64.zip
+
   # Linux x64 build
   build-linux-x64:
     needs: build-branding-tool
@@ -727,8 +828,8 @@ jobs:
 
   # Upload to BossConsole-Releases
   upload-to-releases:
-    needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-linux-x64, build-linux-arm64]
-    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
+    needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-windows-arm64, build-linux-x64, build-linux-arm64]
+    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-windows-arm64.result == 'success' || needs.build-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Download All Artifacts
@@ -761,7 +862,8 @@ jobs:
           ## Downloads
           - \`boss-chromium-macos-arm64.zip\` - macOS Apple Silicon
           - \`boss-chromium-macos-x64.zip\` - macOS Intel
-          - \`boss-chromium-windows-x64.zip\` - Windows 64-bit
+          - \`boss-chromium-windows-x64.zip\` - Windows x64
+          - \`boss-chromium-windows-arm64.zip\` - Windows ARM64
           - \`boss-chromium-linux-x64.zip\` - Linux x64
           - \`boss-chromium-linux-arm64.zip\` - Linux ARM64
 

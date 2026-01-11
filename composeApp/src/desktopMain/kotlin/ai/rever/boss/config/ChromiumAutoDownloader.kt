@@ -94,6 +94,7 @@ object ChromiumAutoDownloader {
      * - boss-chromium-macos-arm64.zip
      * - boss-chromium-macos-x64.zip
      * - boss-chromium-windows-x64.zip
+     * - boss-chromium-windows-arm64.zip
      * - boss-chromium-linux-x64.zip
      * - boss-chromium-linux-arm64.zip
      */
@@ -103,6 +104,7 @@ object ChromiumAutoDownloader {
         return when {
             os.contains("mac") && (arch.contains("aarch64") || arch.contains("arm64")) -> "macos-arm64"
             os.contains("mac") -> "macos-x64"
+            os.contains("win") && (arch.contains("aarch64") || arch.contains("arm64")) -> "windows-arm64"
             os.contains("win") -> "windows-x64"
             os.contains("linux") && (arch.contains("aarch64") || arch.contains("arm64")) -> "linux-arm64"
             os.contains("linux") -> "linux-x64"
