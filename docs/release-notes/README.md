@@ -22,6 +22,7 @@ This directory contains detailed release notes for each version of BOSS.
 | [v8.9.2](v8.9.2.md) | 2024-10 | Maintenance release with GitHub Actions workflow improvements for release asset synchronization and repository cleanup |
 | [v8.9.1](v8.9.1.md) | 2024-10 | Complete auto-update implementation with improved UI and progress tracking, along with GitHub Actions workflow refinements |
 | [v8.9.0](v8.9.0.md) | 2024-10 | GitHub Actions workflow modernization with Slack notifications, comprehensive dependency updates, and workflow consolidation for improved CI/CD efficiency |
+| [v8.8.1](v8.8.1.md) | 2024-10 | Windows code signing infrastructure with DigiCert KeyLocker integration, streamlined GitHub Actions workflows, and comprehensive CI/CD reliability improvements |
 | [v8.11.2](v8.11.2.md) | 2024-10 | Major authentication system overhaul with complete Supabase integration, enhanced macOS code signing for notarization compliance, and framework updates |
 | [v8.10.1](v8.10.1.md) | 2024-10 | Linux packaging support with optimized distribution formats, streamlined GitHub Actions workflows, and dependency updates |
 | [v8.10.0](v8.10.0.md) | 2024-10 | Windows code signing infrastructure with DigiCert KeyLocker integration, streamlined GitHub Actions workflows, and comprehensive CI/CD reliability improvements |
