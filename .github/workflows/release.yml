@@ -1055,8 +1055,160 @@ jobs:
           path: composeApp/build/compose/binaries/main/msi/
           retention-days: 30
 
+  build-windows-arm64:
+    needs: prepare-version
+    if: needs.prepare-version.outputs.should-build == 'true'
+    runs-on: windows_arm64
+    continue-on-error: true  # Graceful failure if ARM runner unavailable
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare-version.outputs.updated-sha }}
+
+      - name: ☕ Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: 🔧 Setup Build Environment
+        run: |
+          echo "🔧 Setting up build environment for Windows ARM64"
+          echo "📦 Version: ${{ needs.prepare-version.outputs.version }}"
+
+          # Verify version consistency
+          ./gradlew showVersion
+
+      - name: 🔍 Get JxBrowser Version
+        shell: bash
+        run: |
+          # Extract JxBrowser version from libs.versions.toml for Chromium URL
+          JXBROWSER_VERSION=$(grep '^jxbrowser = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "JxBrowser version: $JXBROWSER_VERSION"
+          echo "JXBROWSER_VERSION=$JXBROWSER_VERSION" >> $GITHUB_ENV
+
+      - name: 📥 Download Branded Chromium (Windows ARM64)
+        shell: bash
+        run: |
+          echo "📥 Downloading BOSS-branded Chromium for Windows ARM64..."
+
+          CHROMIUM_URL="https://github.com/risa-labs-inc/BossConsole-Releases/releases/download/chromium-v$JXBROWSER_VERSION/boss-chromium-windows-arm64.zip"
+
+          mkdir -p branded-chromium
+          if curl -L --fail -o branded-chromium/boss-chromium-windows-arm64.zip "$CHROMIUM_URL"; then
+            echo "✅ Downloaded branded Chromium"
+            unzip -o branded-chromium/boss-chromium-windows-arm64.zip -d branded-chromium/
+            echo "BRANDED_CHROMIUM_AVAILABLE=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Branded Chromium not available yet"
+            echo "BRANDED_CHROMIUM_AVAILABLE=false" >> $GITHUB_ENV
+          fi
+
+      - name: 🏗️ Build Windows ARM64 App
+        run: |
+          echo "🏗️ Building Windows ARM64 app..."
+          ./gradlew createDistributable
+          echo "✅ Windows ARM64 app build completed"
+
+      - name: 📦 Bundle Branded Chromium (Windows ARM64)
+        if: env.BRANDED_CHROMIUM_AVAILABLE == 'true'
+        shell: bash
+        run: |
+          echo "📦 Bundling BOSS-branded Chromium into Windows ARM64 app..."
+
+          # Find the app directory
+          APP_DIR=$(find composeApp/build/compose/binaries/main/app -type d -name "BOSS" | head -1)
+
+          if [[ -n "$APP_DIR" && -d "$APP_DIR" ]]; then
+            echo "Found app directory: $APP_DIR"
+
+            # Create chromium directory alongside the app
+            CHROMIUM_DIR="$APP_DIR/chromium"
+            mkdir -p "$CHROMIUM_DIR"
+
+            # Copy branded Chromium files
+            cp -r branded-chromium/* "$CHROMIUM_DIR/" 2>/dev/null || true
+            rm -f "$CHROMIUM_DIR"/*.zip 2>/dev/null || true
+
+            echo "✅ Branded Chromium bundled at: $CHROMIUM_DIR"
+            ls -la "$CHROMIUM_DIR"
+          else
+            echo "⚠️ App directory not found, skipping Chromium bundling"
+          fi
+
+      - name: 🏗️ Package Windows ARM64 MSI
+        run: |
+          echo "🏗️ Packaging Windows ARM64 MSI..."
+          ./gradlew packageMsi
+          echo "✅ Windows ARM64 MSI build completed successfully"
+
+      - name: 🔍 Verify Built Version (Windows ARM64)
+        run: |
+          echo "🔍 Verifying version inside built artifacts..."
+
+          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "Expected version: $EXPECTED_VERSION"
+
+          # Check generated VersionConstants.kt
+          GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
+          if [ -f "$GENERATED_FILE" ]; then
+            echo "Checking generated VersionConstants.kt..."
+
+            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+
+            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
+
+            if [ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]; then
+              echo "❌ VERSION MISMATCH DETECTED!"
+              echo "   Expected: $EXPECTED_VERSION"
+              echo "   Built: $BUILT_VERSION"
+              exit 1
+            else
+              echo "✅ Version verification passed: $BUILT_VERSION"
+            fi
+          else
+            echo "⚠️ VersionConstants.kt not found - this indicates build issue"
+            exit 1
+          fi
+        shell: bash
+
+      - name: 📊 Verify Build Artifacts (Windows ARM64)
+        run: |
+          $msiPath = "composeApp/build/compose/binaries/main/msi/BOSS-*.msi"
+          $msiFiles = Get-ChildItem $msiPath -ErrorAction SilentlyContinue
+          if ($msiFiles) {
+            Write-Host "✅ MSI found: $($msiFiles[0].FullName)"
+            Write-Host "   Size: $([math]::Round($msiFiles[0].Length/1MB,2)) MB"
+          } else {
+            Write-Host "❌ MSI not found at expected location"
+            Write-Host "Searching for MSI files recursively..."
+            $allMsi = Get-ChildItem "composeApp/build" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue
+            if ($allMsi) {
+              Write-Host "Found MSI at: $($allMsi[0].FullName)"
+            } else {
+              Write-Host "No MSI files found anywhere in build directory"
+              exit 1
+            }
+          }
+        shell: powershell
+
+      - name: 📤 Upload Windows ARM64 MSI
+        uses: actions/upload-artifact@v6
+        with:
+          name: boss-windows-arm64-${{ needs.prepare-version.outputs.version }}
+          path: composeApp/build/compose/binaries/main/msi/
+          retention-days: 30
+
   create-release:
-    needs: [prepare-version, build-macos, build-linux-amd64, build-linux-arm64, build-windows]
+    needs: [prepare-version, build-macos, build-linux-amd64, build-linux-arm64, build-windows, build-windows-arm64]
     # Run if required builds succeed, even if ARM64 fails/is cancelled (ARM64 is optional)
     if: |
       always() &&
@@ -1088,8 +1240,11 @@ jobs:
           # macOS Universal
           find ./artifacts -name "*.dmg" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \; 2>/dev/null || true
 
-          # Windows
-          find ./artifacts -name "*.msi" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \; 2>/dev/null || true
+          # Windows x64
+          find ./artifacts -name "*.msi" -path "*boss-windows-$VERSION*" -exec cp {} ./release-assets/BOSS-${VERSION}.msi \; 2>/dev/null || true
+
+          # Windows ARM64 (tolerate missing - ARM64 build may fail)
+          find ./artifacts -name "*.msi" -path "*arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-arm64.msi \; 2>/dev/null || true
 
           # Linux AMD64 artifacts (use path matching)
           find ./artifacts -name "*.deb" -path "*amd64*" -exec cp {} ./release-assets/BOSS-${VERSION}-amd64.deb \; 2>/dev/null || true
@@ -1120,6 +1275,7 @@ jobs:
           |----------|--------------|---------|
           | **macOS** | Universal (Apple Silicon & Intel) | \`BOSS-${VERSION}-Universal.dmg\` |
           | **Windows** | x64 | \`BOSS-${VERSION}.msi\` |
+          | **Windows** | ARM64 | \`BOSS-${VERSION}-arm64.msi\` |
           | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.deb\` |
           | **Linux DEB** | ARM64 (aarch64) | \`BOSS-${VERSION}-arm64.deb\` |
           | **Linux RPM** | AMD64 (x86_64) | \`BOSS-${VERSION}-amd64.rpm\` |
@@ -1147,8 +1303,13 @@ jobs:
           2. Open the DMG and drag BOSS to Applications
           3. Launch from Applications folder
 
-          ### Windows (64-bit)
+          ### Windows (x64)
           1. Download \`BOSS-${VERSION}.msi\`
+          2. Run the installer as Administrator
+          3. Launch from Start Menu or Desktop
+
+          ### Windows (ARM64)
+          1. Download \`BOSS-${VERSION}-arm64.msi\`
           2. Run the installer as Administrator
           3. Launch from Start Menu or Desktop
 
@@ -1222,7 +1383,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Platforms Built**: macOS, Linux (AMD64 + ARM64), Windows" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Platforms Built**: macOS, Linux (AMD64 + ARM64), Windows (x64 + ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
@@ -1230,4 +1391,4 @@ jobs:
           echo "- 🐧 Linux DEB (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "- 🐧 Linux RPM (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
           echo "- 🐧 Linux JAR (AMD64 + ARM64)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🪟 Windows MSI (x64)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🪟 Windows MSI (x64 + ARM64)" >> $GITHUB_STEP_SUMMARY
