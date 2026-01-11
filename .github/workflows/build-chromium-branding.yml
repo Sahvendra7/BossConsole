@@ -540,23 +540,7 @@ jobs:
           name: branding-tool
           path: tools
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: false
-
-      - name: Build Branding Tool for ARM64
-        shell: powershell
-        run: |
-          # The pre-built tool is for x64, need to build for ARM64
-          # Download source as zip (git not available on this runner)
-          Invoke-WebRequest -Uri "https://github.com/TeamDev-IP/Chromium-Branding/archive/refs/heads/main.zip" -OutFile chromium-branding-tool.zip
-          Expand-Archive -Path chromium-branding-tool.zip -DestinationPath .
-          Rename-Item -Path "Chromium-Branding-main" -NewName "chromium-branding-tool"
-          Set-Location chromium-branding-tool
-          go build -o ../tools/chromium_branding_windows_arm64.exe .
-          Set-Location ..
+      # Note: ARM64 binary is already built in build-branding-tool job via cross-compilation
 
       - name: Set up JDK
         uses: actions/setup-java@v4
