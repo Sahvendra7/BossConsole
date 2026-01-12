@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.18](v8.15.18.md) | 2026-01-12 | Windows path handling fixes and browser engine download messaging improvements |
 | [v8.15.17](v8.15.17.md) | 2026-01-12 | Fixed folder loading stuck during codebase indexing |
 | [v8.15.16](v8.15.16.md) | 2026-01-11 | Critical macOS ARM64 stability fix and CI/CD reliability improvements |
 | [v8.15.11](v8.15.11.md) | 2026-01-11 | Browser zoom controls, Git integration in top bar, enhanced URL bar autocomplete, and Windows ARM64 Chromium branding support |
