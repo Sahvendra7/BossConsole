@@ -6,6 +6,7 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.utils.extractFileName
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineScope
@@ -204,7 +205,7 @@ actual object DeepLinkHandler {
             return
         }
 
-        val name = params["name"] ?: folder.name
+        val name = (params["name"] ?: folder.name).extractFileName()
 
         // Update ProjectState directly (reactive)
         scope.launch(Dispatchers.Main) {

@@ -4,6 +4,7 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadFaviconFromCache
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.BookmarkCollection
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
@@ -526,7 +527,7 @@ class BookmarksPanel(
             "editor" -> {
                 val filePath = bookmark.tabConfig.filePath ?: ""
                 if (filePath.isNotEmpty()) {
-                    val fileName = filePath.substringAfterLast('/')
+                    val fileName = filePath.extractFileName()
                     splitViewState.openFileInActivePanel(filePath, fileName)
                 }
             }

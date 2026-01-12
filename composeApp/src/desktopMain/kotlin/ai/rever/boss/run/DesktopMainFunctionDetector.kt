@@ -394,7 +394,9 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
 
         // Fallback: compile and run with kotlinc (for simple standalone files)
         val jarName = File(filePath).nameWithoutExtension.replace("'", "_")
-        return "kotlinc ${shellEscape(filePath)} -include-runtime -d ${shellEscape("/tmp/$jarName.jar")} && java -jar ${shellEscape("/tmp/$jarName.jar")}"
+        val compileCmd = "kotlinc ${shellEscape(filePath)} -include-runtime -d ${shellEscape("/tmp/$jarName.jar")}"
+        val runCmd = "java -jar ${shellEscape("/tmp/$jarName.jar")}"
+        return ShellUtils.chainCommands(compileCmd, runCmd)
     }
 
     private fun generateJavaCommand(detected: DetectedMainFunction, projectDir: File): String {
@@ -426,11 +428,20 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
      * Looks for common patterns like /moduleName/src/main/... or /moduleName/src/...Main/...
      */
     private fun detectModuleName(filePath: String, projectDir: File): String? {
+        // Use File API to properly handle path separators on all platforms
+        val file = File(filePath)
         val projectPath = projectDir.absolutePath
-        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
 
-        // Pattern: moduleName/src/...
-        val parts = relativePath.split("/")
+        // Get relative path using File API (handles both / and \ properly)
+        val relativePath = file.absolutePath.removePrefix(projectPath)
+            .removePrefix(File.separator)
+            .removePrefix("/") // Remove Unix separator if present
+            .removePrefix("\\") // Remove Windows separator if present
+
+        // Pattern: moduleName/src/... (split by platform separator)
+        val parts = relativePath.split(File.separator, "/", "\\")
+            .filter { it.isNotEmpty() } // Remove empty parts
+
         if (parts.size >= 2 && parts[1] == "src") {
             val potentialModule = parts[0]
             // Verify it's a valid module by checking for build.gradle(.kts)
@@ -505,18 +516,29 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
 
         // Fallback: Compile and run the specific Rust file directly
         val outputName = File(filePath).nameWithoutExtension.replace("'", "_")
-        return "rustc ${shellEscape(filePath)} -o ${shellEscape("/tmp/$outputName")} && ${shellEscape("/tmp/$outputName")}"
+        val compileCmd = "rustc ${shellEscape(filePath)} -o ${shellEscape("/tmp/$outputName")}"
+        val runCmd = shellEscape("/tmp/$outputName")
+        return ShellUtils.chainCommands(compileCmd, runCmd)
     }
 
     /**
      * Detect Cargo workspace member name from file path.
      */
     private fun detectCargoModule(filePath: String, projectDir: File): String? {
+        // Use File API to properly handle path separators on all platforms
+        val file = File(filePath)
         val projectPath = projectDir.absolutePath
-        val relativePath = filePath.removePrefix(projectPath).removePrefix("/")
 
-        // Pattern: crate-name/src/...
-        val parts = relativePath.split("/")
+        // Get relative path using File API (handles both / and \ properly)
+        val relativePath = file.absolutePath.removePrefix(projectPath)
+            .removePrefix(File.separator)
+            .removePrefix("/") // Remove Unix separator if present
+            .removePrefix("\\") // Remove Windows separator if present
+
+        // Pattern: crate-name/src/... (split by platform separator)
+        val parts = relativePath.split(File.separator, "/", "\\")
+            .filter { it.isNotEmpty() } // Remove empty parts
+
         if (parts.size >= 2 && parts[1] == "src") {
             val potentialCrate = parts[0]
             // Verify it's a valid crate by checking for Cargo.toml

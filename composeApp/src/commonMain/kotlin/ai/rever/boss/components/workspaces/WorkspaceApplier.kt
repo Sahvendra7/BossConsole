@@ -12,6 +12,7 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -38,7 +39,7 @@ suspend fun applyWorkspace(
     if (restoreProject) {
         workspace.projectPath?.let { path ->
             if (path.isNotEmpty()) {
-                val projectName = path.trimEnd('/').substringAfterLast('/').ifEmpty { "Project" }
+                val projectName = path.trimEnd('/').trimEnd('\\').extractFileName().ifEmpty { "Project" }
                 ProjectState.selectProject(Project(
                     name = projectName,
                     path = path,

@@ -1,5 +1,7 @@
 package ai.rever.boss.platform
 
+import ai.rever.boss.utils.extractFileName
+
 /**
  * Utility for sanitizing file names to prevent security issues and ensure cross-platform compatibility.
  *
@@ -40,7 +42,7 @@ object FileNameSanitizer {
         if (sanitized.startsWith("/") || sanitized.startsWith("\\") ||
             sanitized.contains("..") || sanitized.contains(":/")) {
             // Extract just the file name part
-            sanitized = sanitized.substringAfterLast('/').substringAfterLast('\\')
+            sanitized = sanitized.extractFileName()
         }
 
         // 2. Remove control characters (0x00-0x1F, 0x7F-0x9F)

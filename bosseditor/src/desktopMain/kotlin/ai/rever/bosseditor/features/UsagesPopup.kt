@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.psi.DefinitionInfo
+import ai.rever.bosseditor.utils.extractFileName
+import ai.rever.bosseditor.utils.extractParentName
 import ai.rever.bosseditor.psi.ReferenceLocation
 import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
@@ -208,8 +210,8 @@ private fun FileHeader(
     backgroundColor: Color,
     textColor: Color
 ) {
-    val fileName = filePath.substringAfterLast('/')
-    val directory = filePath.substringBeforeLast('/').substringAfterLast('/')
+    val fileName = filePath.extractFileName()
+    val directory = filePath.extractParentName()
 
     Row(
         modifier = Modifier

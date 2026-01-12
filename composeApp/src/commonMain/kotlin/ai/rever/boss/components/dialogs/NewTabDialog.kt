@@ -2,6 +2,7 @@ package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
+import ai.rever.boss.utils.extractFileName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -355,7 +356,7 @@ fun NewTabDialog(
                         // Directory picker for selecting new folder
                         val directoryPicker = rememberDirectoryPicker { path ->
                             path?.let {
-                                val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                                val projectName = it.extractFileName().ifEmpty { "Unknown" }
                                 ProjectState.selectProject(
                                     ai.rever.boss.components.plugin.panels.left_top.Project(
                                         name = projectName,

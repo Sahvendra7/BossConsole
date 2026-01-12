@@ -145,8 +145,9 @@ class CompletionProtocolTest {
         assertEquals("import", item.label)
         assertEquals(CompletionItemKind.KEYWORD, item.kind)
         assertNotNull(item.textEdit)
-        assertEquals(0, item.textEdit?.range?.start?.line)
-        assertEquals("import kotlin.io.*", item.textEdit?.newText)
+        val textEdit = item.textEdit
+        assertEquals(0, textEdit.range.start.line)
+        assertEquals("import kotlin.io.*", textEdit.newText)
     }
 
     @Test
@@ -201,8 +202,9 @@ class CompletionProtocolTest {
 
         val item = json.decodeFromString(LspCompletionItem.serializer(), jsonString)
         assertNotNull(item.additionalTextEdits)
-        assertEquals(1, item.additionalTextEdits?.size)
-        assertTrue(item.additionalTextEdits?.get(0)?.newText?.contains("useEffect") == true)
+        val additionalTextEdits = item.additionalTextEdits
+        assertEquals(1, additionalTextEdits.size)
+        assertTrue(additionalTextEdits[0].newText.contains("useEffect"))
     }
 
     @Test
@@ -217,8 +219,9 @@ class CompletionProtocolTest {
 
         val item = json.decodeFromString(LspCompletionItem.serializer(), jsonString)
         assertNotNull(item.commitCharacters)
-        assertEquals(2, item.commitCharacters?.size)
-        assertTrue(item.commitCharacters?.contains(".") == true)
-        assertTrue(item.commitCharacters?.contains("(") == true)
+        val commitCharacters = item.commitCharacters
+        assertEquals(2, commitCharacters.size)
+        assertTrue(commitCharacters.contains("."))
+        assertTrue(commitCharacters.contains("("))
     }
 }

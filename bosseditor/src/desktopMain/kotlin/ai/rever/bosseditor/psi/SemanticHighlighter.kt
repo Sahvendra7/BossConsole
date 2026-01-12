@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import java.util.concurrent.ConcurrentHashMap
+import ai.rever.bosseditor.utils.extractFileName
 
 /**
  * Semantic element types for highlighting.
@@ -131,7 +132,7 @@ class SemanticHighlighter(
                 // Check if PSI is initialized
                 if (!PSIBootstrap.isInitialized) return@launch
 
-                val fileName = filePath.substringAfterLast('/')
+                val fileName = filePath.extractFileName()
 
                 // Parse and analyze in PSI thread
                 val elements = PSIThreadBridge.readAction {

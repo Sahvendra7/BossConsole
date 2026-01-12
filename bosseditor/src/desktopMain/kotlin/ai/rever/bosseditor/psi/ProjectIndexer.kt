@@ -6,6 +6,7 @@ import java.nio.file.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.jar.JarFile
+import ai.rever.bosseditor.utils.extractFileName
 
 /**
  * Indexing progress callback.
@@ -661,7 +662,7 @@ class ProjectIndexer(val projectPath: String) {
 
                     try {
                         val content = jar.getInputStream(entry).bufferedReader().readText()
-                        val fileName = entry.name.substringAfterLast("/")
+                        val fileName = entry.name.extractFileName()
 
                         // Create a virtual path for the library file
                         val virtualPath = "jar://${jarFile.absolutePath}!/${entry.name}"

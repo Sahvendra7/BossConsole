@@ -1,5 +1,6 @@
 package ai.rever.bosseditor.lsp.server
 
+import ai.rever.bosseditor.utils.extractFileName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -56,7 +57,7 @@ data class LanguageServerConfig(
 
         // Check file patterns if defined
         if (filePatterns.isNotEmpty()) {
-            val fileName = filePath.substringAfterLast('/')
+            val fileName = filePath.extractFileName()
             return filePatterns.any { pattern ->
                 matchGlobPattern(pattern, fileName)
             }

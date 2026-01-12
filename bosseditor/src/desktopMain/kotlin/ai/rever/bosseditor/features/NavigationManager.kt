@@ -12,6 +12,7 @@ import ai.rever.bosseditor.psi.ProjectIndexer
 import ai.rever.bosseditor.psi.ReferenceLocation
 import ai.rever.bosseditor.psi.ReferenceService
 import ai.rever.bosseditor.psi.SemanticHighlighter
+import ai.rever.bosseditor.utils.extractFileName
 import kotlinx.coroutines.*
 import org.jetbrains.kotlin.psi.KtFile
 
@@ -180,7 +181,7 @@ class NavigationManager(
     private suspend fun parseKotlinFile(): KtFile? {
         val path = filePath ?: return null
         val content = document.getText()
-        val fileName = path.substringAfterLast('/')
+        val fileName = path.extractFileName()
 
         return try {
             PSIThreadBridge.readAction {

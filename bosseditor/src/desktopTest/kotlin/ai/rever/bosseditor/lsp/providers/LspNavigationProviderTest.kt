@@ -356,7 +356,8 @@ class LspNavigationProviderTest {
 
         assertNotNull(result)
         assertNotNull(result.range)
-        assertEquals(5, result.range!!.start.line)
+        val range = result.range
+        assertEquals(5, range.start.line)
     }
 
     @Test

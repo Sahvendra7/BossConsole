@@ -1,5 +1,6 @@
 package ai.rever.boss.cli
 
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.components.events.FileEventBus
@@ -370,7 +371,7 @@ class CLICommandHandler private constructor() {
         withContext(Dispatchers.Main) {
             // Import Project and ProjectState from CodeBase.kt
             val project = ai.rever.boss.components.plugin.panels.left_top.Project(
-                name = folder.name,
+                name = folder.name.extractFileName(),
                 path = folder.absolutePath,
                 lastOpened = System.currentTimeMillis()
             )

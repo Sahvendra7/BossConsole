@@ -6,6 +6,7 @@ import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -286,14 +287,21 @@ object ProjectState {
                 val json = file.readText()
                 val projects = kotlinx.serialization.json.Json.decodeFromString<List<Project>>(json)
 
-                // Filter out projects whose directories no longer exist
-                val validProjects = projects.filter { project ->
+                // Filter out projects whose directories no longer exist AND normalize names
+                val validProjects = projects.mapNotNull { project ->
                     val projectDir = java.io.File(project.path)
                     val exists = projectDir.exists() && projectDir.isDirectory
                     if (!exists) {
                         println("Removing deleted project from recent: ${project.name} (${project.path})")
+                        null
+                    } else {
+                        // Normalize the name to handle any legacy full paths
+                        val normalizedName = project.path.extractFileName()
+                        if (normalizedName != project.name) {
+                            println("Normalizing project name: '${project.name}' -> '$normalizedName'")
+                        }
+                        project.copy(name = normalizedName)
                     }
-                    exists
                 }
 
                 _recentProjects.value = validProjects
@@ -387,7 +395,7 @@ class CodeBaseComponent(
     
     private fun createMockFileTree(rootPath: String): FileNode {
         return FileNode(
-            name = rootPath.substringAfterLast('/'),
+            name = rootPath.extractFileName(),
             path = rootPath,
             isDirectory = true,
             children = listOf(
@@ -752,7 +760,7 @@ class CodeBaseComponent(
         // Directory picker - same as top bar
         val directoryPicker = rememberDirectoryPicker { path ->
             path?.let {
-                val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                val projectName = it.extractFileName().ifEmpty { "Unknown" }
                 ProjectState.selectProject(
                     Project(
                         name = projectName,

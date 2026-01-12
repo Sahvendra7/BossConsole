@@ -1,5 +1,6 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.utils.extractFileName
 import kotlinx.serialization.Serializable
 
 /**
@@ -85,7 +86,7 @@ data class DetectedMainFunction(
      * Creates a short display name for UI.
      */
     fun toShortName(): String {
-        val fileName = filePath.substringAfterLast('/')
+        val fileName = filePath.extractFileName()
         return when {
             className != null -> "$className.$functionName ($fileName)"
             else -> "$functionName ($fileName)"
@@ -99,8 +100,8 @@ data class DetectedMainFunction(
      * @param projectRoot The project root directory path
      */
     fun toShortNameWithProject(projectRoot: String?): String {
-        val fileName = filePath.substringAfterLast('/')
-        val projectName = projectRoot?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+        val fileName = filePath.extractFileName()
+        val projectName = projectRoot?.extractFileName()?.takeIf { it.isNotBlank() }
 
         val nameWithFile = when {
             className != null -> "$className.$functionName"

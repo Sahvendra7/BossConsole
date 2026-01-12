@@ -1,6 +1,7 @@
 package ai.rever.boss.components.events
 
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.dashboard.RecentFilesManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -195,7 +196,7 @@ object FileEventBus {
     suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0) {
         // Strip file: prefix if present (may come from terminal hyperlinks)
         val cleanPath = stripFilePrefix(filePath)
-        val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+        val fileName = cleanPath.extractFileName().ifEmpty { "untitled" }
 
         // Track file open in dashboard
         RecentFilesManager.recordFileOpen(cleanPath, ProjectState.selectedProject.value.path)

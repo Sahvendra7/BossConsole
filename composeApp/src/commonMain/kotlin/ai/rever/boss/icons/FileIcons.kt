@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import ai.rever.boss.utils.extractFileName
 import compose.icons.SimpleIcons
 import compose.icons.simpleicons.*
 
@@ -87,7 +88,7 @@ object FileIcons {
      * @return [FileIconInfo] containing the appropriate icon and color
      */
     fun forFile(fileName: String): FileIconInfo {
-        val name = fileName.substringAfterLast('/')
+        val name = fileName.extractFileName()
         val extension = name.substringAfterLast('.', "").lowercase()
 
         // Handle special filenames first

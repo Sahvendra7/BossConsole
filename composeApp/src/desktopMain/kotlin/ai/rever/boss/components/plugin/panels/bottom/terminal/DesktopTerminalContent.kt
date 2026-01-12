@@ -154,10 +154,24 @@ actual fun TabbedTerminalContent(
             modifier = Modifier.fillMaxSize(),
             color = settings.defaultBackgroundColor
         ) {
+            // Normalize initialCommand to ensure auto-execution on Windows
+            // BossTerm's TabbedTerminal doesn't append \n on Windows but does on Linux/macOS
+            val normalizedPendingCommand = pendingCommand?.command?.let { command ->
+                if (ShellUtils.isWindows && command.isNotEmpty()) {
+                    if (command.endsWith("\n") || command.endsWith("\r\n")) {
+                        command
+                    } else {
+                        "$command\n"
+                    }
+                } else {
+                    command
+                }
+            }
+
             TabbedTerminal(
                 state = state,
                 // Pass pending command for first render (runs in default tab)
-                initialCommand = pendingCommand?.command,
+                initialCommand = normalizedPendingCommand,
                 workingDirectory = effectiveWorkingDir,
                 settingsOverride = sidebarSettings,
                 onExit = {
@@ -246,10 +260,27 @@ actual fun PersistentTabbedTerminalContent(
             modifier = Modifier.fillMaxSize(),
             color = settings.defaultBackgroundColor
         ) {
+            // Normalize initialCommand to ensure auto-execution on Windows
+            // BossTerm's TabbedTerminal doesn't append \n on Windows but does on Linux/macOS
+            val normalizedInitialCommand = if (isNew) {
+                if (ShellUtils.isWindows && !initialCommand.isNullOrEmpty()) {
+                    // Append newline if not already present
+                    if (initialCommand.endsWith("\n") || initialCommand.endsWith("\r\n")) {
+                        initialCommand
+                    } else {
+                        "$initialCommand\n"
+                    }
+                } else {
+                    initialCommand
+                }
+            } else {
+                null
+            }
+
             TabbedTerminal(
                 state = state,
                 // Only send initial command and working directory for newly created terminals
-                initialCommand = if (isNew) initialCommand else null,
+                initialCommand = normalizedInitialCommand,
                 workingDirectory = effectiveWorkingDir,
                 onExit = {
                     TabbedTerminalStateRegistry.remove(terminalId)
@@ -405,7 +436,8 @@ object TabbedTerminalStateRegistry {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
                     if (contains(SIDEBAR_TERMINAL_ID)) {
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("clear && $fullCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
+                        val clearCommand = ShellUtils.chainCommands("clear", fullCommand)
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
                     }
                 }
             } else {
@@ -418,7 +450,8 @@ object TabbedTerminalStateRegistry {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
                     if (contains(SIDEBAR_TERMINAL_ID)) {
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("clear && $fullCommand\n".toByteArray(Charsets.UTF_8))
+                        val clearCommand = ShellUtils.chainCommands("clear", fullCommand)
+                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8))
                     }
                 }
             }
@@ -430,7 +463,20 @@ object TabbedTerminalStateRegistry {
             // Panel already open, new config: create a new tab with configId as stable tabId
             val state = get(SIDEBAR_TERMINAL_ID) ?: return false
             println("[SidebarTerminal] New config (panel open): creating new tab with tabId=$configId")
-            state.createTab(workingDir = workingDirectory, initialCommand = command, tabId = configId)
+
+            // Normalize initialCommand to ensure auto-execution on Windows
+            // BossTerm's createTab doesn't append \n on Windows but does on Linux/macOS
+            val normalizedCommand = if (ShellUtils.isWindows && command.isNotEmpty()) {
+                if (command.endsWith("\n") || command.endsWith("\r\n")) {
+                    command
+                } else {
+                    "$command\n"
+                }
+            } else {
+                command
+            }
+
+            state.createTab(workingDir = workingDirectory, initialCommand = normalizedCommand, tabId = configId)
             // Record the mapping (configId is the tabId)
             if (configId != null) {
                 sidebarConfigToTabId[configId] = configId

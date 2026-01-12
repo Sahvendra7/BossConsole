@@ -31,6 +31,7 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
@@ -551,7 +552,7 @@ fun BossTabsComponent.BossMainTabBar(
                     }
                     TabType.FILE -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
-                        val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val fileName = path.extractFileName().ifEmpty { "untitled.txt" }
                         val fileIconInfo = FileIcons.forFile(fileName)
                         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                             id = "editor-$timestamp",
@@ -749,7 +750,7 @@ fun BossTabsComponent.BossMainPanelContent(
                 onOpenFile = { filePath ->
                     splitViewState?.openFileInActivePanel(
                         filePath,
-                        filePath.substringAfterLast('/').ifEmpty { "untitled" }
+                        filePath.extractFileName().ifEmpty { "untitled" }
                     )
                 },
                 onOpenUrl = { url ->
@@ -843,7 +844,7 @@ fun BossTabsComponent.BossMainPanelContent(
                     }
                     TabType.FILE -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
-                        val fileName = path.substringAfterLast('/').ifEmpty { "untitled.txt" }
+                        val fileName = path.extractFileName().ifEmpty { "untitled.txt" }
                         val fileIconInfo = FileIcons.forFile(fileName)
                         val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                             id = "editor-$timestamp",
@@ -974,7 +975,7 @@ private fun createTabFromConfig(
                 SplitTemplatesManager.processPlaceholders(it, projectPath, null)
             }
             if (filePath != null) {
-                val fileName = filePath.substringAfterLast('/').ifEmpty { "untitled" }
+                val fileName = filePath.extractFileName().ifEmpty { "untitled" }
                 val fileIconInfo = FileIcons.forFile(fileName)
                 EditorTabInfo(
                     id = "editor-$timestamp",

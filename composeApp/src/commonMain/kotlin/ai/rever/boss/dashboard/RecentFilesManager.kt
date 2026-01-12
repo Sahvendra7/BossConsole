@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.utils.extractFileName
 
 /**
  * Data class representing a recently opened file.
@@ -116,7 +117,7 @@ object RecentFilesManager {
      */
     fun recordFileOpen(filePath: String, projectPath: String? = null) {
         scope.launch {
-            val fileName = filePath.substringAfterLast('/').substringAfterLast('\\')
+            val fileName = filePath.extractFileName()
             val newFile = RecentFile(
                 path = filePath,
                 name = fileName,

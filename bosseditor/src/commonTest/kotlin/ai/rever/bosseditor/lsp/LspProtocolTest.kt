@@ -70,8 +70,9 @@ class LspProtocolTest {
 
         assertNull(decoded.result)
         assertNotNull(decoded.error)
-        assertEquals(ErrorCodes.METHOD_NOT_FOUND, decoded.error!!.code)
-        assertEquals("Method not found", decoded.error!!.message)
+        val decodedError = decoded.error!!
+        assertEquals(ErrorCodes.METHOD_NOT_FOUND, decodedError.code)
+        assertEquals("Method not found", decodedError.message)
     }
 
     @Test

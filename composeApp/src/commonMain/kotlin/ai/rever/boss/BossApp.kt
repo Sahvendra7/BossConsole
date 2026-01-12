@@ -24,6 +24,7 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
@@ -305,7 +306,7 @@ private fun createBrowserTab(url: String): FluckTabInfo {
  */
 private fun createEditorTab(filePath: String): EditorTabInfo {
     val cleanPath = stripFilePrefix(filePath)
-    val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+    val fileName = cleanPath.extractFileName().ifEmpty { "untitled" }
     val fileIconInfo = FileIcons.forFile(fileName)
     return EditorTabInfo(
         id = "editor-${Random.nextLong()}",
@@ -486,7 +487,7 @@ private fun openTerminalLinkInternal(
             if (isFile) {
                 // For file URLs, use openFileInActivePanel for consistent behavior
                 val cleanPath = stripFilePrefix(url)
-                val fileName = cleanPath.substringAfterLast('/').ifEmpty { "untitled" }
+                val fileName = cleanPath.extractFileName().ifEmpty { "untitled" }
                 splitViewState.openFileInActivePanel(cleanPath, fileName)
                 navigateToLineIfNeeded()
             } else {
@@ -1439,7 +1440,7 @@ fun ComponentContext.BossApp(
             .onEach { filePath ->
                 splitViewState.openFileInActivePanel(
                     filePath,
-                    filePath.substringAfterLast('/').ifEmpty { "untitled" }
+                    filePath.extractFileName().ifEmpty { "untitled" }
                 )
             }
             .launchIn(this)
@@ -2335,7 +2336,7 @@ fun ComponentContext.BossApp(
                                 targetComponent.addTab(tab)
                             }
                             TabType.FILE -> {
-                                val fileName = path.substringAfterLast('/')
+                                val fileName = path.extractFileName()
                                 val fileIconInfo = FileIcons.forFile(fileName)
                                 val tab = EditorTabInfo(
                                     id = "editor-${Random.nextLong()}",
@@ -2448,7 +2449,7 @@ fun ComponentContext.BossApp(
             // Directory picker for project selection (must be outside conditional for Compose)
             val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
                 path?.let {
-                    val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+                    val projectName = it.extractFileName().ifEmpty { "Unknown" }
                     ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(
                         ai.rever.boss.components.plugin.panels.left_top.Project(
                             name = projectName,
@@ -2536,7 +2537,7 @@ private fun createTabFromTemplateConfig(
             ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                 id = "terminal-$timestamp",
                 typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
-                title = command?.substringBefore(" ")?.substringAfterLast("/") ?: "Terminal",
+                title = command?.substringBefore(" ")?.extractFileName() ?: "Terminal",
                 icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
                 workingDirectory = projectPath,
                 initialCommand = command
@@ -2558,7 +2559,7 @@ private fun createTabFromTemplateConfig(
             ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
                 id = "editor-$timestamp",
                 typeId = ai.rever.boss.components.plugin.tab_types.CodeEditor.typeId,
-                title = filePath.substringAfterLast('/'),
+                title = filePath.extractFileName(),
                 icon = ai.rever.boss.components.plugin.tab_types.CodeEditor.icon,
                 filePath = filePath
             )

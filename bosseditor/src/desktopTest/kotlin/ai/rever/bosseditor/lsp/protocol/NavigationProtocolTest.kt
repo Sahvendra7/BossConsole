@@ -214,9 +214,10 @@ class NavigationProtocolTest {
         val symbol = json.decodeFromString(DocumentSymbol.serializer(), jsonString)
         assertEquals("MyClass", symbol.name)
         assertNotNull(symbol.children)
-        assertEquals(1, symbol.children!!.size)
-        assertEquals("method1", symbol.children!![0].name)
-        assertEquals(SymbolKind.METHOD, symbol.children!![0].kind)
+        val children = symbol.children
+        assertEquals(1, children.size)
+        assertEquals("method1", children[0].name)
+        assertEquals(SymbolKind.METHOD, children[0].kind)
     }
 
     @Test

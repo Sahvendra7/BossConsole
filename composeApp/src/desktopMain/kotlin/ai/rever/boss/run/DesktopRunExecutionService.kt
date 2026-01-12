@@ -83,11 +83,7 @@ actual object RunExecutionService {
         }
 
         // If working directory is specified and different from current, cd first
-        return if (config.workingDirectory.isNotBlank()) {
-            "cd ${config.workingDirectory} && $baseCommand"
-        } else {
-            baseCommand
-        }
+        return ShellUtils.buildCommandWithWorkingDirectory(baseCommand, config.workingDirectory)
     }
 
     /**

@@ -4,6 +4,7 @@ import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.dashboard.RecentFile
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.utils.extractParentName
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -102,7 +103,7 @@ fun FileCard(
             }
 
             // Parent folder with fixed height for consistency
-            val parentFolder = file.path.substringBeforeLast('/').substringAfterLast('/')
+            val parentFolder = file.path.extractParentName()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -32,6 +32,7 @@ import ai.rever.boss.git.GitOperationResult
 import ai.rever.boss.git.GitStashInfo
 import ai.rever.boss.components.dialogs.CommitDialog
 import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.windows.SettingsWindow
 import ai.rever.boss.components.model.BossDraggableComponent
@@ -586,7 +587,7 @@ fun BossDraggableComponent.BossTopLeftBar(
     // Directory picker for native file selection
     val directoryPicker = rememberDirectoryPicker { path ->
         path?.let {
-            val projectName = it.substringAfterLast('/').ifEmpty { "Unknown" }
+            val projectName = it.extractFileName().ifEmpty { "Unknown" }
             val project = Project(name = projectName, path = it)
             // Close the selection dialog
             showProjectDialog = false

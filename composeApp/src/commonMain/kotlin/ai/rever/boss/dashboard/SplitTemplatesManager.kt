@@ -1,5 +1,6 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.components.workspaces.CommandProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -360,6 +361,9 @@ object SplitTemplatesManager {
         // Replace Claude continue flag based on session existence
         val claudeFlag = getClaudeContinueFlag(projectPath)
         result = result.replace("{claudeContinueFlag}", claudeFlag)
+
+        // Normalize command separators for current platform (MUST be last step)
+        result = CommandProcessor.normalizeCommand(result)
 
         return result
     }
