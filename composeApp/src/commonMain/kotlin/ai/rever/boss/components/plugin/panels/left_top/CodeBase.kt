@@ -364,8 +364,8 @@ class CodeBaseComponent(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main
     )
 
-    // Mutex to prevent race conditions during compact loading
-    private val compactLoadMutex = kotlinx.coroutines.sync.Mutex()
+    // Mutex to prevent race conditions during tree updates (folder loading and compact loading)
+    private val treeUpdateMutex = kotlinx.coroutines.sync.Mutex()
 
     init {
         // Load initial file tree
@@ -482,48 +482,67 @@ class CodeBaseComponent(
      * IntelliJ-style async loading of node children.
      * Uses background thread for I/O, updates UI on main thread.
      * Handles compact middle packages: loads the END node's children.
+     * Uses mutex to prevent race conditions when multiple folders are expanded concurrently.
      */
     private suspend fun loadNodeChildren(path: String) {
+        // Early validation before acquiring lock
         val currentTree = _fileTree.value ?: return
         val node = findNodeByPath(currentTree, path)
-
         if (node?.isDirectory != true) return
 
-        // For compact middle packages: find the end node that needs loading
         val endNode = node.getCompactEndNode()
         val targetPath = endNode.path
-
-        // If end node is already loaded with children, nothing to do
         if (endNode.isLoaded && endNode.children.isNotEmpty()) return
 
-        // Step 1: Mark the end node as CHECKING state (shows loading indicator)
-        _fileTree.value = updateNodeAtPath(currentTree, targetPath) { existingNode ->
-            existingNode.copy(loadingState = NodeLoadingState.CHECKING)
+        // Acquire lock to mark as CHECKING
+        treeUpdateMutex.lock()
+        try {
+            // Re-validate after acquiring lock (TOCTOU protection)
+            val treeForUpdate = _fileTree.value ?: return
+            val nodeAfterLock = findNodeByPath(treeForUpdate, path)
+            if (nodeAfterLock?.isDirectory != true) return
+
+            val endNodeAfterLock = nodeAfterLock.getCompactEndNode()
+            if (endNodeAfterLock.isLoaded && endNodeAfterLock.children.isNotEmpty()) return
+
+            // Mark as CHECKING state (shows loading indicator)
+            _fileTree.value = updateNodeAtPath(treeForUpdate, targetPath) { existingNode ->
+                existingNode.copy(loadingState = NodeLoadingState.CHECKING)
+            }
+        } finally {
+            treeUpdateMutex.unlock()
         }
 
-        try {
-            // Step 2: Load children on IO dispatcher (IntelliJ pattern - background thread)
-            val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        // I/O without holding lock
+        val scannedNode = try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 scanDirectoryWithDepth(targetPath, maxDepth = 1, startDepth = 0)
             }
+        } catch (e: Exception) {
+            println("Error loading children for $targetPath: ${e.message}")
+            null
+        }
 
-            // Step 3: Update tree with loaded children
-            val latestTree = _fileTree.value ?: return
-            if (scannedNode != null) {
-                val loadedChildren = scannedNode.children.map { child ->
-                    // For each child directory, do a quick hasChildren check
-                    if (child.isDirectory) {
-                        val hasKids = try {
-                            directoryHasChildren(child.path)
-                        } catch (e: Exception) {
-                            false // Assume no children on error
-                        }
-                        child.copy(hasChildren = hasKids)
-                    } else {
-                        child
-                    }
+        // Process children once (avoid duplication)
+        val loadedChildren = scannedNode?.children?.map { child ->
+            if (child.isDirectory) {
+                val hasKids = try {
+                    directoryHasChildren(child.path)
+                } catch (e: Exception) {
+                    false
                 }
+                child.copy(hasChildren = hasKids)
+            } else {
+                child
+            }
+        }
 
+        // Acquire lock for final tree update
+        treeUpdateMutex.lock()
+        try {
+            val latestTree = _fileTree.value ?: return
+
+            if (loadedChildren != null) {
                 _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
                     existingNode.copy(
                         children = loadedChildren,
@@ -532,13 +551,8 @@ class CodeBaseComponent(
                         loadDepth = 1
                     )
                 }
-
-                // Compact middle packages: if only one child directory, keep loading deeper
-                // This ensures the compact chain is fully loaded for display
-                // Limit depth to prevent excessive I/O on deep hierarchies
-                compactLoadIfNeeded(loadedChildren, currentDepth = 0)
             } else {
-                // No children found - mark as loaded with empty
+                // No children found or error - mark as loaded with empty
                 _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
                     existingNode.copy(
                         children = emptyList(),
@@ -547,17 +561,13 @@ class CodeBaseComponent(
                     )
                 }
             }
-        } catch (e: Exception) {
-            // Handle I/O errors gracefully - mark as loaded with error state
-            println("Error loading children for $targetPath: ${e.message}")
-            val latestTree = _fileTree.value ?: return
-            _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
-                existingNode.copy(
-                    children = emptyList(),
-                    hasChildren = false,
-                    loadingState = NodeLoadingState.LOADED
-                )
-            }
+        } finally {
+            treeUpdateMutex.unlock()
+        }
+
+        // Compact loading after releasing lock (reuse already-processed children)
+        if (loadedChildren != null) {
+            compactLoadIfNeeded(loadedChildren, currentDepth = 0)
         }
     }
 
@@ -629,38 +639,47 @@ class CodeBaseComponent(
         currentDepth: Int = 0,
         maxDepth: Int = 10
     ) {
-        // Use mutex to prevent race conditions when multiple compact loads run concurrently
-        compactLoadMutex.lock()
-        try {
-            val currentTree = _fileTree.value
-            if (currentTree == null) return
+        // Early validation before acquiring lock
+        val currentTree = _fileTree.value ?: return
+        val node = findNodeByPath(currentTree, path)
+        if (node?.isDirectory != true) return
+        if (node.isLoaded) return
 
-            val node = findNodeByPath(currentTree, path)
-            if (node?.isDirectory != true) return
-            if (node.isLoaded) return
-
-            // Load children on IO dispatcher
-            val scannedNode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        // I/O without holding lock
+        val scannedNode = try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
             }
+        } catch (e: Exception) {
+            println("Error loading children for compact path $path: ${e.message}")
+            null
+        }
 
-            val latestTree = _fileTree.value
-            if (latestTree == null) return
-
-            if (scannedNode != null) {
-                val loadedChildren = scannedNode.children.map { child ->
-                    if (child.isDirectory) {
-                        val hasKids = try {
-                            directoryHasChildren(child.path)
-                        } catch (e: Exception) {
-                            false // Assume no children on error
-                        }
-                        child.copy(hasChildren = hasKids)
-                    } else {
-                        child
-                    }
+        // Process children once outside the lock (avoid I/O inside lock)
+        val loadedChildren = scannedNode?.children?.map { child ->
+            if (child.isDirectory) {
+                val hasKids = try {
+                    directoryHasChildren(child.path)
+                } catch (e: Exception) {
+                    false
                 }
+                child.copy(hasChildren = hasKids)
+            } else {
+                child
+            }
+        }
 
+        // Acquire lock only for tree update
+        treeUpdateMutex.lock()
+        try {
+            val latestTree = _fileTree.value ?: return
+
+            // Re-validate after acquiring lock (TOCTOU protection)
+            val nodeAfterLock = findNodeByPath(latestTree, path)
+            if (nodeAfterLock?.isDirectory != true) return
+            if (nodeAfterLock.isLoaded) return
+
+            if (loadedChildren != null) {
                 _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
                     existingNode.copy(
                         children = loadedChildren,
@@ -669,12 +688,6 @@ class CodeBaseComponent(
                         loadDepth = 1
                     )
                 }
-
-                // Continue loading for compact calculation if single directory child
-                // Release lock before recursive call to prevent deadlock
-                compactLoadMutex.unlock()
-                compactLoadIfNeeded(loadedChildren, currentDepth, maxDepth)
-                return  // Already unlocked
             } else {
                 _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
                     existingNode.copy(
@@ -684,24 +697,13 @@ class CodeBaseComponent(
                     )
                 }
             }
-        } catch (e: Exception) {
-            // Handle I/O errors gracefully
-            println("Error loading children for compact path $path: ${e.message}")
-            val latestTree = _fileTree.value
-            if (latestTree != null) {
-                _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
-                    existingNode.copy(
-                        children = emptyList(),
-                        hasChildren = false,
-                        loadingState = NodeLoadingState.LOADED
-                    )
-                }
-            }
         } finally {
-            // Ensure mutex is released if not already
-            if (compactLoadMutex.isLocked) {
-                try { compactLoadMutex.unlock() } catch (e: Exception) { /* Already unlocked */ }
-            }
+            treeUpdateMutex.unlock()
+        }
+
+        // Recursive call after releasing lock
+        if (loadedChildren != null) {
+            compactLoadIfNeeded(loadedChildren, currentDepth, maxDepth)
         }
     }
     
