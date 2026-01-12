@@ -326,7 +326,7 @@ fun main(args: Array<String>) {
                             totalMB = downloadProgress.totalMB,
                             status = when {
                                 downloadProgress.isExtracting -> "Extracting files..."
-                                downloadProgress.totalBytes > 0 -> "Downloading BOSS-branded Chromium..."
+                                downloadProgress.totalBytes > 0 -> "Installing BOSS Browser Engine..."
                                 else -> "Connecting to download server..."
                             },
                             error = downloadProgress.error,

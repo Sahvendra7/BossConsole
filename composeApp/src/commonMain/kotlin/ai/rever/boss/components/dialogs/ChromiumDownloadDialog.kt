@@ -143,7 +143,7 @@ fun ChromiumDownloadContent(
     progress: Float,
     downloadedMB: Long,
     totalMB: Long,
-    status: String = "Downloading BOSS-branded Chromium...",
+    status: String = "Installing BOSS Browser Engine...",
     error: String? = null,
     onCancel: () -> Unit,
     onRetry: (() -> Unit)? = null
@@ -182,7 +182,7 @@ fun ChromiumDownloadDialog(
     progress: Float,
     downloadedMB: Long,
     totalMB: Long,
-    status: String = "Downloading BOSS-branded Chromium...",
+    status: String = "Installing BOSS Browser Engine...",
     error: String? = null,
     onCancel: () -> Unit,
     onRetry: (() -> Unit)? = null
