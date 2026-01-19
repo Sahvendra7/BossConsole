@@ -336,7 +336,7 @@ kotlin {
 
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
-            implementation("org.junit.jupiter:junit-jupiter:6.0.1")
+            implementation("org.junit.jupiter:junit-jupiter:6.0.2")
         }
     }
 }
@@ -358,6 +358,8 @@ compose.desktop {
         // JVM arguments optimized for platform-specific runtime
         // Build platform-specific args to avoid warnings about non-existent packages
         val currentOs = System.getProperty("os.name").lowercase()
+        val currentArch = System.getProperty("os.arch").lowercase()
+        val isMacosArm64 = currentOs.contains("mac") && (currentArch == "aarch64" || currentArch == "arm64")
         val platformJvmArgs = buildList {
             // Common JCEF argument
             add("--add-opens=java.desktop/sun.awt=ALL-UNNAMED")
@@ -378,11 +380,15 @@ compose.desktop {
             // Apple Silicon JIT compatibility flags (harmless on other platforms)
             add("-XX:+IgnoreUnrecognizedVMOptions")
 
-            // Prevent C2 JIT crash during JxBrowser native library loading on macOS ARM64
-            // The C2 compiler conflicts with Rust allocator in libipc.dylib, causing crashes
-            // at startup (see issue #476). Using C1-only is ~10-20% slower but stable.
-            // This flag is safe on all platforms - C1 is fast enough for a GUI app.
-            add("-XX:TieredStopAtLevel=3")
+            // macOS ARM64: Delay C2 JIT to avoid crash during JxBrowser native library loading
+            // The C2 compiler conflicts with Rust allocator in libipc.dylib at startup (issue #476).
+            // Instead of disabling C2 entirely (causes lag), we delay C2 compilation until after
+            // startup by increasing thresholds. C2 kicks in after ~15000 invocations instead of ~1500.
+            if (isMacosArm64) {
+                add("-XX:Tier4CompileThreshold=15000")      // Delay C2 compilation
+                add("-XX:Tier4InvocationThreshold=10000")   // Higher invocation threshold for C2
+                add("-XX:Tier4BackEdgeThreshold=50000")     // Higher loop threshold for C2
+            }
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
         
