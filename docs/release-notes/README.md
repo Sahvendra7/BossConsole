@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.22](v8.15.22.md) | 2026-01-20 | Title bar hover reveal in focus mode, search functionality for large file viewer, and logging improvements |
 | [v8.15.21](v8.15.21.md) | 2026-01-20 | Memory-efficient large file viewer for BossEditor and automatic update fallback for expired tokens |
 | [v8.15.20](v8.15.20.md) | 2026-01-19 | Critical CI/CD workflow fix restoring all 5 platform build configurations |
 | [v8.15.19](v8.15.19.md) | 2026-01-19 | Critical macOS ARM64 performance fix and comprehensive dependency updates |
