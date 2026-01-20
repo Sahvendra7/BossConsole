@@ -1,7 +1,6 @@
 package ai.rever.boss.config
 
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 /**
  * Configuration for GitHub API access.
@@ -23,48 +22,151 @@ import java.io.InputStreamReader
  *                 and add to local.properties: GITHUB_TOKEN=ghp_your_token_here
  */
 object GitHubConfig {
+    private const val GH_TIMEOUT_SECONDS = 5L
+
     /**
-     * GitHub Personal Access Token loaded from secure sources.
-     * Attempts to use GitHub CLI if no token is explicitly configured.
-     * Returns null if not configured (will use unauthenticated access).
+     * Encapsulates GitHub authentication state including token, source, and validity.
      */
-    val token: String? by lazy {
-        // Try explicit configuration first
-        ConfigLoader.getConfig("GITHUB_TOKEN")
-            ?: getTokenFromGitHubCLI()
+    data class GitHubAuthContext(
+        val token: String?,
+        val source: TokenSource,
+        val isValid: Boolean
+    ) {
+        enum class TokenSource {
+            ENVIRONMENT_VARIABLE,
+            SYSTEM_PROPERTY,
+            LOCAL_PROPERTIES,
+            GITHUB_CLI,
+            NONE
+        }
+
+        val isAuthenticated: Boolean get() = token != null && isValid
+        val rateLimit: Int get() = if (isAuthenticated) 5000 else 60
     }
 
     /**
-     * Check if GitHub token is configured
+     * Get fresh authentication context for each API call.
+     * This method does not cache results to ensure token validity is checked on every use.
      */
-    val hasToken: Boolean
-        get() = token != null
+    fun getAuthContext(): GitHubAuthContext {
+        // Try explicit config sources first (fast: env var, system prop, local.properties)
+        ConfigLoader.getConfig("GITHUB_TOKEN")?.let { token ->
+            val source = when {
+                System.getenv("GITHUB_TOKEN") != null -> GitHubAuthContext.TokenSource.ENVIRONMENT_VARIABLE
+                System.getProperty("GITHUB_TOKEN") != null -> GitHubAuthContext.TokenSource.SYSTEM_PROPERTY
+                else -> GitHubAuthContext.TokenSource.LOCAL_PROPERTIES
+            }
+            return GitHubAuthContext(
+                token = token,
+                source = source,
+                isValid = validateToken(token)
+            )
+        }
+
+        // Try GitHub CLI with timeout (slow: subprocess call)
+        val cliToken = getTokenFromGitHubCLI()
+        return if (cliToken != null) {
+            GitHubAuthContext(
+                token = cliToken,
+                source = GitHubAuthContext.TokenSource.GITHUB_CLI,
+                isValid = validateToken(cliToken)
+            )
+        } else {
+            GitHubAuthContext(
+                token = null,
+                source = GitHubAuthContext.TokenSource.NONE,
+                isValid = false
+            )
+        }
+    }
 
     /**
-     * Attempt to retrieve token from GitHub CLI (gh auth token)
-     * Returns null if gh is not installed or not authenticated
+     * Attempt to retrieve token from GitHub CLI (gh auth token) with timeout.
+     * Returns null if gh is not installed, not authenticated, or times out.
      */
     private fun getTokenFromGitHubCLI(): String? {
+        var process: Process? = null
         return try {
-            val process = ProcessBuilder("gh", "auth", "token")
+            process = ProcessBuilder("gh", "auth", "token")
                 .redirectErrorStream(true)
                 .start()
 
-            val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                reader.readText().trim()
+            // Wait for process to complete with timeout
+            if (!process.waitFor(GH_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                println("⚠️ GitHub CLI token retrieval timed out after ${GH_TIMEOUT_SECONDS}s")
+                return null
             }
 
-            val exitCode = process.waitFor()
+            // Process completed - now safely read output
+            val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+            val exitCode = process.exitValue()
 
-            if (exitCode == 0 && output.isNotBlank() && !output.contains("not logged in", ignoreCase = true)) {
-                println("✅ Using GitHub token from GitHub CLI (gh)")
-                output
-            } else {
-                null
+            when {
+                exitCode != 0 -> {
+                    println("⚠️ GitHub CLI not authenticated (exit code $exitCode)")
+                    null
+                }
+                output.isBlank() -> {
+                    println("⚠️ GitHub CLI returned empty token")
+                    null
+                }
+                output.contains("not logged in", ignoreCase = true) -> {
+                    println("⚠️ GitHub CLI: not logged in")
+                    null
+                }
+                else -> {
+                    println("✅ Retrieved GitHub token from GitHub CLI (gh)")
+                    output
+                }
             }
         } catch (e: Exception) {
-            // gh command not found or other error - silently ignore
+            println("⚠️ GitHub CLI not available: ${e.message}")
             null
+        } finally {
+            process?.let {
+                if (it.isAlive) it.destroyForcibly()
+            }
         }
     }
+
+    /**
+     * Validate GitHub token format.
+     * Supports all GitHub token types:
+     * - Classic PAT: ghp_[A-Za-z0-9]{36}
+     * - Fine-grained PAT: github_pat_[A-Za-z0-9_]{82}
+     * - OAuth access token: gho_[A-Za-z0-9]{36} (used by gh CLI)
+     * - User-to-server: ghu_[A-Za-z0-9]{36}
+     * - Server-to-server: ghs_[A-Za-z0-9]{36}
+     * - Refresh token: ghr_[A-Za-z0-9]{36}
+     */
+    private fun validateToken(token: String): Boolean {
+        return when {
+            token.startsWith("ghp_") -> token.length >= 40  // Classic PAT
+            token.startsWith("gho_") -> token.length >= 40  // OAuth (gh CLI)
+            token.startsWith("ghu_") -> token.length >= 40  // User-to-server
+            token.startsWith("ghs_") -> token.length >= 40  // Server-to-server
+            token.startsWith("ghr_") -> token.length >= 40  // Refresh token
+            token.startsWith("github_pat_") -> token.length >= 93  // Fine-grained PAT
+            else -> false
+        }
+    }
+
+    // Deprecated properties for backward compatibility
+
+    /**
+     * @deprecated Use getAuthContext() instead. This lazy property caches the token forever,
+     * which can lead to stale/expired tokens being used.
+     */
+    @Deprecated("Use getAuthContext() instead")
+    val token: String? by lazy {
+        ConfigLoader.getConfig("GITHUB_TOKEN") ?: getTokenFromGitHubCLI()
+    }
+
+    /**
+     * @deprecated Use getAuthContext().isAuthenticated instead
+     */
+    @Deprecated("Use getAuthContext() instead")
+    val hasToken: Boolean
+        get() = token != null
 }

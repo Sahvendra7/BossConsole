@@ -63,33 +63,84 @@ actual class UpdateService {
         private const val RELEASES_REPO = "risa-labs-inc/BossConsole-Releases"
         private const val RELEASES_ENDPOINT = "$GITHUB_API_BASE/repos/$RELEASES_REPO/releases"
     }
-    
-    actual suspend fun checkForUpdates(): UpdateInfo {
-        return try {
-            // Log authentication status
-            if (GitHubConfig.hasToken) {
-                println("✅ Using authenticated GitHub API (5,000 requests/hour)")
-            } else {
-                println("⚠️ Using unauthenticated GitHub API (60 requests/hour)")
-                println("   Add GITHUB_TOKEN to local.properties for higher rate limits")
-            }
 
-            val response = apiClient.get("$RELEASES_ENDPOINT") {
+    /**
+     * Make GitHub API request with automatic fallback to unauthenticated access.
+     * Since BossConsole-Releases is a public repo, authentication is optional.
+     * If authenticated request fails with 401, automatically retry without token.
+     */
+    private suspend fun makeGitHubRequest(
+        url: String,
+        authContext: GitHubConfig.GitHubAuthContext
+    ): HttpResponse {
+        // Try authenticated request first if token available
+        if (authContext.isAuthenticated) {
+            val authenticatedResponse = apiClient.get(url) {
                 headers {
                     append("Accept", "application/vnd.github.v3+json")
                     append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
-
-                    // Add authentication token if available
-                    GitHubConfig.token?.let { token ->
-                        append("Authorization", "Bearer $token")
-                    }
+                    append("Authorization", "Bearer ${authContext.token}")
                 }
             }
+
+            // If authenticated request succeeds, return it
+            if (authenticatedResponse.status.value in 200..299) {
+                return authenticatedResponse
+            }
+
+            // If 401 error with token, fall back to unauthenticated
+            if (authenticatedResponse.status.value == 401) {
+                println("⚠️ Authenticated request failed (token expired/invalid)")
+                println("   Retrying without authentication (public repo access)...")
+                // Fall through to unauthenticated request
+            } else {
+                // Other error, return it
+                return authenticatedResponse
+            }
+        }
+
+        // Make unauthenticated request (or fallback after 401)
+        return apiClient.get(url) {
+            headers {
+                append("Accept", "application/vnd.github.v3+json")
+                append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+            }
+        }
+    }
+
+    actual suspend fun checkForUpdates(): UpdateInfo {
+        return try {
+            // Single token retrieval with validation
+            val authContext = GitHubConfig.getAuthContext()
+
+            // Accurate status message
+            when {
+                authContext.isAuthenticated -> {
+                    println("✅ Using authenticated GitHub API (${authContext.rateLimit} requests/hour)")
+                    println("   Token source: ${authContext.source}")
+                    println("   Note: Public repo - will fallback to unauthenticated if token fails")
+                }
+                authContext.token != null && !authContext.isValid -> {
+                    println("⚠️ GitHub token found but format is invalid")
+                    println("   Using unauthenticated API (60 requests/hour)")
+                    println("   Token source: ${authContext.source}")
+                }
+                else -> {
+                    println("ℹ️ Using unauthenticated GitHub API (60 requests/hour)")
+                    println("   Public repo access - no authentication needed")
+                    println("   Optional: Add GITHUB_TOKEN for higher rate limits (5,000/hour)")
+                }
+            }
+
+            // Use helper function with automatic fallback for public repo
+            val response = makeGitHubRequest(RELEASES_ENDPOINT, authContext)
 
             // Check for error responses (rate limits, etc.)
             if (response.status.value !in 200..299) {
                 val errorBody = response.bodyAsText()
                 val errorMessage = when {
+                    response.status.value == 401 ->
+                        "GitHub API authentication failed. This is unexpected for public repository access."
                     errorBody.contains("rate limit", ignoreCase = true) ->
                         "GitHub API rate limit exceeded. Please try again later."
                     else -> "Unable to check for updates (HTTP ${response.status.value})"
@@ -375,25 +426,15 @@ actual class UpdateService {
      */
     actual suspend fun fetchAllReleases(): List<VersionInfo> = withContext(Dispatchers.IO) {
         try {
+            val authContext = GitHubConfig.getAuthContext()
             val allReleases = mutableListOf<GitHubRelease>()
             var page = 1
             val perPage = 100 // GitHub max per page
 
             // Fetch all pages until we get an empty response
             while (true) {
-                val response = apiClient.get("$RELEASES_ENDPOINT") {
-                    headers {
-                        append("Accept", "application/vnd.github.v3+json")
-                        append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
-
-                        // Add authentication token if available
-                        GitHubConfig.token?.let { token ->
-                            append("Authorization", "Bearer $token")
-                        }
-                    }
-                    parameter("page", page)
-                    parameter("per_page", perPage)
-                }
+                val url = "$RELEASES_ENDPOINT?page=$page&per_page=$perPage"
+                val response = makeGitHubRequest(url, authContext)
 
                 if (response.status.value !in 200..299) {
                     println("Failed to fetch releases page $page: HTTP ${response.status.value}")
@@ -446,18 +487,9 @@ actual class UpdateService {
      */
     actual suspend fun fetchVersionDetails(version: Version): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
+            val authContext = GitHubConfig.getAuthContext()
             val tagName = "v$version"
-            val response = apiClient.get("$RELEASES_ENDPOINT/tags/$tagName") {
-                headers {
-                    append("Accept", "application/vnd.github.v3+json")
-                    append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
-
-                    // Add authentication token if available
-                    GitHubConfig.token?.let { token ->
-                        append("Authorization", "Bearer $token")
-                    }
-                }
-            }
+            val response = makeGitHubRequest("$RELEASES_ENDPOINT/tags/$tagName", authContext)
 
             if (response.status.value !in 200..299) {
                 println("Failed to fetch version $version: HTTP ${response.status.value}")
