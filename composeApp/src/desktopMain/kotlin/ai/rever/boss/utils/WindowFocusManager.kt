@@ -44,13 +44,10 @@ actual object WindowFocusManager {
             override fun windowGainedFocus(e: WindowEvent?) {
                 focusedWindowId = windowId
                 _focusedWindowFlow.value = windowId  // Emit to Flow for observers
-                println("WindowFocusManager: Window $windowId gained focus")
             }
 
             override fun windowLostFocus(e: WindowEvent?) {
-                if (focusedWindowId == windowId) {
-                    println("WindowFocusManager: Window $windowId lost focus")
-                }
+                // Focus tracking handled by windowGainedFocus
             }
         }
 
@@ -59,8 +56,6 @@ actual object WindowFocusManager {
 
         // Add listener to window
         window.addWindowFocusListener(listener)
-
-        println("WindowFocusManager: Registered window $windowId (total: ${windows.size})")
     }
 
     /**
@@ -89,8 +84,8 @@ actual object WindowFocusManager {
         if (focusedWindowId == windowId) {
             // If the focused window closed, clear focus (another window will gain focus via listener)
             focusedWindowId = null
+            _focusedWindowFlow.value = null  // Keep flow in sync
         }
-        println("WindowFocusManager: Unregistered window $windowId (remaining: ${windows.size})")
     }
 
     /**
@@ -123,12 +118,9 @@ actual object WindowFocusManager {
 
                 // Request focus
                 window.requestFocus()
-
-                println("WindowFocusManager: Focused window $windowId")
             }
             true
         } else {
-            println("WindowFocusManager: Window $windowId not found")
             false
         }
     }
@@ -149,9 +141,7 @@ actual object WindowFocusManager {
 
                 // Request focus
                 window.requestFocus()
-
-                println("WindowFocusManager: Brought window to front")
             }
-        } ?: println("WindowFocusManager: No window registered")
+        }
     }
 }

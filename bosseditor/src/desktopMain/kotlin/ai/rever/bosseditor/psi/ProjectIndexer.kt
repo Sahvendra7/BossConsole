@@ -119,7 +119,6 @@ class ProjectIndexer(val projectPath: String) {
                 }
 
                 indexingComplete.set(true)
-                println("[Indexer] Project indexed: ${index.size} declarations")
 
             } catch (e: CancellationException) {
                 throw e
@@ -546,7 +545,6 @@ class ProjectIndexer(val projectPath: String) {
                 }
 
                 libraryIndexingComplete.set(true)
-                println("[Indexer] Library indexed: ${index.size} total declarations")
 
             } catch (e: CancellationException) {
                 throw e

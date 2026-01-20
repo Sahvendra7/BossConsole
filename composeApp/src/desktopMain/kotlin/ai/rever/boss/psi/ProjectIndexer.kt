@@ -86,14 +86,11 @@ class ProjectIndexer(val projectPath: String) {
      */
     fun startIndexing(progressCallback: IndexingProgressCallback? = null): Job {
         if (indexingInProgress.getAndSet(true)) {
-            println("[Indexer] Indexing already in progress")
             return indexScope.launch { } // Return empty job
         }
 
         return indexScope.launch {
             try {
-                println("[Indexer] Starting project indexing: $projectPath")
-
                 // Mark this directory as indexed
                 indexedDirectories.add(File(projectPath).canonicalPath)
 
@@ -101,8 +98,6 @@ class ProjectIndexer(val projectPath: String) {
                 val sourceFiles = findSourceFiles()
                 totalFiles.set(sourceFiles.size)
                 filesIndexed.set(0)
-
-                println("[Indexer] Found ${sourceFiles.size} source files to index")
 
                 // Index each file
                 for ((idx, file) in sourceFiles.withIndex()) {
@@ -118,19 +113,16 @@ class ProjectIndexer(val projectPath: String) {
                             yield()
                         }
                     } catch (e: Exception) {
-                        println("[Indexer] Error indexing ${file.name}: ${e.message}")
+                        // Skip problematic files
                     }
                 }
 
                 indexingComplete.set(true)
-                println("[Indexer] Indexing complete: ${index.size} declarations indexed")
 
             } catch (e: CancellationException) {
-                println("[Indexer] Indexing cancelled")
                 throw e
             } catch (e: Exception) {
-                println("[Indexer] Error during indexing: ${e.message}")
-                e.printStackTrace()
+                // Indexing error - continue silently
             } finally {
                 indexingInProgress.set(false)
             }
@@ -184,8 +176,6 @@ class ProjectIndexer(val projectPath: String) {
                 val projectDir = Paths.get(projectPath)
                 registerDirectoryTree(projectDir)
 
-                println("[Indexer] Started watching for file changes")
-
                 // Process events
                 while (isActive) {
                     val key = withContext(Dispatchers.IO) {
@@ -198,7 +188,7 @@ class ProjectIndexer(val projectPath: String) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                println("[Indexer] Error in file watcher: ${e.message}")
+                // File watcher error - ignore
             }
         }
     }
@@ -256,7 +246,6 @@ class ProjectIndexer(val projectPath: String) {
         // Check if already indexed or indexing in progress
         synchronized(jobsLock) {
             if (normalizedPath in indexedDirectories) {
-                println("[Indexer] Directory already indexed: $normalizedPath")
                 // Return existing job if still running
                 return pendingIndexingJobs[normalizedPath]?.takeIf { it.isActive }
             }
@@ -264,7 +253,6 @@ class ProjectIndexer(val projectPath: String) {
 
         val job = indexScope.launch {
             try {
-                println("[Indexer] Adding directory to index: $normalizedPath")
                 synchronized(jobsLock) {
                     indexedDirectories.add(normalizedPath)
                 }
@@ -272,7 +260,6 @@ class ProjectIndexer(val projectPath: String) {
                 // Find source files in this directory
                 val dir = File(normalizedPath)
                 if (!dir.exists() || !dir.isDirectory) {
-                    println("[Indexer] Invalid directory: $normalizedPath")
                     return@launch
                 }
 
@@ -289,22 +276,18 @@ class ProjectIndexer(val projectPath: String) {
                     }
                     .toList()
 
-                println("[Indexer] Found ${sourceFiles.size} additional files to index")
-
                 for ((idx, file) in sourceFiles.withIndex()) {
                     try {
                         indexFile(file)
                         progressCallback?.invoke(idx + 1, sourceFiles.size, file.name)
                         if (idx % 10 == 0) yield()
                     } catch (e: Exception) {
-                        println("[Indexer] Error indexing ${file.name}: ${e.message}")
+                        // Skip problematic files
                     }
                 }
 
-                println("[Indexer] Extended index now has ${index.size} declarations")
-
             } catch (e: Exception) {
-                println("[Indexer] Error adding directory: ${e.message}")
+                // Error adding directory - ignore
             } finally {
                 // Remove from pending jobs when done
                 synchronized(jobsLock) {
@@ -385,10 +368,8 @@ class ProjectIndexer(val projectPath: String) {
      * @return Job for the indexing operation, or null if already indexed or no project found
      */
     fun ensureFileProjectIndexed(filePath: String): Job? {
-        println("[Indexer] ensureFileProjectIndexed called for: $filePath")
         val file = File(filePath)
         if (!file.exists()) {
-            println("[Indexer] File does not exist: $filePath")
             return null
         }
 
@@ -410,15 +391,10 @@ class ProjectIndexer(val projectPath: String) {
         if (projectRoot != null) {
             val normalizedRoot = projectRoot.canonicalPath
             val mainProjectPath = File(projectPath).canonicalPath
-            println("[Indexer] Found project root: $normalizedRoot (main: $mainProjectPath)")
-            println("[Indexer] Already indexed: ${isDirectoryIndexed(normalizedRoot)}, is main: ${normalizedRoot == mainProjectPath}")
 
             if (!isDirectoryIndexed(normalizedRoot) && normalizedRoot != mainProjectPath) {
-                println("[Indexer] Detected new project root: $normalizedRoot")
                 return addDirectory(normalizedRoot)
             }
-        } else {
-            println("[Indexer] No project root found for: $filePath")
         }
         return null
     }
@@ -429,7 +405,6 @@ class ProjectIndexer(val projectPath: String) {
     private fun findSourceFiles(): List<File> {
         val projectDir = File(projectPath)
         if (!projectDir.exists() || !projectDir.isDirectory) {
-            println("[Indexer] Invalid project path: $projectPath")
             return emptyList()
         }
 
@@ -501,8 +476,6 @@ class ProjectIndexer(val projectPath: String) {
             // Only process source files
             if (file.extension.lowercase() !in listOf("kt", "kts", "java")) continue
 
-            println("[Indexer] File ${kind.name()}: ${file.name}")
-
             when (kind) {
                 StandardWatchEventKinds.ENTRY_CREATE,
                 StandardWatchEventKinds.ENTRY_MODIFY -> {
@@ -544,56 +517,38 @@ class ProjectIndexer(val projectPath: String) {
     fun indexLibrarySources(progressCallback: IndexingProgressCallback? = null): Job {
         return indexScope.launch {
             try {
-                println("[Indexer] Starting library source indexing...")
-
                 val gradleCache = File(System.getProperty("user.home"), ".gradle/caches/modules-2/files-2.1")
                 if (!gradleCache.exists()) {
-                    println("[Indexer] Gradle cache not found: ${gradleCache.absolutePath}")
                     return@launch
                 }
 
                 // Find source JARs for key libraries
                 val sourceJars = findLibrarySourceJars(gradleCache)
-                println("[Indexer] Found ${sourceJars.size} library source JARs to index")
 
                 var indexed = 0
                 for (jar in sourceJars) {
                     if (jar.absolutePath in indexedLibraryJars) continue
 
                     try {
-                        val count = extractAndIndexJar(jar)
+                        extractAndIndexJar(jar)
                         indexedLibraryJars.add(jar.absolutePath)
                         indexed++
                         progressCallback?.invoke(indexed, sourceJars.size, jar.name)
 
                         if (indexed % 5 == 0) {
-                            println("[Indexer] Library indexing progress: $indexed/${sourceJars.size} JARs")
                             yield()
                         }
                     } catch (e: Exception) {
-                        println("[Indexer] Error indexing JAR ${jar.name}: ${e.message}")
+                        // Skip problematic JARs
                     }
                 }
 
                 libraryIndexingComplete.set(true)
-                println("[Indexer] Library indexing complete. Total declarations: ${index.size}")
-
-                // Debug: verify key Compose symbols are indexed
-                val testSymbols = listOf("remember", "LaunchedEffect", "Composable", "mutableStateOf", "Column", "Row", "Text", "Box")
-                println("[Indexer] === Verifying key Compose symbols ===")
-                for (symbol in testSymbols) {
-                    val matches = index.findByName(symbol)
-                    if (matches.isNotEmpty()) {
-                        println("[Indexer] ✅ '$symbol' found: ${matches.size} declarations (first: ${matches.first().filePath.takeLast(60)})")
-                    } else {
-                        println("[Indexer] ❌ '$symbol' NOT FOUND in index")
-                    }
-                }
 
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                println("[Indexer] Error during library indexing: ${e.message}")
+                // Library indexing error - ignore
             }
         }
     }
@@ -635,7 +590,6 @@ class ProjectIndexer(val projectPath: String) {
             // Find the group directory (group uses dots, not slashes!)
             val groupDir = File(gradleCache, group)
             if (!groupDir.exists()) {
-                println("[Indexer] Group directory not found: ${groupDir.absolutePath}")
                 continue
             }
 
@@ -646,7 +600,6 @@ class ProjectIndexer(val projectPath: String) {
                     val sourceJar = findLatestSourceJar(artifactDir)
                     if (sourceJar != null) {
                         sourceJars.add(sourceJar)
-                        println("[Indexer] Found source JAR: ${sourceJar.name}")
                     }
                 }
             }
@@ -728,7 +681,7 @@ class ProjectIndexer(val projectPath: String) {
                 }
             }
         } catch (e: Exception) {
-            println("[Indexer] Error reading JAR ${jarFile.name}: ${e.message}")
+            // Error reading JAR - ignore
         }
 
         return filesIndexed

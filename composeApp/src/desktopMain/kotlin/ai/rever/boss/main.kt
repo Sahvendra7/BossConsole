@@ -205,27 +205,17 @@ fun main(args: Array<String>) {
     if (PSIBootstrap.isInitialized) {
         try {
             val projectPath = System.getProperty("user.dir")
-            println("[Indexer] Initializing project indexer for: $projectPath")
             val indexer = ProjectIndexer.initialize(projectPath)
 
             // Start project indexing, then library indexing
             CoroutineScope(Dispatchers.IO).launch {
                 // First index project files
-                indexer.startIndexing { indexed, total, file ->
-                    if (indexed % 50 == 0 || indexed == total) {
-                        println("[Indexer] Progress: $indexed/$total - $file")
-                    }
-                }.join()
+                indexer.startIndexing().join()
 
                 // Then index library sources (Compose, stdlib, etc.)
-                indexer.indexLibrarySources { indexed, total, jar ->
-                    if (indexed % 10 == 0 || indexed == total) {
-                        println("[Indexer] Library progress: $indexed/$total - $jar")
-                    }
-                }
+                indexer.indexLibrarySources()
             }
         } catch (e: Exception) {
-            println("Warning: ProjectIndexer initialization failed: ${e.message}")
             // Continue - cross-file navigation will be limited
         }
     }

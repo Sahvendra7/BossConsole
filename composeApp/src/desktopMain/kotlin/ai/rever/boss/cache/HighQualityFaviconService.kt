@@ -98,7 +98,6 @@ object HighQualityFaviconService {
                 // Fall back to standard favicon
                 loadStandardFavicon(standardCacheKey)
             } catch (e: Exception) {
-                println("[HQFavicon] Error: ${e.message}")
                 loadStandardFavicon(standardCacheKey)
             }
         }
@@ -181,7 +180,6 @@ object HighQualityFaviconService {
                 null
             }
         } catch (e: Exception) {
-            println("[HQFavicon] Failed to fetch from Google for $domain: ${e.message}")
             null
         }
     }
@@ -207,8 +205,6 @@ object HighQualityFaviconService {
                         // Ignore deletion errors
                     }
                 }
-
-                println("[HQFavicon] Evicted ${toDelete.size} old cache entries")
             }
         }
     }
@@ -228,7 +224,7 @@ object HighQualityFaviconService {
         try {
             cacheDir.listFiles()?.forEach { it.delete() }
         } catch (e: Exception) {
-            println("[HQFavicon] Error clearing cache: ${e.message}")
+            // Ignore cache clearing errors
         }
     }
 
