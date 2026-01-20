@@ -53,6 +53,11 @@ class BossActionHandler(
             KeymapActions.FOCUS_MODE_TOGGLE -> handleFocusModeToggle()
             KeymapActions.SETTINGS_OPEN -> handleSettingsOpen()
             KeymapActions.TEST_EXTERNAL_LINK -> handleTestExternalLink()
+            // Editor actions - handled by component-level key handlers (BossEditor, LargeFileViewer)
+            KeymapActions.EDITOR_FIND,
+            KeymapActions.EDITOR_FIND_NEXT,
+            KeymapActions.EDITOR_FIND_PREVIOUS,
+            KeymapActions.EDITOR_REPLACE -> false
             else -> false
         }
     }

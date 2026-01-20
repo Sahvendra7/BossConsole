@@ -36,6 +36,12 @@ class LargeFileEditorState(
 
     val document: LargeFileDocument = LargeFileDocument(file)
 
+    /**
+     * Progressive searcher for this document.
+     * Use [PagedSearcher.search] to start a search operation.
+     */
+    val searcher: PagedSearcher = PagedSearcher(document)
+
     // Caret position
     private val _caretPosition = MutableStateFlow(EditorPosition.ZERO)
     val caretPosition: StateFlow<EditorPosition> = _caretPosition.asStateFlow()
@@ -294,6 +300,7 @@ class LargeFileEditorState(
     }
 
     override fun close() {
+        searcher.clear()
         document.close()
     }
 

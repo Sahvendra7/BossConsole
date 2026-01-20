@@ -16,6 +16,7 @@ import ai.rever.bosseditor.compose.NavigationResolveResult
 import ai.rever.bosseditor.largefile.LargeFileConstants
 import ai.rever.bosseditor.largefile.LargeFileDocument
 import ai.rever.bosseditor.largefile.LargeFileEditorState
+import ai.rever.bosseditor.largefile.LargeFileLimitationsDialog
 import ai.rever.bosseditor.largefile.LargeFileViewer
 import java.io.File
 import ai.rever.bosseditor.features.NavigationFailureReason
@@ -38,7 +39,22 @@ import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.settings.EditorSettingsManager
 import ai.rever.bosseditor.theme.EditorTheme
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -1196,13 +1212,13 @@ private fun parseHexColor(hex: String): Color? {
  * - Read-only viewing
  * - Scrolling and navigation
  * - Line numbers
+ * - Search with Ctrl+F
  * - Option to open in full editor (loads entire file into memory)
  *
  * Limitations:
  * - No syntax highlighting
  * - No editing
  * - No code folding
- * - No search
  */
 @Composable
 private fun LargeFileEditorIntegration(
@@ -1221,6 +1237,7 @@ private fun LargeFileEditorIntegration(
     var openInFullEditor by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var fullContent by remember { mutableStateOf<String?>(null) }
+    var showLimitationsDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     // Map theme
@@ -1297,9 +1314,41 @@ private fun LargeFileEditorIntegration(
         }
     }
 
+    // Extract file info
+    val fileName = remember(filePath) { File(filePath).name }
+    val fileSize = remember(filePath) { formatFileSize(File(filePath).length()) }
+
+    // Show limitations dialog if triggered
+    if (showLimitationsDialog) {
+        LargeFileLimitationsDialog(
+            fileName = fileName,
+            fileSize = fileSize,
+            onDismiss = { showLimitationsDialog = false },
+            onOpenInEditor = {
+                isLoading = true
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val content = File(filePath).readText()
+                        withContext(Dispatchers.Main) {
+                            fullContent = content
+                            openInFullEditor = true
+                            isLoading = false
+                        }
+                    } catch (e: Exception) {
+                        println("[LargeFileEditorIntegration] Error loading file: ${e.message}")
+                        withContext(Dispatchers.Main) {
+                            isLoading = false
+                        }
+                    }
+                }
+            },
+            theme = editorTheme
+        )
+    }
+
     if (largeFileState != null) {
         Column(modifier = modifier) {
-            // Show large file indicator with "Open in Editor" option
+            // Show large file indicator with info icon and "Open in Editor" option
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1308,11 +1357,26 @@ private fun LargeFileEditorIntegration(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                androidx.compose.material.Text(
-                    text = "Large file (${formatFileSize(File(filePath).length())}) - Read-only view",
-                    color = editorTheme.colors.lineNumber,
-                    fontSize = 12.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material.Text(
+                        text = "Large file ($fileSize) - Read-only view",
+                        color = editorTheme.colors.lineNumber,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    // Info icon to show limitations dialog
+                    androidx.compose.material.IconButton(
+                        onClick = { showLimitationsDialog = true },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        androidx.compose.material.Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Large file mode info",
+                            tint = editorTheme.colors.lineNumber,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
 
                 if (isLoading) {
                     androidx.compose.material.Text(
