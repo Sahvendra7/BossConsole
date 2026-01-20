@@ -13,6 +13,11 @@ import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
 import ai.rever.bosseditor.compose.BossEditor
 import ai.rever.bosseditor.compose.NavigationResolveResult
+import ai.rever.bosseditor.largefile.LargeFileConstants
+import ai.rever.bosseditor.largefile.LargeFileDocument
+import ai.rever.bosseditor.largefile.LargeFileEditorState
+import ai.rever.bosseditor.largefile.LargeFileViewer
+import java.io.File
 import ai.rever.bosseditor.features.NavigationFailureReason
 import ai.rever.bosseditor.features.NavigationFeedbackPopup
 import ai.rever.bosseditor.features.NavigationFeedbackState
@@ -100,10 +105,32 @@ fun BossEditorIntegration(
     onRun: (DetectedMainFunction) -> Unit = { },
     onNavigate: (NavigationEvent) -> Unit = { }
 ) {
-    val coroutineScope = rememberCoroutineScope()
+    // Check if file is large and should use the large file viewer
+    val isLargeFile = remember(filePath) {
+        filePath.isNotEmpty() && LargeFileDocument.shouldUseLargeFileAdapter(filePath)
+    }
 
     // Use BossEditor's unified settings system
     val editorSettings by EditorSettingsManager.instance.settings.collectAsState()
+
+    // For large files, use the specialized viewer
+    if (isLargeFile) {
+        LargeFileEditorIntegration(
+            filePath = filePath,
+            modifier = modifier,
+            onCursorPositionChange = onCursorPositionChange,
+            editorSettings = editorSettings,
+            language = language,
+            projectPath = projectPath,
+            onContentChange = onContentChange,
+            onModifiedStateChange = onModifiedStateChange,
+            onRun = onRun,
+            onNavigate = onNavigate
+        )
+        return
+    }
+
+    val coroutineScope = rememberCoroutineScope()
 
     // Create editor state that persists across recompositions
     val editorState = remember(filePath) {
@@ -402,6 +429,311 @@ fun BossEditorIntegration(
         }
 
         // Render navigation feedback popup if visible
+        val feedbackState = navigationFeedbackState
+        if (feedbackState is NavigationFeedbackState.Visible) {
+            NavigationFeedbackPopup(
+                reason = feedbackState.reason,
+                anchorOffset = feedbackState.anchorOffset,
+                onDismiss = {
+                    navigationFeedbackState = NavigationFeedbackState.Hidden
+                },
+                theme = editorTheme
+            )
+        }
+    }
+}
+
+/**
+ * Internal BossEditor integration that takes editorSettings directly.
+ * Used by LargeFileEditorIntegration when user chooses to open in full editor.
+ */
+@Composable
+private fun BossEditorIntegrationInternal(
+    content: String,
+    onContentChange: (String) -> Unit,
+    language: String,
+    filePath: String,
+    projectPath: String = "",
+    modifier: Modifier = Modifier,
+    isReadOnly: Boolean = false,
+    onCursorPositionChange: (line: Int, column: Int) -> Unit = { _, _ -> },
+    onModifiedStateChange: (Boolean) -> Unit = { },
+    onRun: (DetectedMainFunction) -> Unit = { },
+    onNavigate: (NavigationEvent) -> Unit = { },
+    editorSettings: ai.rever.bosseditor.settings.EditorSettings
+) {
+    val coroutineScope = rememberCoroutineScope()
+
+    // Create editor state that persists across recompositions
+    val editorState = remember(filePath) {
+        EditorState(content)
+    }
+
+    // Track original content for modification detection
+    var originalContent by remember(filePath) { mutableStateOf(content) }
+
+    // State for detected main functions
+    var detectedMainFunctions by remember { mutableStateOf<List<DetectedMainFunction>>(emptyList()) }
+
+    // State for usages popup
+    var usagesPopupState by remember { mutableStateOf(UsagesPopupState.Hidden) }
+
+    // State for navigation feedback popup
+    var navigationFeedbackState: NavigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
+
+    // Create lexer based on language
+    val lexer = remember(language) {
+        getLexerForLanguage(language.lowercase())
+    }
+
+    // Create token cache for multi-line state tracking (only if lexer is available)
+    val tokenCache = remember(lexer, editorState.document) {
+        lexer?.let { TokenCache(editorState.document, it) }
+    }
+
+    // Dispose token cache when composable is disposed
+    DisposableEffect(tokenCache) {
+        onDispose {
+            tokenCache?.dispose()
+        }
+    }
+
+    // Create navigation service for PSI-based navigation
+    val navigationService = remember { NavigationService() }
+
+    // Ensure project is indexed when projectPath is set
+    LaunchedEffect(projectPath) {
+        if (projectPath.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                ProjectIndexer.current?.ensureFileProjectIndexed(filePath)
+            }
+        }
+    }
+
+    // Navigation resolver using composeApp's PSI infrastructure
+    val navigationResolver: suspend (String, String, Int) -> NavigationResolveResult = remember(navigationService) {
+        { contentParam, currentFilePath, offset ->
+            if (!PSIBootstrap.isInitialized) {
+                NavigationResolveResult.NotFound
+            } else if (!currentFilePath.endsWith(".kt") && !currentFilePath.endsWith(".kts")) {
+                NavigationResolveResult.NotFound
+            } else {
+                try {
+                    val fileName = currentFilePath.substringAfterLast('/')
+                    val ktFile = PSIThreadBridge.readAction {
+                        PSIBootstrap.parseKotlinFile(fileName, contentParam)
+                    }
+                    val result = PSIThreadBridge.readAction {
+                        navigationService.goToDefinition(ktFile, offset, currentFilePath)
+                    }
+                    when (result) {
+                        is NavigationResult.Found -> {
+                            NavigationResolveResult.Found(
+                                filePath = result.target.filePath,
+                                line = result.target.line,
+                                column = result.target.column
+                            )
+                        }
+                        is NavigationResult.MultipleTargets -> {
+                            result.targets.firstOrNull()?.let { target ->
+                                NavigationResolveResult.Found(
+                                    filePath = target.filePath,
+                                    line = target.line,
+                                    column = target.column
+                                )
+                            } ?: NavigationResolveResult.NotFound
+                        }
+                        else -> NavigationResolveResult.NotFound
+                    }
+                } catch (e: Exception) {
+                    println("[BossEditorIntegrationInternal] Navigation error: ${e.message}")
+                    NavigationResolveResult.NotFound
+                }
+            }
+        }
+    }
+
+    // Map theme name to EditorTheme
+    val editorTheme = remember(editorSettings.themeName) {
+        mapBossThemeToEditorTheme(editorSettings.themeName)
+    }
+
+    // Map font family name to FontFamily
+    val composeFontFamily = remember(editorSettings.fontFamily) {
+        FontManager.loadComposeFontFamily(editorSettings.fontFamily ?: FontManager.BUNDLED_JETBRAINS_MONO)
+    }
+
+    // Calculate line height for scrolling
+    val textMeasurer = rememberTextMeasurer()
+    val lineHeightPx = remember(editorSettings.fontSize, composeFontFamily, editorSettings.lineSpacing) {
+        val style = TextStyle(
+            fontFamily = composeFontFamily,
+            fontSize = editorSettings.fontSize.sp
+        )
+        textMeasurer.measure("M", style).size.height.toFloat() * editorSettings.lineSpacing
+    }
+
+    // Listen for navigation targets
+    LaunchedEffect(filePath, editorState, lineHeightPx) {
+        NavigationTargetBus.targets
+            .collect { target ->
+                if (target.filePath == filePath && target.line > 0) {
+                    try {
+                        val line = (target.line - 1).coerceAtLeast(0)
+                        val column = (target.column - 1).coerceAtLeast(0)
+                        val position = EditorPosition(line, column)
+                        editorState.moveCaret(position)
+                        editorState.clearSelection()
+                        editorState.scrollToLine(line, lineHeightPx, 600f)
+                        NavigationTargetBus.clearCache()
+                    } catch (e: Exception) {
+                        println("[BossEditorIntegrationInternal] Error positioning cursor: ${e.message}")
+                    }
+                }
+            }
+    }
+
+    // Update content from external source
+    LaunchedEffect(content) {
+        if (editorState.document.getText() != content) {
+            editorState.document.setText(content)
+        }
+    }
+
+    // Detect main functions
+    LaunchedEffect(content, filePath) {
+        if (filePath.isNotEmpty() && content.isNotEmpty()) {
+            val currentFilePath = filePath
+            withContext(Dispatchers.IO) {
+                try {
+                    val detector = MainFunctionDetectorProvider.get()
+                    val langEnum = Language.fromFileName(currentFilePath)
+                    val detected = detector.detectInFile(currentFilePath, content, langEnum)
+                    withContext(Dispatchers.Main) {
+                        if (filePath == currentFilePath) {
+                            detectedMainFunctions = detected
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("[BossEditorIntegrationInternal] Error detecting main functions: ${e.message}")
+                    withContext(Dispatchers.Main) {
+                        if (filePath == currentFilePath) {
+                            detectedMainFunctions = emptyList()
+                        }
+                    }
+                }
+            }
+        } else {
+            detectedMainFunctions = emptyList()
+        }
+    }
+
+    // Token provider for syntax highlighting
+    val tokenProvider: (Int) -> List<EditorToken> = remember(tokenCache, filePath) {
+        { lineNumber ->
+            val lexerTokens: List<Token> = tokenCache?.getLineTokens(lineNumber) ?: emptyList()
+            val semanticTokens = getSemanticTokensForLine(editorState.document, filePath, lineNumber)
+            val mergedTokens = if (semanticTokens.isNotEmpty()) {
+                mergeTokens(lexerTokens, semanticTokens)
+            } else {
+                lexerTokens
+            }
+            EditorToken.fromTokens(mergedTokens)
+        }
+    }
+
+    // Layout: Run gutter | Editor
+    Row(modifier = modifier.fillMaxSize()) {
+        // Run gutter
+        if (detectedMainFunctions.isNotEmpty()) {
+            BossEditorRunGutter(
+                detectedMainFunctions = detectedMainFunctions,
+                editorState = editorState,
+                fontSize = editorSettings.fontSize,
+                fontFamily = composeFontFamily,
+                lineSpacing = editorSettings.lineSpacing,
+                onRun = onRun,
+                modifier = Modifier
+                    .width(28.dp)
+                    .fillMaxHeight()
+                    .background(editorTheme.colors.gutterBackground)
+            )
+        }
+
+        // Parse minimap custom colors
+        val minimapBgColor = remember(editorSettings.minimapBackgroundColor) {
+            editorSettings.minimapBackgroundColor?.let { parseHexColor(it) }
+        }
+        val minimapFgColor = remember(editorSettings.minimapForegroundColor) {
+            editorSettings.minimapForegroundColor?.let { parseHexColor(it) }
+        }
+
+        // Main editor
+        BossEditor(
+            state = editorState,
+            modifier = Modifier.fillMaxSize(),
+            theme = editorTheme,
+            fontFamily = composeFontFamily,
+            fontSize = editorSettings.fontSize,
+            lineSpacing = editorSettings.lineSpacing,
+            showLineNumbers = editorSettings.showLineNumbers,
+            highlightCurrentLine = editorSettings.highlightCurrentLine,
+            readOnly = isReadOnly,
+            filePath = filePath,
+            projectPath = projectPath,
+            showMinimap = editorSettings.showMinimap,
+            minimapWidth = editorSettings.minimapWidth,
+            minimapUseEditorColors = editorSettings.minimapUseEditorColors,
+            minimapBackgroundColor = minimapBgColor,
+            minimapForegroundColor = minimapFgColor,
+            tokenProvider = tokenProvider,
+            onTextChanged = {
+                val newContent = editorState.document.getText()
+                onContentChange(newContent)
+                val isModified = newContent != originalContent
+                onModifiedStateChange(isModified)
+            },
+            onCaretPositionChanged = { position ->
+                onCursorPositionChange(position.line + 1, position.column + 1)
+            },
+            onSelectionChanged = { _ -> },
+            navigationResolver = null,
+            onNavigate = { navFilePath, line, column ->
+                onNavigate(NavigationEvent(navFilePath, line, column))
+            },
+            onShowUsages = { references, definition, clickPosition ->
+                usagesPopupState = UsagesPopupState(
+                    isVisible = true,
+                    references = references,
+                    definition = definition,
+                    anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
+                )
+            },
+            onNavigationFailed = { reason, clickPosition ->
+                navigationFeedbackState = NavigationFeedbackState.Visible(
+                    reason = reason,
+                    anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
+                )
+            }
+        )
+
+        // Render usages popup
+        if (usagesPopupState.isVisible && usagesPopupState.definition != null) {
+            UsagesPopup(
+                references = usagesPopupState.references,
+                definition = usagesPopupState.definition!!,
+                anchorOffset = usagesPopupState.anchorOffset,
+                onNavigate = { navFilePath, line, column ->
+                    onNavigate(NavigationEvent(navFilePath, line, column))
+                },
+                onDismiss = {
+                    usagesPopupState = UsagesPopupState.Hidden
+                },
+                theme = editorTheme
+            )
+        }
+
+        // Render navigation feedback popup
         val feedbackState = navigationFeedbackState
         if (feedbackState is NavigationFeedbackState.Visible) {
             NavigationFeedbackPopup(
@@ -851,5 +1183,210 @@ private fun parseHexColor(hex: String): Color? {
         }
     } catch (e: Exception) {
         null
+    }
+}
+
+/**
+ * Integration composable for large files (>10MB).
+ *
+ * Uses page-based lazy loading to efficiently view large files without
+ * loading the entire content into memory.
+ *
+ * Features:
+ * - Read-only viewing
+ * - Scrolling and navigation
+ * - Line numbers
+ * - Option to open in full editor (loads entire file into memory)
+ *
+ * Limitations:
+ * - No syntax highlighting
+ * - No editing
+ * - No code folding
+ * - No search
+ */
+@Composable
+private fun LargeFileEditorIntegration(
+    filePath: String,
+    modifier: Modifier,
+    onCursorPositionChange: (line: Int, column: Int) -> Unit,
+    editorSettings: ai.rever.bosseditor.settings.EditorSettings,
+    language: String = "",
+    projectPath: String = "",
+    onContentChange: (String) -> Unit = {},
+    onModifiedStateChange: (Boolean) -> Unit = {},
+    onRun: (DetectedMainFunction) -> Unit = {},
+    onNavigate: (NavigationEvent) -> Unit = {}
+) {
+    // Track whether user wants to open in full editor
+    var openInFullEditor by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var fullContent by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Map theme
+    val editorTheme = remember(editorSettings.themeName) {
+        mapBossThemeToEditorTheme(editorSettings.themeName)
+    }
+
+    // Map font family
+    val composeFontFamily = remember(editorSettings.fontFamily) {
+        FontManager.loadComposeFontFamily(editorSettings.fontFamily ?: FontManager.BUNDLED_JETBRAINS_MONO)
+    }
+
+    // If user chose to open in full editor and content is loaded, show BossEditor with banner
+    if (openInFullEditor && fullContent != null) {
+        Column(modifier = modifier) {
+            // Header banner with "Open in Read-only Mode" option
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(editorTheme.colors.gutterBackground)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material.Text(
+                    text = "Large file (${formatFileSize(File(filePath).length())})",
+                    color = editorTheme.colors.lineNumber,
+                    fontSize = 12.sp
+                )
+
+                androidx.compose.material.TextButton(
+                    onClick = { openInFullEditor = false },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    androidx.compose.material.Text(
+                        text = "Open in Read-only Mode",
+                        color = Color(0xFF6B9BFA),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            // Full editor
+            BossEditorIntegrationInternal(
+                content = fullContent!!,
+                onContentChange = { newContent ->
+                    fullContent = newContent
+                    onContentChange(newContent)
+                },
+                language = language,
+                filePath = filePath,
+                projectPath = projectPath,
+                modifier = Modifier.fillMaxSize(),
+                isReadOnly = false,
+                onCursorPositionChange = onCursorPositionChange,
+                onModifiedStateChange = onModifiedStateChange,
+                onRun = onRun,
+                onNavigate = onNavigate,
+                editorSettings = editorSettings
+            )
+        }
+        return
+    }
+
+    // Create large file state
+    val largeFileState = remember(filePath) {
+        LargeFileEditorState.createIfLargeFile(filePath)
+    }
+
+    // Cleanup on dispose
+    DisposableEffect(largeFileState) {
+        onDispose {
+            largeFileState?.close()
+        }
+    }
+
+    if (largeFileState != null) {
+        Column(modifier = modifier) {
+            // Show large file indicator with "Open in Editor" option
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(editorTheme.colors.gutterBackground)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material.Text(
+                    text = "Large file (${formatFileSize(File(filePath).length())}) - Read-only view",
+                    color = editorTheme.colors.lineNumber,
+                    fontSize = 12.sp
+                )
+
+                if (isLoading) {
+                    androidx.compose.material.Text(
+                        text = "Loading...",
+                        color = editorTheme.colors.lineNumber,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    androidx.compose.material.TextButton(
+                        onClick = {
+                            isLoading = true
+                            coroutineScope.launch(Dispatchers.IO) {
+                                try {
+                                    val content = File(filePath).readText()
+                                    withContext(Dispatchers.Main) {
+                                        fullContent = content
+                                        openInFullEditor = true
+                                        isLoading = false
+                                    }
+                                } catch (e: Exception) {
+                                    println("[LargeFileEditorIntegration] Error loading file: ${e.message}")
+                                    withContext(Dispatchers.Main) {
+                                        isLoading = false
+                                    }
+                                }
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        androidx.compose.material.Text(
+                            text = "Open in Editor",
+                            color = Color(0xFF6B9BFA),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            // Large file viewer
+            LargeFileViewer(
+                state = largeFileState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                theme = editorTheme,
+                fontFamily = composeFontFamily,
+                fontSize = editorSettings.fontSize,
+                lineSpacing = editorSettings.lineSpacing,
+                showLineNumbers = editorSettings.showLineNumbers,
+                onCaretPositionChanged = { position ->
+                    onCursorPositionChange(position.line + 1, position.column + 1)
+                }
+            )
+        }
+    } else {
+        // Fallback: file isn't actually large or couldn't be opened
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material.Text(
+                text = "Unable to open file",
+                color = editorTheme.colors.text
+            )
+        }
+    }
+}
+
+/**
+ * Formats file size in human-readable format.
+ */
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes >= 1_000_000_000 -> String.format("%.1f GB", bytes / 1_000_000_000.0)
+        bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
+        bytes >= 1_000 -> String.format("%.1f KB", bytes / 1_000.0)
+        else -> "$bytes bytes"
     }
 }

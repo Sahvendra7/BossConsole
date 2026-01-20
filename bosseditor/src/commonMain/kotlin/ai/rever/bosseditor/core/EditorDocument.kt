@@ -13,7 +13,7 @@ package ai.rever.bosseditor.core
  * - O(1) line lookup via line index
  * - Document change listeners for incremental updates
  */
-class EditorDocument(initialText: String = "") {
+class EditorDocument(initialText: String = "") : ITextModel {
 
     // Gap buffer storage
     private var buffer: CharArray = CharArray(initialText.length + INITIAL_GAP_SIZE)
@@ -42,25 +42,25 @@ class EditorDocument(initialText: String = "") {
     /**
      * The total number of characters in the document (excluding the gap).
      */
-    val length: Int
+    override val length: Int
         get() = buffer.size - (gapEnd - gapStart)
 
     /**
      * The number of lines in the document.
      */
-    val lineCount: Int
+    override val lineCount: Int
         get() = lineStarts.size
 
     /**
      * The current document version. Incremented on every modification.
      */
-    val documentVersion: Long
+    override val documentVersion: Long
         get() = version
 
     /**
      * Returns the entire document text.
      */
-    fun getText(): String {
+    override fun getText(): String {
         val result = StringBuilder(length)
         // Text before gap
         for (i in 0 until gapStart) {
@@ -76,7 +76,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns a substring of the document.
      */
-    fun getText(startOffset: Int, endOffset: Int): String {
+    override fun getText(startOffset: Int, endOffset: Int): String {
         require(startOffset >= 0) { "startOffset must be non-negative" }
         require(endOffset <= length) { "endOffset must be <= length" }
         require(startOffset <= endOffset) { "startOffset must be <= endOffset" }
@@ -93,7 +93,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns the character at the given offset.
      */
-    fun charAt(offset: Int): Char {
+    override fun charAt(offset: Int): Char {
         require(offset in 0 until length) { "Offset out of bounds: $offset" }
         return buffer[toBufferIndex(offset)]
     }
@@ -101,7 +101,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns the text of the specified line (without line terminator).
      */
-    fun getLineText(lineNumber: Int): String {
+    override fun getLineText(lineNumber: Int): String {
         require(lineNumber in 0 until lineCount) { "Line number out of bounds: $lineNumber" }
 
         val startOffset = lineStarts[lineNumber]
@@ -124,7 +124,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns the length of the specified line (excluding line terminator).
      */
-    fun getLineLength(lineNumber: Int): Int {
+    override fun getLineLength(lineNumber: Int): Int {
         require(lineNumber in 0 until lineCount) { "Line number out of bounds: $lineNumber" }
 
         val startOffset = lineStarts[lineNumber]
@@ -145,7 +145,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns the start offset of the specified line.
      */
-    fun getLineStartOffset(lineNumber: Int): Int {
+    override fun getLineStartOffset(lineNumber: Int): Int {
         require(lineNumber in 0 until lineCount) { "Line number out of bounds: $lineNumber" }
         return lineStarts[lineNumber]
     }
@@ -153,7 +153,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Returns the end offset of the specified line (after the line terminator if present).
      */
-    fun getLineEndOffset(lineNumber: Int): Int {
+    override fun getLineEndOffset(lineNumber: Int): Int {
         require(lineNumber in 0 until lineCount) { "Line number out of bounds: $lineNumber" }
         return if (lineNumber + 1 < lineCount) {
             lineStarts[lineNumber + 1]
@@ -165,7 +165,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Converts a text offset to a position (line, column).
      */
-    fun offsetToPosition(offset: Int): EditorPosition {
+    override fun offsetToPosition(offset: Int): EditorPosition {
         require(offset in 0..length) { "Offset out of bounds: $offset" }
 
         // Binary search for the line containing this offset
@@ -189,14 +189,14 @@ class EditorDocument(initialText: String = "") {
     /**
      * Converts a position (line, column) to a text offset.
      */
-    fun positionToOffset(position: EditorPosition): Int {
+    override fun positionToOffset(position: EditorPosition): Int {
         return positionToOffset(position.line, position.column)
     }
 
     /**
      * Converts a position (line, column) to a text offset.
      */
-    fun positionToOffset(line: Int, column: Int): Int {
+    override fun positionToOffset(line: Int, column: Int): Int {
         require(line in 0 until lineCount) { "Line out of bounds: $line" }
         val lineStart = lineStarts[line]
         val lineLen = getLineLength(line)
@@ -207,7 +207,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Inserts text at the specified offset.
      */
-    fun insert(offset: Int, text: String) {
+    override fun insert(offset: Int, text: String) {
         if (text.isEmpty()) return
         require(offset in 0..length) { "Offset out of bounds: $offset" }
 
@@ -244,7 +244,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Deletes text at the specified range.
      */
-    fun delete(startOffset: Int, endOffset: Int) {
+    override fun delete(startOffset: Int, endOffset: Int) {
         if (startOffset == endOffset) return
         require(startOffset >= 0) { "startOffset must be non-negative" }
         require(endOffset <= length) { "endOffset must be <= length" }
@@ -279,7 +279,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Replaces text at the specified range.
      */
-    fun replace(startOffset: Int, endOffset: Int, newText: String) {
+    override fun replace(startOffset: Int, endOffset: Int, newText: String) {
         if (startOffset == endOffset && newText.isEmpty()) return
         require(startOffset >= 0) { "startOffset must be non-negative" }
         require(endOffset <= length) { "endOffset must be <= length" }
@@ -321,7 +321,7 @@ class EditorDocument(initialText: String = "") {
     /**
      * Sets the entire document text.
      */
-    fun setText(text: String) {
+    override fun setText(text: String) {
         val oldText = getText()
         val oldVersion = version
 
@@ -351,14 +351,14 @@ class EditorDocument(initialText: String = "") {
     /**
      * Adds a document change listener.
      */
-    fun addDocumentListener(listener: DocumentListener) {
+    override fun addDocumentListener(listener: DocumentListener) {
         listeners.add(listener)
     }
 
     /**
      * Removes a document change listener.
      */
-    fun removeDocumentListener(listener: DocumentListener) {
+    override fun removeDocumentListener(listener: DocumentListener) {
         listeners.remove(listener)
     }
 
