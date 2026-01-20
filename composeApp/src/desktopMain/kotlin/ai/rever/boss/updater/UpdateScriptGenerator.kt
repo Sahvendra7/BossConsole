@@ -329,9 +329,22 @@ object UpdateScriptGenerator {
             #!/bin/bash
 
             # BOSS Update Helper Script (Debian/Ubuntu)
+            LOG_FILE="/tmp/boss-update-debug-${'$'}(date +%s).log"
 
-            echo "BOSS Update Helper started"
-            echo "Waiting for BOSS to quit (PID: $appPid)..."
+            # Log everything
+            exec > >(tee -a "${'$'}LOG_FILE") 2>&1
+
+            echo "=== BOSS Update Script Started ==="
+            echo "Timestamp: ${'$'}(date)"
+            echo "Script PID: ${'$'}${'$'}"
+            echo "User: ${'$'}(whoami)"
+            echo "DISPLAY: ${'$'}DISPLAY"
+            echo "XAUTHORITY: ${'$'}XAUTHORITY"
+            echo "Package: $escapedDebPath"
+            echo "Target PID: $appPid"
+            echo ""
+
+            echo "[1/5] Waiting for BOSS to quit (PID: $appPid)..."
 
             # Wait for the app process to terminate (max 30 seconds)
             WAIT_COUNT=0
@@ -340,20 +353,20 @@ object UpdateScriptGenerator {
                 sleep 1
                 WAIT_COUNT=${'$'}((WAIT_COUNT + 1))
                 if [ ${'$'}WAIT_COUNT -ge ${'$'}MAX_WAIT ]; then
-                    echo "Timeout waiting for app to quit"
+                    echo "❌ Timeout waiting for app to quit"
                     exit 1
                 fi
             done
 
-            echo "BOSS has quit. Starting installation..."
+            echo "✅ BOSS has quit. Starting installation..."
+            echo ""
 
             # Give extra time for file locks to release
             sleep 2
 
-            echo "Installing DEB package: $escapedDebPath"
+            echo "[2/5] Installing DEB package: $escapedDebPath"
 
-            # Batch all privileged operations into a single pkexec/sudo call
-            # This ensures only ONE password prompt for the entire update
+            # Batch all privileged operations into a single script
             PRIVILEGED_SCRIPT='
                 set -e
                 DEB_PATH='"$escapedDebPath"'
@@ -385,52 +398,105 @@ object UpdateScriptGenerator {
                 echo "=== All privileged operations complete ==="
             '
 
-            # Try pkexec first (graphical sudo prompt), fall back to sudo
-            if command -v pkexec &> /dev/null; then
-                echo "Using pkexec for privileged operations..."
-                pkexec sh -c "${'$'}PRIVILEGED_SCRIPT"
-                INSTALL_RESULT=${'$'}?
-            elif command -v sudo &> /dev/null; then
-                echo "Using sudo for privileged operations..."
-                sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
-                INSTALL_RESULT=${'$'}?
+            # Try pkexec first (works well in normal desktop sessions with DISPLAY)
+            if command -v pkexec &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                echo "Trying pkexec for installation..."
+                timeout 10 pkexec sh -c "${'$'}PRIVILEGED_SCRIPT" &
+                PKEXEC_PID=${'$'}!
+                sleep 2
+
+                # Check if pkexec is still running (waiting for auth)
+                if kill -0 ${'$'}PKEXEC_PID 2>/dev/null; then
+                    echo "✅ pkexec authentication dialog should be visible"
+                    wait ${'$'}PKEXEC_PID
+                    INSTALL_RESULT=${'$'}?
+                else
+                    echo "⚠️ pkexec exited immediately, trying sudo with graphical prompt..."
+                    INSTALL_RESULT=1
+                fi
             else
-                echo "Error: Neither pkexec nor sudo available for installation"
+                echo "ℹ️ pkexec not available or no DISPLAY, will use sudo"
+                INSTALL_RESULT=1
+            fi
+
+            # Fallback to sudo with graphical askpass if pkexec failed
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                ASKPASS_SCRIPT="/tmp/boss-askpass-${'$'}${'$'}.sh"
+                if command -v zenity &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                    echo "Using sudo with zenity for graphical authentication..."
+                    cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
+#!/bin/bash
+zenity --password --title="BOSS Update Authentication" --text="Enter your password to install the BOSS update:"
+ASKPASS_EOF
+                    chmod +x "${'$'}ASKPASS_SCRIPT"
+                    export SUDO_ASKPASS="${'$'}ASKPASS_SCRIPT"
+                    sudo -A sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                    rm -f "${'$'}ASKPASS_SCRIPT"
+                elif command -v kdialog &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                    echo "Using sudo with kdialog for graphical authentication..."
+                    cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
+#!/bin/bash
+kdialog --password "Enter your password to install the BOSS update:"
+ASKPASS_EOF
+                    chmod +x "${'$'}ASKPASS_SCRIPT"
+                    export SUDO_ASKPASS="${'$'}ASKPASS_SCRIPT"
+                    sudo -A sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                    rm -f "${'$'}ASKPASS_SCRIPT"
+                elif command -v sudo &> /dev/null; then
+                    echo "Using sudo for installation..."
+                    sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                else
+                    echo "❌ ERROR: No elevation method available"
+                    exit 1
+                fi
+            fi
+
+            echo "Installation result: exit code ${'$'}INSTALL_RESULT"
+
+            # Only proceed with post-install steps if installation succeeded
+            if [ ${'$'}INSTALL_RESULT -eq 0 ]; then
+                echo "✅ Installation successful"
+                echo ""
+
+                echo "[3/5] Refreshing icon cache and desktop database..."
+                gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+                if command -v update-desktop-database &> /dev/null; then
+                    update-desktop-database /usr/share/applications 2>/dev/null || true
+                    echo "✅ Desktop database refreshed"
+                else
+                    echo "ℹ️ update-desktop-database not available, skipping"
+                fi
+
+                echo ""
+                echo "[4/5] Launching BOSS..."
+                if [ -x /opt/boss/bin/BOSS ]; then
+                    nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
+                    echo "✅ Launched from /opt/boss/bin/BOSS"
+                elif [ -x /usr/bin/boss ]; then
+                    nohup /usr/bin/boss > /dev/null 2>&1 &
+                    echo "✅ Launched from /usr/bin/boss"
+                elif command -v boss &> /dev/null; then
+                    nohup boss > /dev/null 2>&1 &
+                    echo "✅ Launched from PATH"
+                else
+                    echo "⚠️ WARNING: Could not find BOSS executable"
+                fi
+
+                sleep 2
+                echo ""
+                echo "=== Update Script Completed Successfully ==="
+                echo "Log file: ${'$'}LOG_FILE"
+                rm -f "${'$'}0"
+                exit 0
+            else
+                echo "❌ ERROR: Installation failed with exit code ${'$'}INSTALL_RESULT"
+                echo "Log file: ${'$'}LOG_FILE"
+                echo "You can manually install with: sudo dpkg -i $escapedDebPath"
                 exit 1
             fi
-
-            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                echo "Installation failed with exit code ${'$'}INSTALL_RESULT"
-            else
-                echo "Installation complete!"
-            fi
-
-            # Refresh icon cache and desktop database (non-privileged, may fail silently)
-            gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
-            if command -v update-desktop-database &> /dev/null; then
-                update-desktop-database /usr/share/applications 2>/dev/null || true
-            fi
-
-            # Launch the updated app
-            echo "Launching BOSS..."
-            if [ -x /opt/boss/bin/BOSS ]; then
-                nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
-            elif [ -x /usr/bin/boss ]; then
-                nohup /usr/bin/boss > /dev/null 2>&1 &
-            elif command -v boss &> /dev/null; then
-                nohup boss > /dev/null 2>&1 &
-            else
-                echo "Warning: Could not find BOSS executable to launch"
-            fi
-
-            # Give the app time to start
-            sleep 2
-
-            # Self-destruct - remove this script
-            echo "Update complete. Cleaning up script..."
-            rm -f "${'$'}0"
-
-            exit 0
         """.trimIndent()
 
         scriptFile.writeText(script)
@@ -468,9 +534,22 @@ object UpdateScriptGenerator {
             #!/bin/bash
 
             # BOSS Update Helper Script (Fedora/RHEL)
+            LOG_FILE="/tmp/boss-update-debug-${'$'}(date +%s).log"
 
-            echo "BOSS Update Helper started"
-            echo "Waiting for BOSS to quit (PID: $appPid)..."
+            # Log everything
+            exec > >(tee -a "${'$'}LOG_FILE") 2>&1
+
+            echo "=== BOSS Update Script Started ==="
+            echo "Timestamp: ${'$'}(date)"
+            echo "Script PID: ${'$'}${'$'}"
+            echo "User: ${'$'}(whoami)"
+            echo "DISPLAY: ${'$'}DISPLAY"
+            echo "XAUTHORITY: ${'$'}XAUTHORITY"
+            echo "Package: $escapedRpmPath"
+            echo "Target PID: $appPid"
+            echo ""
+
+            echo "[1/5] Waiting for BOSS to quit (PID: $appPid)..."
 
             # Wait for the app process to terminate (max 30 seconds)
             WAIT_COUNT=0
@@ -479,20 +558,20 @@ object UpdateScriptGenerator {
                 sleep 1
                 WAIT_COUNT=${'$'}((WAIT_COUNT + 1))
                 if [ ${'$'}WAIT_COUNT -ge ${'$'}MAX_WAIT ]; then
-                    echo "Timeout waiting for app to quit"
+                    echo "❌ Timeout waiting for app to quit"
                     exit 1
                 fi
             done
 
-            echo "BOSS has quit. Starting installation..."
+            echo "✅ BOSS has quit. Starting installation..."
+            echo ""
 
             # Give extra time for file locks to release
             sleep 2
 
-            echo "Installing RPM package: $escapedRpmPath"
+            echo "[2/5] Installing RPM package: $escapedRpmPath"
 
-            # Batch all privileged operations into a single pkexec/sudo call
-            # This ensures only ONE password prompt for the entire update
+            # Batch all privileged operations into a single script
             PRIVILEGED_SCRIPT='
                 set -e
                 RPM_PATH='"$escapedRpmPath"'
@@ -529,52 +608,105 @@ object UpdateScriptGenerator {
                 echo "=== All privileged operations complete ==="
             '
 
-            # Try pkexec first (graphical sudo prompt), fall back to sudo
-            if command -v pkexec &> /dev/null; then
-                echo "Using pkexec for privileged operations..."
-                pkexec sh -c "${'$'}PRIVILEGED_SCRIPT"
-                INSTALL_RESULT=${'$'}?
-            elif command -v sudo &> /dev/null; then
-                echo "Using sudo for privileged operations..."
-                sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
-                INSTALL_RESULT=${'$'}?
+            # Try pkexec first (works well in normal desktop sessions with DISPLAY)
+            if command -v pkexec &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                echo "Trying pkexec for installation..."
+                timeout 10 pkexec sh -c "${'$'}PRIVILEGED_SCRIPT" &
+                PKEXEC_PID=${'$'}!
+                sleep 2
+
+                # Check if pkexec is still running (waiting for auth)
+                if kill -0 ${'$'}PKEXEC_PID 2>/dev/null; then
+                    echo "✅ pkexec authentication dialog should be visible"
+                    wait ${'$'}PKEXEC_PID
+                    INSTALL_RESULT=${'$'}?
+                else
+                    echo "⚠️ pkexec exited immediately, trying sudo with graphical prompt..."
+                    INSTALL_RESULT=1
+                fi
             else
-                echo "Error: Neither pkexec nor sudo available for installation"
+                echo "ℹ️ pkexec not available or no DISPLAY, will use sudo"
+                INSTALL_RESULT=1
+            fi
+
+            # Fallback to sudo with graphical askpass if pkexec failed
+            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
+                ASKPASS_SCRIPT="/tmp/boss-askpass-${'$'}${'$'}.sh"
+                if command -v zenity &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                    echo "Using sudo with zenity for graphical authentication..."
+                    cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
+#!/bin/bash
+zenity --password --title="BOSS Update Authentication" --text="Enter your password to install the BOSS update:"
+ASKPASS_EOF
+                    chmod +x "${'$'}ASKPASS_SCRIPT"
+                    export SUDO_ASKPASS="${'$'}ASKPASS_SCRIPT"
+                    sudo -A sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                    rm -f "${'$'}ASKPASS_SCRIPT"
+                elif command -v kdialog &> /dev/null && [ -n "${'$'}DISPLAY" ]; then
+                    echo "Using sudo with kdialog for graphical authentication..."
+                    cat > "${'$'}ASKPASS_SCRIPT" << 'ASKPASS_EOF'
+#!/bin/bash
+kdialog --password "Enter your password to install the BOSS update:"
+ASKPASS_EOF
+                    chmod +x "${'$'}ASKPASS_SCRIPT"
+                    export SUDO_ASKPASS="${'$'}ASKPASS_SCRIPT"
+                    sudo -A sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                    rm -f "${'$'}ASKPASS_SCRIPT"
+                elif command -v sudo &> /dev/null; then
+                    echo "Using sudo for installation..."
+                    sudo sh -c "${'$'}PRIVILEGED_SCRIPT"
+                    INSTALL_RESULT=${'$'}?
+                else
+                    echo "❌ ERROR: No elevation method available"
+                    exit 1
+                fi
+            fi
+
+            echo "Installation result: exit code ${'$'}INSTALL_RESULT"
+
+            # Only proceed with post-install steps if installation succeeded
+            if [ ${'$'}INSTALL_RESULT -eq 0 ]; then
+                echo "✅ Installation successful"
+                echo ""
+
+                echo "[3/5] Refreshing icon cache and desktop database..."
+                gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+                if command -v update-desktop-database &> /dev/null; then
+                    update-desktop-database /usr/share/applications 2>/dev/null || true
+                    echo "✅ Desktop database refreshed"
+                else
+                    echo "ℹ️ update-desktop-database not available, skipping"
+                fi
+
+                echo ""
+                echo "[4/5] Launching BOSS..."
+                if [ -x /opt/boss/bin/BOSS ]; then
+                    nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
+                    echo "✅ Launched from /opt/boss/bin/BOSS"
+                elif [ -x /usr/bin/boss ]; then
+                    nohup /usr/bin/boss > /dev/null 2>&1 &
+                    echo "✅ Launched from /usr/bin/boss"
+                elif command -v boss &> /dev/null; then
+                    nohup boss > /dev/null 2>&1 &
+                    echo "✅ Launched from PATH"
+                else
+                    echo "⚠️ WARNING: Could not find BOSS executable"
+                fi
+
+                sleep 2
+                echo ""
+                echo "=== Update Script Completed Successfully ==="
+                echo "Log file: ${'$'}LOG_FILE"
+                rm -f "${'$'}0"
+                exit 0
+            else
+                echo "❌ ERROR: Installation failed with exit code ${'$'}INSTALL_RESULT"
+                echo "Log file: ${'$'}LOG_FILE"
+                echo "You can manually install with: sudo rpm -U $escapedRpmPath"
                 exit 1
             fi
-
-            if [ ${'$'}INSTALL_RESULT -ne 0 ]; then
-                echo "Installation failed with exit code ${'$'}INSTALL_RESULT"
-            else
-                echo "Installation complete!"
-            fi
-
-            # Refresh icon cache and desktop database (non-privileged, may fail silently)
-            gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
-            if command -v update-desktop-database &> /dev/null; then
-                update-desktop-database /usr/share/applications 2>/dev/null || true
-            fi
-
-            # Launch the updated app
-            echo "Launching BOSS..."
-            if [ -x /opt/boss/bin/BOSS ]; then
-                nohup /opt/boss/bin/BOSS > /dev/null 2>&1 &
-            elif [ -x /usr/bin/boss ]; then
-                nohup /usr/bin/boss > /dev/null 2>&1 &
-            elif command -v boss &> /dev/null; then
-                nohup boss > /dev/null 2>&1 &
-            else
-                echo "Warning: Could not find BOSS executable to launch"
-            fi
-
-            # Give the app time to start
-            sleep 2
-
-            # Self-destruct - remove this script
-            echo "Update complete. Cleaning up script..."
-            rm -f "${'$'}0"
-
-            exit 0
         """.trimIndent()
 
         scriptFile.writeText(script)
@@ -591,11 +723,16 @@ object UpdateScriptGenerator {
      */
     fun launchScript(scriptFile: File) {
         try {
+            val logDir = File("/tmp/boss-updater")
+            logDir.mkdirs()
+            val timestamp = System.currentTimeMillis()
+            val logFile = File(logDir, "update-${timestamp}.log")
+
             val os = System.getProperty("os.name").lowercase()
             val command = when {
                 os.contains("mac") || os.contains("darwin") || os.contains("linux") -> {
                     // macOS/Linux: Launch in background with nohup
-                    listOf("nohup", "sh", scriptFile.absolutePath)
+                    listOf("nohup", "bash", scriptFile.absolutePath)
                 }
                 os.contains("win") -> {
                     // Windows: Launch detached
@@ -603,18 +740,32 @@ object UpdateScriptGenerator {
                 }
                 else -> {
                     println("Unknown OS, attempting direct execution")
-                    listOf("sh", scriptFile.absolutePath)
+                    listOf("bash", scriptFile.absolutePath)
                 }
             }
 
             println("Launching update script: ${command.joinToString(" ")}")
+            println("Log file: ${logFile.absolutePath}")
 
             val processBuilder = ProcessBuilder(command)
-            processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD)
-            processBuilder.start()
 
-            println("✅ Update script launched successfully")
+            // CRITICAL FIX: Redirect to log file instead of DISCARD
+            // This allows pkexec to communicate with authentication agent
+            processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+            processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(logFile))
+
+            val process = processBuilder.start()
+
+            // Monitor process briefly to detect immediate failures
+            Thread.sleep(500)
+            if (!process.isAlive) {
+                val exitCode = process.exitValue()
+                println("WARNING: Update script exited immediately with code: $exitCode")
+                println("Check log: ${logFile.absolutePath}")
+            } else {
+                println("✅ Update script launched successfully")
+                println("💡 Monitor progress: tail -f ${logFile.absolutePath}")
+            }
 
         } catch (e: Exception) {
             println("❌ Failed to launch update script: ${e.message}")
