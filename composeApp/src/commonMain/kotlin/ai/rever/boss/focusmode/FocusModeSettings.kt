@@ -10,10 +10,12 @@ import kotlinx.serialization.Serializable
  * @property enabled Whether focus mode is currently active
  * @property autoRevealEnabled Whether to auto-reveal hidden bars on mouse hover at edges
  * @property revealOffsetPx Distance in pixels from window edge to trigger auto-reveal
+ * @property revealDelayMs Delay in milliseconds before reveal triggers after hovering at edge
  */
 @Serializable
 data class FocusModeSettings(
     val enabled: Boolean = false,
     val autoRevealEnabled: Boolean = true,
-    val revealOffsetPx: Float = 10f
+    val revealOffsetPx: Float = 10f,
+    val revealDelayMs: Long = 500L
 )

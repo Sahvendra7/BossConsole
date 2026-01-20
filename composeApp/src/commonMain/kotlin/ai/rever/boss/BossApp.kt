@@ -2,7 +2,6 @@ package ai.rever.boss
 
 import BossTheme
 import ai.rever.boss.components.bars.horizontal.BossBottomBar
-import ai.rever.boss.components.bars.horizontal.BossTitleBar
 import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
@@ -719,12 +718,57 @@ fun ComponentContext.BossApp(
     val showTitleBarSetting = windowAppearanceSettings.showTitleBar
     val isAutoRevealEnabled = focusModeSettings.autoRevealEnabled
     val revealOffsetDp = with(LocalDensity.current) { focusModeSettings.revealOffsetPx.toDp() }
+    val revealDelayMs = focusModeSettings.revealDelayMs
 
     // Focus mode hover reveal state - edge strip hover detection
+    // Hovering states track raw cursor position in hover strips
+    var hoveringTopStrip by remember { mutableStateOf(false) }
+    var hoveringLeftStrip by remember { mutableStateOf(false) }
+    var hoveringRightStrip by remember { mutableStateOf(false) }
+    var hoveringBottomStrip by remember { mutableStateOf(false) }
+
+    // Reveal states are set after delay threshold is met
     var hoverRevealTop by remember { mutableStateOf(false) }
     var hoverRevealLeft by remember { mutableStateOf(false) }
     var hoverRevealRight by remember { mutableStateOf(false) }
     var hoverRevealBottom by remember { mutableStateOf(false) }
+
+    // Apply reveal delay before triggering reveal
+    LaunchedEffect(hoveringTopStrip, revealDelayMs) {
+        if (hoveringTopStrip) {
+            delay(revealDelayMs)
+            hoverRevealTop = true
+        } else {
+            hoverRevealTop = false
+        }
+    }
+
+    LaunchedEffect(hoveringLeftStrip, revealDelayMs) {
+        if (hoveringLeftStrip) {
+            delay(revealDelayMs)
+            hoverRevealLeft = true
+        } else {
+            hoverRevealLeft = false
+        }
+    }
+
+    LaunchedEffect(hoveringRightStrip, revealDelayMs) {
+        if (hoveringRightStrip) {
+            delay(revealDelayMs)
+            hoverRevealRight = true
+        } else {
+            hoverRevealRight = false
+        }
+    }
+
+    LaunchedEffect(hoveringBottomStrip, revealDelayMs) {
+        if (hoveringBottomStrip) {
+            delay(revealDelayMs)
+            hoverRevealBottom = true
+        } else {
+            hoverRevealBottom = false
+        }
+    }
 
     // Interaction sources for sidebar hover tracking
     val topBarInteractionSource = remember { MutableInteractionSource() }
@@ -2071,14 +2115,6 @@ fun ComponentContext.BossApp(
                 }
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Title bar - conditionally shown based on settings
-                    // Default: hidden on Linux/Windows, shown on macOS
-                    if (showTitleBarSetting) {
-                        BossTitleBar(
-                            onToggleMaximize = onToggleMaximize
-                        )
-                    }
-
                     // Update banner - always visible (even in focus mode)
                     val updateState by UpdateManager.instance.updateState.collectAsState()
                     UpdateBanner(
@@ -2242,10 +2278,10 @@ fun ComponentContext.BossApp(
                             .zIndex(10f)
                             .background(Color.Transparent)
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
-                                hoverRevealTop = true
+                                hoveringTopStrip = true
                             }
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
-                                hoverRevealTop = false
+                                hoveringTopStrip = false
                             }
                     )
                 }
@@ -2260,10 +2296,10 @@ fun ComponentContext.BossApp(
                             .zIndex(10f)
                             .background(Color.Transparent)
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
-                                hoverRevealLeft = true
+                                hoveringLeftStrip = true
                             }
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
-                                hoverRevealLeft = false
+                                hoveringLeftStrip = false
                             }
                     )
                 }
@@ -2278,10 +2314,10 @@ fun ComponentContext.BossApp(
                             .zIndex(10f)
                             .background(Color.Transparent)
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
-                                hoverRevealRight = true
+                                hoveringRightStrip = true
                             }
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
-                                hoverRevealRight = false
+                                hoveringRightStrip = false
                             }
                     )
                 }
@@ -2296,10 +2332,10 @@ fun ComponentContext.BossApp(
                             .zIndex(10f)
                             .background(Color.Transparent)
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) {
-                                hoverRevealBottom = true
+                                hoveringBottomStrip = true
                             }
                             .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) {
-                                hoverRevealBottom = false
+                                hoveringBottomStrip = false
                             }
                     )
                 }

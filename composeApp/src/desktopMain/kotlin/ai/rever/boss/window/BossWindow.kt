@@ -90,11 +90,8 @@ fun ApplicationScope.BossWindow(
         state = composeWindowState,
         icon = painterResource(Res.drawable.boss_icon)
     ) {
-        // Set window appearance properties
+        // Set window appearance - using native OS title bar
         window.background = Color(BossDarkSurface.value.toInt())
-        window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
-        window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
-        window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
 
         // Register window for focus management (deep links, etc.)
         DisposableEffect(windowState.id, window) {

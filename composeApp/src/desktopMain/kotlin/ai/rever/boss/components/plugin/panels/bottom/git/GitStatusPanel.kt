@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -436,7 +437,7 @@ private fun FileStatusRow(
                         modifier = Modifier.size(20.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Undo,
+                            imageVector = Icons.AutoMirrored.Outlined.Undo,
                             contentDescription = "Discard Changes",
                             tint = BossDarkTextSecondary,
                             modifier = Modifier.size(14.dp)

@@ -266,7 +266,7 @@ private fun ContextMenuContent(
                                         .verticalScroll(scrollState)
                                 ) {
                                     SubMenuContent(
-                                        items = item.subMenu!!,
+                                        items = item.subMenu,
                                         onDismissRequest = onDismissRequest
                                     )
                                 }
@@ -397,7 +397,7 @@ private fun SubMenuContent(
                                     .verticalScroll(scrollState)
                             ) {
                                 SubMenuContent(
-                                    items = subItem.subMenu!!,
+                                    items = subItem.subMenu,
                                     onDismissRequest = onDismissRequest
                                 )
                             }

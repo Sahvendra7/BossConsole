@@ -17,6 +17,8 @@ import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.automirrored.outlined.MergeType
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
@@ -220,7 +222,7 @@ private fun getGitContextMenuItems(
         ),
         ContextMenuItem(
             text = "Merge into current",
-            icon = Icons.Outlined.MergeType,
+            icon = Icons.AutoMirrored.Outlined.MergeType,
             onClick = { onMerge(branch.name) }
         ),
         ContextMenuItem(
@@ -266,7 +268,7 @@ private fun getGitContextMenuItems(
         if (onCreatePR != null) {
             add(ContextMenuItem(
                 text = "Create Pull Request...",
-                icon = Icons.Outlined.OpenInNew,
+                icon = Icons.AutoMirrored.Outlined.OpenInNew,
                 onClick = onCreatePR
             ))
         }

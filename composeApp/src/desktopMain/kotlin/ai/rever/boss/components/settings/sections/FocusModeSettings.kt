@@ -202,6 +202,54 @@ fun FocusModeSettings() {
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            SettingSection(
+                title = "Reveal Delay",
+                description = "Time to hover at edge before UI reveals (prevents accidental reveals)"
+            ) {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (settings.revealDelayMs == 0L) "Instant" else "${settings.revealDelayMs} ms",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BossDarkAccent
+                        )
+                        Text(
+                            text = "Hold cursor at edge to reveal",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Slider(
+                        value = settings.revealDelayMs.toFloat(),
+                        onValueChange = { value ->
+                            coroutineScope.launch {
+                                FocusModeSettingsManager.updateSettings(
+                                    settings.copy(revealDelayMs = value.toLong())
+                                )
+                            }
+                        },
+                        valueRange = 0f..1000f,
+                        steps = 9, // 0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+                        colors = SliderDefaults.colors(
+                            thumbColor = BossDarkAccent,
+                            activeTrackColor = BossDarkAccent,
+                            inactiveTrackColor = BossDarkAccent.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))

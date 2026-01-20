@@ -29,8 +29,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
+import ai.rever.boss.utils.createTextClipEntry
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -239,7 +239,7 @@ private fun CommitRow(
     onError: (String) -> Unit,
     onSuccess: (String) -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
 
     Column(
@@ -346,7 +346,9 @@ private fun CommitRow(
                     )
                     IconButton(
                         onClick = {
-                            clipboardManager.setText(AnnotatedString(commit.hash))
+                            scope.launch {
+                                clipboard.setClipEntry(createTextClipEntry(commit.hash))
+                            }
                             onSuccess("Copied commit hash")
                         },
                         modifier = Modifier.size(20.dp)

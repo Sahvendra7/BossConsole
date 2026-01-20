@@ -334,7 +334,7 @@ actual fun createBrowser(): Any {
     // Register download callback on this browser
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
     // Register screen capture handler to prevent repeated permission dialogs on macOS
-    FluckEngine.setupCaptureSessionHandler(browser as com.teamdev.jxbrowser.browser.Browser)
+    FluckEngine.setupCaptureSessionHandler(browser)
     return browser
 }
 

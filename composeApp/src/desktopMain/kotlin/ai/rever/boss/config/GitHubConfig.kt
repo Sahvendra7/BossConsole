@@ -168,5 +168,5 @@ object GitHubConfig {
      */
     @Deprecated("Use getAuthContext() instead")
     val hasToken: Boolean
-        get() = token != null
+        get() = getAuthContext().isAuthenticated
 }
