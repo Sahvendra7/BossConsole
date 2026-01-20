@@ -29,9 +29,9 @@ class FocusModeSettingsTest {
     }
 
     @Test
-    fun `default settings should have 10px reveal offset`() {
+    fun `default settings should have 30px reveal offset`() {
         val settings = FocusModeSettings()
-        assertEquals(10f, settings.revealOffsetPx, "Default reveal offset should be 10px")
+        assertEquals(30f, settings.revealOffsetPx, "Default reveal offset should be 30px")
     }
 
     // ==================== CUSTOM VALUES TESTS ====================
