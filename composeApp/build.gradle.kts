@@ -317,7 +317,7 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
 
             // CLI argument parsing
-            implementation("com.github.ajalt.clikt:clikt:5.0.3")
+            implementation("com.github.ajalt.clikt:clikt:5.1.0")
 
             // RSyntaxTextArea - Advanced code editor with syntax highlighting, code folding, etc.
             // https://github.com/bobbylight/RSyntaxTextArea
