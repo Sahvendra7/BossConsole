@@ -14,6 +14,7 @@ import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
 import ai.rever.boss.components.plugin.panels.bottom.terminal.resetAllTerminalStates
 import ai.rever.bossterm.compose.onboarding.OnboardingWizard
 import ai.rever.bossterm.compose.settings.SettingsManager
@@ -26,6 +27,7 @@ import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -503,24 +505,28 @@ fun ApplicationScope.BossWindow(
         // using onPreviewKeyEvent. The MenuBar shortcuts work alongside those handlers
         // and provide visual feedback for users discovering available shortcuts.
 
-        // Create independent component context for this window
-        // Each window gets its own Decompose context tree
-        with(createBossAppContext) {
-            // Only the first window should load "Last Session" workspace (Issue #129)
-            val isFirstWindow = WindowManager.windowCount == 1
-            BossAppWithAuth(
-                windowId = windowState.id,
-                isFirstWindow = isFirstWindow,
-                panelRegistry = panelRegistry,
-                onToggleMaximize = {
-                    // Capture state before EDT dispatch to avoid race condition with rapid double-clicks
-                    val shouldMaximize = window.extendedState != Frame.MAXIMIZED_BOTH
-                    java.awt.EventQueue.invokeLater {
-                        window.extendedState = if (shouldMaximize) Frame.MAXIMIZED_BOTH else Frame.NORMAL
-                        // isMaximized will be updated by WindowStateListener
+        // Provide the AWT window via LocalAwtWindow for multi-window support
+        // This ensures JxBrowser instances get the correct window handle for their containing window
+        CompositionLocalProvider(LocalAwtWindow provides window) {
+            // Create independent component context for this window
+            // Each window gets its own Decompose context tree
+            with(createBossAppContext) {
+                // Only the first window should load "Last Session" workspace (Issue #129)
+                val isFirstWindow = WindowManager.windowCount == 1
+                BossAppWithAuth(
+                    windowId = windowState.id,
+                    isFirstWindow = isFirstWindow,
+                    panelRegistry = panelRegistry,
+                    onToggleMaximize = {
+                        // Capture state before EDT dispatch to avoid race condition with rapid double-clicks
+                        val shouldMaximize = window.extendedState != Frame.MAXIMIZED_BOTH
+                        java.awt.EventQueue.invokeLater {
+                            window.extendedState = if (shouldMaximize) Frame.MAXIMIZED_BOTH else Frame.NORMAL
+                            // isMaximized will be updated by WindowStateListener
+                        }
                     }
-                }
-            )
+                )
+            }
         }
 
         // CLI Installation Dialog

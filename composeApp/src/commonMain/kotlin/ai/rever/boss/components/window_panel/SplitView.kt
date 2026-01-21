@@ -617,6 +617,21 @@ class SplitViewState(
         }
     }
 
+    /**
+     * Synchronously dispose all browser tabs in all panels.
+     * Called when the window is closing to ensure JxBrowser instances
+     * are fully closed before AWT window destruction.
+     *
+     * This is critical for preventing crashes when closing windows:
+     * - JxBrowser browsers must be disposed BEFORE the AWT window is destroyed
+     * - The dispose is synchronous (blocking) to ensure completion before window destruction
+     * - Prevents EXC_BAD_ACCESS crashes in getWindowHandle native code
+     */
+    fun disposeAllBrowsersBlocking() {
+        getAllPanels().forEach { panel ->
+            panel.tabsComponent.disposeAllTabsBlocking()
+        }
+    }
 
     /**
      * Check if any splits exist (more than one panel).

@@ -364,6 +364,16 @@ fun main(args: Array<String>) {
                     BossWindow(
                         windowState = windowState,
                         onCloseRequest = {
+                            // CRITICAL: Dispose all browsers BEFORE window close begins
+                            // This prevents JxBrowser OffScreenWidget crash when it tries to
+                            // access the window handle during Compose disposal
+                            // Must happen HERE, not in BossApp.onDispose, because:
+                            // - onCloseRequest runs BEFORE Compose disposal
+                            // - BossApp.onDispose runs DURING Compose disposal (too late!)
+                            ai.rever.boss.components.window_panel.SplitViewStateRegistry
+                                .getState(windowState.id)
+                                ?.disposeAllBrowsersBlocking()
+
                             WindowManager.closeWindow(windowState.id)
                             ai.rever.boss.utils.WindowFocusManager.unregisterWindow(windowState.id)
                             // Don't call exitApplication - keep app running (macOS style)

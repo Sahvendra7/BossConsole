@@ -1165,6 +1165,23 @@ class BossTabsComponent(
             println("TabsComponent: No tabs to close")
         }
     }
+
+    /**
+     * Synchronously dispose all browser tabs in this component.
+     * Called when the window is closing to ensure JxBrowser instances
+     * are fully closed before AWT window destruction.
+     *
+     * This prevents crashes caused by JxBrowser trying to access
+     * disposed AWT window handles during rendering.
+     */
+    fun disposeAllTabsBlocking() {
+        tabComponents.values.toList().forEach { component ->
+            if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                component.disposeBlocking()
+            }
+        }
+        tabComponents.clear()
+    }
 }
 
 /**

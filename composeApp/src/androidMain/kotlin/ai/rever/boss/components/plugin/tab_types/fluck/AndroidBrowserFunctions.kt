@@ -11,7 +11,7 @@ actual fun disposeBrowser(browser: Any) {
     // No-op for Android
 }
 
-actual fun createBrowserViewState(browser: Any): Any {
+actual fun createBrowserViewState(browser: Any, window: Any?): Any {
     // Android doesn't use JxBrowser - return dummy object
     return Any()
 }
@@ -23,7 +23,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 actual fun getBrowserState(
     url: String,
     onOpenInNewTab: ((String) -> Unit)?,
-    onBrowserClosed: (() -> Unit)?
+    onBrowserClosed: (() -> Unit)?,
+    window: Any?
 ): Pair<Any, Any>? {
     // Android doesn't support browser state preservation yet
     return null
@@ -65,4 +66,10 @@ actual fun getMaxRecoveryAttempts(): Int = 3  // Default value
 actual fun collectEngineGeneration(): Long {
     // Android doesn't use JxBrowser - always return 0
     return 0L
+}
+
+@Composable
+actual fun getCurrentAwtWindow(): Any? {
+    // Android doesn't use AWT windows - return null
+    return null
 }

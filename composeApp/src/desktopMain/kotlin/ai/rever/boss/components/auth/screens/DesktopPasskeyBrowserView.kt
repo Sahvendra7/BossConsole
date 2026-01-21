@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
@@ -99,8 +100,12 @@ actual fun PasskeyBrowserView(
     } else if (browser != null) {
         // Embed JxBrowser view in Compose using native BrowserView
         // Create BrowserViewState for this specific browser instance
-        val window = remember { Window.getWindows().firstOrNull() ?: Frame() }
-        val browserViewState = remember(browser) {
+        // Use LocalAwtWindow for multi-window support, fallback to first available window
+        val localWindow = LocalAwtWindow.current
+        val window = remember(localWindow) {
+            localWindow ?: Window.getWindows().firstOrNull() ?: Frame()
+        }
+        val browserViewState = remember(browser, window) {
             BrowserViewState(browser!!, MainScope(), window)
         }
 

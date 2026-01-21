@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
@@ -44,6 +45,15 @@ object BrowserSettings {
     var jsPromptDefaultValue: String = ""  // Empty string or user-configured default
     var jsPromptUsePageDefault: Boolean = true  // Use page's default value if true, else use jsPromptDefaultValue
 }
+
+/**
+ * CompositionLocal providing the current AWT Window for this Compose window.
+ * Used by JxBrowser to get the correct window handle for BrowserViewState.
+ *
+ * This fixes the multi-window crash where browsers in window 2 would reference
+ * window 1's handle because getValidComposeWindow() returned the first window.
+ */
+val LocalAwtWindow = compositionLocalOf<Window?> { null }
 
 /**
  * Gets a valid AWT Window that is safe to use with JxBrowser.
@@ -354,20 +364,21 @@ actual fun disposeBrowser(browser: Any) {
     }
 }
 
-actual fun createBrowserViewState(browser: Any): Any? {
+actual fun createBrowserViewState(browser: Any, window: Any?): Any? {
     val jxBrowser = browser as Browser
 
-    // Get a valid window - no blocking, just check if one is ready now
-    // Browser initialization is now async (LaunchedEffect), so this is called after window is displayed
-    val window = getValidComposeWindow()
+    // Use provided window first (from LocalAwtWindow), fall back to finding a valid window
+    val awtWindow = (window as? Window)?.takeIf {
+        try { it.isDisplayable && it.isShowing } catch (e: Exception) { false }
+    } ?: getValidComposeWindow()
 
-    if (window == null) {
+    if (awtWindow == null) {
         println("⚠️  No valid window available for BrowserViewState - window may not be ready yet")
         return null
     }
 
     // Use MainScope to ensure UI operations happen on the main thread
-    return BrowserViewState(jxBrowser, MainScope(), window)
+    return BrowserViewState(jxBrowser, MainScope(), awtWindow)
 }
 
 actual fun disposeBrowserViewState(browserViewState: Any) {
@@ -377,7 +388,8 @@ actual fun disposeBrowserViewState(browserViewState: Any) {
 actual fun getBrowserState(
     url: String,
     onOpenInNewTab: ((String) -> Unit)?,
-    onBrowserClosed: (() -> Unit)?
+    onBrowserClosed: (() -> Unit)?,
+    window: Any?
 ): Pair<Any, Any>? {
     return try {
         // Verify engine is available before creating browser
@@ -417,7 +429,8 @@ actual fun getBrowserState(
             configureBrowserPopupHandler(browser, onOpenInNewTab)
         }
 
-        val browserViewState = createBrowserViewState(browser)
+        // Pass the window from LocalAwtWindow to ensure browsers get the correct window handle
+        val browserViewState = createBrowserViewState(browser, window)
 
         // If browserViewState creation failed (no valid window), clean up and return null
         if (browserViewState == null) {
@@ -514,4 +527,11 @@ actual fun collectEngineGeneration(): Long {
     val generation by FluckEngine.engineGenerationFlow.collectAsState()
     return generation
 }
+
+/**
+ * Get the current AWT Window from the LocalAwtWindow CompositionLocal.
+ * This ensures browsers get the correct window handle for their containing window.
+ */
+@Composable
+actual fun getCurrentAwtWindow(): Any? = LocalAwtWindow.current
 

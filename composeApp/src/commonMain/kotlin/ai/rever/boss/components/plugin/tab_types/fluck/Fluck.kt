@@ -159,7 +159,8 @@ expect fun collectEngineGeneration(): Long
 
 // Platform-specific browser view state creation
 // Returns null if no valid window is available
-expect fun createBrowserViewState(browser: Any): Any?
+// window: Optional AWT window to use (from LocalAwtWindow) for correct multi-window support
+expect fun createBrowserViewState(browser: Any, window: Any? = null): Any?
 
 // Platform-specific browser disposal
 expect fun disposeBrowser(browser: Any)
@@ -170,11 +171,18 @@ expect fun disposeBrowserViewState(browserViewState: Any)
 // Platform-specific browser state retrieval
 // onBrowserClosed is called when the browser is closed (e.g., engine shutdown)
 // This enables event-driven recovery instead of polling
+// window: Optional AWT window to use (from LocalAwtWindow) for correct multi-window support
 expect fun getBrowserState(
     url: String,
     onOpenInNewTab: ((String) -> Unit)? = null,
-    onBrowserClosed: (() -> Unit)? = null
+    onBrowserClosed: (() -> Unit)? = null,
+    window: Any? = null
 ): Pair<Any, Any>?
+
+// Platform-specific function to get the current AWT window from CompositionLocal
+// Returns null on non-desktop platforms
+@Composable
+expect fun getCurrentAwtWindow(): Any?
 
 // Platform-specific FluckTabComponent creation
 expect fun createFluckTabComponent(
@@ -315,6 +323,10 @@ open class FluckTabComponent(
         // When engine reinitializes, existing browsers become stale
         val currentEngineGeneration = collectEngineGeneration()
 
+        // Get the current AWT window from CompositionLocal (multi-window fix)
+        // This ensures browsers get the correct window handle for their containing window
+        val currentWindow = getCurrentAwtWindow()
+
         // Local Compose state to trigger recomposition when browser is ready
         // Initialized from class-level browserState which persists across tab switches
         var localBrowserState by remember(config.id) {
@@ -368,6 +380,7 @@ open class FluckTabComponent(
                     // Pass callbacks to configure popup handler and browser close detection
                     // OAuth popups with dimensions will be real popups, regular links will be tabs
                     // onBrowserClosed triggers recovery when browser is closed (event-driven, no polling)
+                    // Pass currentWindow (from LocalAwtWindow) to ensure correct window handle for multi-window
                     val state = getBrowserState(
                         url = currentUrlForBrowser,
                         onOpenInNewTab = onOpenInNewTab,
@@ -385,7 +398,8 @@ open class FluckTabComponent(
                             } else {
                                 println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
                             }
-                        }
+                        },
+                        window = currentWindow
                     )
 
                     if (state != null) {
@@ -678,6 +692,42 @@ open class FluckTabComponent(
                 } catch (e: Exception) {
                     println("Error disposing browser: ${e.message}")
                 }
+            }
+        }
+    }
+
+    /**
+     * Synchronously dispose the browser tab.
+     * Called when the window is closing to ensure JxBrowser instances
+     * are fully closed before AWT window destruction.
+     *
+     * Unlike dispose(), this method blocks until the browser is closed.
+     * This prevents crashes when closing parent windows by ensuring browsers
+     * are fully disposed before the AWT window handle is destroyed.
+     */
+    fun disposeBlocking() {
+        // Use compareAndSet for atomic thread-safe disposal flag update
+        if (isDisposedAtomic.compareAndSet(false, true)) {
+            // Cancel component scope first to stop any pending coroutines
+            componentScope.cancel()
+
+            // Synchronously dispose browser resources
+            // This MUST complete before returning to prevent crashes
+            try {
+                // First: Dispose view state with write lock
+                browserLock.write {
+                    browserViewState?.let { disposeBrowserViewState(it) }
+                }
+
+                // Close the browser synchronously - this is the critical part
+                // JxBrowser's close() is synchronous and will stop all rendering
+                // Note: We skip the 150ms delay used in async dispose() since
+                // the window is being destroyed anyway
+                browserLock.write {
+                    browser?.let { disposeBrowser(it) }
+                }
+            } catch (e: Exception) {
+                println("Error disposing browser (blocking): ${e.message}")
             }
         }
     }

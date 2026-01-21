@@ -1022,6 +1022,10 @@ fun ComponentContext.BossApp(
         draggablePanelComponent.update()
 
         onDispose {
+            // NOTE: Browser disposal moved to main.kt onCloseRequest handler
+            // Browsers must be disposed BEFORE Compose disposal begins, not during it
+            // See main.kt onCloseRequest for the disposeAllBrowsersBlocking() call
+
             // Save current workspace as "Last Session" when app closes
             try {
                 // Use runBlocking to ensure save completes before app closes
