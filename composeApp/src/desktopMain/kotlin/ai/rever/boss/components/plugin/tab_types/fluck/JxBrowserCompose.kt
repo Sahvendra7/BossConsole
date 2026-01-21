@@ -73,7 +73,6 @@ import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import com.teamdev.jxbrowser.zoom.ZoomLevel
-import com.teamdev.jxbrowser.browser.callback.input.MoveMouseWheelCallback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
@@ -804,32 +803,11 @@ fun JxBrowserCompose(
         }
     }
 
-    // Set up pinch-to-zoom gesture handling
-    // 1. JxBrowser callback for Ctrl+Scroll (standard zoom on Windows/Linux)
-    // 2. macOS native gesture handler for trackpad pinch (macOS only)
+    // Set up macOS native trackpad pinch gesture handler for zoom
+    // Note: MoveMouseWheelCallback removed to fix scroll lag - use Ctrl+Plus/Minus for zoom on Windows/Linux
     LaunchedEffect(browser) {
         if (!isBrowserEnvironmentValid()) return@LaunchedEffect
 
-        // Set up JxBrowser callback for Ctrl+Scroll zoom
-        browser.unsafe().set(MoveMouseWheelCallback::class.java, MoveMouseWheelCallback { params ->
-            val event = params.event()
-            val isCtrlDown = event.keyModifiers().isControlDown
-
-            if (isCtrlDown) {
-                // This is a zoom gesture (Ctrl+Wheel)
-                val deltaY = event.deltaY()
-                if (deltaY < 0) {
-                    performZoomIn()
-                } else if (deltaY > 0) {
-                    performZoomOut()
-                }
-                MoveMouseWheelCallback.Response.suppress()
-            } else {
-                MoveMouseWheelCallback.Response.proceed()
-            }
-        })
-
-        // Set up macOS native trackpad pinch gesture handler
         if (MacOSGestureHandler.isSupported()) {
             val window = Window.getWindows().firstOrNull { it.isDisplayable && it.isShowing }
             if (window is JFrame) {
