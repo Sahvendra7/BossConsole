@@ -44,6 +44,7 @@ import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
 import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth
+import ai.rever.boss.components.plugin.panels.left_top.FileTreeUtils
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
@@ -493,37 +494,6 @@ fun NewTabDialog(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                        // Helper function to find node by path in tree
-                        fun findNodeByPath(root: FileNode?, targetPath: String): FileNode? {
-                            if (root == null) return null
-                            if (root.path == targetPath) return root
-                            for (child in root.children) {
-                                val found = findNodeByPath(child, targetPath)
-                                if (found != null) return found
-                            }
-                            return null
-                        }
-
-                        // Helper function to update node at path with new data
-                        fun updateNodeAtPath(
-                            root: FileNode,
-                            targetPath: String,
-                            update: (FileNode) -> FileNode
-                        ): FileNode {
-                            if (root.path == targetPath) {
-                                return update(root)
-                            }
-                            return root.copy(
-                                children = root.children.map { child ->
-                                    if (targetPath.startsWith(child.path + "/") || targetPath == child.path) {
-                                        updateNodeAtPath(child, targetPath, update)
-                                    } else {
-                                        child
-                                    }
-                                }
-                            )
-                        }
-
                         // File tree browser
                         Card(
                             modifier = Modifier
@@ -567,7 +537,7 @@ fun NewTabDialog(
                                                     // Load children if needed
                                                     val currentTree = fileTree
                                                     if (currentTree != null) {
-                                                        val targetNode = findNodeByPath(currentTree, path)
+                                                        val targetNode = FileTreeUtils.findNodeByPath(currentTree, path)
                                                         if (targetNode?.isDirectory == true && targetNode.children.isEmpty()) {
                                                             // Need to load children
                                                             coroutineScope.launch {
@@ -588,7 +558,7 @@ fun NewTabDialog(
                                                                                 child
                                                                             }
                                                                         }
-                                                                        fileTree = updateNodeAtPath(currentTree, path) { existingNode ->
+                                                                        fileTree = FileTreeUtils.updateNodeAtPath(currentTree, path) { existingNode ->
                                                                             existingNode.copy(
                                                                                 children = loadedChildren,
                                                                                 hasChildren = loadedChildren.isNotEmpty()

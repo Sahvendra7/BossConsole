@@ -495,11 +495,11 @@ class CodeBaseComponent(
     private suspend fun loadNodeChildren(path: String) {
         // Early validation before acquiring lock
         val currentTree = _fileTree.value ?: return
-        val node = findNodeByPath(currentTree, path)
+        val node = FileTreeUtils.findNodeByPath(currentTree, path)
         if (node?.isDirectory != true) return
 
         val endNode = node.getCompactEndNode()
-        val targetPath = endNode.path
+        var targetPath = endNode.path
         if (endNode.isLoaded && endNode.children.isNotEmpty()) return
 
         // Acquire lock to mark as CHECKING
@@ -507,14 +507,19 @@ class CodeBaseComponent(
         try {
             // Re-validate after acquiring lock (TOCTOU protection)
             val treeForUpdate = _fileTree.value ?: return
-            val nodeAfterLock = findNodeByPath(treeForUpdate, path)
+            val nodeAfterLock = FileTreeUtils.findNodeByPath(treeForUpdate, path)
             if (nodeAfterLock?.isDirectory != true) return
 
             val endNodeAfterLock = nodeAfterLock.getCompactEndNode()
             if (endNodeAfterLock.isLoaded && endNodeAfterLock.children.isNotEmpty()) return
 
+            // Update targetPath to use the recalculated end node's path
+            // (tree may have changed since first calculation)
+            // This path will be used consistently for I/O and the final update
+            targetPath = endNodeAfterLock.path
+
             // Mark as CHECKING state (shows loading indicator)
-            _fileTree.value = updateNodeAtPath(treeForUpdate, targetPath) { existingNode ->
+            _fileTree.value = FileTreeUtils.updateNodeAtPath(treeForUpdate, targetPath) { existingNode ->
                 existingNode.copy(loadingState = NodeLoadingState.CHECKING)
             }
         } finally {
@@ -546,12 +551,13 @@ class CodeBaseComponent(
         }
 
         // Acquire lock for final tree update
+        // Use the same targetPath that was set to CHECKING in the first lock
         treeUpdateMutex.lock()
         try {
             val latestTree = _fileTree.value ?: return
 
             if (loadedChildren != null) {
-                _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
+                _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, targetPath) { existingNode ->
                     existingNode.copy(
                         children = loadedChildren,
                         hasChildren = loadedChildren.isNotEmpty(),
@@ -561,7 +567,7 @@ class CodeBaseComponent(
                 }
             } else {
                 // No children found or error - mark as loaded with empty
-                _fileTree.value = updateNodeAtPath(latestTree, targetPath) { existingNode ->
+                _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, targetPath) { existingNode ->
                     existingNode.copy(
                         children = emptyList(),
                         hasChildren = false,
@@ -649,7 +655,7 @@ class CodeBaseComponent(
     ) {
         // Early validation before acquiring lock
         val currentTree = _fileTree.value ?: return
-        val node = findNodeByPath(currentTree, path)
+        val node = FileTreeUtils.findNodeByPath(currentTree, path)
         if (node?.isDirectory != true) return
         if (node.isLoaded) return
 
@@ -683,12 +689,12 @@ class CodeBaseComponent(
             val latestTree = _fileTree.value ?: return
 
             // Re-validate after acquiring lock (TOCTOU protection)
-            val nodeAfterLock = findNodeByPath(latestTree, path)
+            val nodeAfterLock = FileTreeUtils.findNodeByPath(latestTree, path)
             if (nodeAfterLock?.isDirectory != true) return
             if (nodeAfterLock.isLoaded) return
 
             if (loadedChildren != null) {
-                _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
+                _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, path) { existingNode ->
                     existingNode.copy(
                         children = loadedChildren,
                         hasChildren = loadedChildren.isNotEmpty(),
@@ -697,7 +703,7 @@ class CodeBaseComponent(
                     )
                 }
             } else {
-                _fileTree.value = updateNodeAtPath(latestTree, path) { existingNode ->
+                _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, path) { existingNode ->
                     existingNode.copy(
                         children = emptyList(),
                         hasChildren = false,
@@ -713,42 +719,6 @@ class CodeBaseComponent(
         if (loadedChildren != null) {
             compactLoadIfNeeded(loadedChildren, currentDepth, maxDepth)
         }
-    }
-    
-    private fun findNodeByPath(root: FileNode?, targetPath: String): FileNode? {
-        if (root == null) return null
-        if (root.path == targetPath) return root
-
-        for (child in root.children) {
-            val found = findNodeByPath(child, targetPath)
-            if (found != null) return found
-        }
-        return null
-    }
-
-    /**
-     * Creates a new tree with the node at targetPath updated using the provided transform.
-     * This ensures immutable state updates for proper Compose recomposition.
-     */
-    private fun updateNodeAtPath(
-        root: FileNode,
-        targetPath: String,
-        update: (FileNode) -> FileNode
-    ): FileNode {
-        if (root.path == targetPath) {
-            return update(root)
-        }
-
-        // Recursively update, creating new nodes along the path to the target
-        return root.copy(
-            children = root.children.map { child ->
-                if (targetPath.startsWith(child.path + "/") || targetPath == child.path) {
-                    updateNodeAtPath(child, targetPath, update)
-                } else {
-                    child
-                }
-            }
-        )
     }
 
     @Composable
