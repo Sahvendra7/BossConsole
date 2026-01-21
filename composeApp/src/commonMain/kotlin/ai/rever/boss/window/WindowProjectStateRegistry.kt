@@ -18,6 +18,12 @@ fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Proj
 }
 
 /**
+ * CompositionLocal to provide the window ID to descendant composables.
+ * This allows components to identify which window they are in (e.g., for filtering events).
+ */
+val LocalWindowId = compositionLocalOf<String?> { null }
+
+/**
  * CompositionLocal to provide WindowProjectState to descendant composables.
  * This allows components like BossTopBar to access the window-specific project state.
  */

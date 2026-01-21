@@ -6,6 +6,7 @@ import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
 // BossTerm's HyperlinkType enum: HTTP, FILE, FOLDER, EMAIL, FTP, etc.
@@ -95,6 +96,8 @@ actual fun TabbedTerminalContent(
 ) {
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
+    // Get current window ID for event filtering (Issue #498)
+    val windowId = LocalWindowId.current
 
     // Observe reset generation to force recomposition when terminals are reset
     val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
@@ -191,7 +194,7 @@ actual fun TabbedTerminalContent(
                 },
                 onShowSettings = onShowSettings,
                 onShowWelcomeWizard = { showWelcomeWizard = true },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID, windowId) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -236,6 +239,8 @@ actual fun PersistentTabbedTerminalContent(
     val state = remember(terminalId, resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
+    // Get current window ID for event filtering (Issue #498)
+    val windowId = LocalWindowId.current
     val effectiveWorkingDir = if (isNew) workingDirectory else null
 
     // Welcome Wizard support - show on first launch when onboarding not completed
@@ -289,7 +294,7 @@ actual fun PersistentTabbedTerminalContent(
                 onShowSettings = onShowSettings,
                 onShowWelcomeWizard = { showWelcomeWizard = true },
                 onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -622,15 +627,16 @@ actual fun resetTerminals() {
  * @param info HyperlinkInfo containing URL, type, and metadata (from BossTerm)
  * @param scope CoroutineScope to launch async operations
  * @param terminalId Optional terminal tab ID (for detecting source panel when opening in splits)
+ * @param windowId Optional window ID (for filtering events to correct window, Issue #498)
  * @return true if handled by BOSS, false to use BossTerm's default behavior
  */
-private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, terminalId: String? = null): Boolean {
+private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, terminalId: String? = null, windowId: String? = null): Boolean {
     return when (info.type) {
         HyperlinkType.HTTP -> {
             // Emit HTTP/HTTPS links to event bus for BossApp to handle
             // BossApp will show dialog or auto-open based on user preference
             scope.launch {
-                TerminalLinkEventBus.emitLinkClick(info.url, terminalId)
+                TerminalLinkEventBus.emitLinkClick(info.url, terminalId, windowId)
             }
             true // Handled - BOSS manages HTTP links
         }
@@ -656,7 +662,7 @@ private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, 
                                 }
                             }
                         }
-                        TerminalLinkEventBus.emitLinkClick(urlWithLocation, terminalId)
+                        TerminalLinkEventBus.emitLinkClick(urlWithLocation, terminalId, windowId)
                     }
                     is FileValidationResult.Invalid -> {
                         println("[Terminal] Cannot open file: ${result.reason}")
@@ -713,6 +719,8 @@ actual fun TerminalContent(
     val (isNew, state) = terminalState
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
+    // Get current window ID for event filtering (Issue #498)
+    val windowId = LocalWindowId.current
 
     // Use key() to force complete recreation of terminal when reset happens
     key(resetGeneration) {
@@ -730,7 +738,7 @@ actual fun TerminalContent(
                     terminalId?.let { TerminalStateRegistry.remove(it) }
                     onExit()
                 },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId) },
+                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
                 modifier = Modifier.fillMaxSize()
             )
         }

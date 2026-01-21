@@ -34,6 +34,7 @@ import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.window.WindowProjectStateRegistry
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
@@ -1334,11 +1336,13 @@ fun ComponentContext.BossApp(
     // Shows dialog or auto-opens based on user preference
     // Note: We collect linkClickEvents directly (not with combine()) to avoid
     // re-processing the same event when settings change (e.g., when user clicks "Remember")
-    LaunchedEffect(splitViewState) {
+    // Issue #498: Filter events by window to prevent dialog appearing in all windows
+    LaunchedEffect(splitViewState, windowId) {
         TerminalLinkEventBus.linkClickEvents
+            .filter { event -> event.sourceWindowId == null || event.sourceWindowId == windowId }
             .onEach { event ->
                 val settings = TerminalLinkSettingsManager.currentSettings.value
-                println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}")
+                println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}, window: $windowId")
 
                 when (settings.openMode) {
                     TerminalLinkOpenMode.ALWAYS_ASK -> {
@@ -2077,6 +2081,7 @@ fun ComponentContext.BossApp(
     with(draggablePanelComponent) {
         BossTheme {
             CompositionLocalProvider(
+                LocalWindowId provides windowId,
                 LocalSplitViewState provides splitViewState,
                 LocalWorkspaceManager provides workspaceManager,
                 LocalWindowProjectState provides windowProjectState
