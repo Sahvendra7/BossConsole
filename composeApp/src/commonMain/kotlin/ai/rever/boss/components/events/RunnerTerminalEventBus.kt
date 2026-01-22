@@ -13,7 +13,8 @@ data class RunnerTerminalOpenEvent(
     val configId: String,
     val configName: String,
     val workingDirectory: String?,
-    val isRerun: Boolean
+    val isRerun: Boolean,
+    val sourceWindowId: String  // Window that initiated the run (Issue #498)
 )
 
 /**
@@ -58,6 +59,7 @@ object RunnerTerminalEventBus {
 
     /**
      * Emit event to open a runner terminal.
+     * @param sourceWindowId Window that initiated the run (Issue #498)
      */
     suspend fun openRunnerTerminal(
         terminalId: String,
@@ -65,7 +67,8 @@ object RunnerTerminalEventBus {
         configId: String,
         configName: String,
         workingDirectory: String?,
-        isRerun: Boolean
+        isRerun: Boolean,
+        sourceWindowId: String
     ) {
         _openEvents.emit(
             RunnerTerminalOpenEvent(
@@ -74,7 +77,8 @@ object RunnerTerminalEventBus {
                 configId = configId,
                 configName = configName,
                 workingDirectory = workingDirectory,
-                isRerun = isRerun
+                isRerun = isRerun,
+                sourceWindowId = sourceWindowId
             )
         )
     }

@@ -31,6 +31,7 @@ fun BossDraggableComponent.BossWindow(
     // State for split panels - use provided or create new
     val actualSplitViewState = splitViewState ?: rememberSplitViewState(
         tabRegistry = tabsComponent.tabRegistry,
+        windowId = tabsComponent.windowId,
         initialTabsComponent = tabsComponent
     )
 

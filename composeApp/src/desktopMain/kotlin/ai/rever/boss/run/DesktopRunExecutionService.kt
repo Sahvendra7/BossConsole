@@ -36,8 +36,10 @@ actual object RunExecutionService {
     /**
      * Execute a run configuration using RunnerTerminalService.
      * Respects runner settings for sidebar vs main panel terminal.
+     *
+     * @param windowId The window ID that initiated the run (Issue #498)
      */
-    actual suspend fun execute(config: RunConfiguration, debug: Boolean): RunningProcess? {
+    actual suspend fun execute(config: RunConfiguration, debug: Boolean, windowId: String): RunningProcess? {
         try {
             val processId = UUID.randomUUID().toString()
 
@@ -59,7 +61,7 @@ actual object RunExecutionService {
 
             // Use RunnerTerminalService which respects sidebar/main panel setting
             println("[Run] Executing via RunnerTerminalService: $command")
-            RunnerTerminalService.openRunnerTerminal(config)
+            RunnerTerminalService.openRunnerTerminal(config, windowId)
 
             // Update status to running
             updateProcessStatus(processId, ProcessStatus.RUNNING)

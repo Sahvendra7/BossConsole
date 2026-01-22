@@ -32,6 +32,11 @@ actual object RunnerTerminalService {
     private val _configToTerminal = MutableStateFlow<Map<String, String>>(emptyMap())
     actual val configToTerminal: StateFlow<Map<String, String>> = _configToTerminal.asStateFlow()
 
+    // Map: configId → Set<windowId> (a config can run in multiple windows simultaneously)
+    // Issue #498: Made observable as StateFlow so UI can recompose when window-config mappings change
+    private val _configToWindows = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    actual val configToWindows: StateFlow<Map<String, Set<String>>> = _configToWindows.asStateFlow()
+
     // Reverse map: terminalTabId → Set<configId> (supports multiple configs per terminal, e.g., sidebar)
     // Thread-safe: uses ConcurrentHashMap with concurrent sets
     private val terminalToConfigs = ConcurrentHashMap<String, ConcurrentHashMap.KeySetView<String, Boolean>>()
@@ -57,6 +62,37 @@ actual object RunnerTerminalService {
     }
 
     /**
+     * Add a window to a config's running windows set. (StateFlow update)
+     */
+    private fun addWindowToConfig(configId: String, windowId: String) {
+        _configToWindows.update { current ->
+            val windows = current[configId]?.let { it + windowId } ?: setOf(windowId)
+            current + (configId to windows)
+        }
+    }
+
+    /**
+     * Remove a window from a config's running windows set. (StateFlow update)
+     */
+    private fun removeWindowFromConfig(configId: String, windowId: String) {
+        _configToWindows.update { current ->
+            val windows = current[configId]?.minus(windowId)
+            if (windows.isNullOrEmpty()) {
+                current - configId
+            } else {
+                current + (configId to windows)
+            }
+        }
+    }
+
+    /**
+     * Remove all windows from a config (when terminal stops/closes).
+     */
+    private fun removeAllWindowsFromConfig(configId: String) {
+        _configToWindows.update { it - configId }
+    }
+
+    /**
      * Check if a specific configuration is currently running.
      */
     actual fun isConfigRunning(configId: String): Boolean {
@@ -64,10 +100,24 @@ actual object RunnerTerminalService {
     }
 
     /**
+     * Check if a specific configuration is currently running in a specific window.
+     * Used for per-window button state isolation (Issue #498).
+     *
+     * @param windowId The window ID to check
+     * @param configId The configuration ID to check
+     * @return True if the config is running in the specified window
+     */
+    actual fun isConfigRunningInWindow(windowId: String, configId: String): Boolean {
+        return _configToWindows.value[configId]?.contains(windowId) == true
+    }
+
+    /**
      * Open or reuse a runner terminal for the given configuration.
+     * @param windowId The window ID that initiated the run (Issue #498)
      */
     actual suspend fun openRunnerTerminal(
         config: RunConfiguration,
+        windowId: String,
         onTerminalCreated: (String) -> Unit
     ): String {
         // Build the command outside lock (no state access needed)
@@ -82,6 +132,7 @@ actual object RunnerTerminalService {
             _configToTerminal.update { it + (config.id to newTerminalId) }
             addConfigToTerminal(newTerminalId, config.id)
             _runningConfigs.update { it + config.id }
+            addWindowToConfig(config.id, windowId)
 
             newTerminalId to (existingTerminalId != null)
         }
@@ -95,7 +146,8 @@ actual object RunnerTerminalService {
             configId = config.id,
             configName = config.name,
             workingDirectory = config.workingDirectory.ifBlank { null },
-            isRerun = isRerun
+            isRerun = isRerun,
+            sourceWindowId = windowId
         )
 
         onTerminalCreated(terminalId)
@@ -106,12 +158,14 @@ actual object RunnerTerminalService {
      * Stop the runner for a configuration by closing its terminal tab.
      *
      * This closes the active tab which terminates the running process.
+     * @param windowId The window ID that initiated the stop (Issue #498)
+     * @param configId The configuration ID to stop
      */
-    actual suspend fun stopRunner(configId: String): Boolean {
-        // Get terminal ID and validate under lock
+    actual suspend fun stopRunner(windowId: String, configId: String): Boolean {
+        // Get terminal ID, validate under lock
         val terminalId = stateLock.withLock {
-            if (!isConfigRunning(configId)) {
-                println("[Runner] Config $configId is not running")
+            if (!isConfigRunningInWindow(windowId, configId)) {
+                println("[Runner] Config $configId is not running in window $windowId")
                 return false
             }
 
@@ -121,25 +175,30 @@ actual object RunnerTerminalService {
                 return false
             }
 
-            // Clear tracking atomically
-            _configToTerminal.update { it - configId }
-            removeConfigFromTerminal(id, configId)
-            _runningConfigs.update { it - configId }
+            // Remove this window from the config's window set
+            removeWindowFromConfig(configId, windowId)
+
+            // Only clean up global state if no more windows are running this config
+            if (_configToWindows.value[configId] == null) {
+                _configToTerminal.update { it - configId }
+                removeConfigFromTerminal(id, configId)
+                _runningConfigs.update { it - configId }
+            }
 
             id
         }
 
-        // Perform I/O operations outside lock
-        val closed = TabbedTerminalStateRegistry.closeActiveTab(terminalId)
+        // Perform I/O operations outside lock (window-scoped)
+        val closed = TabbedTerminalStateRegistry.closeActiveTab(windowId, terminalId)
         if (closed) {
-            println("[Runner] Closed terminal tab: $terminalId (config: $configId)")
+            println("[Runner] Closed terminal tab: $terminalId (config: $configId, window: $windowId)")
         } else {
-            println("[Runner] Failed to close tab - terminal not found: $terminalId")
+            println("[Runner] Failed to close tab - terminal not found: $terminalId (window: $windowId)")
         }
 
-        // Clear sidebar tab tracking if this was a sidebar config
+        // Clear sidebar tab tracking if this was a sidebar config (window-scoped)
         if (terminalId == SIDEBAR_TERMINAL_ID) {
-            TabbedTerminalStateRegistry.removeSidebarConfigTracking(configId)
+            TabbedTerminalStateRegistry.removeSidebarConfigTracking(windowId, configId)
         }
 
         // Emit stop event for any additional UI handling
@@ -154,9 +213,12 @@ actual object RunnerTerminalService {
      * For main panel: Sends Ctrl+C to stop the current process, closes the old terminal,
      * and creates a new one with the same command.
      * For sidebar panel: Ctrl+C is handled by openInSidebarTerminal via the isRerun flag.
+     *
+     * @param windowId The window ID that initiated the run (Issue #498)
      */
     actual suspend fun rerunRunner(
         config: RunConfiguration,
+        windowId: String,
         onTerminalCreated: (String) -> Unit
     ): String {
         println("[Runner] Re-running config: ${config.name}")
@@ -168,8 +230,9 @@ actual object RunnerTerminalService {
         val command = buildFullCommand(config)
 
         // Atomic state update under lock
-        val (terminalId, existingTerminalId) = stateLock.withLock {
+        val (terminalId, existingTerminalId, existingWindowId) = stateLock.withLock {
             val existingId = _configToTerminal.value[config.id]
+            val existingWinId = _configToWindows.value[config.id]?.firstOrNull()
 
             // Stop existing process and close terminal (only for main panel mode)
             if (existingId != null && !usesSidebar) {
@@ -183,17 +246,18 @@ actual object RunnerTerminalService {
             _configToTerminal.update { it + (config.id to newTerminalId) }
             addConfigToTerminal(newTerminalId, config.id)
             _runningConfigs.update { it + config.id }
+            addWindowToConfig(config.id, windowId)
 
-            newTerminalId to existingId
+            Triple(newTerminalId, existingId, existingWinId)
         }
 
         // Perform I/O operations outside lock with error handling
-        if (existingTerminalId != null && !usesSidebar) {
+        if (existingTerminalId != null && existingWindowId != null && !usesSidebar) {
             try {
-                // Send Ctrl+C to stop the running process
-                val sent = TabbedTerminalStateRegistry.sendCtrlC(existingTerminalId)
+                // Send Ctrl+C to stop the running process (window-scoped)
+                val sent = TabbedTerminalStateRegistry.sendCtrlC(existingWindowId, existingTerminalId)
                 if (sent) {
-                    println("[Runner] Sent Ctrl+C to stop existing process")
+                    println("[Runner] Sent Ctrl+C to stop existing process (window: $existingWindowId)")
                 }
                 // Close the terminal tab
                 RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
@@ -210,7 +274,8 @@ actual object RunnerTerminalService {
             configId = config.id,
             configName = config.name,
             workingDirectory = config.workingDirectory.ifBlank { null },
-            isRerun = true
+            isRerun = true,
+            sourceWindowId = windowId
         )
 
         onTerminalCreated(terminalId)
@@ -231,6 +296,8 @@ actual object RunnerTerminalService {
                     current.filterKeys { it !in configIds }
                 }
                 _runningConfigs.update { it - configIds }
+                // Clean up window mapping
+                configIds.forEach { removeAllWindowsFromConfig(it) }
                 println("[Runner] Terminal stopped: $terminalId (configs: $configIds)")
             }
         }
@@ -239,8 +306,11 @@ actual object RunnerTerminalService {
     /**
      * Remove tracking for a terminal tab (when tab is closed).
      * For terminals with multiple configs (sidebar), removes all.
+     *
+     * @param windowId The window ID
+     * @param terminalId The terminal tab ID
      */
-    actual fun removeTerminal(terminalId: String) {
+    actual fun removeTerminal(windowId: String, terminalId: String) {
         val isSidebar = stateLock.withLock {
             val configIds = terminalToConfigs.remove(terminalId)?.toSet() ?: emptySet()
             if (configIds.isNotEmpty()) {
@@ -248,14 +318,16 @@ actual object RunnerTerminalService {
                     current.filterKeys { it !in configIds }
                 }
                 _runningConfigs.update { it - configIds }
-                println("[Runner] Terminal removed: $terminalId (configs: $configIds)")
+                // Clean up window mapping
+                configIds.forEach { removeAllWindowsFromConfig(it) }
+                println("[Runner] Terminal removed: $terminalId (configs: $configIds, window: $windowId)")
             }
             terminalId == SIDEBAR_TERMINAL_ID
         }
 
-        // Clear sidebar tab tracking outside lock (I/O operation)
+        // Clear sidebar tab tracking for this window outside lock (I/O operation)
         if (isSidebar) {
-            TabbedTerminalStateRegistry.clearSidebarConfigTracking()
+            TabbedTerminalStateRegistry.clearSidebarConfigTrackingForWindow(windowId)
         }
     }
 
@@ -272,16 +344,46 @@ actual object RunnerTerminalService {
      * Unlike removeTerminal which removes all configs for a terminal,
      * this only removes one specific config.
      *
+     * @param windowId The window ID (used for sidebar config tracking)
      * @param configId The configuration ID to remove
      */
-    actual fun removeConfig(configId: String) {
+    actual fun removeConfig(windowId: String, configId: String) {
         stateLock.withLock {
             val terminalId = _configToTerminal.value[configId]
             if (terminalId != null) {
                 _configToTerminal.update { it - configId }
                 removeConfigFromTerminal(terminalId, configId)
                 _runningConfigs.update { it - configId }
-                println("[Runner] Config removed: $configId (terminal: $terminalId)")
+                removeWindowFromConfig(configId, windowId)
+                println("[Runner] Config removed: $configId (terminal: $terminalId, window: $windowId)")
+            }
+        }
+    }
+
+    /**
+     * Clean up all runner state associated with a window.
+     * Called when a window is closed to prevent memory leaks.
+     *
+     * @param windowId The window ID being closed
+     */
+    fun cleanupWindow(windowId: String) {
+        stateLock.withLock {
+            val configsToRemove = _configToWindows.value.entries
+                .filter { windowId in it.value }
+                .map { it.key }
+
+            configsToRemove.forEach { configId ->
+                val terminalId = _configToTerminal.value[configId]
+                if (terminalId != null) {
+                    removeConfigFromTerminal(terminalId, configId)
+                }
+                _configToTerminal.update { it - configId }
+                _runningConfigs.update { it - configId }
+                removeWindowFromConfig(configId, windowId)
+            }
+
+            if (configsToRemove.isNotEmpty()) {
+                println("[Runner] Cleaned up ${configsToRemove.size} configs for closed window: $windowId")
             }
         }
     }
@@ -293,39 +395,50 @@ actual object RunnerTerminalService {
      *
      * State is updated BEFORE terminal operation to prevent race conditions where
      * another thread sees inconsistent state. If the operation fails, state is rolled back.
+     *
+     * @param windowId The window ID for window-scoped terminal state
+     * @param configId The configuration ID for tracking
+     * @param command The command to run
+     * @param workingDirectory Optional working directory
+     * @param tabTitle The title for the terminal tab
+     * @param isRerun If true, sends Ctrl+C first to stop any running process
      */
     actual fun openInSidebarTerminal(
+        windowId: String,
         configId: String,
         command: String,
         workingDirectory: String?,
         tabTitle: String,
         isRerun: Boolean
     ): Boolean {
-        // Update state BEFORE terminal operation (prevents race conditions)
+        // Update state BEFORE terminal operation (with rollback on failure)
+        // This ensures UI updates immediately when user clicks run
         stateLock.withLock {
             _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
             addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
             _runningConfigs.update { it + configId }
+            addWindowToConfig(configId, windowId)
         }
 
-        // Perform terminal operation
         val success = TabbedTerminalStateRegistry.newSidebarTab(
+            windowId = windowId,
             command = command,
             workingDirectory = workingDirectory,
             configId = configId,
             isRerun = isRerun
         )
 
-        if (success) {
-            println("[Runner] Opened command in sidebar terminal: $tabTitle (mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
-        } else {
+        if (!success) {
             // Roll back state on failure
             stateLock.withLock {
                 _configToTerminal.update { it - configId }
                 removeConfigFromTerminal(SIDEBAR_TERMINAL_ID, configId)
                 _runningConfigs.update { it - configId }
+                removeWindowFromConfig(configId, windowId)
             }
-            println("[Runner] Failed to open in sidebar terminal - panel may not be open")
+            println("[Runner] Failed to open in sidebar terminal - panel may not be open (window=$windowId)")
+        } else {
+            println("[Runner] Opened command in sidebar terminal: $tabTitle (window=$windowId, mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
         }
         return success
     }

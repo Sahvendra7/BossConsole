@@ -514,11 +514,12 @@ fun ComponentContext.BossApp(
 
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
     val tabDragComponent = remember { TabDraggableComponent() }
-    val tabsComponent = remember { BossTabsComponent(this, tabRegistry) }
+    val tabsComponent = remember { BossTabsComponent(this, tabRegistry, windowId) }
     
     // Create split view state that manages all tab panels
     val splitViewState = rememberSplitViewState(
         tabRegistry = tabRegistry,
+        windowId = windowId,
         initialTabsComponent = tabsComponent
     )
 
@@ -1245,9 +1246,11 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for runner terminal events (Issue #347 - Runner in terminal sidebar)
-    LaunchedEffect(splitViewState) {
+    // Issue #498: Filter events by window to prevent duplicate tabs in all windows
+    LaunchedEffect(splitViewState, windowId) {
         // Open runner terminal events
         RunnerTerminalEventBus.openEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 println("[BossApp] Runner terminal open event: ${event.configName}")
 
@@ -1260,8 +1263,9 @@ fun ComponentContext.BossApp(
                     // First, ensure the sidebar terminal panel is open
                     PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
 
-                    // Create a new tab in the sidebar terminal with the command
+                    // Create a new tab in the sidebar terminal with the command (window-scoped)
                     val success = RunnerTerminalService.openInSidebarTerminal(
+                        windowId = windowId,
                         configId = event.configId,
                         command = event.command,
                         workingDirectory = event.workingDirectory,
@@ -1292,8 +1296,8 @@ fun ComponentContext.BossApp(
                 val panel = splitViewState.findPanelWithTab(event.terminalId)
                 panel?.tabsComponent?.removeTabById(event.terminalId)
 
-                // Notify service that terminal was removed
-                RunnerTerminalService.removeTerminal(event.terminalId)
+                // Notify service that terminal was removed (window-scoped)
+                RunnerTerminalService.removeTerminal(windowId, event.terminalId)
             }
             .launchIn(this)
 
@@ -1308,16 +1312,19 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for Git terminal events (opens git commands in sidebar terminal)
-    LaunchedEffect(splitViewState) {
+    // Issue #498: Filter events by window to prevent duplicate tabs in all windows
+    LaunchedEffect(splitViewState, windowId) {
         GitTerminalEventBus.openEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 println("[BossApp] Git terminal event: ${event.operationName} - ${event.command}")
 
                 // Open the terminal panel if not already open
                 PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
 
-                // Create a new tab in the sidebar terminal with the git command
+                // Create a new tab in the sidebar terminal with the git command (window-scoped)
                 val success = GitTerminalService.openInSidebarTerminal(
+                    windowId = windowId,
                     command = event.command,
                     workingDirectory = event.workingDirectory,
                     operationName = event.operationName
@@ -1379,7 +1386,7 @@ fun ComponentContext.BossApp(
                     RunConfigurationManager.selectConfiguration(configToSelect.id)
                 }
 
-                RunExecutionService.execute(event.configuration, event.debug)
+                RunExecutionService.execute(event.configuration, event.debug, windowId)
             }
             .launchIn(this)
 

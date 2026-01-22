@@ -57,24 +57,32 @@ data class PendingRunnerCommand(
     val configId: String? = null
 )
 
-/** Pending command to run when sidebar terminal first renders (thread-safe) */
-private val pendingRunnerCommand = AtomicReference<PendingRunnerCommand?>(null)
+/** Pending commands per window to run when sidebar terminal first renders (thread-safe) */
+private val pendingRunnerCommands = java.util.concurrent.ConcurrentHashMap<String, PendingRunnerCommand>()
 
 /**
- * Set a pending command to run when the sidebar terminal panel opens.
+ * Set a pending command to run when the sidebar terminal panel opens for a specific window.
  * This should be called BEFORE opening the panel.
- * Thread-safe via AtomicReference.
+ * Thread-safe via ConcurrentHashMap.
+ *
+ * @param windowId The window ID to set the command for
+ * @param command The command to run
+ * @param workingDirectory Optional working directory for the terminal
+ * @param configId Optional configuration ID for runner tracking
  */
-fun setPendingSidebarCommand(command: String, workingDirectory: String?, configId: String? = null) {
-    pendingRunnerCommand.set(PendingRunnerCommand(command, workingDirectory, configId))
+fun setPendingSidebarCommand(windowId: String, command: String, workingDirectory: String?, configId: String? = null) {
+    pendingRunnerCommands[windowId] = PendingRunnerCommand(command, workingDirectory, configId)
 }
 
 /**
- * Get and clear the pending command (called by TabbedTerminalContent on render).
- * Thread-safe via AtomicReference.getAndSet().
+ * Get and clear the pending command for a specific window (called by TabbedTerminalContent on render).
+ * Thread-safe via ConcurrentHashMap.remove().
+ *
+ * @param windowId The window ID to get the command for
+ * @return The pending command, or null if none
  */
-fun consumePendingSidebarCommand(): PendingRunnerCommand? {
-    return pendingRunnerCommand.getAndSet(null)
+fun consumePendingSidebarCommand(windowId: String): PendingRunnerCommand? {
+    return pendingRunnerCommands.remove(windowId)
 }
 
 /**
@@ -96,21 +104,21 @@ actual fun TabbedTerminalContent(
 ) {
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
-    // Get current window ID for event filtering (Issue #498)
-    val windowId = LocalWindowId.current
+    // Get current window ID for per-window terminal isolation (Issue #498)
+    val windowId = LocalWindowId.current ?: return
 
     // Observe reset generation to force recomposition when terminals are reset
     val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
 
-    // Check if this is a fresh terminal (not in registry yet)
-    val isNew = !TabbedTerminalStateRegistry.contains(SIDEBAR_TERMINAL_ID)
+    // Check if this is a fresh terminal (not in registry yet for this window)
+    val isNew = !TabbedTerminalStateRegistry.contains(windowId, SIDEBAR_TERMINAL_ID)
 
     // Use persistent state so runner can send commands to this terminal
     // Key on resetGeneration to force re-creation after reset
-    val state = remember(resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(SIDEBAR_TERMINAL_ID) }
+    val state = remember(resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(windowId, SIDEBAR_TERMINAL_ID) }
 
-    // Check for pending runner command (set before panel opened)
-    val pendingCommand = remember { if (isNew) consumePendingSidebarCommand() else null }
+    // Check for pending runner command (set before panel opened) - window-scoped
+    val pendingCommand = remember { if (isNew) consumePendingSidebarCommand(windowId) else null }
 
     // Override settings to always show tab bar for runner integration
     val sidebarSettings = remember {
@@ -130,13 +138,15 @@ actual fun TabbedTerminalContent(
     }
 
     // Register the first tab's ID using session listener (callback-based, no polling)
+    // Capture windowId for use in listener
+    val capturedWindowId = windowId
     androidx.compose.runtime.DisposableEffect(pendingCommand?.configId) {
         if (pendingCommand?.configId != null) {
             val configId = pendingCommand.configId
             val listener = object : ai.rever.bossterm.compose.tabs.TerminalSessionListener {
                 override fun onSessionCreated(session: ai.rever.bossterm.compose.TerminalSession) {
-                    // Register the first session's ID for this config
-                    TabbedTerminalStateRegistry.registerSidebarTabId(configId, session.id)
+                    // Register the first session's ID for this config (window-scoped)
+                    TabbedTerminalStateRegistry.registerSidebarTabId(capturedWindowId, configId, session.id)
                     // Remove listener after first session (we only need the initial tab)
                     state.removeSessionListener(this)
                 }
@@ -178,18 +188,18 @@ actual fun TabbedTerminalContent(
                 workingDirectory = effectiveWorkingDir,
                 settingsOverride = sidebarSettings,
                 onExit = {
-                    TabbedTerminalStateRegistry.remove(SIDEBAR_TERMINAL_ID)
-                    // Clean up all runner configs when sidebar terminal exits
-                    RunnerTerminalService.removeTerminal(SIDEBAR_TERMINAL_ID)
+                    TabbedTerminalStateRegistry.remove(windowId, SIDEBAR_TERMINAL_ID)
+                    // Clean up all runner configs for this window's sidebar terminal
+                    RunnerTerminalService.removeTerminal(windowId, SIDEBAR_TERMINAL_ID)
                     onExit()
                 },
                 onTabClose = { tabId ->
                     // When a tab is closed in sidebar terminal, check if it's a runner config
-                    // and clean up the runner state for just that config
-                    val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(tabId)
+                    // and clean up the runner state for just that config (window-scoped)
+                    val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(windowId, tabId)
                     if (configId != null) {
-                        RunnerTerminalService.removeConfig(configId)
-                        TabbedTerminalStateRegistry.removeSidebarConfigTracking(configId)
+                        RunnerTerminalService.removeConfig(windowId, configId)
+                        TabbedTerminalStateRegistry.removeSidebarConfigTracking(windowId, configId)
                     }
                 },
                 onShowSettings = onShowSettings,
@@ -233,14 +243,15 @@ actual fun PersistentTabbedTerminalContent(
     // Observe reset generation to force recomposition when terminals are reset
     val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
 
-    // Check if this is a new terminal (not already in registry)
-    val isNew = !TabbedTerminalStateRegistry.contains(terminalId)
-    // Key on both terminalId and resetGeneration to force re-creation after reset
-    val state = remember(terminalId, resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(terminalId) }
     val settings by SettingsManager.instance.settings.collectAsState()
     val scope = rememberCoroutineScope()
-    // Get current window ID for event filtering (Issue #498)
-    val windowId = LocalWindowId.current
+    // Get current window ID for per-window terminal isolation (Issue #498)
+    val windowId = LocalWindowId.current ?: return
+
+    // Check if this is a new terminal (not already in registry for this window)
+    val isNew = !TabbedTerminalStateRegistry.contains(windowId, terminalId)
+    // Key on both terminalId and resetGeneration to force re-creation after reset
+    val state = remember(terminalId, resetGeneration) { TabbedTerminalStateRegistry.getOrCreate(windowId, terminalId) }
     val effectiveWorkingDir = if (isNew) workingDirectory else null
 
     // Welcome Wizard support - show on first launch when onboarding not completed
@@ -288,7 +299,7 @@ actual fun PersistentTabbedTerminalContent(
                 initialCommand = normalizedInitialCommand,
                 workingDirectory = effectiveWorkingDir,
                 onExit = {
-                    TabbedTerminalStateRegistry.remove(terminalId)
+                    TabbedTerminalStateRegistry.remove(windowId, terminalId)
                     onExit()
                 },
                 onShowSettings = onShowSettings,
@@ -311,8 +322,11 @@ actual fun PersistentTabbedTerminalContent(
 }
 
 /**
- * Registry to store TabbedTerminal states by ID, allowing them to persist across
+ * Registry to store TabbedTerminal states by window and terminal ID, allowing them to persist across
  * composition tree changes (e.g., when switching tabs).
+ *
+ * Uses composite keys of format "$windowId:$terminalId" to ensure per-window isolation.
+ * This prevents terminal state from being shared across multiple windows (Issue #498).
  */
 object TabbedTerminalStateRegistry {
     private val states = mutableMapOf<String, TabbedTerminalState>()
@@ -332,28 +346,51 @@ object TabbedTerminalStateRegistry {
     private val _resetGeneration = MutableStateFlow(0)
     val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
-    fun getOrCreate(terminalId: String): TabbedTerminalState {
-        return states.getOrPut(terminalId) { TabbedTerminalState() }
+    /** Create a composite key for window-scoped terminal state */
+    private fun key(windowId: String, terminalId: String) = "$windowId:$terminalId"
+
+    fun getOrCreate(windowId: String, terminalId: String): TabbedTerminalState {
+        return states.getOrPut(key(windowId, terminalId)) { TabbedTerminalState() }
     }
 
-    fun get(terminalId: String): TabbedTerminalState? = states[terminalId]
+    fun get(windowId: String, terminalId: String): TabbedTerminalState? = states[key(windowId, terminalId)]
 
-    fun remove(terminalId: String) {
-        states.remove(terminalId)?.dispose()
+    fun remove(windowId: String, terminalId: String) {
+        states.remove(key(windowId, terminalId))?.dispose()
     }
 
-    fun contains(terminalId: String): Boolean = terminalId in states
+    fun contains(windowId: String, terminalId: String): Boolean = key(windowId, terminalId) in states
 
     /**
-     * Send input bytes to a terminal by ID.
+     * Remove all terminal states for a specific window.
+     * Called when a window is closed.
+     *
+     * @param windowId The window ID to clean up
+     * @return Number of terminal states that were disposed
+     */
+    fun removeAllForWindow(windowId: String): Int {
+        val prefix = "$windowId:"
+        val keysToRemove = states.keys.filter { it.startsWith(prefix) }
+        keysToRemove.forEach { key ->
+            states.remove(key)?.dispose()
+        }
+        // Also clean up sidebar config tracking for this window
+        clearSidebarConfigTrackingForWindow(windowId)
+        println("[TabbedTerminalStateRegistry] Removed ${keysToRemove.size} terminals for window: $windowId")
+        return keysToRemove.size
+    }
+
+    /**
+     * Send input bytes to a terminal by window and terminal ID.
      * Used for sending control characters like Ctrl+C (0x03).
      *
+     * @param windowId The window ID
      * @param terminalId The terminal ID to send input to
      * @param bytes The bytes to send
      * @return true if the terminal exists and input was sent, false otherwise
      */
-    fun sendInput(terminalId: String, bytes: ByteArray): Boolean {
-        val state = states[terminalId] ?: return false
+    fun sendInput(windowId: String, terminalId: String, bytes: ByteArray): Boolean {
+        val state = states[key(windowId, terminalId)] ?: return false
         state.sendInput(bytes)
         return true
     }
@@ -361,22 +398,24 @@ object TabbedTerminalStateRegistry {
     /**
      * Send Ctrl+C (interrupt signal) to a terminal.
      *
+     * @param windowId The window ID
      * @param terminalId The terminal ID to send Ctrl+C to
      * @return true if the terminal exists and Ctrl+C was sent, false otherwise
      */
-    fun sendCtrlC(terminalId: String): Boolean {
-        return sendInput(terminalId, byteArrayOf(0x03))
+    fun sendCtrlC(windowId: String, terminalId: String): Boolean {
+        return sendInput(windowId, terminalId, byteArrayOf(0x03))
     }
 
     /**
      * Close the active tab in a terminal.
      * This will terminate the running process and close the tab.
      *
+     * @param windowId The window ID
      * @param terminalId The terminal ID to close the active tab in
      * @return true if the terminal exists and tab was closed, false otherwise
      */
-    fun closeActiveTab(terminalId: String): Boolean {
-        val state = states[terminalId] ?: return false
+    fun closeActiveTab(windowId: String, terminalId: String): Boolean {
+        val state = states[key(windowId, terminalId)] ?: return false
         state.closeActiveTab()
         return true
     }
@@ -385,30 +424,36 @@ object TabbedTerminalStateRegistry {
      * Run a command in a terminal by sending it as input.
      * This sends the command text followed by Enter to execute it.
      *
+     * @param windowId The window ID
      * @param terminalId The terminal ID to send the command to
      * @param command The command to run
      * @return true if the terminal exists and command was sent, false otherwise
      */
-    fun runCommand(terminalId: String, command: String): Boolean {
-        val state = states[terminalId] ?: return false
+    fun runCommand(windowId: String, terminalId: String, command: String): Boolean {
+        val state = states[key(windowId, terminalId)] ?: return false
         // Send the command followed by Enter (newline)
         val commandWithEnter = "$command\n"
         state.sendInput(commandWithEnter.toByteArray(Charsets.UTF_8))
         return true
     }
 
-    // Track configId → stable tabId for sidebar terminal tabs
+    // Track (windowId, configId) → stable tabId for sidebar terminal tabs
     // Uses BossTerm 1.0.61+ stable tab ID API
+    // Key format: "$windowId:$configId"
     private val sidebarConfigToTabId = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** Create a composite key for sidebar config tracking */
+    private fun sidebarConfigKey(windowId: String, configId: String) = "$windowId:$configId"
+
     /**
-     * Run a command in the sidebar terminal.
+     * Run a command in the sidebar terminal for a specific window.
      * - First run (panel not open): Sets pending command, panel will use it on render
      * - First run (panel already open): Creates a new tab with configId as stable tabId
      * - Re-run: Sends Ctrl+C to the config's tab by stable tabId, waits, then sends new command
      *
      * Uses BossTerm 1.0.61+ stable tab ID API for reliable tab targeting.
      *
+     * @param windowId The window ID
      * @param command The command to run
      * @param workingDirectory Optional working directory for the terminal
      * @param configId The configuration ID (used as stable tabId for the tab)
@@ -416,18 +461,20 @@ object TabbedTerminalStateRegistry {
      * @return true if command was sent successfully
      */
     fun newSidebarTab(
+        windowId: String,
         command: String,
         workingDirectory: String? = null,
         configId: String? = null,
         isRerun: Boolean = false
     ): Boolean {
-        val terminalExists = contains(SIDEBAR_TERMINAL_ID)
-        println("[SidebarTerminal] newSidebarTab: isRerun=$isRerun, terminalExists=$terminalExists, configId=$configId, command=$command")
+        val terminalExists = contains(windowId, SIDEBAR_TERMINAL_ID)
+        println("[SidebarTerminal] newSidebarTab: windowId=$windowId, isRerun=$isRerun, terminalExists=$terminalExists, configId=$configId, command=$command")
 
         if (isRerun && configId != null) {
             // Re-run: send Ctrl+C to the config's tab by stable tabId, wait, then send new command
-            val state = get(SIDEBAR_TERMINAL_ID) ?: return false
-            val tabId = sidebarConfigToTabId[configId]
+            val state = get(windowId, SIDEBAR_TERMINAL_ID) ?: return false
+            val configKey = sidebarConfigKey(windowId, configId)
+            val tabId = sidebarConfigToTabId[configKey]
 
             if (tabId != null) {
                 println("[SidebarTerminal] Re-run: switching to tab '$tabId', sending Ctrl+C, then command after delay")
@@ -437,12 +484,13 @@ object TabbedTerminalStateRegistry {
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = ShellUtils.buildCommandWithWorkingDirectory(command, workingDirectory)
                 val capturedTabId = tabId // Capture for lambda
+                val capturedWindowId = windowId // Capture for lambda
                 CoroutineScope(Dispatchers.Default).launch {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
-                    if (contains(SIDEBAR_TERMINAL_ID)) {
+                    if (contains(capturedWindowId, SIDEBAR_TERMINAL_ID)) {
                         val clearCommand = ShellUtils.chainCommands("clear", fullCommand)
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
+                        get(capturedWindowId, SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8), capturedTabId)
                     }
                 }
             } else {
@@ -451,22 +499,23 @@ object TabbedTerminalStateRegistry {
                 state.sendInput(byteArrayOf(0x03))
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = ShellUtils.buildCommandWithWorkingDirectory(command, workingDirectory)
+                val capturedWindowId = windowId // Capture for lambda
                 CoroutineScope(Dispatchers.Default).launch {
                     delay(delayMs)
                     // Check if terminal still exists before sending (prevents sending to disposed terminal)
-                    if (contains(SIDEBAR_TERMINAL_ID)) {
+                    if (contains(capturedWindowId, SIDEBAR_TERMINAL_ID)) {
                         val clearCommand = ShellUtils.chainCommands("clear", fullCommand)
-                        get(SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8))
+                        get(capturedWindowId, SIDEBAR_TERMINAL_ID)?.sendInput("$clearCommand\n".toByteArray(Charsets.UTF_8))
                     }
                 }
             }
         } else if (!terminalExists) {
             // First run, panel not open yet: set pending command for TabbedTerminalContent to use
-            println("[SidebarTerminal] First run (panel opening): setting pending command with configId=$configId")
-            setPendingSidebarCommand(command, workingDirectory, configId)
+            println("[SidebarTerminal] First run (panel opening): setting pending command with configId=$configId for window=$windowId")
+            setPendingSidebarCommand(windowId, command, workingDirectory, configId)
         } else {
             // Panel already open, new config: create a new tab with configId as stable tabId
-            val state = get(SIDEBAR_TERMINAL_ID) ?: return false
+            val state = get(windowId, SIDEBAR_TERMINAL_ID) ?: return false
             println("[SidebarTerminal] New config (panel open): creating new tab with tabId=$configId")
 
             // Normalize initialCommand to ensure auto-execution on Windows
@@ -484,8 +533,9 @@ object TabbedTerminalStateRegistry {
             state.createTab(workingDir = workingDirectory, initialCommand = normalizedCommand, tabId = configId)
             // Record the mapping (configId is the tabId)
             if (configId != null) {
-                sidebarConfigToTabId[configId] = configId
-                println("[SidebarTerminal] Recorded tabId '$configId' for config")
+                val configKey = sidebarConfigKey(windowId, configId)
+                sidebarConfigToTabId[configKey] = configId
+                println("[SidebarTerminal] Recorded tabId '$configId' for config in window=$windowId")
             }
         }
         return true
@@ -494,30 +544,60 @@ object TabbedTerminalStateRegistry {
     /**
      * Register the tabId for a config after the first tab is created.
      * Called from TabbedTerminalContent after the initial tab renders.
+     *
+     * @param windowId The window ID
+     * @param configId The configuration ID
+     * @param tabId The terminal tab ID
      */
-    fun registerSidebarTabId(configId: String, tabId: String) {
-        sidebarConfigToTabId[configId] = tabId
-        println("[SidebarTerminal] Registered tabId '$tabId' for config '$configId'")
+    fun registerSidebarTabId(windowId: String, configId: String, tabId: String) {
+        val configKey = sidebarConfigKey(windowId, configId)
+        sidebarConfigToTabId[configKey] = tabId
+        println("[SidebarTerminal] Registered tabId '$tabId' for config '$configId' in window=$windowId")
     }
 
     /**
      * Remove tab tracking for a config when it's stopped/removed.
+     *
+     * @param windowId The window ID
+     * @param configId The configuration ID
      */
-    fun removeSidebarConfigTracking(configId: String) {
-        sidebarConfigToTabId.remove(configId)
+    fun removeSidebarConfigTracking(windowId: String, configId: String) {
+        val configKey = sidebarConfigKey(windowId, configId)
+        sidebarConfigToTabId.remove(configKey)
     }
 
     /**
      * Get the config ID for a sidebar tab ID (reverse lookup).
      * Returns the configId if found, null otherwise.
+     *
+     * @param windowId The window ID
+     * @param tabId The terminal tab ID
+     * @return The config ID, or null if not found
      */
-    fun getConfigIdForSidebarTab(tabId: String): String? {
-        return sidebarConfigToTabId.entries.find { it.value == tabId }?.key
+    fun getConfigIdForSidebarTab(windowId: String, tabId: String): String? {
+        val prefix = "$windowId:"
+        return sidebarConfigToTabId.entries
+            .filter { it.key.startsWith(prefix) && it.value == tabId }
+            .map { it.key.removePrefix(prefix) }
+            .firstOrNull()
+    }
+
+    /**
+     * Clear all sidebar config tracking for a specific window.
+     *
+     * @param windowId The window ID
+     */
+    fun clearSidebarConfigTrackingForWindow(windowId: String) {
+        val prefix = "$windowId:"
+        val keysToRemove = sidebarConfigToTabId.keys.filter { it.startsWith(prefix) }
+        keysToRemove.forEach { sidebarConfigToTabId.remove(it) }
     }
 
     /**
      * Clear all sidebar config tracking (e.g., when sidebar terminal is closed).
+     * @deprecated Use clearSidebarConfigTrackingForWindow(windowId) instead
      */
+    @Deprecated("Use clearSidebarConfigTrackingForWindow(windowId) instead", ReplaceWith("clearSidebarConfigTrackingForWindow(windowId)"))
     fun clearSidebarConfigTracking() {
         sidebarConfigToTabId.clear()
     }
@@ -549,8 +629,10 @@ object TabbedTerminalStateRegistry {
 }
 
 /**
- * Registry to store terminal states by ID, allowing them to persist across
+ * Registry to store terminal states by window and terminal ID, allowing them to persist across
  * composition tree changes (e.g., when splitting panels).
+ *
+ * Uses composite keys of format "$windowId:$terminalId" for per-window isolation.
  */
 private object TerminalStateRegistry {
     private val states = mutableMapOf<String, EmbeddableTerminalState>()
@@ -559,15 +641,18 @@ private object TerminalStateRegistry {
     private val _resetGeneration = MutableStateFlow(0)
     val resetGeneration: StateFlow<Int> = _resetGeneration.asStateFlow()
 
-    fun getOrCreate(terminalId: String): EmbeddableTerminalState {
-        return states.getOrPut(terminalId) { EmbeddableTerminalState() }
+    /** Create a composite key for window-scoped terminal state */
+    private fun key(windowId: String, terminalId: String) = "$windowId:$terminalId"
+
+    fun getOrCreate(windowId: String, terminalId: String): EmbeddableTerminalState {
+        return states.getOrPut(key(windowId, terminalId)) { EmbeddableTerminalState() }
     }
 
-    fun remove(terminalId: String) {
-        states.remove(terminalId)?.dispose()
+    fun remove(windowId: String, terminalId: String) {
+        states.remove(key(windowId, terminalId))?.dispose()
     }
 
-    fun contains(terminalId: String): Boolean = terminalId in states
+    fun contains(windowId: String, terminalId: String): Boolean = key(windowId, terminalId) in states
 
     fun resetAll(): Int {
         val count = states.size
@@ -693,12 +778,17 @@ actual fun TerminalContent(
     // Uses TabbedTerminalStateRegistry's generation since both registries are reset together
     val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
 
+    val settings by SettingsManager.instance.settings.collectAsState()
+    val scope = rememberCoroutineScope()
+    // Get current window ID for per-window terminal isolation (Issue #498)
+    val windowId = LocalWindowId.current ?: return
+
     // If terminalId is provided, use the registry for persistent state
     // Otherwise, use compose's remember (ephemeral state)
     val terminalState = if (terminalId != null) {
-        val isNew = !TerminalStateRegistry.contains(terminalId)
+        val isNew = !TerminalStateRegistry.contains(windowId, terminalId)
         // Key on both terminalId and resetGeneration to force re-creation after reset
-        val state = remember(terminalId, resetGeneration) { TerminalStateRegistry.getOrCreate(terminalId) }
+        val state = remember(terminalId, resetGeneration) { TerminalStateRegistry.getOrCreate(windowId, terminalId) }
 
         // Clean up when this composable is permanently removed
         DisposableEffect(terminalId) {
@@ -717,10 +807,6 @@ actual fun TerminalContent(
     }
 
     val (isNew, state) = terminalState
-    val settings by SettingsManager.instance.settings.collectAsState()
-    val scope = rememberCoroutineScope()
-    // Get current window ID for event filtering (Issue #498)
-    val windowId = LocalWindowId.current
 
     // Use key() to force complete recreation of terminal when reset happens
     key(resetGeneration) {
@@ -734,8 +820,8 @@ actual fun TerminalContent(
                 initialCommand = if (isNew) initialCommand else null,
                 workingDirectory = if (isNew) workingDirectory else null,
                 onExit = { _ ->
-                    // Clean up registry when terminal exits
-                    terminalId?.let { TerminalStateRegistry.remove(it) }
+                    // Clean up registry when terminal exits (window-scoped)
+                    terminalId?.let { TerminalStateRegistry.remove(windowId, it) }
                     onExit()
                 },
                 onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },

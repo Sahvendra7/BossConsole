@@ -28,40 +28,61 @@ expect object RunnerTerminalService {
     val runningConfigs: StateFlow<Set<String>>
 
     /**
+     * Map of configId to set of windowIds where the config is running.
+     * Used for per-window button state (Issue #498).
+     */
+    val configToWindows: StateFlow<Map<String, Set<String>>>
+
+    /**
      * Check if a specific configuration is currently running.
      */
     fun isConfigRunning(configId: String): Boolean
+
+    /**
+     * Check if a specific configuration is currently running in a specific window.
+     * Used for per-window button state isolation.
+     *
+     * @param windowId The window ID to check
+     * @param configId The configuration ID to check
+     * @return True if the config is running in the specified window
+     */
+    fun isConfigRunningInWindow(windowId: String, configId: String): Boolean
 
     /**
      * Open or reuse a runner terminal for the given configuration.
      * If a terminal already exists for this config, it will be reused.
      *
      * @param config The run configuration to execute
+     * @param windowId The window ID that initiated the run (Issue #498)
      * @param onTerminalCreated Callback when terminal tab is created, receives terminal ID
      * @return The terminal tab ID
      */
     suspend fun openRunnerTerminal(
         config: RunConfiguration,
+        windowId: String,
         onTerminalCreated: (String) -> Unit = {}
     ): String
 
     /**
      * Stop the runner for a configuration by sending Ctrl+C.
      *
+     * @param windowId The window ID that initiated the stop (Issue #498)
      * @param configId The configuration ID to stop
      * @return True if stop signal was sent, false if config not running
      */
-    suspend fun stopRunner(configId: String): Boolean
+    suspend fun stopRunner(windowId: String, configId: String): Boolean
 
     /**
      * Re-run a configuration: stop current process (if running) and run again.
      *
      * @param config The run configuration to re-run
+     * @param windowId The window ID that initiated the run (Issue #498)
      * @param onTerminalCreated Callback when terminal tab is created
      * @return The terminal tab ID
      */
     suspend fun rerunRunner(
         config: RunConfiguration,
+        windowId: String,
         onTerminalCreated: (String) -> Unit = {}
     ): String
 
@@ -76,9 +97,10 @@ expect object RunnerTerminalService {
     /**
      * Remove tracking for a terminal tab (when tab is closed).
      *
+     * @param windowId The window ID
      * @param terminalId The terminal tab ID
      */
-    fun removeTerminal(terminalId: String)
+    fun removeTerminal(windowId: String, terminalId: String)
 
     /**
      * Get the configuration ID associated with a terminal tab.
@@ -93,15 +115,17 @@ expect object RunnerTerminalService {
      * Unlike removeTerminal which removes all configs for a terminal,
      * this only removes one specific config.
      *
+     * @param windowId The window ID
      * @param configId The configuration ID to remove
      */
-    fun removeConfig(configId: String)
+    fun removeConfig(windowId: String, configId: String)
 
     /**
      * Open a runner command in the sidebar terminal panel.
      * Creates a new tab in the sidebar terminal with the given command.
      * Also updates the configId → terminalId mapping to use SIDEBAR_TERMINAL_ID.
      *
+     * @param windowId The window ID for window-scoped terminal state
      * @param configId The configuration ID for tracking
      * @param command The command to run
      * @param workingDirectory Optional working directory
@@ -110,6 +134,7 @@ expect object RunnerTerminalService {
      * @return True if the sidebar terminal exists and tab was created
      */
     fun openInSidebarTerminal(
+        windowId: String,
         configId: String,
         command: String,
         workingDirectory: String?,

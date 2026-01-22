@@ -715,49 +715,54 @@ actual object GitService {
 
     // ===== Terminal Integration Implementation =====
 
-    actual suspend fun pullInTerminal() {
+    actual suspend fun pullInTerminal(windowId: String) {
         val projectPath = currentProjectPath ?: return
         GitTerminalEventBus.openGitTerminal(
             command = "git pull",
             workingDirectory = projectPath,
-            operationName = "Pull"
+            operationName = "Pull",
+            sourceWindowId = windowId
         )
     }
 
-    actual suspend fun pushInTerminal() {
+    actual suspend fun pushInTerminal(windowId: String) {
         val projectPath = currentProjectPath ?: return
         GitTerminalEventBus.openGitTerminal(
             command = "git push -u origin HEAD",
             workingDirectory = projectPath,
-            operationName = "Push"
+            operationName = "Push",
+            sourceWindowId = windowId
         )
     }
 
-    actual suspend fun mergeInTerminal(branchName: String) {
+    actual suspend fun mergeInTerminal(windowId: String, branchName: String) {
         val projectPath = currentProjectPath ?: return
         GitTerminalEventBus.openGitTerminal(
             command = "git merge $branchName",
             workingDirectory = projectPath,
-            operationName = "Merge"
+            operationName = "Merge",
+            sourceWindowId = windowId
         )
     }
 
-    actual suspend fun rebaseInTerminal(branchName: String) {
+    actual suspend fun rebaseInTerminal(windowId: String, branchName: String) {
         val projectPath = currentProjectPath ?: return
         GitTerminalEventBus.openGitTerminal(
             command = "git rebase $branchName",
             workingDirectory = projectPath,
-            operationName = "Rebase"
+            operationName = "Rebase",
+            sourceWindowId = windowId
         )
     }
 
-    actual suspend fun runInTerminal(vararg args: String) {
+    actual suspend fun runInTerminal(windowId: String, vararg args: String) {
         val projectPath = currentProjectPath ?: return
         val command = "git ${args.joinToString(" ")}"
         GitTerminalEventBus.openGitTerminal(
             command = command,
             workingDirectory = projectPath,
-            operationName = "Git"
+            operationName = "Git",
+            sourceWindowId = windowId
         )
     }
 

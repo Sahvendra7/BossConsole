@@ -7,6 +7,7 @@ import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.foundation.layout.*
@@ -359,6 +360,8 @@ fun BossDraggableComponent.BossTopLeftBar(
     onShowTopOfMind: (() -> Unit)? = null,
     onNewProject: (() -> Unit)? = null
 ) {
+    // Get window ID for per-window terminal isolation (Issue #498)
+    val windowId = LocalWindowId.current ?: return
     // Use per-window project state for independent project per window
     val windowProjectState = LocalWindowProjectState.current
     val selectedProject by windowProjectState?.selectedProject?.collectAsState()
@@ -471,18 +474,18 @@ fun BossDraggableComponent.BossTopLeftBar(
                     }
                 },
                 onMerge = { branchName ->
-                    scope.launch { GitService.mergeInTerminal(branchName) }
+                    scope.launch { GitService.mergeInTerminal(windowId, branchName) }
                 },
                 onRebase = { branchName ->
-                    scope.launch { GitService.rebaseInTerminal(branchName) }
+                    scope.launch { GitService.rebaseInTerminal(windowId, branchName) }
                 },
                 onCreateBranch = { showCreateBranchDialog = true },
                 onCommit = { showCommitDialog = true },
                 onPull = {
-                    scope.launch { GitService.pullInTerminal() }
+                    scope.launch { GitService.pullInTerminal(windowId) }
                 },
                 onPush = {
-                    scope.launch { GitService.pushInTerminal() }
+                    scope.launch { GitService.pushInTerminal(windowId) }
                 },
                 onCreatePR = createPRUrl?.let { url ->
                     {

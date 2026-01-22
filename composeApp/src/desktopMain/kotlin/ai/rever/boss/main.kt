@@ -374,6 +374,11 @@ fun main(args: Array<String>) {
                                 .getState(windowState.id)
                                 ?.disposeAllBrowsersBlocking()
 
+                            // Clean up runner terminal state to prevent memory leaks (Issue #498)
+                            ai.rever.boss.run.RunnerTerminalService.cleanupWindow(windowState.id)
+                            ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+                                .removeAllForWindow(windowState.id)
+
                             WindowManager.closeWindow(windowState.id)
                             ai.rever.boss.utils.WindowFocusManager.unregisterWindow(windowState.id)
                             // Don't call exitApplication - keep app running (macOS style)

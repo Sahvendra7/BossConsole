@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Terminal
+import ai.rever.boss.window.LocalWindowId
 import kotlinx.coroutines.launch
 
 /**
@@ -57,15 +58,20 @@ import kotlinx.coroutines.launch
 @Composable
 fun BossTopRunBar() {
     val scope = rememberCoroutineScope()
+    // Issue #498: Get window ID for multi-window support
+    val windowId = LocalWindowId.current ?: return
     val settings by RunConfigurationManager.currentSettings.collectAsState()
     val selectedConfig by RunConfigurationManager.selectedConfiguration.collectAsState()
-    val runningConfigs by RunnerTerminalService.runningConfigs.collectAsState()
 
     // Get run history - configurations that have been explicitly run
     val runHistory = settings.configurations
 
-    // Check if selected config is running
-    val isSelectedConfigRunning = selectedConfig?.let { it.id in runningConfigs } ?: false
+    // Issue #498: Observe configToWindows to trigger recomposition when window-config mappings change
+    // This ensures the stop button updates immediately when a run starts in any window
+    val configToWindows by RunnerTerminalService.configToWindows.collectAsState()
+    val isSelectedConfigRunning = selectedConfig?.let { config ->
+        configToWindows[config.id]?.contains(windowId) == true
+    } ?: false
 
     Row(
         verticalAlignment = Alignment.CenterVertically
@@ -74,7 +80,10 @@ fun BossTopRunBar() {
         RunConfigurationSelector(
             selectedConfig = selectedConfig,
             runHistory = runHistory,
-            runningConfigs = runningConfigs,
+            isConfigRunning = { configId ->
+                // Issue #498: Window-scoped check for running state using observed StateFlow
+                configToWindows[configId]?.contains(windowId) == true
+            },
             onSelect = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
@@ -83,20 +92,20 @@ fun BossTopRunBar() {
             onRun = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
-                    RunnerTerminalService.openRunnerTerminal(config)
+                    RunnerTerminalService.openRunnerTerminal(config, windowId)
                     RunConfigurationManager.addConfiguration(config)
                 }
             },
             onRerun = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
-                    RunnerTerminalService.rerunRunner(config)
+                    RunnerTerminalService.rerunRunner(config, windowId)
                 }
             },
             onStop = { config ->
                 scope.launch {
                     RunConfigurationManager.selectConfiguration(config.id)
-                    RunnerTerminalService.stopRunner(config.id)
+                    RunnerTerminalService.stopRunner(windowId, config.id)
                 }
             },
             onDelete = { config ->
@@ -119,10 +128,10 @@ fun BossTopRunBar() {
                     scope.launch {
                         if (isSelectedConfigRunning) {
                             // Re-run: stop and run again
-                            RunnerTerminalService.rerunRunner(config)
+                            RunnerTerminalService.rerunRunner(config, windowId)
                         } else {
                             // First run
-                            RunnerTerminalService.openRunnerTerminal(config)
+                            RunnerTerminalService.openRunnerTerminal(config, windowId)
                         }
                         // Also add to run history
                         RunConfigurationManager.addConfiguration(config)
@@ -142,7 +151,7 @@ fun BossTopRunBar() {
             onClick = {
                 selectedConfig?.let { config ->
                     scope.launch {
-                        RunnerTerminalService.stopRunner(config.id)
+                        RunnerTerminalService.stopRunner(windowId, config.id)
                     }
                 }
             }
@@ -210,12 +219,14 @@ private fun RunSquareButton(
  * - Not running: [Play] [Delete]
  * - Running: [Rerun] [Stop]
  * Clicking any action button also selects that configuration.
+ *
+ * Issue #498: Uses window-scoped running check instead of global set.
  */
 @Composable
 private fun RunConfigurationSelector(
     selectedConfig: RunConfiguration?,
     runHistory: List<RunConfiguration>,
-    runningConfigs: Set<String>,
+    isConfigRunning: (String) -> Boolean,
     onSelect: (RunConfiguration) -> Unit,
     onRun: (RunConfiguration) -> Unit,
     onRerun: (RunConfiguration) -> Unit,
@@ -227,7 +238,7 @@ private fun RunConfigurationSelector(
         if (runHistory.isNotEmpty()) {
             // Show run history with action buttons based on running state
             runHistory.forEach { config ->
-                val isRunning = config.id in runningConfigs
+                val isRunning = isConfigRunning(config.id)
                 add(ContextMenuItem(
                     text = config.name,
                     icon = getLanguageIcon(config.language),

@@ -10,11 +10,13 @@ import kotlinx.coroutines.flow.asSharedFlow
  * @param command The full git command to execute (including 'git' prefix)
  * @param workingDirectory The working directory for the command
  * @param operationName Human-readable name for the operation (e.g., "Pull", "Push")
+ * @param sourceWindowId The window ID that initiated the event (for per-window filtering, Issue #498)
  */
 data class GitTerminalOpenEvent(
     val command: String,
     val workingDirectory: String,
-    val operationName: String
+    val operationName: String,
+    val sourceWindowId: String
 )
 
 /**
@@ -40,17 +42,20 @@ object GitTerminalEventBus {
      * @param command The full git command to execute
      * @param workingDirectory The working directory for the command
      * @param operationName Human-readable name for the operation
+     * @param sourceWindowId The window ID that initiated the event
      */
     suspend fun openGitTerminal(
         command: String,
         workingDirectory: String,
-        operationName: String
+        operationName: String,
+        sourceWindowId: String
     ) {
         _openEvents.emit(
             GitTerminalOpenEvent(
                 command = command,
                 workingDirectory = workingDirectory,
-                operationName = operationName
+                operationName = operationName,
+                sourceWindowId = sourceWindowId
             )
         )
     }

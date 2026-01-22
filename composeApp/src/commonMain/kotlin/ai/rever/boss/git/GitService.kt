@@ -363,34 +363,41 @@ expect object GitService {
 
     /**
      * Run git pull in the terminal (for real-time output).
+     *
+     * @param windowId The window ID for per-window terminal isolation (Issue #498)
      */
-    suspend fun pullInTerminal()
+    suspend fun pullInTerminal(windowId: String)
 
     /**
      * Run git push in the terminal (for real-time output).
+     *
+     * @param windowId The window ID for per-window terminal isolation (Issue #498)
      */
-    suspend fun pushInTerminal()
+    suspend fun pushInTerminal(windowId: String)
 
     /**
      * Run git merge in the terminal (for real-time output).
      *
+     * @param windowId The window ID for per-window terminal isolation (Issue #498)
      * @param branchName Branch to merge
      */
-    suspend fun mergeInTerminal(branchName: String)
+    suspend fun mergeInTerminal(windowId: String, branchName: String)
 
     /**
      * Run git rebase in the terminal (for real-time output).
      *
+     * @param windowId The window ID for per-window terminal isolation (Issue #498)
      * @param branchName Branch to rebase onto
      */
-    suspend fun rebaseInTerminal(branchName: String)
+    suspend fun rebaseInTerminal(windowId: String, branchName: String)
 
     /**
      * Run a custom git command in the terminal.
      *
+     * @param windowId The window ID for per-window terminal isolation (Issue #498)
      * @param args Git command arguments (without 'git' prefix)
      */
-    suspend fun runInTerminal(vararg args: String)
+    suspend fun runInTerminal(windowId: String, vararg args: String)
 
     /**
      * Get the current project path (for terminal commands).

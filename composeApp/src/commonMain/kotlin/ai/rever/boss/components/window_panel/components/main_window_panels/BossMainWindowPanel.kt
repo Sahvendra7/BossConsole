@@ -995,10 +995,13 @@ val createBossAppContext get() = DefaultComponentContext(LifecycleRegistry())
 
 /**
  * Root component for the BOSS app using Decompose for navigation
+ *
+ * @param windowId The window ID for per-window terminal isolation (Issue #498)
  */
 class BossTabsComponent(
     componentContext: ComponentContext,
-    val tabRegistry: TabRegistry
+    val tabRegistry: TabRegistry,
+    val windowId: String
 ) : ComponentContext by componentContext {
 
     private val tabComponents = mutableStateMapOf<String, TabComponentWithUI>()
@@ -1036,7 +1039,7 @@ class BossTabsComponent(
             // If this is a runner terminal, notify the service to clean up tracking
             // This handles the case where user closes the tab directly (not via Stop button)
             if (it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
-                RunnerTerminalService.removeTerminal(it.id)
+                RunnerTerminalService.removeTerminal(windowId, it.id)
             }
         }
         tabsNavigation.removeTab(index)

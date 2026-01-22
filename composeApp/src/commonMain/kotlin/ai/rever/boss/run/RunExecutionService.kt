@@ -24,9 +24,10 @@ expect object RunExecutionService {
      *
      * @param config The configuration to execute
      * @param debug Whether to run in debug mode (future feature)
+     * @param windowId The window ID that initiated the run (Issue #498)
      * @return The running process info
      */
-    suspend fun execute(config: RunConfiguration, debug: Boolean = false): RunningProcess?
+    suspend fun execute(config: RunConfiguration, debug: Boolean = false, windowId: String): RunningProcess?
 
     /**
      * Stop a running process by ID.

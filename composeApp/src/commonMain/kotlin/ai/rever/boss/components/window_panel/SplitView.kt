@@ -101,13 +101,14 @@ enum class NavigationDirection {
 @Stable
 class SplitViewState(
     private val tabRegistry: TabRegistry,
+    private val windowId: String,
     initialTabsComponent: BossTabsComponent? = null
 ) {
     // Root node of the split tree
     private var _rootNode = mutableStateOf<SplitNode>(
         SplitNode.Panel(
             id = "main",
-            tabsComponent = initialTabsComponent ?: BossTabsComponent(createBossAppContext, tabRegistry)
+            tabsComponent = initialTabsComponent ?: BossTabsComponent(createBossAppContext, tabRegistry, windowId)
         )
     )
     val rootNode: SplitNode get() = _rootNode.value
@@ -405,7 +406,7 @@ class SplitViewState(
 
         // Create new panel with copied tab
         val newPanelId = "split-${Random.nextLong()}"
-        val newComponent = BossTabsComponent(createBossAppContext, tabRegistry)
+        val newComponent = BossTabsComponent(createBossAppContext, tabRegistry, windowId)
 
         // Copy tab if specified
         tabToMove?.let { tab ->
@@ -955,7 +956,7 @@ class SplitViewState(
     
     fun clearAllPanels() {
         // Reset to single main panel
-        val mainComponent = BossTabsComponent(createBossAppContext, tabRegistry)
+        val mainComponent = BossTabsComponent(createBossAppContext, tabRegistry, windowId)
         _rootNode.value = SplitNode.Panel(
             id = "main",
             tabsComponent = mainComponent
@@ -1212,9 +1213,10 @@ class SplitViewState(
 @Composable
 fun rememberSplitViewState(
     tabRegistry: TabRegistry,
+    windowId: String,
     initialTabsComponent: BossTabsComponent? = null
 ): SplitViewState {
-    return remember { SplitViewState(tabRegistry, initialTabsComponent) }
+    return remember { SplitViewState(tabRegistry, windowId, initialTabsComponent) }
 }
 
 @Composable
