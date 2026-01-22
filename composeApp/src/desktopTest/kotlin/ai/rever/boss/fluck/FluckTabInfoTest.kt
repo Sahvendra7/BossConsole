@@ -230,4 +230,135 @@ class FluckTabInfoTest {
 
         assertEquals(initialHistorySize, tabInfo.navigationHistory.size)
     }
+
+    // ==================== SHALLOW COPY FIX TESTS (Issue #406) ====================
+
+    @Test
+    fun `copy creates independent navigation history`() {
+        // Create original tab with navigation history
+        val original = createTabInfo(url = "https://a.com")
+        original.navigateToPage("Page A", "https://a.com")
+        original.navigateToPage("Page B", "https://b.com")
+
+        // Create a copy using updateTitle (which calls copy internally)
+        val copied = original.updateTitle("New Title")
+
+        // Verify initial state is the same
+        assertEquals(2, original.navigationHistory.size)
+        assertEquals(2, copied.navigationHistory.size)
+        assertEquals("https://b.com", original.currentUrl)
+        assertEquals("https://b.com", copied.currentUrl)
+
+        // Modify navigation on the copy
+        copied.navigateToPage("Page C", "https://c.com")
+
+        // Original should not be affected (this would fail with shallow copy)
+        assertEquals(2, original.navigationHistory.size)
+        assertEquals("https://b.com", original.currentUrl)
+        assertEquals(1, original.historyIndex)
+
+        // Copy should have its own history
+        assertEquals(3, copied.navigationHistory.size)
+        assertEquals("https://c.com", copied.currentUrl)
+        assertEquals(2, copied.historyIndex)
+    }
+
+    @Test
+    fun `copy with back navigation creates independent history`() {
+        // Create original tab with navigation history
+        val original = createTabInfo(url = "https://a.com")
+        original.navigateToPage("Page A", "https://a.com")
+        original.navigateToPage("Page B", "https://b.com")
+        original.navigateToPage("Page C", "https://c.com")
+
+        // Create a copy using updateTitle
+        val copied = original.updateTitle("Copied Tab")
+
+        // Navigate back on the copy
+        copied.navigateBack()
+
+        // Original should not be affected
+        assertEquals("https://c.com", original.currentUrl)
+        assertEquals(2, original.historyIndex)
+
+        // Copy should have navigated back
+        assertEquals("https://b.com", copied.currentUrl)
+        assertEquals(1, copied.historyIndex)
+
+        // Navigate forward on original
+        original.navigateToPage("Page D", "https://d.com")
+
+        // Copy should not be affected
+        assertEquals("https://b.com", copied.currentUrl)
+        assertEquals(3, copied.navigationHistory.size)
+    }
+
+    @Test
+    fun `equals is based on id and display content`() {
+        val tab1 = createTabInfo(url = "https://a.com")
+        tab1.navigateToPage("Page A", "https://a.com")
+
+        val tab2 = createTabInfo(url = "https://b.com")
+        tab2.navigateToPage("Page B", "https://b.com")
+
+        // Same id but different content (title, URL) should NOT be equal
+        assertTrue(tab1 != tab2)
+
+        // hashCode is still based on ID only, so it may be the same
+        assertEquals(tab1.hashCode(), tab2.hashCode())
+
+        // Tabs with same id AND same content should be equal
+        val tab3 = createTabInfo(url = "https://a.com")
+        tab3.navigateToPage("Page A", "https://a.com")
+        assertEquals(tab1, tab3)
+    }
+
+    @Test
+    fun `equals returns false for different ids`() {
+        val tab1 = FluckTabInfo(
+            id = "tab-1",
+            typeId = TabTypeId("fluck"),
+            _title = "Tab 1",
+            url = "https://a.com"
+        )
+
+        val tab2 = FluckTabInfo(
+            id = "tab-2",
+            typeId = TabTypeId("fluck"),
+            _title = "Tab 2",
+            url = "https://a.com"
+        )
+
+        // Different ids should not be equal
+        assertTrue(tab1 != tab2)
+        assertTrue(tab1.hashCode() != tab2.hashCode())
+    }
+
+    @Test
+    fun `copy for split view preserves current URL as initial URL`() {
+        // Create tab and navigate away from initial URL
+        val original = FluckTabInfo(
+            id = "original-tab",
+            typeId = TabTypeId("fluck"),
+            _title = "Original",
+            url = "https://initial.com"
+        )
+        original.navigateToPage("Current Page", "https://current.com")
+
+        // Simulate split view copy with new ID and current URL
+        val splitCopy = original.copy(
+            id = "split-123",
+            url = original.currentUrl,  // Should be current URL
+            _currentUrl = original.currentUrl,
+            navigationHistory = original.navigationHistory.toMutableList()
+        )
+
+        // Split copy should have current URL as both url and _currentUrl
+        assertEquals("https://current.com", splitCopy.url)
+        assertEquals("https://current.com", splitCopy.currentUrl)
+
+        // Original should be unchanged
+        assertEquals("https://initial.com", original.url)
+        assertEquals("https://current.com", original.currentUrl)
+    }
 }

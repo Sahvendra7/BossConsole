@@ -43,10 +43,12 @@ object Fluck: TabTypeInfo {
     override val icon = Icons.Outlined.Language
 }
 
-// Mutable tab info for dynamic title and icon updates
+// Tab info for dynamic title and icon updates
 // Thread Safety: Navigation methods (_currentUrl mutations) use @Synchronized for thread-safe access.
 // All callers should ideally be on Main thread, but @Synchronized provides defensive protection.
-data class FluckTabInfo(
+// Note: This is a regular class (not data class) to provide explicit control over equals() and copy().
+// equals() compares id AND display content for Compose change detection; hashCode() is ID-only for HashMap efficiency.
+class FluckTabInfo(
     override val id: String,
     override val typeId: TabTypeId,
     private var _title: String,
@@ -64,15 +66,72 @@ data class FluckTabInfo(
     override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
     val currentUrl: String @Synchronized get() = _currentUrl
     val currentZoomLevel: Double get() = _currentZoomLevel
-    
+
+    // Explicit equals() based on id AND content that affects display
+    // This ensures Compose detects when tab content changes (title, URL, etc.)
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null || other !is FluckTabInfo) return false
+
+        return id == other.id &&
+               _title == other._title &&
+               _currentUrl == other._currentUrl &&
+               _icon == other._icon &&
+               _tabIcon == other._tabIcon &&
+               faviconCacheKey == other.faviconCacheKey &&
+               _currentZoomLevel == other._currentZoomLevel
+    }
+
+    // Keep hashCode based on ID only for HashMap performance
+    override fun hashCode(): Int = id.hashCode()
+
+    // Explicit copy() method that creates independent navigationHistory list (fixes Issue #406)
+    // Note: id and typeId default to original values but can be overridden for split view use cases
+    fun copy(
+        id: String = this.id,
+        typeId: TabTypeId = this.typeId,
+        _title: String = this._title,
+        _icon: ImageVector = this._icon,
+        _tabIcon: TabIcon? = this._tabIcon,
+        url: String = this.url,
+        _currentUrl: String = this._currentUrl,
+        _currentZoomLevel: Double = this._currentZoomLevel,
+        faviconCacheKey: String? = this.faviconCacheKey,
+        navigationHistory: MutableList<Pair<String, String>>? = null,
+        historyIndex: Int = this.historyIndex
+    ): FluckTabInfo {
+        val newTab = FluckTabInfo(
+            id = id,
+            typeId = typeId,
+            _title = _title,
+            _icon = _icon,
+            _tabIcon = _tabIcon,
+            url = url,
+            _currentUrl = _currentUrl,
+            _currentZoomLevel = _currentZoomLevel,
+            faviconCacheKey = faviconCacheKey
+        )
+
+        // Copy navigation history list to prevent shared reference issues (fixes Issue #406)
+        // Pairs are immutable so they're safely shared; we just need independent list instances
+        if (navigationHistory != null) {
+            newTab.navigationHistory.addAll(navigationHistory)
+        } else {
+            newTab.navigationHistory.addAll(this.navigationHistory)
+        }
+        newTab.historyIndex = historyIndex
+
+        return newTab
+    }
+
     fun updateTitle(newTitle: String): FluckTabInfo {
         return copy(_title = newTitle)
     }
-    
+
     fun updateIcon(newIcon: ImageVector): FluckTabInfo {
         return copy(_icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
     }
-    
+
     fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
         return copy(_tabIcon = newTabIcon)
     }
@@ -85,6 +144,47 @@ data class FluckTabInfo(
         return copy(_currentZoomLevel = newLevel)
     }
 
+    fun updateNavigation(title: String, url: String): FluckTabInfo {
+        // Calculate new history and index WITHOUT mutating
+        val newHistory = navigationHistory.toMutableList()
+        var newIndex = historyIndex
+
+        // Truncate forward history if needed
+        if (newIndex < newHistory.size - 1) {
+            while (newHistory.size > newIndex + 1) {
+                newHistory.removeAt(newHistory.size - 1)
+            }
+        }
+
+        // Add new entry if not duplicate
+        if (newHistory.isEmpty() || newHistory.lastOrNull()?.second != url) {
+            newHistory.add(Pair(title, url))
+            newIndex = newHistory.size - 1
+        }
+
+        // Track page visit
+        RecentBrowserPagesManager.recordPageVisit(url, title, faviconCacheKey)
+
+        // Return NEW instance with updated values (no mutation!)
+        // Note: We DON'T update _title here because onTitleUpdate handles that separately
+        // to avoid race conditions between the two callbacks
+        return copy(
+            _currentUrl = url,
+            navigationHistory = newHistory,
+            historyIndex = newIndex
+        )
+    }
+
+    /**
+     * @deprecated Use updateNavigation() instead for immutable updates.
+     * This mutable method is kept for backward compatibility but creates inconsistent state update patterns.
+     * Prefer: `val updatedTab = tab.updateNavigation(title, url); parent.updateTab(index, updatedTab)`
+     */
+    @Deprecated(
+        message = "Use updateNavigation() for immutable state updates",
+        replaceWith = ReplaceWith("updateNavigation(title, url)"),
+        level = DeprecationLevel.WARNING
+    )
     @Synchronized
     fun navigateToPage(title: String, url: String) {
         // Update current URL
@@ -1079,8 +1179,11 @@ fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo
                 if (tabIndex >= 0) {
                     val currentTab = tabs[tabIndex]
                     if (currentTab is FluckTabInfo) {
-                        // Navigate to page
-                        currentTab.navigateToPage(title, url)
+                        // Create new instance with updated navigation (fixes synchronous title update)
+                        // Using updateNavigation() instead of navigateToPage() + copy() ensures
+                        // proper Compose recomposition without mutation-before-copy issues
+                        val updatedTab = currentTab.updateNavigation(title, url)
+                        parent.updateTab(tabIndex, updatedTab)
                     }
                 }
             }

@@ -373,33 +373,68 @@ class SplitViewState(
         }
     }
 
+    /**
+     * Finds the panel containing a tab with the given ID by recursively searching the split tree.
+     * Returns null if no panel contains a tab with that ID.
+     */
+    private fun findPanelContainingTab(tabId: String): SplitNode.Panel? {
+        fun searchNode(node: SplitNode): SplitNode.Panel? = when (node) {
+            is SplitNode.Panel -> {
+                if (node.tabsComponent.tabsState.value.tabs.any { it.id == tabId }) {
+                    node
+                } else {
+                    null
+                }
+            }
+            is SplitNode.VerticalSplit -> {
+                searchNode(node.left) ?: searchNode(node.right)
+            }
+            is SplitNode.HorizontalSplit -> {
+                searchNode(node.top) ?: searchNode(node.bottom)
+            }
+        }
+        return searchNode(_rootNode.value)
+    }
+
     fun splitPanel(
         panelId: String,
         orientation: SplitOrientation,
         tabToMove: TabInfo? = null
     ): String {
         findPanel(panelId) ?: return panelId
-        
+
         // Create new panel with copied tab
         val newPanelId = "split-${Random.nextLong()}"
         val newComponent = BossTabsComponent(createBossAppContext, tabRegistry)
-        
+
         // Copy tab if specified
         tabToMove?.let { tab ->
-            val copiedTab = when (tab) {
-                is EditorTabInfo -> 
-                    tab.copy(id = "editor-${Random.nextLong()}")
-                is FluckTabInfo ->
-                    tab.copy(
-                        id = "fluck-${Random.nextLong()}",
-                        _currentUrl = tab.currentUrl, // Preserve the current URL (not initial URL)
-                        navigationHistory = tab.navigationHistory.toMutableList() // Deep copy the history
-                    )
-                is TerminalTabInfo -> 
-                    tab.copy(id = "terminal-${Random.nextLong()}")
-                else -> tab
+            // For FluckTabInfo, get fresh instance from source panel to get latest navigation state
+            // This ensures we copy the current URL, not the stale URL from when drag started
+            val freshTab = if (tab is FluckTabInfo) {
+                // Find the panel containing this tab
+                val sourcePanel = findPanelContainingTab(tab.id)
+                val foundTab = sourcePanel?.tabsComponent?.tabsState?.value?.tabs?.find { it.id == tab.id } as? FluckTabInfo
+                foundTab ?: tab  // Fallback to provided tab if not found
+            } else {
+                tab
             }
-            
+
+            val copiedTab = when (freshTab) {
+                is EditorTabInfo ->
+                    freshTab.copy(id = "editor-${Random.nextLong()}")
+                is FluckTabInfo ->
+                    freshTab.copy(
+                        id = "fluck-${Random.nextLong()}",
+                        url = freshTab.currentUrl, // Set initial URL to current URL (Issue #406)
+                        _currentUrl = freshTab.currentUrl, // Preserve the current URL
+                        navigationHistory = freshTab.navigationHistory.toMutableList() // Deep copy the history
+                    )
+                is TerminalTabInfo ->
+                    freshTab.copy(id = "terminal-${Random.nextLong()}")
+                else -> freshTab
+            }
+
             newComponent.addTab(copiedTab).takeIf { it >= 0 }?.let(newComponent::selectTab)
         }
         
