@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.25](v8.15.25.md) | 2026-01-22 | Multi-window event filtering fixes for runner terminal, hyperlink dialogs, and browser tab titles |
 | [v8.15.24](v8.15.24.md) | 2026-01-21 | Critical multi-window crash fix and BossTerm 1.0.87 update |
 | [v8.15.23](v8.15.23.md) | 2026-01-21 | Browser scroll lag fix, improved focus mode responsiveness, file tree loading fixes, and Linux update enhancements |
 | [v8.15.22](v8.15.22.md) | 2026-01-20 | Title bar hover reveal in focus mode, search functionality for large file viewer, and logging improvements |
