@@ -2,6 +2,7 @@ package ai.rever.boss
 
 import BossTheme
 import ai.rever.boss.components.bars.horizontal.BossBottomBar
+import ai.rever.boss.components.bars.horizontal.BossTitleBar
 import ai.rever.boss.components.bars.horizontal.BossTopBar
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
@@ -2164,6 +2165,14 @@ fun ComponentContext.BossApp(
                 }
             ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
+                    // Title bar - conditionally shown based on settings
+                    // Default: hidden on Linux/Windows, shown on macOS
+                    if (showTitleBarSetting) {
+                        BossTitleBar(
+                            onToggleMaximize = onToggleMaximize
+                        )
+                    }
+
                     // Update banner - always visible (even in focus mode)
                     val updateState by UpdateManager.instance.updateState.collectAsState()
                     UpdateBanner(

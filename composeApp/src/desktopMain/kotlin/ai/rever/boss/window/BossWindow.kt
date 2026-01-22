@@ -95,6 +95,18 @@ fun ApplicationScope.BossWindow(
         // Set window appearance - using native OS title bar
         window.background = Color(BossDarkSurface.value.toInt())
 
+        // Enable native macOS fullscreen support and extend content into title bar
+        // This allows the green traffic light button to enter proper native fullscreen,
+        // extends app content into the title bar area, and makes the title bar transparent
+        // to ensure clicks reach the Compose UI layer instead of being intercepted by macOS
+        val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+        if (isMacOS) {
+            window.rootPane.putClientProperty("apple.awt.fullscreenable", true)
+            window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
+            window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
+            window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+        }
+
         // Register window for focus management (deep links, etc.)
         DisposableEffect(windowState.id, window) {
             WindowFocusManager.registerWindow(windowState.id, window)
