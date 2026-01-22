@@ -5,6 +5,7 @@ import ai.rever.boss.platform.FileNameSanitizer
 import ai.rever.boss.platform.MacOSScreenCapture
 import ai.rever.boss.platform.FileSystemUtils
 import ai.rever.boss.platform.pickSaveFile
+import ai.rever.boss.utils.WindowFocusManager
 import com.teamdev.jxbrowser.browser.callback.StartDownloadCallback
 import com.teamdev.jxbrowser.download.Download
 import com.teamdev.jxbrowser.download.event.*
@@ -955,9 +956,15 @@ object FluckEngine {
                         )
 
                         // Open the Downloads sidebar panel
-                        ai.rever.boss.components.events.PanelEventBus.openPanel(
-                            ai.rever.boss.components.plugin.panels.left_top.DownloadInfo.id
-                        )
+                        val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+                        if (focusedWindowId != null) {
+                            ai.rever.boss.components.events.PanelEventBus.openPanel(
+                                ai.rever.boss.components.plugin.panels.left_top.DownloadInfo.id,
+                                sourceWindowId = focusedWindowId
+                            )
+                        } else {
+                            println("FluckEngine: No window focused, cannot open Downloads panel")
+                        }
                     }
 
                     // Register event listeners on the download object

@@ -1,6 +1,7 @@
 package ai.rever.boss.services
 
 import ai.rever.boss.components.events.URLEventBus
+import ai.rever.boss.utils.WindowFocusManager
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -125,8 +126,15 @@ actual object URLHandlerService {
             }
 
             // Bring BOSS window to front BEFORE processing URL
-            ai.rever.boss.utils.WindowFocusManager.bringToFront()
+            WindowFocusManager.bringToFront()
             println("URLHandlerService: Brought window to front")
+
+            // Get focused window ID for multi-window support
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            if (focusedWindowId == null) {
+                println("URLHandlerService: No window focused, cannot open URL: $url")
+                return
+            }
 
             // Extract domain for tab title
             val title = extractDomain(url) ?: "Loading..."
@@ -137,11 +145,11 @@ actual object URLHandlerService {
             incremented = true  // Mark that THIS invocation incremented
             println("URLHandlerService: Processing count incremented: $count, isProcessing: ${_isProcessing.value}")
 
-            // Emit URL open event - all windows will receive it and the active window handles it
+            // Emit URL open event - focused window will handle it
             CoroutineScope(Dispatchers.Main).launch {
                 try {
-                    URLEventBus.openURL(url, title)
-                    println("URLHandlerService: Emitted URL open event for $url")
+                    URLEventBus.openURL(url, title, sourceWindowId = focusedWindowId)
+                    println("URLHandlerService: Emitted URL open event for $url (window: $focusedWindowId)")
                     
                     // CRITICAL: Wait for tab to actually be created before decrementing
                     // The event emission is instant, but tab creation (splitViewState.openUrlInActivePanel)

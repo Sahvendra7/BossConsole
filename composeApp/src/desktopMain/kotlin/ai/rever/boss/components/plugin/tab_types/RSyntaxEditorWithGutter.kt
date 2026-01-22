@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.font.FontManager
 import ai.rever.boss.components.events.NavigationTargetBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.psi.NavigationEvent
 import ai.rever.boss.psi.NavigationHandler
 import ai.rever.boss.psi.PSIBootstrap
@@ -77,6 +78,7 @@ fun RSyntaxEditorWithGutter(
     onNavigate: (NavigationEvent) -> Unit = { }
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window filtering
 
     // Thread-safe flag to prevent update loops between Compose and Swing
     // Uses AtomicBoolean for thread-safe compareAndSet operations across EDT and Main dispatcher
@@ -246,11 +248,13 @@ fun RSyntaxEditorWithGutter(
     }
 
     // Listen for navigation targets (PSI go-to-definition cursor positioning)
-    LaunchedEffect(filePath) {
+    // Issue #506: Filter by windowId for multi-window support
+    LaunchedEffect(filePath, windowId) {
         NavigationTargetBus.targets
             .collect { target ->
-                // Only process if this editor is showing the target file
-                if (target.filePath == filePath && target.line > 0) {
+                // Only process if this editor is showing the target file and event is for this window
+                val isForThisWindow = target.sourceWindowId == windowId
+                if (isForThisWindow && target.filePath == filePath && target.line > 0) {
                     SwingUtilities.invokeLater {
                         try {
                             val text = textArea.text ?: return@invokeLater

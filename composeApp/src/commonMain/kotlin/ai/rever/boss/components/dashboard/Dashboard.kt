@@ -25,6 +25,7 @@ import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.dashboard.RecentFilesManager
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -115,6 +116,7 @@ fun Dashboard(
 ) {
     val scrollState = rememberScrollState()
     val dialogScope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current
 
     // State for project open mode dialog
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
@@ -357,8 +359,10 @@ fun Dashboard(
                             title = "New Terminal",
                             shortcut = "Cmd+`",
                             onClick = {
-                                scope.launch {
-                                    TerminalEventBus.openTerminal()
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        TerminalEventBus.openTerminal(sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -384,8 +388,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Code,
                             title = "CodeBase",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(CodeBaseInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(CodeBaseInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -393,8 +399,10 @@ fun Dashboard(
                             icon = Icons.Outlined.PlayArrow,
                             title = "Run Config",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(RunConfigurationsInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(RunConfigurationsInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -402,8 +410,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Star,
                             title = "Bookmarks",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(BookmarksInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(BookmarksInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -411,8 +421,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Download,
                             title = "Downloads",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(DownloadInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(DownloadInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -420,8 +432,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Language,
                             title = "Browse Web",
                             onClick = {
-                                scope.launch {
-                                    URLEventBus.openURL("https://google.com", "Google")
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        URLEventBus.openURL("https://google.com", "Google", sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -451,8 +465,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Terminal,
                             title = "Terminal",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(TerminalInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(TerminalInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -460,8 +476,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Language,
                             title = "Browser",
                             onClick = {
-                                scope.launch {
-                                    URLEventBus.openURL("https://github.com", "GitHub")
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        URLEventBus.openURL("https://github.com", "GitHub", sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -469,8 +487,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Code,
                             title = "CodeBase",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(CodeBaseInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(CodeBaseInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -478,8 +498,10 @@ fun Dashboard(
                             icon = Icons.Outlined.PlayArrow,
                             title = "Runner",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(RunConfigurationsInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(RunConfigurationsInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )
@@ -487,8 +509,10 @@ fun Dashboard(
                             icon = Icons.Outlined.Star,
                             title = "Bookmarks",
                             onClick = {
-                                scope.launch {
-                                    PanelEventBus.togglePanel(BookmarksInfo.id)
+                                windowId?.let { wid ->
+                                    scope.launch {
+                                        PanelEventBus.togglePanel(BookmarksInfo.id, sourceWindowId = wid)
+                                    }
                                 }
                             }
                         )

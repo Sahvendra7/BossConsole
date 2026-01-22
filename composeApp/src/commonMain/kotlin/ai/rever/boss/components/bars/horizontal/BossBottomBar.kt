@@ -4,6 +4,7 @@ import BossDarkTextSecondary
 import BossDarkBorder
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.events.PanelEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.performance.PerformanceState
 import kotlinx.coroutines.CoroutineScope
@@ -156,6 +157,8 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
 
 @Composable
 fun BossRightBottomBar() {
+    val windowId = LocalWindowId.current
+
     // Performance indicator (shows memory/CPU usage)
     val showIndicator = PerformanceState.shouldShowIndicator()
     if (showIndicator) {
@@ -175,8 +178,10 @@ fun BossRightBottomBar() {
         color = BossDarkTextSecondary,
         onClick = {
             // Toggle Console panel (PanelId "console" with order 14)
-            CoroutineScope(Dispatchers.Main).launch {
-                PanelEventBus.togglePanel(PanelId("console", 14))
+            windowId?.let { wid ->
+                CoroutineScope(Dispatchers.Main).launch {
+                    PanelEventBus.togglePanel(PanelId("console", 14), sourceWindowId = wid)
+                }
             }
         }
     )

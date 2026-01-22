@@ -202,7 +202,7 @@ actual object RunnerTerminalService {
         }
 
         // Emit stop event for any additional UI handling
-        RunnerTerminalEventBus.stopRunnerTerminal(terminalId, configId)
+        RunnerTerminalEventBus.stopRunnerTerminal(terminalId, configId, sourceWindowId = windowId)
 
         return closed
     }
@@ -259,8 +259,8 @@ actual object RunnerTerminalService {
                 if (sent) {
                     println("[Runner] Sent Ctrl+C to stop existing process (window: $existingWindowId)")
                 }
-                // Close the terminal tab
-                RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId)
+                // Close the terminal tab (in the window where it exists)
+                RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId, sourceWindowId = existingWindowId)
             } catch (e: Exception) {
                 // Log error but continue - we've already updated state for new terminal
                 println("[Runner] Error stopping existing terminal: ${e.message}")

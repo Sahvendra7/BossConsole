@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.asSharedFlow
  *
  * @property url The URL to open (http:// or https://)
  * @property title Initial title for the tab (domain name or "Loading...")
+ * @property sourceWindowId The window that initiated this event (required for multi-window support)
  */
 data class URLOpenEvent(
     val url: String,
-    val title: String
+    val title: String,
+    val sourceWindowId: String
 )
 
 /**
@@ -34,13 +36,13 @@ object URLEventBus {
     /**
      * Emit a URL open event
      *
-     * All windows will receive this event, and the active window will create
-     * a new tab (or focus existing tab if URL is already open).
+     * Only the window matching sourceWindowId will handle the event.
      *
      * @param url The URL to open
      * @param title Initial tab title (defaults to "Loading...")
+     * @param sourceWindowId The window that initiated this event (required for multi-window support)
      */
-    suspend fun openURL(url: String, title: String = "Loading...") {
-        _urlOpenEvents.emit(URLOpenEvent(url, title))
+    suspend fun openURL(url: String, title: String = "Loading...", sourceWindowId: String) {
+        _urlOpenEvents.emit(URLOpenEvent(url, title, sourceWindowId))
     }
 }

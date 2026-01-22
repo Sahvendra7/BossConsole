@@ -19,17 +19,21 @@ data class RunnerTerminalOpenEvent(
 
 /**
  * Event for stopping a runner terminal (Ctrl+C request).
+ * @property sourceWindowId Window that initiated the stop (required for multi-window support)
  */
 data class RunnerTerminalStopEvent(
     val terminalId: String,
-    val configId: String
+    val configId: String,
+    val sourceWindowId: String
 )
 
 /**
  * Event for closing a runner terminal tab.
+ * @property sourceWindowId Window that initiated the close (required for multi-window support)
  */
 data class RunnerTerminalCloseEvent(
-    val terminalId: String
+    val terminalId: String,
+    val sourceWindowId: String
 )
 
 /**
@@ -85,15 +89,17 @@ object RunnerTerminalEventBus {
 
     /**
      * Emit event to stop a runner terminal (Ctrl+C request).
+     * @param sourceWindowId Window that initiated the stop (required for multi-window support)
      */
-    suspend fun stopRunnerTerminal(terminalId: String, configId: String) {
-        _stopEvents.emit(RunnerTerminalStopEvent(terminalId, configId))
+    suspend fun stopRunnerTerminal(terminalId: String, configId: String, sourceWindowId: String) {
+        _stopEvents.emit(RunnerTerminalStopEvent(terminalId, configId, sourceWindowId))
     }
 
     /**
      * Emit event to close a runner terminal tab.
+     * @param sourceWindowId Window that initiated the close (required for multi-window support)
      */
-    suspend fun closeRunnerTerminal(terminalId: String) {
-        _closeEvents.emit(RunnerTerminalCloseEvent(terminalId))
+    suspend fun closeRunnerTerminal(terminalId: String, sourceWindowId: String) {
+        _closeEvents.emit(RunnerTerminalCloseEvent(terminalId, sourceWindowId))
     }
 }

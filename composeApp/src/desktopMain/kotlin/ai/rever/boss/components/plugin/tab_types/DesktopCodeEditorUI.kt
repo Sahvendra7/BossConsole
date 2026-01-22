@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.psi.NavigationEvent
 import ai.rever.boss.run.DetectedMainFunction
@@ -51,6 +52,7 @@ fun DesktopCodeEditorUI(
     onSaveRequested: suspend () -> Boolean = { false }
 ) {
     val scope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current
 
     // Track cursor position for status bar
     var cursorLine by remember { mutableStateOf(1) }
@@ -112,13 +114,13 @@ fun DesktopCodeEditorUI(
                     },
                     onRun = { detected ->
                         scope.launch {
-                            executeDetectedMainFunction(detected, projectPath)
+                            executeDetectedMainFunction(detected, projectPath, windowId)
                         }
                     },
                     onNavigate = { event ->
-                        if (event.filePath.isNotEmpty()) {
+                        if (event.filePath.isNotEmpty() && windowId != null) {
                             scope.launch {
-                                FileEventBus.openFile(event.filePath, event.line, event.column)
+                                FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
                             }
                         }
                     }
@@ -148,16 +150,16 @@ fun DesktopCodeEditorUI(
                     },
                     onRun = { detected ->
                         scope.launch {
-                            executeDetectedMainFunction(detected, projectPath)
+                            executeDetectedMainFunction(detected, projectPath, windowId)
                         }
                     },
                     onNavigate = { event ->
-                        if (event.filePath.isNotEmpty()) {
+                        if (event.filePath.isNotEmpty() && windowId != null) {
                             scope.launch {
                                 // Open the target file at the specified position
                                 // For same-file navigation, FileEventBus handler will scroll to position
                                 // For cross-file, it opens the file and navigates
-                                FileEventBus.openFile(event.filePath, event.line, event.column)
+                                FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
                             }
                         }
                     }

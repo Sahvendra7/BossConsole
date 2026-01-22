@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.TabComponentWithUI
 import ai.rever.boss.components.registery.TabInfo
@@ -67,6 +68,7 @@ fun CodeEditorUI(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window support
     val density = LocalDensity.current
 
     // Get settings from platform-specific implementation
@@ -149,7 +151,7 @@ fun CodeEditorUI(
                                     detected = detected,
                                     onRun = { detectedFunc ->
                                         scope.launch {
-                                            executeDetectedMainFunction(detectedFunc, projectPath)
+                                            executeDetectedMainFunction(detectedFunc, projectPath, windowId)
                                         }
                                     }
                                 )
@@ -213,8 +215,16 @@ fun CodeEditorUI(
 
 /**
  * Execute a detected main function by creating a run configuration and sending it to the event bus.
+ *
+ * @param detected The detected main function to execute
+ * @param projectPath The project path
+ * @param windowId The window ID for multi-window support (Issue #506)
  */
-suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String) {
+suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String, windowId: String? = null) {
+    if (windowId == null) {
+        println("[CodeEditor] Cannot execute main function: no window ID")
+        return
+    }
     try {
         val detector = MainFunctionDetectorProvider.get()
         // Find the actual project root for the working directory
@@ -235,7 +245,7 @@ suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectP
             isAutoDetected = true
         )
 
-        RunEventBus.execute(config)
+        RunEventBus.execute(config, sourceWindowId = windowId)
     } catch (e: Exception) {
         println("[CodeEditor] Error executing main function: ${e.message}")
     }

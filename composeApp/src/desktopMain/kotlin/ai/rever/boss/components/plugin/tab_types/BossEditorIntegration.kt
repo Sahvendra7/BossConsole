@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.events.NavigationTargetBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.font.FontManager
 import ai.rever.boss.psi.NavigationEvent
 import ai.rever.boss.psi.NavigationResult
@@ -147,6 +148,7 @@ fun BossEditorIntegration(
     }
 
     val coroutineScope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window filtering
 
     // Create editor state that persists across recompositions
     val editorState = remember(filePath) {
@@ -261,11 +263,13 @@ fun BossEditorIntegration(
     }
 
     // Listen for navigation targets (cursor positioning after navigation)
-    LaunchedEffect(filePath, editorState, lineHeightPx) {
+    // Issue #506: Filter by windowId for multi-window support
+    LaunchedEffect(filePath, editorState, lineHeightPx, windowId) {
         NavigationTargetBus.targets
             .collect { target ->
-                // Only process if this editor is showing the target file
-                if (target.filePath == filePath && target.line > 0) {
+                // Only process if this editor is showing the target file and event is for this window
+                val isForThisWindow = target.sourceWindowId == windowId
+                if (isForThisWindow && target.filePath == filePath && target.line > 0) {
                     try {
                         // Convert 1-based line/column to 0-based EditorPosition
                         val line = (target.line - 1).coerceAtLeast(0)
@@ -282,7 +286,7 @@ fun BossEditorIntegration(
                         // Clear replay cache after consumption to avoid re-triggering
                         NavigationTargetBus.clearCache()
 
-                        println("[BossEditorIntegration] Positioned cursor at line ${target.line}, column ${target.column}")
+                        println("[BossEditorIntegration] Positioned cursor at line ${target.line}, column ${target.column} (window: $windowId)")
                     } catch (e: Exception) {
                         println("[BossEditorIntegration] Error positioning cursor: ${e.message}")
                     }
@@ -479,6 +483,7 @@ private fun BossEditorIntegrationInternal(
     editorSettings: ai.rever.bosseditor.settings.EditorSettings
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window filtering
 
     // Create editor state that persists across recompositions
     val editorState = remember(filePath) {
@@ -590,10 +595,13 @@ private fun BossEditorIntegrationInternal(
     }
 
     // Listen for navigation targets
-    LaunchedEffect(filePath, editorState, lineHeightPx) {
+    // Issue #506: Filter by windowId for multi-window support
+    LaunchedEffect(filePath, editorState, lineHeightPx, windowId) {
         NavigationTargetBus.targets
             .collect { target ->
-                if (target.filePath == filePath && target.line > 0) {
+                // Only process if event is for this window
+                val isForThisWindow = target.sourceWindowId == windowId
+                if (isForThisWindow && target.filePath == filePath && target.line > 0) {
                     try {
                         val line = (target.line - 1).coerceAtLeast(0)
                         val column = (target.column - 1).coerceAtLeast(0)

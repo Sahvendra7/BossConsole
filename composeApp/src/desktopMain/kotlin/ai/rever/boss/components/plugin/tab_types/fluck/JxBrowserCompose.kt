@@ -20,6 +20,7 @@ import ai.rever.boss.components.events.KeyboardEventBus
 import ai.rever.boss.components.events.KeyEventSource
 import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.selectProjectInWindow
@@ -1358,13 +1359,16 @@ fun JxBrowserCompose(
 
         if (showDashboard) {
             // Dashboard for empty/about:blank URLs
+            val windowId = LocalWindowId.current
             val windowProjectState = LocalWindowProjectState.current
             val selectedProject by windowProjectState?.selectedProject?.collectAsState()
                 ?: ProjectState.selectedProject.collectAsState()
 
             Dashboard(
                 onOpenFile = { path ->
-                    coroutineScope.launch { DashboardEventBus.openFile(path) }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.openFile(path, sourceWindowId = wid) }
+                    }
                 },
                 onOpenUrl = { url ->
                     // Navigate browser to the URL
@@ -1377,28 +1381,42 @@ fun JxBrowserCompose(
                 },
                 selectedProject = selectedProject,
                 onNewTab = {
-                    coroutineScope.launch { DashboardEventBus.newTab() }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.newTab(sourceWindowId = wid) }
+                    }
                 },
                 onNewTerminal = {
-                    coroutineScope.launch { DashboardEventBus.newTerminal() }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.newTerminal(sourceWindowId = wid) }
+                    }
                 },
                 onNewWindow = {
                     WindowOperations.createNewWindow()
                 },
                 onOpenProjectDialog = {
-                    coroutineScope.launch { DashboardEventBus.showProjectDialog() }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.showProjectDialog(sourceWindowId = wid) }
+                    }
                 },
                 onOpenFileDialog = {
-                    coroutineScope.launch { DashboardEventBus.showFileDialog() }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.showFileDialog(sourceWindowId = wid) }
+                    }
                 },
                 onNewProject = {
-                    coroutineScope.launch { DashboardEventBus.showNewProject() }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.showNewProject(sourceWindowId = wid) }
+                    }
                 },
                 onApplySplitTemplate = { template ->
-                    coroutineScope.launch { DashboardEventBus.applySplitTemplate(template) }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.applySplitTemplate(template, sourceWindowId = wid) }
+                    }
                 },
                 onActivatePlugin = { pluginId ->
-                    coroutineScope.launch { DashboardEventBus.activatePlugin(pluginId) }
+                    windowId?.let { wid ->
+                        coroutineScope.launch { DashboardEventBus.activatePlugin(pluginId, sourceWindowId = wid) }
+                    }
                 }
             )
         } else {

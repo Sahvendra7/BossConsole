@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.bottom.performance
 
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.performance.PerformanceMonitor
+import ai.rever.boss.utils.WindowFocusManager
 import java.io.File
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSettingsManager
@@ -72,7 +73,12 @@ class PerformanceViewModel {
                     }
                     _exportResult.value = displayPath
                     // Open the exported file in a new editor tab (use full path)
-                    FileEventBus.openFile(filePath)
+                    val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+                    if (focusedWindowId != null) {
+                        FileEventBus.openFile(filePath, sourceWindowId = focusedWindowId)
+                    } else {
+                        println("PerformanceViewModel: No window focused, cannot open exported metrics file")
+                    }
                 }
                 .onFailure { error ->
                     _exportError.value = error.message ?: "Failed to export metrics"

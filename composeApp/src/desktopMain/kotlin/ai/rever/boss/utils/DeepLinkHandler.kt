@@ -219,8 +219,13 @@ actual object DeepLinkHandler {
             println("DeepLinkHandler: Folder opened in codebase: ${folder.absolutePath}")
 
             // Emit panel open event to show the codebase panel
-            PanelEventBus.openPanel(CodeBaseInfo.id)
-            println("DeepLinkHandler: Emitted codebase panel open event")
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            if (focusedWindowId == null) {
+                println("DeepLinkHandler: No window focused, cannot open codebase panel")
+                return@launch
+            }
+            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = focusedWindowId)
+            println("DeepLinkHandler: Emitted codebase panel open event (window: $focusedWindowId)")
         }
     }
 
@@ -253,8 +258,13 @@ actual object DeepLinkHandler {
                 pluginId = "ai.rever.boss"  // Default plugin
             )
 
-            PanelEventBus.openPanel(panelId)
-            println("DeepLinkHandler: Emitted panel open event for: $panelIdStr")
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            if (focusedWindowId == null) {
+                println("DeepLinkHandler: No window focused, cannot open panel: $panelIdStr")
+                return@launch
+            }
+            PanelEventBus.openPanel(panelId, sourceWindowId = focusedWindowId)
+            println("DeepLinkHandler: Emitted panel open event for: $panelIdStr (window: $focusedWindowId)")
         }
     }
 

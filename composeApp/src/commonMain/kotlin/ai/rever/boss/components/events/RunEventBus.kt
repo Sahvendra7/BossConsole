@@ -10,28 +10,34 @@ import kotlinx.coroutines.flow.asSharedFlow
  *
  * @property configuration The run configuration to execute
  * @property debug Whether to run in debug mode (future feature)
+ * @property sourceWindowId The window that initiated the run (required for multi-window support)
  */
 data class RunExecuteEvent(
     val configuration: RunConfiguration,
-    val debug: Boolean = false
+    val debug: Boolean = false,
+    val sourceWindowId: String
 )
 
 /**
  * Event emitted when running processes should be stopped.
  *
  * @property configId Optional config ID to stop, null means stop all
+ * @property sourceWindowId The window that initiated the stop (required for multi-window support)
  */
 data class RunStopEvent(
-    val configId: String? = null
+    val configId: String? = null,
+    val sourceWindowId: String
 )
 
 /**
  * Event emitted when a project should be scanned for run configurations.
  *
  * @property projectPath The path to the project to scan
+ * @property sourceWindowId The window that initiated the scan (required for multi-window support)
  */
 data class RunScanEvent(
-    val projectPath: String
+    val projectPath: String,
+    val sourceWindowId: String
 )
 
 /**
@@ -64,26 +70,29 @@ object RunEventBus {
      *
      * @param configuration The run configuration to execute
      * @param debug Whether to run in debug mode
+     * @param sourceWindowId The window that initiated the run (required for multi-window support)
      */
-    suspend fun execute(configuration: RunConfiguration, debug: Boolean = false) {
-        _executeEvents.emit(RunExecuteEvent(configuration, debug))
+    suspend fun execute(configuration: RunConfiguration, debug: Boolean = false, sourceWindowId: String) {
+        _executeEvents.emit(RunExecuteEvent(configuration, debug, sourceWindowId))
     }
 
     /**
      * Emit a stop event.
      *
      * @param configId Optional config ID to stop, null means stop all
+     * @param sourceWindowId The window that initiated the stop (required for multi-window support)
      */
-    suspend fun stop(configId: String? = null) {
-        _stopEvents.emit(RunStopEvent(configId))
+    suspend fun stop(configId: String? = null, sourceWindowId: String) {
+        _stopEvents.emit(RunStopEvent(configId, sourceWindowId))
     }
 
     /**
      * Emit a scan event to discover run configurations.
      *
      * @param projectPath The project path to scan
+     * @param sourceWindowId The window that initiated the scan (required for multi-window support)
      */
-    suspend fun scanProject(projectPath: String) {
-        _scanEvents.emit(RunScanEvent(projectPath))
+    suspend fun scanProject(projectPath: String, sourceWindowId: String) {
+        _scanEvents.emit(RunScanEvent(projectPath, sourceWindowId))
     }
 }

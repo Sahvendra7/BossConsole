@@ -6,6 +6,7 @@ import BossDarkBorder
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -77,6 +78,7 @@ private fun GitStatusView(scope: CoroutineScope) {
     val isGitRepository by GitService.isGitRepository.collectAsState()
     val isLoading by GitService.isLoading.collectAsState()
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val windowId = LocalWindowId.current
 
     // Refresh status when panel opens
     LaunchedEffect(Unit) {
@@ -127,13 +129,13 @@ private fun GitStatusView(scope: CoroutineScope) {
             val stagedFiles = fileStatus.filter { it.isStaged }
             val unstagedFiles = fileStatus.filter { it.isUnstaged || it.indexStatus == GitFileStatusType.UNTRACKED }
 
-            // Handler to open file in editor
+            // Handler to open file in editor (window-scoped for multi-window support)
             val openFileInEditor: (String) -> Unit = { relativePath ->
                 val projectPath = GitService.getCurrentProjectPath()
-                if (projectPath != null) {
+                if (projectPath != null && windowId != null) {
                     val fullPath = "$projectPath/$relativePath"
                     scope.launch {
-                        FileEventBus.openFile(fullPath)
+                        FileEventBus.openFile(fullPath, sourceWindowId = windowId)
                     }
                 }
             }

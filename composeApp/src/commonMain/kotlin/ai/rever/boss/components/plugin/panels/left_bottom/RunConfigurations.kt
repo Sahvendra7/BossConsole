@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.panels.left_bottom
 
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.events.RunEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.icons.LanguageIcons
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
@@ -95,6 +96,7 @@ class RunConfigurationsComponent(
 @Composable
 fun RunConfigurationsContent() {
     val scope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window support
     val selectedProject by ProjectState.selectedProject.collectAsState()
     val detectedConfigs by RunConfigurationManager.detectedConfigurations.collectAsState()
     val isScanning by RunConfigurationManager.isScanning.collectAsState()
@@ -103,9 +105,9 @@ fun RunConfigurationsContent() {
     var searchQuery by remember { mutableStateOf("") }
 
     // Auto-scan when project changes (if a project is selected)
-    LaunchedEffect(selectedProject.path) {
-        if (selectedProject.path.isNotEmpty()) {
-            RunEventBus.scanProject(selectedProject.path)
+    LaunchedEffect(selectedProject.path, windowId) {
+        if (selectedProject.path.isNotEmpty() && windowId != null) {
+            RunEventBus.scanProject(selectedProject.path, sourceWindowId = windowId)
         }
     }
 
@@ -168,9 +170,9 @@ fun RunConfigurationsContent() {
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
                         .clickable {
-                            if (!isScanning) {
+                            if (!isScanning && windowId != null) {
                                 scope.launch {
-                                    RunEventBus.scanProject(selectedProject.path)
+                                    RunEventBus.scanProject(selectedProject.path, sourceWindowId = windowId)
                                 }
                             }
                         }
@@ -346,8 +348,10 @@ fun RunConfigurationsContent() {
                                 RunConfigurationItem(
                                     config = config,
                                     onRun = {
-                                        scope.launch {
-                                            RunEventBus.execute(config)
+                                        windowId?.let { wid ->
+                                            scope.launch {
+                                                RunEventBus.execute(config, sourceWindowId = wid)
+                                            }
                                         }
                                     }
                                 )

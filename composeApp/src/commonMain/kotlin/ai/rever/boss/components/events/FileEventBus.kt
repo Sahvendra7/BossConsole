@@ -7,11 +7,21 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
+/**
+ * Event emitted when a file should be opened in the editor.
+ *
+ * @property filePath The file path to open
+ * @property fileName The file name (extracted from path)
+ * @property line 1-based line to navigate to (0 = don't navigate)
+ * @property column 1-based column to navigate to (0 = don't navigate)
+ * @property sourceWindowId The window that initiated this event (required for multi-window support)
+ */
 data class FileOpenEvent(
     val filePath: String,
     val fileName: String,
-    val line: Int = 0,    // 1-based line to navigate to (0 = don't navigate)
-    val column: Int = 0   // 1-based column to navigate to (0 = don't navigate)
+    val line: Int = 0,
+    val column: Int = 0,
+    val sourceWindowId: String
 )
 
 /**
@@ -192,8 +202,9 @@ object FileEventBus {
      * @param filePath The file path to open. May include "file:" prefix (will be stripped).
      * @param line 1-based line number to navigate to (0 = don't navigate)
      * @param column 1-based column number to navigate to (0 = don't navigate)
+     * @param sourceWindowId The window that initiated this event (required for multi-window support)
      */
-    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0) {
+    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0, sourceWindowId: String) {
         // Strip file: prefix if present (may come from terminal hyperlinks)
         val cleanPath = stripFilePrefix(filePath)
         val fileName = cleanPath.extractFileName().ifEmpty { "untitled" }
@@ -201,7 +212,7 @@ object FileEventBus {
         // Track file open in dashboard
         RecentFilesManager.recordFileOpen(cleanPath, ProjectState.selectedProject.value.path)
 
-        println("[FileEventBus] openFile: $cleanPath:$line:$column")
-        _fileOpenEvents.emit(FileOpenEvent(cleanPath, fileName, line, column))
+        println("[FileEventBus] openFile: $cleanPath:$line:$column (window: $sourceWindowId)")
+        _fileOpenEvents.emit(FileOpenEvent(cleanPath, fileName, line, column, sourceWindowId))
     }
 }

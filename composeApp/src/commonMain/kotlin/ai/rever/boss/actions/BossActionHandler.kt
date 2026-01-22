@@ -266,7 +266,8 @@ class BossActionHandler(
         coroutineScope.launch {
             ai.rever.boss.components.events.URLEventBus.openURL(
                 "https://www.google.com",
-                "Google"
+                "Google",
+                sourceWindowId = windowId
             )
         }
         return true

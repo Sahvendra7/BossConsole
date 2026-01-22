@@ -8,9 +8,11 @@ import kotlinx.coroutines.flow.asSharedFlow
  * Event emitted when a terminal tab should be opened
  *
  * @property command Optional initial command to run in the terminal
+ * @property sourceWindowId The window that initiated this event (required for multi-window support)
  */
 data class TerminalOpenEvent(
-    val command: String?
+    val command: String?,
+    val sourceWindowId: String
 )
 
 /**
@@ -32,12 +34,12 @@ object TerminalEventBus {
     /**
      * Emit a terminal open event
      *
-     * All windows will receive this event, and the active window will create
-     * a new terminal tab (or focus existing terminal if one is available).
+     * Only the window matching sourceWindowId will handle the event.
      *
      * @param command Optional command to run in the terminal
+     * @param sourceWindowId The window that initiated this event (required for multi-window support)
      */
-    suspend fun openTerminal(command: String? = null) {
-        _terminalOpenEvents.emit(TerminalOpenEvent(command))
+    suspend fun openTerminal(command: String? = null, sourceWindowId: String) {
+        _terminalOpenEvents.emit(TerminalOpenEvent(command, sourceWindowId))
     }
 }

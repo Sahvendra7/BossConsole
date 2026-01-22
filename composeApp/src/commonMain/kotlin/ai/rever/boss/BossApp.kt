@@ -329,19 +329,22 @@ private fun isFileUrl(url: String): Boolean = url.startsWith("file:")
  * Handles creating browser tabs (for HTTP) or editor tabs (for file:) and splitting panels.
  *
  * Issue #346: Terminal link click prompt with remember preference
+ * Issue #506: Added windowId for multi-window navigation filtering
  *
  * @param url The URL to open (HTTP or file: URL)
  * @param mode How to open the link (split or new tab)
  * @param splitViewState The split view state for panel operations
  * @param sourceTerminalId Optional terminal tab ID where the link was clicked (for finding source panel)
  * @param scope CoroutineScope for launching navigation events (structured concurrency)
+ * @param windowId The window ID for multi-window filtering (Issue #506)
  */
 private fun openTerminalLink(
     url: String,
     mode: TerminalLinkOpenMode,
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
     sourceTerminalId: String? = null,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    windowId: String? = null
 ) {
     // Find the source panel (where the terminal is) to correctly identify "the other" panel
     // This is important because cmd+click doesn't change focus, so activePanelId may not be the terminal panel
@@ -385,7 +388,8 @@ private fun openTerminalLink(
                     isFile = true,
                     fileLine = parsed.line,
                     fileColumn = parsed.column,
-                    scope = scope
+                    scope = scope,
+                    windowId = windowId
                 )
             }
         }
@@ -397,7 +401,8 @@ private fun openTerminalLink(
             splitViewState = splitViewState,
             validSourcePanelId = validSourcePanelId,
             isFile = false,
-            scope = scope
+            scope = scope,
+            windowId = windowId
         )
     }
 }
@@ -414,6 +419,7 @@ private fun openTerminalLink(
  * @param fileLine 1-based line number for file navigation (0 = no navigation)
  * @param fileColumn 1-based column number for file navigation (0 = no navigation)
  * @param scope CoroutineScope for launching navigation events (structured concurrency)
+ * @param windowId The window ID for multi-window filtering (Issue #506)
  */
 private fun openTerminalLinkInternal(
     url: String,
@@ -423,18 +429,20 @@ private fun openTerminalLinkInternal(
     isFile: Boolean,
     fileLine: Int = 0,
     fileColumn: Int = 0,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    windowId: String? = null
 ) {
     // Helper to create the appropriate tab type
     fun createTab() = if (isFile) createEditorTab(url) else createBrowserTab(url)
 
     // Helper to trigger navigation after opening a file with line:column
     // Uses structured concurrency - coroutine is cancelled if the composable is disposed
+    // Issue #506: Pass windowId for multi-window filtering
     fun navigateToLineIfNeeded() {
-        if (isFile && fileLine > 0) {
+        if (isFile && fileLine > 0 && windowId != null) {
             val cleanPath = stripFilePrefix(url)
             scope.launch(Dispatchers.Main) {
-                NavigationTargetBus.navigateTo(cleanPath, fileLine, fileColumn)
+                NavigationTargetBus.navigateTo(cleanPath, fileLine, fileColumn, sourceWindowId = windowId)
             }
         }
     }
@@ -570,8 +578,8 @@ fun ComponentContext.BossApp(
         if (pendingProject != null) {
             println("BossApp: Consuming pending project '${pendingProject.name}' for window: $windowId")
             windowProjectState.selectProject(pendingProject)
-            PanelEventBus.openPanel(CodeBaseInfo.id)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
         }
     }
 
@@ -585,8 +593,8 @@ fun ComponentContext.BossApp(
         val initialProject = windowProjectState.selectedProject.value
         if (initialProject.path.isNotEmpty()) {
             println("BossApp: Project '${initialProject.name}' already selected at startup, opening panels")
-            PanelEventBus.openPanel(CodeBaseInfo.id)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
         }
     }
 
@@ -905,10 +913,10 @@ fun ComponentContext.BossApp(
     }
 
     // Open CodeBase and RunConfigurations panels when project is selected (reactive architecture)
-    LaunchedEffect(selectedProject.path) {
+    LaunchedEffect(selectedProject.path, windowId) {
         if (selectedProject.path.isNotEmpty()) {
-            PanelEventBus.openPanel(CodeBaseInfo.id)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id)
+            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
         }
     }
 
@@ -1220,23 +1228,29 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for file open events - now handled by split state
-    LaunchedEffect(splitViewState) {
+    // Issue #506: Filter by window to prevent file opening in all windows
+    LaunchedEffect(splitViewState, windowId) {
         FileEventBus.fileOpenEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] FileEventBus received: ${event.filePath}:${event.line}")
+                println("[BossApp] FileEventBus received: ${event.filePath}:${event.line} (window: $windowId)")
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
                 // Emit navigation target for cursor positioning (PSI navigation)
+                // Issue #506: Pass windowId for multi-window filtering
                 if (event.line > 0) {
-                    NavigationTargetBus.navigateTo(event.filePath, event.line, event.column)
+                    NavigationTargetBus.navigateTo(event.filePath, event.line, event.column, sourceWindowId = windowId)
                 }
             }
             .launchIn(this)
     }
 
     // Listen for terminal open events - now handled by split state
-    LaunchedEffect(splitViewState) {
+    // Issue #506: Filter by window to prevent terminal opening in all windows
+    LaunchedEffect(splitViewState, windowId) {
         TerminalEventBus.terminalOpenEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
+                println("[BossApp] TerminalEventBus received (window: $windowId)")
                 splitViewState.openTerminalInActivePanel(event.command)
             }
             .launchIn(this)
@@ -1261,7 +1275,7 @@ fun ComponentContext.BossApp(
                 if (usesSidebar) {
                     // Open in sidebar terminal panel
                     // First, ensure the sidebar terminal panel is open
-                    PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
+                    PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id, sourceWindowId = windowId)
 
                     // Create a new tab in the sidebar terminal with the command (window-scoped)
                     val success = RunnerTerminalService.openInSidebarTerminal(
@@ -1288,9 +1302,11 @@ fun ComponentContext.BossApp(
             .launchIn(this)
 
         // Close runner terminal events
+        // Issue #506: Filter by window to prevent closing in all windows
         RunnerTerminalEventBus.closeEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Runner terminal close event: ${event.terminalId}")
+                println("[BossApp] Runner terminal close event: ${event.terminalId} (window: $windowId)")
 
                 // Find and close the terminal tab
                 val panel = splitViewState.findPanelWithTab(event.terminalId)
@@ -1303,9 +1319,11 @@ fun ComponentContext.BossApp(
 
         // Stop runner terminal events
         // Note: Ctrl+C is sent by RunnerTerminalService.stopRunner() via TabbedTerminalStateRegistry
+        // Issue #506: Filter by window to prevent stopping in all windows
         RunnerTerminalEventBus.stopEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Runner terminal stop event: ${event.terminalId}")
+                println("[BossApp] Runner terminal stop event: ${event.terminalId} (window: $windowId)")
                 // Ctrl+C is already sent by the service - this event is for any additional UI handling
             }
             .launchIn(this)
@@ -1320,7 +1338,7 @@ fun ComponentContext.BossApp(
                 println("[BossApp] Git terminal event: ${event.operationName} - ${event.command}")
 
                 // Open the terminal panel if not already open
-                PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id)
+                PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id, sourceWindowId = windowId)
 
                 // Create a new tab in the sidebar terminal with the git command (window-scoped)
                 val success = GitTerminalService.openInSidebarTerminal(
@@ -1346,7 +1364,7 @@ fun ComponentContext.BossApp(
     // Issue #498: Filter events by window to prevent dialog appearing in all windows
     LaunchedEffect(splitViewState, windowId) {
         TerminalLinkEventBus.linkClickEvents
-            .filter { event -> event.sourceWindowId == null || event.sourceWindowId == windowId }
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 val settings = TerminalLinkSettingsManager.currentSettings.value
                 println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}, window: $windowId")
@@ -1358,7 +1376,7 @@ fun ComponentContext.BossApp(
                         showTerminalLinkDialog = true
                     }
                     else -> {
-                        openTerminalLink(event.url, settings.openMode, splitViewState, event.sourceTerminalId, this)
+                        openTerminalLink(event.url, settings.openMode, splitViewState, event.sourceTerminalId, this, windowId = windowId)
                     }
                 }
             }
@@ -1367,10 +1385,12 @@ fun ComponentContext.BossApp(
 
     // Listen for run execute events (Issue #321 - Run functionality)
     // IntelliJ-style: Adds config to run history when executed
-    LaunchedEffect(splitViewState) {
+    // Issue #506: Filter by sourceWindowId for multi-window support
+    LaunchedEffect(splitViewState, windowId) {
         RunEventBus.executeEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Run event received: ${event.configuration.name}")
+                println("[BossApp] Run event received: ${event.configuration.name} (window: $windowId)")
 
                 // Add to run history (IntelliJ-style)
                 // Note: addConfiguration() already handles deduplication by filePath,
@@ -1391,7 +1411,9 @@ fun ComponentContext.BossApp(
             .launchIn(this)
 
         RunEventBus.stopEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
+                println("[BossApp] Stop event received: configId=${event.configId} (window: $windowId)")
                 if (event.configId != null) {
                     RunExecutionService.stop(event.configId)
                 } else {
@@ -1401,8 +1423,11 @@ fun ComponentContext.BossApp(
             .launchIn(this)
 
         // Scan events are still handled for explicit scan requests (e.g., from Run Configurations plugin)
+        // Issue #506: Filter by sourceWindowId for multi-window support
         RunEventBus.scanEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
+                println("[BossApp] Scan event received: ${event.projectPath} (window: $windowId)")
                 RunConfigurationManager.scanProject(event.projectPath)
             }
             .launchIn(this)
@@ -1413,8 +1438,10 @@ fun ComponentContext.BossApp(
     // not automatically when project changes.
 
     // Listen for workspace load events from CLI
-    LaunchedEffect(splitViewState, workspaceManager) {
+    // Issue #506: Filter by sourceWindowId for multi-window support
+    LaunchedEffect(splitViewState, workspaceManager, windowId) {
         ai.rever.boss.components.events.WorkspaceEventBus.workspaceLoadEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 try {
                     val file = java.io.File(event.workspacePath)
@@ -1426,7 +1453,7 @@ fun ComponentContext.BossApp(
                         workspaceManager.loadWorkspace(workspace)
                         applyWorkspace(workspace, splitViewState)
 
-                        println("BossApp: Workspace loaded from CLI: ${file.absolutePath}")
+                        println("BossApp: Workspace loaded from CLI: ${file.absolutePath} (window: $windowId)")
                     } else {
                         println("BossApp: Cannot load workspace: ${file.absolutePath}")
                     }
@@ -1438,8 +1465,10 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for panel open events (e.g., from CLI folder command)
-    LaunchedEffect(draggablePanelComponent, panelRegistry) {
+    // Issue #506: Filter by window to prevent panel opening in all windows
+    LaunchedEffect(draggablePanelComponent, panelRegistry, windowId) {
         PanelEventBus.panelOpenEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 try {
                     // Find the panel info from registry
@@ -1493,26 +1522,30 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for Dashboard events from Fluck tabs (when Dashboard is shown in empty browser tabs)
-    LaunchedEffect(splitViewState) {
+    // Issue #506: Filter by window to prevent events affecting all windows
+    LaunchedEffect(splitViewState, windowId) {
         // Handle file open events
         DashboardEventBus.openFileEvents
-            .onEach { filePath ->
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
                 splitViewState.openFileInActivePanel(
-                    filePath,
-                    filePath.extractFileName().ifEmpty { "untitled" }
+                    event.path,
+                    event.path.extractFileName().ifEmpty { "untitled" }
                 )
             }
             .launchIn(this)
 
         // Handle URL open in new tab events
         DashboardEventBus.openUrlInNewTabEvents
-            .onEach { url ->
-                splitViewState.openUrlInActivePanel(url, "Loading...")
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
+                splitViewState.openUrlInActivePanel(event.url, "Loading...")
             }
             .launchIn(this)
 
         // Handle new tab events
         DashboardEventBus.newTabEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach {
                 showNewTabDialog = true
             }
@@ -1520,6 +1553,7 @@ fun ComponentContext.BossApp(
 
         // Handle new terminal events
         DashboardEventBus.newTerminalEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach {
                 val timestamp = System.currentTimeMillis()
                 val projectPath = windowProjectState.selectedProject.value.path
@@ -1536,6 +1570,7 @@ fun ComponentContext.BossApp(
 
         // Handle project dialog events
         DashboardEventBus.showProjectDialogEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach {
                 showProjectDialog = true
             }
@@ -1543,6 +1578,7 @@ fun ComponentContext.BossApp(
 
         // Handle file dialog events
         DashboardEventBus.showFileDialogEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach {
                 // File dialog is typically handled by a system file chooser
                 // For now, show new tab dialog with file option
@@ -1552,6 +1588,7 @@ fun ComponentContext.BossApp(
 
         // Handle new project events
         DashboardEventBus.showNewProjectEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach {
                 showNewProjectDialog = true
             }
@@ -1559,7 +1596,8 @@ fun ComponentContext.BossApp(
 
         // Handle split template events
         DashboardEventBus.applySplitTemplateEvents
-            .onEach { template ->
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
                 // Split templates from Fluck Dashboard - apply using active panel
                 val activeComponent = splitViewState.getActiveTabsComponent()
                 if (activeComponent != null) {
@@ -1568,8 +1606,8 @@ fun ComponentContext.BossApp(
                         System.getProperty("user.home")
                     }
                     // Create tabs from template panels
-                    val leftPanelConfig = template.panels.find { it.position == "left" }
-                    val rightPanelConfig = template.panels.find { it.position == "right" }
+                    val leftPanelConfig = event.template.panels.find { it.position == "left" }
+                    val rightPanelConfig = event.template.panels.find { it.position == "right" }
 
                     leftPanelConfig?.let { config ->
                         createTabFromTemplateConfig(config, projectPath)?.let { tab ->
@@ -1595,8 +1633,9 @@ fun ComponentContext.BossApp(
 
         // Handle plugin activation events
         DashboardEventBus.activatePluginEvents
-            .onEach { pluginId ->
-                draggablePanelComponent.activatePlugin(pluginId)
+            .filter { event -> event.sourceWindowId == windowId }
+            .onEach { event ->
+                draggablePanelComponent.activatePlugin(event.pluginId)
             }
             .launchIn(this)
     }
@@ -1618,23 +1657,13 @@ fun ComponentContext.BossApp(
     LaunchedEffect(splitViewState, windowId) {
         // Set up URL listener for incoming URLs
         // Note: We DON'T call markAppReady() here - that happens AFTER Last Session loads
+        // Issue #506: Filter by window to prevent URL opening in all windows
         ai.rever.boss.components.events.URLEventBus.urlOpenEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                val isFocused = WindowFocusManager.isWindowFocused(windowId)
-                println("BossApp: Received URL event: ${event.url} (window: $windowId, focused: $isFocused)")
-
-                // Handle URL events in focused window
-                // During cold start, focus check may fail due to timing, so we handle events anyway
-                // and rely on the event bus's extraBufferCapacity to prevent duplicates
-                if (isFocused) {
-                    println("BossApp: Opening URL in focused window: ${event.url}")
-                    splitViewState.openUrlInActivePanel(event.url, event.title)
-                } else {
-                    // During cold start, window may not be marked as focused yet, but we still need to handle the URL
-                    // This is safe because there's only one window during cold start
-                    println("BossApp: Window not focused, but opening URL anyway (cold start handling): ${event.url}")
-                    splitViewState.openUrlInActivePanel(event.url, event.title)
-                }
+                // sourceWindowId is required, so we already filtered to the correct window
+                println("BossApp: Opening URL in window $windowId: ${event.url}")
+                splitViewState.openUrlInActivePanel(event.url, event.title)
             }
             .launchIn(this)
 
@@ -1769,8 +1798,10 @@ fun ComponentContext.BossApp(
     }
     
     // Listen for panel close events
-    LaunchedEffect(draggablePanelComponent) {
+    // Issue #506: Filter by window to prevent panel closing in all windows
+    LaunchedEffect(draggablePanelComponent, windowId) {
         PanelEventBus.panelCloseEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 // Find which panel contains this component
                 val panels = listOf(
@@ -1795,8 +1826,10 @@ fun ComponentContext.BossApp(
     }
 
     // Listen for panel toggle events (open if closed, close if open)
-    LaunchedEffect(draggablePanelComponent, panelRegistry) {
+    // Issue #506: Filter by window to prevent panel toggling in all windows
+    LaunchedEffect(draggablePanelComponent, panelRegistry, windowId) {
         PanelEventBus.panelToggleEvents
+            .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 try {
                     val panels = listOf(
@@ -2491,7 +2524,8 @@ fun ComponentContext.BossApp(
                         }
 
                         // Open the link using helper function
-                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId, coroutineScope)
+                        // Issue #506: Pass windowId for multi-window navigation filtering
+                        openTerminalLink(pendingTerminalLinkUrl, mode, splitViewState, pendingTerminalSourceId, coroutineScope, windowId = windowId)
                         pendingTerminalLinkUrl = ""
                         pendingTerminalSourceId = null
                     }

@@ -2,6 +2,7 @@ package ai.rever.boss.performance
 
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.utils.WindowFocusManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,13 +37,23 @@ actual object PerformanceState {
 
     actual fun openPerformancePanel() {
         scope.launch {
-            PanelEventBus.openPanel(PanelId("performance", 15))
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            if (focusedWindowId == null) {
+                println("PerformanceState: No window focused, cannot open performance panel")
+                return@launch
+            }
+            PanelEventBus.openPanel(PanelId("performance", 15), sourceWindowId = focusedWindowId)
         }
     }
 
     actual fun togglePerformancePanel() {
         scope.launch {
-            PanelEventBus.togglePanel(PanelId("performance", 15))
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            if (focusedWindowId == null) {
+                println("PerformanceState: No window focused, cannot toggle performance panel")
+                return@launch
+            }
+            PanelEventBus.togglePanel(PanelId("performance", 15), sourceWindowId = focusedWindowId)
         }
     }
 

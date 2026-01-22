@@ -489,9 +489,9 @@ fun BossDraggableComponent.BossTopLeftBar(
                 },
                 onCreatePR = createPRUrl?.let { url ->
                     {
-                        // Show terminal link dialog for opening PR URL
+                        // Show terminal link dialog for opening PR URL (window-scoped)
                         scope.launch {
-                            TerminalLinkEventBus.emitLinkClick(url, sourceTerminalId = null)
+                            TerminalLinkEventBus.emitLinkClick(url, sourceTerminalId = null, sourceWindowId = windowId)
                         }
                     }
                 },

@@ -4,6 +4,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.extractFileName
@@ -892,6 +893,7 @@ fun FileTreeItem(
     onFileClick: (FileNode) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current
 
     // IntelliJ's compact middle packages pattern:
     // Get the end node of any single-child directory chain
@@ -921,8 +923,10 @@ fun FileTreeItem(
                     onDoubleClick = {
                         if (!node.isDirectory) {
                             onFileClick(node)
-                            scope.launch {
-                                FileEventBus.openFile(node.path)
+                            windowId?.let { wid ->
+                                scope.launch {
+                                    FileEventBus.openFile(node.path, sourceWindowId = wid)
+                                }
                             }
                         }
                     }

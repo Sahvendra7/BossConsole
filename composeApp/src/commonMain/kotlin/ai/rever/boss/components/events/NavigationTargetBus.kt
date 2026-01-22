@@ -11,11 +11,13 @@ import kotlinx.coroutines.flow.asSharedFlow
  * @property filePath Absolute path to the file
  * @property line Line number (1-based)
  * @property column Column number (1-based)
+ * @property sourceWindowId The window that initiated the navigation (required for multi-window support)
  */
 data class NavigationTargetEvent(
     val filePath: String,
     val line: Int,
-    val column: Int
+    val column: Int,
+    val sourceWindowId: String
 )
 
 /**
@@ -42,10 +44,11 @@ object NavigationTargetBus {
      * @param filePath Absolute path to the target file
      * @param line Target line (1-based), must be > 0
      * @param column Target column (1-based)
+     * @param sourceWindowId The window that initiated the navigation (required for multi-window support)
      */
-    suspend fun navigateTo(filePath: String, line: Int, column: Int) {
+    suspend fun navigateTo(filePath: String, line: Int, column: Int, sourceWindowId: String) {
         if (line > 0) {
-            _targets.emit(NavigationTargetEvent(filePath, line, column))
+            _targets.emit(NavigationTargetEvent(filePath, line, column, sourceWindowId))
         }
     }
 

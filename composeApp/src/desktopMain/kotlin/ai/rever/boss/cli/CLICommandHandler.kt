@@ -1,6 +1,7 @@
 package ai.rever.boss.cli
 
 import ai.rever.boss.utils.extractFileName
+import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.components.events.FileEventBus
@@ -267,15 +268,22 @@ class CLICommandHandler private constructor() {
             return
         }
 
+        // Get focused window ID for multi-window support
+        val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+        if (focusedWindowId == null) {
+            println("CLI: No window focused, cannot load workspace: ${file.absolutePath}")
+            return
+        }
+
         // Emit workspace load event - BossApp will handle the actual loading
         // This is much simpler than trying to access splitViewState from CLI layer
-        ai.rever.boss.components.events.WorkspaceEventBus.loadWorkspace(file.absolutePath)
-        println("CLI: Emitted workspace load event for ${file.absolutePath}")
+        ai.rever.boss.components.events.WorkspaceEventBus.loadWorkspace(file.absolutePath, sourceWindowId = focusedWindowId)
+        println("CLI: Emitted workspace load event for ${file.absolutePath} (window: $focusedWindowId)")
     }
 
     /**
      * Opens file in editor tab.
-     * 
+     *
      * Direct emit only - queueing is handled in executeCommand().
      * This is called from markFileHandlerReady() after handler is ready.
      */
@@ -303,6 +311,13 @@ class CLICommandHandler private constructor() {
             return
         }
 
+        // Get focused window ID for multi-window support
+        val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+        if (focusedWindowId == null) {
+            println("CLI: No window focused, cannot open file: ${file.absolutePath}")
+            return
+        }
+
         // Track file processing (prevents New Tab Dialog race condition)
         ai.rever.boss.services.FileHandlerService.incrementProcessing()
 
@@ -310,8 +325,8 @@ class CLICommandHandler private constructor() {
         // The active window's BossApp will listen and create the editor tab
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                FileEventBus.openFile(file.absolutePath)
-                println("CLI: Emitted file open event for ${file.absolutePath}")
+                FileEventBus.openFile(file.absolutePath, sourceWindowId = focusedWindowId)
+                println("CLI: Emitted file open event for ${file.absolutePath} (window: $focusedWindowId)")
 
                 // CRITICAL: Wait for file tab to actually be created before decrementing
                 // The event emission is instant, but file tab creation is async and takes time.
@@ -394,6 +409,13 @@ class CLICommandHandler private constructor() {
             return
         }
 
+        // Get focused window ID for multi-window support
+        val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+        if (focusedWindowId == null) {
+            println("CLI: No window focused, cannot open terminal")
+            return
+        }
+
         // Track terminal processing (prevents New Tab Dialog race condition)
         ai.rever.boss.services.TerminalHandlerService.incrementProcessing()
 
@@ -401,8 +423,8 @@ class CLICommandHandler private constructor() {
         // The active window's BossApp will listen and create the terminal tab
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                TerminalEventBus.openTerminal(command)
-                println("CLI: Emitted terminal open event${if (command != null) " with command: $command" else ""}")
+                TerminalEventBus.openTerminal(command, sourceWindowId = focusedWindowId)
+                println("CLI: Emitted terminal open event${if (command != null) " with command: $command" else ""} (window: $focusedWindowId)")
 
                 // CRITICAL: Wait for terminal tab to actually be created before decrementing
                 // The event emission is instant, but terminal tab creation is async and takes time.
