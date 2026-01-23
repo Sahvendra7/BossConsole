@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.15.27](v8.15.27.md) | 2026-01-23 | macOS fullscreen fix with transparent title bar restoration and major README overhaul with badges and quick install commands |
 | [v8.15.26](v8.15.26.md) | 2026-01-22 | Comprehensive event bus architecture update with sourceWindowId support across all 11 event buses for proper multi-window event routing |
 | [v8.15.25](v8.15.25.md) | 2026-01-22 | Multi-window event filtering fixes for runner terminal, hyperlink dialogs, and browser tab titles |
 | [v8.15.24](v8.15.24.md) | 2026-01-21 | Critical multi-window crash fix and BossTerm 1.0.87 update |
