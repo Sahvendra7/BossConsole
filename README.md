@@ -1,7 +1,6 @@
 # BOSS - Business OS + Simulator
 
 [![BOSS Version](https://img.shields.io/github/v/release/risa-labs-inc/BossConsole-Releases.svg?label=BOSS&color=brightgreen)](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/risa-labs-inc/BossConsole/build.yml?branch=main)](https://github.com/risa-labs-inc/BossConsole/actions/workflows/build.yml)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue.svg)](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](https://github.com/risa-labs-inc/BossConsole-Releases/blob/main/LICENSE)
 
