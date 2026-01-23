@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.1](v8.16.1.md) | 2026-01-23 | JxBrowser 8.16.1 (Chromium 144) upgrade with centralized version management and workflow fixes |
 | [v8.16.0](v8.16.0.md) | 2026-01-23 | Comprehensive video playback support and chrome:// URL navigation with proprietary codecs and Widevine DRM |
 | [v8.15.28](v8.15.28.md) | 2026-01-23 | Fixed split view resize cursor interfering with JxBrowser functionality |
 | [v8.15.27](v8.15.27.md) | 2026-01-23 | macOS fullscreen fix with transparent title bar restoration and major README overhaul with badges and quick install commands |
