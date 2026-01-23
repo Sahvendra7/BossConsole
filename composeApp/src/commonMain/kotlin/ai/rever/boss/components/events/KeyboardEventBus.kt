@@ -16,6 +16,7 @@ data class KeyboardEvent(
     val keyEvent: KeyEvent,
     val source: KeyEventSource,
     val context: ShortcutContext,
+    val sourceWindowId: String,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -77,11 +78,22 @@ data class KeyboardEventResult(
 )
 
 /**
+ * Information about a registered keyboard event handler.
+ * Tracks handler metadata for window-specific filtering.
+ */
+private data class HandlerInfo(
+    val handlerName: String,
+    val targetWindowId: String,  // Every handler must be tied to a specific window
+    val handler: suspend (KeyboardEvent) -> KeyboardEventResult
+)
+
+/**
  * Central event bus for keyboard events.
  * Implements event bubbling with priority-based handling:
  * Component -> Workspace -> Global
  *
  * Each handler can consume the event or let it bubble to the next priority level.
+ * Supports window-specific filtering via sourceWindowId/targetWindowId matching.
  */
 object KeyboardEventBus {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -99,12 +111,12 @@ object KeyboardEventBus {
 
     /**
      * Handlers registered for each priority level.
-     * Map: Priority -> List of (handlerName, handler function)
+     * Map: Priority -> List of HandlerInfo (includes targetWindowId for filtering)
      *
      * Uses ConcurrentHashMap and CopyOnWriteArrayList for thread-safe access
      * from multiple coroutines without explicit synchronization.
      */
-    private val handlers = ConcurrentHashMap<KeyboardEventPriority, CopyOnWriteArrayList<Pair<String, suspend (KeyboardEvent) -> KeyboardEventResult>>>()
+    private val handlers = ConcurrentHashMap<KeyboardEventPriority, CopyOnWriteArrayList<HandlerInfo>>()
 
     /**
      * Debug mode - logs all events and handling results.
@@ -128,15 +140,20 @@ object KeyboardEventBus {
         for (priority in priorities) {
             val priorityHandlers = handlers[priority] ?: continue
 
-            for ((handlerName, handler) in priorityHandlers) {
+            for (handlerInfo in priorityHandlers) {
+                // Only invoke handlers for the event's source window
+                if (handlerInfo.targetWindowId != event.sourceWindowId) {
+                    continue
+                }
+
                 try {
-                    val result = handler(event)
+                    val result = handlerInfo.handler(event)
 
                     if (result.consumed) {
                         return true
                     }
                 } catch (e: Exception) {
-                    println("Error in keyboard handler '$handlerName': ${e.message}")
+                    println("Error in keyboard handler '${handlerInfo.handlerName}': ${e.message}")
                 }
             }
         }
@@ -150,19 +167,22 @@ object KeyboardEventBus {
      *
      * @param priority The priority level for this handler
      * @param handlerName Name for debugging purposes
+     * @param targetWindowId Window ID to filter events - handler only receives events from this window
      * @param handler Function that processes the event and returns whether it was consumed
      * @return Job that can be cancelled to unsubscribe
      */
     fun subscribe(
         priority: KeyboardEventPriority,
         handlerName: String,
+        targetWindowId: String,
         handler: suspend (KeyboardEvent) -> KeyboardEventResult
     ): Job {
         // Add handler to the list for this priority (thread-safe with atomic computeIfAbsent)
-        handlers.computeIfAbsent(priority) { CopyOnWriteArrayList() }.add(handlerName to handler)
+        val handlerInfo = HandlerInfo(handlerName, targetWindowId, handler)
+        handlers.computeIfAbsent(priority) { CopyOnWriteArrayList() }.add(handlerInfo)
 
         if (debugMode) {
-            println("[KeyboardEventBus] Registered handler '$handlerName' with priority ${priority.name}")
+            println("[KeyboardEventBus] Registered handler '$handlerName' for window '$targetWindowId' with priority ${priority.name}")
         }
 
         // Return a job that removes the handler when cancelled
@@ -170,7 +190,7 @@ object KeyboardEventBus {
             try {
                 awaitCancellation()
             } finally {
-                handlers[priority]?.removeAll { it.first == handlerName }
+                handlers[priority]?.removeAll { it.handlerName == handlerName }
                 if (debugMode) {
                     println("[KeyboardEventBus] Unregistered handler '$handlerName'")
                 }

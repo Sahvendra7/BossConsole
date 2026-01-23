@@ -21,7 +21,7 @@ The application features a comprehensive keyboard shortcuts system (Issue #201) 
 
 ### Event Flow
 
-1. **GlobalKeyboardInterceptor** (desktop AWT level) - Intercepts GLOBAL context shortcuts before Compose
+1. **MenuBar** (native OS level) - Handles GLOBAL context shortcuts via native menu accelerators
 2. **KeyboardEventBus** - Central event distribution with priority-based handling:
    - **COMPONENT** (priority 0) - Terminal, browser, editor handle their own shortcuts first
    - **WORKSPACE** (priority 1) - Workspace-level shortcuts (panel navigation, workspace save)
@@ -37,7 +37,6 @@ The application features a comprehensive keyboard shortcuts system (Issue #201) 
 - `KeymapActions.kt` - Registry of 18 action IDs across 8 categories
 
 **Handler System** (`composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/handler/`):
-- `GlobalKeyboardInterceptor.kt` - AWT-level interception for GLOBAL shortcuts
 - `KeymapMatcher.kt` - Matches keyboard events to configured bindings
 - `KeymapValidator.kt` - Detects conflicts and validates shortcuts
 - `KeymapHandler.kt` - Context-aware event dispatcher

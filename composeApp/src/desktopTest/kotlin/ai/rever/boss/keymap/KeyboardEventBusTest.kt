@@ -47,17 +47,17 @@ class KeyboardEventBusTest {
         val callOrder = mutableListOf<String>()
 
         // Register in reverse order to test sorting
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global", "test-window") {
             callOrder.add("global")
             KeyboardEventResult(consumed = false, handlerName = "global")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component", "test-window") {
             callOrder.add("component")
             KeyboardEventResult(consumed = false, handlerName = "component")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace", "test-window") {
             callOrder.add("workspace")
             KeyboardEventResult(consumed = false, handlerName = "workspace")
         }
@@ -101,12 +101,12 @@ class KeyboardEventBusTest {
     fun `consumed event stops propagation`() = runBlocking {
         val callOrder = mutableListOf<String>()
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component", "test-window") {
             callOrder.add("component")
             KeyboardEventResult(consumed = true, handlerName = "component")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace", "test-window") {
             callOrder.add("workspace")
             KeyboardEventResult(consumed = false, handlerName = "workspace")
         }
@@ -122,17 +122,17 @@ class KeyboardEventBusTest {
     fun `unconsumed event propagates to all handlers`() = runBlocking {
         val callOrder = mutableListOf<String>()
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "component", "test-window") {
             callOrder.add("component")
             KeyboardEventResult(consumed = false, handlerName = "component")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "workspace", "test-window") {
             callOrder.add("workspace")
             KeyboardEventResult(consumed = false, handlerName = "workspace")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global", "test-window") {
             callOrder.add("global")
             KeyboardEventResult(consumed = false, handlerName = "global")
         }
@@ -156,7 +156,7 @@ class KeyboardEventBusTest {
 
     @Test
     fun `subscribe adds handler`() {
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "test") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "test", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "test")
         }
 
@@ -168,12 +168,12 @@ class KeyboardEventBusTest {
     fun `multiple handlers at same priority all called`() = runBlocking {
         val callCount = mutableListOf<Int>()
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "handler1") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "handler1", "test-window") {
             callCount.add(1)
             KeyboardEventResult(consumed = false, handlerName = "handler1")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "handler2") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "handler2", "test-window") {
             callCount.add(2)
             KeyboardEventResult(consumed = false, handlerName = "handler2")
         }
@@ -187,7 +187,7 @@ class KeyboardEventBusTest {
 
     @Test
     fun `cancelled job removes handler`() = runBlocking {
-        val job = KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "test") {
+        val job = KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "test", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "test")
         }
 
@@ -202,13 +202,13 @@ class KeyboardEventBusTest {
 
     @Test
     fun `clearHandlers removes all handlers`() {
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "comp")
         }
-        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "work") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "work", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "work")
         }
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "global")
         }
 
@@ -224,12 +224,12 @@ class KeyboardEventBusTest {
     fun `handler exception does not stop other handlers`() = runBlocking {
         val callOrder = mutableListOf<String>()
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "failing") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "failing", "test-window") {
             callOrder.add("failing")
             throw RuntimeException("Test error")
         }
 
-        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "succeeding") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.WORKSPACE, "succeeding", "test-window") {
             callOrder.add("succeeding")
             KeyboardEventResult(consumed = false, handlerName = "succeeding")
         }
@@ -253,13 +253,13 @@ class KeyboardEventBusTest {
 
     @Test
     fun `getHandlerCounts returns correct counts per priority`() {
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp1") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp1", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "comp1")
         }
-        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp2") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.COMPONENT, "comp2", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "comp2")
         }
-        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global1") {
+        KeyboardEventBus.subscribe(KeyboardEventPriority.GLOBAL, "global1", "test-window") {
             KeyboardEventResult(consumed = false, handlerName = "global1")
         }
 
@@ -316,19 +316,79 @@ class KeyboardEventBusTest {
         assertEquals("test.action", result.actionId)
     }
 
+    // ==================== WINDOW-SPECIFIC FILTERING TESTS ====================
+
+    @Test
+    fun `handler with targetWindowId only receives matching events`() = runBlocking {
+        val receivedEvents = mutableListOf<String>()
+
+        // Handler for window-1 only
+        KeyboardEventBus.subscribe(
+            KeyboardEventPriority.WORKSPACE,
+            "window1-handler",
+            targetWindowId = "window-1"
+        ) {
+            receivedEvents.add("window1: ${it.sourceWindowId}")
+            KeyboardEventResult(consumed = false, handlerName = "window1-handler")
+        }
+
+        // Emit event from window-1
+        KeyboardEventBus.emit(createTestEvent(sourceWindowId = "window-1"))
+        // Emit event from window-2
+        KeyboardEventBus.emit(createTestEvent(sourceWindowId = "window-2"))
+
+        assertEquals(1, receivedEvents.size, "Handler should only receive events from window-1")
+        assertEquals("window1: window-1", receivedEvents[0])
+    }
+
+    @Test
+    fun `multiple window-specific handlers filter correctly`() = runBlocking {
+        val window1Events = mutableListOf<String>()
+        val window2Events = mutableListOf<String>()
+
+        KeyboardEventBus.subscribe(
+            KeyboardEventPriority.WORKSPACE,
+            "window1-handler",
+            targetWindowId = "window-1"
+        ) {
+            window1Events.add(it.sourceWindowId)
+            KeyboardEventResult(consumed = false, handlerName = "window1-handler")
+        }
+
+        KeyboardEventBus.subscribe(
+            KeyboardEventPriority.WORKSPACE,
+            "window2-handler",
+            targetWindowId = "window-2"
+        ) {
+            window2Events.add(it.sourceWindowId)
+            KeyboardEventResult(consumed = false, handlerName = "window2-handler")
+        }
+
+        // Emit events from both windows
+        KeyboardEventBus.emit(createTestEvent(sourceWindowId = "window-1"))
+        KeyboardEventBus.emit(createTestEvent(sourceWindowId = "window-2"))
+        KeyboardEventBus.emit(createTestEvent(sourceWindowId = "window-1"))
+
+        assertEquals(2, window1Events.size, "Window-1 handler should receive 2 events")
+        assertEquals(1, window2Events.size, "Window-2 handler should receive 1 event")
+    }
+
     // ==================== HELPER FUNCTIONS ====================
 
     /**
      * Creates a test KeyboardEvent using mocked components.
      * Note: This creates a minimal event for testing event bus behavior.
+     *
+     * @param sourceWindowId The window ID for the test event (default: "test-window")
      */
-    private fun createTestEvent(): KeyboardEvent {
+    private fun createTestEvent(sourceWindowId: String = "test-window"): KeyboardEvent {
         // We need to create a mock KeyEvent for testing
         // Using a workaround since Compose KeyEvent requires native event
         return KeyboardEvent(
             keyEvent = createMockComposeKeyEvent(),
             source = KeyEventSource.TEST,
             context = ShortcutContext.GLOBAL,
+            sourceWindowId = sourceWindowId,
             timestamp = System.currentTimeMillis()
         )
     }

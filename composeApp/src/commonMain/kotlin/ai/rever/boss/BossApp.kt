@@ -151,17 +151,9 @@ import ai.rever.boss.utils.CLIVersionManager
 import ai.rever.boss.utils.CLIInstaller
 import ai.rever.boss.utils.Version
 import ai.rever.boss.keymap.KeymapSettingsManager
-import ai.rever.boss.keymap.handler.KeymapHandler
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
-import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
 import ai.rever.boss.keymap.lifecycle.conditions.*
-import ai.rever.boss.components.events.KeyboardEventBus
-import ai.rever.boss.components.events.KeyboardEventPriority
-import ai.rever.boss.components.events.KeyEventSource
-import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
-import ai.rever.boss.components.events.KeyboardEventResult
-import ai.rever.boss.actions.BossActionHandler
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.window_panel.SplitViewState
@@ -723,11 +715,8 @@ fun ComponentContext.BossApp(
     // Focus requester for keyboard shortcuts
     val focusRequester = remember { FocusRequester() }
 
-    // Keyboard shortcut handler with customizable keymaps
+    // Keymap settings (used by ShortcutHelpDialog)
     val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
-    val keymapHandler = remember(keymapSettings) {
-        KeymapHandler.from(keymapSettings)
-    }
 
     // Focus mode settings
     val focusModeSettings by FocusModeSettingsManager.currentSettings.collectAsState()
@@ -932,118 +921,8 @@ fun ComponentContext.BossApp(
         }
     }
 
-    // Action handler for keyboard shortcuts
-    val actionHandler = remember(
-        splitViewState,
-        windowId,
-        workspaceManager,
-        draggablePanelComponent,
-        coroutineScope
-    ) {
-        BossActionHandler(
-            splitViewState = splitViewState,
-            windowId = windowId,
-            workspaceManager = workspaceManager,
-            draggablePanelComponent = draggablePanelComponent,
-            onShowNewTabDialog = { showNewTabDialog = true },
-            onShowTopOfMindDialog = { showTopOfMindDialog = true },
-            onShowSaveMessage = { saveMessage = it },
-            onShowSettings = { showSettingsDialog = true },
-            onShowShortcutHelp = { showShortcutHelpDialog = true },
-            getProjectPath = { windowProjectState.selectedProject.value.path },
-            coroutineScope = coroutineScope
-        )
-    }
-
-    // Register lifecycle conditions for shortcuts
-    LaunchedEffect(Unit) {
-        // Note: TAB_CLOSE does not use lifecycle conditions because it has inline
-        // tab count checking in its handler. Using lifecycle conditions would break
-        // multi-window support since ShortcutLifecycleManager is a singleton and
-        // each window would overwrite the previous window's condition.
-
-        // Panel-dependent shortcuts
-        ShortcutLifecycleManager.registerCondition(
-            KeymapActions.PANEL_NAVIGATE_LEFT,
-            SplitNavigationCondition(
-                getSplitCount = { splitViewState.getAllPanels().size }
-            )
-        )
-
-        ShortcutLifecycleManager.registerCondition(
-            KeymapActions.PANEL_NAVIGATE_RIGHT,
-            SplitNavigationCondition(
-                getSplitCount = { splitViewState.getAllPanels().size }
-            )
-        )
-
-        ShortcutLifecycleManager.registerCondition(
-            KeymapActions.PANEL_NAVIGATE_UP,
-            SplitNavigationCondition(
-                getSplitCount = { splitViewState.getAllPanels().size }
-            )
-        )
-
-        ShortcutLifecycleManager.registerCondition(
-            KeymapActions.PANEL_NAVIGATE_DOWN,
-            SplitNavigationCondition(
-                getSplitCount = { splitViewState.getAllPanels().size }
-            )
-        )
-    }
-
-    // Reevaluate lifecycle conditions when panels change
-    LaunchedEffect(splitViewState.getAllPanels().size) {
-        ShortcutLifecycleManager.reevaluate()
-    }
-
-    // Subscribe to keyboard events with WORKSPACE priority
-    LaunchedEffect(keymapHandler, splitViewState, windowId) {
-        val handlerName = "BossApp-Workspace-$windowId"
-        KeyboardEventBus.subscribe(
-            priority = KeyboardEventPriority.WORKSPACE,
-            handlerName = handlerName
-        ) { event ->
-            // IMPORTANT: Only handle keyboard events if this window is focused
-            // This prevents multiple windows from processing the same shortcut
-            if (!WindowFocusManager.isWindowFocused(windowId)) {
-                return@subscribe KeyboardEventResult(
-                    consumed = false,
-                    handlerName = handlerName
-                )
-            }
-
-            // Determine current context based on active tab type
-            val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-            val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
-            val currentContext = when {
-                activeTab is FluckTabInfo -> ShortcutContext.BROWSER
-                activeTab is TerminalTabInfo -> ShortcutContext.TERMINAL
-                activeTab is EditorTabInfo -> ShortcutContext.EDITOR
-                else -> ShortcutContext.WORKSPACE
-            }
-
-            // Try to handle as workspace shortcut using the KeymapHandler
-            val handled = keymapHandler.handleKeyEvent(event.keyEvent, currentContext) { actionId ->
-                // Check lifecycle condition before executing (synchronous check)
-                // Skip lifecycle check for TAB_CLOSE - it has inline tab count checking
-                if (actionId != KeymapActions.TAB_CLOSE) {
-                    val state = ShortcutLifecycleManager.getState(actionId)
-                    if (state != null && !state.enabled) {
-                        return@handleKeyEvent false
-                    }
-                }
-
-                // Execute the shortcut action via the action handler
-                actionHandler.handleAction(actionId)
-            }
-
-            KeyboardEventResult(consumed = handled, handlerName = handlerName)
-        }
-    }
-
-    DisposableEffect(panelRegistry, tabRegistry) {
-        val plugin = DefaultPlugin(panelRegistry, tabRegistry)
+    DisposableEffect(panelRegistry, tabRegistry, windowProjectState) {
+        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState)
         draggablePanelComponent.update()
 
         onDispose {
@@ -2135,6 +2014,113 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Handle Browser Reload menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.reloadBrowserEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                    val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
+                    if (activeTab is FluckTabInfo) {
+                        val activeTabComponent = activeTabsComponent.getActiveComponent()
+                        if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                            activeTabComponent.reload()
+                        }
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Save Workspace menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.saveWorkspaceEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val currentConfig = workspaceManager.currentWorkspace.value
+                    if (currentConfig != null) {
+                        val currentLayout = ai.rever.boss.components.workspaces.extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+                        val updatedConfig = currentConfig.copy(
+                            layout = currentLayout.layout,
+                            timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                        )
+                        workspaceManager.updateCurrentWorkspace(updatedConfig)
+                        workspaceManager.saveCurrentWorkspace()
+                        ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState.markWorkspaceAsSaved(currentConfig.id)
+                    } else {
+                        val currentLayout = ai.rever.boss.components.workspaces.extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+                        val newConfig = currentLayout.copy(
+                            name = "Workspace ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
+                            description = "Saved workspace"
+                        )
+                        workspaceManager.updateCurrentWorkspace(newConfig)
+                        workspaceManager.saveCurrentWorkspace()
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Open Codebase menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.openCodebaseEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    draggablePanelComponent.activatePlugin("codebase")
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Panel Navigation menu events
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.navigatePanelLeftEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.LEFT)?.let { panel ->
+                        splitViewState.setActivePanel(panel.id)
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.navigatePanelRightEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.RIGHT)?.let { panel ->
+                        splitViewState.setActivePanel(panel.id)
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.navigatePanelUpEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.UP)?.let { panel ->
+                        splitViewState.setActivePanel(panel.id)
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    LaunchedEffect(windowId) {
+        ai.rever.boss.window.MenuActionsHandler.navigatePanelDownEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.DOWN)?.let { panel ->
+                        splitViewState.setActivePanel(panel.id)
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
     with(draggablePanelComponent) {
         BossTheme {
             CompositionLocalProvider(
@@ -2145,42 +2131,10 @@ fun ComponentContext.BossApp(
                 LocalWindowRunnerState provides windowRunnerState
             ) {
                 Box(modifier = Modifier
-                .fillMaxSize()
-                .focusRequester(focusRequester)
-                .focusable()
-                .onPreviewKeyEvent { event ->
-                    // Emit keyboard events to the event bus for priority-based handling
-                    // Child components (terminal, browser) consume their own events first
-                    // Events that reach here are passed to the KeyboardEventBus subscribers
-                    if (event.type == KeyEventType.KeyDown) {
-                        // Determine current context based on active tab type
-                        val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
-                        val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
-                        val currentContext = when {
-                            activeTab is FluckTabInfo -> ShortcutContext.BROWSER
-                            activeTab is TerminalTabInfo -> ShortcutContext.TERMINAL
-                            activeTab is EditorTabInfo -> ShortcutContext.EDITOR
-                            else -> ShortcutContext.WORKSPACE
-                        }
-
-                        // Emit to KeyboardEventBus for priority-based handling
-                        coroutineScope.launch {
-                            KeyboardEventBus.emit(
-                                BossKeyboardEvent(
-                                    keyEvent = event,
-                                    source = KeyEventSource.WORKSPACE,
-                                    context = currentContext
-                                )
-                            )
-                        }
-
-                        // Don't consume the event - let KeyboardEventBus handlers decide
-                        false
-                    } else {
-                        false
-                    }
-                }
-            ) { // Use Box to allow overlaying the drag ghost
+                    .fillMaxSize()
+                    .focusRequester(focusRequester)
+                    .focusable()
+                ) { // Use Box to allow overlaying the drag ghost
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Title bar - conditionally shown based on settings
                     // Default: hidden on Linux/Windows, shown on macOS

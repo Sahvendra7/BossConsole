@@ -50,7 +50,7 @@ This document covers the core subsystems of BOSS Console.
 
 **Key Components**:
 - `KeymapSettingsManager.kt` - Settings persistence (`~/.boss/keymap-settings.json`)
-- `GlobalKeyboardInterceptor.kt` - AWT-level interception
+- `MenuBar` - Native OS menu with keyboard accelerators for GLOBAL shortcuts
 - `KeyboardEventBus` - Priority-based event distribution
 - `BossActionHandler` - Action execution
 

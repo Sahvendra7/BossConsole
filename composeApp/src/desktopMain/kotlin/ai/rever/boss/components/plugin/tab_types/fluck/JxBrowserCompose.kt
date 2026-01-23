@@ -241,6 +241,7 @@ fun JxBrowserCompose(
     var lastUserEditTime by remember { mutableStateOf(0L) }
     val dropdownListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val windowId = LocalWindowId.current ?: "unknown"
 
     // Secret integration state
     val secretViewModel = remember { BrowserSecretIntegrationViewModel() }
@@ -1375,7 +1376,8 @@ fun JxBrowserCompose(
                                                 BossKeyboardEvent(
                                                     keyEvent = keyEvent,
                                                     source = KeyEventSource.COMPONENT_BROWSER,
-                                                    context = ShortcutContext.BROWSER
+                                                    context = ShortcutContext.BROWSER,
+                                                    sourceWindowId = windowId
                                                 )
                                             )
                                         }

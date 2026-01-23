@@ -42,6 +42,8 @@ import compose.icons.feathericons.GitCommit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
@@ -481,7 +483,33 @@ private fun getStatusColor(status: GitFileStatusType?): Color {
 
 /**
  * Register Git Status panel with the plugin system (desktop implementation)
+ *
+ * Dynamically registers/unregisters based on:
+ * 1. A project being selected (path is not empty)
+ * 2. The project being a Git repository (GitService.isGitRepository)
+ *
+ * Follows the SecretManagerPanel pattern for dynamic panel registration.
  */
-actual fun DefaultPlugin.registerGitStatus() = panelRegistry.registerPanel(GitStatusInfo) {
-    ctx, panelInfo -> GitStatusComponent(ctx, panelInfo)
+actual fun DefaultPlugin.registerGitStatus() {
+    val projectState = windowProjectState ?: return
+
+    pluginScope.launch(Dispatchers.Main) {
+        combine(
+            projectState.selectedProject,
+            GitService.isGitRepository
+        ) { project, isGitRepo ->
+            // Show panel only when a project is selected AND it's a git repository
+            project.path.isNotEmpty() && isGitRepo
+        }
+            .distinctUntilChanged()
+            .collect { shouldShow ->
+                if (shouldShow) {
+                    panelRegistry.registerPanel(GitStatusInfo) { ctx, panelInfo ->
+                        GitStatusComponent(ctx, panelInfo)
+                    }
+                } else {
+                    panelRegistry.unregisterPanel(GitStatusInfo.id)
+                }
+            }
+    }
 }

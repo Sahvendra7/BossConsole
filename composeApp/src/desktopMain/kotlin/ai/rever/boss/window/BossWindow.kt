@@ -8,7 +8,6 @@ import ai.rever.boss.utils.CLIInstaller
 import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.keymap.KeymapSettingsManager
-import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
 import ai.rever.boss.keymap.menu.MenuShortcutBridge
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.focusmode.FocusModeSettingsManager
@@ -42,14 +41,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.key.Key
 import org.jetbrains.compose.resources.painterResource
 import boss_kotlin.composeapp.generated.resources.Res
 import boss_kotlin.composeapp.generated.resources.boss_icon
 import androidx.compose.ui.window.*
 import java.awt.Color
 import java.awt.Frame
-import java.awt.event.KeyEvent
 
 /**
  * Individual BOSS window composable
@@ -117,9 +114,7 @@ fun ApplicationScope.BossWindow(
             }
         }
 
-        // Attach GlobalKeyboardInterceptor for AWT-level keyboard interception
         val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
-        val globalInterceptor = remember { GlobalKeyboardInterceptor(keymapSettings) }
 
         // Create shortcut bridge for menu items
         val shortcutBridge = remember(keymapSettings) { MenuShortcutBridge.from(keymapSettings) }
@@ -138,20 +133,6 @@ fun ApplicationScope.BossWindow(
 
         // State for Welcome Wizard dialog
         var showWelcomeWizard by remember { mutableStateOf(false) }
-
-        DisposableEffect(window, globalInterceptor) {
-            globalInterceptor.attach(window)
-
-            onDispose {
-                globalInterceptor.detach(window)
-            }
-        }
-
-        // Update interceptor when keymap settings change
-        DisposableEffect(keymapSettings) {
-            globalInterceptor.updateSettings(keymapSettings)
-            onDispose { }
-        }
 
         // Sync isMaximized state with actual window state (handles OS maximize controls)
         DisposableEffect(window) {
@@ -205,8 +186,8 @@ fun ApplicationScope.BossWindow(
         }
 
         // macOS MenuBar - provides native menu integration
-        // Keyboard shortcuts are displayed next to menu items via MenuShortcutBridge
-        // Actual shortcut handling is done in BossApp.kt via onPreviewKeyEvent
+        // Keyboard shortcuts are handled at OS level via native menu accelerators
+        // This is the single source of truth for all keyboard shortcuts (BossTerm pattern)
         MenuBar {
             // File Menu
             Menu("File") {
@@ -281,6 +262,24 @@ fun ApplicationScope.BossWindow(
                         }
                     )
                 }
+
+                Separator()
+
+                Item(
+                    "Save Workspace",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.WORKSPACE_SAVE),
+                    onClick = {
+                        MenuActionsHandler.triggerSaveWorkspace(windowState.id)
+                    }
+                )
+
+                Item(
+                    "Open Codebase",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.CODEBASE_OPEN),
+                    onClick = {
+                        MenuActionsHandler.triggerOpenCodebase(windowState.id)
+                    }
+                )
 
                 Separator()
 
@@ -378,6 +377,46 @@ fun ApplicationScope.BossWindow(
                         MenuActionsHandler.triggerZoomOut(windowState.id)
                     }
                 )
+                Item(
+                    "Reload",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.BROWSER_RELOAD),
+                    onClick = {
+                        MenuActionsHandler.triggerReloadBrowser(windowState.id)
+                    }
+                )
+
+                Separator()
+
+                // Panel Navigation
+                Item(
+                    "Navigate Left",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_LEFT),
+                    onClick = {
+                        MenuActionsHandler.triggerNavigatePanelLeft(windowState.id)
+                    }
+                )
+                Item(
+                    "Navigate Right",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_RIGHT),
+                    onClick = {
+                        MenuActionsHandler.triggerNavigatePanelRight(windowState.id)
+                    }
+                )
+                Item(
+                    "Navigate Up",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_UP),
+                    onClick = {
+                        MenuActionsHandler.triggerNavigatePanelUp(windowState.id)
+                    }
+                )
+                Item(
+                    "Navigate Down",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_DOWN),
+                    onClick = {
+                        MenuActionsHandler.triggerNavigatePanelDown(windowState.id)
+                    }
+                )
+
                 Separator()
 
                 Item(
@@ -442,6 +481,7 @@ fun ApplicationScope.BossWindow(
                 )
                 Item(
                     "Close Window",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.WINDOW_CLOSE),
                     onClick = { WindowOperations.closeWindow(windowState.id) }
                 )
 
@@ -532,10 +572,6 @@ fun ApplicationScope.BossWindow(
                 )
             }
         }
-
-        // Note: Keyboard shortcuts are ALSO handled at the Compose level in BossApp.kt
-        // using onPreviewKeyEvent. The MenuBar shortcuts work alongside those handlers
-        // and provide visual feedback for users discovering available shortcuts.
 
         // Provide the AWT window via LocalAwtWindow for multi-window support
         // This ensures JxBrowser instances get the correct window handle for their containing window

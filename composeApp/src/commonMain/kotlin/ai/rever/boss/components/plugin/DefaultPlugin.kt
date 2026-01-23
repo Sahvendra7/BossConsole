@@ -21,6 +21,7 @@ import ai.rever.boss.components.plugin.panels.right_top.registerUserSecretList
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
+import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.components.registery.TabRegistry
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +31,8 @@ import kotlinx.coroutines.cancel
 
 class DefaultPlugin(
     val panelRegistry: PanelRegistry,
-    val tabRegistry: TabRegistry
+    val tabRegistry: TabRegistry,
+    val windowProjectState: WindowProjectState?
 ) {
     // Lifecycle-aware scope for long-running operations like dynamic panel registration
     // This scope should be cancelled when the plugin is disposed

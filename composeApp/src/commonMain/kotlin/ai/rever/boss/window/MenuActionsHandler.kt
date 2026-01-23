@@ -64,6 +64,27 @@ object MenuActionsHandler {
     private val _revealPluginEvents = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 10)
     val revealPluginEvents: SharedFlow<Pair<String, String>> = _revealPluginEvents.asSharedFlow()
 
+    private val _reloadBrowserEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val reloadBrowserEvents: SharedFlow<String> = _reloadBrowserEvents.asSharedFlow()
+
+    private val _saveWorkspaceEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val saveWorkspaceEvents: SharedFlow<String> = _saveWorkspaceEvents.asSharedFlow()
+
+    private val _openCodebaseEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val openCodebaseEvents: SharedFlow<String> = _openCodebaseEvents.asSharedFlow()
+
+    private val _navigatePanelLeftEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val navigatePanelLeftEvents: SharedFlow<String> = _navigatePanelLeftEvents.asSharedFlow()
+
+    private val _navigatePanelRightEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val navigatePanelRightEvents: SharedFlow<String> = _navigatePanelRightEvents.asSharedFlow()
+
+    private val _navigatePanelUpEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val navigatePanelUpEvents: SharedFlow<String> = _navigatePanelUpEvents.asSharedFlow()
+
+    private val _navigatePanelDownEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val navigatePanelDownEvents: SharedFlow<String> = _navigatePanelDownEvents.asSharedFlow()
+
     // State for enabling/disabling split menu items per window (windowId -> hasActiveTabs)
     private val _splitEnabledState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val splitEnabledState: StateFlow<Map<String, Boolean>> = _splitEnabledState.asStateFlow()
@@ -238,5 +259,68 @@ object MenuActionsHandler {
      */
     fun triggerRevealPlugin(windowId: String, pluginId: String) {
         _revealPluginEvents.tryEmit(Pair(windowId, pluginId))
+    }
+
+    /**
+     * Trigger a "Reload Browser" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerReloadBrowser(windowId: String) {
+        _reloadBrowserEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Save Workspace" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerSaveWorkspace(windowId: String) {
+        _saveWorkspaceEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger an "Open Codebase" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerOpenCodebase(windowId: String) {
+        _openCodebaseEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Navigate Panel Left" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNavigatePanelLeft(windowId: String) {
+        _navigatePanelLeftEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Navigate Panel Right" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNavigatePanelRight(windowId: String) {
+        _navigatePanelRightEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Navigate Panel Up" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNavigatePanelUp(windowId: String) {
+        _navigatePanelUpEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Navigate Panel Down" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerNavigatePanelDown(windowId: String) {
+        _navigatePanelDownEvents.tryEmit(windowId)
     }
 }
