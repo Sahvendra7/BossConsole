@@ -1,5 +1,6 @@
 package ai.rever.boss.config
 
+import ai.rever.boss.utils.VersionConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
@@ -19,8 +20,8 @@ import java.util.zip.ZipInputStream
  * and extracting it to ~/.boss/boss-chromium/
  */
 object ChromiumAutoDownloader {
-    // Must match the version in gradle/libs.versions.toml
-    private const val JXBROWSER_VERSION = "8.15.0"
+    // JxBrowser version from generated VersionConstants (source: gradle/libs.versions.toml)
+    private val JXBROWSER_VERSION = VersionConstants.JXBROWSER_VERSION
     private const val RELEASES_BASE_URL = "https://github.com/risa-labs-inc/BossConsole-Releases/releases/download"
     private const val VERSION_FILE = "version.txt"
 

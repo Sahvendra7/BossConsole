@@ -81,7 +81,7 @@ jobs:
           CHROMIUM_DIR="$HOME/chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" -PjxBrowserVersion="$JXBROWSER_VERSION" --no-daemon
 
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
@@ -286,7 +286,7 @@ jobs:
           CHROMIUM_DIR="$HOME/chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" -PjxBrowserVersion="$JXBROWSER_VERSION" --no-daemon
 
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
@@ -473,7 +473,7 @@ jobs:
           $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" --no-daemon
+          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
 
           Write-Host "Chromium directory contents:"
           Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
@@ -584,7 +584,7 @@ jobs:
           $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          .\gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" --no-daemon
+          .\gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
 
           Write-Host "Chromium directory contents:"
           Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
@@ -673,7 +673,7 @@ jobs:
           CHROMIUM_DIR="$HOME/chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" -PjxBrowserVersion="$JXBROWSER_VERSION" --no-daemon
 
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
@@ -781,7 +781,7 @@ jobs:
           CHROMIUM_DIR="$HOME/chromium-binaries"
 
           # Use the main project's downloadChromium task (has proper license)
-          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" --no-daemon
+          ./gradlew :composeApp:downloadChromium -PchromiumDir="$CHROMIUM_DIR" -PjxBrowserVersion="$JXBROWSER_VERSION" --no-daemon
 
           echo "Chromium directory contents:"
           ls -la "$CHROMIUM_DIR" || echo "Directory not found!"
