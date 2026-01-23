@@ -1,89 +1,52 @@
 package ai.rever.boss.components.settings.sections
 
-import BossDarkAccent
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
+import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.components.settings.shared.SettingsToggle
+import ai.rever.boss.components.settings.shared.SettingsInfoRow
 import ai.rever.boss.window.WindowAppearanceSettingsManager
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun WindowAppearanceSettings() {
     val settings by WindowAppearanceSettingsManager.currentSettings.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    // Determine platform default
+    val os = System.getProperty("os.name").lowercase()
+    val platformDefault = when {
+        os.contains("mac") -> "Shown"
+        os.contains("linux") -> "Hidden"
+        os.contains("windows") -> "Hidden"
+        else -> "Platform-dependent"
+    }
+
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "Window Appearance",
-            description = "Customize the appearance of the application window"
-        )
+        SettingsSection(title = "Title Bar") {
+            SettingsToggle(
+                label = "Show Title Bar",
+                checked = settings.showTitleBar,
+                onCheckedChange = { enabled ->
+                    coroutineScope.launch {
+                        WindowAppearanceSettingsManager.updateSettings(
+                            settings.copy(showTitleBar = enabled)
+                        )
+                    }
+                },
+                description = "Display the \"Boss Console\" title bar at the top of the window"
+            )
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Show Title Bar Setting
-        SettingSection(
-            title = "Show Title Bar",
-            description = "Show the \"Boss Console\" title bar at the top of the window"
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = if (settings.showTitleBar) "Shown" else "Hidden",
-                    fontSize = 14.sp,
-                    fontWeight = if (settings.showTitleBar) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (settings.showTitleBar) BossDarkAccent else Color.Gray
-                )
-
-                Switch(
-                    checked = settings.showTitleBar,
-                    onCheckedChange = { enabled ->
-                        coroutineScope.launch {
-                            WindowAppearanceSettingsManager.updateSettings(
-                                settings.copy(showTitleBar = enabled)
-                            )
-                        }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = BossDarkAccent,
-                        checkedTrackColor = BossDarkAccent.copy(alpha = 0.5f)
-                    )
-                )
-            }
+            SettingsInfoRow(
+                label = "Platform Default",
+                value = platformDefault,
+                description = "The default setting for your operating system"
+            )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Platform note
-        val os = System.getProperty("os.name").lowercase()
-        val platformNote = when {
-            os.contains("mac") -> "Default: Shown (macOS)"
-            os.contains("linux") -> "Default: Hidden (Linux)"
-            os.contains("windows") -> "Default: Hidden (Windows)"
-            else -> "Default: Based on platform"
-        }
-
-        Text(
-            text = platformNote,
-            color = Color.Gray,
-            fontSize = 12.sp
-        )
     }
 }

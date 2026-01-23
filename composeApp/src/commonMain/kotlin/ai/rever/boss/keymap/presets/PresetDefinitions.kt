@@ -158,6 +158,15 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.VIEW,
                 description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
             ),
+            // Help - Emacs: C-h ? (help) - simplified to ? (Shift+/)
+            KeyBinding(
+                actionId = KeymapActions.HELP_SHORTCUTS,
+                key = "Slash",
+                modifiers = listOf("Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.HELP,
+                description = KeymapActions.getDescription(KeymapActions.HELP_SHORTCUTS)
+            ),
             // Debug
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,

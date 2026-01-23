@@ -47,6 +47,9 @@ object KeymapActions {
     const val FOCUS_MODE_TOGGLE = "view.focus_mode_toggle"
     const val SETTINGS_OPEN = "view.settings_open"
 
+    // Help Actions
+    const val HELP_SHORTCUTS = "help.shortcuts"
+
     // Test/Debug Actions
     const val TEST_EXTERNAL_LINK = "test.external_link"
 
@@ -62,6 +65,7 @@ object KeymapActions {
         const val EDITOR = "Editor"
         const val TOOLS = "Tools"
         const val VIEW = "View/UI"
+        const val HELP = "Help"
         const val DEBUG = "Debug"
     }
 
@@ -93,6 +97,7 @@ object KeymapActions {
         CODEBASE_OPEN to "Open CodeBase panel",
         FOCUS_MODE_TOGGLE to "Toggle Focus Mode (hide/show UI bars)",
         SETTINGS_OPEN to "Open application settings",
+        HELP_SHORTCUTS to "Show keyboard shortcuts help dialog",
         TEST_EXTERNAL_LINK to "Test external link handling (debug)"
     )
 
@@ -124,6 +129,7 @@ object KeymapActions {
         CODEBASE_OPEN to Categories.TOOLS,
         FOCUS_MODE_TOGGLE to Categories.VIEW,
         SETTINGS_OPEN to Categories.VIEW,
+        HELP_SHORTCUTS to Categories.HELP,
         TEST_EXTERNAL_LINK to Categories.DEBUG
     )
 
@@ -155,6 +161,7 @@ object KeymapActions {
         CODEBASE_OPEN to ShortcutContext.GLOBAL,
         FOCUS_MODE_TOGGLE to ShortcutContext.GLOBAL,
         SETTINGS_OPEN to ShortcutContext.GLOBAL,
+        HELP_SHORTCUTS to ShortcutContext.GLOBAL,
         TEST_EXTERNAL_LINK to ShortcutContext.GLOBAL
     )
 
@@ -171,6 +178,7 @@ object KeymapActions {
         CODEBASE_OPEN,
         FOCUS_MODE_TOGGLE,
         SETTINGS_OPEN,
+        HELP_SHORTCUTS,
         TEST_EXTERNAL_LINK
     )
 

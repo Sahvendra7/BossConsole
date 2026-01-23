@@ -40,14 +40,30 @@ actual object KeymapSettingsManager {
     /**
      * Load settings synchronously on startup.
      * If file doesn't exist, uses default keymap.
+     * Applies migration to add any new actions from presets.
      */
     private fun loadSettingsSync() {
         try {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
-                val settings = json.decodeFromString<KeymapSettings>(content)
-                _currentSettings.value = settings
+                val loaded = json.decodeFromString<KeymapSettings>(content)
                 println("[Keymap] Loaded settings from ${settingsFile.absolutePath}")
+
+                // Apply migration to add any new actions from preset
+                val migrated = migrateSettings(loaded)
+
+                // Save if migration made changes
+                if (migrated != loaded) {
+                    try {
+                        val migratedContent = json.encodeToString(KeymapSettings.serializer(), migrated)
+                        settingsFile.writeText(migratedContent)
+                        println("[Keymap] Migrated settings saved to ${settingsFile.absolutePath}")
+                    } catch (e: Exception) {
+                        println("[Keymap] Warning: Could not save migrated settings: ${e.message}")
+                    }
+                }
+
+                _currentSettings.value = migrated
             } else {
                 // First run - create default keymap file
                 println("[Keymap] No settings file found, creating default keymap")
@@ -68,6 +84,40 @@ actual object KeymapSettingsManager {
             println("[Keymap] Falling back to default keymap")
             _currentSettings.value = KeymapPresets.getBOSSDefault()
         }
+    }
+
+    /**
+     * Migrate settings by adding any new actions from the preset that are missing.
+     * This ensures existing users get new keybindings added to presets while
+     * preserving their customizations.
+     *
+     * @param loaded The loaded user settings
+     * @return Migrated settings with any missing actions added from the preset
+     */
+    private fun migrateSettings(loaded: KeymapSettings): KeymapSettings {
+        // Get the preset that matches user's presetName
+        val presetShortcuts = when (loaded.presetName) {
+            "VS Code" -> KeymapPresets.getVSCodePreset().shortcuts
+            "IntelliJ IDEA" -> KeymapPresets.getIntelliJPreset().shortcuts
+            "Emacs" -> KeymapPresets.getEmacsPreset().shortcuts
+            else -> KeymapPresets.getBOSSDefault().shortcuts
+        }
+
+        // Find actions in preset that are missing from user settings
+        val missingActions = presetShortcuts.filterKeys { actionId ->
+            !loaded.shortcuts.containsKey(actionId)
+        }
+
+        if (missingActions.isEmpty()) {
+            return loaded // No migration needed
+        }
+
+        println("[Keymap] Migrating settings: adding ${missingActions.size} new action(s): ${missingActions.keys.joinToString()}")
+
+        // Merge: user settings + missing actions from preset
+        val mergedShortcuts = loaded.shortcuts + missingActions
+
+        return loaded.copy(shortcuts = mergedShortcuts)
     }
 
     /**

@@ -207,6 +207,15 @@ object KeymapPresets {
                 category = KeymapActions.Categories.VIEW,
                 description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
             ),
+            // Help
+            KeyBinding(
+                actionId = KeymapActions.HELP_SHORTCUTS,
+                key = "Slash",
+                modifiers = listOf("Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.HELP,
+                description = KeymapActions.getDescription(KeymapActions.HELP_SHORTCUTS)
+            ),
             // Debug
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,
@@ -425,6 +434,15 @@ object KeymapPresets {
                 category = KeymapActions.Categories.VIEW,
                 description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
             ),
+            // Help - VS Code uses ? for keyboard shortcuts cheatsheet
+            KeyBinding(
+                actionId = KeymapActions.HELP_SHORTCUTS,
+                key = "Slash",
+                modifiers = listOf("Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.HELP,
+                description = KeymapActions.getDescription(KeymapActions.HELP_SHORTCUTS)
+            ),
             // Debug - Keep same as BOSS
             KeyBinding(
                 actionId = KeymapActions.TEST_EXTERNAL_LINK,
@@ -642,6 +660,15 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.VIEW,
                 description = KeymapActions.getDescription(KeymapActions.SETTINGS_OPEN)
+            ),
+            // Help - IntelliJ style
+            KeyBinding(
+                actionId = KeymapActions.HELP_SHORTCUTS,
+                key = "Slash",
+                modifiers = listOf("Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.HELP,
+                description = KeymapActions.getDescription(KeymapActions.HELP_SHORTCUTS)
             ),
             // Debug
             KeyBinding(

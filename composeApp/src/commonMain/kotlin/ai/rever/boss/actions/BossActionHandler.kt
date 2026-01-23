@@ -31,6 +31,7 @@ class BossActionHandler(
     private val onShowTopOfMindDialog: () -> Unit,
     private val onShowSaveMessage: (String?) -> Unit,
     private val onShowSettings: () -> Unit,
+    private val onShowShortcutHelp: () -> Unit,
     private val coroutineScope: CoroutineScope
 ) {
     fun handleAction(actionId: String): Boolean {
@@ -52,6 +53,7 @@ class BossActionHandler(
             KeymapActions.CODEBASE_OPEN -> handleCodebaseOpen()
             KeymapActions.FOCUS_MODE_TOGGLE -> handleFocusModeToggle()
             KeymapActions.SETTINGS_OPEN -> handleSettingsOpen()
+            KeymapActions.HELP_SHORTCUTS -> handleHelpShortcuts()
             KeymapActions.TEST_EXTERNAL_LINK -> handleTestExternalLink()
             // Editor actions - handled by component-level key handlers (BossEditor, LargeFileViewer)
             KeymapActions.EDITOR_FIND,
@@ -257,6 +259,13 @@ class BossActionHandler(
 
     private fun handleSettingsOpen(): Boolean {
         onShowSettings()
+        return true
+    }
+
+    // Help Actions
+
+    private fun handleHelpShortcuts(): Boolean {
+        onShowShortcutHelp()
         return true
     }
 

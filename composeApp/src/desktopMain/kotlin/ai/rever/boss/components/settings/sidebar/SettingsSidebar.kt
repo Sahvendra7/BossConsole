@@ -1,9 +1,6 @@
 package ai.rever.boss.components.settings.sidebar
 
-import BossDarkAccent
-import BossDarkBackground
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -21,221 +18,168 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.SurfaceColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextSecondary
 
-enum class SettingsSection {
-    FLUCK, CODE_EDITOR, BOSS_EDITOR, LANGUAGE_SERVERS, TERMINAL, RUNNER, WORKSPACE, LLM_PROVIDERS, UPDATES, SECURITY, KEYMAP, FOCUS_MODE, WINDOW_APPEARANCE, PERFORMANCE, STARTUP
+/**
+ * Settings section enum with display metadata for BossTerm-style navigation.
+ */
+enum class SettingsSection(
+    val displayName: String,
+    val description: String,
+    val icon: ImageVector
+) {
+    FLUCK(
+        displayName = "Browser",
+        description = "Configure browser behavior, user agent, and link handling",
+        icon = Icons.Outlined.Language
+    ),
+    CODE_EDITOR(
+        displayName = "Code Editor",
+        description = "Font, theme, and editor appearance settings",
+        icon = Icons.Outlined.Code
+    ),
+    BOSS_EDITOR(
+        displayName = "BossEditor",
+        description = "Scroll behavior, code folding, and bracket matching",
+        icon = Icons.Outlined.Edit
+    ),
+    LANGUAGE_SERVERS(
+        displayName = "Language Servers",
+        description = "LSP configuration, completions, and diagnostics",
+        icon = Icons.Outlined.Hub
+    ),
+    TERMINAL(
+        displayName = "Terminal",
+        description = "Shell configuration, colors, and startup behavior",
+        icon = Icons.Outlined.Terminal
+    ),
+    RUNNER(
+        displayName = "Runner",
+        description = "Run/stop behavior and terminal target options",
+        icon = Icons.Outlined.PlayArrow
+    ),
+    WORKSPACE(
+        displayName = "Workspace",
+        description = "Default layout and workspace templates",
+        icon = Icons.Outlined.GridView
+    ),
+    LLM_PROVIDERS(
+        displayName = "LLM Providers",
+        description = "API keys, models, and AI assistant settings",
+        icon = Icons.Outlined.AutoAwesome
+    ),
+    UPDATES(
+        displayName = "Updates",
+        description = "Auto-update preferences and version information",
+        icon = Icons.Outlined.SystemUpdate
+    ),
+    SECURITY(
+        displayName = "Security",
+        description = "WebAuthn, Touch ID, and authentication options",
+        icon = Icons.Outlined.Security
+    ),
+    KEYMAP(
+        displayName = "Shortcuts",
+        description = "Keyboard shortcuts and keymap presets",
+        icon = Icons.Outlined.Keyboard
+    ),
+    FOCUS_MODE(
+        displayName = "Focus Mode",
+        description = "Hide UI elements and minimize distractions",
+        icon = Icons.Outlined.Visibility
+    ),
+    WINDOW_APPEARANCE(
+        displayName = "Appearance",
+        description = "Title bar, window decorations, and theming",
+        icon = Icons.Outlined.DesktopWindows
+    ),
+    PERFORMANCE(
+        displayName = "Performance",
+        description = "Memory and CPU monitoring settings",
+        icon = Icons.Outlined.Speed
+    ),
+    STARTUP(
+        displayName = "Startup",
+        description = "Launch behavior and initialization options",
+        icon = Icons.Outlined.RocketLaunch
+    );
+
+    companion object {
+        val default = FLUCK
+    }
 }
+
+private val NavRailWidth = 180.dp
 
 @Composable
 fun SettingsSidebar(
     selectedSection: SettingsSection,
     onSectionChange: (SettingsSection) -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = Modifier
-            .width(280.dp)
+            .width(NavRailWidth)
             .fillMaxHeight()
-            .verticalScroll(rememberScrollState())
-            .background(BossDarkBackground)
-            .padding(16.dp)
+            .background(SurfaceColor)
+            .verticalScroll(scrollState)
+            .padding(vertical = 8.dp)
     ) {
-        SidebarItem(
-            icon = Icons.Outlined.Language,
-            title = "Fluck Browser",
-            subtitle = "User agent, profiles",
-            isSelected = selectedSection == SettingsSection.FLUCK,
-            onClick = { onSectionChange(SettingsSection.FLUCK) }
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        SidebarItem(
-            icon = Icons.Outlined.Code,
-            title = "Code Editor",
-            subtitle = "Font, size, theme",
-            isSelected = selectedSection == SettingsSection.CODE_EDITOR,
-            onClick = { onSectionChange(SettingsSection.CODE_EDITOR) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Edit,
-            title = "BossEditor",
-            subtitle = "Scroll, folding, brackets",
-            isSelected = selectedSection == SettingsSection.BOSS_EDITOR,
-            onClick = { onSectionChange(SettingsSection.BOSS_EDITOR) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Hub,
-            title = "Language Servers",
-            subtitle = "LSP, completions, diagnostics",
-            isSelected = selectedSection == SettingsSection.LANGUAGE_SERVERS,
-            onClick = { onSectionChange(SettingsSection.LANGUAGE_SERVERS) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Terminal,
-            title = "Terminal",
-            subtitle = "Shell, colors, startup",
-            isSelected = selectedSection == SettingsSection.TERMINAL,
-            onClick = { onSectionChange(SettingsSection.TERMINAL) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.PlayArrow,
-            title = "Runner",
-            subtitle = "Run/stop, terminal target",
-            isSelected = selectedSection == SettingsSection.RUNNER,
-            onClick = { onSectionChange(SettingsSection.RUNNER) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.GridView,
-            title = "Workspace",
-            subtitle = "Default layout, templates",
-            isSelected = selectedSection == SettingsSection.WORKSPACE,
-            onClick = { onSectionChange(SettingsSection.WORKSPACE) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.AutoAwesome,
-            title = "LLM Providers",
-            subtitle = "API keys, models, settings",
-            isSelected = selectedSection == SettingsSection.LLM_PROVIDERS,
-            onClick = { onSectionChange(SettingsSection.LLM_PROVIDERS) }
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        SidebarItem(
-            icon = Icons.Outlined.SystemUpdate,
-            title = "Updates",
-            subtitle = "Auto-update, version info",
-            isSelected = selectedSection == SettingsSection.UPDATES,
-            onClick = { onSectionChange(SettingsSection.UPDATES) }
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        SidebarItem(
-            icon = Icons.Outlined.Security,
-            title = "Security",
-            subtitle = "WebAuthn, Touch ID",
-            isSelected = selectedSection == SettingsSection.SECURITY,
-            onClick = { onSectionChange(SettingsSection.SECURITY) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Keyboard,
-            title = "Keyboard Shortcuts",
-            subtitle = "Edit shortcuts, presets",
-            isSelected = selectedSection == SettingsSection.KEYMAP,
-            onClick = { onSectionChange(SettingsSection.KEYMAP) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Visibility,
-            title = "Focus Mode",
-            subtitle = "Hide UI, minimize distractions",
-            isSelected = selectedSection == SettingsSection.FOCUS_MODE,
-            onClick = { onSectionChange(SettingsSection.FOCUS_MODE) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.DesktopWindows,
-            title = "Window Appearance",
-            subtitle = "Title bar, decorations",
-            isSelected = selectedSection == SettingsSection.WINDOW_APPEARANCE,
-            onClick = { onSectionChange(SettingsSection.WINDOW_APPEARANCE) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.Speed,
-            title = "Performance",
-            subtitle = "Memory, CPU monitoring",
-            isSelected = selectedSection == SettingsSection.PERFORMANCE,
-            onClick = { onSectionChange(SettingsSection.PERFORMANCE) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        SidebarItem(
-            icon = Icons.Outlined.RocketLaunch,
-            title = "Startup",
-            subtitle = "Launch behavior, timeouts",
-            isSelected = selectedSection == SettingsSection.STARTUP,
-            onClick = { onSectionChange(SettingsSection.STARTUP) }
-        )
-
+        SettingsSection.entries.forEach { section ->
+            val isSelected = section == selectedSection
+            NavigationRailItem(
+                section = section,
+                isSelected = isSelected,
+                onClick = { onSectionChange(section) }
+            )
+        }
     }
 }
 
+/**
+ * Single navigation rail item with BossTerm-style selection indicator.
+ */
 @Composable
-private fun SidebarItem(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
+private fun NavigationRailItem(
+    section: SettingsSection,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val backgroundColor = if (isSelected) BossDarkAccent.copy(alpha = 0.1f) else Color.Transparent
-    val borderColor = if (isSelected) BossDarkAccent else Color.Transparent
-    
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .clickable { onClick() },
-        color = backgroundColor,
-        shape = RoundedCornerShape(8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (isSelected) AccentColor.copy(alpha = 0.15f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
+        // Selection indicator bar (3dp wide, 20dp tall)
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = if (isSelected) BossDarkAccent else Color.Gray,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(
-                    text = title,
-                    color = if (isSelected) Color.White else Color.Gray,
-                    fontSize = 15.sp,
-                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
-                )
-                Text(
-                    text = subtitle,
-                    color = Color.Gray.copy(alpha = 0.7f),
-                    fontSize = 12.sp
-                )
-            }
-        }
+                .width(3.dp)
+                .height(20.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (isSelected) AccentColor else Color.Transparent)
+        )
+
+        Icon(
+            imageVector = section.icon,
+            contentDescription = section.displayName,
+            tint = if (isSelected) AccentColor else TextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+
+        Text(
+            text = section.displayName,
+            color = if (isSelected) AccentColor else TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+        )
     }
 }

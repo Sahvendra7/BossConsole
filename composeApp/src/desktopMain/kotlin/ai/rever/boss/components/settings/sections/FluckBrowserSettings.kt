@@ -1,33 +1,30 @@
 package ai.rever.boss.components.settings.sections
 
-import BossDarkAccent
-import BossDarkBackground
-import BossDarkBorder
-import BossDarkSurface
-import androidx.compose.foundation.background
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
+import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.components.settings.shared.SettingsDropdown
+import ai.rever.boss.components.settings.shared.SettingsTextField
+import ai.rever.boss.components.settings.shared.SettingsNumberInput
+import ai.rever.boss.components.settings.shared.SettingsButtonRow
+import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.SurfaceColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextSecondary
 import ai.rever.boss.terminal.ExistingSplitTargetMode
 import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
-import ai.rever.boss.components.settings.shared.DropdownSelector
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
 import ai.rever.boss.utils.ApplicationRestarter
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -40,7 +37,6 @@ fun FluckBrowserSettings() {
     var maxInitRetries by remember { mutableStateOf(BrowserSettings.maxInitRetries) }
     var maxRecoveryAttempts by remember { mutableStateOf(BrowserSettings.maxRecoveryAttempts) }
 
-    // Terminal link settings (Issue #346)
     val terminalLinkSettings by TerminalLinkSettingsManager.currentSettings.collectAsState()
     var terminalLinkOpenMode by remember(terminalLinkSettings) { mutableStateOf(terminalLinkSettings.openMode) }
     var existingSplitTarget by remember(terminalLinkSettings) { mutableStateOf(terminalLinkSettings.existingSplitTarget) }
@@ -48,97 +44,95 @@ fun FluckBrowserSettings() {
     val userAgents = listOf("Default", "Chrome", "Firefox", "Safari", "Edge", "Custom")
     var showRestartDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    
+
+    // Track original values to detect changes requiring restart
+    val originalProfile = remember { BrowserSettings.currentProfile }
+    val originalUserAgent = remember { BrowserSettings.userAgent }
+
+    // Helper to save and check for restart
+    fun saveAndCheckRestart() {
+        val profileChanged = BrowserSettings.currentProfile != currentProfile
+        val userAgentChanged = BrowserSettings.userAgent != (if (userAgent == "Default") null else userAgent) ||
+            (userAgent == "Custom" && BrowserSettings.customUserAgent != customUserAgent)
+
+        BrowserSettings.currentProfile = currentProfile
+        BrowserSettings.userAgent = if (userAgent == "Default") null else userAgent
+        if (userAgent == "Custom") {
+            BrowserSettings.customUserAgent = customUserAgent
+        }
+        BrowserSettings.maxInitRetries = maxInitRetries
+        BrowserSettings.maxRecoveryAttempts = maxRecoveryAttempts
+
+        coroutineScope.launch {
+            BrowserSettingsManager.saveSettings()
+        }
+
+        if (profileChanged || userAgentChanged) {
+            showRestartDialog = true
+        }
+    }
+
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "Fluck Browser Settings",
-            description = "Configure browser behavior and profiles"
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // User Agent Selection
-        SettingSection(title = "User Agent", description = "Change how websites see your browser") {
-            DropdownSelector(
-                label = "User Agent",
-                value = userAgent,
+        // User Agent
+        SettingsSection(title = "User Agent") {
+            SettingsDropdown(
+                label = "Browser Identity",
                 options = userAgents,
-                onValueChange = { 
+                selectedOption = userAgent,
+                onOptionSelected = {
                     userAgent = it
                     BrowserSettings.userAgent = if (it == "Default") null else it
                 },
-                modifier = Modifier.width(400.dp)
+                description = "How websites identify your browser"
             )
-            
+
             if (userAgent == "Custom") {
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
+                SettingsTextField(
+                    label = "Custom User Agent String",
                     value = customUserAgent,
-                    onValueChange = { 
+                    onValueChange = {
                         customUserAgent = it
                         BrowserSettings.customUserAgent = it
                     },
-                    label = { Text("Custom User Agent String") },
-                    placeholder = { Text("Mozilla/5.0 (Windows NT 10.0; Win64; x64)...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
-                    maxLines = 3,
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        focusedBorderColor = BossDarkAccent,
-                        unfocusedBorderColor = BossDarkBorder,
-                        focusedLabelColor = BossDarkAccent,
-                        unfocusedLabelColor = Color.Gray,
-                        placeholderColor = Color.Gray.copy(alpha = 0.5f)
-                    )
+                    placeholder = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
                 )
             }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Note about restart requirement
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = BossDarkAccent.copy(alpha = 0.1f),
-            shape = RoundedCornerShape(8.dp),
-            elevation = 0.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Outlined.Info,
-                    contentDescription = "Info",
-                    tint = BossDarkAccent,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Note: Application restart required for browser settings changes to take effect",
-                    fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.8f)
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
 
-        // Default Browser Section
+            // Restart notice
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = AccentColor.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(6.dp),
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        tint = AccentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Application restart required for browser settings changes",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
+        // Default Browser
         DefaultBrowserSection()
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Terminal Link Behavior Section (Issue #346)
-        SettingSection(
-            title = "Terminal Link Behavior",
-            description = "How to open links clicked in terminal"
-        ) {
+        // Terminal Link Behavior
+        SettingsSection(title = "Terminal Links") {
             val linkOpenModeOptions = listOf(
                 "Always Ask" to TerminalLinkOpenMode.ALWAYS_ASK,
                 "Existing Split" to TerminalLinkOpenMode.EXISTING_SPLIT,
@@ -147,11 +141,11 @@ fun FluckBrowserSettings() {
                 "New Tab" to TerminalLinkOpenMode.NEW_TAB
             )
 
-            DropdownSelector(
+            SettingsDropdown(
                 label = "Open links with",
-                value = linkOpenModeOptions.find { it.second == terminalLinkOpenMode }?.first ?: "Always Ask",
                 options = linkOpenModeOptions.map { it.first },
-                onValueChange = { selectedLabel ->
+                selectedOption = linkOpenModeOptions.find { it.second == terminalLinkOpenMode }?.first ?: "Always Ask",
+                onOptionSelected = { selectedLabel ->
                     val selectedMode = linkOpenModeOptions.find { it.first == selectedLabel }?.second
                         ?: TerminalLinkOpenMode.ALWAYS_ASK
                     terminalLinkOpenMode = selectedMode
@@ -159,38 +153,26 @@ fun FluckBrowserSettings() {
                         TerminalLinkSettingsManager.setOpenMode(selectedMode)
                     }
                 },
-                modifier = Modifier.width(400.dp)
+                description = when (terminalLinkOpenMode) {
+                    TerminalLinkOpenMode.ALWAYS_ASK -> "A dialog appears each time you click a link"
+                    TerminalLinkOpenMode.EXISTING_SPLIT -> "Opens in an existing split panel if available"
+                    TerminalLinkOpenMode.VERTICAL_SPLIT -> "Opens in a new panel to the right"
+                    TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Opens in a new panel below"
+                    TerminalLinkOpenMode.NEW_TAB -> "Opens in a new tab"
+                }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Description of each mode
-            Text(
-                text = when (terminalLinkOpenMode) {
-                    TerminalLinkOpenMode.ALWAYS_ASK -> "A dialog will appear each time you click a link in the terminal"
-                    TerminalLinkOpenMode.EXISTING_SPLIT -> "Links open in an existing split panel (if available)"
-                    TerminalLinkOpenMode.VERTICAL_SPLIT -> "Links open in a new browser panel to the right of the terminal"
-                    TerminalLinkOpenMode.HORIZONTAL_SPLIT -> "Links open in a new browser panel below the terminal"
-                    TerminalLinkOpenMode.NEW_TAB -> "Links open in a new tab in the current panel"
-                },
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
-
-            // Target panel selection for EXISTING_SPLIT mode
             if (terminalLinkOpenMode == TerminalLinkOpenMode.EXISTING_SPLIT) {
-                Spacer(modifier = Modifier.height(16.dp))
-
                 val targetModeOptions = listOf(
                     "Most Recent Active" to ExistingSplitTargetMode.MOST_RECENT_ACTIVE,
                     "First Available" to ExistingSplitTargetMode.FIRST_AVAILABLE
                 )
 
-                DropdownSelector(
+                SettingsDropdown(
                     label = "Target panel",
-                    value = targetModeOptions.find { it.second == existingSplitTarget }?.first ?: "Most Recent Active",
                     options = targetModeOptions.map { it.first },
-                    onValueChange = { selectedLabel ->
+                    selectedOption = targetModeOptions.find { it.second == existingSplitTarget }?.first ?: "Most Recent Active",
+                    onOptionSelected = { selectedLabel ->
                         val selectedMode = targetModeOptions.find { it.first == selectedLabel }?.second
                             ?: ExistingSplitTargetMode.MOST_RECENT_ACTIVE
                         existingSplitTarget = selectedMode
@@ -198,192 +180,61 @@ fun FluckBrowserSettings() {
                             TerminalLinkSettingsManager.setExistingSplitTarget(selectedMode)
                         }
                     },
-                    modifier = Modifier.width(400.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = when (existingSplitTarget) {
+                    description = when (existingSplitTarget) {
                         ExistingSplitTargetMode.MOST_RECENT_ACTIVE -> "Opens in the most recently used panel"
                         ExistingSplitTargetMode.FIRST_AVAILABLE -> "Opens in the first available panel"
-                    },
-                    fontSize = 12.sp,
-                    color = Color.Gray
+                    }
                 )
             }
 
-            // Reset button (only show if not already on ALWAYS_ASK)
             if (terminalLinkOpenMode != TerminalLinkOpenMode.ALWAYS_ASK) {
-                Spacer(modifier = Modifier.height(16.dp))
-                TextButton(
+                SettingsButtonRow(
+                    label = "Reset Link Behavior",
+                    buttonText = "Reset",
                     onClick = {
                         terminalLinkOpenMode = TerminalLinkOpenMode.ALWAYS_ASK
                         coroutineScope.launch {
                             TerminalLinkSettingsManager.resetToDefault()
                         }
                     },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = BossDarkAccent
-                    )
-                ) {
-                    Icon(
-                        Icons.Outlined.Refresh,
-                        contentDescription = "Reset",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reset to Always Ask", fontSize = 13.sp)
-                }
+                    description = "Reset to \"Always Ask\" mode"
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Profile Management Section
+        // Profile Management
         ProfileManagementSection(
             currentProfile = currentProfile,
             onProfileChange = { currentProfile = it }
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        // Advanced Settings
+        SettingsSection(title = "Advanced") {
+            SettingsNumberInput(
+                label = "Max Initialization Retries",
+                value = maxInitRetries,
+                onValueChange = { maxInitRetries = it },
+                range = 1..10,
+                description = "Attempts to initialize browser on startup"
+            )
 
-        // Advanced Settings Section
-        SettingSection(
-            title = "Advanced",
-            description = "Configure browser retry and recovery behavior"
-        ) {
-            // Max Init Retries
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Max Initialization Retries",
-                        fontSize = 14.sp,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Number of attempts to initialize browser on startup",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { if (maxInitRetries > 1) maxInitRetries-- },
-                        enabled = maxInitRetries > 1
-                    ) {
-                        Text("-", fontSize = 20.sp, color = if (maxInitRetries > 1) Color.White else Color.Gray)
-                    }
-                    Text(
-                        text = maxInitRetries.toString(),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.width(40.dp),
-                        textAlign = TextAlign.Center
-                    )
-                    IconButton(
-                        onClick = { if (maxInitRetries < 10) maxInitRetries++ },
-                        enabled = maxInitRetries < 10
-                    ) {
-                        Text("+", fontSize = 20.sp, color = if (maxInitRetries < 10) Color.White else Color.Gray)
-                    }
-                }
-            }
+            SettingsNumberInput(
+                label = "Max Recovery Attempts",
+                value = maxRecoveryAttempts,
+                onValueChange = { maxRecoveryAttempts = it },
+                range = 1..10,
+                description = "Attempts to recover when browser becomes invalid"
+            )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Max Recovery Attempts
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Max Recovery Attempts",
-                        fontSize = 14.sp,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Number of attempts to recover when browser becomes invalid",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { if (maxRecoveryAttempts > 1) maxRecoveryAttempts-- },
-                        enabled = maxRecoveryAttempts > 1
-                    ) {
-                        Text("-", fontSize = 20.sp, color = if (maxRecoveryAttempts > 1) Color.White else Color.Gray)
-                    }
-                    Text(
-                        text = maxRecoveryAttempts.toString(),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.width(40.dp),
-                        textAlign = TextAlign.Center
-                    )
-                    IconButton(
-                        onClick = { if (maxRecoveryAttempts < 10) maxRecoveryAttempts++ },
-                        enabled = maxRecoveryAttempts < 10
-                    ) {
-                        Text("+", fontSize = 20.sp, color = if (maxRecoveryAttempts < 10) Color.White else Color.Gray)
-                    }
-                }
-            }
+            SettingsButtonRow(
+                label = "Apply Browser Settings",
+                buttonText = "Apply",
+                onClick = { saveAndCheckRestart() },
+                description = "Save changes (may require restart)"
+            )
         }
     }
 
-    // Apply settings button
-    Spacer(modifier = Modifier.height(32.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
-    ) {
-        Button(
-            onClick = {
-                // Check what changed
-                val profileChanged = BrowserSettings.currentProfile != currentProfile
-                val userAgentChanged = BrowserSettings.userAgent != (if (userAgent == "Default") null else userAgent) ||
-                    (userAgent == "Custom" && BrowserSettings.customUserAgent != customUserAgent)
-
-                // Apply settings
-                BrowserSettings.currentProfile = currentProfile
-                BrowserSettings.userAgent = if (userAgent == "Default") null else userAgent
-                if (userAgent == "Custom") {
-                    BrowserSettings.customUserAgent = customUserAgent
-                }
-                // Apply retry/recovery settings (take effect immediately, no restart needed)
-                BrowserSettings.maxInitRetries = maxInitRetries
-                BrowserSettings.maxRecoveryAttempts = maxRecoveryAttempts
-
-                // Save settings
-                coroutineScope.launch {
-                    BrowserSettingsManager.saveSettings()
-                }
-
-                // Show restart dialog if significant changes were made
-                if (profileChanged || userAgentChanged) {
-                    showRestartDialog = true
-                }
-            },
-            colors = ButtonDefaults.buttonColors(
-                backgroundColor = BossDarkAccent,
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(6.dp)
-        ) {
-            Text("Apply Settings")
-        }
-    }
-    
     // Restart dialog
     if (showRestartDialog) {
         AlertDialog(
@@ -391,29 +242,22 @@ fun FluckBrowserSettings() {
             title = {
                 Text(
                     "Restart Required",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
                 Column {
                     Text(
                         "Browser settings have been changed and require an application restart to take effect.",
-                        color = Color.Gray,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "Would you like to restart the application now?",
-                        color = Color.Gray,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
+                        color = TextSecondary,
+                        fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Make sure to save any unsaved work before restarting.",
-                        color = Color.Gray.copy(alpha = 0.7f),
+                        color = TextSecondary.copy(alpha = 0.7f),
                         fontSize = 12.sp
                     )
                 }
@@ -422,22 +266,19 @@ fun FluckBrowserSettings() {
                 TextButton(
                     onClick = {
                         showRestartDialog = false
-                        // Restart the application
                         ApplicationRestarter.scheduleRestart(delayMillis = 500)
                     }
                 ) {
-                    Text("Restart Now", color = BossDarkAccent)
+                    Text("Restart Now", color = AccentColor)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showRestartDialog = false }
-                ) {
-                    Text("Later", color = Color.Gray)
+                TextButton(onClick = { showRestartDialog = false }) {
+                    Text("Later", color = TextSecondary)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = SurfaceColor,
+            contentColor = TextPrimary
         )
     }
 }

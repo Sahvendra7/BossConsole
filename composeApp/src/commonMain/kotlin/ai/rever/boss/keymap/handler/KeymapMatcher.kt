@@ -190,6 +190,7 @@ class KeymapMatcher(
             "[" -> "OpenBracket"
             "]" -> "CloseBracket"
             "/" -> "Slash"
+            "?" -> "Slash"  // Shift+/ produces "?" - map to Slash for matching
             "\\" -> "Backslash"
             ";" -> "Semicolon"
             "'" -> "Apostrophe"

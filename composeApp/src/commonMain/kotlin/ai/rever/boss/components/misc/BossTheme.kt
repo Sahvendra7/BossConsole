@@ -6,9 +6,11 @@ import androidx.compose.ui.graphics.Color
 // JetBrains Dark Theme Colors
 val BossDarkBackground = Color(0xFF2B2B2B) // JetBrains dark background
 val BossDarkSurface = Color(0xFF3C3F41)    // JetBrains secondary background
+val BossDarkContentBackground = Color(0xFF1E1E1E) // Darker content background (for settings)
 val BossDarkBorder = Color(0xFF4D4D4D)     // JetBrains border color
 val BossDarkTextPrimary = Color(0xFFF2F2F2) // JetBrains text color - brightened
 val BossDarkTextSecondary = Color(0xFFAAAAAA) // JetBrains secondary text - brightened
+val BossDarkTextMuted = Color(0xFF707070)  // Muted text color
 val BossDarkAccent = Color(0xFF3592C4)      // JetBrains blue accent
 val BossDarkSecondary = Color(0xFF43A047)   // Secondary color - green
 val BossDarkError = Color(0xFFE53935)       // Error color - red

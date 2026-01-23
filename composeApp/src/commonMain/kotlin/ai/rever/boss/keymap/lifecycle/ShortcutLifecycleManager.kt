@@ -2,6 +2,7 @@ package ai.rever.boss.keymap.lifecycle
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Represents the current lifecycle state of a keyboard shortcut.
@@ -41,8 +42,9 @@ object ShortcutLifecycleManager {
 
     /**
      * Registered conditions for each action ID.
+     * Uses ConcurrentHashMap for thread-safe access from multiple coroutines.
      */
-    private val conditions = mutableMapOf<String, ShortcutLifecycleCondition>()
+    private val conditions = ConcurrentHashMap<String, ShortcutLifecycleCondition>()
 
     /**
      * Current lifecycle states for all shortcuts.

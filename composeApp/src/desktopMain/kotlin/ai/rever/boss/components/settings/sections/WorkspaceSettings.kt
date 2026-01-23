@@ -1,18 +1,19 @@
 package ai.rever.boss.components.settings.sections
 
-import BossDarkAccent
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
+import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.BorderColor
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
+import ai.rever.boss.components.settings.shared.SettingsTheme.TextSecondary
 import ai.rever.boss.components.workspaces.PredefinedWorkspaces
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.*
+import androidx.compose.material.Icon
+import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.runtime.*
@@ -25,15 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-/**
- * Settings UI section for workspace configuration.
- */
 @Composable
 fun WorkspaceSettings() {
     val settings by WorkspaceSettingsManager.currentSettings.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Build workspace options including "None" option
     val workspaceOptions = buildList {
         add(WorkspaceOption(
             id = "none",
@@ -50,26 +47,11 @@ fun WorkspaceSettings() {
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "Workspace",
-            description = "Configure workspace behavior when opening projects"
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Default Workspace Selection
-        SettingSection(
-            title = "Default Workspace",
-            description = "Automatically apply this workspace when a project is selected"
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = 8.dp)
-            ) {
+        SettingsSection(title = "Default Workspace") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 workspaceOptions.forEach { option ->
                     WorkspaceOptionItem(
                         title = option.name,
@@ -81,32 +63,18 @@ fun WorkspaceSettings() {
                             }
                         }
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Info about workspaces
-        SettingSection(
-            title = "About Workspaces",
-            description = "How workspaces work"
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = 8.dp)
-            ) {
-                InfoItem(text = "Workspaces define panel layouts with terminals and browsers")
-                Spacer(modifier = Modifier.height(8.dp))
-                InfoItem(text = "Terminal commands use {projectPath} placeholder for the current project")
-                Spacer(modifier = Modifier.height(8.dp))
-                InfoItem(text = "Browser tabs use {gitRemoteUrl} to open the project's GitHub page")
-                Spacer(modifier = Modifier.height(8.dp))
-                InfoItem(text = "Save custom workspaces via the Workspace button in the top bar")
+        SettingsSection(title = "About Workspaces") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                NoteItem(text = "Workspaces define panel layouts with terminals and browsers")
+                NoteItem(text = "Terminal commands use {projectPath} placeholder for the current project")
+                NoteItem(text = "Browser tabs use {gitRemoteUrl} to open the project's GitHub page")
+                NoteItem(text = "Save custom workspaces via the Workspace button in the top bar")
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -123,31 +91,31 @@ private fun WorkspaceOptionItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val borderColor = if (selected) BossDarkAccent else Color(0xFF3C3C3C)
-    val backgroundColor = if (selected) BossDarkAccent.copy(alpha = 0.1f) else Color.Transparent
+    val borderColor = if (selected) AccentColor else BorderColor
+    val backgroundColor = if (selected) AccentColor.copy(alpha = 0.15f) else Color.Transparent
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (selected) BossDarkAccent else MaterialTheme.colors.onSurface
+                color = if (selected) AccentColor else TextPrimary
             )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = description,
-                fontSize = 12.sp,
-                color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                fontSize = 11.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
 
@@ -155,19 +123,19 @@ private fun WorkspaceOptionItem(
             Icon(
                 imageVector = Icons.Outlined.Check,
                 contentDescription = "Selected",
-                tint = BossDarkAccent,
-                modifier = Modifier.size(20.dp)
+                tint = AccentColor,
+                modifier = Modifier.size(18.dp)
             )
         }
     }
 }
 
 @Composable
-private fun InfoItem(text: String) {
+private fun NoteItem(text: String) {
     Text(
         text = "• $text",
         fontSize = 12.sp,
-        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f),
+        color = TextSecondary,
         lineHeight = 18.sp
     )
 }

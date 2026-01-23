@@ -22,6 +22,7 @@ import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
+import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
@@ -895,6 +896,9 @@ fun ComponentContext.BossApp(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var settingsInitialSection by remember { mutableStateOf<String?>(null) }
 
+    // State for showing keyboard shortcut help dialog
+    var showShortcutHelpDialog by remember { mutableStateOf(false) }
+
     // State for terminal link open dialog (Issue #346)
     var showTerminalLinkDialog by remember { mutableStateOf(false) }
     var pendingTerminalLinkUrl by remember { mutableStateOf("") }
@@ -938,6 +942,7 @@ fun ComponentContext.BossApp(
             onShowTopOfMindDialog = { showTopOfMindDialog = true },
             onShowSaveMessage = { saveMessage = it },
             onShowSettings = { showSettingsDialog = true },
+            onShowShortcutHelp = { showShortcutHelpDialog = true },
             coroutineScope = coroutineScope
         )
     }
@@ -2508,6 +2513,21 @@ fun ComponentContext.BossApp(
                         settingsInitialSection = null
                     },
                     initialSection = settingsInitialSection
+                )
+            }
+
+            // Keyboard Shortcut Help Dialog
+            if (showShortcutHelpDialog) {
+                ShortcutHelpDialog(
+                    keymapSettings = keymapSettings,
+                    onDismiss = {
+                        showShortcutHelpDialog = false
+                        focusRequester.requestFocus()
+                    },
+                    onOpenSettings = {
+                        settingsInitialSection = "KEYMAP"
+                        showSettingsDialog = true
+                    }
                 )
             }
 

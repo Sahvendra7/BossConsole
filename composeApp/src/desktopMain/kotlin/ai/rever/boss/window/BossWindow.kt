@@ -9,6 +9,8 @@ import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.GlobalKeyboardInterceptor
+import ai.rever.boss.keymap.menu.MenuShortcutBridge
+import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.window.WindowType
@@ -119,6 +121,9 @@ fun ApplicationScope.BossWindow(
         val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
         val globalInterceptor = remember { GlobalKeyboardInterceptor(keymapSettings) }
 
+        // Create shortcut bridge for menu items
+        val shortcutBridge = remember(keymapSettings) { MenuShortcutBridge.from(keymapSettings) }
+
         // State for CLI installation dialog
         var showCLIInstallDialog by remember { mutableStateOf(false) }
         var isCliInstalled by remember { mutableStateOf<Boolean>(CLIInstaller.isInstalled()) }
@@ -200,18 +205,21 @@ fun ApplicationScope.BossWindow(
         }
 
         // macOS MenuBar - provides native menu integration
-        // Note: Keyboard shortcuts (Cmd+N, Cmd+T, etc.) are handled in BossApp.kt via onPreviewKeyEvent
+        // Keyboard shortcuts are displayed next to menu items via MenuShortcutBridge
+        // Actual shortcut handling is done in BossApp.kt via onPreviewKeyEvent
         MenuBar {
             // File Menu
             Menu("File") {
                 Item(
                     "New Tab",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.TAB_NEW),
                     onClick = {
                         MenuActionsHandler.triggerNewTab(windowState.id)
                     }
                 )
                 Item(
                     "New Window",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.WINDOW_NEW),
                     onClick = { WindowOperations.createNewWindow() }
                 )
                 Item(
@@ -230,6 +238,13 @@ fun ApplicationScope.BossWindow(
                     "New Terminal Tab",
                     onClick = {
                         MenuActionsHandler.triggerNewTerminal(windowState.id)
+                    }
+                )
+                Item(
+                    "Close Tab",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.TAB_CLOSE),
+                    onClick = {
+                        MenuActionsHandler.triggerCloseTab(windowState.id)
                     }
                 )
 
@@ -260,6 +275,7 @@ fun ApplicationScope.BossWindow(
                     // Access TopOfMindDialog for workspace switching and quick navigation
                     Item(
                         "Top of the Mind",
+                        shortcut = shortcutBridge.getKeyShortcut(KeymapActions.QUICK_SWITCHER_OPEN),
                         onClick = {
                             MenuActionsHandler.triggerSelectWorkspace(windowState.id)
                         }
@@ -270,6 +286,7 @@ fun ApplicationScope.BossWindow(
 
                 Item(
                     "Settings",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.SETTINGS_OPEN),
                     onClick = {
                         MenuActionsHandler.triggerOpenSettings(windowState.id)
                     }
@@ -315,6 +332,7 @@ fun ApplicationScope.BossWindow(
             Menu("View") {
                 Item(
                     text = if (isFocusModeEnabled) "Focus Mode (On)" else "Focus Mode (Off)",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.FOCUS_MODE_TOGGLE),
                     onClick = {
                         MenuActionsHandler.triggerToggleFocusMode(windowState.id)
                     }
@@ -341,23 +359,25 @@ fun ApplicationScope.BossWindow(
 
                 Item(
                     "Actual Size",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.BROWSER_ZOOM_RESET),
                     onClick = {
                         MenuActionsHandler.triggerActualSize(windowState.id)
                     }
                 )
                 Item(
                     "Zoom In",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.BROWSER_ZOOM_IN),
                     onClick = {
                         MenuActionsHandler.triggerZoomIn(windowState.id)
                     }
                 )
                 Item(
                     "Zoom Out",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.BROWSER_ZOOM_OUT),
                     onClick = {
                         MenuActionsHandler.triggerZoomOut(windowState.id)
                     }
                 )
-
                 Separator()
 
                 Item(

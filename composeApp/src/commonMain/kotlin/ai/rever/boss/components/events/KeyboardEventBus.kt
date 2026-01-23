@@ -5,6 +5,8 @@ import ai.rever.boss.keymap.model.ShortcutContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Represents a keyboard event with its source and context information.
@@ -98,8 +100,11 @@ object KeyboardEventBus {
     /**
      * Handlers registered for each priority level.
      * Map: Priority -> List of (handlerName, handler function)
+     *
+     * Uses ConcurrentHashMap and CopyOnWriteArrayList for thread-safe access
+     * from multiple coroutines without explicit synchronization.
      */
-    private val handlers = mutableMapOf<KeyboardEventPriority, MutableList<Pair<String, suspend (KeyboardEvent) -> KeyboardEventResult>>>()
+    private val handlers = ConcurrentHashMap<KeyboardEventPriority, CopyOnWriteArrayList<Pair<String, suspend (KeyboardEvent) -> KeyboardEventResult>>>()
 
     /**
      * Debug mode - logs all events and handling results.
@@ -153,8 +158,8 @@ object KeyboardEventBus {
         handlerName: String,
         handler: suspend (KeyboardEvent) -> KeyboardEventResult
     ): Job {
-        // Add handler to the list for this priority
-        handlers.getOrPut(priority) { mutableListOf() }.add(handlerName to handler)
+        // Add handler to the list for this priority (thread-safe with atomic computeIfAbsent)
+        handlers.computeIfAbsent(priority) { CopyOnWriteArrayList() }.add(handlerName to handler)
 
         if (debugMode) {
             println("[KeyboardEventBus] Registered handler '$handlerName' with priority ${priority.name}")
