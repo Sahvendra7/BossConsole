@@ -65,8 +65,8 @@ class LockedBrowser(
 
     /**
      * Access raw browser for operations that can't be wrapped.
-     * Use this for event registration (browser.on()) since events are typically
-     * registered once during setup and don't need per-call locking.
+     * Use this for event registration (browser.on()) and callback registration (browser.set())
+     * since these are typically done once during setup and don't need per-call locking.
      * WARNING: For regular browser operations, use wrapper methods instead.
      */
     fun unsafe(): Browser = browser

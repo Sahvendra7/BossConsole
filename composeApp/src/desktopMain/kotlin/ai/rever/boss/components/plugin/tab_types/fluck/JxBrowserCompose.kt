@@ -9,9 +9,9 @@ import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.InfoDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.events.DashboardEventBus
+import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
@@ -51,8 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerButton
@@ -66,6 +66,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.teamdev.jxbrowser.browser.Browser
+import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
 import com.teamdev.jxbrowser.navigation.event.FrameLoadFailed
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
@@ -220,7 +221,15 @@ fun JxBrowserCompose(
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var lastNavigationTime by remember { mutableStateOf(0L) }  // Debounce rapid clicks (100ms)
-    var rightClickPosition by remember { mutableStateOf(Offset.Zero) }
+
+    // Hybrid context menu state (Issue #XXX)
+    // Position captured from Compose pointer event (window-relative, reliable)
+    var lastRightClickPosition by remember { mutableStateOf(IntOffset.Zero) }
+    // Context info from JxBrowser ShowContextMenuCallback
+    var showContextMenu by remember { mutableStateOf(false) }
+    var contextMenuInfo by remember { mutableStateOf<ContextMenuInfo?>(null) }
+
+    // Legacy state (kept for backward compatibility with context menu items)
     var hasVideoAtClick by remember { mutableStateOf(false) }
     var rightClickedLinkUrl by remember { mutableStateOf<String?>(null) }
     var selectedText by remember { mutableStateOf<String?>(null) }
@@ -538,6 +547,11 @@ fun JxBrowserCompose(
                     // Inject form field detection script for secret auto-fill (Issue #56)
                     FormFieldDetector.injectFormDetectionScript(browser)
 
+                    // Inject video click tracker for accurate PiP context menu
+                    browser.mainFrame().ifPresent { frame ->
+                        frame.executeJavaScript<Unit>(BrowserJavaScripts.injectVideoClickTracker)
+                    }
+
                     // Install form submission monitor for debugging autofill issues
                     coroutineScope.launch {
                         FormFieldInjector.installFormSubmissionMonitor(browser)
@@ -822,41 +836,154 @@ fun JxBrowserCompose(
         }
     }
 
-    // Create context menu items dynamically based on browser state
-    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, selectedText, focusedFieldInfo, secretViewModel.state) {
-        // Issue #56: If form field is focused, show secret context menu
-        if (focusedFieldInfo != null) {
-            try {
-                // Issue #255: Protect browser.url() call from "closed object" exception
-                val currentUrl = if (isBrowserEnvironmentValid()) {
-                    try {
-                        browser.url()
-                    } catch (e: Exception) {
-                        ""
-                    }
-                } else {
-                    ""
-                }
+    // Register JxBrowser ShowContextMenuCallback for hybrid context menu
+    // This callback intercepts right-click events and gathers context info (link URL, selected text, etc.)
+    // The position is captured from Compose's pointer event (more reliable than JxBrowser's screen coordinates)
+    LaunchedEffect(browser) {
+        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
 
-                SecretContextMenuBuilder.buildSecretMenu(
-                    browser = browser,
-                    fieldInfo = focusedFieldInfo!!,
-                    currentUrl = currentUrl,
-                    allSecrets = secretViewModel.state.allSecrets,
-                    coroutineScope = coroutineScope,
-                    onShowAllSecrets = {
-                        secretViewModel.showAllSecretsDialog()
-                    },
-                    onAddNewSecret = { websitePrefill ->
-                        secretViewModel.showQuickCreateDialog(websitePrefill)
-                    },
-                    onDismiss = {
+        // Use unsafe() for callback registration (done once during setup)
+        browser.unsafe().set(ShowContextMenuCallback::class.java,
+            BrowserContextMenuCallback(browser) { info ->
+                coroutineScope.launch(Dispatchers.Main) {
+                    // Store context info from JxBrowser callback
+                    contextMenuInfo = info
+
+                    // Update legacy state variables for context menu items
+                    rightClickedLinkUrl = info.linkUrl
+                    selectedText = info.selectedText
+                    hasVideoAtClick = info.hasVideo
+
+                    // Form field detection for secrets (Issue #56)
+                    if (info.isEditable) {
+                        focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
+                    } else {
                         focusedFieldInfo = null
                     }
-                )
-            } catch (e: Exception) {
-                // If secret menu building fails, fall back to default menu
-                emptyList()
+
+                    // Show context menu using Compose position (captured from pointer event)
+                    showContextMenu = true
+                }
+            }
+        )
+    }
+
+    // Create context menu items dynamically based on browser state
+    val contextMenuItems = remember(canGoBack, canGoForward, hasVideoAtClick, rightClickedLinkUrl, selectedText, focusedFieldInfo, secretViewModel.state) {
+        // Issue #56: If form field is focused, show combined menu with edit options + secrets
+        if (focusedFieldInfo != null) {
+            buildList {
+                // Edit operations for text fields
+                add(ContextMenuItem(
+                    text = "Copy",
+                    icon = Icons.Default.ContentCopy,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            browser.mainFrame().ifPresent { frame ->
+                                frame.executeJavaScript<Unit>("document.execCommand('copy')")
+                            }
+                        }
+                    }
+                ))
+
+                add(ContextMenuItem(
+                    text = "Paste",
+                    icon = Icons.Default.ContentPaste,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            try {
+                                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                val clipboardText = clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+                                if (!clipboardText.isNullOrEmpty()) {
+                                    browser.mainFrame().ifPresent { frame ->
+                                        // Insert text at cursor position in the focused field
+                                        val escapedText = clipboardText
+                                            .replace("\\", "\\\\")
+                                            .replace("'", "\\'")
+                                            .replace("\n", "\\n")
+                                            .replace("\r", "")
+                                        frame.executeJavaScript<Unit>("""
+                                            (function() {
+                                                var el = document.activeElement;
+                                                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+                                                    if (el.isContentEditable) {
+                                                        document.execCommand('insertText', false, '$escapedText');
+                                                    } else {
+                                                        var start = el.selectionStart || 0;
+                                                        var end = el.selectionEnd || 0;
+                                                        var value = el.value || '';
+                                                        el.value = value.substring(0, start) + '$escapedText' + value.substring(end);
+                                                        el.selectionStart = el.selectionEnd = start + '$escapedText'.length;
+                                                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                                                    }
+                                                }
+                                            })()
+                                        """.trimIndent())
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                // Paste operation failed
+                            }
+                        }
+                    }
+                ))
+
+                add(ContextMenuItem(isDivider = true))
+
+                // Secret menu items
+                try {
+                    val currentUrl = if (isBrowserEnvironmentValid()) {
+                        try { browser.url() } catch (e: Exception) { "" }
+                    } else { "" }
+
+                    val secretItems = SecretContextMenuBuilder.buildSecretMenu(
+                        browser = browser,
+                        fieldInfo = focusedFieldInfo!!,
+                        currentUrl = currentUrl,
+                        allSecrets = secretViewModel.state.allSecrets,
+                        coroutineScope = coroutineScope,
+                        onShowAllSecrets = { secretViewModel.showAllSecretsDialog() },
+                        onAddNewSecret = { websitePrefill -> secretViewModel.showQuickCreateDialog(websitePrefill) },
+                        onDismiss = { focusedFieldInfo = null }
+                    )
+                    addAll(secretItems)
+                } catch (e: Exception) {
+                    // If secret menu fails, just skip it
+                }
+
+                add(ContextMenuItem(isDivider = true))
+
+                // Reload
+                add(ContextMenuItem(
+                    text = "Reload",
+                    icon = Icons.Default.Refresh,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            try { browser.navigation().reload() } catch (e: Exception) { }
+                        }
+                    }
+                ))
+
+                // Copy Page URL
+                add(ContextMenuItem(
+                    text = "Copy Page URL",
+                    icon = Icons.Outlined.ContentCopy,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            try {
+                                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                clipboard.setContents(StringSelection(browser.url()), null)
+                            } catch (e: Exception) { }
+                        }
+                    }
+                ))
+
+                // Developer tools
+                add(ContextMenuItem(
+                    text = "Inspect Element",
+                    icon = Icons.Outlined.Code,
+                    onClick = { if (isBrowserEnvironmentValid()) browser.devTools().show() }
+                ))
             }
         } else {
             // Default context menu
@@ -957,24 +1084,23 @@ fun JxBrowserCompose(
                 ))
             }
 
-            // Copy current URL
-            add(ContextMenuItem(
-                text = "Copy URL",
-                icon = Icons.Outlined.ContentCopy,
-                onClick = {
-                    if (isBrowserEnvironmentValid()) {
+            // Copy URL - copies link URL if on a link, otherwise copies page URL
+            if (!rightClickedLinkUrl.isNullOrEmpty()) {
+                // Right-clicked on a link - copy link URL
+                add(ContextMenuItem(
+                    text = "Copy Link URL",
+                    icon = Icons.Outlined.ContentCopy,
+                    onClick = {
                         try {
                             val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-                            clipboard.setContents(StringSelection(browser.url()), null)
+                            clipboard.setContents(StringSelection(rightClickedLinkUrl), null)
                         } catch (e: Exception) {
-                            // Issue #255: Browser closed during URL copy
+                            // Copy operation failed
                         }
                     }
-                }
-            ))
+                ))
 
-            // Open link in new tab option - only show if right-clicked on a link
-            if (!rightClickedLinkUrl.isNullOrEmpty()) {
+                // Open link in new tab
                 add(ContextMenuItem(
                     text = "Open Link in New Tab",
                     icon = Icons.AutoMirrored.Filled.OpenInNew,
@@ -982,6 +1108,22 @@ fun JxBrowserCompose(
                         coroutineScope.launch(Dispatchers.Main) {
                             rightClickedLinkUrl?.let { url ->
                                 onOpenInNewTab(url)
+                            }
+                        }
+                    }
+                ))
+            } else {
+                // Not on a link - copy current page URL
+                add(ContextMenuItem(
+                    text = "Copy Page URL",
+                    icon = Icons.Outlined.ContentCopy,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            try {
+                                val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                clipboard.setContents(StringSelection(browser.url()), null)
+                            } catch (e: Exception) {
+                                // Issue #255: Browser closed during URL copy
                             }
                         }
                     }
@@ -1462,49 +1604,37 @@ fun JxBrowserCompose(
                             return@onPointerEvent
                         }
 
-                        // Handle right-click for context menu
+                        // Handle right-click - capture position only (hybrid context menu approach)
+                        // JxBrowser's ShowContextMenuCallback handles gathering context info
                         if (event.button == PointerButton.Secondary) {
-                            // Store the click position
                             val change = event.changes.firstOrNull()
                             if (change != null) {
-                                rightClickPosition = change.position
-
-                                // Check for form fields first (Issue #56 - Secret integration)
-                                coroutineScope.launch {
-                                    focusedFieldInfo = FormFieldDetector.getCurrentFocusedField(browser)
-                                }
-
-                                // Get the right-clicked link URL, selected text, and check for video
-                                browser.mainFrame().ifPresent { frame ->
-                                    // Get the right-clicked link URL
-                                    val linkUrl = frame.executeJavaScript<String?>(BrowserJavaScripts.getRightClickedLinkUrl)
-
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        rightClickedLinkUrl = linkUrl
-                                    }
-
-                                    // Get selected text (Issue #159 - Copy text context menu)
-                                    val selection = frame.executeJavaScript<String?>(BrowserJavaScripts.getSelectedText)
-
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        selectedText = if (!selection.isNullOrBlank()) selection else null
-                                    }
-
-                                    // Check if there's a video element on the page
-                                    val hasVideo = frame.executeJavaScript<Boolean>(BrowserJavaScripts.hasVideoElements)
-
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        hasVideoAtClick = hasVideo ?: false
-                                    }
-                                }
+                                // Store Compose position (window-relative, reliable)
+                                lastRightClickPosition = IntOffset(
+                                    change.position.x.toInt(),
+                                    change.position.y.toInt()
+                                )
+                                // Don't consume - let JxBrowser callback handle context info
                             }
                         }
                     }
-                    .contextMenu(items = contextMenuItems)
             )
         }
         }
-        
+
+        // Context menu (hybrid approach - position from Compose, context from JxBrowser callback)
+        if (showContextMenu) {
+            ContextMenu(
+                items = contextMenuItems,
+                offset = lastRightClickPosition,
+                onDismissRequest = {
+                    showContextMenu = false
+                    contextMenuInfo = null
+                    focusedFieldInfo = null
+                }
+            )
+        }
+
         // Floating dropdown overlay
         if (showDropdown) {
             Card(

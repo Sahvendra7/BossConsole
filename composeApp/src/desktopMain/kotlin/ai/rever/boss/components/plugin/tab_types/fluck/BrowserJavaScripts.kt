@@ -67,6 +67,85 @@ object BrowserJavaScripts {
     """.trimIndent()
 
     /**
+     * Check if the right-clicked element is a video or inside a video container.
+     *
+     * This stores the result when contextmenu event fires and retrieves it.
+     * More accurate than hasVideoElements for showing PiP option only on video right-click.
+     *
+     * **Usage**: `frame.executeJavaScript<Boolean>(BrowserJavaScripts.isClickedOnVideo)`
+     *
+     * @return true if clicked on/inside video element, false otherwise
+     */
+    val isClickedOnVideo = """
+        (function() {
+            return window._rightClickedOnVideo || false;
+        })();
+    """.trimIndent()
+
+    /**
+     * JavaScript to inject for tracking right-click on video elements.
+     * Should be injected once after page load.
+     *
+     * Sets window._rightClickedOnVideo to true/false based on whether
+     * the contextmenu event target is a video that supports Picture-in-Picture.
+     *
+     * Uses native PiP API checks (works across all sites):
+     * - document.pictureInPictureEnabled: browser supports PiP
+     * - !video.disablePictureInPicture: video element allows PiP
+     * - video.readyState >= 1: video has loaded metadata (filters unloaded previews)
+     * - video.videoWidth > 0: video actually has a video track
+     */
+    val injectVideoClickTracker = """
+        (function() {
+            if (!window._videoClickTrackerAdded) {
+                document.addEventListener('contextmenu', function(event) {
+                    var el = event.target;
+                    window._rightClickedOnVideo = false;
+                    while (el) {
+                        if (el.tagName === 'VIDEO') {
+                            // Use native PiP API checks (general, works on all sites)
+                            var pipSupported = document.pictureInPictureEnabled === true;
+                            var pipAllowed = el.disablePictureInPicture !== true;
+                            var hasMetadata = el.readyState >= 1;  // HAVE_METADATA or higher
+                            var hasVideoTrack = el.videoWidth > 0 && el.videoHeight > 0;
+
+                            if (pipSupported && pipAllowed && hasMetadata && hasVideoTrack) {
+                                window._rightClickedOnVideo = true;
+                            }
+                            break;
+                        }
+                        el = el.parentElement;
+                    }
+                }, true);
+                window._videoClickTrackerAdded = true;
+            }
+        })();
+    """.trimIndent()
+
+    /**
+     * Generate JavaScript to find a link element at given screen coordinates.
+     *
+     * Uses document.elementFromPoint() to find the element, then traverses up
+     * the DOM tree to find the nearest anchor tag with an href.
+     *
+     * **Usage**: `frame.executeJavaScript<String?>(BrowserJavaScripts.getLinkAtPoint(x, y))`
+     *
+     * @param x The x coordinate in the viewport
+     * @param y The y coordinate in the viewport
+     * @return JavaScript code that returns the link URL or null
+     */
+    fun getLinkAtPoint(x: Int, y: Int): String = """
+        (function() {
+            var el = document.elementFromPoint($x, $y);
+            while (el) {
+                if (el.tagName === 'A' && el.href) return el.href;
+                el = el.parentElement;
+            }
+            return null;
+        })()
+    """.trimIndent()
+
+    /**
      * Enable Picture-in-Picture mode for videos on the page.
      *
      * Attempts to find and activate PiP on:
