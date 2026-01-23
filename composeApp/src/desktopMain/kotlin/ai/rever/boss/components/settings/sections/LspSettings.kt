@@ -5,9 +5,7 @@ package ai.rever.boss.components.settings.sections
 import BossDarkAccent
 import BossDarkBorder
 import BossDarkSurface
-import ai.rever.boss.components.settings.shared.DropdownSelector
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
+import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.bosseditor.lsp.config.*
 import ai.rever.bosseditor.lsp.logging.LogLevel
 import ai.rever.bosseditor.lsp.server.LanguageServerRegistry
@@ -58,20 +56,12 @@ fun LspSettings() {
     var showAdvancedDialog by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "Language Servers",
-            description = "Configure LSP support for code intelligence features"
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
 
         // Global Enable/Disable
-        SettingSection(
+        SettingsSection(
             title = "LSP Support",
             description = "Enable or disable Language Server Protocol support"
         ) {
@@ -110,7 +100,7 @@ fun LspSettings() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Built-in Language Servers
-        SettingSection(
+        SettingsSection(
             title = "Built-in Language Servers",
             description = "Manage pre-configured language servers"
         ) {
@@ -129,7 +119,7 @@ fun LspSettings() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Custom Language Servers
-        SettingSection(
+        SettingsSection(
             title = "Custom Language Servers",
             description = "Add your own language server configurations"
         ) {
@@ -161,7 +151,7 @@ fun LspSettings() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Timeouts Section
-        SettingSection(
+        SettingsSection(
             title = "Timeouts",
             description = "Configure request and initialization timeouts"
         ) {
@@ -191,7 +181,7 @@ fun LspSettings() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Debug Options
-        SettingSection(
+        SettingsSection(
             title = "Debugging",
             description = "Options for troubleshooting LSP issues"
         ) {
@@ -271,7 +261,7 @@ fun LspSettings() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Reset to Defaults
-        SettingSection(
+        SettingsSection(
             title = "Reset",
             description = "Restore default LSP settings"
         ) {

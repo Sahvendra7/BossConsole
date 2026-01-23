@@ -1,20 +1,35 @@
 package ai.rever.boss.components.settings.keymap
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkContentBackground
+import BossDarkError
+import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,36 +84,24 @@ fun EditableKeymapSettings() {
 
     // Make entire content scrollable by putting everything in LazyColumn
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Title and summary
+        // Summary row with shortcuts count and conflict badge
         item {
-            Column {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Keyboard Shortcuts",
-                    style = MaterialTheme.typography.h5,
-                    fontWeight = FontWeight.Bold
+                    text = "${keymapSettings.shortcuts.size} shortcuts configured",
+                    fontSize = 13.sp,
+                    color = BossDarkTextSecondary
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${keymapSettings.shortcuts.size} shortcuts configured",
-                        style = MaterialTheme.typography.body2,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                if (conflicts.isNotEmpty()) {
+                    ConflictWarningBadge(
+                        conflicts = conflicts.flatMap { it.bindings }
                     )
-                    if (conflicts.isNotEmpty()) {
-                        ConflictWarningBadge(
-                            conflicts = conflicts.flatMap { it.bindings }
-                        )
-                    }
                 }
             }
         }
@@ -128,53 +131,124 @@ fun EditableKeymapSettings() {
 
         // Test All Shortcuts button
         item {
-            OutlinedButton(
-                onClick = { showTestDialog = true },
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(BossDarkBackground)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Test All Shortcuts")
+                Column {
+                    Text(
+                        text = "Test Shortcuts",
+                        color = BossDarkTextPrimary,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Verify all shortcuts are working correctly",
+                        color = BossDarkTextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                TextButton(
+                    onClick = { showTestDialog = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Test All", fontSize = 13.sp)
+                }
             }
         }
 
         item {
-            Divider()
+            Divider(color = BossDarkBorder)
         }
 
         // Search and filter
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(BossDarkBackground)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // Search field
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search shortcuts...") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search"
-                        )
-                    },
-                    singleLine = true
-                )
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BossDarkContentBackground)
+                        .border(1.dp, BossDarkBorder, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = BossDarkTextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f),
+                        textStyle = TextStyle(
+                            color = BossDarkTextPrimary,
+                            fontSize = 13.sp
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(BossDarkAccent),
+                        decorationBox = { innerTextField ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Search shortcuts...",
+                                    color = BossDarkTextSecondary,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
 
                 // Category filter dropdown
                 Box {
-                    OutlinedButton(
-                        onClick = { categoryMenuExpanded = true },
-                        modifier = Modifier.height(56.dp)
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(BossDarkContentBackground)
+                            .border(1.dp, BossDarkBorder, RoundedCornerShape(4.dp))
+                            .clickable { categoryMenuExpanded = true }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(if (selectedCategory == "All") "All Categories" else selectedCategory)
+                        Text(
+                            text = if (selectedCategory == "All") "All Categories" else selectedCategory,
+                            color = BossDarkTextPrimary,
+                            fontSize = 13.sp
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Expand",
+                            tint = BossDarkTextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
 
                     DropdownMenu(
                         expanded = categoryMenuExpanded,
-                        onDismissRequest = { categoryMenuExpanded = false }
+                        onDismissRequest = { categoryMenuExpanded = false },
+                        modifier = Modifier.background(BossDarkBackground)
                     ) {
                         allCategories.forEach { category ->
                             DropdownMenuItem(
@@ -185,7 +259,8 @@ fun EditableKeymapSettings() {
                             ) {
                                 Text(
                                     text = if (category == "All") "All Categories" else category,
-                                    fontWeight = if (category == selectedCategory) FontWeight.Bold else FontWeight.Normal
+                                    color = if (category == selectedCategory) BossDarkAccent else BossDarkTextPrimary,
+                                    fontSize = 13.sp
                                 )
                             }
                         }
@@ -229,13 +304,15 @@ fun EditableKeymapSettings() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = "No shortcuts found",
-                                style = MaterialTheme.typography.h6,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.4f)
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = BossDarkTextSecondary
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Try a different search term",
-                                style = MaterialTheme.typography.body2,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                                fontSize = 13.sp,
+                                color = BossDarkTextSecondary.copy(alpha = 0.7f)
                             )
                         }
                     }
@@ -287,12 +364,12 @@ private fun CategoryHeader(category: String, count: Int) {
             text = category,
             style = MaterialTheme.typography.subtitle1,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colors.primary
+            color = BossDarkAccent
         )
         Text(
             text = "$count shortcut${if (count != 1) "s" else ""}",
             style = MaterialTheme.typography.caption,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+            color = BossDarkTextSecondary
         )
     }
 }
@@ -311,90 +388,91 @@ private fun ShortcutItem(
     val lifecycleStates by ShortcutLifecycleManager.states.collectAsState()
     val lifecycleState = lifecycleStates[binding.actionId]
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = if (hasConflict) {
-            MaterialTheme.colors.error.copy(alpha = 0.05f)
-        } else {
-            MaterialTheme.colors.surface
-        },
-        elevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left side: description and context
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = binding.description,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = binding.context.displayName,
-                        style = MaterialTheme.typography.caption,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                    )
-                    if (!binding.enabled) {
-                        Text(
-                            text = "• DISABLED",
-                            style = MaterialTheme.typography.caption,
-                            color = MaterialTheme.colors.error
-                        )
-                    }
-                    // Show lifecycle state
-                    if (lifecycleState != null && !lifecycleState.enabled) {
-                        Text(
-                            text = "• ${lifecycleState.reason ?: "Unavailable"}",
-                            style = MaterialTheme.typography.caption,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-            }
+    val borderColor = if (hasConflict) BossDarkError.copy(alpha = 0.5f) else BossDarkBorder
+    val backgroundColor = if (hasConflict) BossDarkError.copy(alpha = 0.05f) else Color.Transparent
 
-            // Right side: key display, conflict badge, and edit button
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Left side: description and context
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = binding.description,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = BossDarkTextPrimary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Conflict badge
-                if (hasConflict) {
-                    ConflictWarningBadge(conflicts = conflictingBindings)
-                }
-
-                // Key display
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colors.primary.copy(alpha = 0.1f)
-                ) {
+                Text(
+                    text = binding.context.displayName,
+                    fontSize = 12.sp,
+                    color = BossDarkTextSecondary
+                )
+                if (!binding.enabled) {
                     Text(
-                        text = binding.displayString(),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.body2,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colors.primary
+                        text = "• DISABLED",
+                        fontSize = 12.sp,
+                        color = BossDarkError
                     )
                 }
+                // Show lifecycle state
+                if (lifecycleState != null && !lifecycleState.enabled) {
+                    Text(
+                        text = "• ${lifecycleState.reason ?: "Unavailable"}",
+                        fontSize = 12.sp,
+                        color = BossDarkTextSecondary
+                    )
+                }
+            }
+        }
 
-                // Edit button
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit shortcut",
-                        tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                    )
-                }
+        // Right side: key display, conflict badge, and edit button
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Conflict badge
+            if (hasConflict) {
+                ConflictWarningBadge(conflicts = conflictingBindings)
+            }
+
+            // Key display
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(BossDarkAccent.copy(alpha = 0.2f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = binding.displayString(),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BossDarkAccent
+                )
+            }
+
+            // Edit button
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit shortcut",
+                    tint = BossDarkTextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

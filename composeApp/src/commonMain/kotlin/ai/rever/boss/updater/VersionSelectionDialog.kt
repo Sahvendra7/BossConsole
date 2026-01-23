@@ -1,5 +1,12 @@
 package ai.rever.boss.updater
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkContentBackground
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,8 +64,8 @@ fun VersionSelectionDialog(
             modifier = Modifier
                 .width(600.dp)
                 .heightIn(max = 700.dp),
-            backgroundColor = Color(0xFF2D2D2D),
-            shape = RoundedCornerShape(8.dp),
+            backgroundColor = BossDarkBackground,
+            shape = RoundedCornerShape(12.dp),
             elevation = 8.dp
         ) {
             Column(
@@ -72,15 +79,15 @@ fun VersionSelectionDialog(
                 ) {
                     Text(
                         text = "Select Version",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BossDarkTextPrimary
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Default.Close,
                             "Close",
-                            tint = Color.White
+                            tint = BossDarkTextSecondary
                         )
                     }
                 }
@@ -107,12 +114,12 @@ fun VersionSelectionDialog(
                         checked = showStableOnly,
                         onCheckedChange = { showStableOnly = it },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFF4CAF50)
+                            checkedColor = BossDarkAccent
                         )
                     )
                     Text(
                         text = "Stable releases only",
-                        color = Color.White,
+                        color = BossDarkTextPrimary,
                         fontSize = 14.sp
                     )
                 }
@@ -155,11 +162,11 @@ fun VersionSelectionDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = Color(0xFF2196F3))
+                            CircularProgressIndicator(color = BossDarkAccent)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 "Loading versions...",
-                                color = Color.Gray,
+                                color = BossDarkTextSecondary,
                                 fontSize = 14.sp
                             )
                         }
@@ -173,7 +180,7 @@ fun VersionSelectionDialog(
                     ) {
                         Text(
                             "No versions found",
-                            color = Color.Gray,
+                            color = BossDarkTextSecondary,
                             fontSize = 14.sp
                         )
                     }
@@ -213,12 +220,13 @@ private fun VersionItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        backgroundColor = if (isCurrent)
-            Color(0xFF2196F3).copy(alpha = 0.3f)
-        else
-            Color(0xFF1E1E1E),
+        backgroundColor = BossDarkContentBackground,
         shape = RoundedCornerShape(8.dp),
-        elevation = 2.dp
+        elevation = 0.dp,
+        border = BorderStroke(
+            1.dp,
+            if (isCurrent) BossDarkAccent.copy(alpha = 0.5f) else BossDarkBorder
+        )
     ) {
         Row(
             modifier = Modifier
@@ -234,9 +242,9 @@ private fun VersionItem(
                 ) {
                     Text(
                         text = "v${versionInfo.version}",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isCurrent) BossDarkAccent else BossDarkTextPrimary
                     )
 
                     if (isCurrent) {
@@ -249,14 +257,14 @@ private fun VersionItem(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = BossDarkTextPrimary
                             )
                         }
                     }
 
                     if (isLatest && !isCurrent) {
                         Card(
-                            backgroundColor = Color(0xFF2196F3),
+                            backgroundColor = BossDarkAccent,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
@@ -264,7 +272,7 @@ private fun VersionItem(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = BossDarkTextPrimary
                             )
                         }
                     }
@@ -290,14 +298,14 @@ private fun VersionItem(
                 Text(
                     text = "Released: ${formatReleaseDate(versionInfo.releaseDate)} • ${formatFileSize(versionInfo.downloadSize)}",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = BossDarkTextSecondary
                 )
             }
 
             Icon(
                 imageVector = Icons.Default.CloudDownload,
                 contentDescription = "Download",
-                tint = Color(0xFF2196F3)
+                tint = BossDarkAccent
             )
         }
     }

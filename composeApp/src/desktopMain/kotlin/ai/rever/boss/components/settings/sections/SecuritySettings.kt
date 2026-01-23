@@ -3,9 +3,11 @@ package ai.rever.boss.components.settings.sections
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkContentBackground
 import BossDarkSurface
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.passkey.PasskeyInfo
 import ai.rever.boss.services.passkey.PasskeyState
@@ -220,16 +222,9 @@ fun SecuritySettings() {
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "Security",
-            description = "Manage WebAuthn credentials for secure authentication"
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
         
         // Authentication status check
         if (authState !is AuthService.AuthState.Authenticated) {
@@ -253,7 +248,7 @@ fun SecuritySettings() {
                     Text(
                         text = "You must be logged in to manage security settings",
                         fontSize = 14.sp,
-                        color = Color.White
+                        color = BossDarkTextPrimary
                     )
                 }
             }
@@ -261,7 +256,7 @@ fun SecuritySettings() {
         }
         
         // WebAuthn / Touch ID Authentication
-        SettingSection(
+        SettingsSection(
             title = "WebAuthn Authentication",
             description = if (touchIDSupported) 
                 "Manage WebAuthn credentials for secure, passwordless authentication"
@@ -289,7 +284,7 @@ fun SecuritySettings() {
                         Text(
                             text = "WebAuthn is not supported on this device. Please ensure you have biometric authentication enabled in System Preferences.",
                             fontSize = 14.sp,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                     }
                 }
@@ -298,9 +293,10 @@ fun SecuritySettings() {
                     // Loading state
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = BossDarkBackground,
+                        backgroundColor = BossDarkContentBackground,
                         shape = RoundedCornerShape(8.dp),
-                        elevation = 2.dp
+                        elevation = 0.dp,
+                        border = BorderStroke(1.dp, BossDarkBorder)
                     ) {
                         Row(
                             modifier = Modifier.padding(20.dp),
@@ -315,7 +311,7 @@ fun SecuritySettings() {
                             Text(
                                 text = "Loading WebAuthn credentials...",
                                 fontSize = 14.sp,
-                                color = Color.White
+                                color = BossDarkTextPrimary
                             )
                         }
                     }
@@ -324,10 +320,10 @@ fun SecuritySettings() {
                     webAuthnCapabilities?.let { capabilities ->
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                            backgroundColor = BossDarkSurface,
-                            shape = RoundedCornerShape(12.dp),
-                            elevation = 2.dp,
-                            border = BorderStroke(1.dp, BossDarkBorder.copy(alpha = 0.3f))
+                            backgroundColor = BossDarkContentBackground,
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = 0.dp,
+                            border = BorderStroke(1.dp, BossDarkBorder)
                         ) {
                             Column(
                                 modifier = Modifier.padding(20.dp)
@@ -336,7 +332,7 @@ fun SecuritySettings() {
                                     text = "WebAuthn Capabilities",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color.White
+                                    color = BossDarkTextPrimary
                                 )
                                 
                                 Spacer(modifier = Modifier.height(16.dp))
@@ -386,9 +382,10 @@ fun SecuritySettings() {
                     // Current WebAuthn status
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = BossDarkBackground,
+                        backgroundColor = BossDarkContentBackground,
                         shape = RoundedCornerShape(8.dp),
-                        elevation = 2.dp
+                        elevation = 0.dp,
+                        border = BorderStroke(1.dp, BossDarkBorder)
                     ) {
                         Column(modifier = Modifier.padding(20.dp)) {
                             Row(
@@ -408,18 +405,18 @@ fun SecuritySettings() {
                                             text = "WebAuthn Credentials",
                                             fontSize = 16.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color.White
+                                            color = BossDarkTextPrimary
                                         )
                                         Text(
                                             text = if (passkeyFactors.isEmpty()) "No credentials enrolled" else "${passkeyFactors.size} credential(s) enrolled",
                                             fontSize = 14.sp,
-                                            color = Color.Gray
+                                            color = BossDarkTextSecondary
                                         )
                                     }
                                 }
-                                
+
                                 Spacer(modifier = Modifier.weight(1f))
-                                
+
                                 if (passkeyFactors.isEmpty()) {
                                     Button(
                                         onClick = {
@@ -427,7 +424,7 @@ fun SecuritySettings() {
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             backgroundColor = BossDarkAccent,
-                                            contentColor = Color.White
+                                            contentColor = BossDarkTextPrimary
                                         )
                                     ) {
                                         Icon(
@@ -448,9 +445,10 @@ fun SecuritySettings() {
                         passkeyFactors.forEach { passkey ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                backgroundColor = BossDarkBackground,
+                                backgroundColor = BossDarkContentBackground,
                                 shape = RoundedCornerShape(8.dp),
-                                elevation = 1.dp
+                                elevation = 0.dp,
+                                border = BorderStroke(1.dp, BossDarkBorder)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(16.dp),
@@ -473,23 +471,23 @@ fun SecuritySettings() {
                                             text = passkey.displayName,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color.White
+                                            color = BossDarkTextPrimary
                                         )
                                         Text(
                                             text = "Added ${formatTimestamp(passkey.createdAt)}",
                                             fontSize = 12.sp,
-                                            color = Color.Gray
+                                            color = BossDarkTextSecondary
                                         )
-                                        
+
                                         // Show additional details
                                         Text(
                                             text = formatPasskeyDetails(passkey),
                                             fontSize = 11.sp,
-                                            color = Color.Gray.copy(alpha = 0.7f),
+                                            color = BossDarkTextSecondary.copy(alpha = 0.7f),
                                             maxLines = 1
                                         )
                                     }
-                                    
+
                                     IconButton(
                                         onClick = { showRemovePasskeyDialog = passkey },
                                         modifier = Modifier.size(32.dp)
@@ -504,16 +502,17 @@ fun SecuritySettings() {
                                 }
                             }
                         }
-                        
+
                         // Add another WebAuthn credential button
                         Button(
                             onClick = {
                                 showEnhancedEnrollDialog = true
                             },
                             colors = ButtonDefaults.buttonColors(
-                                backgroundColor = BossDarkSurface,
+                                backgroundColor = BossDarkContentBackground,
                                 contentColor = BossDarkAccent
                             ),
+                            border = BorderStroke(1.dp, BossDarkBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(
@@ -532,15 +531,16 @@ fun SecuritySettings() {
         Spacer(modifier = Modifier.height(32.dp))
         
         // Security Tips
-        SettingSection(
+        SettingsSection(
             title = "Security Best Practices",
             description = "Tips for secure authentication"
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = BossDarkAccent.copy(alpha = 0.05f),
+                backgroundColor = BossDarkContentBackground,
                 shape = RoundedCornerShape(8.dp),
-                elevation = 0.dp
+                elevation = 0.dp,
+                border = BorderStroke(1.dp, BossDarkBorder)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     SecurityTip(
@@ -573,7 +573,8 @@ fun SecuritySettings() {
                 modifier = Modifier.fillMaxWidth(),
                 backgroundColor = Color(0xFFFF5252).copy(alpha = 0.1f),
                 shape = RoundedCornerShape(8.dp),
-                elevation = 0.dp
+                elevation = 0.dp,
+                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.3f))
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -589,7 +590,7 @@ fun SecuritySettings() {
                     Text(
                         text = message,
                         fontSize = 14.sp,
-                        color = Color.White
+                        color = BossDarkTextPrimary
                     )
                 }
             }
@@ -603,7 +604,7 @@ fun SecuritySettings() {
             title = {
                 Text(
                     "Remove WebAuthn Credential",
-                    color = Color.White,
+                    color = BossDarkTextPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -612,13 +613,14 @@ fun SecuritySettings() {
                 Column {
                     Text(
                         "Are you sure you want to remove this WebAuthn credential?",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
-                        backgroundColor = BossDarkSurface,
-                        shape = RoundedCornerShape(8.dp)
+                        backgroundColor = BossDarkContentBackground,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, BossDarkBorder)
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -638,7 +640,7 @@ fun SecuritySettings() {
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = passkey.displayName,
-                                color = Color.White,
+                                color = BossDarkTextPrimary,
                                 fontSize = 14.sp
                             )
                         }
@@ -676,11 +678,11 @@ fun SecuritySettings() {
             },
             dismissButton = {
                 TextButton(onClick = { showRemovePasskeyDialog = null }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = BossDarkTextSecondary)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = BossDarkBackground,
+            contentColor = BossDarkTextPrimary
         )
     }
     
@@ -727,13 +729,13 @@ private fun PasskeyEnrollmentDialog(
 ) {
     var isEnrolling by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
                 "Set Up Passkey",
-                color = Color.White,
+                color = BossDarkTextPrimary,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -752,32 +754,32 @@ private fun PasskeyEnrollmentDialog(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             "Setting up your passkey...",
-                            color = Color.Gray,
+                            color = BossDarkTextSecondary,
                             fontSize = 14.sp
                         )
                     }
                 } else {
                     Text(
                         "Set up a passkey for secure, passwordless authentication using Touch ID or Windows Hello.",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         "• No passwords to remember",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 12.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         "• More secure than traditional passwords",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 12.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         "• Works across all your devices",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 12.sp
                     )
                 }
@@ -792,9 +794,9 @@ private fun PasskeyEnrollmentDialog(
                             try {
                                 // Attempt passkey registration
                                 AuthService.registerPasskey().fold(
-                                    onSuccess = { 
+                                    onSuccess = {
                                         isEnrolling = false
-                                        onSuccess() 
+                                        onSuccess()
                                     },
                                     onFailure = { error ->
                                         isEnrolling = false
@@ -809,7 +811,7 @@ private fun PasskeyEnrollmentDialog(
                     },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = BossDarkAccent,
-                        contentColor = Color.White
+                        contentColor = BossDarkTextPrimary
                     )
                 ) {
                     Text("Set Up Passkey")
@@ -819,12 +821,12 @@ private fun PasskeyEnrollmentDialog(
         dismissButton = {
             if (!isEnrolling) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = BossDarkTextSecondary)
                 }
             }
         },
-        backgroundColor = BossDarkSurface,
-        contentColor = Color.White
+        backgroundColor = BossDarkBackground,
+        contentColor = BossDarkTextPrimary
     )
 }
 
@@ -846,7 +848,7 @@ private fun SecurityTip(
         Text(
             text = text,
             fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.9f),
+            color = BossDarkTextPrimary.copy(alpha = 0.9f),
             lineHeight = 18.sp
         )
     }
@@ -881,13 +883,13 @@ private fun WebAuthnCapabilityRow(
             Text(
                 text = label,
                 fontSize = 14.sp,
-                color = Color.White
+                color = BossDarkTextPrimary
             )
         }
         Text(
             text = status,
             fontSize = 12.sp,
-            color = if (enabled) Color(0xFF4CAF50) else Color.Gray
+            color = if (enabled) Color(0xFF4CAF50) else BossDarkTextSecondary
         )
     }
 }

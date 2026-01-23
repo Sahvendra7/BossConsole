@@ -1,5 +1,12 @@
 package ai.rever.boss.updater
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkContentBackground
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -342,32 +349,33 @@ fun UpdateSettingsSection(
         // Version Information
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = BossDarkContentBackground,
             shape = RoundedCornerShape(8.dp),
-            elevation = 2.dp
+            elevation = 0.dp,
+            border = BorderStroke(1.dp, BossDarkBorder)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
                     "Version Information",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = BossDarkTextPrimary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 Text(
                     "Current Version: v$currentVersion",
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = BossDarkTextPrimary
                 )
-                
+
                 lastCheckTime?.let { checkTime ->
                     Text(
                         "Last checked: ${formatTime(checkTime)}",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = BossDarkTextSecondary
                     )
                 }
             }
@@ -378,18 +386,19 @@ fun UpdateSettingsSection(
         // Update Controls
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = BossDarkContentBackground,
             shape = RoundedCornerShape(8.dp),
-            elevation = 2.dp
+            elevation = 0.dp,
+            border = BorderStroke(1.dp, BossDarkBorder)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
                     "Update Settings",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = BossDarkTextPrimary
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -405,12 +414,12 @@ fun UpdateSettingsSection(
                         Text(
                             "Automatic Update Checks",
                             fontSize = 14.sp,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                         Text(
                             "Check for updates every 6 hours",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = BossDarkTextSecondary
                         )
                     }
                     Switch(
@@ -429,8 +438,8 @@ fun UpdateSettingsSection(
                             }
                         },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF4CAF50),
-                            checkedTrackColor = Color(0xFF4CAF50).copy(alpha = 0.5f)
+                            checkedThumbColor = BossDarkAccent,
+                            checkedTrackColor = BossDarkAccent.copy(alpha = 0.5f)
                         )
                     )
                 }
@@ -440,53 +449,57 @@ fun UpdateSettingsSection(
                 // Update action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Check for Updates Button
-                    Button(
+                    TextButton(
                         onClick = {
                             coroutineScope.launch {
                                 updateManager.checkForUpdates()
                             }
                         },
                         enabled = updateState !is UpdateState.CheckingForUpdates,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2196F3)),
-                        modifier = Modifier.weight(1f)
+                        colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
                     ) {
                         if (updateState is UpdateState.CheckingForUpdates) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = Color.White,
+                                color = BossDarkAccent,
                                 strokeWidth = 2.dp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                         }
                         Text(
                             if (updateState is UpdateState.CheckingForUpdates) "Checking..." else "Check for Updates",
-                            color = Color.White
+                            fontSize = 13.sp
                         )
                     }
 
                     // Select Version Button
-                    OutlinedButton(
+                    TextButton(
                         onClick = {
                             coroutineScope.launch {
                                 versionListManager.fetchVersions()
                                 showVersionDialog = true
                             }
                         },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
-                        )
+                        colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
                     ) {
                         Icon(
                             Icons.Default.ArrowDropDown,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Select Version")
+                        Text("Select Version", fontSize = 13.sp)
                     }
                 }
 
@@ -496,71 +509,87 @@ fun UpdateSettingsSection(
                 when (val currentState = updateState) {
                     is UpdateState.UpToDate -> {
                         Text(
-                            "✓ You're running the latest version",
+                            "You're running the latest version",
                             color = Color(0xFF4CAF50),
                             fontSize = 14.sp
                         )
                     }
                     is UpdateState.UpdateAvailable -> {
-                        Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                "🔄 Update available: v${currentState.updateInfo.latestVersion}",
+                                "Update available: v${currentState.updateInfo.latestVersion}",
                                 color = Color(0xFFFF9800),
                                 fontSize = 14.sp
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
+                            TextButton(
                                 onClick = {
                                     coroutineScope.launch {
                                         updateManager.downloadUpdate(currentState.updateInfo)
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4CAF50)),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF4CAF50))
                             ) {
-                                Text("Download Update", color = Color.White)
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Download Update", fontSize = 13.sp)
                             }
                         }
                     }
                     is UpdateState.Downloading -> {
                         Column {
                             Text(
-                                "📥 Downloading update...",
-                                color = Color(0xFF2196F3),
+                                "Downloading update...",
+                                color = BossDarkAccent,
                                 fontSize = 14.sp
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 progress = currentState.progress,
                                 modifier = Modifier.fillMaxWidth(),
-                                color = Color(0xFF2196F3)
+                                color = BossDarkAccent
                             )
                             Text(
                                 "${(currentState.progress * 100).toInt()}%",
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = BossDarkTextSecondary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.align(Alignment.End)
                             )
                         }
                     }
                     is UpdateState.ReadyToInstall -> {
-                        Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                "✅ Update downloaded successfully",
+                                "Update downloaded successfully",
                                 color = Color(0xFF4CAF50),
                                 fontSize = 14.sp
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
+                            TextButton(
                                 onClick = {
                                     coroutineScope.launch {
                                         updateManager.installUpdate(currentState.downloadPath)
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFFF5722)),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF5722))
                             ) {
-                                Text("Install Now", color = Color.White)
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Install Now", fontSize = 13.sp)
                             }
                         }
                     }
@@ -573,36 +602,44 @@ fun UpdateSettingsSection(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "🔧 Installing update...",
+                                "Installing update...",
                                 color = Color(0xFFFF5722),
                                 fontSize = 14.sp
                             )
                         }
                     }
                     is UpdateState.RestartRequired -> {
-                        Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                "🔄 Update installed! Restart required.",
+                                "Update installed! Restart required.",
                                 color = Color(0xFF4CAF50),
                                 fontSize = 14.sp
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
+                            TextButton(
                                 onClick = {
                                     coroutineScope.launch {
                                         restartApplication()
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF9C27B0)),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
                             ) {
-                                Text("Restart Application", color = Color.White)
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Restart Application", fontSize = 13.sp)
                             }
                         }
                     }
                     is UpdateState.Error -> {
                         Text(
-                            "⚠️ ${currentState.message}",
+                            currentState.message,
                             color = Color(0xFFF44336),
                             fontSize = 14.sp
                         )

@@ -3,9 +3,13 @@ package ai.rever.boss.components.settings.sections
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkContentBackground
 import BossDarkSurface
-import ai.rever.boss.components.settings.shared.SettingSection
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.utils.DefaultBrowserManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,18 +61,19 @@ fun DefaultBrowserSection() {
         )
     }
 
-    SettingSection(
+    SettingsSection(
         title = "Default Browser",
         description = "Make BOSS your default web browser"
     ) {
         // Status Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = BossDarkBackground,
+            backgroundColor = BossDarkContentBackground,
             shape = RoundedCornerShape(8.dp),
-            elevation = 2.dp
+            elevation = 0.dp,
+            border = BorderStroke(1.dp, BossDarkBorder)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 // Status Display
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -78,7 +83,7 @@ fun DefaultBrowserSection() {
                     Column {
                         Text(
                             text = "Status",
-                            color = Color.Gray,
+                            color = BossDarkTextSecondary,
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -89,13 +94,13 @@ fun DefaultBrowserSection() {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(16.dp),
                                         strokeWidth = 2.dp,
-                                        color = Color.Gray
+                                        color = BossDarkAccent
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "Checking...",
-                                        color = Color.Gray,
-                                        fontSize = 16.sp
+                                        color = BossDarkTextSecondary,
+                                        fontSize = 14.sp
                                     )
                                 }
                             }
@@ -105,13 +110,13 @@ fun DefaultBrowserSection() {
                                         Icons.Outlined.Error,
                                         contentDescription = "Error",
                                         tint = Color(0xFFFF6B6B),
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "Error checking status",
                                         color = Color(0xFFFF6B6B),
-                                        fontSize = 16.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
@@ -121,14 +126,14 @@ fun DefaultBrowserSection() {
                                     Icon(
                                         Icons.Outlined.CheckCircle,
                                         contentDescription = "Default",
-                                        tint = BossDarkAccent,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "BOSS is your default browser",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
+                                        color = BossDarkTextPrimary,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
@@ -138,14 +143,14 @@ fun DefaultBrowserSection() {
                                     Icon(
                                         Icons.Outlined.Cancel,
                                         contentDescription = "Not Default",
-                                        tint = Color.Gray,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = BossDarkTextSecondary,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "BOSS is not your default browser",
-                                        color = Color.Gray,
-                                        fontSize = 16.sp,
+                                        color = BossDarkTextSecondary,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                 }
@@ -154,9 +159,9 @@ fun DefaultBrowserSection() {
                     }
 
                     // Action Buttons
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         // Refresh button
-                        IconButton(
+                        TextButton(
                             onClick = {
                                 coroutineScope.launch {
                                     isLoading = true
@@ -173,19 +178,20 @@ fun DefaultBrowserSection() {
                                         }
                                     )
                                 }
-                            }
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = BossDarkTextSecondary)
                         ) {
                             Icon(
                                 Icons.Outlined.Refresh,
                                 contentDescription = "Refresh",
-                                tint = Color.Gray
+                                modifier = Modifier.size(16.dp)
                             )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Refresh", fontSize = 13.sp)
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
                         // Set as default button
-                        Button(
+                        TextButton(
                             onClick = {
                                 coroutineScope.launch {
                                     isLoading = true
@@ -212,30 +218,27 @@ fun DefaultBrowserSection() {
                                 }
                             },
                             enabled = !isLoading && isDefault != true,
-                            colors = ButtonDefaults.buttonColors(
-                                backgroundColor = BossDarkAccent,
-                                contentColor = Color.White,
-                                disabledBackgroundColor = Color.Gray.copy(alpha = 0.3f),
-                                disabledContentColor = Color.Gray
-                            ),
-                            shape = RoundedCornerShape(6.dp)
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = BossDarkAccent,
+                                disabledContentColor = BossDarkTextSecondary
+                            )
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = Color.White
+                                    color = BossDarkAccent
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Setting...")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Setting...", fontSize = 13.sp)
                             } else {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.OpenInNew,
                                     contentDescription = "Set",
                                     modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Set as Default Browser")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Set as Default", fontSize = 13.sp)
                             }
                         }
                     }
@@ -253,13 +256,13 @@ fun DefaultBrowserSection() {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Platform-specific info card
         Card(
             modifier = Modifier.fillMaxWidth(),
             backgroundColor = BossDarkAccent.copy(alpha = 0.1f),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(6.dp),
             elevation = 0.dp
         ) {
             Row(
@@ -270,17 +273,17 @@ fun DefaultBrowserSection() {
                     Icons.Outlined.Info,
                     contentDescription = "Info",
                     tint = BossDarkAccent,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
                         text = "Platform: ${DefaultBrowserManager.getPlatformName()}",
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 12.sp,
+                        color = BossDarkTextPrimary,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = when {
                             DefaultBrowserManager.getPlatformName() == "macOS" ->
@@ -290,8 +293,8 @@ fun DefaultBrowserSection() {
                             else ->
                                 "Uses XDG standards for Linux desktop environments"
                         },
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        fontSize = 11.sp,
+                        color = BossDarkTextSecondary
                     )
                 }
             }
@@ -305,25 +308,25 @@ fun DefaultBrowserSection() {
             title = {
                 Text(
                     "Success",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = BossDarkTextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
                 Text(
                     "BOSS has been set as your default web browser. Links will now open in BOSS.",
-                    color = Color.Gray,
-                    fontSize = 14.sp
+                    color = BossDarkTextSecondary,
+                    fontSize = 13.sp
                 )
             },
             confirmButton = {
                 TextButton(onClick = { showSuccessDialog = false }) {
-                    Text("OK", color = BossDarkAccent)
+                    Text("OK", color = BossDarkAccent, fontSize = 13.sp)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = BossDarkBackground,
+            contentColor = BossDarkTextPrimary
         )
     }
 
@@ -334,17 +337,17 @@ fun DefaultBrowserSection() {
             title = {
                 Text(
                     "Complete Setup in Windows Settings",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = BossDarkTextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
                 Column {
                     Text(
                         "Windows Settings has been opened. Please complete these steps:",
-                        color = Color.Gray,
-                        fontSize = 14.sp
+                        color = BossDarkTextSecondary,
+                        fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -352,14 +355,14 @@ fun DefaultBrowserSection() {
                         "2. Click on the current browser\n" +
                         "3. Select \"BOSS Console\" from the list\n" +
                         "4. Close Settings",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 14.sp,
+                        color = BossDarkTextPrimary,
+                        fontSize = 13.sp,
                         lineHeight = 22.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "After completing these steps, click \"Refresh\" to verify.",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 12.sp,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
@@ -367,11 +370,11 @@ fun DefaultBrowserSection() {
             },
             confirmButton = {
                 TextButton(onClick = { showInstructionsDialog = false }) {
-                    Text("Got it", color = BossDarkAccent)
+                    Text("Got it", color = BossDarkAccent, fontSize = 13.sp)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = BossDarkBackground,
+            contentColor = BossDarkTextPrimary
         )
     }
 }

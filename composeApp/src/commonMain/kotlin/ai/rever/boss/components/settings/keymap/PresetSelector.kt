@@ -1,10 +1,19 @@
 package ai.rever.boss.components.settings.keymap
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkContentBackground
+import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -35,106 +44,107 @@ fun PresetSelector(
     var showResetConfirmation by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    Column(modifier = modifier) {
-        // Header
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Preset selector row (matching SettingsDropdown pattern)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(BossDarkBackground)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Keymap Preset",
-                    style = MaterialTheme.typography.subtitle1,
-                    fontWeight = FontWeight.Bold
+                    color = BossDarkTextPrimary,
+                    fontSize = 13.sp
                 )
                 Text(
-                    text = "Choose a predefined keyboard shortcut scheme",
-                    style = MaterialTheme.typography.caption,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    text = getPresetDescription(currentSettings.presetName),
+                    color = BossDarkTextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Preset selector button and reset button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Preset dropdown
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .clickable { showPresetMenu = true },
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colors.surface,
-                elevation = 2.dp
-            ) {
+            Box {
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BossDarkContentBackground)
+                        .border(1.dp, BossDarkBorder, RoundedCornerShape(4.dp))
+                        .clickable { showPresetMenu = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = currentSettings.presetName,
-                            style = MaterialTheme.typography.body1,
-                            fontWeight = FontWeight.Medium
-                        )
-                        if (currentSettings.customized) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colors.primary.copy(alpha = 0.1f)
-                            ) {
-                                Text(
-                                    text = "CUSTOMIZED",
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colors.primary
-                                )
-                            }
+                    Text(
+                        text = currentSettings.presetName,
+                        color = BossDarkTextPrimary,
+                        fontSize = 13.sp
+                    )
+                    if (currentSettings.customized) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(BossDarkAccent.copy(alpha = 0.2f))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Modified",
+                                fontSize = 10.sp,
+                                color = BossDarkAccent
+                            )
                         }
                     }
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
                         contentDescription = "Select preset",
-                        tint = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                        tint = BossDarkTextSecondary,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
+        }
 
-            // Reset button
-            Button(
+        // Reset button row (matching SettingsButtonRow pattern)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(BossDarkBackground)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Reset Shortcuts",
+                    color = BossDarkTextPrimary,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "Restore all shortcuts to default preset",
+                    color = BossDarkTextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            TextButton(
                 onClick = { showResetConfirmation = true },
-                modifier = Modifier.height(48.dp)
+                colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "Reset to default",
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Reset to Default")
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Reset", fontSize = 13.sp)
             }
         }
 
-        // Preset description
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = getPresetDescription(currentSettings.presetName),
-            style = MaterialTheme.typography.caption,
-            color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f),
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
     }
 
     // Preset menu dialog
@@ -178,16 +188,25 @@ private fun PresetMenuDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(400.dp),
+            modifier = Modifier.width(450.dp),
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colors.surface,
+            color = BossDarkBackground,
             elevation = 8.dp
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                     text = "Select Keymap Preset",
-                    style = MaterialTheme.typography.h6,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BossDarkTextPrimary
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Choose a predefined keyboard shortcut scheme",
+                    fontSize = 13.sp,
+                    color = BossDarkTextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -203,11 +222,13 @@ private fun PresetMenuDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Text("Cancel")
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = BossDarkTextSecondary, fontSize = 13.sp)
+                    }
                 }
             }
         }
@@ -223,40 +244,42 @@ private fun PresetMenuItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
-        color = if (isSelected) MaterialTheme.colors.primary.copy(alpha = 0.1f) else Color.Transparent
+            .clip(RoundedCornerShape(6.dp))
+            .background(BossDarkContentBackground)
+            .border(
+                width = 1.dp,
+                color = if (isSelected) BossDarkAccent.copy(alpha = 0.5f) else BossDarkBorder,
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = presetName,
-                    style = MaterialTheme.typography.body1,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
-                Text(
-                    text = getPresetDescription(presetName),
-                    style = MaterialTheme.typography.caption,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                )
-            }
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colors.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = presetName,
+                fontSize = 13.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isSelected) BossDarkAccent else BossDarkTextPrimary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = getPresetDescription(presetName),
+                fontSize = 11.sp,
+                color = BossDarkTextSecondary
+            )
+        }
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = BossDarkAccent,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
@@ -271,20 +294,28 @@ private fun ResetConfirmationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reset to Default Keymap?") },
+        title = { Text("Reset to Default Keymap?", color = BossDarkTextPrimary) },
         text = {
-            Text("This will restore all keyboard shortcuts to the BOSS default keymap. Any customizations will be lost.")
+            Text(
+                "This will restore all keyboard shortcuts to the BOSS default keymap. Any customizations will be lost.",
+                color = BossDarkTextSecondary
+            )
         },
         confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Reset")
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(backgroundColor = BossDarkAccent)
+            ) {
+                Text("Reset", color = BossDarkTextPrimary)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = BossDarkTextSecondary)
             }
-        }
+        },
+        backgroundColor = BossDarkSurface,
+        contentColor = BossDarkTextPrimary
     )
 }
 

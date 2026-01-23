@@ -1,5 +1,12 @@
 package ai.rever.boss.components.settings.keymap
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkContentBackground
+import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -11,6 +18,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -52,7 +60,7 @@ fun KeyCaptureDialog(
                 .width(500.dp)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colors.surface,
+            color = BossDarkBackground,
             elevation = 8.dp
         ) {
             Column(
@@ -66,44 +74,62 @@ fun KeyCaptureDialog(
                 ) {
                     Text(
                         text = "Capture Keyboard Shortcut",
-                        style = MaterialTheme.typography.h6,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BossDarkTextPrimary
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = BossDarkTextSecondary
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Action description
-                Text(
-                    text = "Action: $actionDescription",
-                    style = MaterialTheme.typography.body1,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-                )
+                // Action info card
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(BossDarkContentBackground)
+                        .border(1.dp, BossDarkBorder, RoundedCornerShape(6.dp))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = actionDescription,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = BossDarkTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Context: ${context.displayName}",
+                        fontSize = 12.sp,
+                        color = BossDarkTextSecondary
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Context: ${context.displayName}",
-                    style = MaterialTheme.typography.body2,
-                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Current binding display
                 if (currentBinding != null) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(BossDarkContentBackground)
+                            .border(1.dp, BossDarkBorder, RoundedCornerShape(6.dp))
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Current:",
-                            style = MaterialTheme.typography.body2,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                            text = "Current shortcut",
+                            fontSize = 13.sp,
+                            color = BossDarkTextSecondary
                         )
                         KeyDisplay(currentBinding.displayString())
                     }
@@ -115,22 +141,16 @@ fun KeyCaptureDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp)
-                        .background(
-                            color = MaterialTheme.colors.background,
-                            shape = RoundedCornerShape(8.dp)
-                        )
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BossDarkContentBackground)
                         .border(
                             width = 2.dp,
-                            color = if (hasCapture) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.2f),
+                            color = if (hasCapture) BossDarkAccent else BossDarkBorder,
                             shape = RoundedCornerShape(8.dp)
                         )
                         .focusRequester(focusRequester)
                         .onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown) {
-                                // Capture the key and modifiers
-                                // Platform-aware modifier capture:
-                                // - macOS: Meta (Command) → "Cmd", Ctrl → "Ctrl"
-                                // - Linux/Windows: Ctrl → "Cmd" (primary modifier), Meta → "Ctrl"
                                 capturedKey = event.key
                                 val mods = mutableListOf<String>()
                                 val isMacOS = SystemUtils.isMacOS
@@ -138,7 +158,6 @@ fun KeyCaptureDialog(
                                     if (event.isMetaPressed) mods.add("Cmd")
                                     if (event.isCtrlPressed) mods.add("Ctrl")
                                 } else {
-                                    // On Linux/Windows: Ctrl is the primary modifier (equivalent to Cmd)
                                     if (event.isCtrlPressed) mods.add("Cmd")
                                     if (event.isMetaPressed) mods.add("Ctrl")
                                 }
@@ -163,14 +182,15 @@ fun KeyCaptureDialog(
                         ) {
                             Text(
                                 text = "Press any key combination...",
-                                style = MaterialTheme.typography.h6,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.4f)
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = BossDarkTextSecondary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "The dialog is focused and ready to capture",
-                                style = MaterialTheme.typography.caption,
-                                color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                                fontSize = 12.sp,
+                                color = BossDarkTextSecondary.copy(alpha = 0.7f)
                             )
                         }
                     }
@@ -184,7 +204,7 @@ fun KeyCaptureDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text("Cancel", color = BossDarkTextSecondary)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
@@ -202,9 +222,13 @@ fun KeyCaptureDialog(
                                 onKeyCaptured(binding)
                             }
                         },
-                        enabled = hasCapture && capturedKey != null
+                        enabled = hasCapture && capturedKey != null,
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = BossDarkAccent,
+                            disabledBackgroundColor = BossDarkBorder
+                        )
                     ) {
-                        Text("Apply")
+                        Text("Apply", color = BossDarkTextPrimary)
                     }
                 }
             }
@@ -217,15 +241,17 @@ fun KeyCaptureDialog(
  */
 @Composable
 private fun KeyDisplay(shortcutText: String, large: Boolean = false) {
-    Row(
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(BossDarkAccent.copy(alpha = 0.2f))
+            .padding(horizontal = if (large) 16.dp else 8.dp, vertical = if (large) 8.dp else 4.dp)
     ) {
         Text(
             text = shortcutText,
-            style = if (large) MaterialTheme.typography.h5 else MaterialTheme.typography.body1,
+            fontSize = if (large) 24.sp else 13.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colors.primary
+            color = BossDarkAccent
         )
     }
 }

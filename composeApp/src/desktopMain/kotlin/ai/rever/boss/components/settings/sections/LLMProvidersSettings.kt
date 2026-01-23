@@ -3,18 +3,22 @@ package ai.rever.boss.components.settings.sections
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkContentBackground
 import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ai.rever.boss.components.plugin.panels.right_top.*
 import ai.rever.boss.components.settings.shared.DropdownSelector
-import ai.rever.boss.components.settings.shared.SectionHeader
-import ai.rever.boss.components.settings.shared.SettingSection
+import ai.rever.boss.components.settings.shared.SettingsSection
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -62,49 +66,138 @@ fun LLMProvidersSettings() {
     }
     
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionHeader(
-            title = "LLM Provider Settings",
-            description = "Configure AI models and API keys for automation"
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
         
         // Provider Selection
-        SettingSection(title = "Provider Selection", description = "Choose your preferred AI provider") {
+        SettingsSection(title = "Provider Selection", description = "Choose your preferred AI provider") {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = BossDarkBackground,
+                backgroundColor = BossDarkContentBackground,
                 shape = RoundedCornerShape(8.dp),
-                elevation = 2.dp
+                elevation = 0.dp,
+                border = BorderStroke(1.dp, BossDarkBorder)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    // Provider tabs
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Provider dropdown
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        LLMProvider.values().forEach { provider ->
-                            ProviderTab(
-                                provider = provider,
-                                isSelected = selectedProvider == provider,
-                                hasApiKey = apiKeys[provider]?.isNotBlank() == true,
-                                onClick = { 
-                                    selectedProvider = provider
-                                    // Update selected model to first available for this provider
-                                    val providerModels = availableModels[provider.name] ?: LLMModelFetcher.getModelsForProvider(provider)
-                                    if (providerModels.isNotEmpty()) {
-                                        selectedModelId = providerModels.first().id
-                                    }
-                                }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "AI Provider",
+                                fontSize = 13.sp,
+                                color = BossDarkTextPrimary
+                            )
+                            Text(
+                                text = "Select which AI service to use",
+                                fontSize = 11.sp,
+                                color = BossDarkTextSecondary,
+                                modifier = Modifier.padding(top = 2.dp)
                             )
                         }
+
+                        // Provider dropdown with status indicator
+                        var providerDropdownExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(BossDarkBackground)
+                                    .border(1.dp, BossDarkBorder, RoundedCornerShape(6.dp))
+                                    .clickable { providerDropdownExpanded = true }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    when (selectedProvider) {
+                                        LLMProvider.ANTHROPIC -> Icons.Outlined.AutoAwesome
+                                        LLMProvider.OPENAI -> Icons.Outlined.Psychology
+                                        LLMProvider.TOGETHER -> Icons.Outlined.Groups
+                                        LLMProvider.CUSTOM -> Icons.Outlined.Settings
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = BossDarkAccent
+                                )
+                                Text(
+                                    text = selectedProvider.displayName,
+                                    fontSize = 13.sp,
+                                    color = BossDarkTextPrimary
+                                )
+                                if (apiKeys[selectedProvider]?.isNotBlank() == true) {
+                                    Icon(
+                                        Icons.Outlined.CheckCircle,
+                                        contentDescription = "API Key Set",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = Color(0xFF4CAF50)
+                                    )
+                                }
+                                Icon(
+                                    Icons.Outlined.ArrowDropDown,
+                                    contentDescription = "Expand",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = BossDarkTextSecondary
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = providerDropdownExpanded,
+                                onDismissRequest = { providerDropdownExpanded = false },
+                                modifier = Modifier.background(BossDarkBackground)
+                            ) {
+                                LLMProvider.values().forEach { provider ->
+                                    DropdownMenuItem(
+                                        onClick = {
+                                            selectedProvider = provider
+                                            // Update selected model to first available for this provider
+                                            val providerModels = availableModels[provider.name] ?: LLMModelFetcher.getModelsForProvider(provider)
+                                            if (providerModels.isNotEmpty()) {
+                                                selectedModelId = providerModels.first().id
+                                            }
+                                            providerDropdownExpanded = false
+                                        }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                when (provider) {
+                                                    LLMProvider.ANTHROPIC -> Icons.Outlined.AutoAwesome
+                                                    LLMProvider.OPENAI -> Icons.Outlined.Psychology
+                                                    LLMProvider.TOGETHER -> Icons.Outlined.Groups
+                                                    LLMProvider.CUSTOM -> Icons.Outlined.Settings
+                                                },
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = if (provider == selectedProvider) BossDarkAccent else BossDarkTextSecondary
+                                            )
+                                            Text(
+                                                text = provider.displayName,
+                                                fontSize = 13.sp,
+                                                color = if (provider == selectedProvider) BossDarkAccent else BossDarkTextPrimary
+                                            )
+                                            if (apiKeys[provider]?.isNotBlank() == true) {
+                                                Icon(
+                                                    Icons.Outlined.CheckCircle,
+                                                    contentDescription = "API Key Set",
+                                                    modifier = Modifier.size(14.dp),
+                                                    tint = Color(0xFF4CAF50)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    
-                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Spacer(modifier = Modifier.height(16.dp))
                     
                     // API Key input for selected provider
                     Column {
@@ -118,7 +211,7 @@ fun LLMProvidersSettings() {
                                     text = "${selectedProvider.displayName} API Key",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color.White
+                                    color = BossDarkTextPrimary
                                 )
                                 
                                 // Show if key is from environment
@@ -175,7 +268,7 @@ fun LLMProvidersSettings() {
                             onValueChange = { apiKeys[selectedProvider] = it },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = envKey.isNullOrBlank(), // Disable if env key exists
-                            placeholder = { 
+                            placeholder = {
                                 Text(
                                     if (!envKey.isNullOrBlank()) {
                                         "Using environment variable"
@@ -187,8 +280,8 @@ fun LLMProvidersSettings() {
                                             LLMProvider.CUSTOM -> "Your API key"
                                         }
                                     },
-                                    color = Color.Gray.copy(alpha = 0.5f)
-                                ) 
+                                    color = BossDarkTextSecondary.copy(alpha = 0.5f)
+                                )
                             },
                             visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
                             trailingIcon = {
@@ -199,18 +292,18 @@ fun LLMProvidersSettings() {
                                         if (showApiKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                                         contentDescription = if (showApiKey) "Hide" else "Show",
                                         modifier = Modifier.size(20.dp),
-                                        tint = Color.Gray
+                                        tint = BossDarkTextSecondary
                                     )
                                 }
                             },
                             singleLine = true,
                             colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = Color.White,
+                                textColor = BossDarkTextPrimary,
                                 focusedBorderColor = BossDarkAccent,
                                 unfocusedBorderColor = BossDarkBorder,
                                 focusedLabelColor = BossDarkAccent,
-                                unfocusedLabelColor = Color.Gray,
-                                placeholderColor = Color.Gray.copy(alpha = 0.5f)
+                                unfocusedLabelColor = BossDarkTextSecondary,
+                                placeholderColor = BossDarkTextSecondary.copy(alpha = 0.5f)
                             )
                         )
                         
@@ -229,7 +322,7 @@ fun LLMProvidersSettings() {
                                 "You can also set the $envVarName environment variable"
                             },
                             fontSize = 12.sp,
-                            color = Color.Gray.copy(alpha = 0.7f),
+                            color = BossDarkTextSecondary.copy(alpha = 0.7f),
                             modifier = Modifier.padding(start = 4.dp)
                         )
                         
@@ -239,15 +332,15 @@ fun LLMProvidersSettings() {
                                 value = customEndpoint,
                                 onValueChange = { customEndpoint = it },
                                 label = { Text("API Endpoint") },
-                                placeholder = { Text("https://api.example.com/v1/chat", color = Color.Gray.copy(alpha = 0.5f)) },
+                                placeholder = { Text("https://api.example.com/v1/chat", color = BossDarkTextSecondary.copy(alpha = 0.5f)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    textColor = Color.White,
+                                    textColor = BossDarkTextPrimary,
                                     focusedBorderColor = BossDarkAccent,
                                     unfocusedBorderColor = BossDarkBorder,
                                     focusedLabelColor = BossDarkAccent,
-                                    unfocusedLabelColor = Color.Gray
+                                    unfocusedLabelColor = BossDarkTextSecondary
                                 )
                             )
                         }
@@ -260,7 +353,7 @@ fun LLMProvidersSettings() {
         
         // Model Selection
         if (selectedProvider != LLMProvider.CUSTOM) {
-            SettingSection(title = "Model Selection", description = "Choose the AI model to use") {
+            SettingsSection(title = "Model Selection", description = "Choose the AI model to use") {
                 val providerModels = availableModels[selectedProvider.name] ?: LLMModelFetcher.getModelsForProvider(selectedProvider)
                 
                 if (isLoadingModels && providerModels.isEmpty()) {
@@ -273,7 +366,7 @@ fun LLMProvidersSettings() {
                             color = BossDarkAccent
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Loading models...", color = Color.Gray)
+                        Text("Loading models...", color = BossDarkTextSecondary)
                     }
                 } else {
                     val currentModel = providerModels.find { it.id == selectedModelId }
@@ -294,30 +387,31 @@ fun LLMProvidersSettings() {
                         Spacer(modifier = Modifier.height(8.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            backgroundColor = BossDarkBackground.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(4.dp),
-                            elevation = 0.dp
+                            backgroundColor = BossDarkContentBackground,
+                            shape = RoundedCornerShape(6.dp),
+                            elevation = 0.dp,
+                            border = BorderStroke(1.dp, BossDarkBorder)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 model.description?.let {
                                     Text(
                                         text = it,
                                         fontSize = 12.sp,
-                                        color = Color.Gray
+                                        color = BossDarkTextSecondary
                                     )
                                 }
                                 model.contextLength?.let {
                                     Text(
                                         text = "Context: ${it.toString().reversed().chunked(3).reversed().joinToString(",")} tokens",
                                         fontSize = 11.sp,
-                                        color = Color.Gray.copy(alpha = 0.7f)
+                                        color = BossDarkTextSecondary.copy(alpha = 0.7f)
                                     )
                                 }
                                 if (model.capabilities.isNotEmpty()) {
                                     Text(
                                         text = "Capabilities: ${model.capabilities.joinToString(", ")}",
                                         fontSize = 11.sp,
-                                        color = Color.Gray.copy(alpha = 0.7f)
+                                        color = BossDarkTextSecondary.copy(alpha = 0.7f)
                                     )
                                 }
                             }
@@ -352,13 +446,13 @@ fun LLMProvidersSettings() {
                 Text(
                     text = "Custom models can be set via BOSS_LLM_MODELS_${selectedProvider.name} environment variable",
                     fontSize = 11.sp,
-                    color = Color.Gray.copy(alpha = 0.5f),
+                    color = BossDarkTextSecondary.copy(alpha = 0.5f),
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
                 Text(
                     text = "Format: model1:name1:context1;model2:name2:context2",
                     fontSize = 10.sp,
-                    color = Color.Gray.copy(alpha = 0.4f),
+                    color = BossDarkTextSecondary.copy(alpha = 0.4f),
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                 )
             }
@@ -367,7 +461,7 @@ fun LLMProvidersSettings() {
         Spacer(modifier = Modifier.height(32.dp))
         
         // Advanced Settings
-        SettingSection(title = "Advanced Settings", description = "Fine-tune model behavior") {
+        SettingsSection(title = "Advanced Settings", description = "Fine-tune model behavior") {
             Column {
                 // Temperature
                 Row(
@@ -379,22 +473,22 @@ fun LLMProvidersSettings() {
                             text = "Temperature",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                         Text(
                             text = "Controls randomness (0 = focused, 2 = creative)",
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = BossDarkTextSecondary
                         )
                     }
-                    
+
                     Text(
                         text = String.format("%.1f", temperature),
                         fontSize = 14.sp,
-                        color = Color.White,
+                        color = BossDarkAccent,
                         modifier = Modifier.width(40.dp)
                     )
-                    
+
                     Slider(
                         value = temperature,
                         onValueChange = { temperature = it },
@@ -407,9 +501,9 @@ fun LLMProvidersSettings() {
                         )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Max Tokens
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -420,18 +514,18 @@ fun LLMProvidersSettings() {
                             text = "Max Tokens",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                         Text(
                             text = "Maximum response length",
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = BossDarkTextSecondary
                         )
                     }
-                    
+
                     OutlinedTextField(
                         value = maxTokens,
-                        onValueChange = { 
+                        onValueChange = {
                             if (it.all { char -> char.isDigit() }) {
                                 maxTokens = it
                             }
@@ -439,15 +533,15 @@ fun LLMProvidersSettings() {
                         modifier = Modifier.width(150.dp),
                         singleLine = true,
                         colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
+                            textColor = BossDarkTextPrimary,
                             focusedBorderColor = BossDarkAccent,
                             unfocusedBorderColor = BossDarkBorder
                         )
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Options
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -468,10 +562,10 @@ fun LLMProvidersSettings() {
                         Text(
                             text = "Enable Streaming",
                             fontSize = 14.sp,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                     }
-                    
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -487,7 +581,7 @@ fun LLMProvidersSettings() {
                         Text(
                             text = "Enable Response Caching",
                             fontSize = 14.sp,
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                     }
                 }
@@ -516,7 +610,7 @@ fun LLMProvidersSettings() {
                     LLMSettings.maxTokens = maxTokens.toIntOrNull() ?: 2000
                     LLMSettings.enableStreaming = enableStreaming
                     LLMSettings.enableCaching = enableCaching
-                    
+
                     // Save settings
                     coroutineScope.launch {
                         try {
@@ -533,7 +627,7 @@ fun LLMProvidersSettings() {
                 },
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = BossDarkAccent,
-                    contentColor = Color.White
+                    contentColor = BossDarkTextPrimary
                 ),
                 shape = RoundedCornerShape(6.dp)
             ) {
@@ -549,22 +643,22 @@ fun LLMProvidersSettings() {
             title = {
                 Text(
                     "Sign in to ${provider.displayName}",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = BossDarkTextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
                 Column {
                     Text(
                         "OAuth authentication for ${provider.displayName} is not yet implemented.",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "Please manually enter your API key for now. You can obtain it from:",
-                        color = Color.Gray,
+                        color = BossDarkTextSecondary,
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -588,8 +682,8 @@ fun LLMProvidersSettings() {
                     Text("OK", color = BossDarkAccent)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = BossDarkBackground,
+            contentColor = BossDarkTextPrimary
         )
     }
     
@@ -601,14 +695,14 @@ fun LLMProvidersSettings() {
         ) {
             Surface(
                 modifier = Modifier.padding(top = 16.dp),
-                color = if (message.contains("Error")) Color.Red else BossDarkAccent,
+                color = if (message.contains("Error")) Color(0xFFF44336) else BossDarkAccent,
                 shape = RoundedCornerShape(6.dp),
                 elevation = 4.dp
             ) {
                 Text(
                     text = message,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = Color.White,
+                    color = BossDarkTextPrimary,
                     style = MaterialTheme.typography.body2
                 )
             }
@@ -616,59 +710,3 @@ fun LLMProvidersSettings() {
     }
 }
 
-@Composable
-private fun ProviderTab(
-    provider: LLMProvider,
-    isSelected: Boolean,
-    hasApiKey: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .clickable { onClick() }
-            .padding(4.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = if (isSelected) BossDarkAccent.copy(alpha = 0.2f) else Color.Transparent,
-        border = BorderStroke(
-            1.dp, 
-            if (isSelected) BossDarkAccent else BossDarkBorder
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Provider icon placeholder
-            Icon(
-                when (provider) {
-                    LLMProvider.ANTHROPIC -> Icons.Outlined.AutoAwesome
-                    LLMProvider.OPENAI -> Icons.Outlined.Psychology
-                    LLMProvider.TOGETHER -> Icons.Outlined.Groups
-                    LLMProvider.CUSTOM -> Icons.Outlined.Settings
-                },
-                contentDescription = provider.displayName,
-                modifier = Modifier.size(20.dp),
-                tint = if (isSelected) BossDarkAccent else Color.Gray
-            )
-            
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            Text(
-                text = provider.displayName,
-                fontSize = 14.sp,
-                color = if (isSelected) Color.White else Color.Gray,
-                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
-            )
-            
-            if (hasApiKey) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Icon(
-                    Icons.Outlined.CheckCircle,
-                    contentDescription = "API Key Set",
-                    modifier = Modifier.size(16.dp),
-                    tint = Color(0xFF4CAF50)
-                )
-            }
-        }
-    }
-}

@@ -1,5 +1,10 @@
 package ai.rever.boss.updater
 
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkTextPrimary
+import BossDarkTextSecondary
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -28,8 +33,8 @@ fun DowngradeWarningDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.width(500.dp),
-            backgroundColor = Color(0xFF2D2D2D),
-            shape = RoundedCornerShape(8.dp),
+            backgroundColor = BossDarkBackground,
+            shape = RoundedCornerShape(12.dp),
             elevation = 8.dp
         ) {
             Column(
@@ -48,9 +53,9 @@ fun DowngradeWarningDialog(
                     )
                     Text(
                         "Downgrade Warning",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BossDarkTextPrimary
                     )
                 }
 
@@ -60,7 +65,7 @@ fun DowngradeWarningDialog(
                 Text(
                     "You are about to downgrade from v$currentVersion to v$targetVersion.",
                     fontSize = 14.sp,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -68,8 +73,8 @@ fun DowngradeWarningDialog(
                 // Warning message
                 Text(
                     "Downgrading may cause:",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    color = BossDarkTextPrimary,
                     fontSize = 14.sp
                 )
 
@@ -89,8 +94,9 @@ fun DowngradeWarningDialog(
 
                 // Backup reminder
                 Card(
-                    backgroundColor = Color(0xFFFFC107).copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(4.dp)
+                    backgroundColor = Color(0xFFFFC107).copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFC107).copy(alpha = 0.3f))
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -104,7 +110,7 @@ fun DowngradeWarningDialog(
                         )
                         Text(
                             "Make sure you have backups before proceeding.",
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Medium,
                             color = Color(0xFFFFC107),
                             fontSize = 13.sp
                         )
@@ -123,8 +129,9 @@ fun DowngradeWarningDialog(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
-                        )
+                            contentColor = BossDarkTextSecondary
+                        ),
+                        border = BorderStroke(1.dp, BossDarkBorder)
                     ) {
                         Text("Cancel")
                     }
@@ -134,12 +141,13 @@ fun DowngradeWarningDialog(
                         onClick = onConfirm,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFF44336)
+                            backgroundColor = Color(0xFFF44336),
+                            contentColor = BossDarkTextPrimary
                         )
                     ) {
                         Text(
                             "Downgrade Anyway",
-                            color = Color.White
+                            color = BossDarkTextPrimary
                         )
                     }
                 }
@@ -164,7 +172,7 @@ private fun WarningItem(text: String) {
         )
         Text(
             text,
-            color = Color.White.copy(alpha = 0.8f),
+            color = BossDarkTextSecondary,
             fontSize = 13.sp
         )
     }

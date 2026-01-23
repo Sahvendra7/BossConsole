@@ -3,10 +3,14 @@ package ai.rever.boss.components.settings.sections
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkContentBackground
 import BossDarkSurface
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
-import ai.rever.boss.components.settings.shared.SettingSection
+import ai.rever.boss.components.settings.shared.SettingsSection
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,17 +53,18 @@ fun ProfileManagementSection(
 
     val coroutineScope = rememberCoroutineScope()
 
-    SettingSection(
+    SettingsSection(
         title = "Browser Profiles",
         description = "Manage browser data and sessions"
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = BossDarkBackground,
+            backgroundColor = BossDarkContentBackground,
             shape = RoundedCornerShape(8.dp),
-            elevation = 2.dp
+            elevation = 0.dp,
+            border = BorderStroke(1.dp, BossDarkBorder)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -68,41 +73,37 @@ fun ProfileManagementSection(
                     Column {
                         Text(
                             text = "Current Profile",
-                            color = Color.Gray,
+                            color = BossDarkTextSecondary,
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = currentProfile,
-                            color = Color.White,
-                            fontSize = 16.sp,
+                            color = BossDarkTextPrimary,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
                     Row {
                         Box {
-                            Button(
+                            TextButton(
                                 onClick = { showSwitchProfileMenu = true },
-                                colors = ButtonDefaults.buttonColors(
-                                    backgroundColor = BossDarkAccent,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(6.dp)
+                                colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
                             ) {
                                 Icon(
                                     Icons.Outlined.SwapHoriz,
                                     contentDescription = "Switch",
                                     modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Switch Profile")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Switch", fontSize = 13.sp)
                             }
 
                             DropdownMenu(
                                 expanded = showSwitchProfileMenu,
                                 onDismissRequest = { showSwitchProfileMenu = false },
-                                modifier = Modifier.background(BossDarkSurface)
+                                modifier = Modifier.background(BossDarkBackground)
                             ) {
                                 availableProfiles.forEach { profile ->
                                     DropdownMenuItem(
@@ -114,7 +115,7 @@ fun ProfileManagementSection(
                                         modifier = Modifier.background(
                                             if (profile == currentProfile)
                                                 BossDarkAccent.copy(alpha = 0.1f)
-                                            else BossDarkSurface
+                                            else BossDarkBackground
                                         )
                                     ) {
                                         Row(
@@ -123,7 +124,8 @@ fun ProfileManagementSection(
                                         ) {
                                             Text(
                                                 text = profile,
-                                                color = Color.White
+                                                color = BossDarkTextPrimary,
+                                                fontSize = 13.sp
                                             )
                                             if (profile == currentProfile) {
                                                 Icon(
@@ -139,23 +141,17 @@ fun ProfileManagementSection(
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Button(
+                        TextButton(
                             onClick = { showNewProfileDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                backgroundColor = BossDarkAccent,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(6.dp)
+                            colors = ButtonDefaults.textButtonColors(contentColor = BossDarkAccent)
                         ) {
                             Icon(
                                 Icons.Outlined.Add,
                                 contentDescription = "Add",
                                 modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("New Profile")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("New Profile", fontSize = 13.sp)
                         }
                     }
                 }
@@ -173,17 +169,17 @@ fun ProfileManagementSection(
             title = {
                 Text(
                     "Create New Profile",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = BossDarkTextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             },
             text = {
                 Column {
                     Text(
                         "Enter a name for the new browser profile:",
-                        color = Color.Gray,
-                        fontSize = 14.sp
+                        color = BossDarkTextSecondary,
+                        fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
@@ -194,12 +190,12 @@ fun ProfileManagementSection(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
+                            textColor = BossDarkTextPrimary,
                             focusedBorderColor = BossDarkAccent,
                             unfocusedBorderColor = BossDarkBorder,
                             focusedLabelColor = BossDarkAccent,
-                            unfocusedLabelColor = Color.Gray,
-                            placeholderColor = Color.Gray.copy(alpha = 0.5f)
+                            unfocusedLabelColor = BossDarkTextSecondary,
+                            placeholderColor = BossDarkTextSecondary.copy(alpha = 0.5f)
                         )
                     )
                 }
@@ -225,7 +221,8 @@ fun ProfileManagementSection(
                 ) {
                     Text(
                         "Create",
-                        color = if (newProfileName.isNotBlank()) BossDarkAccent else Color.Gray
+                        color = if (newProfileName.isNotBlank()) BossDarkAccent else BossDarkTextSecondary,
+                        fontSize = 13.sp
                     )
                 }
             },
@@ -236,11 +233,11 @@ fun ProfileManagementSection(
                         newProfileName = ""
                     }
                 ) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = BossDarkTextSecondary, fontSize = 13.sp)
                 }
             },
-            backgroundColor = BossDarkSurface,
-            contentColor = Color.White
+            backgroundColor = BossDarkBackground,
+            contentColor = BossDarkTextPrimary
         )
     }
 }
