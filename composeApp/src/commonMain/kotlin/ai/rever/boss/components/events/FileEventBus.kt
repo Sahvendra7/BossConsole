@@ -1,6 +1,5 @@
 package ai.rever.boss.components.events
 
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.dashboard.RecentFilesManager
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -203,14 +202,15 @@ object FileEventBus {
      * @param line 1-based line number to navigate to (0 = don't navigate)
      * @param column 1-based column number to navigate to (0 = don't navigate)
      * @param sourceWindowId The window that initiated this event (required for multi-window support)
+     * @param projectPath The current project path for tracking recent files
      */
-    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0, sourceWindowId: String) {
+    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0, sourceWindowId: String, projectPath: String = "") {
         // Strip file: prefix if present (may come from terminal hyperlinks)
         val cleanPath = stripFilePrefix(filePath)
         val fileName = cleanPath.extractFileName().ifEmpty { "untitled" }
 
         // Track file open in dashboard
-        RecentFilesManager.recordFileOpen(cleanPath, ProjectState.selectedProject.value.path)
+        RecentFilesManager.recordFileOpen(cleanPath, projectPath)
 
         println("[FileEventBus] openFile: $cleanPath:$line:$column (window: $sourceWindowId)")
         _fileOpenEvents.emit(FileOpenEvent(cleanPath, fileName, line, column, sourceWindowId))

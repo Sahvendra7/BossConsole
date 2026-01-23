@@ -16,7 +16,10 @@ import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.components.plugin.panels.left_top.Project
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -74,8 +77,10 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
             ,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Collect state once at the top level to avoid multiple subscriptions
-            val currentProject by ProjectState.selectedProject.collectAsState()
+            // Collect state once at the top level to avoid multiple subscriptions (per-window)
+            val windowProjectState = LocalWindowProjectState.current
+            val currentProject by windowProjectState?.selectedProject?.collectAsState()
+                ?: remember { mutableStateOf(Project("No Project", "", 0L)) }
 
             if (tabsComponent != null) {
                 val tabsState by tabsComponent.tabsState.subscribeAsState()

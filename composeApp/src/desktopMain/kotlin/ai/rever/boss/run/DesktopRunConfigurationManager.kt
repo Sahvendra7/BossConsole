@@ -27,9 +27,6 @@ actual object RunConfigurationManager {
     private val _detectedConfigurations = MutableStateFlow<List<RunConfiguration>>(emptyList())
     actual val detectedConfigurations: StateFlow<List<RunConfiguration>> = _detectedConfigurations.asStateFlow()
 
-    private val _selectedConfiguration = MutableStateFlow<RunConfiguration?>(null)
-    actual val selectedConfiguration: StateFlow<RunConfiguration?> = _selectedConfiguration.asStateFlow()
-
     private val _isScanning = MutableStateFlow(false)
     actual val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -63,7 +60,6 @@ actual object RunConfigurationManager {
                 val cleanedSettings = settings.copy(configurations = withUniqueNames)
                 _currentSettings.value = cleanedSettings
 
-                // Don't auto-select - leave selectedConfiguration as null
                 println("[Run] Loaded ${cleanedSettings.configurations.size} configurations from ${settingsFile.absolutePath}")
 
                 // Save cleaned settings if we deduplicated anything
@@ -230,12 +226,6 @@ actual object RunConfigurationManager {
             recentConfigIds = current.recentConfigIds.filter { it != configId }
         )
         _currentSettings.value = updated
-
-        // Clear selection if removed config was selected
-        if (_selectedConfiguration.value?.id == configId) {
-            _selectedConfiguration.value = null
-        }
-
         saveSettings()
     }
 
@@ -250,38 +240,7 @@ actual object RunConfigurationManager {
             }
         )
         _currentSettings.value = updated
-
-        // Update selected if it's the same config
-        if (_selectedConfiguration.value?.id == config.id) {
-            _selectedConfiguration.value = config
-        }
-
         saveSettings()
-    }
-
-    /**
-     * Select a configuration as the current one.
-     */
-    actual suspend fun selectConfiguration(configId: String) {
-        // Look in both user configs and detected configs
-        val config = _currentSettings.value.configurations.find { it.id == configId }
-            ?: _detectedConfigurations.value.find { it.id == configId }
-
-        _selectedConfiguration.value = config
-
-        if (config != null) {
-            // Update recent list
-            val current = _currentSettings.value
-            val recentIds = (listOf(configId) + current.recentConfigIds)
-                .distinct()
-                .take(current.maxRecentConfigs)
-
-            _currentSettings.value = current.copy(
-                lastUsedConfigId = configId,
-                recentConfigIds = recentIds
-            )
-            saveSettings()
-        }
     }
 
     /**

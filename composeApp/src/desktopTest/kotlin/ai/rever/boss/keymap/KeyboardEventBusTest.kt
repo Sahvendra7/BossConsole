@@ -9,7 +9,7 @@ import ai.rever.boss.keymap.model.ShortcutContext
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -193,8 +193,7 @@ class KeyboardEventBusTest {
 
         assertEquals(1, KeyboardEventBus.getHandlerCounts()[KeyboardEventPriority.GLOBAL])
 
-        job.cancel()
-        delay(100) // Give time for cleanup
+        job.cancelAndJoin()
 
         assertEquals(0, KeyboardEventBus.getHandlerCounts()[KeyboardEventPriority.GLOBAL] ?: 0)
     }

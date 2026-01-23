@@ -362,10 +362,10 @@ fun BossDraggableComponent.BossTopLeftBar(
 ) {
     // Get window ID for per-window terminal isolation (Issue #498)
     val windowId = LocalWindowId.current ?: return
-    // Use per-window project state for independent project per window
+    // Use per-window project state for independent project per window (required for multi-window support)
     val windowProjectState = LocalWindowProjectState.current
     val selectedProject by windowProjectState?.selectedProject?.collectAsState()
-        ?: ProjectState.selectedProject.collectAsState() // Fallback to global if not provided
+        ?: remember { mutableStateOf(Project("No Project", "", 0L)) }
     var showProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     var deletedProjectName by remember { mutableStateOf<String?>(null) }

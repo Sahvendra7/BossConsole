@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Terminal
 import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowRunnerState
 import kotlinx.coroutines.launch
 
 /**
@@ -60,8 +61,9 @@ fun BossTopRunBar() {
     val scope = rememberCoroutineScope()
     // Issue #498: Get window ID for multi-window support
     val windowId = LocalWindowId.current ?: return
+    val windowRunnerState = LocalWindowRunnerState.current ?: return
     val settings by RunConfigurationManager.currentSettings.collectAsState()
-    val selectedConfig by RunConfigurationManager.selectedConfiguration.collectAsState()
+    val selectedConfig by windowRunnerState.selectedConfiguration.collectAsState()
 
     // Get run history - configurations that have been explicitly run
     val runHistory = settings.configurations
@@ -85,26 +87,24 @@ fun BossTopRunBar() {
                 configToWindows[configId]?.contains(windowId) == true
             },
             onSelect = { config ->
-                scope.launch {
-                    RunConfigurationManager.selectConfiguration(config.id)
-                }
+                windowRunnerState.selectConfiguration(config)
             },
             onRun = { config ->
                 scope.launch {
-                    RunConfigurationManager.selectConfiguration(config.id)
+                    windowRunnerState.selectConfiguration(config)
                     RunnerTerminalService.openRunnerTerminal(config, windowId)
                     RunConfigurationManager.addConfiguration(config)
                 }
             },
             onRerun = { config ->
                 scope.launch {
-                    RunConfigurationManager.selectConfiguration(config.id)
+                    windowRunnerState.selectConfiguration(config)
                     RunnerTerminalService.rerunRunner(config, windowId)
                 }
             },
             onStop = { config ->
                 scope.launch {
-                    RunConfigurationManager.selectConfiguration(config.id)
+                    windowRunnerState.selectConfiguration(config)
                     RunnerTerminalService.stopRunner(windowId, config.id)
                 }
             },

@@ -3,12 +3,13 @@ package ai.rever.boss.components.plugin.panels.left_bottom
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.icons.LanguageIcons
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
@@ -97,7 +98,10 @@ class RunConfigurationsComponent(
 fun RunConfigurationsContent() {
     val scope = rememberCoroutineScope()
     val windowId = LocalWindowId.current  // Issue #506: Get window ID for multi-window support
-    val selectedProject by ProjectState.selectedProject.collectAsState()
+    val windowProjectState = LocalWindowProjectState.current
+    // Per-window project state (required for multi-window support)
+    val selectedProject by windowProjectState?.selectedProject?.collectAsState()
+        ?: remember { mutableStateOf(Project("No Project", "", 0L)) }
     val detectedConfigs by RunConfigurationManager.detectedConfigurations.collectAsState()
     val isScanning by RunConfigurationManager.isScanning.collectAsState()
     val lastError by RunConfigurationManager.lastError.collectAsState()

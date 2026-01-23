@@ -19,11 +19,6 @@ expect object RunConfigurationManager {
     val detectedConfigurations: StateFlow<List<RunConfiguration>>
 
     /**
-     * Currently selected run configuration.
-     */
-    val selectedConfiguration: StateFlow<RunConfiguration?>
-
-    /**
      * Whether a project scan is currently in progress.
      */
     val isScanning: StateFlow<Boolean>
@@ -59,11 +54,6 @@ expect object RunConfigurationManager {
      * Update an existing run configuration.
      */
     suspend fun updateConfiguration(config: RunConfiguration)
-
-    /**
-     * Select a configuration as the current one.
-     */
-    suspend fun selectConfiguration(configId: String)
 
     /**
      * Clear all detected configurations.

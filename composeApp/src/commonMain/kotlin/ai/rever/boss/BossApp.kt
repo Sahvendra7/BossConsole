@@ -38,6 +38,8 @@ import ai.rever.boss.window.WindowProjectStateRegistry
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.selectProjectInWindow
+import ai.rever.boss.window.WindowRunnerStateRegistry
+import ai.rever.boss.window.LocalWindowRunnerState
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -574,6 +576,11 @@ fun ComponentContext.BossApp(
         WindowProjectStateRegistry.getOrCreate(windowId)
     }
 
+    // Create per-window runner state (each window has independent selected configuration)
+    val windowRunnerState = remember(windowId) {
+        WindowRunnerStateRegistry.getOrCreate(windowId)
+    }
+
     // Consume any pending initial project for this window (from "Open in New Window" context menu)
     LaunchedEffect(windowId, windowProjectState) {
         val pendingProject = consumePendingInitialProject(windowId)
@@ -911,7 +918,7 @@ fun ComponentContext.BossApp(
             if (defaultWorkspace != null) {
                 // Apply the workspace
                 println("BossApp: Applying default workspace '${defaultWorkspace.name}' for project '${selectedProject.name}'")
-                applyWorkspace(defaultWorkspace, splitViewState)
+                applyWorkspace(defaultWorkspace, splitViewState, windowProjectState)
                 workspaceManager.loadWorkspace(defaultWorkspace)
             }
         }
@@ -943,6 +950,7 @@ fun ComponentContext.BossApp(
             onShowSaveMessage = { saveMessage = it },
             onShowSettings = { showSettingsDialog = true },
             onShowShortcutHelp = { showShortcutHelpDialog = true },
+            getProjectPath = { windowProjectState.selectedProject.value.path },
             coroutineScope = coroutineScope
         )
     }
@@ -1047,7 +1055,7 @@ fun ComponentContext.BossApp(
             try {
                 // Use runBlocking to ensure save completes before app closes
                 kotlinx.coroutines.runBlocking {
-                    val currentLayout = extractCurrentWorkspace(splitViewState)
+                    val currentLayout = extractCurrentWorkspace(splitViewState, selectedProject.path)
                     val lastSessionConfig = currentLayout.copy(
                         id = "last-session",
                         name = "Last Session",
@@ -1071,6 +1079,9 @@ fun ComponentContext.BossApp(
 
             // Unregister this window's project state from the registry
             WindowProjectStateRegistry.unregister(windowId)
+
+            // Unregister this window's runner state from the registry
+            WindowRunnerStateRegistry.unregister(windowId)
         }
     }
     
@@ -1149,7 +1160,7 @@ fun ComponentContext.BossApp(
                             }
                             // Apply the last session workspace FIRST
                             workspaceManager.loadWorkspace(configWithId)
-                            applyWorkspace(configWithId, splitViewState)
+                            applyWorkspace(configWithId, splitViewState, windowProjectState)
 
                             println("BossApp: Last Session loaded, now processing queued URLs/terminals")
                         } else {
@@ -1404,12 +1415,12 @@ fun ComponentContext.BossApp(
                 val historyConfig = event.configuration.copy(isAutoDetected = false)
                 RunConfigurationManager.addConfiguration(historyConfig)
 
-                // Select the config in top bar dropdown
+                // Select the config in top bar dropdown (window-scoped)
                 // Use filePath lookup since addConfiguration may deduplicate (existing config has different ID)
                 val savedConfigs = RunConfigurationManager.currentSettings.value.configurations
                 val configToSelect = savedConfigs.find { it.filePath == historyConfig.filePath }
                 if (configToSelect != null) {
-                    RunConfigurationManager.selectConfiguration(configToSelect.id)
+                    windowRunnerState.selectConfiguration(configToSelect)
                 }
 
                 RunExecutionService.execute(event.configuration, event.debug, windowId)
@@ -1457,7 +1468,7 @@ fun ComponentContext.BossApp(
 
                         // Use the same loading pattern as the UI
                         workspaceManager.loadWorkspace(workspace)
-                        applyWorkspace(workspace, splitViewState)
+                        applyWorkspace(workspace, splitViewState, windowProjectState)
 
                         println("BossApp: Workspace loaded from CLI: ${file.absolutePath} (window: $windowId)")
                     } else {
@@ -1714,9 +1725,9 @@ fun ComponentContext.BossApp(
         var saveJob: Job? = null
         
         // Monitor the entire layout structure for changes
-        snapshotFlow { 
+        snapshotFlow {
             // Extract current layout workspace
-            extractCurrentWorkspace(splitViewState)
+            extractCurrentWorkspace(splitViewState, selectedProject.path)
         }
         .onEach { currentLayout ->
             // Check if we have a loaded workspace
@@ -2000,8 +2011,8 @@ fun ComponentContext.BossApp(
                     // Directly create and open terminal tab
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     activeTabsComponent?.let { component ->
-                        // Get current project path for terminal working directory
-                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+                        // Get current project path for terminal working directory (per-window)
+                        val projectPath = windowProjectState.selectedProject.value.path
                         val terminalTab = TerminalTabInfo(
                             id = "terminal-${Random.nextLong()}",
                             typeId = TerminalTab.typeId,
@@ -2033,7 +2044,7 @@ fun ComponentContext.BossApp(
                     workspaceManager.loadWorkspace(workspace)
 
                     // Apply workspace to UI
-                    applyWorkspace(workspace, splitViewState)
+                    applyWorkspace(workspace, splitViewState, windowProjectState)
                 }
             }
             .launchIn(this)
@@ -2130,7 +2141,8 @@ fun ComponentContext.BossApp(
                 LocalWindowId provides windowId,
                 LocalSplitViewState provides splitViewState,
                 LocalWorkspaceManager provides workspaceManager,
-                LocalWindowProjectState provides windowProjectState
+                LocalWindowProjectState provides windowProjectState,
+                LocalWindowRunnerState provides windowRunnerState
             ) {
                 Box(modifier = Modifier
                 .fillMaxSize()
@@ -2234,11 +2246,11 @@ fun ComponentContext.BossApp(
                                         // First load the workspace to reset dirty state
                                         workspaceManager.loadWorkspace(workspace)
                                         // Then apply it to the UI (which will try to restore preserved state)
-                                        applyWorkspace(workspace, splitViewState)
+                                        applyWorkspace(workspace, splitViewState, windowProjectState)
                                     }
                                 },
                                 getCurrentWorkspace = {
-                                    extractCurrentWorkspace(splitViewState)
+                                    extractCurrentWorkspace(splitViewState, selectedProject.path)
                                 },
                                 onShowTopOfMind = {
                                     showTopOfMindDialog = true
@@ -2448,8 +2460,8 @@ fun ComponentContext.BossApp(
                                 targetComponent.addTab(tab)
                             }
                             TabType.TERMINAL -> {
-                                // Get current project path for terminal working directory
-                                val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+                                // Get current project path for terminal working directory (per-window)
+                                val projectPath = windowProjectState.selectedProject.value.path
                                 val tab = TerminalTabInfo(
                                     id = "terminal-${Random.nextLong()}",
                                     typeId = TerminalTab.typeId,
@@ -2492,7 +2504,7 @@ fun ComponentContext.BossApp(
                             if (targetWorkspace != null) {
                                 // Load and apply the target workspace
                                 workspaceManager.loadWorkspace(targetWorkspace)
-                                applyWorkspace(targetWorkspace, splitViewState)
+                                applyWorkspace(targetWorkspace, splitViewState, windowProjectState)
 
                                 // Focus the specific tab after a short delay to ensure workspace is applied
                                 delay(100)
@@ -2565,7 +2577,8 @@ fun ComponentContext.BossApp(
             val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
                 path?.let {
                     val projectName = it.extractFileName().ifEmpty { "Unknown" }
-                    ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(
+                    ai.rever.boss.window.selectProjectInWindow(
+                        windowProjectState,
                         ai.rever.boss.components.plugin.panels.left_top.Project(
                             name = projectName,
                             path = it

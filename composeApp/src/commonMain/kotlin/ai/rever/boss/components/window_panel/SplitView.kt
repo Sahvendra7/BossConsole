@@ -39,6 +39,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.registery.TabTypeId
+import ai.rever.boss.window.WindowProjectStateRegistry
 
 // Sealed class representing the split tree structure
 sealed class SplitNode {
@@ -318,6 +319,9 @@ class SplitViewState(
     fun openTerminalInActivePanel(command: String? = null) {
         val activeComponent = getActiveTabsComponent()
 
+        // Get current project path for terminal working directory (per-window)
+        val projectPath = WindowProjectStateRegistry.get(windowId)?.selectedProject?.value?.path ?: ""
+
         // If no active component, this is likely the first terminal on app startup
         // Find any available panel to add the tab to
         if (activeComponent == null) {
@@ -329,9 +333,6 @@ class SplitViewState(
             }
 
             val component = firstPanel.tabsComponent
-
-            // Get current project path for terminal working directory
-            val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
 
             // Create terminal tab in first available panel
             val terminalTab = TerminalTabInfo(
@@ -352,9 +353,6 @@ class SplitViewState(
             }
             return
         }
-
-        // Get current project path for terminal working directory
-        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
 
         // Create new terminal tab in active panel
         val terminalTab = TerminalTabInfo(

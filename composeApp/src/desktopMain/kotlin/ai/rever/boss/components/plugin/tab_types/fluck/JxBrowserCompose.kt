@@ -1504,8 +1504,9 @@ fun JxBrowserCompose(
             // Dashboard for empty/about:blank URLs
             val windowId = LocalWindowId.current
             val windowProjectState = LocalWindowProjectState.current
+            // Per-window project state (required for multi-window support)
             val selectedProject by windowProjectState?.selectedProject?.collectAsState()
-                ?: ProjectState.selectedProject.collectAsState()
+                ?: remember { mutableStateOf(ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L)) }
 
             Dashboard(
                 onOpenFile = { path ->

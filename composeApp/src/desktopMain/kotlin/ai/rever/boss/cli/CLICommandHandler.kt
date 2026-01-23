@@ -384,14 +384,22 @@ class CLICommandHandler private constructor() {
         }
 
         withContext(Dispatchers.Main) {
-            // Import Project and ProjectState from CodeBase.kt
+            // Get focused window for multi-window support
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            val windowProjectState = focusedWindowId?.let { ai.rever.boss.window.WindowProjectStateRegistry.get(it) }
+
             val project = ai.rever.boss.components.plugin.panels.left_top.Project(
                 name = folder.name.extractFileName(),
                 path = folder.absolutePath,
                 lastOpened = System.currentTimeMillis()
             )
 
-            ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectProject(project)
+            if (windowProjectState != null) {
+                windowProjectState.selectProject(project)
+            } else {
+                // Fall back to just updating recent projects if no window state available
+                ai.rever.boss.components.plugin.panels.left_top.ProjectState.updateRecentProjects(project)
+            }
             println("CLI: Folder opened in codebase plugin: ${folder.absolutePath}")
         }
     }

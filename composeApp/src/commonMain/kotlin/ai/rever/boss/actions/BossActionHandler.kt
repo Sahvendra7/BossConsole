@@ -32,6 +32,7 @@ class BossActionHandler(
     private val onShowSaveMessage: (String?) -> Unit,
     private val onShowSettings: () -> Unit,
     private val onShowShortcutHelp: () -> Unit,
+    private val getProjectPath: () -> String,
     private val coroutineScope: CoroutineScope
 ) {
     fun handleAction(actionId: String): Boolean {
@@ -204,7 +205,7 @@ class BossActionHandler(
         coroutineScope.launch {
             val currentConfig = workspaceManager.currentWorkspace.value
             if (currentConfig != null) {
-                val currentLayout = extractCurrentWorkspace(splitViewState)
+                val currentLayout = extractCurrentWorkspace(splitViewState, getProjectPath())
                 val updatedConfig = currentConfig.copy(
                     layout = currentLayout.layout,
                     timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
@@ -216,7 +217,7 @@ class BossActionHandler(
                 delay(3000)
                 onShowSaveMessage(null)
             } else {
-                val currentLayout = extractCurrentWorkspace(splitViewState)
+                val currentLayout = extractCurrentWorkspace(splitViewState, getProjectPath())
                 val newConfig = currentLayout.copy(
                     name = "Workspace ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
                     description = "Saved workspace"

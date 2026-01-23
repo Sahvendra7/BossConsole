@@ -325,9 +325,19 @@ fun NewTabDialog(
                             )
                         )
                     } else if (selectedType == TabType.FILE) {
-                        // Current project/folder selector
-                        val selectedProject by ProjectState.selectedProject.collectAsState()
+                        // Current project/folder selector (uses global recent projects)
+                        // Note: In NewTabDialog we don't have window context, so we use the most recent project
                         val recentProjects by ProjectState.recentProjects.collectAsState()
+                        var selectedProject by remember {
+                            mutableStateOf(recentProjects.firstOrNull()
+                                ?: ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L))
+                        }
+                        // Update selectedProject when recentProjects changes
+                        LaunchedEffect(recentProjects) {
+                            if (selectedProject.path.isEmpty() && recentProjects.isNotEmpty()) {
+                                selectedProject = recentProjects.first()
+                            }
+                        }
                         var showFolderDropdown by remember { mutableStateOf(false) }
 
                         // File tree state
@@ -358,12 +368,13 @@ fun NewTabDialog(
                         val directoryPicker = rememberDirectoryPicker { path ->
                             path?.let {
                                 val projectName = it.extractFileName().ifEmpty { "Unknown" }
-                                ProjectState.selectProject(
-                                    ai.rever.boss.components.plugin.panels.left_top.Project(
-                                        name = projectName,
-                                        path = it
-                                    )
+                                val newProject = ai.rever.boss.components.plugin.panels.left_top.Project(
+                                    name = projectName,
+                                    path = it
                                 )
+                                // Update local state and recent projects list
+                                selectedProject = newProject
+                                ProjectState.updateRecentProjects(newProject)
                                 // Clear expanded paths for new folder
                                 expandedPaths = emptySet()
                             }
@@ -440,7 +451,8 @@ fun NewTabDialog(
                                         recentProjects.forEach { project ->
                                             DropdownMenuItem(
                                                 onClick = {
-                                                    ProjectState.selectProject(project)
+                                                    // Update local state to switch to selected project in this dialog
+                                                    selectedProject = project
                                                     expandedPaths = emptySet()
                                                     showFolderDropdown = false
                                                 }

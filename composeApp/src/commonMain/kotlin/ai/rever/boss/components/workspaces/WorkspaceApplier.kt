@@ -8,7 +8,7 @@ import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
 import ai.rever.boss.components.plugin.tab_types.TerminalTab
 import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.icons.FileIcons
@@ -23,6 +23,7 @@ import kotlin.time.Clock
  * Applies a layout workspace to the split view
  * @param workspace The workspace to apply
  * @param splitViewState The split view state to apply the workspace to
+ * @param windowProjectState The window project state for multi-window support (optional)
  * @param restoreProject Whether to restore the project from the workspace. Set to false when
  *                       applying workspace due to project selection change (to avoid overwriting
  *                       the user's project selection).
@@ -30,17 +31,18 @@ import kotlin.time.Clock
 suspend fun applyWorkspace(
     workspace: LayoutWorkspace,
     splitViewState: SplitViewState,
+    windowProjectState: WindowProjectState? = null,
     restoreProject: Boolean = true
 ) {
     // Generate ID if missing
     val workspaceId = workspace.id.ifEmpty { LayoutWorkspace.generateId() }
 
     // Restore project if workspace has one and restoreProject is true
-    if (restoreProject) {
+    if (restoreProject && windowProjectState != null) {
         workspace.projectPath?.let { path ->
             if (path.isNotEmpty()) {
                 val projectName = path.trimEnd('/').trimEnd('\\').extractFileName().ifEmpty { "Project" }
-                ProjectState.selectProject(Project(
+                windowProjectState.selectProject(Project(
                     name = projectName,
                     path = path,
                     lastOpened = Clock.System.now().toEpochMilliseconds()
@@ -48,6 +50,9 @@ suspend fun applyWorkspace(
             }
         }
     }
+
+    // Get current project path for tab creation
+    val currentProjectPath = windowProjectState?.selectedProject?.value?.path ?: workspace.projectPath ?: ""
 
     // Try to restore preserved state first
     if (splitViewState.restorePreservedState(workspaceId)) {
@@ -59,24 +64,25 @@ suspend fun applyWorkspace(
     splitViewState.clearAllPanels()
 
     // Apply the workspace recursively
-    applyWorkspaceNode(workspace.layout, splitViewState, "main")
+    applyWorkspaceNode(workspace.layout, splitViewState, "main", currentProjectPath)
 }
 
 private suspend fun applyWorkspaceNode(
     node: SplitConfig,
     splitViewState: SplitViewState,
-    currentPanelId: String
+    currentPanelId: String,
+    projectPath: String
 ) {
     when (node) {
         is SplitConfig.SinglePanel -> {
             // Add tabs to current panel
             val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
             node.panel.tabs.forEach { tabConfig ->
-                val tab = createTabFromWorkspaceConfig(tabConfig)
+                val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
                 tabsComponent?.addTab(tab)
             }
         }
-        
+
         is SplitConfig.VerticalSplit -> {
             // First process left side in current panel
             when (val leftNode = node.left) {
@@ -84,43 +90,43 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     leftNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromWorkspaceConfig(tabConfig)
+                        val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
                         tabsComponent?.addTab(tab)
                     }
                 }
                 else -> {
                     // Recursively apply left workspace config
-                    applyWorkspaceNode(leftNode, splitViewState, currentPanelId)
+                    applyWorkspaceNode(leftNode, splitViewState, currentPanelId, projectPath)
                 }
             }
-            
+
             // Then create vertical split for right side
             val firstRightTab = getFirstTab(node.right)
             if (firstRightTab != null) {
                 val rightPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = createTabFromWorkspaceConfig(firstRightTab)
+                    tabToMove = createTabFromWorkspaceConfig(firstRightTab, projectPath)
                 )
-                
+
                 // Add remaining tabs or process splits for right side
                 when (val rightNode = node.right) {
                     is SplitConfig.SinglePanel -> {
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(rightPanelId)
                         rightNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromWorkspaceConfig(tabConfig)
+                            val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
                             tabsComponent?.addTab(tab)
                         }
                     }
                     else -> {
                         // Recursively apply right workspace config
-                        applyWorkspaceNode(rightNode, splitViewState, rightPanelId)
+                        applyWorkspaceNode(rightNode, splitViewState, rightPanelId, projectPath)
                     }
                 }
             }
         }
-        
+
         is SplitConfig.HorizontalSplit -> {
             // First process top side in current panel
             when (val topNode = node.top) {
@@ -128,38 +134,38 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     topNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromWorkspaceConfig(tabConfig)
+                        val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
                         tabsComponent?.addTab(tab)
                     }
                 }
                 else -> {
                     // Recursively apply top workspace config
-                    applyWorkspaceNode(topNode, splitViewState, currentPanelId)
+                    applyWorkspaceNode(topNode, splitViewState, currentPanelId, projectPath)
                 }
             }
-            
+
             // Then create horizontal split for bottom side
             val firstBottomTab = getFirstTab(node.bottom)
             if (firstBottomTab != null) {
                 val bottomPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.HORIZONTAL,
-                    tabToMove = createTabFromWorkspaceConfig(firstBottomTab)
+                    tabToMove = createTabFromWorkspaceConfig(firstBottomTab, projectPath)
                 )
-                
+
                 // Add remaining tabs or process splits for bottom side
                 when (val bottomNode = node.bottom) {
                     is SplitConfig.SinglePanel -> {
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(bottomPanelId)
                         bottomNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromWorkspaceConfig(tabConfig)
+                            val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
                             tabsComponent?.addTab(tab)
                         }
                     }
                     else -> {
                         // Recursively apply bottom workspace config
-                        applyWorkspaceNode(bottomNode, splitViewState, bottomPanelId)
+                        applyWorkspaceNode(bottomNode, splitViewState, bottomPanelId, projectPath)
                     }
                 }
             }
@@ -175,9 +181,9 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
     }
 }
 
-private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
-    // Get current project path for placeholder resolution
-    val projectPath = ProjectState.selectedProject.value.path.ifEmpty {
+private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: String): TabInfo {
+    // Resolve project path for placeholder resolution
+    val resolvedProjectPath = projectPath.ifEmpty {
         System.getProperty("user.home") ?: ""
     }
 
@@ -188,7 +194,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
 
             // Process URL placeholders
             val processedUrl = tabConfig.url?.let {
-                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
             } ?: "about:blank"
 
             FluckTabInfo(
@@ -203,12 +209,12 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
         "terminal" -> {
             // Process working directory placeholder
             val workingDir = tabConfig.workingDirectory?.let {
-                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
-            } ?: projectPath.ifEmpty { null }
+                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
+            } ?: resolvedProjectPath.ifEmpty { null }
 
             // Process initial command placeholder
             val initialCmd = tabConfig.initialCommand?.let {
-                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
             }
 
             TerminalTabInfo(
@@ -222,7 +228,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig): TabInfo {
         "editor" -> {
             // Process file path placeholder
             val filePath = tabConfig.filePath?.let {
-                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
             } ?: ""
             val fileIconInfo = FileIcons.forFile(tabConfig.title)
 

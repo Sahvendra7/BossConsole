@@ -5,6 +5,8 @@ import BossDarkBorder
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.extractFileName
@@ -177,22 +179,13 @@ data class Project(
     val lastOpened: Long = 0L
 )
 
-// Global project state with persistence
+// Global project state with persistence - manages shared recent projects list
+// Note: Selected project is per-window via WindowProjectState. This object only manages recent projects.
 object ProjectState {
     private const val MAX_RECENT_PROJECTS = 10
     private const val RECENT_PROJECTS_FILE = "recent-projects.json"
 
-    // Start with no project selected - user should choose
-    private val _selectedProject = MutableStateFlow(
-        Project(
-            name = "No Project",
-            path = "",
-            lastOpened = 0L
-        )
-    )
-    val selectedProject: StateFlow<Project> = _selectedProject.asStateFlow()
-
-    // Recent projects list - loaded from disk on init
+    // Recent projects list - loaded from disk on init (shared across all windows)
     private val _recentProjects = MutableStateFlow<List<Project>>(emptyList())
     val recentProjects: StateFlow<List<Project>> = _recentProjects.asStateFlow()
 
@@ -202,33 +195,6 @@ object ProjectState {
         // Load recent projects from disk on startup (async to avoid blocking main thread)
         ioScope.launch {
             loadRecentProjects()
-        }
-    }
-
-    fun selectProject(project: Project) {
-        // Update timestamp when project is selected
-        val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
-        _selectedProject.value = updatedProject
-
-        // Update recent projects list with LRU behavior
-        val updated = _recentProjects.value.toMutableList()
-
-        // Remove if already exists
-        updated.removeAll { it.path == updatedProject.path }
-
-        // Add to front - being at position 0 means most recently used
-        updated.add(0, updatedProject)
-
-        // Keep only MAX_RECENT_PROJECTS
-        while (updated.size > MAX_RECENT_PROJECTS) {
-            updated.removeLast()
-        }
-
-        _recentProjects.value = updated
-
-        // Save to disk (async)
-        ioScope.launch {
-            saveRecentProjects()
         }
     }
 
@@ -346,8 +312,8 @@ class WindowProjectState(val windowId: String) {
     fun selectProject(project: Project) {
         val updatedProject = project.copy(lastOpened = System.currentTimeMillis())
         _selectedProject.value = updatedProject
-        // Update global project state so all panels see the new project
-        ProjectState.selectProject(updatedProject)
+        // Update recent projects list without affecting other windows
+        ProjectState.updateRecentProjects(updatedProject)
         println("WindowProjectState[$windowId]: Selected project '${project.name}' at ${project.path}")
     }
 
@@ -376,12 +342,8 @@ class CodeBaseComponent(
     // Mutex to prevent race conditions during tree updates (folder loading and compact loading)
     private val treeUpdateMutex = kotlinx.coroutines.sync.Mutex()
 
-    init {
-        // Load initial file tree
-        scope.launch {
-            loadFileTree(ProjectState.selectedProject.value.path)
-        }
-    }
+    // Note: File tree is loaded reactively via LaunchedEffect in Content()
+    // when the per-window selectedProject changes. No eager load needed here.
     
     private suspend fun loadFileTree(rootPath: String) {
         // Validate path before attempting to load
@@ -724,7 +686,10 @@ class CodeBaseComponent(
 
     @Composable
     override fun Content() {
-        val selectedProject by ProjectState.selectedProject.collectAsState()
+        val windowProjectState = LocalWindowProjectState.current
+        // Window project state is required for multi-window support
+        val selectedProject by (windowProjectState?.selectedProject?.collectAsState()
+            ?: remember { mutableStateOf(Project("No Project", "", 0L)) })
         val tree by fileTree.collectAsState()
         val expandedPaths by _expandedPaths.asStateFlow().collectAsState()
 
@@ -732,7 +697,8 @@ class CodeBaseComponent(
         val directoryPicker = rememberDirectoryPicker { path ->
             path?.let {
                 val projectName = it.extractFileName().ifEmpty { "Unknown" }
-                ProjectState.selectProject(
+                selectProjectInWindow(
+                    windowProjectState,
                     Project(
                         name = projectName,
                         path = it

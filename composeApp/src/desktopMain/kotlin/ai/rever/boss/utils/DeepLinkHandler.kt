@@ -207,19 +207,26 @@ actual object DeepLinkHandler {
 
         val name = (params["name"] ?: folder.name).extractFileName()
 
-        // Update ProjectState directly (reactive)
+        // Update project state (use per-window state if available)
         scope.launch(Dispatchers.Main) {
-            ProjectState.selectProject(
-                Project(
-                    name = name,
-                    path = folder.absolutePath,
-                    lastOpened = System.currentTimeMillis()
-                )
+            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+            val windowProjectState = focusedWindowId?.let { ai.rever.boss.window.WindowProjectStateRegistry.get(it) }
+
+            val project = Project(
+                name = name,
+                path = folder.absolutePath,
+                lastOpened = System.currentTimeMillis()
             )
+
+            if (windowProjectState != null) {
+                windowProjectState.selectProject(project)
+            } else {
+                // Fall back to just updating recent projects if no window state available
+                ProjectState.updateRecentProjects(project)
+            }
             println("DeepLinkHandler: Folder opened in codebase: ${folder.absolutePath}")
 
             // Emit panel open event to show the codebase panel
-            val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             if (focusedWindowId == null) {
                 println("DeepLinkHandler: No window focused, cannot open codebase panel")
                 return@launch

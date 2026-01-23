@@ -1,20 +1,23 @@
 package ai.rever.boss.window
 
 import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
 
 /**
- * Helper function to select a project using window-specific state if available,
- * falling back to global ProjectState otherwise.
+ * Helper function to select a project using window-specific state.
+ * Window state is required for multi-window support.
  *
- * This eliminates the repeated pattern:
- * `windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)`
+ * @param windowProjectState The window project state (should not be null in normal operation)
+ * @param project The project to select
  */
 fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Project) {
-    windowProjectState?.selectProject(project) ?: ProjectState.selectProject(project)
+    if (windowProjectState != null) {
+        windowProjectState.selectProject(project)
+    } else {
+        println("Warning: selectProjectInWindow called without window state - project selection ignored")
+    }
 }
 
 /**

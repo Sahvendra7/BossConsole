@@ -44,7 +44,6 @@ import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.selectProjectInWindow
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
 import ai.rever.boss.run.RUNNER_TERMINAL_PREFIX
@@ -142,6 +141,8 @@ fun BossTabsComponent.BossMainTabBar(
     val tabsState = tabsState.subscribeAsState()
     var showNewTabDialog by remember { mutableStateOf(false) }
     var selectedTabType by remember { mutableStateOf<TabType?>(null) }
+    // Per-window project state for terminal working directory
+    val windowProjectState = LocalWindowProjectState.current
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var tabToBookmark by remember { mutableStateOf<TabInfo?>(null) }
 
@@ -569,8 +570,8 @@ fun BossTabsComponent.BossMainTabBar(
                     }
                     TabType.TERMINAL -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
-                        // Get current project path for terminal working directory
-                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+                        // Get current project path for terminal working directory (per-window)
+                        val projectPath = windowProjectState?.selectedProject?.value?.path ?: ""
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
@@ -729,10 +730,10 @@ fun BossTabsComponent.BossMainPanelContent(
     // Coroutine scope for async operations
     val scope = rememberCoroutineScope()
 
-    // Per-window project state for Dashboard
+    // Per-window project state for Dashboard (required for multi-window support)
     val windowProjectState = LocalWindowProjectState.current
     val selectedProject by windowProjectState?.selectedProject?.collectAsState()
-        ?: ProjectState.selectedProject.collectAsState()
+        ?: remember { mutableStateOf(ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L)) }
 
     Box(modifier = modifier) {
         val activeTab = tabsState.value.activeTab
@@ -767,7 +768,8 @@ fun BossTabsComponent.BossMainPanelContent(
                 onNewTerminal = {
                     // Create a new terminal tab
                     val timestamp = Clock.System.now().toEpochMilliseconds()
-                    val projectPath = ProjectState.selectedProject.value.path
+                    // Use per-window project state for terminal working directory
+                    val projectPath = selectedProject.path
                     val terminalTab = TerminalTabInfo(
                         id = "terminal-$timestamp",
                         typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
@@ -805,7 +807,7 @@ fun BossTabsComponent.BossMainPanelContent(
                             applyWorkspace(matchingWorkspace, splitViewState)
                         }
                     } else {
-                        applySplitTemplate(template, splitViewState, currentPanelId)
+                        applySplitTemplate(template, splitViewState, currentPanelId, selectedProject.path)
                     }
                 },
                 onActivatePlugin = { pluginId ->
@@ -861,8 +863,8 @@ fun BossTabsComponent.BossMainPanelContent(
                     }
                     TabType.TERMINAL -> {
                         val timestamp = Clock.System.now().toEpochMilliseconds()
-                        // Get current project path for terminal working directory
-                        val projectPath = ai.rever.boss.components.plugin.panels.left_top.ProjectState.selectedProject.value.path
+                        // Get current project path for terminal working directory (per-window)
+                        val projectPath = selectedProject.path
                         val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
                             id = "terminal-$timestamp",
                             typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
@@ -888,16 +890,18 @@ fun BossTabsComponent.BossMainPanelContent(
  * @param template The split template to apply
  * @param splitViewState The split view state (if available)
  * @param currentPanelId The current panel ID
+ * @param projectPath The current project path for template placeholders
  */
 private fun BossTabsComponent.applySplitTemplate(
     template: SplitTemplate,
     splitViewState: ai.rever.boss.components.window_panel.SplitViewState?,
-    currentPanelId: String?
+    currentPanelId: String?,
+    projectPath: String
 ) {
     if (splitViewState == null || currentPanelId == null) return
 
-    val projectPath = ProjectState.selectedProject.value.path.ifEmpty {
-        System.getProperty("user.home")
+    val resolvedProjectPath = projectPath.ifEmpty {
+        System.getProperty("user.home") ?: ""
     }
 
     // Process the template panels
@@ -909,8 +913,8 @@ private fun BossTabsComponent.applySplitTemplate(
     val rightPanelConfig = panels.find { it.position == "right" }
 
     // Create left panel tab first (in current panel)
-    val leftTab = leftPanelConfig?.let { createTabFromConfig(it, projectPath) }
-    val rightTab = rightPanelConfig?.let { createTabFromConfig(it, projectPath) }
+    val leftTab = leftPanelConfig?.let { createTabFromConfig(it, resolvedProjectPath) }
+    val rightTab = rightPanelConfig?.let { createTabFromConfig(it, resolvedProjectPath) }
 
     if (leftTab != null) {
         // Add left tab to current panel

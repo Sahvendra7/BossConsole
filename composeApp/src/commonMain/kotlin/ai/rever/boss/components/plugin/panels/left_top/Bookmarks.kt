@@ -33,6 +33,7 @@ import ai.rever.boss.components.workspaces.PanelConfig
 import ai.rever.boss.components.workspaces.SplitConfig
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
+import ai.rever.boss.window.LocalWindowProjectState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -108,6 +109,9 @@ class BookmarksPanel(
         val splitViewState = LocalSplitViewState.current
         val workspaceManagerLocal = LocalWorkspaceManager.current
         val coroutineScope = rememberCoroutineScope()
+        val windowProjectState = LocalWindowProjectState.current
+        // Per-window project state (required for multi-window support)
+        val currentProjectPath = windowProjectState?.selectedProject?.value?.path ?: ""
 
         // Search state
         var searchQuery by remember { mutableStateOf("") }
@@ -209,7 +213,7 @@ class BookmarksPanel(
                                 BookmarkItem(
                                     bookmark = bookmark,
                                     collectionId = favoritesCollection.id,
-                                    onClick = { onBookmarkClick(bookmark, splitViewState, workspaceManagerLocal, coroutineScope, workspaces) }
+                                    onClick = { onBookmarkClick(bookmark, splitViewState, workspaceManagerLocal, coroutineScope, workspaces, currentProjectPath) }
                                 )
                             }
                         }
@@ -265,7 +269,7 @@ class BookmarksPanel(
                                 isExpanded = expandedCollections.contains(collection.id),
                                 onToggleExpand = { toggleCollectionExpansion(collection.id) },
                                 onBookmarkClick = { bookmark ->
-                                    onBookmarkClick(bookmark, splitViewState, workspaceManagerLocal, coroutineScope, workspaces)
+                                    onBookmarkClick(bookmark, splitViewState, workspaceManagerLocal, coroutineScope, workspaces, currentProjectPath)
                                 },
                                 collectionId = collection.id,
                                 searchQuery = searchQuery
@@ -307,7 +311,7 @@ class BookmarksPanel(
                                 isExpanded = expandedWorkspaces.contains(workspace.id),
                                 onToggleExpand = { toggleWorkspaceExpansion(workspace.id) },
                                 onWorkspaceClick = { onWorkspaceClick(workspace, splitViewState, workspaceManagerLocal, coroutineScope) },
-                                onTabClick = { tabConfig -> onWorkspaceTabClick(tabConfig, splitViewState) },
+                                onTabClick = { tabConfig -> onWorkspaceTabClick(tabConfig, splitViewState, currentProjectPath) },
                                 buildStructure = ::buildTabStructure,
                                 isFavorite = bookmarkManager.isFavorite(workspace.id)
                             )
@@ -364,7 +368,7 @@ class BookmarksPanel(
                                 isExpanded = expandedWorkspaces.contains(workspace.id),
                                 onToggleExpand = { toggleWorkspaceExpansion(workspace.id) },
                                 onWorkspaceClick = { onWorkspaceClick(workspace, splitViewState, workspaceManagerLocal, coroutineScope) },
-                                onTabClick = { tabConfig -> onWorkspaceTabClick(tabConfig, splitViewState) },
+                                onTabClick = { tabConfig -> onWorkspaceTabClick(tabConfig, splitViewState, currentProjectPath) },
                                 buildStructure = ::buildTabStructure,
                                 isFavorite = bookmarkManager.isFavorite(workspace.id)
                             )
@@ -464,7 +468,8 @@ class BookmarksPanel(
         splitViewState: SplitViewState?,
         workspaceManagerLocal: ai.rever.boss.components.workspaces.WorkspaceManager?,
         coroutineScope: kotlinx.coroutines.CoroutineScope,
-        workspaces: List<ai.rever.boss.components.workspaces.LayoutWorkspace>
+        workspaces: List<ai.rever.boss.components.workspaces.LayoutWorkspace>,
+        projectPath: String
     ) {
         // Mark bookmark as accessed
         val collection = bookmarkManager.collections.value.find { coll ->
@@ -501,7 +506,7 @@ class BookmarksPanel(
                         }
 
                         // Open the tab in the (now active) panel
-                        openTabInActivePanel(bookmark, splitViewState)
+                        openTabInActivePanel(bookmark, splitViewState, projectPath)
                     }
                 }
             }
@@ -511,14 +516,14 @@ class BookmarksPanel(
         // No target workspaces - use current workspace
         if (splitViewState != null) {
             // Open the tab in the active panel
-            openTabInActivePanel(bookmark, splitViewState)
+            openTabInActivePanel(bookmark, splitViewState, projectPath)
         }
     }
 
     /**
      * Helper function to open a tab in the active panel based on tab type
      */
-    private fun openTabInActivePanel(bookmark: Bookmark, splitViewState: SplitViewState) {
+    private fun openTabInActivePanel(bookmark: Bookmark, splitViewState: SplitViewState, projectPath: String) {
         when (bookmark.tabConfig.type) {
             "browser" -> {
                 val url = bookmark.tabConfig.url ?: "about:blank"
@@ -535,8 +540,6 @@ class BookmarksPanel(
                 // Get active tabs component and add terminal tab
                 val activeComponent = splitViewState.getActiveTabsComponent()
                 if (activeComponent != null) {
-                    // Get current project path for terminal working directory
-                    val projectPath = ProjectState.selectedProject.value.path
                     val terminalTab = TerminalTabInfo(
                         id = "terminal-${Random.nextLong()}",
                         typeId = TerminalTab.typeId,
@@ -618,7 +621,7 @@ class BookmarksPanel(
     /**
      * Handle workspace tab click - opens individual tab from workspace
      */
-    private fun onWorkspaceTabClick(tabConfig: TabConfig, splitViewState: SplitViewState?) {
+    private fun onWorkspaceTabClick(tabConfig: TabConfig, splitViewState: SplitViewState?, projectPath: String) {
         // Open the tab (reuse bookmark opening logic)
         if (splitViewState != null) {
             when (tabConfig.type) {
@@ -637,8 +640,6 @@ class BookmarksPanel(
                     // Get active tabs component and add terminal tab
                     val activeComponent = splitViewState.getActiveTabsComponent()
                     if (activeComponent != null) {
-                        // Get current project path for terminal working directory
-                        val projectPath = ProjectState.selectedProject.value.path
                         val terminalTab = TerminalTabInfo(
                             id = "terminal-${Random.nextLong()}",
                             typeId = TerminalTab.typeId,

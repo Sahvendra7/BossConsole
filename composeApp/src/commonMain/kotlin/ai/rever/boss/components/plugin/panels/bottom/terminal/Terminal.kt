@@ -3,12 +3,12 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Terminal
@@ -65,8 +65,11 @@ class TerminalComponent(
     @Composable
     override fun Content() {
         val windowId = LocalWindowId.current
+        val windowProjectState = LocalWindowProjectState.current
+        // Per-window project state (required for multi-window support)
+        val projectPath = windowProjectState?.selectedProject?.value?.path ?: ""
         TabbedTerminalContent(
-            workingDirectory = ProjectState.selectedProject.value.path.ifEmpty { null },
+            workingDirectory = projectPath.ifEmpty { null },
             onExit = {
                 windowId?.let { wid ->
                     coroutineScope.launch {
