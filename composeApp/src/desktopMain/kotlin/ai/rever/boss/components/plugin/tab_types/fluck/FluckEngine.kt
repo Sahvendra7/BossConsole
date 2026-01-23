@@ -11,6 +11,7 @@ import com.teamdev.jxbrowser.download.Download
 import com.teamdev.jxbrowser.download.event.*
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
+import com.teamdev.jxbrowser.engine.ProprietaryFeature
 import com.teamdev.jxbrowser.engine.UserDataDirectoryAlreadyInUseException
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
@@ -754,7 +755,21 @@ object FluckEngine {
             .licenseKey(JxBrowserConfig.licenseKey)
             .chromiumDir(chromiumDir)
             .userDataDir(profileDirPath)
-            // Minimal Chrome flags - removed anti-detection flags as they may be causing detection
+            // Enable all proprietary codecs for full media support
+            .enableProprietaryFeature(ProprietaryFeature.H_264)
+            .enableProprietaryFeature(ProprietaryFeature.AAC)
+            .enableProprietaryFeature(ProprietaryFeature.HEVC)
+            // GPU acceleration and performance flags
+            .addSwitch("--enable-gpu-rasterization")
+            .addSwitch("--enable-zero-copy")
+            .addSwitch("--ignore-gpu-blocklist")
+            // Linux-specific hardware video decode
+            .apply {
+                if (System.getProperty("os.name").lowercase().contains("linux")) {
+                    addSwitch("--enable-features=VaapiVideoDecoder,VaapiVideoEncoder")
+                }
+            }
+            // Minimal Chrome flags
             .addSwitch("--disable-dev-shm-usage")
             .addSwitch("--no-sandbox") // May be needed for some environments
         
@@ -780,6 +795,14 @@ object FluckEngine {
         }
         
         val newEngine = Engine.newInstance(optionsBuilder.build())
+
+        // Activate Widevine DRM for protected content (Netflix, Disney+, etc.)
+        try {
+            val widevineStatus = newEngine.widevine().activate().join()
+            println("Widevine activation status: $widevineStatus")
+        } catch (e: Exception) {
+            println("Widevine activation failed: ${e.message}")
+        }
 
         // Set up permission handlers for the engine
         setupPermissionHandlers(newEngine)

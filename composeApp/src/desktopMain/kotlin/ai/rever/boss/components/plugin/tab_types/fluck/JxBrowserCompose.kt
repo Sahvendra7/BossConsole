@@ -91,7 +91,8 @@ private fun processUrlInput(input: String): String {
 
     // If it's already a full URL or special scheme, return as-is (case-insensitive check)
     if (lowerTrimmed.startsWith("http://") || lowerTrimmed.startsWith("https://") ||
-        lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:")) {
+        lowerTrimmed.startsWith("file://") || lowerTrimmed.startsWith("javascript:") ||
+        lowerTrimmed.startsWith("chrome://")) {
         return trimmed
     }
 

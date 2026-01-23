@@ -341,6 +341,8 @@ private fun configureBrowserPopupHandler(
 
 actual fun createBrowser(): Any {
     val browser = FluckEngine.engine.newBrowser()
+    // Enable swipe navigation for touchscreen devices
+    browser.settings().enableOverscrollHistoryNavigation()
     // Register download callback on this browser
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
     // Register screen capture handler to prevent repeated permission dialogs on macOS
