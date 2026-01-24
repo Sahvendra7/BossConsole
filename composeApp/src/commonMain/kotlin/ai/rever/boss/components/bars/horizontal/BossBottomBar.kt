@@ -119,9 +119,9 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
                         )
                     }
                     is TerminalTabInfo -> {
-                        // Show terminal text
+                        // Show terminal title (e.g., "user@hostname:/path")
                         Text(
-                            text = "Terminal",
+                            text = activeTab.title,
                             color = BossDarkTextSecondary,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 4.dp)
