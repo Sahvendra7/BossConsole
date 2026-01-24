@@ -186,16 +186,21 @@ object KeyboardEventBus {
         }
 
         // Return a job that removes the handler when cancelled
-        return scope.launch {
-            try {
-                awaitCancellation()
-            } finally {
-                handlers[priority]?.removeAll { it.handlerName == handlerName }
-                if (debugMode) {
-                    println("[KeyboardEventBus] Unregistered handler '$handlerName'")
-                }
+        val job = scope.launch {
+            awaitCancellation()
+        }
+
+        // Use invokeOnCompletion to ensure handler removal happens synchronously
+        // when the job is cancelled/completed. This runs on the thread that calls
+        // cancel(), ensuring visibility to callers of cancelAndJoin().
+        job.invokeOnCompletion {
+            handlers[priority]?.removeAll { it.handlerName == handlerName }
+            if (debugMode) {
+                println("[KeyboardEventBus] Unregistered handler '$handlerName'")
             }
         }
+
+        return job
     }
 
     /**

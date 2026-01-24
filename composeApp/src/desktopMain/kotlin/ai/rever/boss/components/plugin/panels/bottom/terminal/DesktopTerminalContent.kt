@@ -1,11 +1,14 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.components.events.KeyboardShortcutInterceptor
+import ai.rever.boss.components.events.KeyEventSource
 import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
 import ai.rever.boss.components.events.validateFilePath
 import ai.rever.boss.components.events.TerminalLinkEventBus
 import ai.rever.boss.components.events.URLEventBus
+import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.bossterm.compose.EmbeddableTerminal
 import ai.rever.bossterm.compose.hyperlinks.HyperlinkInfo
@@ -181,32 +184,38 @@ actual fun TabbedTerminalContent(
                 }
             }
 
-            TabbedTerminal(
-                state = state,
-                // Pass pending command for first render (runs in default tab)
-                initialCommand = normalizedPendingCommand,
-                workingDirectory = effectiveWorkingDir,
-                settingsOverride = sidebarSettings,
-                onExit = {
-                    TabbedTerminalStateRegistry.remove(windowId, SIDEBAR_TERMINAL_ID)
-                    // Clean up all runner configs for this window's sidebar terminal
-                    RunnerTerminalService.removeTerminal(windowId, SIDEBAR_TERMINAL_ID)
-                    onExit()
-                },
-                onTabClose = { tabId ->
-                    // When a tab is closed in sidebar terminal, check if it's a runner config
-                    // and clean up the runner state for just that config (window-scoped)
-                    val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(windowId, tabId)
-                    if (configId != null) {
-                        RunnerTerminalService.removeConfig(windowId, configId)
-                        TabbedTerminalStateRegistry.removeSidebarConfigTracking(windowId, configId)
-                    }
-                },
-                onShowSettings = onShowSettings,
-                onShowWelcomeWizard = { showWelcomeWizard = true },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID, windowId) },
-                modifier = Modifier.fillMaxSize()
-            )
+            KeyboardShortcutInterceptor(
+                windowId = windowId,
+                source = KeyEventSource.COMPONENT_TERMINAL,
+                context = ShortcutContext.TERMINAL
+            ) {
+                TabbedTerminal(
+                    state = state,
+                    // Pass pending command for first render (runs in default tab)
+                    initialCommand = normalizedPendingCommand,
+                    workingDirectory = effectiveWorkingDir,
+                    settingsOverride = sidebarSettings,
+                    onExit = {
+                        TabbedTerminalStateRegistry.remove(windowId, SIDEBAR_TERMINAL_ID)
+                        // Clean up all runner configs for this window's sidebar terminal
+                        RunnerTerminalService.removeTerminal(windowId, SIDEBAR_TERMINAL_ID)
+                        onExit()
+                    },
+                    onTabClose = { tabId ->
+                        // When a tab is closed in sidebar terminal, check if it's a runner config
+                        // and clean up the runner state for just that config (window-scoped)
+                        val configId = TabbedTerminalStateRegistry.getConfigIdForSidebarTab(windowId, tabId)
+                        if (configId != null) {
+                            RunnerTerminalService.removeConfig(windowId, configId)
+                            TabbedTerminalStateRegistry.removeSidebarConfigTracking(windowId, configId)
+                        }
+                    },
+                    onShowSettings = onShowSettings,
+                    onShowWelcomeWizard = { showWelcomeWizard = true },
+                    onLinkClick = { info -> handleTerminalLinkClick(info, scope, SIDEBAR_TERMINAL_ID, windowId) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 
@@ -293,21 +302,27 @@ actual fun PersistentTabbedTerminalContent(
                 null
             }
 
-            TabbedTerminal(
-                state = state,
-                // Only send initial command and working directory for newly created terminals
-                initialCommand = normalizedInitialCommand,
-                workingDirectory = effectiveWorkingDir,
-                onExit = {
-                    TabbedTerminalStateRegistry.remove(windowId, terminalId)
-                    onExit()
-                },
-                onShowSettings = onShowSettings,
-                onShowWelcomeWizard = { showWelcomeWizard = true },
-                onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
-                modifier = Modifier.fillMaxSize()
-            )
+            KeyboardShortcutInterceptor(
+                windowId = windowId,
+                source = KeyEventSource.COMPONENT_TERMINAL,
+                context = ShortcutContext.TERMINAL
+            ) {
+                TabbedTerminal(
+                    state = state,
+                    // Only send initial command and working directory for newly created terminals
+                    initialCommand = normalizedInitialCommand,
+                    workingDirectory = effectiveWorkingDir,
+                    onExit = {
+                        TabbedTerminalStateRegistry.remove(windowId, terminalId)
+                        onExit()
+                    },
+                    onShowSettings = onShowSettings,
+                    onShowWelcomeWizard = { showWelcomeWizard = true },
+                    onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
+                    onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 
@@ -814,19 +829,25 @@ actual fun TerminalContent(
             modifier = Modifier.fillMaxSize(),
             color = settings.defaultBackgroundColor
         ) {
-            EmbeddableTerminal(
-                state = state,
-                // Only send initial command and working directory for newly created terminals
-                initialCommand = if (isNew) initialCommand else null,
-                workingDirectory = if (isNew) workingDirectory else null,
-                onExit = { _ ->
-                    // Clean up registry when terminal exits (window-scoped)
-                    terminalId?.let { TerminalStateRegistry.remove(windowId, it) }
-                    onExit()
-                },
-                onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
-                modifier = Modifier.fillMaxSize()
-            )
+            KeyboardShortcutInterceptor(
+                windowId = windowId,
+                source = KeyEventSource.COMPONENT_TERMINAL,
+                context = ShortcutContext.TERMINAL
+            ) {
+                EmbeddableTerminal(
+                    state = state,
+                    // Only send initial command and working directory for newly created terminals
+                    initialCommand = if (isNew) initialCommand else null,
+                    workingDirectory = if (isNew) workingDirectory else null,
+                    onExit = { _ ->
+                        // Clean up registry when terminal exits (window-scoped)
+                        terminalId?.let { TerminalStateRegistry.remove(windowId, it) }
+                        onExit()
+                    },
+                    onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

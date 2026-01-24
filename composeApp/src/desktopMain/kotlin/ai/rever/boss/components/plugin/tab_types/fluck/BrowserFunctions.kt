@@ -347,6 +347,8 @@ actual fun createBrowser(): Any {
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
     // Register screen capture handler to prevent repeated permission dialogs on macOS
     FluckEngine.setupCaptureSessionHandler(browser)
+    // Register keyboard interceptor to forward menu shortcuts (Cmd+R, Cmd+N, etc.) to native menu bar
+    FluckEngine.setupKeyboardInterceptor(browser)
     return browser
 }
 

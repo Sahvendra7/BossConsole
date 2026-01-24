@@ -5,6 +5,7 @@ import ai.rever.boss.components.plugin.panels.bottom.terminal.PersistentTabbedTe
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.run.RUNNER_TERMINAL_PREFIX
 import ai.rever.boss.run.RunnerTerminalService
+import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Terminal
@@ -76,6 +77,8 @@ class TerminalTabComponent(
 
     @Composable
     override fun Content() {
+        val windowId = LocalWindowId.current
+
         // Get initial command and working directory from config if it's a TerminalTabInfo
         val terminalConfig = config as? TerminalTabInfo
         val initialCommand = terminalConfig?.initialCommand
@@ -87,7 +90,7 @@ class TerminalTabComponent(
             workingDirectory = workingDirectory,
             onExit = { onClose() },
             onShowSettings = {
-                MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")
+                windowId?.let { MenuActionsHandler.triggerOpenSettings(it, "TERMINAL") }
             },
             onTitleChange = { newTitle ->
                 onTitleUpdate(newTitle)

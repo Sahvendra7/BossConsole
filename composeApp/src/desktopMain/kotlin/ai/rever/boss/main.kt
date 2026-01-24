@@ -15,6 +15,7 @@ import ai.rever.boss.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
+import ai.rever.boss.window.AWTKeyboardInterceptor
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
 import ai.rever.boss.components.plugin.panels.bottom.console.GlobalLogCapture
@@ -148,6 +149,12 @@ fun main(args: Array<String>) {
         } catch (e: Exception) {
             println("Error closing favicon HTTP client: ${e.message}")
         }
+        try {
+            // Uninstall AWT keyboard interceptor
+            AWTKeyboardInterceptor.uninstall()
+        } catch (e: Exception) {
+            println("Error uninstalling keyboard interceptor: ${e.message}")
+        }
         SingleInstanceManager.release()
     })
 
@@ -188,6 +195,10 @@ fun main(args: Array<String>) {
 
     // Process command line arguments for deep links (Windows)
     DeepLinkHandler.processCommandLineArgs(args)
+
+    // Install AWT keyboard interceptor to capture shortcuts before BossTerm
+    // This ensures Cmd+N, Cmd+W, etc. work even when terminal has focus
+    AWTKeyboardInterceptor.install()
     
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()

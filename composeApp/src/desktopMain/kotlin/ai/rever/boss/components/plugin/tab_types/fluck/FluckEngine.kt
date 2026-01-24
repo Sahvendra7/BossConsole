@@ -5,6 +5,7 @@ import ai.rever.boss.platform.FileNameSanitizer
 import ai.rever.boss.platform.MacOSScreenCapture
 import ai.rever.boss.platform.FileSystemUtils
 import ai.rever.boss.platform.pickSaveFile
+import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.WindowFocusManager
 import com.teamdev.jxbrowser.browser.callback.StartDownloadCallback
 import com.teamdev.jxbrowser.download.Download
@@ -117,7 +118,6 @@ object FluckEngine {
         if (proactiveCleanupDone) return
         proactiveCleanupDone = true
 
-        println("=== Proactive JxBrowser lock cleanup ===")
         val userHome = System.getProperty("user.home")
         val selectedProfile = BrowserSettings.currentProfile
         val profileDirPath = Paths.get(userHome, ".boss", selectedProfile)
@@ -130,9 +130,7 @@ object FluckEngine {
             // Also clean up any other lock-related files
             cleanupAllLockRelatedFiles(profileDirPath)
         } else {
-            println("Profile directory does not exist yet: $profileDirPath")
         }
-        println("=== End proactive cleanup ===")
     }
 
     /**
@@ -140,7 +138,6 @@ object FluckEngine {
      * These zombie processes can prevent profile reuse even without lock files.
      */
     private fun killStaleChromiumProcesses(userHome: String) {
-        println("Checking for stale Chromium processes...")
         var killedAny = false
         try {
             // Use explicit paths for more precise matching (security: avoid killing unrelated processes)
@@ -197,10 +194,6 @@ object FluckEngine {
                     val commandLine = process.info().commandLine().orElse("unknown")
 
                     // Log full command line for debugging before killing
-                    println("  Found stale Chromium process:")
-                    println("    PID=$pid")
-                    println("    Command=$command")
-                    println("    CommandLine=$commandLine")
 
                     // Try graceful termination first with proper timeout handling
                     process.destroy()
@@ -212,30 +205,24 @@ object FluckEngine {
                         process.onExit().get(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                     } catch (e: java.util.concurrent.TimeoutException) {
                         // Process didn't exit in time - force kill
-                        println("  Process $pid didn't exit gracefully, force killing...")
                         process.destroyForcibly()
                     } catch (e: Exception) {
                         // Process already exited or other error
                     }
-                    println("  Killed stale process: $pid")
                 } catch (e: Exception) {
-                    println("  Failed to kill process: ${e.message}")
                 }
             }
 
             if (staleProcesses.isEmpty()) {
-                println("  No stale Chromium processes found")
             }
 
             // If we killed any processes, wait for them to fully terminate
             // Using Thread.sleep() is acceptable here since this runs during startup
             // before UI initialization (per code review recommendation)
             if (killedAny) {
-                println("  Waiting for processes to fully terminate...")
                 Thread.sleep(500)
             }
         } catch (e: Exception) {
-            println("Error checking for stale processes: ${e.message}")
         }
     }
 
@@ -244,7 +231,6 @@ object FluckEngine {
      * JxBrowser/Chromium uses multiple files for locking.
      */
     private fun cleanupAllLockRelatedFiles(profileDir: java.nio.file.Path) {
-        println("Cleaning up all lock-related files in: $profileDir")
 
         val lockFiles = listOf(
             "SingletonLock",
@@ -258,7 +244,6 @@ object FluckEngine {
             val file = profileDir.resolve(fileName).toFile()
             if (file.exists()) {
                 val deleted = file.delete()
-                println("  $fileName: deleted=$deleted")
             }
         }
 
@@ -269,7 +254,6 @@ object FluckEngine {
                 val file = defaultDir.resolve(fileName).toFile()
                 if (file.exists()) {
                     val deleted = file.delete()
-                    println("  Default/$fileName: deleted=$deleted")
                 }
             }
         }
@@ -313,7 +297,6 @@ object FluckEngine {
     fun notifyTabOpened() {
         val now = System.currentTimeMillis()
         recentlyOpenedTabIds.add(now to "")
-        println("FluckEngine: Notified that a tab was just opened (timestamp: $now)")
 
         // Clean up old entries (older than 5 seconds)
         val cutoff = now - 5_000
@@ -340,7 +323,6 @@ object FluckEngine {
         val recentTabs = recentlyOpenedTabIds.filter { it.first >= recentCutoff }
 
         if (recentTabs.isNotEmpty()) {
-            println("FluckEngine: Auto-closing most recently opened tab (opened ${now - recentTabs.last().first}ms ago)")
             onCloseMostRecentTab?.invoke()
             // Clear the entries
             recentlyOpenedTabIds.removeIf { it.first >= recentCutoff }
@@ -355,11 +337,9 @@ object FluckEngine {
         activeDownloads[downloadId]?.let { download ->
             try {
                 download.pause()
-                println("FluckEngine: Paused download: $downloadId")
             } catch (e: Exception) {
-                println("FluckEngine: Error pausing download $downloadId: ${e.message}")
             }
-        } ?: println("FluckEngine: Cannot pause download $downloadId - not found in active downloads")
+        }
     }
 
     /**
@@ -370,11 +350,9 @@ object FluckEngine {
         activeDownloads[downloadId]?.let { download ->
             try {
                 download.resume()
-                println("FluckEngine: Resumed download: $downloadId")
             } catch (e: Exception) {
-                println("FluckEngine: Error resuming download $downloadId: ${e.message}")
             }
-        } ?: println("FluckEngine: Cannot resume download $downloadId - not found in active downloads")
+        }
     }
 
     /**
@@ -385,11 +363,9 @@ object FluckEngine {
         activeDownloads[downloadId]?.let { download ->
             try {
                 download.cancel()
-                println("FluckEngine: Cancelled download: $downloadId")
             } catch (e: Exception) {
-                println("FluckEngine: Error cancelling download $downloadId: ${e.message}")
             }
-        } ?: println("FluckEngine: Cannot cancel download $downloadId - not found in active downloads")
+        }
     }
 
     // Lock object for thread-safe engine access
@@ -404,14 +380,12 @@ object FluckEngine {
                 }
                 // Engine was closed (e.g., during app restart/update flow)
                 // Clear cache and reinitialize
-                println("⚠️ FluckEngine: Cached engine was closed, reinitializing...")
                 _engine = null
                 initializationError = null
                 attemptCount = 0
                 // Increment generation to notify browser tabs that they need to reload
                 _engineGeneration++
                 _engineGenerationFlow.value = _engineGeneration
-                println("🔄 FluckEngine: Engine generation incremented to $_engineGeneration")
             }
 
             // Throw cached error if initialization failed before and we've tried too many times
@@ -430,7 +404,6 @@ object FluckEngine {
         // This ensures permission is granted before user tries to screen share,
         // preventing repeated permission dialogs while still allowing native picker
         if (!MacOSScreenCapture.hasPermission()) {
-            println("Requesting screen capture permission proactively...")
             MacOSScreenCapture.requestPermission()
         }
 
@@ -457,14 +430,12 @@ object FluckEngine {
         // Priority 1: Bundled BOSS-branded Chromium (in app resources)
         val bundledDir = getBundledChromiumPath()
         if (bundledDir != null && isValidChromiumDir(bundledDir)) {
-            println("Using bundled BOSS-branded Chromium: $bundledDir")
             return bundledDir
         }
 
         // Priority 2: Cached BOSS-branded Chromium
         val cachedBrandedDir = Paths.get(userHome, ".boss", "boss-chromium")
         if (isValidChromiumDir(cachedBrandedDir)) {
-            println("Using cached BOSS-branded Chromium: $cachedBrandedDir")
             return cachedBrandedDir
         }
 
@@ -565,11 +536,8 @@ object FluckEngine {
         val socketFile = profileDir.resolve("SingletonSocket").toFile()
         val cookieFile = profileDir.resolve("SingletonCookie").toFile()
 
-        println("Checking for stale lock files in: $profileDir")
-        println("  SingletonLock exists: ${lockFile.exists()}")
 
         if (!lockFile.exists()) {
-            println("  No lock file found - profile is available")
             return false // No lock to clean
         }
 
@@ -577,38 +545,31 @@ object FluckEngine {
         // Check if the PID is still running
         try {
             val isSymlink = Files.isSymbolicLink(lockFile.toPath())
-            println("  SingletonLock is symlink: $isSymlink")
 
             if (isSymlink) {
                 val target = Files.readSymbolicLink(lockFile.toPath()).toString()
-                println("  Symlink target: $target")
 
                 // Parse PID from "spark-hostname-12345" or similar format
                 val pid = target.substringAfterLast("-").toLongOrNull()
-                println("  Extracted PID: $pid")
 
                 if (pid != null) {
                     // Check if process is still running
                     val processHandle = ProcessHandle.of(pid)
                     val isRunning = processHandle.isPresent
-                    println("  Process $pid is running: $isRunning")
 
                     if (isRunning) {
                         // Additional check: verify it's actually a BOSS/JxBrowser process
                         // not just a reused PID from another application
                         val processInfo = processHandle.orElse(null)
                         val command = processInfo?.info()?.command()?.orElse(null)
-                        println("  Process command: $command")
 
                         // If it's not a Java process, it's likely a reused PID
                         val isJavaProcess = command?.contains("java", ignoreCase = true) == true
                         if (!isJavaProcess) {
-                            println("  PID $pid is not a Java process - lock is stale (PID reused)")
                             deleteLockFiles(lockFile, socketFile, cookieFile)
                             return true
                         }
                     } else {
-                        println("  PID $pid no longer running - cleaning up stale lock files")
                         deleteLockFiles(lockFile, socketFile, cookieFile)
                         return true
                     }
@@ -616,11 +577,9 @@ object FluckEngine {
                     // Couldn't parse PID - try to clean up anyway if lock file is old
                     val lastModified = lockFile.lastModified()
                     val ageMinutes = (System.currentTimeMillis() - lastModified) / (1000 * 60)
-                    println("  Could not parse PID from symlink. Lock file age: $ageMinutes minutes")
 
                     // If lock is older than 5 minutes, assume it's stale
                     if (ageMinutes > 5) {
-                        println("  Lock file is old - assuming stale and cleaning up")
                         deleteLockFiles(lockFile, socketFile, cookieFile)
                         return true
                     }
@@ -629,57 +588,44 @@ object FluckEngine {
                 // Not a symlink (Windows or other OS) - check file age
                 val lastModified = lockFile.lastModified()
                 val ageMinutes = (System.currentTimeMillis() - lastModified) / (1000 * 60)
-                println("  Lock file (not symlink) age: $ageMinutes minutes")
 
                 // On non-Linux, if lock is older than 5 minutes and we're starting fresh, clean it
                 if (ageMinutes > 5) {
-                    println("  Lock file is old - assuming stale and cleaning up")
                     deleteLockFiles(lockFile, socketFile, cookieFile)
                     return true
                 }
             }
         } catch (e: Exception) {
             // Log error without printStackTrace per CLAUDE.md guidelines
-            println("  Error checking lock file: ${e.message}")
 
             // If we can't check, try to clean up anyway
-            println("  Attempting cleanup despite error...")
             try {
                 deleteLockFiles(lockFile, socketFile, cookieFile)
                 return true
             } catch (e2: Exception) {
-                println("  Cleanup failed: ${e2.message}")
             }
         }
 
-        println("  Lock appears to be held by active process - cannot clean up")
         return false
     }
 
     private fun deleteLockFiles(lockFile: java.io.File, socketFile: java.io.File, cookieFile: java.io.File) {
-        println("  Deleting lock files...")
         if (lockFile.exists()) {
             val deleted = lockFile.delete()
             if (!deleted) {
-                println("    WARNING: Failed to delete SingletonLock - may cause browser initialization issues")
             } else {
-                println("    SingletonLock deleted: $deleted")
             }
         }
         if (socketFile.exists()) {
             val deleted = socketFile.delete()
             if (!deleted) {
-                println("    WARNING: Failed to delete SingletonSocket - may cause browser initialization issues")
             } else {
-                println("    SingletonSocket deleted: $deleted")
             }
         }
         if (cookieFile.exists()) {
             val deleted = cookieFile.delete()
             if (!deleted) {
-                println("    WARNING: Failed to delete SingletonCookie - may cause browser initialization issues")
             } else {
-                println("    SingletonCookie deleted: $deleted")
             }
         }
     }
@@ -699,11 +645,9 @@ object FluckEngine {
                 it.name != "browser-profile" &&
                 it.lastModified() < oneDayAgo
             }?.forEach { dir ->
-                println("Cleaning up old temporary profile: ${dir.name}")
                 dir.deleteRecursively()
             }
         } catch (e: Exception) {
-            println("Failed to clean up old profiles: ${e.message}")
         }
     }
 
@@ -717,16 +661,13 @@ object FluckEngine {
         } catch (e: UserDataDirectoryAlreadyInUseException) {
             // Try to clean up stale lock files first
             if (cleanupStaleLockFiles(profileDirPath)) {
-                println("Retrying with cleaned profile '$selectedProfile'...")
                 try {
                     return createEngineInstance(chromiumDir, profileDirPath, selectedProfile)
                 } catch (e2: Exception) {
-                    println("Still failed after cleanup: ${e2.message}")
                 }
             }
 
             // Profile is genuinely in use by another process, use temporary
-            println("Profile '$selectedProfile' is already in use, trying with temporary profile...")
             val tempProfile = "browser-profile-${System.currentTimeMillis()}"
             val tempProfilePath = Paths.get(userHome, ".boss", tempProfile)
             tempProfilePath.toFile().mkdirs()
@@ -734,17 +675,9 @@ object FluckEngine {
             try {
                 createEngineInstance(chromiumDir, tempProfilePath, tempProfile)
             } catch (e2: Exception) {
-                println("Failed to create engine with temporary profile: ${e2.message}")
                 throw e2
             }
         } catch (e: Exception) {
-            println("JxBrowser initialization failed:")
-            println("- Error: ${e.message}")
-            println("- Type: ${e.javaClass.name}")
-            println("- User home: $userHome")
-            println("- OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
-            println("- Arch: ${System.getProperty("os.arch")}")
-            println("- Java: ${System.getProperty("java.version")}")
             initializationError = e
             throw e
         }
@@ -799,9 +732,7 @@ object FluckEngine {
         // Activate Widevine DRM for protected content (Netflix, Disney+, etc.)
         try {
             val widevineStatus = newEngine.widevine().activate().join()
-            println("Widevine activation status: $widevineStatus")
         } catch (e: Exception) {
-            println("Widevine activation failed: ${e.message}")
         }
 
         // Set up permission handlers for the engine
@@ -809,7 +740,6 @@ object FluckEngine {
 
         _engine = newEngine
 
-        println("JxBrowser initialized with profile: $profileName")
 
         return newEngine
     }
@@ -852,10 +782,8 @@ object FluckEngine {
         browser.set(StartCaptureSessionCallback::class.java, StartCaptureSessionCallback { params, tell ->
             // On macOS, check and request screen recording permission
             if (!MacOSScreenCapture.hasPermission()) {
-                println("Screen capture permission not granted, requesting...")
                 val granted = MacOSScreenCapture.requestPermission()
                 if (!granted) {
-                    println("Screen capture permission denied by user")
                     tell.cancel()
                     return@StartCaptureSessionCallback
                 }
@@ -864,7 +792,6 @@ object FluckEngine {
             val sources = params.sources()
 
             // Log available sources for debugging
-            println("Screen capture requested - Screens: ${sources.screens().size}, Windows: ${sources.applicationWindows().size}, Browsers: ${sources.browsers().size}")
 
             // Generate unique request ID
             val requestId = java.util.UUID.randomUUID().toString()
@@ -880,11 +807,106 @@ object FluckEngine {
             CoroutineScope(Dispatchers.Default).launch {
                 delay(60_000)
                 if (ScreenCaptureNotifier.hasPendingRequest(requestId)) {
-                    println("Screen capture request timed out after 60 seconds")
                     ScreenCaptureNotifier.cancel(requestId)
                 }
             }
         })
+    }
+
+    /**
+     * Sets up keyboard interceptor for a browser to forward menu shortcuts to the native menu bar.
+     * This intercepts Cmd+R, Cmd+N, Cmd+T, Cmd+W, etc. (on macOS) or Ctrl+R, Ctrl+N, etc. (on Windows/Linux)
+     * before JxBrowser consumes them, and manually triggers the corresponding MenuActionsHandler methods.
+     */
+    fun setupKeyboardInterceptor(browser: com.teamdev.jxbrowser.browser.Browser) {
+        browser.set(com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback::class.java,
+            com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback { params ->
+                val event = params.event()
+                val modifiers = event.keyModifiers()
+                val keyCode = event.keyCode()
+
+                // Platform-aware main modifier: Cmd on macOS, Ctrl on Windows/Linux
+                val isMainModifierDown = if (SystemUtils.isMacOS) {
+                    modifiers.isMetaDown && !modifiers.isControlDown
+                } else {
+                    modifiers.isControlDown && !modifiers.isMetaDown
+                }
+                val modifierName = if (SystemUtils.isMacOS) "Cmd" else "Ctrl"
+
+                // Intercept main modifier + key shortcuts
+                if (isMainModifierDown && !modifiers.isShiftDown && !modifiers.isAltDown) {
+                    // Read focusedWindowId here to minimize race window between read and use
+                    val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+                    if (focusedWindowId != null) {
+                        when (keyCode) {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_R -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerReloadBrowser(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_N -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerNewTab(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_T -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerNewTab(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_W -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerCloseTab(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            else -> {
+                                // Let other main modifier + key combos pass through to the native menu bar
+                            }
+                        }
+                    } else {
+                        // Log only for shortcuts we handle to avoid spam
+                        when (keyCode) {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_R,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_N,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_T,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_W -> {
+                                println("FluckEngine: No window focused, cannot dispatch $modifierName+${keyCode.name} shortcut")
+                            }
+                            else -> { /* Not a handled shortcut, no logging needed */ }
+                        }
+                    }
+                }
+
+                // Intercept main modifier + Shift + key shortcuts
+                if (isMainModifierDown && modifiers.isShiftDown && !modifiers.isAltDown) {
+                    // Read focusedWindowId here to minimize race window between read and use
+                    val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
+                    if (focusedWindowId != null) {
+                        when (keyCode) {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerToggleFocusMode(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_S -> {
+                                ai.rever.boss.window.MenuActionsHandler.triggerSaveWorkspace(focusedWindowId)
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
+                            else -> {
+                                // Let other main modifier + Shift + key combos pass through
+                            }
+                        }
+                    } else {
+                        // Log only for shortcuts we handle to avoid spam
+                        when (keyCode) {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_S -> {
+                                println("FluckEngine: No window focused, cannot dispatch $modifierName+Shift+${keyCode.name} shortcut")
+                            }
+                            else -> { /* Not a handled shortcut, no logging needed */ }
+                        }
+                    }
+                }
+
+                // Let all other key events proceed normally
+                com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.proceed()
+            }
+        )
     }
 
     fun setupBrowserDownloadHandler(browser: com.teamdev.jxbrowser.browser.Browser) {
@@ -899,7 +921,6 @@ object FluckEngine {
                 // This must happen before any other logic because popup handler may execute concurrently
                 val downloadUrl = target.url()
                 activeDownloadUrls.add(downloadUrl)
-                println("FluckEngine: Marked URL as active download: $downloadUrl")
 
                 // Auto-close any tabs that were recently opened (likely download redirects)
                 autoCloseDownloadTab()
@@ -931,7 +952,6 @@ object FluckEngine {
                 if (savePath != null) {
                     // Ensure parent directory exists
                     if (!FileSystemUtils.ensureParentDirectoryExists(savePath)) {
-                        println("Failed to create download directory for: $savePath")
                         action.cancel()
                         return@StartDownloadCallback
                     }
@@ -939,7 +959,6 @@ object FluckEngine {
                     // Warn for executable files
                     if (downloadSettings.warnForExecutables &&
                         FileNameSanitizer.isExecutableFile(sanitizedFileName)) {
-                        println("Warning: Downloading executable file: $sanitizedFileName")
                         // TODO: Show user warning dialog (for now, just proceed)
                     }
 
@@ -952,7 +971,6 @@ object FluckEngine {
                         downloadSettings = downloadSettings.copy(lastUsedDirectory = parentDir)
                     }
 
-                    println("Download starting: $sanitizedFileName -> $savePath")
 
                     // Generate unique download ID
                     val downloadId = UUID.randomUUID().toString()
@@ -986,7 +1004,6 @@ object FluckEngine {
                                 sourceWindowId = focusedWindowId
                             )
                         } else {
-                            println("FluckEngine: No window focused, cannot open Downloads panel")
                         }
                     }
 
@@ -998,7 +1015,6 @@ object FluckEngine {
                     action.download(downloadPath)
                 } else {
                     // User cancelled save dialog
-                    println("Download cancelled by user: $sanitizedFileName")
                     action.cancel()
                 }
             }
@@ -1034,7 +1050,6 @@ object FluckEngine {
                 val currentItem = downloadManager.getDownload(downloadId)
                 if (currentItem?.status == DownloadStatus.PAUSED && !download.isPaused && speed > 0) {
                     downloadManager.updateStatus(downloadId, DownloadStatus.DOWNLOADING)
-                    println("Download resumed: $fileName")
                 }
 
                 downloadManager.updateProgress(downloadId, receivedBytes, totalBytes, speed)
@@ -1045,7 +1060,6 @@ object FluckEngine {
         download.on(DownloadPaused::class.java) { event ->
             scope.launch {
                 downloadManager.updateStatus(downloadId, DownloadStatus.PAUSED)
-                println("Download paused: $fileName")
             }
         }
 
@@ -1053,7 +1067,6 @@ object FluckEngine {
         download.on(DownloadFinished::class.java) { event ->
             scope.launch {
                 downloadManager.updateStatus(downloadId, DownloadStatus.COMPLETED)
-                println("Download completed: $fileName")
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
@@ -1070,7 +1083,6 @@ object FluckEngine {
                     errorReason = "Download failed: $reason"
                 )
                 FileSystemUtils.cleanupPartialFile(destinationPath)
-                println("Download failed: $fileName - $reason")
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
@@ -1082,7 +1094,6 @@ object FluckEngine {
             scope.launch {
                 downloadManager.updateStatus(downloadId, DownloadStatus.CANCELLED)
                 FileSystemUtils.cleanupPartialFile(destinationPath)
-                println("Download cancelled: $fileName")
                 // Remove from tracking maps
                 activeDownloadUrls.remove(url)
                 activeDownloads.remove(downloadId)
@@ -1127,7 +1138,6 @@ object FluckEngine {
      * @return ResetResult with detailed status of each step
      */
     suspend fun resetBrowserProfile(): ResetResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        println("🔄 [FluckEngine] Resetting browser profile...")
 
         var engineClosed = false
         var profileDeleted = false
@@ -1137,12 +1147,10 @@ object FluckEngine {
             // Step 1: Close current engine if it exists
             _engine?.let { engine ->
                 if (!engine.isClosed) {
-                    println("   Closing current engine...")
                     try {
                         engine.close()
                         engineClosed = true
                     } catch (e: Exception) {
-                        println("   Warning: Error closing engine: ${e.message}")
                         // Continue anyway - engine may be in bad state
                         engineClosed = true // Mark as closed since we tried
                     }
@@ -1160,14 +1168,12 @@ object FluckEngine {
             // Increment generation to notify browser tabs that they need to reload
             _engineGeneration++
             _engineGenerationFlow.value = _engineGeneration
-            println("🔄 FluckEngine: Engine generation incremented to $_engineGeneration (reset)")
 
             // Step 3: Kill any stale Chromium processes
             val userHome = System.getProperty("user.home")
             try {
                 killStaleChromiumProcesses(userHome)
             } catch (e: Exception) {
-                println("   Warning: Error killing stale processes: ${e.message}")
                 // Continue - not critical
             }
 
@@ -1176,12 +1182,9 @@ object FluckEngine {
             val profileDir = java.io.File(userHome, ".boss/$selectedProfile")
 
             if (profileDir.exists()) {
-                println("   Deleting profile directory: ${profileDir.absolutePath}")
                 profileDeleted = profileDir.deleteRecursively()
                 if (profileDeleted) {
-                    println("   ✅ Profile directory deleted successfully")
                 } else {
-                    println("   ⚠️ Could not delete all files in profile directory")
                     // This is a partial failure - return with details
                     return@withContext ResetResult(
                         success = false,
@@ -1193,7 +1196,6 @@ object FluckEngine {
                     )
                 }
             } else {
-                println("   Profile directory does not exist, nothing to delete")
                 profileDeleted = true // Nothing to delete is success
             }
 
@@ -1202,12 +1204,10 @@ object FluckEngine {
                 cleanupOldTemporaryProfiles(userHome)
                 tempProfilesCleaned = true
             } catch (e: Exception) {
-                println("   Warning: Error cleaning temp profiles: ${e.message}")
                 // Not critical - continue
                 tempProfilesCleaned = false
             }
 
-            println("✅ [FluckEngine] Browser profile reset complete")
             ResetResult(
                 success = true,
                 engineClosed = engineClosed,
@@ -1216,7 +1216,6 @@ object FluckEngine {
             )
 
         } catch (e: Exception) {
-            println("❌ [FluckEngine] Error resetting browser profile: ${e.message}")
             ResetResult(
                 success = false,
                 engineClosed = engineClosed,

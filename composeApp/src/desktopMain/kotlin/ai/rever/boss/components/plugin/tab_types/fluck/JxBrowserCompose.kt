@@ -9,6 +9,10 @@ import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.InfoDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.events.DashboardEventBus
+import ai.rever.boss.components.events.KeyboardEventBus
+import ai.rever.boss.components.events.KeyEventSource
+import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
+import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.registery.TabIcon
@@ -16,10 +20,6 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
-import ai.rever.boss.components.events.KeyboardEventBus
-import ai.rever.boss.components.events.KeyEventSource
-import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
-import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.WindowOperations

@@ -7,8 +7,6 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.performance.PerformanceState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
@@ -20,6 +18,7 @@ import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import ai.rever.boss.utils.SystemUtils
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -163,6 +162,18 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
 @Composable
 fun BossRightBottomBar() {
     val windowId = LocalWindowId.current
+    val scope = rememberCoroutineScope()
+
+    // Status message (temporary messages like "Workspace Saved")
+    val statusMessage by StatusMessageManager.currentMessage.collectAsState()
+    statusMessage?.let { message ->
+        Text(
+            text = message,
+            color = androidx.compose.ui.graphics.Color(0xFF4CAF50), // Green color for success
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+    }
 
     // Performance indicator (shows memory/CPU usage)
     val showIndicator = PerformanceState.shouldShowIndicator()
@@ -184,7 +195,7 @@ fun BossRightBottomBar() {
         onClick = {
             // Toggle Console panel (PanelId "console" with order 14)
             windowId?.let { wid ->
-                CoroutineScope(Dispatchers.Main).launch {
+                scope.launch {
                     PanelEventBus.togglePanel(PanelId("console", 14), sourceWindowId = wid)
                 }
             }

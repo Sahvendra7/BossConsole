@@ -118,11 +118,9 @@ class SplitViewState(
     private var _activePanelId = mutableStateOf("main")
     val activePanelId: String get() = _activePanelId.value
     val activePanelIdState: State<String> get() = _activePanelId
-    
-    // Track last interacted tab for Cmd+R, Cmd+N operations
-    private var _lastInteractedTabPanelId = mutableStateOf("main")
+
+    // Track last interacted tab ID
     private var _lastInteractedTabId: String? = null
-    val lastInteractedTabPanelId: String get() = _lastInteractedTabPanelId.value
 
     // Track panel activation history for MOST_RECENT_ACTIVE mode in terminal link handling
     // Maintains order of recently activated panels (most recent first, limited to last 10)
@@ -190,14 +188,12 @@ class SplitViewState(
     }
     
     fun trackTabInteraction(panelId: String, tabId: String) {
-        _lastInteractedTabPanelId.value = panelId
         _lastInteractedTabId = tabId
-        // Also set as active panel (which also records in activation history)
-        setActivePanel(panelId)
+        setActivePanel(panelId)  // Now handles both active and lastInteracted
     }
     
     fun getLastInteractedTabComponent(): BossTabsComponent? {
-        return findPanel(_lastInteractedTabPanelId.value)?.tabsComponent
+        return findPanel(_activePanelId.value)?.tabsComponent
     }
     
     fun getActiveTabsComponent(): BossTabsComponent? {

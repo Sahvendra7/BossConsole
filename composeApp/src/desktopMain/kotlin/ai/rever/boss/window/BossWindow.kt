@@ -106,18 +106,23 @@ fun ApplicationScope.BossWindow(
             window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
         }
 
-        // Register window for focus management (deep links, etc.)
+        // Register window for focus management (deep links, etc.) and keyboard interception
         DisposableEffect(windowState.id, window) {
             WindowFocusManager.registerWindow(windowState.id, window)
+            AWTKeyboardInterceptor.registerWindow(window, windowState.id)
             onDispose {
                 WindowFocusManager.unregisterWindow(windowState.id)
+                AWTKeyboardInterceptor.unregisterWindow(window)
+                MenuActionsHandler.cleanupWindow(windowState.id)
             }
         }
 
         val keymapSettings by KeymapSettingsManager.currentSettings.collectAsState()
 
         // Create shortcut bridge for menu items
-        val shortcutBridge = remember(keymapSettings) { MenuShortcutBridge.from(keymapSettings) }
+        val shortcutBridge = remember(keymapSettings) {
+            MenuShortcutBridge.from(keymapSettings)
+        }
 
         // State for CLI installation dialog
         var showCLIInstallDialog by remember { mutableStateOf(false) }
@@ -162,6 +167,11 @@ fun ApplicationScope.BossWindow(
         // Get split enabled state (whether there are tabs to split)
         val splitEnabledMap by MenuActionsHandler.splitEnabledState.collectAsState()
         val isSplitEnabled = splitEnabledMap[windowState.id] ?: false
+
+        // Get panel count state (for enabling/disabling panel navigation)
+        val panelCountMap by MenuActionsHandler.panelCountState.collectAsState()
+        val panelCount = panelCountMap[windowState.id] ?: 1
+        val isPanelNavigationEnabled = panelCount > 1
 
         // Get registered plugins for Plugin menu
         val panelRegistry = remember { PanelRegistry() }
@@ -393,28 +403,32 @@ fun ApplicationScope.BossWindow(
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_LEFT),
                     onClick = {
                         MenuActionsHandler.triggerNavigatePanelLeft(windowState.id)
-                    }
+                    },
+                    enabled = isPanelNavigationEnabled
                 )
                 Item(
                     "Navigate Right",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_RIGHT),
                     onClick = {
                         MenuActionsHandler.triggerNavigatePanelRight(windowState.id)
-                    }
+                    },
+                    enabled = isPanelNavigationEnabled
                 )
                 Item(
                     "Navigate Up",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_UP),
                     onClick = {
                         MenuActionsHandler.triggerNavigatePanelUp(windowState.id)
-                    }
+                    },
+                    enabled = isPanelNavigationEnabled
                 )
                 Item(
                     "Navigate Down",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_NAVIGATE_DOWN),
                     onClick = {
                         MenuActionsHandler.triggerNavigatePanelDown(windowState.id)
-                    }
+                    },
+                    enabled = isPanelNavigationEnabled
                 )
 
                 Separator()
@@ -474,12 +488,6 @@ fun ApplicationScope.BossWindow(
             // Window Menu
             Menu("Window") {
                 Item(
-                    "Close Tab",
-                    onClick = {
-                        MenuActionsHandler.triggerCloseTab(windowState.id)
-                    }
-                )
-                Item(
                     "Close Window",
                     shortcut = shortcutBridge.getKeyShortcut(KeymapActions.WINDOW_CLOSE),
                     onClick = { WindowOperations.closeWindow(windowState.id) }
@@ -537,6 +545,16 @@ fun ApplicationScope.BossWindow(
 
             // Help Menu
             Menu("Help") {
+                Item(
+                    "Keyboard Shortcuts",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.HELP_SHORTCUTS),
+                    onClick = {
+                        MenuActionsHandler.triggerShowShortcutHelp(windowState.id)
+                    }
+                )
+
+                Separator()
+
                 Item(
                     "Welcome Wizard...",
                     onClick = {
@@ -763,7 +781,6 @@ fun ApplicationScope.BossWindow(
                                             }
                                             resetTerminalResult = true
                                         } catch (e: Exception) {
-                                            println("Error resetting terminals: ${e.message}")
                                             resetTerminalResult = false
                                         }
                                         isResetting = false

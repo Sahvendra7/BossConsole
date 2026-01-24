@@ -4,6 +4,7 @@ import BossTheme
 import ai.rever.boss.components.bars.horizontal.BossBottomBar
 import ai.rever.boss.components.bars.horizontal.BossTitleBar
 import ai.rever.boss.components.bars.horizontal.BossTopBar
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
@@ -17,13 +18,17 @@ import ai.rever.boss.components.overlays.DraggingItemOverlay
 import ai.rever.boss.components.overlays.TabDraggingOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
+import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
+import ai.rever.boss.components.plugin.tab_types.CodeEditor
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
+import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.terminal.ExistingSplitTargetMode
@@ -40,6 +45,8 @@ import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.window.WindowRunnerStateRegistry
 import ai.rever.boss.window.LocalWindowRunnerState
+import ai.rever.boss.window.MenuActionsHandler
+import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,6 +84,9 @@ import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.components.events.GitTerminalEventBus
 import ai.rever.boss.components.events.RunnerTerminalEventBus
+import ai.rever.boss.components.events.RunnerTerminalOpenEvent
+import ai.rever.boss.components.events.WorkspaceEventBus
+import ai.rever.boss.components.events.URLEventBus
 import ai.rever.boss.git.GitTerminalService
 import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.components.events.DashboardEventBus
@@ -121,6 +131,11 @@ import ai.rever.boss.components.workspaces.LayoutWorkspace
 import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
+import ai.rever.boss.components.workspaces.WorkspaceSerializer
+import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo as TerminalPanelInfo
+import ai.rever.boss.dashboard.TemplatePanelConfig
+import ai.rever.boss.dashboard.SplitTemplatesManager
+import ai.rever.boss.platform.rememberDirectoryPicker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -157,6 +172,7 @@ import ai.rever.boss.keymap.lifecycle.conditions.*
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.components.window_panel.NavigationDirection
 import ai.rever.boss.window.WindowAppearanceSettingsManager
 import ai.rever.boss.performance.PerformanceState
 import ai.rever.boss.performance.BrowserTabInfo
@@ -245,13 +261,13 @@ private fun handleTabDropResult(result: TabDropResult, splitViewState: SplitView
  * Creates a terminal tab with the run command and adds it to the active panel.
  */
 private fun openRunnerInMainPanel(
-    event: ai.rever.boss.components.events.RunnerTerminalOpenEvent,
-    splitViewState: ai.rever.boss.components.window_panel.SplitViewState
+    event: RunnerTerminalOpenEvent,
+    splitViewState: SplitViewState
 ) {
     // Create terminal tab in active panel
     val terminalTab = TerminalTabInfo(
         id = event.terminalId,
-        typeId = ai.rever.boss.components.registery.TabTypeId("terminal"),
+        typeId = TabTypeId("terminal"),
         title = "Run: ${event.configName}",
         initialCommand = event.command,
         workingDirectory = event.workingDirectory
@@ -272,10 +288,8 @@ private fun openRunnerInMainPanel(
         val tabIndex = activeComponent.addTab(terminalTab)
         if (tabIndex >= 0) {
             activeComponent.selectTab(tabIndex)
-            println("[BossApp] Runner terminal tab created in main panel: ${event.terminalId}")
         }
     } else {
-        println("[BossApp] ERROR - No panel available for runner terminal")
     }
 }
 
@@ -337,7 +351,7 @@ private fun isFileUrl(url: String): Boolean = url.startsWith("file:")
 private fun openTerminalLink(
     url: String,
     mode: TerminalLinkOpenMode,
-    splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    splitViewState: SplitViewState,
     sourceTerminalId: String? = null,
     scope: CoroutineScope,
     windowId: String? = null
@@ -368,7 +382,6 @@ private fun openTerminalLink(
 
         when (val result = validateFilePath(parsed.path)) {
             is FileValidationResult.Invalid -> {
-                println("[BossApp] Cannot open file: ${result.reason}")
                 return
             }
             is FileValidationResult.Valid -> {
@@ -420,7 +433,7 @@ private fun openTerminalLink(
 private fun openTerminalLinkInternal(
     url: String,
     mode: TerminalLinkOpenMode,
-    splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    splitViewState: SplitViewState,
     validSourcePanelId: String,
     isFile: Boolean,
     fileLine: Int = 0,
@@ -551,7 +564,6 @@ fun ComponentContext.BossApp(
     LaunchedEffect(windowId, splitViewState) {
         val pendingTab = consumePendingInitialTab(windowId)
         if (pendingTab != null) {
-            println("BossApp: Consuming pending tab '${pendingTab.title}' for window: $windowId")
             // Add the tab to the active panel (first panel by default)
             val activePanel = splitViewState.getAllPanels().firstOrNull()
             if (activePanel != null) {
@@ -577,7 +589,6 @@ fun ComponentContext.BossApp(
     LaunchedEffect(windowId, windowProjectState) {
         val pendingProject = consumePendingInitialProject(windowId)
         if (pendingProject != null) {
-            println("BossApp: Consuming pending project '${pendingProject.name}' for window: $windowId")
             windowProjectState.selectProject(pendingProject)
             PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
             PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
@@ -593,7 +604,6 @@ fun ComponentContext.BossApp(
     LaunchedEffect(windowProjectState) {
         val initialProject = windowProjectState.selectedProject.value
         if (initialProject.path.isNotEmpty()) {
-            println("BossApp: Project '${initialProject.name}' already selected at startup, opening panels")
             PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
             PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
         }
@@ -874,7 +884,7 @@ fun ComponentContext.BossApp(
     
     // State for showing new tab dialog
     var showNewTabDialog by remember { mutableStateOf(false) }
-    var newTabDialogInitialType by remember { mutableStateOf<ai.rever.boss.components.dialogs.TabType?>(null) }
+    var newTabDialogInitialType by remember { mutableStateOf<TabType?>(null) }
     // Track if workspace restoration has completed (for first window only)
     // New windows don't restore Last Session, so start as complete
     var workspaceRestorationComplete by remember { mutableStateOf(!isFirstWindow) }
@@ -906,7 +916,6 @@ fun ComponentContext.BossApp(
             val defaultWorkspace = WorkspaceSettingsManager.getDefaultWorkspace()
             if (defaultWorkspace != null) {
                 // Apply the workspace
-                println("BossApp: Applying default workspace '${defaultWorkspace.name}' for project '${selectedProject.name}'")
                 applyWorkspace(defaultWorkspace, splitViewState, windowProjectState)
                 workspaceManager.loadWorkspace(defaultWorkspace)
             }
@@ -944,7 +953,6 @@ fun ComponentContext.BossApp(
                     workspaceManager.saveCurrentWorkspace("Last Session")
                 }
             } catch (e: Exception) {
-                println("❌ [BossApp] Failed to save Last Session workspace: ${e.message}")
             }
 
             // Cleanup plugin coroutines
@@ -970,7 +978,6 @@ fun ComponentContext.BossApp(
             LLMSettingsManager.loadSettings()
         } catch (e: Exception) {
             // Ignore errors during settings load to prevent app crash
-            println("Warning: Failed to load LLM settings: ${e.message}")
         }
     }
     
@@ -987,7 +994,6 @@ fun ComponentContext.BossApp(
                 }
             }
         } catch (e: Exception) {
-            println("Warning: Failed to initialize update manager: ${e.message}")
         }
     }
 
@@ -996,16 +1002,12 @@ fun ComponentContext.BossApp(
         launch {
             try {
                 if (CLIVersionManager.needsCLIUpdate()) {
-                    println("CLI auto-update: Updating CLI scripts to version ${Version.CURRENT}")
                     val result = CLIInstaller.installCLI()
                     if (result.success) {
-                        println("✅ CLI auto-update successful: ${result.message}")
                     } else {
-                        println("⚠️ CLI auto-update failed: ${result.message}")
                     }
                 }
             } catch (e: Exception) {
-                println("⚠️ CLI auto-update error: ${e.message}")
             }
         }
     }
@@ -1029,7 +1031,6 @@ fun ComponentContext.BossApp(
                         val lastSessionConfig = configs.find { it.name == "Last Session" }
 
                         if (lastSessionConfig != null) {
-                            println("BossApp: Loading Last Session workspace BEFORE processing URLs/terminals")
 
                             // Ensure it has the correct ID
                             val configWithId = if (lastSessionConfig.id != "last-session") {
@@ -1041,9 +1042,7 @@ fun ComponentContext.BossApp(
                             workspaceManager.loadWorkspace(configWithId)
                             applyWorkspace(configWithId, splitViewState, windowProjectState)
 
-                            println("BossApp: Last Session loaded, now processing queued URLs/terminals")
                         } else {
-                            println("BossApp: No Last Session found, starting with empty workspace")
                         }
 
                         // Mark workspace restoration as complete (for auto-show dialog logic)
@@ -1055,21 +1054,15 @@ fun ComponentContext.BossApp(
                         // Uses atomic compareAndSet to prevent race with timeout fallback
                         if (handlersMarked.compareAndSet(false, true)) {
                             URLHandlerService.markAppReady()
-                            println("BossApp: Marked URL handler as ready (window: $windowId)")
 
                             FileHandlerService.markReady()
-                            println("BossApp: Marked file handler as ready (window: $windowId)")
 
                             WorkspaceHandlerService.markReady()
-                            println("BossApp: Marked workspace handler as ready (window: $windowId)")
 
                             // Wait for session to resolve before marking terminal handler ready
                             // This ensures terminal tabs only appear after authentication is fully initialized
                             if (isSessionResolved) {
                                 TerminalHandlerService.markReady()
-                                println("BossApp: Marked terminal handler as ready (window: $windowId)")
-                            } else {
-                                println("BossApp: Session not resolved yet, will mark terminal handler ready later")
                             }
                         }
                     }
@@ -1078,17 +1071,13 @@ fun ComponentContext.BossApp(
                         // Uses atomic compareAndSet to prevent race with timeout fallback
                         if (handlersMarked.compareAndSet(false, true)) {
                             URLHandlerService.markAppReady()
-                            println("BossApp: Marked URL handler as ready (new window: $windowId)")
 
                             FileHandlerService.markReady()
-                            println("BossApp: Marked file handler as ready (new window: $windowId)")
 
                             WorkspaceHandlerService.markReady()
-                            println("BossApp: Marked workspace handler as ready (new window: $windowId)")
 
                             if (isSessionResolved) {
                                 TerminalHandlerService.markReady()
-                                println("BossApp: Marked terminal handler as ready (new window: $windowId)")
                             }
                         }
                     }
@@ -1106,7 +1095,6 @@ fun ComponentContext.BossApp(
             delay(timeoutMs) // Wait for workspace manager to load from disk
             if (!workspaceRestorationComplete) {
                 // Still not complete after timeout - assume fresh install
-                println("BossApp: Workspace loading timeout (${timeoutMs}ms), assuming fresh install")
                 workspaceRestorationComplete = true
 
                 // Uses atomic compareAndSet to prevent race with workspace loading flow
@@ -1117,7 +1105,6 @@ fun ComponentContext.BossApp(
                     if (isSessionResolved) {
                         TerminalHandlerService.markReady()
                     }
-                    println("BossApp: Marked all handlers ready (fresh install fallback)")
                 }
             }
         }
@@ -1129,7 +1116,6 @@ fun ComponentContext.BossApp(
         FileEventBus.fileOpenEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] FileEventBus received: ${event.filePath}:${event.line} (window: $windowId)")
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
                 // Emit navigation target for cursor positioning (PSI navigation)
                 // Issue #506: Pass windowId for multi-window filtering
@@ -1146,7 +1132,6 @@ fun ComponentContext.BossApp(
         TerminalEventBus.terminalOpenEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] TerminalEventBus received (window: $windowId)")
                 splitViewState.openTerminalInActivePanel(event.command)
             }
             .launchIn(this)
@@ -1162,7 +1147,6 @@ fun ComponentContext.BossApp(
         RunnerTerminalEventBus.openEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Runner terminal open event: ${event.configName}")
 
                 // Check settings for terminal target
                 val settings = RunnerSettingsManager.currentSettings.value
@@ -1171,7 +1155,7 @@ fun ComponentContext.BossApp(
                 if (usesSidebar) {
                     // Open in sidebar terminal panel
                     // First, ensure the sidebar terminal panel is open
-                    PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id, sourceWindowId = windowId)
+                    PanelEventBus.openPanel(TerminalPanelInfo.id, sourceWindowId = windowId)
 
                     // Create a new tab in the sidebar terminal with the command (window-scoped)
                     val success = RunnerTerminalService.openInSidebarTerminal(
@@ -1184,10 +1168,8 @@ fun ComponentContext.BossApp(
                     )
 
                     if (success) {
-                        println("[BossApp] Runner opened in sidebar terminal: ${event.configName}")
                     } else {
                         // Fallback to main panel if sidebar terminal not available
-                        println("[BossApp] Sidebar terminal not available, falling back to main panel")
                         openRunnerInMainPanel(event, splitViewState)
                     }
                 } else {
@@ -1202,7 +1184,6 @@ fun ComponentContext.BossApp(
         RunnerTerminalEventBus.closeEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Runner terminal close event: ${event.terminalId} (window: $windowId)")
 
                 // Find and close the terminal tab
                 val panel = splitViewState.findPanelWithTab(event.terminalId)
@@ -1219,7 +1200,6 @@ fun ComponentContext.BossApp(
         RunnerTerminalEventBus.stopEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Runner terminal stop event: ${event.terminalId} (window: $windowId)")
                 // Ctrl+C is already sent by the service - this event is for any additional UI handling
             }
             .launchIn(this)
@@ -1231,10 +1211,9 @@ fun ComponentContext.BossApp(
         GitTerminalEventBus.openEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Git terminal event: ${event.operationName} - ${event.command}")
 
                 // Open the terminal panel if not already open
-                PanelEventBus.openPanel(ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo.id, sourceWindowId = windowId)
+                PanelEventBus.openPanel(TerminalPanelInfo.id, sourceWindowId = windowId)
 
                 // Create a new tab in the sidebar terminal with the git command (window-scoped)
                 val success = GitTerminalService.openInSidebarTerminal(
@@ -1245,9 +1224,7 @@ fun ComponentContext.BossApp(
                 )
 
                 if (success) {
-                    println("[BossApp] Git command opened in sidebar terminal: ${event.operationName}")
                 } else {
-                    println("[BossApp] Failed to open git command in sidebar terminal")
                 }
             }
             .launchIn(this)
@@ -1263,7 +1240,6 @@ fun ComponentContext.BossApp(
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 val settings = TerminalLinkSettingsManager.currentSettings.value
-                println("[BossApp] Terminal link click: ${event.url}, mode: ${settings.openMode}, window: $windowId")
 
                 when (settings.openMode) {
                     TerminalLinkOpenMode.ALWAYS_ASK -> {
@@ -1286,7 +1262,6 @@ fun ComponentContext.BossApp(
         RunEventBus.executeEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Run event received: ${event.configuration.name} (window: $windowId)")
 
                 // Add to run history (IntelliJ-style)
                 // Note: addConfiguration() already handles deduplication by filePath,
@@ -1309,7 +1284,6 @@ fun ComponentContext.BossApp(
         RunEventBus.stopEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Stop event received: configId=${event.configId} (window: $windowId)")
                 if (event.configId != null) {
                     RunExecutionService.stop(event.configId)
                 } else {
@@ -1323,7 +1297,6 @@ fun ComponentContext.BossApp(
         RunEventBus.scanEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                println("[BossApp] Scan event received: ${event.projectPath} (window: $windowId)")
                 RunConfigurationManager.scanProject(event.projectPath)
             }
             .launchIn(this)
@@ -1336,25 +1309,22 @@ fun ComponentContext.BossApp(
     // Listen for workspace load events from CLI
     // Issue #506: Filter by sourceWindowId for multi-window support
     LaunchedEffect(splitViewState, workspaceManager, windowId) {
-        ai.rever.boss.components.events.WorkspaceEventBus.workspaceLoadEvents
+        WorkspaceEventBus.workspaceLoadEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 try {
                     val file = java.io.File(event.workspacePath)
                     if (file.exists() && file.canRead()) {
                         val json = file.readText()
-                        val workspace = ai.rever.boss.components.workspaces.WorkspaceSerializer.deserialize(json)
+                        val workspace = WorkspaceSerializer.deserialize(json)
 
                         // Use the same loading pattern as the UI
                         workspaceManager.loadWorkspace(workspace)
                         applyWorkspace(workspace, splitViewState, windowProjectState)
 
-                        println("BossApp: Workspace loaded from CLI: ${file.absolutePath} (window: $windowId)")
                     } else {
-                        println("BossApp: Cannot load workspace: ${file.absolutePath}")
                     }
                 } catch (e: Exception) {
-                    println("BossApp: Error loading workspace: ${e.message}")
                 }
             }
             .launchIn(this)
@@ -1386,8 +1356,8 @@ fun ComponentContext.BossApp(
                                 left.bottom -> bottom
                                 left.top.top -> left.top
                                 right.top.top -> right.top
-                                left.top.bottom -> left.top
-                                right.top.bottom -> right.top
+                                left.top.bottom -> left.bottom
+                                right.top.bottom -> right.bottom
                                 else -> null
                             }
 
@@ -1400,18 +1370,13 @@ fun ComponentContext.BossApp(
                                 if (!isAlreadyVisible || !isSamePanel) {
                                     draggablePanelComponent.onClick.invoke(targetItem)
                                 }
-                                println("BossApp: Opened panel: ${event.panelId.panelId}")
                             } else {
-                                println("BossApp: Could not determine target panel for slot: $panelSlot")
                             }
                         } else {
-                            println("BossApp: Panel item not found: ${event.panelId.panelId}")
                         }
                     } else {
-                        println("BossApp: Panel info not found: ${event.panelId}")
                     }
                 } catch (e: Exception) {
-                    println("BossApp: Error opening panel: ${e.message}")
                 }
             }
             .launchIn(this)
@@ -1453,11 +1418,11 @@ fun ComponentContext.BossApp(
             .onEach {
                 val timestamp = System.currentTimeMillis()
                 val projectPath = windowProjectState.selectedProject.value.path
-                val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                val terminalTab = TerminalTabInfo(
                     id = "terminal-$timestamp",
-                    typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                    typeId = TerminalTab.typeId,
                     title = "Terminal",
-                    icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                    icon = TerminalTab.icon,
                     workingDirectory = projectPath.ifEmpty { null }
                 )
                 splitViewState.getActiveTabsComponent()?.addTab(terminalTab)
@@ -1512,7 +1477,7 @@ fun ComponentContext.BossApp(
                                 createTabFromTemplateConfig(rightPanelConfig, projectPath)?.let { rightTab ->
                                     splitViewState.splitPanel(
                                         panelId = activePanelId,
-                                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                                        orientation = SplitOrientation.VERTICAL,
                                         tabToMove = rightTab
                                     )
                                 }
@@ -1543,7 +1508,6 @@ fun ComponentContext.BossApp(
             // Session is now resolved and workspace has been loaded
             // Mark terminal handler ready if it hasn't been already
             TerminalHandlerService.markReady()
-            println("BossApp: Marked terminal handler as ready (session resolved after workspace load)")
         }
     }
 
@@ -1554,11 +1518,10 @@ fun ComponentContext.BossApp(
         // Set up URL listener for incoming URLs
         // Note: We DON'T call markAppReady() here - that happens AFTER Last Session loads
         // Issue #506: Filter by window to prevent URL opening in all windows
-        ai.rever.boss.components.events.URLEventBus.urlOpenEvents
+        URLEventBus.urlOpenEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 // sourceWindowId is required, so we already filtered to the correct window
-                println("BossApp: Opening URL in window $windowId: ${event.url}")
                 splitViewState.openUrlInActivePanel(event.url, event.title)
             }
             .launchIn(this)
@@ -1586,14 +1549,11 @@ fun ComponentContext.BossApp(
             .debounce(200) // Wait for 200ms of stability
             .take(1)       // Only take first stabilized value
             .collect { state ->
-                println("BossApp: State stabilized - tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete} (window: $windowId)")
 
                 // Only show dialog if no tabs AND nothing being processed AND workspace restoration is complete
                 if (state.totalTabs == 0 && !state.isProcessingURLs && !state.isProcessingTerminals && !state.isProcessingFiles && state.isRestorationComplete) {
                     showNewTabDialog = true
-                    println("BossApp: Auto-showing New Tab Dialog (window: $windowId, no tabs, no processing, restoration complete)")
                 } else {
-                    println("BossApp: Skipping auto-show (window: $windowId, tabs: ${state.totalTabs}, processing URLs: ${state.isProcessingURLs}, processing terminals: ${state.isProcessingTerminals}, processing files: ${state.isProcessingFiles}, restoration complete: ${state.isRestorationComplete})")
                 }
             }
     }
@@ -1745,7 +1705,6 @@ fun ComponentContext.BossApp(
                             // Panel is visible - close it
                             draggablePanelComponent.setPanelVisible(panel, false)
                             panelComponentStore.removeComponent(event.panelId)
-                            println("BossApp: Toggled panel closed: ${event.panelId.panelId}")
                             foundVisible = true
                             break
                         }
@@ -1765,12 +1724,10 @@ fun ComponentContext.BossApp(
 
                             if (targetItem != null) {
                                 draggablePanelComponent.onClick.invoke(targetItem)
-                                println("BossApp: Toggled panel open: ${event.panelId.panelId}")
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    println("BossApp: Error toggling panel: ${e.message}")
                 }
             }
             .launchIn(this)
@@ -1778,7 +1735,7 @@ fun ComponentContext.BossApp(
 
     // Listen for menu actions from MenuBar (File > New Tab, etc.)
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.newTabEvents
+        MenuActionsHandler.newTabEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     // Show new tab dialog when menu item is clicked
@@ -1789,10 +1746,22 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.closeTabEvents
+        MenuActionsHandler.closeTabEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    // Close current tab when menu item is clicked
+                    // First check if there are ANY tabs in the window
+                    val allPanels = splitViewState.getAllPanels()
+                    val totalTabs = allPanels.sumOf { panel ->
+                        panel.tabsComponent.tabsState.value.tabs.size
+                    }
+
+                    // If no tabs at all (dashboard showing), close window directly
+                    if (totalTabs == 0) {
+                        WindowOperations.closeWindow(windowId)
+                        return@onEach
+                    }
+
+                    // Otherwise, close the active tab
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     if (activeTabsComponent != null) {
                         val tabs = activeTabsComponent.tabsState.value.tabs
@@ -1800,15 +1769,12 @@ fun ComponentContext.BossApp(
                         if (activeIndex >= 0 && activeIndex < tabs.size) {
                             activeTabsComponent.removeTab(activeIndex)
 
-                            // Check if all panels in window are now empty
-                            val allPanels = splitViewState.getAllPanels()
-                            val totalTabs = allPanels.sumOf { panel ->
+                            // Re-check total tabs after removal
+                            val remainingTabs = allPanels.sumOf { panel ->
                                 panel.tabsComponent.tabsState.value.tabs.size
                             }
-
-                            // If no tabs remaining in any panel, close the window
-                            if (totalTabs == 0) {
-                                ai.rever.boss.window.WindowOperations.closeWindow(windowId)
+                            if (remainingTabs == 0) {
+                                WindowOperations.closeWindow(windowId)
                             }
                         }
                     }
@@ -1819,12 +1785,12 @@ fun ComponentContext.BossApp(
 
     // Listen for zoom menu actions
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.zoomInEvents
+        MenuActionsHandler.zoomInEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     val activeTab = activeTabsComponent?.getActiveComponent()
-                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                    if (activeTab is FluckTabComponent) {
                         activeTab.zoomIn()
                     }
                 }
@@ -1833,12 +1799,12 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.zoomOutEvents
+        MenuActionsHandler.zoomOutEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     val activeTab = activeTabsComponent?.getActiveComponent()
-                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                    if (activeTab is FluckTabComponent) {
                         activeTab.zoomOut()
                     }
                 }
@@ -1847,12 +1813,12 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.actualSizeEvents
+        MenuActionsHandler.actualSizeEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     val activeTab = activeTabsComponent?.getActiveComponent()
-                    if (activeTab is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                    if (activeTab is FluckTabComponent) {
                         activeTab.actualSize()
                     }
                 }
@@ -1862,7 +1828,7 @@ fun ComponentContext.BossApp(
 
     // Handle new File menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.openProjectEvents
+        MenuActionsHandler.openProjectEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     showProjectDialog = true
@@ -1872,11 +1838,11 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.openFileEvents
+        MenuActionsHandler.openFileEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     // Open file tab selection - show new tab dialog with File tab pre-selected
-                    newTabDialogInitialType = ai.rever.boss.components.dialogs.TabType.FILE
+                    newTabDialogInitialType = TabType.FILE
                     showNewTabDialog = true
                 }
             }
@@ -1884,7 +1850,7 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.newTerminalEvents
+        MenuActionsHandler.newTerminalEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     // Directly create and open terminal tab
@@ -1906,7 +1872,7 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.selectWorkspaceEvents
+        MenuActionsHandler.selectWorkspaceEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     showTopOfMindDialog = true
@@ -1916,7 +1882,7 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId, workspaceManager, splitViewState) {
-        ai.rever.boss.window.MenuActionsHandler.applyWorkspaceEvents
+        MenuActionsHandler.applyWorkspaceEvents
             .onEach { (eventWindowId, workspace) ->
                 if (eventWindowId == windowId) {
                     // Load workspace into manager
@@ -1930,28 +1896,19 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.openSettingsEvents
-            .onEach { eventWindowId ->
+        MenuActionsHandler.openSettingsEvents
+            .onEach { (eventWindowId, section) ->
                 if (eventWindowId == windowId) {
+                    settingsInitialSection = section
                     showSettingsDialog = true
                 }
             }
             .launchIn(this)
     }
 
-    // Handle global settings events (from terminal panels, etc.)
-    LaunchedEffect(Unit) {
-        ai.rever.boss.window.MenuActionsHandler.globalOpenSettingsEvents
-            .onEach { section ->
-                settingsInitialSection = section
-                showSettingsDialog = true
-            }
-            .launchIn(this)
-    }
-
     // Handle View menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.toggleFocusModeEvents
+        MenuActionsHandler.toggleFocusModeEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     coroutineScope.launch {
@@ -1963,14 +1920,14 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.splitVerticallyEvents
+        MenuActionsHandler.splitVerticallyEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     // Copy the active tab to the new panel to prevent empty panel auto-close
                     val currentTab = splitViewState.getActiveTabsComponent()?.getCurrentTab()
                     splitViewState.splitPanel(
                         panelId = splitViewState.activePanelId,
-                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL,
+                        orientation = SplitOrientation.VERTICAL,
                         tabToMove = currentTab
                     )
                 }
@@ -1979,14 +1936,14 @@ fun ComponentContext.BossApp(
     }
 
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.splitHorizontallyEvents
+        MenuActionsHandler.splitHorizontallyEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     // Copy the active tab to the new panel to prevent empty panel auto-close
                     val currentTab = splitViewState.getActiveTabsComponent()?.getCurrentTab()
                     splitViewState.splitPanel(
                         panelId = splitViewState.activePanelId,
-                        orientation = ai.rever.boss.components.window_panel.SplitOrientation.HORIZONTAL,
+                        orientation = SplitOrientation.HORIZONTAL,
                         tabToMove = currentTab
                     )
                 }
@@ -1999,12 +1956,18 @@ fun ComponentContext.BossApp(
     val activeTabsComponent = splitViewState.getActiveTabsComponent()
     val hasActiveTabs = activeTabsComponent?.tabsState?.value?.tabs?.isNotEmpty() == true
     LaunchedEffect(windowId, activePanelId, hasActiveTabs) {
-        ai.rever.boss.window.MenuActionsHandler.updateSplitEnabled(windowId, hasActiveTabs)
+        MenuActionsHandler.updateSplitEnabled(windowId, hasActiveTabs)
+    }
+
+    // Track panel count for navigation menu items
+    val panelCount = splitViewState.getAllPanels().size
+    LaunchedEffect(windowId, panelCount) {
+        MenuActionsHandler.updatePanelCount(windowId, panelCount)
     }
 
     // Handle Plugin menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.revealPluginEvents
+        MenuActionsHandler.revealPluginEvents
             .onEach { (eventWindowId, pluginId) ->
                 if (eventWindowId == windowId) {
                     // Activate the plugin (same as clicking its sidebar icon)
@@ -2016,14 +1979,14 @@ fun ComponentContext.BossApp(
 
     // Handle Browser Reload menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.reloadBrowserEvents
+        MenuActionsHandler.reloadBrowserEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     val activeTabsComponent = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
                     val activeTab = activeTabsComponent?.tabsState?.value?.activeTab
                     if (activeTab is FluckTabInfo) {
                         val activeTabComponent = activeTabsComponent.getActiveComponent()
-                        if (activeTabComponent is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
+                        if (activeTabComponent is FluckTabComponent) {
                             activeTabComponent.reload()
                         }
                     }
@@ -2034,27 +1997,29 @@ fun ComponentContext.BossApp(
 
     // Handle Save Workspace menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.saveWorkspaceEvents
+        MenuActionsHandler.saveWorkspaceEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     val currentConfig = workspaceManager.currentWorkspace.value
                     if (currentConfig != null) {
-                        val currentLayout = ai.rever.boss.components.workspaces.extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+                        val currentLayout = extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
                         val updatedConfig = currentConfig.copy(
                             layout = currentLayout.layout,
                             timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
                         )
                         workspaceManager.updateCurrentWorkspace(updatedConfig)
                         workspaceManager.saveCurrentWorkspace()
-                        ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState.markWorkspaceAsSaved(currentConfig.id)
+                        TabTreeState.markWorkspaceAsSaved(currentConfig.id)
+                        StatusMessageManager.showMessage("Workspace Saved")
                     } else {
-                        val currentLayout = ai.rever.boss.components.workspaces.extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
+                        val currentLayout = extractCurrentWorkspace(splitViewState, windowProjectState.selectedProject.value.path)
                         val newConfig = currentLayout.copy(
                             name = "Workspace ${kotlin.time.Clock.System.now().toEpochMilliseconds() / 1000}",
                             description = "Saved workspace"
                         )
                         workspaceManager.updateCurrentWorkspace(newConfig)
                         workspaceManager.saveCurrentWorkspace()
+                        StatusMessageManager.showMessage("Workspace Saved")
                     }
                 }
             }
@@ -2063,7 +2028,7 @@ fun ComponentContext.BossApp(
 
     // Handle Open Codebase menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.openCodebaseEvents
+        MenuActionsHandler.openCodebaseEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
                     draggablePanelComponent.activatePlugin("codebase")
@@ -2072,50 +2037,32 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
-    // Handle Panel Navigation menu events
+    // Handle Panel Navigation menu events (consolidated)
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.navigatePanelLeftEvents
-            .onEach { eventWindowId ->
+        val navigationFlows = mapOf(
+            NavigationDirection.LEFT to MenuActionsHandler.navigatePanelLeftEvents,
+            NavigationDirection.RIGHT to MenuActionsHandler.navigatePanelRightEvents,
+            NavigationDirection.UP to MenuActionsHandler.navigatePanelUpEvents,
+            NavigationDirection.DOWN to MenuActionsHandler.navigatePanelDownEvents
+        )
+
+        navigationFlows.forEach { (direction, flow) ->
+            flow.onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.LEFT)?.let { panel ->
+                    splitViewState.findPanelInDirection(direction)?.let { panel ->
                         splitViewState.setActivePanel(panel.id)
                     }
                 }
-            }
-            .launchIn(this)
+            }.launchIn(this)
+        }
     }
 
+    // Handle Show Shortcut Help menu events
     LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.navigatePanelRightEvents
+        MenuActionsHandler.showShortcutHelpEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.RIGHT)?.let { panel ->
-                        splitViewState.setActivePanel(panel.id)
-                    }
-                }
-            }
-            .launchIn(this)
-    }
-
-    LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.navigatePanelUpEvents
-            .onEach { eventWindowId ->
-                if (eventWindowId == windowId) {
-                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.UP)?.let { panel ->
-                        splitViewState.setActivePanel(panel.id)
-                    }
-                }
-            }
-            .launchIn(this)
-    }
-
-    LaunchedEffect(windowId) {
-        ai.rever.boss.window.MenuActionsHandler.navigatePanelDownEvents
-            .onEach { eventWindowId ->
-                if (eventWindowId == windowId) {
-                    splitViewState.findPanelInDirection(ai.rever.boss.components.window_panel.NavigationDirection.DOWN)?.let { panel ->
-                        splitViewState.setActivePanel(panel.id)
-                    }
+                    showShortcutHelpDialog = true
                 }
             }
             .launchIn(this)
@@ -2528,19 +2475,19 @@ fun ComponentContext.BossApp(
             }
 
             // Directory picker for project selection (must be outside conditional for Compose)
-            val directoryPicker = ai.rever.boss.platform.rememberDirectoryPicker { path ->
+            val directoryPicker = rememberDirectoryPicker { path ->
                 path?.let {
                     val projectName = it.extractFileName().ifEmpty { "Unknown" }
-                    ai.rever.boss.window.selectProjectInWindow(
+                    selectProjectInWindow(
                         windowProjectState,
-                        ai.rever.boss.components.plugin.panels.left_top.Project(
+                        Project(
                             name = projectName,
                             path = it
                         )
                     )
                     // Show CodeBase panel when project is selected
                     draggablePanelComponent.setPanelVisible(
-                        ai.rever.boss.components.model.Panel.Companion.left.top,
+                        left.top,
                         true
                     )
                     // Close the dialog after selection
@@ -2551,7 +2498,7 @@ fun ComponentContext.BossApp(
             // Project selection dialog (triggered from File > Open Project menu)
             // Note: Dialog handles empty recentProjects case internally by opening directory picker directly
             if (showProjectDialog) {
-                ai.rever.boss.components.dialogs.ProjectSelectionDialog(
+                ProjectSelectionDialog(
                     onDismiss = { showProjectDialog = false },
                     onOpenDirectoryPicker = {
                         showProjectDialog = false
@@ -2606,43 +2553,43 @@ fun ComponentContext.BossApp(
  * Used by DashboardEventBus handlers for split template events from Fluck Dashboard.
  */
 private fun createTabFromTemplateConfig(
-    panelConfig: ai.rever.boss.dashboard.TemplatePanelConfig,
+    panelConfig: TemplatePanelConfig,
     projectPath: String
-): ai.rever.boss.components.registery.TabInfo? {
+): TabInfo? {
     val timestamp = System.currentTimeMillis()
 
     return when (panelConfig.type) {
         "terminal" -> {
             val command = panelConfig.content.command?.let {
-                ai.rever.boss.dashboard.SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
             }
-            ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+            TerminalTabInfo(
                 id = "terminal-$timestamp",
-                typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                typeId = TerminalTab.typeId,
                 title = command?.substringBefore(" ")?.extractFileName() ?: "Terminal",
-                icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                icon = TerminalTab.icon,
                 workingDirectory = projectPath,
                 initialCommand = command
             )
         }
         "browser" -> {
             val url = panelConfig.content.url ?: ""
-            ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+            FluckTabInfo(
                 id = "fluck-$timestamp",
-                typeId = ai.rever.boss.components.plugin.tab_types.fluck.Fluck.typeId,
+                typeId = Fluck.typeId,
                 _title = "Loading...",
                 url = url
             )
         }
         "editor" -> {
             val filePath = panelConfig.content.filePath?.let {
-                ai.rever.boss.dashboard.SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
             } ?: return null
-            ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+            EditorTabInfo(
                 id = "editor-$timestamp",
-                typeId = ai.rever.boss.components.plugin.tab_types.CodeEditor.typeId,
+                typeId = CodeEditor.typeId,
                 title = filePath.extractFileName(),
-                icon = ai.rever.boss.components.plugin.tab_types.CodeEditor.icon,
+                icon = CodeEditor.icon,
                 filePath = filePath
             )
         }

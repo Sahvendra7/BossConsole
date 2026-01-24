@@ -78,8 +78,7 @@ class TerminalComponent(
                 }
             },
             onShowSettings = {
-                // Trigger global settings to open BOSS Settings → Terminal tab
-                MenuActionsHandler.triggerGlobalOpenSettings("TERMINAL")
+                windowId?.let { MenuActionsHandler.triggerOpenSettings(it, "TERMINAL") }
             }
         )
     }

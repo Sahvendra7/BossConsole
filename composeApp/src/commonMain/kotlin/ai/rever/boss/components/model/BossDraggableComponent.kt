@@ -79,12 +79,12 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     }
 
     fun update() {
+        // Only update itemsBySlot - do NOT update panelsData here
+        // panelsData should only be modified by toggleVisibility when panels are explicitly opened
+        // Note: getDefaultSidebarMap() returns SLOT keys (like left.bottom, left.top.bottom)
+        // which overlap with PANEL keys in panelsData, causing incorrect overwrites
         panelRegistry.getDefaultSidebarMap().forEach {
             itemsBySlot[it.key] = it.value
-
-            panelsData[it.key] = panelsData[it.key]
-                ?.copy(sidebarItem = it.value.firstOrNull())
-                ?: PanelData(visibility = false)
         }
     }
 

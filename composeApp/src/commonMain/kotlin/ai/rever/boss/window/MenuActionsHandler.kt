@@ -45,12 +45,8 @@ object MenuActionsHandler {
     private val _selectWorkspaceEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val selectWorkspaceEvents: SharedFlow<String> = _selectWorkspaceEvents.asSharedFlow()
 
-    private val _openSettingsEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
-    val openSettingsEvents: SharedFlow<String> = _openSettingsEvents.asSharedFlow()
-
-    // Global settings event (opens settings in any active window, optionally to a specific section)
-    private val _globalOpenSettingsEvents = MutableSharedFlow<String?>(extraBufferCapacity = 10)
-    val globalOpenSettingsEvents: SharedFlow<String?> = _globalOpenSettingsEvents.asSharedFlow()
+    private val _openSettingsEvents = MutableSharedFlow<Pair<String, String?>>(extraBufferCapacity = 10)
+    val openSettingsEvents: SharedFlow<Pair<String, String?>> = _openSettingsEvents.asSharedFlow()
 
     private val _toggleFocusModeEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val toggleFocusModeEvents: SharedFlow<String> = _toggleFocusModeEvents.asSharedFlow()
@@ -89,6 +85,10 @@ object MenuActionsHandler {
     private val _splitEnabledState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val splitEnabledState: StateFlow<Map<String, Boolean>> = _splitEnabledState.asStateFlow()
 
+    // State for tracking panel count per window (windowId -> panelCount)
+    private val _panelCountState = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val panelCountState: StateFlow<Map<String, Int>> = _panelCountState.asStateFlow()
+
     /**
      * Update whether split is enabled for a window.
      * Split should be enabled when there are tabs in the active panel.
@@ -108,6 +108,33 @@ object MenuActionsHandler {
      */
     fun isSplitEnabled(windowId: String): Boolean {
         return _splitEnabledState.value[windowId] ?: false
+    }
+
+    /**
+     * Update the panel count for a window.
+     * Panel navigation should be enabled when there are multiple panels.
+     *
+     * @param windowId The window ID
+     * @param count The number of panels in the window
+     */
+    fun updatePanelCount(windowId: String, count: Int) {
+        _panelCountState.value = _panelCountState.value + (windowId to count)
+    }
+
+    /**
+     * Clean up state for a closed window to prevent memory leaks.
+     * Should be called from window's DisposableEffect onDispose.
+     *
+     * Note: SharedFlow event buffers are not cleared per-window because:
+     * - Events naturally expire as new events push old ones out (buffer size 10)
+     * - Events only contain small String windowIds (~36 bytes each)
+     * - Subscribers filter by windowId, ignoring events for closed windows
+     *
+     * @param windowId The window ID to clean up
+     */
+    fun cleanupWindow(windowId: String) {
+        _splitEnabledState.value = _splitEnabledState.value - windowId
+        _panelCountState.value = _panelCountState.value - windowId
     }
 
     /**
@@ -195,19 +222,10 @@ object MenuActionsHandler {
      * Trigger an "Open Settings" action for the specified window.
      *
      * @param windowId The ID of the window where the action was triggered
+     * @param section Optional section name to navigate to (e.g., "TERMINAL", "KEYMAP")
      */
-    fun triggerOpenSettings(windowId: String) {
-        _openSettingsEvents.tryEmit(windowId)
-    }
-
-    /**
-     * Trigger a global "Open Settings" action.
-     * This opens settings in any active window (used by terminal panels, etc.)
-     *
-     * @param section Optional section name to navigate to (e.g., "TERMINAL", "FLUCK")
-     */
-    fun triggerGlobalOpenSettings(section: String? = null) {
-        _globalOpenSettingsEvents.tryEmit(section)
+    fun triggerOpenSettings(windowId: String, section: String? = null) {
+        _openSettingsEvents.tryEmit(windowId to section)
     }
 
     /**
@@ -322,5 +340,17 @@ object MenuActionsHandler {
      */
     fun triggerNavigatePanelDown(windowId: String) {
         _navigatePanelDownEvents.tryEmit(windowId)
+    }
+
+    private val _showShortcutHelpEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val showShortcutHelpEvents: SharedFlow<String> = _showShortcutHelpEvents.asSharedFlow()
+
+    /**
+     * Trigger a "Show Shortcut Help" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerShowShortcutHelp(windowId: String) {
+        _showShortcutHelpEvents.tryEmit(windowId)
     }
 }
