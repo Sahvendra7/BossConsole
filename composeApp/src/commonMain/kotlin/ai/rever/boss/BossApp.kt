@@ -45,6 +45,8 @@ import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.window.WindowRunnerStateRegistry
 import ai.rever.boss.window.LocalWindowRunnerState
+import ai.rever.boss.window.WindowGitStateRegistry
+import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.MenuActionsHandler
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
@@ -585,6 +587,12 @@ fun ComponentContext.BossApp(
         WindowRunnerStateRegistry.getOrCreate(windowId)
     }
 
+    // Create per-window git state (each window has independent git state)
+    // This fixes the issue where opening a new window with no project would hide git UI in all windows
+    val windowGitState = remember(windowId) {
+        WindowGitStateRegistry.getOrCreate(windowId)
+    }
+
     // Consume any pending initial project for this window (from "Open in New Window" context menu)
     LaunchedEffect(windowId, windowProjectState) {
         val pendingProject = consumePendingInitialProject(windowId)
@@ -930,8 +938,8 @@ fun ComponentContext.BossApp(
         }
     }
 
-    DisposableEffect(panelRegistry, tabRegistry, windowProjectState) {
-        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState)
+    DisposableEffect(panelRegistry, tabRegistry, windowProjectState, windowGitState) {
+        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState, windowGitState)
         draggablePanelComponent.update()
 
         onDispose {
@@ -969,6 +977,9 @@ fun ComponentContext.BossApp(
 
             // Unregister this window's runner state from the registry
             WindowRunnerStateRegistry.unregister(windowId)
+
+            // Unregister this window's git state from the registry
+            WindowGitStateRegistry.unregister(windowId)
         }
     }
     
@@ -2075,7 +2086,8 @@ fun ComponentContext.BossApp(
                 LocalSplitViewState provides splitViewState,
                 LocalWorkspaceManager provides workspaceManager,
                 LocalWindowProjectState provides windowProjectState,
-                LocalWindowRunnerState provides windowRunnerState
+                LocalWindowRunnerState provides windowRunnerState,
+                LocalWindowGitState provides windowGitState
             ) {
                 Box(modifier = Modifier
                     .fillMaxSize()

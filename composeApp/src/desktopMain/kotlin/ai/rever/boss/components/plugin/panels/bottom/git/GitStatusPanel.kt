@@ -7,6 +7,8 @@ import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowGitState
+import ai.rever.boss.window.WindowGitState
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -76,15 +78,17 @@ class GitStatusComponent(
 
 @Composable
 private fun GitStatusView(scope: CoroutineScope) {
-    val fileStatus by GitService.fileStatus.collectAsState()
-    val isGitRepository by GitService.isGitRepository.collectAsState()
-    val isLoading by GitService.isLoading.collectAsState()
+    // Use window-specific git state for independent per-window git UI
+    val windowGitState = LocalWindowGitState.current
+    val fileStatus by windowGitState?.fileStatus?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val isGitRepository by windowGitState?.isGitRepository?.collectAsState() ?: remember { mutableStateOf(false) }
+    val isLoading by windowGitState?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val windowId = LocalWindowId.current
 
-    // Refresh status when panel opens
-    LaunchedEffect(Unit) {
-        GitService.getStatus()
+    // Refresh status when panel opens - using window-specific state
+    LaunchedEffect(windowGitState) {
+        GitService.getStatusForWindow(windowGitState)
     }
 
     Column(
@@ -153,7 +157,7 @@ private fun GitStatusView(scope: CoroutineScope) {
                             count = stagedFiles.size,
                             onActionClick = {
                                 scope.launch {
-                                    val result = GitService.unstageAll()
+                                    val result = GitService.unstageAll(windowId = windowId)
                                     if (result is GitOperationResult.Error) {
                                         errorMessage = result.message
                                     }
@@ -169,7 +173,8 @@ private fun GitStatusView(scope: CoroutineScope) {
                             isStaged = true,
                             scope = scope,
                             onError = { errorMessage = it },
-                            onFileClick = openFileInEditor
+                            onFileClick = openFileInEditor,
+                            windowId = windowId
                         )
                     }
                 }
@@ -182,7 +187,7 @@ private fun GitStatusView(scope: CoroutineScope) {
                             count = unstagedFiles.size,
                             onActionClick = {
                                 scope.launch {
-                                    val result = GitService.stageAll()
+                                    val result = GitService.stageAll(windowId = windowId)
                                     if (result is GitOperationResult.Error) {
                                         errorMessage = result.message
                                     }
@@ -198,7 +203,8 @@ private fun GitStatusView(scope: CoroutineScope) {
                             isStaged = false,
                             scope = scope,
                             onError = { errorMessage = it },
-                            onFileClick = openFileInEditor
+                            onFileClick = openFileInEditor,
+                            windowId = windowId
                         )
                     }
                 }
@@ -350,7 +356,8 @@ private fun FileStatusRow(
     isStaged: Boolean,
     scope: CoroutineScope,
     onError: (String) -> Unit,
-    onFileClick: (String) -> Unit
+    onFileClick: (String) -> Unit,
+    windowId: String? = null
 ) {
     val statusChar = getStatusChar(if (isStaged) file.indexStatus else file.workTreeStatus)
     val statusColor = getStatusColor(if (isStaged) file.indexStatus else file.workTreeStatus)
@@ -391,7 +398,7 @@ private fun FileStatusRow(
                 IconButton(
                     onClick = {
                         scope.launch {
-                            val result = GitService.unstage(file.path)
+                            val result = GitService.unstage(file.path, windowId = windowId)
                             if (result is GitOperationResult.Error) {
                                 onError(result.message)
                             }
@@ -411,7 +418,7 @@ private fun FileStatusRow(
                 IconButton(
                     onClick = {
                         scope.launch {
-                            val result = GitService.stage(file.path)
+                            val result = GitService.stage(file.path, windowId = windowId)
                             if (result is GitOperationResult.Error) {
                                 onError(result.message)
                             }
@@ -432,7 +439,7 @@ private fun FileStatusRow(
                     IconButton(
                         onClick = {
                             scope.launch {
-                                val result = GitService.discardChanges(file.path)
+                                val result = GitService.discardChanges(file.path, windowId = windowId)
                                 if (result is GitOperationResult.Error) {
                                     onError(result.message)
                                 }
@@ -486,17 +493,22 @@ private fun getStatusColor(status: GitFileStatusType?): Color {
  *
  * Dynamically registers/unregisters based on:
  * 1. A project being selected (path is not empty)
- * 2. The project being a Git repository (GitService.isGitRepository)
+ * 2. The project being a Git repository (using window-specific git state)
+ *
+ * Uses window-specific git state to ensure each window's git panels are independent.
+ * This fixes the issue where opening a new window with no project would hide
+ * git panels in all windows.
  *
  * Follows the SecretManagerPanel pattern for dynamic panel registration.
  */
 actual fun DefaultPlugin.registerGitStatus() {
     val projectState = windowProjectState ?: return
+    val gitState = windowGitState ?: return
 
     pluginScope.launch(Dispatchers.Main) {
         combine(
             projectState.selectedProject,
-            GitService.isGitRepository
+            gitState.isGitRepository  // Use window-specific git state instead of global
         ) { project, isGitRepo ->
             // Show panel only when a project is selected AND it's a git repository
             project.path.isNotEmpty() && isGitRepo

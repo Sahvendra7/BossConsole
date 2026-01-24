@@ -1,6 +1,8 @@
 package ai.rever.boss.git
 
 import ai.rever.boss.components.events.GitTerminalEventBus
+import ai.rever.boss.window.WindowGitState
+import ai.rever.boss.window.WindowGitStateRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,7 +110,7 @@ actual object GitService {
         }
     }
 
-    actual suspend fun checkout(branchName: String): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun checkout(branchName: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
@@ -126,6 +128,7 @@ actual object GitService {
             if (result.exitCode == 0) {
                 // Refresh state after checkout
                 refresh(projectPath)
+                refreshWindowState(windowId)
                 GitOperationResult.Success("Switched to branch '$localName'")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -137,7 +140,7 @@ actual object GitService {
         }
     }
 
-    actual suspend fun createBranch(branchName: String, checkout: Boolean): GitOperationResult =
+    actual suspend fun createBranch(branchName: String, checkout: Boolean, windowId: String?): GitOperationResult =
         withContext(Dispatchers.IO) {
             val projectPath = currentProjectPath
                 ?: return@withContext GitOperationResult.Error("No project selected")
@@ -154,6 +157,7 @@ actual object GitService {
                 if (result.exitCode == 0) {
                     // Refresh state after creation
                     refresh(projectPath)
+                    refreshWindowState(windowId)
                     GitOperationResult.Success("Created branch '$branchName'")
                 } else {
                     val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -382,13 +386,14 @@ actual object GitService {
         }
     }
 
-    actual suspend fun stage(filePath: String): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun stage(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
         val result = runGitCommand(projectPath, "add", "--", filePath)
         if (result.exitCode == 0) {
-            getStatus() // Refresh status
+            getStatus() // Refresh global status
+            refreshWindowState(windowId) // Refresh window-specific status
             GitOperationResult.Success("Staged '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -396,13 +401,14 @@ actual object GitService {
         }
     }
 
-    actual suspend fun stageAll(): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun stageAll(windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
         val result = runGitCommand(projectPath, "add", "-A")
         if (result.exitCode == 0) {
-            getStatus() // Refresh status
+            getStatus() // Refresh global status
+            refreshWindowState(windowId) // Refresh window-specific status
             GitOperationResult.Success("Staged all changes")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -410,13 +416,14 @@ actual object GitService {
         }
     }
 
-    actual suspend fun unstage(filePath: String): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun unstage(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--staged", "--", filePath)
         if (result.exitCode == 0) {
-            getStatus() // Refresh status
+            getStatus() // Refresh global status
+            refreshWindowState(windowId) // Refresh window-specific status
             GitOperationResult.Success("Unstaged '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -424,13 +431,14 @@ actual object GitService {
         }
     }
 
-    actual suspend fun unstageAll(): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun unstageAll(windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--staged", ".")
         if (result.exitCode == 0) {
-            getStatus() // Refresh status
+            getStatus() // Refresh global status
+            refreshWindowState(windowId) // Refresh window-specific status
             GitOperationResult.Success("Unstaged all changes")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -438,13 +446,14 @@ actual object GitService {
         }
     }
 
-    actual suspend fun discardChanges(filePath: String): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun discardChanges(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--", filePath)
         if (result.exitCode == 0) {
-            getStatus() // Refresh status
+            getStatus() // Refresh global status
+            refreshWindowState(windowId) // Refresh window-specific status
             GitOperationResult.Success("Discarded changes to '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
@@ -454,7 +463,7 @@ actual object GitService {
 
     // ===== Commit Implementation =====
 
-    actual suspend fun commit(message: String, amend: Boolean): GitOperationResult = withContext(Dispatchers.IO) {
+    actual suspend fun commit(message: String, amend: Boolean, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
             ?: return@withContext GitOperationResult.Error("No project selected")
 
@@ -468,8 +477,9 @@ actual object GitService {
 
             val result = runGitCommand(projectPath, *args.toTypedArray())
             if (result.exitCode == 0) {
-                getStatus() // Refresh status
-                getLog() // Refresh log
+                getStatus() // Refresh global status
+                getLog() // Refresh global log
+                refreshWindowState(windowId) // Refresh window-specific status and log
                 val action = if (amend) "Amended commit" else "Created commit"
                 GitOperationResult.Success(action)
             } else {
@@ -879,6 +889,19 @@ actual object GitService {
     }
 
     /**
+     * Refresh window-specific git state after a write operation.
+     * This ensures the UI updates immediately in the correct window.
+     */
+    private suspend fun refreshWindowState(windowId: String?) {
+        windowId?.let { id ->
+            WindowGitStateRegistry.get(id)?.let { windowState ->
+                getStatusForWindow(windowState)
+                getLogForWindow(windowState)
+            }
+        }
+    }
+
+    /**
      * Parse a git remote URL (SSH or HTTPS) into an HTTPS URL for browser access.
      *
      * Supports formats:
@@ -913,4 +936,148 @@ actual object GitService {
             null
         }
     }
+
+    // ===== Window-Specific Operations =====
+
+    /**
+     * Refresh git state for a specific window.
+     * Updates the provided WindowGitState instead of global state.
+     * This allows multiple windows to have independent git states.
+     */
+    actual suspend fun refreshForWindow(projectPath: String, windowGitState: WindowGitState?) =
+        withContext(Dispatchers.IO) {
+            if (windowGitState == null) return@withContext
+
+            windowGitState.setProjectPath(projectPath)
+            windowGitState.setLoading(true)
+
+            try {
+                if (!_isGitAvailable.value) {
+                    windowGitState.updateGitState(
+                        isRepo = false,
+                        branch = null,
+                        local = emptyList(),
+                        remote = emptyList()
+                    )
+                    return@withContext
+                }
+
+                // Check if directory is a git repository
+                val isRepo = isGitRepo(projectPath)
+
+                if (!isRepo) {
+                    windowGitState.updateGitState(
+                        isRepo = false,
+                        branch = null,
+                        local = emptyList(),
+                        remote = emptyList()
+                    )
+                    return@withContext
+                }
+
+                // Get current branch (or short SHA for detached HEAD)
+                val branch = getCurrentBranchName(projectPath)
+
+                // Get local branches
+                val local = getLocalBranchList(projectPath)
+
+                // Get remote branches
+                val remote = getRemoteBranchList(projectPath)
+
+                // Update window-specific state
+                windowGitState.updateGitState(
+                    isRepo = isRepo,
+                    branch = branch,
+                    local = local,
+                    remote = remote
+                )
+            } catch (e: Exception) {
+                println("[GitService] Error refreshing for window: ${e.message}")
+            } finally {
+                windowGitState.setLoading(false)
+            }
+        }
+
+    /**
+     * Refresh stash list for a specific window.
+     */
+    actual suspend fun refreshStashListForWindow(windowGitState: WindowGitState?): List<GitStashInfo> =
+        withContext(Dispatchers.IO) {
+            if (windowGitState == null) return@withContext emptyList()
+
+            val projectPath = windowGitState.projectPath.value ?: return@withContext emptyList()
+
+            try {
+                val result = runGitCommand(projectPath, "stash", "list")
+                if (result.exitCode != 0) {
+                    return@withContext emptyList()
+                }
+
+                val stashes = result.output.lines()
+                    .filter { it.isNotBlank() }
+                    .mapIndexedNotNull { index, line -> parseStashLine(index, line) }
+
+                windowGitState.updateStashList(stashes)
+                stashes
+            } catch (e: Exception) {
+                println("[GitService] Error getting stash list for window: ${e.message}")
+                emptyList()
+            }
+        }
+
+    /**
+     * Get file status for a specific window.
+     */
+    actual suspend fun getStatusForWindow(windowGitState: WindowGitState?): List<GitFileStatus> =
+        withContext(Dispatchers.IO) {
+            if (windowGitState == null) return@withContext emptyList()
+
+            val projectPath = windowGitState.projectPath.value ?: return@withContext emptyList()
+
+            try {
+                val result = runGitCommand(projectPath, "status", "--porcelain=v1")
+                if (result.exitCode != 0) {
+                    return@withContext emptyList()
+                }
+
+                val statuses = result.output.lines()
+                    .filter { it.isNotBlank() }
+                    .mapNotNull { parseStatusLine(it) }
+
+                windowGitState.updateFileStatus(statuses)
+                statuses
+            } catch (e: Exception) {
+                println("[GitService] Error getting status for window: ${e.message}")
+                emptyList()
+            }
+        }
+
+    /**
+     * Get commit log for a specific window.
+     */
+    actual suspend fun getLogForWindow(windowGitState: WindowGitState?, limit: Int): List<GitCommitInfo> =
+        withContext(Dispatchers.IO) {
+            if (windowGitState == null) return@withContext emptyList()
+
+            val projectPath = windowGitState.projectPath.value ?: return@withContext emptyList()
+
+            try {
+                val format = "%H%x00%h%x00%an%x00%ae%x00%at%x00%s%x00%P%x00%D"
+                val result = runGitCommand(projectPath, "log", "--format=$format", "-n", limit.toString())
+
+                if (result.exitCode != 0) {
+                    return@withContext emptyList()
+                }
+
+                val commits = result.output.lines()
+                    .filter { it.isNotBlank() }
+                    .mapNotNull { parseCommitLine(it) }
+
+                windowGitState.updateCommitLog(commits)
+                commits
+            } catch (e: Exception) {
+                println("[GitService] Error getting log for window: ${e.message}")
+                emptyList()
+            }
+        }
 }

@@ -155,18 +155,20 @@ expect object GitService {
      * a local tracking branch automatically.
      *
      * @param branchName The branch name to checkout
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun checkout(branchName: String): GitOperationResult
+    suspend fun checkout(branchName: String, windowId: String? = null): GitOperationResult
 
     /**
      * Create a new branch.
      *
      * @param branchName The new branch name
      * @param checkout If true, checkout the new branch immediately
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun createBranch(branchName: String, checkout: Boolean = true): GitOperationResult
+    suspend fun createBranch(branchName: String, checkout: Boolean = true, windowId: String? = null): GitOperationResult
 
     /**
      * Pull changes from remote.
@@ -229,39 +231,44 @@ expect object GitService {
      * Stage a file for commit.
      *
      * @param filePath Path to the file (relative to project root)
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun stage(filePath: String): GitOperationResult
+    suspend fun stage(filePath: String, windowId: String? = null): GitOperationResult
 
     /**
      * Stage all modified files.
      *
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun stageAll(): GitOperationResult
+    suspend fun stageAll(windowId: String? = null): GitOperationResult
 
     /**
      * Unstage a file.
      *
      * @param filePath Path to the file (relative to project root)
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun unstage(filePath: String): GitOperationResult
+    suspend fun unstage(filePath: String, windowId: String? = null): GitOperationResult
 
     /**
      * Unstage all staged files.
      *
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun unstageAll(): GitOperationResult
+    suspend fun unstageAll(windowId: String? = null): GitOperationResult
 
     /**
      * Discard changes to a file in the working tree.
      *
      * @param filePath Path to the file (relative to project root)
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun discardChanges(filePath: String): GitOperationResult
+    suspend fun discardChanges(filePath: String, windowId: String? = null): GitOperationResult
 
     // ===== Commit =====
 
@@ -270,9 +277,10 @@ expect object GitService {
      *
      * @param message Commit message
      * @param amend Whether to amend the previous commit
+     * @param windowId Optional window ID to update window-specific state after operation
      * @return Result indicating success or failure
      */
-    suspend fun commit(message: String, amend: Boolean = false): GitOperationResult
+    suspend fun commit(message: String, amend: Boolean = false, windowId: String? = null): GitOperationResult
 
     /**
      * Get the last commit message (for amending).
@@ -403,4 +411,44 @@ expect object GitService {
      * Get the current project path (for terminal commands).
      */
     fun getCurrentProjectPath(): String?
+
+    // ===== Window-Specific Operations =====
+
+    /**
+     * Refresh git state for a specific window.
+     * Updates the provided WindowGitState instead of global state.
+     *
+     * This allows multiple windows to have independent git states,
+     * fixing the issue where opening a new window with no project
+     * would hide git UI in all windows.
+     *
+     * @param projectPath The root path of the project
+     * @param windowGitState The window-specific git state to update
+     */
+    suspend fun refreshForWindow(projectPath: String, windowGitState: ai.rever.boss.window.WindowGitState?)
+
+    /**
+     * Refresh stash list for a specific window.
+     *
+     * @param windowGitState The window-specific git state to update
+     * @return List of stash entries
+     */
+    suspend fun refreshStashListForWindow(windowGitState: ai.rever.boss.window.WindowGitState?): List<GitStashInfo>
+
+    /**
+     * Get file status for a specific window.
+     *
+     * @param windowGitState The window-specific git state to update
+     * @return List of files with their status
+     */
+    suspend fun getStatusForWindow(windowGitState: ai.rever.boss.window.WindowGitState?): List<GitFileStatus>
+
+    /**
+     * Get commit log for a specific window.
+     *
+     * @param windowGitState The window-specific git state to update
+     * @param limit Maximum number of commits to retrieve
+     * @return List of commits
+     */
+    suspend fun getLogForWindow(windowGitState: ai.rever.boss.window.WindowGitState?, limit: Int = 100): List<GitCommitInfo>
 }

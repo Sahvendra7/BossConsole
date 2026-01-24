@@ -8,6 +8,8 @@ import BossDarkTextSecondary
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
+import ai.rever.boss.window.LocalWindowGitState
+import ai.rever.boss.window.WindowGitState
 import ai.rever.boss.components.registery.PanelComponentWithUI
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.components.registery.PanelInfo
@@ -79,16 +81,18 @@ class GitLogComponent(
 
 @Composable
 private fun GitLogView(scope: CoroutineScope) {
-    val commitLog by GitService.commitLog.collectAsState()
-    val isGitRepository by GitService.isGitRepository.collectAsState()
-    val isLoading by GitService.isLoading.collectAsState()
+    // Use window-specific git state for independent per-window git UI
+    val windowGitState = LocalWindowGitState.current
+    val commitLog by windowGitState?.commitLog?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val isGitRepository by windowGitState?.isGitRepository?.collectAsState() ?: remember { mutableStateOf(false) }
+    val isLoading by windowGitState?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
     var expandedCommit by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
 
-    // Refresh log when panel opens
-    LaunchedEffect(Unit) {
-        GitService.getLog()
+    // Refresh log when panel opens - using window-specific state
+    LaunchedEffect(windowGitState) {
+        GitService.getLogForWindow(windowGitState)
     }
 
     Column(
@@ -444,17 +448,22 @@ private fun getRefColors(ref: String): Pair<Color, Color> {
  *
  * Dynamically registers/unregisters based on:
  * 1. A project being selected (path is not empty)
- * 2. The project being a Git repository (GitService.isGitRepository)
+ * 2. The project being a Git repository (using window-specific git state)
+ *
+ * Uses window-specific git state to ensure each window's git panels are independent.
+ * This fixes the issue where opening a new window with no project would hide
+ * git panels in all windows.
  *
  * Follows the SecretManagerPanel pattern for dynamic panel registration.
  */
 actual fun DefaultPlugin.registerGitLog() {
     val projectState = windowProjectState ?: return
+    val gitState = windowGitState ?: return
 
     pluginScope.launch(Dispatchers.Main) {
         combine(
             projectState.selectedProject,
-            GitService.isGitRepository
+            gitState.isGitRepository  // Use window-specific git state instead of global
         ) { project, isGitRepo ->
             // Show panel only when a project is selected AND it's a git repository
             project.path.isNotEmpty() && isGitRepo

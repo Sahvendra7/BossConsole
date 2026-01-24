@@ -24,6 +24,7 @@ import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import ai.rever.boss.components.registery.PanelRegistry
 import ai.rever.boss.components.registery.TabRegistry
+import ai.rever.boss.window.WindowGitState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,7 +33,8 @@ import kotlinx.coroutines.cancel
 class DefaultPlugin(
     val panelRegistry: PanelRegistry,
     val tabRegistry: TabRegistry,
-    val windowProjectState: WindowProjectState?
+    val windowProjectState: WindowProjectState?,
+    val windowGitState: WindowGitState? = null
 ) {
     // Lifecycle-aware scope for long-running operations like dynamic panel registration
     // This scope should be cancelled when the plugin is disposed

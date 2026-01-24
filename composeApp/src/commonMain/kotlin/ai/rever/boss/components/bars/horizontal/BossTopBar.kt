@@ -9,6 +9,7 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,7 @@ import ai.rever.boss.git.GitService
 import ai.rever.boss.git.GitBranchInfo
 import ai.rever.boss.git.GitOperationResult
 import ai.rever.boss.git.GitStashInfo
+import ai.rever.boss.window.WindowGitState
 import ai.rever.boss.components.dialogs.CommitDialog
 import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.utils.extractFileName
@@ -370,13 +372,19 @@ fun BossDraggableComponent.BossTopLeftBar(
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
     var deletedProjectName by remember { mutableStateOf<String?>(null) }
 
-    // Git state collection (Issue #90)
-    val isGitRepo by GitService.isGitRepository.collectAsState()
-    val currentBranch by GitService.currentBranch.collectAsState()
-    val localBranches by GitService.localBranches.collectAsState()
-    val remoteBranches by GitService.remoteBranches.collectAsState()
-    val stashList by GitService.stashList.collectAsState()
-    val isGitLoading by GitService.isLoading.collectAsState()
+    // Window-specific git state - each window maintains independent git state
+    // This fixes the issue where opening a new window with no project would hide git UI in all windows
+    val windowGitState = LocalWindowGitState.current
+
+    // Git state collection from window-specific state (Issue #90)
+    // Use window-specific state for UI to prevent cross-window interference
+    val isGitRepo by windowGitState?.isGitRepository?.collectAsState() ?: remember { mutableStateOf(false) }
+    val currentBranch by windowGitState?.currentBranch?.collectAsState() ?: remember { mutableStateOf(null) }
+    val localBranches by windowGitState?.localBranches?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val remoteBranches by windowGitState?.remoteBranches?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val stashList by windowGitState?.stashList?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val isGitLoading by windowGitState?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
+    // Git availability is global (system-level) so we still use GitService for this
     val isGitAvailable by GitService.isGitAvailable.collectAsState()
     var showCreateBranchDialog by remember { mutableStateOf(false) }
     var showCommitDialog by remember { mutableStateOf(false) }
@@ -385,15 +393,18 @@ fun BossDraggableComponent.BossTopLeftBar(
     var createPRUrl by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Refresh Git state when project changes
-    LaunchedEffect(selectedProject) {
-        if (selectedProject.path.isNotEmpty()) {
-            GitService.refresh(selectedProject.path)
-            // Also fetch the PR URL and stash list
+    // Refresh Git state when project changes - uses window-specific state
+    // This ensures each window's git UI is independent
+    LaunchedEffect(selectedProject, windowGitState) {
+        if (selectedProject.path.isNotEmpty() && windowGitState != null) {
+            // Refresh git for THIS window only
+            GitService.refreshForWindow(selectedProject.path, windowGitState)
+            // Also fetch the PR URL and stash list for this window
             createPRUrl = GitService.getCreatePRUrl()
-            GitService.refreshStashList()
+            GitService.refreshStashListForWindow(windowGitState)
         } else {
-            GitService.clear()
+            // Only clear THIS window's git state, not other windows
+            windowGitState?.clear()
             createPRUrl = null
         }
     }
@@ -466,7 +477,7 @@ fun BossDraggableComponent.BossTopLeftBar(
                 isLoading = isGitLoading,
                 onCheckout = { branchName ->
                     scope.launch {
-                        val result = GitService.checkout(branchName)
+                        val result = GitService.checkout(branchName, windowId = windowId)
                         when (result) {
                             is GitOperationResult.Success -> gitSuccessMessage = "Switched to '$branchName'"
                             is GitOperationResult.Error -> gitErrorMessage = result.message
@@ -515,9 +526,9 @@ fun BossDraggableComponent.BossTopLeftBar(
                 },
                 onRefresh = {
                     scope.launch {
-                        GitService.refresh(selectedProject.path)
+                        GitService.refreshForWindow(selectedProject.path, windowGitState)
                         createPRUrl = GitService.getCreatePRUrl()
-                        GitService.refreshStashList()
+                        GitService.refreshStashListForWindow(windowGitState)
                     }
                 }
             ),
@@ -559,7 +570,7 @@ fun BossDraggableComponent.BossTopLeftBar(
             onDismiss = { showCreateBranchDialog = false },
             onCreate = { branchName ->
                 scope.launch {
-                    val result = GitService.createBranch(branchName, checkout = true)
+                    val result = GitService.createBranch(branchName, checkout = true, windowId = windowId)
                     if (result is GitOperationResult.Error) {
                         gitErrorMessage = result.message
                     }

@@ -9,6 +9,8 @@ import ai.rever.boss.git.GitFileStatus
 import ai.rever.boss.git.GitFileStatusType
 import ai.rever.boss.git.GitOperationResult
 import ai.rever.boss.git.GitService
+import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.LocalWindowGitState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,8 +53,11 @@ fun CommitDialog(
     onCommitSuccess: (String) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
-    val fileStatus by GitService.fileStatus.collectAsState()
-    val isLoading by GitService.isLoading.collectAsState()
+    val windowId = LocalWindowId.current
+    // Use window-specific git state for independent per-window git UI
+    val windowGitState = LocalWindowGitState.current
+    val fileStatus by windowGitState?.fileStatus?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val isLoading by windowGitState?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
 
     var commitMessage by remember { mutableStateOf("") }
     var amendCommit by remember { mutableStateOf(false) }
@@ -61,9 +66,9 @@ fun CommitDialog(
 
     val focusRequester = remember { FocusRequester() }
 
-    // Load file status and last commit message on open
-    LaunchedEffect(Unit) {
-        GitService.getStatus()
+    // Load file status and last commit message on open - using window-specific state
+    LaunchedEffect(windowGitState) {
+        GitService.getStatusForWindow(windowGitState)
     }
 
     // Load last commit message when amend is checked
@@ -212,7 +217,7 @@ fun CommitDialog(
                                     count = stagedFiles.size,
                                     actionText = "Unstage All",
                                     onAction = {
-                                        scope.launch { GitService.unstageAll() }
+                                        scope.launch { GitService.unstageAll(windowId = windowId) }
                                     }
                                 )
                             }
@@ -221,7 +226,7 @@ fun CommitDialog(
                                     file = file,
                                     isStaged = true,
                                     onToggle = {
-                                        scope.launch { GitService.unstage(file.path) }
+                                        scope.launch { GitService.unstage(file.path, windowId = windowId) }
                                     }
                                 )
                             }
@@ -235,7 +240,7 @@ fun CommitDialog(
                                     count = unstagedFiles.size,
                                     actionText = "Stage All",
                                     onAction = {
-                                        scope.launch { GitService.stageAll() }
+                                        scope.launch { GitService.stageAll(windowId = windowId) }
                                     }
                                 )
                             }
@@ -244,7 +249,7 @@ fun CommitDialog(
                                     file = file,
                                     isStaged = false,
                                     onToggle = {
-                                        scope.launch { GitService.stage(file.path) }
+                                        scope.launch { GitService.stage(file.path, windowId = windowId) }
                                     }
                                 )
                             }
@@ -313,7 +318,7 @@ fun CommitDialog(
                                     commitMessage
                                 }
 
-                                val result = GitService.commit(finalMessage, amend = amendCommit)
+                                val result = GitService.commit(finalMessage, amend = amendCommit, windowId = windowId)
                                 when (result) {
                                     is GitOperationResult.Success -> {
                                         onCommitSuccess(commitMessage)
