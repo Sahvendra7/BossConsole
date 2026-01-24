@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -1146,7 +1147,8 @@ fun JxBrowserCompose(
         // Navigation Bar
         Card(
             modifier = Modifier.fillMaxWidth(),
-            elevation = 1.dp
+            elevation = 1.dp,
+            shape = RectangleShape
         ) {
             Column {
                 Row(
@@ -1393,14 +1395,10 @@ fun JxBrowserCompose(
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(
-                                        MaterialTheme.colors.surface,
-                                        RoundedCornerShape(4.dp)
-                                    )
+                                    .background(MaterialTheme.colors.surface)
                                     .border(
                                         1.dp,
-                                        MaterialTheme.colors.onSurface.copy(alpha = 0.3f),
-                                        RoundedCornerShape(4.dp)
+                                        MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
                                     )
                                     .padding(horizontal = 12.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically

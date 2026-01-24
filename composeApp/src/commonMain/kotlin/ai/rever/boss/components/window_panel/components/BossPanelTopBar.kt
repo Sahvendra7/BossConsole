@@ -31,20 +31,19 @@ fun BossPanelTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(28.dp)
             .background(BossDarkSurface),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         Text(
             text = title ?: "",
             color = Color.White,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier
                 .align(Alignment.CenterVertically)
-                .padding(bottom = 4.dp)
         )
 
         Spacer(modifier = Modifier.weight(1f))
@@ -58,7 +57,7 @@ fun BossPanelTopBar(
             exit = fadeOut()
         ) {
 
-            Row(modifier = Modifier.padding(end = 4.dp)) {
+            Row(modifier = Modifier.padding(end = 2.dp)) {
                 content?.invoke()
 
                 // More button with dropdown menu
