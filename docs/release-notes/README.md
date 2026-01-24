@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.7](v8.16.7.md) | 2026-01-24 | Scrollbar settings fix ensuring visibility preferences properly apply to all panels |
 | [v8.16.6](v8.16.6.md) | 2026-01-24 | UI polish improvements with panel scrollbars, keyboard input fixes, and bottom bar refinements for cleaner, more functional interface |
 | [v8.16.5](v8.16.5.md) | 2026-01-24 | Keyboard shortcut reliability fix with MenuBar as single source of truth, eliminating duplicate handlers and improving cross-platform consistency |
 | [v8.16.4](v8.16.4.md) | 2026-01-23 | Critical multi-window state management fixes: removed global project and runner configuration state for independent window operation |
