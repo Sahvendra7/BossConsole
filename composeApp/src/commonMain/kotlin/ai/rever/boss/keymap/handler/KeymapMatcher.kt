@@ -58,10 +58,34 @@ class KeymapMatcher(
                 matchesBinding(event, binding)
             }
 
-            if (globalMatch != null) return globalMatch
+            if (globalMatch != null) {
+                // For TERMINAL context, only intercept GLOBAL shortcuts with system modifiers
+                // This follows JxBrowser's pattern: let the component handle typable characters
+                // Bindings with only Shift (like '?' = Shift+/) should pass through to terminal
+                if (context == ShortcutContext.TERMINAL && !hasSystemModifier(globalMatch)) {
+                    return null  // Don't intercept - let terminal handle it
+                }
+                return globalMatch
+            }
         }
 
         return null
+    }
+
+    /**
+     * Check if a binding requires system modifiers (Cmd/Ctrl/Alt).
+     * These are "true" shortcuts that should be intercepted even in text-input contexts.
+     * Bindings with only Shift or no modifiers are considered "typable" characters.
+     *
+     * This follows JxBrowser's pattern: only intercept known system shortcuts,
+     * let the component handle everything else (including Shift-only like '?').
+     */
+    private fun hasSystemModifier(binding: KeyBinding): Boolean {
+        return binding.modifiers.any { mod ->
+            mod.equals("Cmd", true) || mod.equals("Meta", true) ||
+            mod.equals("Ctrl", true) || mod.equals("Control", true) ||
+            mod.equals("Alt", true) || mod.equals("Option", true)
+        }
     }
 
     /**
