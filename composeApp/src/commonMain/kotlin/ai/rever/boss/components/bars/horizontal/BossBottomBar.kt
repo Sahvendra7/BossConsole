@@ -187,7 +187,6 @@ fun BossRightBottomBar() {
         )
     }
 
-    BossActionButton(text = "UTF-8", color = BossDarkTextSecondary, onClick = {})
     BossActionButton(
         imageVector = Icons.Outlined.Info,
         text = "Console",
