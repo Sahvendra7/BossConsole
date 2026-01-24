@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
 import ai.rever.boss.cache.loadFaviconFromCache
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.workspaces.applyWorkspace
@@ -20,9 +22,11 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
@@ -468,6 +472,7 @@ fun TopOfMindContent(
     var searchQuery by remember { mutableStateOf("") }
     var showCurrentWorkspace by remember { mutableStateOf(true) }
     val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     
     // Update active tabs whenever the split view state changes or tabs are added/removed
     LaunchedEffect(splitViewState, workspaceManager) {
@@ -577,7 +582,14 @@ fun TopOfMindContent(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    ),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(filteredTreeNodes) { treeNode ->

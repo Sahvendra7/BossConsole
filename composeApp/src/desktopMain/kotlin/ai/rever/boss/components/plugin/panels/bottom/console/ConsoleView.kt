@@ -1,10 +1,13 @@
 package ai.rever.boss.components.plugin.panels.bottom.console
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.utils.createTextClipEntry
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -100,6 +103,11 @@ fun ConsoleView(viewModel: ConsoleViewModel) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(8.dp)
+                        .lazyListScrollbar(
+                            listState = listState,
+                            direction = Orientation.Vertical,
+                            config = PanelScrollbarConfig
+                        )
                 ) {
                     itemsIndexed(logs, key = { index, entry -> "$index-${entry.timestamp}" }) { index, entry ->
                         LogEntryRow(entry)

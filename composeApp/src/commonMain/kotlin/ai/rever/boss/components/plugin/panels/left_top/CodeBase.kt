@@ -21,8 +21,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -692,6 +696,7 @@ class CodeBaseComponent(
             ?: remember { mutableStateOf(Project("No Project", "", 0L)) })
         val tree by fileTree.collectAsState()
         val expandedPaths by _expandedPaths.asStateFlow().collectAsState()
+        val listState = rememberLazyListState()
 
         // Directory picker - same as top bar
         val directoryPicker = rememberDirectoryPicker { path ->
@@ -818,9 +823,15 @@ class CodeBaseComponent(
 
                 // File tree
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = 4.dp)
+                        .lazyListScrollbar(
+                            listState = listState,
+                            direction = Orientation.Vertical,
+                            config = PanelScrollbarConfig
+                        )
                 ) {
                     tree?.let { rootNode ->
                         items(rootNode.children) { node ->

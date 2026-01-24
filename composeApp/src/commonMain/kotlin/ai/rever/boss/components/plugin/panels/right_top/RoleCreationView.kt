@@ -1,12 +1,16 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.PermissionInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -546,7 +550,14 @@ private fun AllPermissionsSection(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val permListState = rememberLazyListState()
             LazyColumn(
+                state = permListState,
+                modifier = Modifier.lazyListScrollbar(
+                    listState = permListState,
+                    direction = Orientation.Vertical,
+                    config = PanelScrollbarConfig
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(permissions) { permission ->
@@ -637,7 +648,14 @@ private fun SelectedRolePermissionsSection(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             } else {
+                val rolePermListState = rememberLazyListState()
                 LazyColumn(
+                    state = rolePermListState,
+                    modifier = Modifier.lazyListScrollbar(
+                        listState = rolePermListState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    ),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(rolePermissions.permissions) { permission ->

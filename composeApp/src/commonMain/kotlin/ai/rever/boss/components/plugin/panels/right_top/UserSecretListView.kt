@@ -1,6 +1,9 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,7 +47,13 @@ fun UserSecretList(
 
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .lazyListScrollbar(
+                listState = listState,
+                direction = Orientation.Vertical,
+                config = PanelScrollbarConfig
+            ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {

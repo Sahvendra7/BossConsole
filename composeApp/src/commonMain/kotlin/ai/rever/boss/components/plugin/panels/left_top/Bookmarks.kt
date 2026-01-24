@@ -4,6 +4,8 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadFaviconFromCache
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.BookmarkCollection
@@ -38,9 +40,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
@@ -147,6 +151,9 @@ class BookmarksPanel(
         var expandedCollections by remember { mutableStateOf<Set<String>>(emptySet()) }
         var expandedWorkspaces by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+        // Scrollbar state
+        val listState = rememberLazyListState()
+
         fun toggleCollectionExpansion(collectionId: String) {
             expandedCollections = if (expandedCollections.contains(collectionId)) {
                 expandedCollections - collectionId
@@ -181,7 +188,16 @@ class BookmarksPanel(
                 )
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    )
+            ) {
                 // Favorites section
                 if (favoritesCollection != null) {
                     item {

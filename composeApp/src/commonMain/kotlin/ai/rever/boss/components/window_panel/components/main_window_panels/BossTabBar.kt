@@ -1,7 +1,6 @@
 package ai.rever.boss.components.window_panel.components.main_window_panels
 
-import BossDarkTextSecondary
-import ai.rever.boss.components.bars.ScrollbarConfig
+import ai.rever.boss.components.bars.HorizontalBarScrollbarConfig
 import ai.rever.boss.components.bars.horizontalLazyListScrollbar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
@@ -33,12 +32,7 @@ fun RowScope.BossLeftTabBar(
             modifier = Modifier
                 .horizontalLazyListScrollbar(
                     listState = listState,
-                    scrollbarConfig = ScrollbarConfig(
-                        indicatorThickness = 2.dp,
-                        indicatorColor = BossDarkTextSecondary,
-                        indicatorCornerRadius = 4.dp,
-                        horizontalScrollbarAtTop = true
-                    )
+                    scrollbarConfig = HorizontalBarScrollbarConfig
                 ),
             verticalAlignment = Alignment.CenterVertically,
             content = content

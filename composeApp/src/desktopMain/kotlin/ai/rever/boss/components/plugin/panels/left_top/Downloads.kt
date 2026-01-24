@@ -8,8 +8,12 @@ import ai.rever.boss.components.registery.PanelInfo
 import ai.rever.boss.platform.FileSystemUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -45,6 +49,7 @@ class DownloadsPanel(
     @Composable
     override fun Content() {
         val downloads by downloadManager.downloads.collectAsState()
+        val listState = rememberLazyListState()
 
         Column(
             modifier = Modifier
@@ -114,7 +119,14 @@ class DownloadsPanel(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .lazyListScrollbar(
+                            listState = listState,
+                            direction = Orientation.Vertical,
+                            config = PanelScrollbarConfig
+                        ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(downloads, key = { it.id }) { download ->

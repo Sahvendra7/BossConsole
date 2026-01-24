@@ -5,6 +5,8 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowGitState
@@ -21,9 +23,11 @@ import ai.rever.boss.git.GitOperationResult
 import ai.rever.boss.git.GitService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -85,6 +89,7 @@ private fun GitStatusView(scope: CoroutineScope) {
     val isLoading by windowGitState?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val windowId = LocalWindowId.current
+    val listState = rememberLazyListState()
 
     // Refresh status when panel opens - using window-specific state
     LaunchedEffect(windowGitState) {
@@ -147,7 +152,14 @@ private fun GitStatusView(scope: CoroutineScope) {
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize()
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    )
             ) {
                 // Staged changes section
                 if (stagedFiles.isNotEmpty()) {

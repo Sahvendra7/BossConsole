@@ -105,6 +105,11 @@ enum class SettingsSection(
         displayName = "Startup",
         description = "Launch behavior and initialization options",
         icon = Icons.Outlined.RocketLaunch
+    ),
+    SCROLLBAR(
+        displayName = "Scrollbars",
+        description = "Scrollbar appearance and behavior settings",
+        icon = Icons.Outlined.LinearScale
     );
 
     companion object {

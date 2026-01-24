@@ -30,8 +30,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Icon
@@ -107,6 +111,7 @@ fun RunConfigurationsContent() {
     val lastError by RunConfigurationManager.lastError.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
 
     // Auto-scan when project changes (if a project is selected)
     LaunchedEffect(selectedProject.path, windowId) {
@@ -335,7 +340,14 @@ fun RunConfigurationsContent() {
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .lazyListScrollbar(
+                                listState = listState,
+                                direction = Orientation.Vertical,
+                                config = PanelScrollbarConfig
+                            ),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         groupedConfigs.forEach { (language, configs) ->

@@ -1,5 +1,8 @@
 package ai.rever.boss.components.bars
 
+import ai.rever.boss.scrollbar.ScrollbarDimensions
+import ai.rever.boss.scrollbar.ScrollbarSettings
+import ai.rever.boss.scrollbar.ScrollbarSettingsManager
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -12,6 +15,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -23,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import BossDarkTextSecondary
 import kotlin.math.max
 
 fun Modifier.scrollbar(
@@ -106,6 +112,68 @@ data class ScrollbarConfig(
     val padding: PaddingValues = PaddingValues(all = 0.dp),
     val horizontalScrollbarAtTop: Boolean = false
 )
+
+/**
+ * Default scrollbar configuration for bottom panels (Console, Git Log, Git Changes)
+ * Uses thinner indicator for compact panel context.
+ * This is a static default - for dynamic settings use getPanelScrollbarConfig()
+ */
+val PanelScrollbarConfig = ScrollbarConfig(
+    indicatorThickness = ScrollbarDimensions.PANEL_THICKNESS,
+    indicatorColor = BossDarkTextSecondary,
+    indicatorCornerRadius = ScrollbarDimensions.PANEL_THICKNESS / 2
+)
+
+/**
+ * Default scrollbar configuration for horizontal bars (Tab Bar, Bottom Bar)
+ * Uses very thin indicator positioned at top for compact horizontal chrome.
+ * This is a static default - for dynamic settings use getBarScrollbarConfig()
+ */
+val HorizontalBarScrollbarConfig = ScrollbarConfig(
+    indicatorThickness = ScrollbarDimensions.BAR_THICKNESS,
+    indicatorColor = BossDarkTextSecondary,
+    indicatorCornerRadius = 4.dp,
+    horizontalScrollbarAtTop = true
+)
+
+/**
+ * Get panel scrollbar configuration using current user settings.
+ * Use this in @Composable functions for dynamic settings.
+ */
+@Composable
+fun getPanelScrollbarConfig(): ScrollbarConfig {
+    val settings by ScrollbarSettingsManager.currentSettings.collectAsState()
+    return ScrollbarConfig(
+        indicatorThickness = settings.panelThicknessDp,
+        indicatorColor = BossDarkTextSecondary,
+        indicatorCornerRadius = settings.panelThicknessDp / 2,
+        alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
+        alphaAnimationSpec = tween(
+            delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
+            durationMillis = settings.fadeDurationMs
+        )
+    )
+}
+
+/**
+ * Get horizontal bar scrollbar configuration using current user settings.
+ * Use this in @Composable functions for dynamic settings.
+ */
+@Composable
+fun getBarScrollbarConfig(): ScrollbarConfig {
+    val settings by ScrollbarSettingsManager.currentSettings.collectAsState()
+    return ScrollbarConfig(
+        indicatorThickness = settings.barThicknessDp,
+        indicatorColor = BossDarkTextSecondary,
+        indicatorCornerRadius = 4.dp,
+        horizontalScrollbarAtTop = true,
+        alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
+        alphaAnimationSpec = tween(
+            delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
+            durationMillis = settings.fadeDurationMs
+        )
+    )
+}
 
 fun Modifier.verticalScrollWithScrollbar(
     scrollState: ScrollState,

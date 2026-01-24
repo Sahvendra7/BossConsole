@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -10,9 +12,11 @@ import ai.rever.boss.components.registery.PanelInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -124,12 +128,19 @@ open class LLMRpaComponent(
         val isExecuting by isExecuting.collectAsState()
         val history by executionHistory.collectAsState()
         val coroutineScope = rememberCoroutineScope()
-        
+        val listState = rememberLazyListState()
+
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colors.background)
-                .padding(16.dp),
+                .padding(16.dp)
+                .lazyListScrollbar(
+                    listState = listState,
+                    direction = Orientation.Vertical,
+                    config = PanelScrollbarConfig
+                ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Header

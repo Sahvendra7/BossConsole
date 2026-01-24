@@ -2,6 +2,8 @@
 
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -12,9 +14,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Card
@@ -706,8 +710,16 @@ open class RpaRecorderComponent(
         if (actions.isEmpty()) {
             EmptyStateMessage()
         } else {
+            val listState = rememberLazyListState()
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(actions.size) { index ->

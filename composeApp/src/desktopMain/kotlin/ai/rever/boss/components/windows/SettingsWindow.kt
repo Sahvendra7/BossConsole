@@ -16,6 +16,7 @@ import ai.rever.boss.utils.DisplayUtils
 import ai.rever.boss.performance.PerformanceSettingsManager
 import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.run.RunnerSettingsManager
+import ai.rever.boss.scrollbar.ScrollbarSettingsManager
 import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import BossTheme
@@ -149,6 +150,7 @@ private fun SettingsContent(initialSection: String? = null) {
                             PerformanceSettingsManager.resetToDefault()
                             FocusModeSettingsManager.resetToDefault()
                             RunnerSettingsManager.resetToDefault()
+                            ScrollbarSettingsManager.resetToDefault()
                             StartupSettingsManager.resetToDefault()
                             TerminalLinkSettingsManager.resetToDefault()
                         }
@@ -257,6 +259,7 @@ private fun SettingsContentArea(
                 SettingsSection.WINDOW_APPEARANCE -> WindowAppearanceSettings()
                 SettingsSection.PERFORMANCE -> PerformanceSettings()
                 SettingsSection.STARTUP -> StartupSettingsSection()
+                SettingsSection.SCROLLBAR -> ScrollbarSettings()
                 else -> {}
             }
         }

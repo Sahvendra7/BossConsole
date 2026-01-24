@@ -2,6 +2,8 @@
 
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -15,8 +17,10 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -132,11 +136,18 @@ open class RpaEngineComponent(
         
         // Access SplitViewState for creating tabs
         val splitViewState = LocalSplitViewState.current
-        
+        val listState = rememberLazyListState()
+
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colors.background),
+                .background(MaterialTheme.colors.background)
+                .lazyListScrollbar(
+                    listState = listState,
+                    direction = Orientation.Vertical,
+                    config = PanelScrollbarConfig
+                ),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

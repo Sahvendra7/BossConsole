@@ -1,11 +1,15 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.services.supabase.models.UserWithRoles
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -196,7 +200,15 @@ fun UserList(
     hasMore: Boolean,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(modifier = modifier) {
+    val listState = rememberLazyListState()
+    LazyColumn(
+        state = listState,
+        modifier = modifier.lazyListScrollbar(
+            listState = listState,
+            direction = Orientation.Vertical,
+            config = PanelScrollbarConfig
+        )
+    ) {
         items(users) { user ->
             UserCard(
                 user = user,

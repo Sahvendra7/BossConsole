@@ -5,6 +5,8 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -18,10 +20,12 @@ import ai.rever.boss.git.GitOperationResult
 import ai.rever.boss.git.GitService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -89,6 +93,7 @@ private fun GitLogView(scope: CoroutineScope) {
     var expandedCommit by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
 
     // Refresh log when panel opens - using window-specific state
     LaunchedEffect(windowGitState) {
@@ -133,7 +138,14 @@ private fun GitLogView(scope: CoroutineScope) {
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize()
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = PanelScrollbarConfig
+                    )
             ) {
                 items(commitLog, key = { it.hash }) { commit ->
                     CommitRow(

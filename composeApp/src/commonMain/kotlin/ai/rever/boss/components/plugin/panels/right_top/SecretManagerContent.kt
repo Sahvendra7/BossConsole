@@ -8,6 +8,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.rever.boss.components.common.BossSearchBar
@@ -32,42 +33,40 @@ fun SecretManagerContent(viewModel: SecretManagerViewModel) {
             // Header with title and refresh button
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     "Secret Manager",
                     color = Color.White,
                     fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Refresh button
+                IconButton(
+                    onClick = { viewModel.loadSecrets() },
+                    enabled = !state.isLoading
                 ) {
-                    // Refresh button
-                    IconButton(
-                        onClick = { viewModel.loadSecrets() },
-                        enabled = !state.isLoading
-                    ) {
-                        Icon(
-                            FeatherIcons.RefreshCw,
-                            contentDescription = "Refresh",
-                            tint = Color.White
-                        )
-                    }
+                    Icon(
+                        FeatherIcons.RefreshCw,
+                        contentDescription = "Refresh",
+                        tint = Color.White
+                    )
+                }
 
-                    // Add button
-                    IconButton(
-                        onClick = { viewModel.showCreateDialog() },
-                        enabled = !state.isLoading
-                    ) {
-                        Icon(
-                            FeatherIcons.Plus,
-                            contentDescription = "Add Secret",
-                            tint = Color(0xFF4CAF50)
-                        )
-                    }
+                // Add button
+                IconButton(
+                    onClick = { viewModel.showCreateDialog() },
+                    enabled = !state.isLoading
+                ) {
+                    Icon(
+                        FeatherIcons.Plus,
+                        contentDescription = "Add Secret",
+                        tint = Color(0xFF4CAF50)
+                    )
                 }
             }
 

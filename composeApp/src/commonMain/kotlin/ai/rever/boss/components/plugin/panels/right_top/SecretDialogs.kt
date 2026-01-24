@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.verticalScrollWithScrollbar
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.services.supabase.models.UpdateSecretRequest
@@ -8,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -55,7 +56,12 @@ fun CreateSecretDialog(
             modifier = Modifier.width(500.dp).heightIn(max = 600.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScrollWithScrollbar(
+                        scrollState = rememberScrollState(),
+                        scrollbarConfig = PanelScrollbarConfig
+                    ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Title
@@ -344,7 +350,12 @@ fun EditSecretDialog(
             modifier = Modifier.width(500.dp).heightIn(max = 600.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScrollWithScrollbar(
+                        scrollState = rememberScrollState(),
+                        scrollbarConfig = PanelScrollbarConfig
+                    ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Title
@@ -690,7 +701,12 @@ fun ShareSecretDialog(
             modifier = Modifier.width(600.dp).heightIn(max = 700.dp)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScrollWithScrollbar(
+                        scrollState = rememberScrollState(),
+                        scrollbarConfig = PanelScrollbarConfig
+                    ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Title
