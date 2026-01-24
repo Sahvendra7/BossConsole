@@ -256,12 +256,24 @@ object FormFieldInjector {
         password: String,
         mode: FillMode = FillMode.BOTH
     ): FillResult {
-        return when (mode) {
+        val result = when (mode) {
             FillMode.USERNAME_ONLY -> findAndFillUsername(browser, username)
-            FillMode.PASSWORD_ONLY -> findAndFillPassword(browser, password)
+            FillMode.PASSWORD_ONLY -> {
+                val passwordResult = findAndFillPassword(browser, password)
+                // Apply discrete mode if enabled and password was filled successfully
+                if (passwordResult is FillResult.Success && BrowserSettings.discretePasswordFill) {
+                    applyDiscreteMode(browser)
+                }
+                passwordResult
+            }
             FillMode.BOTH -> {
                 val usernameResult = findAndFillUsername(browser, username)
                 val passwordResult = findAndFillPassword(browser, password)
+
+                // Apply discrete mode if enabled and password was filled successfully
+                if (passwordResult is FillResult.Success && BrowserSettings.discretePasswordFill) {
+                    applyDiscreteMode(browser)
+                }
 
                 when {
                     usernameResult is FillResult.Success && passwordResult is FillResult.Success ->
@@ -282,6 +294,7 @@ object FormFieldInjector {
                 FillResult.Success("Password copied to clipboard")
             }
         }
+        return result
     }
 
     /**
@@ -599,6 +612,128 @@ object FormFieldInjector {
             clipboard.setContents(stringSelection, null)
         } catch (e: Exception) {
             // Clipboard copy failed
+        }
+    }
+
+    /**
+     * Apply discrete mode to password fields for privacy.
+     *
+     * When enabled, this function:
+     * 1. Ensures password fields have type="password" (shows dots/asterisks)
+     * 2. Applies a CSS blur effect (2px) for additional visual privacy
+     * 3. Blur persists even when field is focused - maximum privacy
+     * 4. Blur persists even if user clicks "show password" - prevents shoulder surfing
+     *
+     * Only affects fields marked with data-boss-filled="true".
+     *
+     * @param browser LockedBrowser instance (thread-safe wrapper)
+     */
+    private suspend fun applyDiscreteMode(browser: LockedBrowser) {
+        try {
+            browser.mainFrame().ifPresent { frame ->
+                frame.executeJavaScript<Unit>("""
+                    (function() {
+                        console.log('[BOSS] 🔒 Applying discrete mode to password fields');
+
+                        // Helper function to apply discrete styling to a field
+                        function applyDiscreteToField(field) {
+                            // Skip if already discrete
+                            if (field.getAttribute('data-boss-discrete') === 'true') {
+                                console.log('[BOSS] Field already discrete, skipping');
+                                return;
+                            }
+
+                            // Store original filter in case site applies its own
+                            if (!field.hasAttribute('data-boss-original-filter')) {
+                                field.setAttribute('data-boss-original-filter', field.style.filter || '');
+                            }
+
+                            // Apply blur effect (stays blurred always - even on focus or show password)
+                            field.style.filter = 'blur(2px)';
+                            field.style.webkitFilter = 'blur(2px)';
+                            field.setAttribute('data-boss-discrete', 'true');
+
+                            console.log('[BOSS] ✅ Discrete mode applied to field:', field.name || field.id || 'unnamed');
+
+                            // Set up MutationObserver to maintain blur even on "show password" toggles
+                            // This ensures maximum privacy - blur stays even if type changes to text
+                            if (!field.__bossDiscreteObserver) {
+                                const observer = new MutationObserver(mutations => {
+                                    mutations.forEach(mutation => {
+                                        if (mutation.type === 'attributes') {
+                                            // Re-enforce blur if someone tries to remove it
+                                            if (mutation.attributeName === 'style' || mutation.attributeName === 'type') {
+                                                if (field.getAttribute('data-boss-discrete') === 'true') {
+                                                    field.style.filter = 'blur(2px)';
+                                                    field.style.webkitFilter = 'blur(2px)';
+                                                }
+                                            }
+                                        }
+                                    });
+                                });
+
+                                observer.observe(field, { attributes: true, attributeFilter: ['type', 'style'] });
+                                field.__bossDiscreteObserver = observer;
+                                console.log('[BOSS] MutationObserver attached to maintain blur');
+                            }
+                        }
+
+                        // Find BOSS-filled password fields
+                        const passwordFields = document.querySelectorAll('input[type="password"][data-boss-filled="true"]');
+                        console.log('[BOSS] Found ' + passwordFields.length + ' BOSS-filled password field(s)');
+
+                        passwordFields.forEach(applyDiscreteToField);
+                    })();
+                """.trimIndent())
+            }
+        } catch (e: Exception) {
+            println("Failed to apply discrete mode: ${e.message}")
+        }
+    }
+
+    /**
+     * Remove discrete mode from all password fields.
+     *
+     * Called when user disables the discrete password fill setting to
+     * immediately clear blur from any existing fields without requiring
+     * a page reload.
+     *
+     * @param browser LockedBrowser instance (thread-safe wrapper)
+     */
+    suspend fun removeDiscreteMode(browser: LockedBrowser) {
+        try {
+            browser.mainFrame().ifPresent { frame ->
+                frame.executeJavaScript<Unit>("""
+                    (function() {
+                        console.log('[BOSS] 🔓 Removing discrete mode from password fields');
+
+                        const discreteFields = document.querySelectorAll('[data-boss-discrete="true"]');
+                        console.log('[BOSS] Found ' + discreteFields.length + ' discrete field(s) to clear');
+
+                        discreteFields.forEach(field => {
+                            // Disconnect observer first to prevent it from re-applying blur
+                            if (field.__bossDiscreteObserver) {
+                                field.__bossDiscreteObserver.disconnect();
+                                delete field.__bossDiscreteObserver;
+                                console.log('[BOSS] MutationObserver disconnected');
+                            }
+
+                            // Remove discrete marker
+                            field.removeAttribute('data-boss-discrete');
+
+                            // Restore original filter
+                            const originalFilter = field.getAttribute('data-boss-original-filter') || '';
+                            field.style.filter = originalFilter;
+                            field.style.webkitFilter = originalFilter;
+                            field.removeAttribute('data-boss-original-filter');
+
+                            console.log('[BOSS] ✅ Discrete mode removed from field:', field.name || field.id || 'unnamed');
+                        });
+                    })();
+                """.trimIndent())
+            }
+        } catch (e: Exception) {
+            println("Failed to remove discrete mode: ${e.message}")
         }
     }
 

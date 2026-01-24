@@ -7,6 +7,7 @@ import ai.rever.boss.components.settings.shared.SettingsDropdown
 import ai.rever.boss.components.settings.shared.SettingsTextField
 import ai.rever.boss.components.settings.shared.SettingsNumberInput
 import ai.rever.boss.components.settings.shared.SettingsButtonRow
+import ai.rever.boss.components.settings.shared.SettingsToggle
 import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.SurfaceColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -199,6 +201,50 @@ fun FluckBrowserSettings() {
                     },
                     description = "Reset to \"Always Ask\" mode"
                 )
+            }
+        }
+
+        // Secret Manager Settings
+        SettingsSection(title = "Secret Manager") {
+            var discretePasswordFill by remember { mutableStateOf(BrowserSettings.discretePasswordFill) }
+
+            SettingsToggle(
+                label = "Discrete Password Fill",
+                checked = discretePasswordFill,
+                onCheckedChange = { enabled ->
+                    discretePasswordFill = enabled
+                    BrowserSettings.discretePasswordFill = enabled
+                    coroutineScope.launch {
+                        BrowserSettingsManager.saveSettings()
+                    }
+                },
+                description = "Hide filled passwords with blur effect for privacy"
+            )
+
+            // Info card explaining the feature
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = AccentColor.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(6.dp),
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.VisibilityOff,
+                        contentDescription = "Privacy",
+                        tint = AccentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "When enabled, auto-filled password fields are blurred for shoulder surfing protection. Blur persists even on \"show password\" toggles.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
             }
         }
 

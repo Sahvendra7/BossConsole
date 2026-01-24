@@ -14,7 +14,9 @@ data class BrowserSettingsData(
     val availableProfiles: List<String> = listOf("browser-profile"),
     // Browser initialization retry settings
     val maxInitRetries: Int = 3,
-    val maxRecoveryAttempts: Int = 3
+    val maxRecoveryAttempts: Int = 3,
+    // Secret Manager settings
+    val discretePasswordFill: Boolean = true
 )
 
 object BrowserSettingsManager {
@@ -45,6 +47,8 @@ object BrowserSettingsManager {
                 // Validate retry/recovery settings to prevent invalid values from manual file editing
                 BrowserSettings.maxInitRetries = settings.maxInitRetries.coerceIn(1, 10)
                 BrowserSettings.maxRecoveryAttempts = settings.maxRecoveryAttempts.coerceIn(1, 10)
+                // Secret Manager settings
+                BrowserSettings.discretePasswordFill = settings.discretePasswordFill
 
                 // Update available profiles if we have more
                 if (settings.availableProfiles.isNotEmpty()) {
@@ -65,7 +69,8 @@ object BrowserSettingsManager {
                 currentProfile = BrowserSettings.currentProfile,
                 availableProfiles = BrowserSettings.availableProfiles.toList(),
                 maxInitRetries = BrowserSettings.maxInitRetries,
-                maxRecoveryAttempts = BrowserSettings.maxRecoveryAttempts
+                maxRecoveryAttempts = BrowserSettings.maxRecoveryAttempts,
+                discretePasswordFill = BrowserSettings.discretePasswordFill
             )
 
             val content = json.encodeToString(settings)

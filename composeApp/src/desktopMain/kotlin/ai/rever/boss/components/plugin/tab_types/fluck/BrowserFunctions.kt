@@ -44,6 +44,9 @@ object BrowserSettings {
     var jsConfirmBehavior: JsConfirmBehavior = JsConfirmBehavior.AUTO_CONFIRM
     var jsPromptDefaultValue: String = ""  // Empty string or user-configured default
     var jsPromptUsePageDefault: Boolean = true  // Use page's default value if true, else use jsPromptDefaultValue
+
+    // Secret Manager settings (configurable via Settings > Browser > Secret Manager)
+    var discretePasswordFill: Boolean = true  // Hide filled passwords with blur effect for privacy
 }
 
 /**
