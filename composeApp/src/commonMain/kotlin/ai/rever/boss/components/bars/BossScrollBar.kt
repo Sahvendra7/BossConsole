@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
@@ -143,16 +144,18 @@ val HorizontalBarScrollbarConfig = ScrollbarConfig(
 @Composable
 fun getPanelScrollbarConfig(): ScrollbarConfig {
     val settings by ScrollbarSettingsManager.currentSettings.collectAsState()
-    return ScrollbarConfig(
-        indicatorThickness = settings.panelThicknessDp,
-        indicatorColor = BossDarkTextSecondary,
-        indicatorCornerRadius = settings.panelThicknessDp / 2,
-        alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
-        alphaAnimationSpec = tween(
-            delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
-            durationMillis = settings.fadeDurationMs
+    return remember(settings) {
+        ScrollbarConfig(
+            indicatorThickness = settings.panelThicknessDp,
+            indicatorColor = BossDarkTextSecondary,
+            indicatorCornerRadius = settings.panelThicknessDp / 2,
+            alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
+            alphaAnimationSpec = tween(
+                delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
+                durationMillis = settings.fadeDurationMs
+            )
         )
-    )
+    }
 }
 
 /**
@@ -162,17 +165,19 @@ fun getPanelScrollbarConfig(): ScrollbarConfig {
 @Composable
 fun getBarScrollbarConfig(): ScrollbarConfig {
     val settings by ScrollbarSettingsManager.currentSettings.collectAsState()
-    return ScrollbarConfig(
-        indicatorThickness = settings.barThicknessDp,
-        indicatorColor = BossDarkTextSecondary,
-        indicatorCornerRadius = 4.dp,
-        horizontalScrollbarAtTop = true,
-        alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
-        alphaAnimationSpec = tween(
-            delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
-            durationMillis = settings.fadeDurationMs
+    return remember(settings) {
+        ScrollbarConfig(
+            indicatorThickness = settings.barThicknessDp,
+            indicatorColor = BossDarkTextSecondary,
+            indicatorCornerRadius = 4.dp,
+            horizontalScrollbarAtTop = true,
+            alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
+            alphaAnimationSpec = tween(
+                delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
+                durationMillis = settings.fadeDurationMs
+            )
         )
-    )
+    }
 }
 
 fun Modifier.verticalScrollWithScrollbar(

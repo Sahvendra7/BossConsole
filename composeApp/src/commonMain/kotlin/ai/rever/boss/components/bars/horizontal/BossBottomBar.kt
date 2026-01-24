@@ -8,7 +8,7 @@ import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.performance.PerformanceState
 import kotlinx.coroutines.launch
-import ai.rever.boss.components.bars.HorizontalBarScrollbarConfig
+import ai.rever.boss.components.bars.getBarScrollbarConfig
 import ai.rever.boss.components.bars.horizontalScrollWithScrollbar
 import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
@@ -66,7 +66,7 @@ fun RowScope.BossLeftBottomBar(tabsComponent: BossTabsComponent? = null) {
             modifier = Modifier
                 .horizontalScrollWithScrollbar(
                     rememberScrollState(),
-                    scrollbarConfig = HorizontalBarScrollbarConfig
+                    scrollbarConfig = getBarScrollbarConfig()
                 )
             ,
             verticalAlignment = Alignment.CenterVertically

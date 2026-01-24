@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.verticalScrollWithScrollbar
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
 import ai.rever.boss.services.supabase.models.SecretEntry
@@ -60,7 +60,7 @@ fun CreateSecretDialog(
                     .padding(24.dp)
                     .verticalScrollWithScrollbar(
                         scrollState = rememberScrollState(),
-                        scrollbarConfig = PanelScrollbarConfig
+                        scrollbarConfig = getPanelScrollbarConfig()
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -354,7 +354,7 @@ fun EditSecretDialog(
                     .padding(24.dp)
                     .verticalScrollWithScrollbar(
                         scrollState = rememberScrollState(),
-                        scrollbarConfig = PanelScrollbarConfig
+                        scrollbarConfig = getPanelScrollbarConfig()
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -705,7 +705,7 @@ fun ShareSecretDialog(
                     .padding(24.dp)
                     .verticalScrollWithScrollbar(
                         scrollState = rememberScrollState(),
-                        scrollbarConfig = PanelScrollbarConfig
+                        scrollbarConfig = getPanelScrollbarConfig()
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

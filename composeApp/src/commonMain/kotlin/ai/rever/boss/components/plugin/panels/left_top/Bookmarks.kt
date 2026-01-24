@@ -4,7 +4,7 @@ import BossDarkAccent
 import BossDarkBackground
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadFaviconFromCache
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.bookmarks.Bookmark
@@ -195,7 +195,7 @@ class BookmarksPanel(
                     .lazyListScrollbar(
                         listState = listState,
                         direction = Orientation.Vertical,
-                        config = PanelScrollbarConfig
+                        config = getPanelScrollbarConfig()
                     )
             ) {
                 // Favorites section

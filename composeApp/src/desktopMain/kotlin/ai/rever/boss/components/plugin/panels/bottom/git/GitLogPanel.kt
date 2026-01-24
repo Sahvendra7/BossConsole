@@ -5,7 +5,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextPrimary
 import BossDarkTextSecondary
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.left
@@ -144,7 +144,7 @@ private fun GitLogView(scope: CoroutineScope) {
                     .lazyListScrollbar(
                         listState = listState,
                         direction = Orientation.Vertical,
-                        config = PanelScrollbarConfig
+                        config = getPanelScrollbarConfig()
                     )
             ) {
                 items(commitLog, key = { it.hash }) { commit ->

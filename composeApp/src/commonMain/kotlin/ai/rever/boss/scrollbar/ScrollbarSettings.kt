@@ -15,9 +15,6 @@ object ScrollbarDimensions {
     /** Thickness for horizontal chrome bars (Tab Bar, Bottom Bar) */
     val BAR_THICKNESS = 2.dp
 
-    /** Default thickness for general scrollbars */
-    val DEFAULT_THICKNESS = 8.dp
-
     /** Minimum allowed thickness */
     val MIN_THICKNESS = 2.dp
 

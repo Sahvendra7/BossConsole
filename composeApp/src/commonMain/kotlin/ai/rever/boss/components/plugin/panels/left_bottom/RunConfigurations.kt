@@ -34,7 +34,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.CircularProgressIndicator
@@ -346,7 +346,7 @@ fun RunConfigurationsContent() {
                             .lazyListScrollbar(
                                 listState = listState,
                                 direction = Orientation.Vertical,
-                                config = PanelScrollbarConfig
+                                config = getPanelScrollbarConfig()
                             ),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {

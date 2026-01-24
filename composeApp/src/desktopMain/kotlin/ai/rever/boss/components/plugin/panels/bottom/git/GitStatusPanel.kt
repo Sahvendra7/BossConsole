@@ -5,7 +5,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextPrimary
 import BossDarkTextSecondary
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.window.LocalWindowId
@@ -158,7 +158,7 @@ private fun GitStatusView(scope: CoroutineScope) {
                     .lazyListScrollbar(
                         listState = listState,
                         direction = Orientation.Vertical,
-                        config = PanelScrollbarConfig
+                        config = getPanelScrollbarConfig()
                     )
             ) {
                 // Staged changes section

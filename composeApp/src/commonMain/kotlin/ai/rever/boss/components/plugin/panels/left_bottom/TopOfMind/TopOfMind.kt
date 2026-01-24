@@ -1,7 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
 import ai.rever.boss.cache.loadFaviconFromCache
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.components.workspaces.WorkspaceManager
@@ -588,7 +588,7 @@ fun TopOfMindContent(
                     .lazyListScrollbar(
                         listState = listState,
                         direction = Orientation.Vertical,
-                        config = PanelScrollbarConfig
+                        config = getPanelScrollbarConfig()
                     ),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {

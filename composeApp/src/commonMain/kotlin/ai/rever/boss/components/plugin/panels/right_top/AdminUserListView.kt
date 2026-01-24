@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.common.BossSearchBar
 import ai.rever.boss.services.supabase.models.UserWithRoles
@@ -206,7 +206,7 @@ fun UserList(
         modifier = modifier.lazyListScrollbar(
             listState = listState,
             direction = Orientation.Vertical,
-            config = PanelScrollbarConfig
+            config = getPanelScrollbarConfig()
         )
     ) {
         items(users) { user ->

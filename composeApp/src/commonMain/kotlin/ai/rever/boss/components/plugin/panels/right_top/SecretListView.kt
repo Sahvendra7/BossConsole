@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.services.supabase.models.SecretEntry
 import androidx.compose.foundation.gestures.Orientation
@@ -58,7 +58,7 @@ fun SecretList(
             .lazyListScrollbar(
                 listState = listState,
                 direction = Orientation.Vertical,
-                config = PanelScrollbarConfig
+                config = getPanelScrollbarConfig()
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 16.dp)

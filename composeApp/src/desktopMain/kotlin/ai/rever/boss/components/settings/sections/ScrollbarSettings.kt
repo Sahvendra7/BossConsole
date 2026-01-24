@@ -111,7 +111,7 @@ fun ScrollbarSettings() {
                     }
                 },
                 valueRange = 0f..3000f,
-                steps = 5, // 0, 500, 1000, 1500, 2000, 2500, 3000
+                steps = 6, // 0, 500, 1000, 1500, 2000, 2500, 3000 = 7 values
                 valueDisplay = { "${it.toInt()}ms" },
                 description = "Time before scrollbar fades out after scrolling stops"
             )
@@ -128,7 +128,7 @@ fun ScrollbarSettings() {
                     }
                 },
                 valueRange = 100f..1000f,
-                steps = 8, // 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000
+                steps = 9, // 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 = 10 values
                 valueDisplay = { "${it.toInt()}ms" },
                 description = "Duration of the scrollbar fade-out animation"
             )

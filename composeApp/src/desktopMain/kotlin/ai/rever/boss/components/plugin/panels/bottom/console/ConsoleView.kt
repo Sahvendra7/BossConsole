@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.bottom.console
 
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.utils.createTextClipEntry
 
@@ -106,7 +106,7 @@ fun ConsoleView(viewModel: ConsoleViewModel) {
                         .lazyListScrollbar(
                             listState = listState,
                             direction = Orientation.Vertical,
-                            config = PanelScrollbarConfig
+                            config = getPanelScrollbarConfig()
                         )
                 ) {
                     itemsIndexed(logs, key = { index, entry -> "$index-${entry.timestamp}" }) { index, entry ->

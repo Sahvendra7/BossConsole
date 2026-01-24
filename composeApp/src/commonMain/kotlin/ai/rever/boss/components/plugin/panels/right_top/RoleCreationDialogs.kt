@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.bars.PanelScrollbarConfig
+import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.PermissionInfo
@@ -366,7 +366,7 @@ fun AssignPermissionDialog(
                             .lazyListScrollbar(
                                 listState = permListState,
                                 direction = Orientation.Vertical,
-                                config = PanelScrollbarConfig
+                                config = getPanelScrollbarConfig()
                             ),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
