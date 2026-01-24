@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.5](v8.16.5.md) | 2026-01-24 | Keyboard shortcut reliability fix with MenuBar as single source of truth, eliminating duplicate handlers and improving cross-platform consistency |
 | [v8.16.4](v8.16.4.md) | 2026-01-23 | Critical multi-window state management fixes: removed global project and runner configuration state for independent window operation |
 | [v8.16.3](v8.16.3.md) | 2026-01-23 | Enhanced keyboard shortcut system with BossTerm patterns and consistent dark theme across settings |
 | [v8.16.1](v8.16.1.md) | 2026-01-23 | JxBrowser 8.16.1 (Chromium 144) upgrade with centralized version management and workflow fixes |
