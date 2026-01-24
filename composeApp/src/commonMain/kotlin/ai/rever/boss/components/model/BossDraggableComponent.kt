@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.coroutines.delay
 import kotlin.math.max
 
 data class PanelData(
@@ -31,6 +32,16 @@ data class SidebarItem(
 // Holds the state and logic for the draggable sidebar system
 @Stable
 class BossDraggableComponent(val panelRegistry: PanelRegistry) {
+
+    companion object {
+        /**
+         * Delay in milliseconds for two-phase panel transitions.
+         * This gives Compose enough time to process visibility changes and dispose
+         * the old BrowserView's DisposableEffect before the new panel opens.
+         * 100ms is sufficient for typical recomposition cycles.
+         */
+        private const val PANEL_DISPOSAL_DELAY_MS = 100L
+    }
 
     init {
         // Register listener to update sidebar when panels are dynamically added/removed
@@ -78,6 +89,11 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         )
     }
 
+    // Pending panel open for two-phase transitions (used for JxBrowser-based plugins)
+    // This ensures the old BrowserView is disposed before the new one is created
+    var pendingPanelOpen by mutableStateOf<Pair<Panel, SidebarItem>?>(null)
+        private set
+
     fun update() {
         // Only update itemsBySlot - do NOT update panelsData here
         // panelsData should only be modified by toggleVisibility when panels are explicitly opened
@@ -98,6 +114,17 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         }
     }
 
+    // Maps sidebar slots to their corresponding panel display areas
+    private fun slotToPanel(slot: Panel): Panel? {
+        return when(slot) {
+            left.bottom -> bottom
+            left.top.top -> left.top
+            right.top.top -> right.top
+            left.top.bottom -> left.bottom
+            right.top.bottom -> right.bottom
+            else -> null
+        }
+    }
 
     fun getPanelContentId(panel: Panel): PanelId? {
         return panelsData[panel]?.sidebarItem?.pluginContentId
@@ -205,6 +232,36 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
                     targetList.add(safeIndex, item)
                 }
                 itemsBySlot[currentDropTarget] = targetList
+
+                // Transfer panel state when dragging an open plugin to a different slot
+                if (currentDropTarget != sourceSlot) {
+                    val oldPanel = slotToPanel(sourceSlot)
+                    val newPanel = slotToPanel(currentDropTarget)
+
+                    if (oldPanel != null && newPanel != null) {
+                        // Check if this item was open in its previous panel
+                        val wasOpen = panelsData[oldPanel]?.let { data ->
+                            data.sidebarItem?.id == item.id && data.visibility
+                        } ?: false
+
+                        if (wasOpen) {
+                            // Close the old panel first
+                            panelsData[oldPanel]?.let {
+                                panelsData[oldPanel] = it.copy(
+                                    visibility = false,
+                                    sidebarItem = null
+                                )
+                            }
+
+                            // Use two-phase transition for panel moves
+                            // This is critical for JxBrowser-based plugins where BrowserViewState
+                            // can only be attached to one Compose view at a time.
+                            // By deferring the new panel open, we ensure the old BrowserView
+                            // is fully disposed before the new one tries to use the same BrowserViewState.
+                            pendingPanelOpen = newPanel to item
+                        }
+                    }
+                }
             } else {
                 // No valid target OR dropped back onto the source slot, return item to its original slot
                 val updatedSourceList = itemsBySlot[sourceSlot]?.toMutableList() ?: mutableListOf()
@@ -289,5 +346,39 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
 
     fun isSelected(item: SidebarItem): Boolean {
         return panelsData.values.any { (it.sidebarItem?.id == item.id) && it.visibility }
+    }
+
+    /**
+     * Composable effect that processes pending panel opens with a delay.
+     * This enables two-phase transitions for JxBrowser-based plugins where
+     * the BrowserViewState can only be attached to one Compose view at a time.
+     *
+     * Call this from the main UI composable to ensure pending opens are processed.
+     *
+     * Note: If a new drag operation starts before the delay completes, the previous
+     * pending open is cancelled and only the latest one will execute. This is intentional -
+     * the user's most recent action takes priority.
+     */
+    @Composable
+    fun ProcessPendingPanelOpen() {
+        val pending = pendingPanelOpen
+        LaunchedEffect(pending) {
+            if (pending != null) {
+                val (panel, item) = pending
+                // Wait for the old panel to be disposed
+                delay(PANEL_DISPOSAL_DELAY_MS)
+
+                // Open the new panel
+                panelsData[panel]?.let {
+                    panelsData[panel] = it.copy(
+                        visibility = true,
+                        sidebarItem = item
+                    )
+                }
+
+                // Clear the pending state
+                pendingPanelOpen = null
+            }
+        }
     }
 }

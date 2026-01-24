@@ -28,6 +28,10 @@ fun BossDraggableComponent.BossWindow(
     onOpenProjectDialog: (() -> Unit)? = null,
     onNewProject: (() -> Unit)? = null
 ) {
+    // Process any pending panel opens (for two-phase transitions)
+    // This is critical for JxBrowser-based plugins to avoid BrowserViewState conflicts
+    ProcessPendingPanelOpen()
+
     // State for split panels - use provided or create new
     val actualSplitViewState = splitViewState ?: rememberSplitViewState(
         tabRegistry = tabsComponent.tabRegistry,
