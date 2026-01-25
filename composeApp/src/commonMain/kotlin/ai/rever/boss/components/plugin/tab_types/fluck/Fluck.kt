@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
+import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -263,6 +265,15 @@ expect fun collectEngineGeneration(): Long
 // window: Optional AWT window to use (from LocalAwtWindow) for correct multi-window support
 expect fun createBrowserViewState(browser: Any, window: Any? = null): Any?
 
+// Platform-specific browser view state recreation
+// Used when re-acquiring rendering surface after fullscreen exit
+// Returns a NEW BrowserViewState instance for the existing browser
+expect fun recreateBrowserViewState(browser: Any, window: Any? = null): Any?
+
+// Platform-specific browser view state closing
+// Must be called before recreating to release the browser
+expect fun closeBrowserViewState(viewState: Any)
+
 // Platform-specific browser disposal
 expect fun disposeBrowser(browser: Any)
 
@@ -429,10 +440,40 @@ open class FluckTabComponent(
         // This ensures browsers get the correct window handle for their containing window
         val currentWindow = getCurrentAwtWindow()
 
+        // Observe fullscreen exit recreation signal
+        // When exiting fullscreen, we need to recreate BrowserViewState to re-acquire rendering surface
+        val needsRecreation by TabFullscreenStateManager.needsViewStateRecreation.collectAsState()
+
         // Local Compose state to trigger recomposition when browser is ready
         // Initialized from class-level browserState which persists across tab switches
         var localBrowserState by remember(config.id) {
             mutableStateOf(this@FluckTabComponent.browserState)
+        }
+
+        // Handle BrowserViewState recreation after fullscreen exit
+        // JxBrowser can only have one active rendering surface per browser instance.
+        // After fullscreen exit, the Swing BrowserView releases the surface, but the
+        // existing Compose BrowserViewState doesn't automatically re-acquire it.
+        // Creating a fresh BrowserViewState forces JxBrowser to establish a new rendering connection.
+        LaunchedEffect(needsRecreation) {
+            if (needsRecreation == config.id) {
+                browserState?.let { (browser, oldViewState) ->
+                    logger.info(LogCategory.BROWSER, "Recreating BrowserViewState after fullscreen exit", mapOf("tabId" to config.id))
+
+                    // Close the old BrowserViewState first to release the browser
+                    closeBrowserViewState(oldViewState)
+
+                    val newViewState = recreateBrowserViewState(browser, currentWindow)
+                    if (newViewState != null) {
+                        this@FluckTabComponent.browserState = Pair(browser, newViewState)
+                        localBrowserState = this@FluckTabComponent.browserState
+                        logger.info(LogCategory.BROWSER, "BrowserViewState recreated successfully", mapOf("tabId" to config.id))
+                    } else {
+                        logger.warn(LogCategory.BROWSER, "Failed to recreate BrowserViewState", mapOf("tabId" to config.id))
+                    }
+                    TabFullscreenStateManager.clearRecreationSignal()
+                }
+            }
         }
 
         // Detect engine reinitialization and invalidate stale browser (Issue #351)

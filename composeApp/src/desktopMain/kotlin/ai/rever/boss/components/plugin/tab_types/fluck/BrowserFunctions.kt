@@ -392,6 +392,64 @@ actual fun createBrowserViewState(browser: Any, window: Any?): Any? {
     return BrowserViewState(jxBrowser, MainScope(), awtWindow)
 }
 
+/**
+ * Recreates the BrowserViewState for an existing browser.
+ * Used when re-acquiring rendering surface after fullscreen exit.
+ *
+ * JxBrowser can only have one active rendering surface per browser instance.
+ * After exiting fullscreen, the Swing BrowserView releases the surface, but
+ * the existing Compose BrowserViewState doesn't automatically re-acquire it.
+ * Creating a fresh BrowserViewState forces JxBrowser to establish a new
+ * rendering connection.
+ *
+ * Note: The old BrowserViewState.close() must be called before this to:
+ * 1. Release the browser from the old state
+ * 2. Cancel the MainScope created with the old state (BrowserViewState.close()
+ *    internally cancels its coroutine scope)
+ *
+ * @param browser The existing JxBrowser Browser instance
+ * @param window The AWT Window to associate with the new BrowserViewState
+ * @return A new BrowserViewState, or null if window is invalid
+ */
+actual fun recreateBrowserViewState(browser: Any, window: Any?): Any? {
+    val jxBrowser = browser as? Browser
+    if (jxBrowser == null || jxBrowser.isClosed) {
+        logger.warn(LogCategory.BROWSER, "Cannot recreate BrowserViewState - browser is null or closed")
+        return null
+    }
+
+    val awtWindow = (window as? Window)?.takeIf {
+        try { it.isDisplayable && it.isShowing } catch (e: Exception) { false }
+    } ?: getValidComposeWindow()
+
+    if (awtWindow == null) {
+        logger.warn(LogCategory.BROWSER, "No valid window for BrowserViewState recreation")
+        return null
+    }
+
+    logger.info(LogCategory.BROWSER, "Recreating BrowserViewState after fullscreen exit")
+    return BrowserViewState(jxBrowser, MainScope(), awtWindow)
+}
+
+/**
+ * Closes the BrowserViewState to release the browser for recreation.
+ * Must be called before recreateBrowserViewState() to avoid
+ * "Browser instance is already used by another state instance" error.
+ *
+ * @param viewState The BrowserViewState to close
+ */
+actual fun closeBrowserViewState(viewState: Any) {
+    try {
+        val state = viewState as? BrowserViewState
+        if (state != null) {
+            logger.info(LogCategory.BROWSER, "Closing old BrowserViewState before recreation")
+            state.close()
+        }
+    } catch (e: Exception) {
+        logger.warn(LogCategory.BROWSER, "Error closing BrowserViewState", error = e)
+    }
+}
+
 actual fun disposeBrowserViewState(browserViewState: Any) {
     // BrowserViewState doesn't have explicit disposal on JVM
 }

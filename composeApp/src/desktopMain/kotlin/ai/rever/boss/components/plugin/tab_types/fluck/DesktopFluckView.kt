@@ -39,6 +39,7 @@ actual fun FluckView(
 
         JxBrowserCompose(
             modifier = Modifier,
+            tabId = fileId,
             browser = lockedBrowser,
             browserViewState = jxBrowserViewState,
             initialUrl = content.ifBlank { "https://www.risalabs.ai" },

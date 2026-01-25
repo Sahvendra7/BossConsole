@@ -79,6 +79,8 @@ import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.view.compose.BrowserView
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import com.teamdev.jxbrowser.zoom.ZoomLevel
+import ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
+import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
@@ -211,6 +213,7 @@ private fun truncateTitle(title: String, url: String): String {
 @Composable
 fun JxBrowserCompose(
     modifier: Modifier = Modifier,
+    tabId: String = "",
     browser: LockedBrowser,
     browserViewState: BrowserViewState,
     initialUrl: String = JxBrowserConfig.defaultUrl,
@@ -254,6 +257,10 @@ fun JxBrowserCompose(
     val secretViewModel = remember { BrowserSecretIntegrationViewModel() }
     var focusedFieldInfo by remember { mutableStateOf<FormFieldDetector.FormFieldInfo?>(null) }
     var showSecretContextMenu by remember { mutableStateOf(false) }
+
+    // Tab fullscreen state - observe whether this tab is in fullscreen mode
+    val fullscreenTabId by TabFullscreenStateManager.fullscreenTabId.collectAsState()
+    val isInFullscreen = tabId.isNotEmpty() && fullscreenTabId == tabId
 
     // Zoom state management
     var currentZoomLevel by remember { mutableStateOf(1.0) }
@@ -872,6 +879,23 @@ fun JxBrowserCompose(
                     // Show context menu using Compose position (captured from pointer event)
                     showContextMenu = true
                 }
+            }
+        )
+    }
+
+    // Register fullscreen handler (Issue #263)
+    // When web content requests fullscreen (e.g., YouTube video), opens a fullscreen window
+    LaunchedEffect(browser, tabId) {
+        if (!isBrowserEnvironmentValid() || tabId.isEmpty()) return@LaunchedEffect
+
+        FluckEngine.setupFullscreenHandler(
+            browser = browser.unsafe(),
+            tabId = tabId,
+            onFullscreenEnter = {
+                jxBrowserComposeLogger.info(LogCategory.BROWSER, "Tab entered fullscreen", mapOf("tabId" to tabId))
+            },
+            onFullscreenExit = {
+                jxBrowserComposeLogger.info(LogCategory.BROWSER, "Tab exited fullscreen", mapOf("tabId" to tabId))
             }
         )
     }
@@ -1538,11 +1562,20 @@ fun JxBrowserCompose(
             }
         }
 
-        // Content area: Show Dashboard for about:blank, otherwise show browser
+        // Content area: Show placeholder when in fullscreen, Dashboard for about:blank, otherwise show browser
         val currentUrl = urlInput.text
         val showDashboard = currentUrl.isEmpty() || currentUrl == "about:blank"
 
-        if (showDashboard) {
+        if (isInFullscreen) {
+            // Fullscreen placeholder - browser is displayed in a separate fullscreen window
+            FullscreenPlaceholder(
+                onExitClick = {
+                    // Request exit through the browser's fullscreen API
+                    // This triggers ExitFullScreenCallback which properly cleans up
+                    FullscreenBrowserWindow.requestExit()
+                }
+            )
+        } else if (showDashboard) {
             // Dashboard for empty/about:blank URLs
             val windowId = LocalWindowId.current
             val windowProjectState = LocalWindowProjectState.current
@@ -1608,11 +1641,12 @@ fun JxBrowserCompose(
         } else {
             // Browser content using native Compose BrowserView with custom context menu
             // Note: Pinch-to-zoom gestures are handled via JxBrowser's MoveMouseWheelCallback
+            // BrowserViewState recreation after fullscreen exit is handled by FluckTabComponent
             BrowserView(
-                state = browserViewState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onPointerEvent(PointerEventType.Press) { event ->
+                    state = browserViewState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onPointerEvent(PointerEventType.Press) { event ->
                         // Access native AWT MouseEvent for extended button detection (Issue #325)
                         val awtEvent = event.nativeEvent as? java.awt.event.MouseEvent
 
@@ -1661,7 +1695,7 @@ fun JxBrowserCompose(
                             }
                         }
                     }
-            )
+                )
         }
         }
 
@@ -1919,4 +1953,41 @@ fun JxBrowserCompose(
         }
     }
     } // CompositionLocalProvider
+}
+
+/**
+ * Placeholder shown in the tab when browser content is displayed in fullscreen mode.
+ * Clicking this placeholder exits fullscreen and returns browser content to the tab.
+ */
+@Composable
+private fun FullscreenPlaceholder(onExitClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1E1E1E))
+            .clickable { onExitClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Fullscreen,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = Color(0xFF888888)
+            )
+            Text(
+                text = "Tab is in fullscreen mode",
+                style = MaterialTheme.typography.h6,
+                color = Color.White
+            )
+            Text(
+                text = "Click here or press ESC to exit fullscreen",
+                style = MaterialTheme.typography.body2,
+                color = Color(0xFF888888)
+            )
+        }
+    }
 }

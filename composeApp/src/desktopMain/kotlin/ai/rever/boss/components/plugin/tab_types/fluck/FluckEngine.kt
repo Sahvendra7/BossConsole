@@ -817,6 +817,46 @@ object FluckEngine {
     }
 
     /**
+     * Sets up fullscreen handler for a browser.
+     * When web content requests fullscreen (e.g., YouTube video),
+     * opens a fullscreen window with the browser content.
+     *
+     * @param browser The browser instance to configure
+     * @param tabId The unique ID of the tab containing this browser
+     * @param onFullscreenEnter Callback when fullscreen mode is entered
+     * @param onFullscreenExit Callback when fullscreen mode is exited
+     */
+    fun setupFullscreenHandler(
+        browser: com.teamdev.jxbrowser.browser.Browser,
+        tabId: String,
+        onFullscreenEnter: () -> Unit,
+        onFullscreenExit: () -> Unit
+    ) {
+        // Handle fullscreen enter request
+        browser.fullScreen().on(com.teamdev.jxbrowser.fullscreen.event.FullScreenEntered::class.java) {
+            logger.info(LogCategory.BROWSER, "Web content requested fullscreen", mapOf("tabId" to tabId))
+
+            // Show fullscreen window
+            ai.rever.boss.tabfullscreen.FullscreenBrowserWindow.showFullscreen(browser, tabId) {
+                // This is called when exiting fullscreen via ESC or clicking placeholder
+                onFullscreenExit()
+            }
+
+            onFullscreenEnter()
+        }
+
+        // Handle fullscreen exit using event listener
+        browser.fullScreen().on(com.teamdev.jxbrowser.fullscreen.event.FullScreenExited::class.java) {
+            logger.info(LogCategory.BROWSER, "Fullscreen exited", mapOf("tabId" to tabId))
+
+            // Close fullscreen window
+            ai.rever.boss.tabfullscreen.FullscreenBrowserWindow.exitFullscreen()
+
+            onFullscreenExit()
+        }
+    }
+
+    /**
      * Sets up keyboard interceptor for a browser to forward menu shortcuts to the native menu bar.
      * This intercepts Cmd+R, Cmd+N, Cmd+T, Cmd+W, etc. (on macOS) or Ctrl+R, Ctrl+N, etc. (on Windows/Linux)
      * before JxBrowser consumes them, and manually triggers the corresponding MenuActionsHandler methods.

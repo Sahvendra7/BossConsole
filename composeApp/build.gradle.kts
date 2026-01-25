@@ -406,6 +406,10 @@ compose.desktop {
                 add("--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED")
                 add("--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
                 add("--add-opens=java.desktop/com.apple.eawt.event=ALL-UNNAMED")
+                // Required for macOS native fullscreen via com.apple.eawt.Application reflection
+                // Used by FullscreenBrowserWindow.kt. Tested on Java 17+.
+                // Fallback to MAXIMIZED_BOTH if API unavailable.
+                add("--add-opens=java.desktop/com.apple.eawt=ALL-UNNAMED")
                 add("-Dapple.awt.application.appearance=system")
             }
 
