@@ -64,7 +64,8 @@ fun BossDraggableComponent.BossTopBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
     onShowSettings: (() -> Unit)? = null,
-    onNewProject: (() -> Unit)? = null
+    onNewProject: (() -> Unit)? = null,
+    onCloneProject: (() -> Unit)? = null
 ) {
 
     val items = listOf(
@@ -84,7 +85,7 @@ fun BossDraggableComponent.BossTopBar(
 
     HorizontalBar(modifier = Modifier.contextMenu(items = items), height = 40.dp) {
         HorizontalBarRow(modifier = Modifier.fillMaxHeight().padding(start = 36.dp)) {
-            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject)
+            BossTopLeftBar(workspaceManager, onApplyWorkspace, getCurrentWorkspace, onShowTopOfMind, onNewProject, onCloneProject)
             Spacer(modifier = Modifier.weight(1f))
             // Run/debug controls (Issue #91 / #321)
             BossTopRunBar()
@@ -142,6 +143,7 @@ fun BossActionButtonWithLogo(
 fun BossDraggableComponent.getProjectSelectContextMenuItems(
     showProjectDialog: () -> Unit,
     showNewProjectDialog: () -> Unit,
+    showCloneProjectDialog: () -> Unit,
     onProjectSelected: (Project) -> Unit
 ): List<ContextMenuItem> {
     val recentProjects by ProjectState.recentProjects.collectAsState()
@@ -175,6 +177,13 @@ fun BossDraggableComponent.getProjectSelectContextMenuItems(
             text = "Open Project...",
             icon = Icons.Filled.Add,
             onClick = showProjectDialog
+        ))
+
+        // Add option to clone a project from Git
+        add(ContextMenuItem(
+            text = "Clone Project...",
+            icon = Icons.Outlined.CloudDownload,
+            onClick = showCloneProjectDialog
         ))
     }
 }
@@ -360,7 +369,8 @@ fun BossDraggableComponent.BossTopLeftBar(
     onApplyWorkspace: ((LayoutWorkspace) -> Unit)? = null,
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
-    onNewProject: (() -> Unit)? = null
+    onNewProject: (() -> Unit)? = null,
+    onCloneProject: (() -> Unit)? = null
 ) {
     // Get window ID for per-window terminal isolation (Issue #498)
     val windowId = LocalWindowId.current ?: return
@@ -444,6 +454,7 @@ fun BossDraggableComponent.BossTopLeftBar(
         contextMenuItems = getProjectSelectContextMenuItems(
             showProjectDialog = { showProjectDialog = true },
             showNewProjectDialog = { onNewProject?.invoke() },
+            showCloneProjectDialog = { onCloneProject?.invoke() },
             onProjectSelected = { project -> handleProjectSelection(project) }
         ),
         hintText = if (selectedProject.path.isEmpty()) "Click to open a project" else "Current Project: ${selectedProject.path}"

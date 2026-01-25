@@ -412,6 +412,22 @@ expect object GitService {
      */
     fun getCurrentProjectPath(): String?
 
+    // ===== Clone Repository =====
+
+    /**
+     * Clone a Git repository to the specified directory.
+     *
+     * @param repositoryUrl The URL of the repository to clone (https://, git@, ssh://)
+     * @param targetDirectory The directory where the repository should be cloned
+     * @param onProgress Callback for progress updates (receives progress messages)
+     * @return Result indicating success or failure with appropriate message
+     */
+    suspend fun cloneRepository(
+        repositoryUrl: String,
+        targetDirectory: String,
+        onProgress: (String) -> Unit = {}
+    ): GitOperationResult
+
     // ===== Window-Specific Operations =====
 
     /**

@@ -28,7 +28,9 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
+import ai.rever.boss.components.dialogs.CloneProjectDialog
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
+import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.terminal.ExistingSplitTargetMode
@@ -902,6 +904,8 @@ fun ComponentContext.BossApp(
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
+    var showCloneProjectDialog by remember { mutableStateOf(false) }
+    var projectToOpen by remember { mutableStateOf<ai.rever.boss.components.plugin.panels.left_top.Project?>(null) }
 
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -2173,6 +2177,9 @@ fun ComponentContext.BossApp(
                                 },
                                 onNewProject = {
                                     showNewProjectDialog = true
+                                },
+                                onCloneProject = {
+                                    showCloneProjectDialog = true
                                 }
                             )
                         }
@@ -2529,6 +2536,55 @@ fun ComponentContext.BossApp(
                     onProjectCreated = { project ->
                         selectProjectInWindow(windowProjectState, project)
                         showNewProjectDialog = false
+                        focusRequester.requestFocus()
+                    }
+                )
+            }
+
+            // Clone project dialog (Issue #550)
+            if (showCloneProjectDialog) {
+                CloneProjectDialog(
+                    onDismiss = {
+                        showCloneProjectDialog = false
+                        focusRequester.requestFocus()
+                    },
+                    onProjectCloned = { projectPath ->
+                        val projectName = projectPath.substringAfterLast(java.io.File.separator)
+                        val project = ai.rever.boss.components.plugin.panels.left_top.Project(
+                            name = projectName,
+                            path = projectPath
+                        )
+                        showCloneProjectDialog = false
+                        // Check if a project is already open
+                        if (selectedProject.path.isNotEmpty()) {
+                            // Show dialog to choose between current window or new window
+                            projectToOpen = project
+                        } else {
+                            // No project open, directly open in current window
+                            selectProjectInWindow(windowProjectState, project)
+                            focusRequester.requestFocus()
+                        }
+                    }
+                )
+            }
+
+            // Project open mode dialog (for cloned projects and other project opening flows)
+            projectToOpen?.let { project ->
+                ProjectOpenModeDialog(
+                    project = project,
+                    onDismiss = {
+                        projectToOpen = null
+                        focusRequester.requestFocus()
+                    },
+                    onOpenInCurrentWindow = { selectedProj ->
+                        selectProjectInWindow(windowProjectState, selectedProj)
+                        projectToOpen = null
+                        focusRequester.requestFocus()
+                    },
+                    onOpenInNewWindow = { selectedProj ->
+                        // Create new window with the project - each window has independent project state
+                        WindowOperations.createNewWindowWithProject(selectedProj)
+                        projectToOpen = null
                         focusRequester.requestFocus()
                     }
                 )
