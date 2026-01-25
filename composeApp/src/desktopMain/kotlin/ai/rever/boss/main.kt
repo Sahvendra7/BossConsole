@@ -37,6 +37,7 @@ import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.swing.JPopupMenu
 
 fun main(args: Array<String>) {
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
@@ -44,6 +45,10 @@ fun main(args: Array<String>) {
 
     // Set up proper temp directories for native libraries
     setupNativeLibraryPaths()
+
+    // Disable lightweight popups for HARDWARE_ACCELERATED rendering mode (#258)
+    // This ensures Swing popup menus (context menus) appear above the browser view
+    JPopupMenu.setDefaultLightWeightPopupEnabled(false)
 
     // Single-instance check: ensure only one BOSS instance runs
     // On Windows, this prevents multiple windows when clicking deep links

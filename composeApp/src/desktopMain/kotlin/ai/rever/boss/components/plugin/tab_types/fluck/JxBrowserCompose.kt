@@ -27,6 +27,7 @@ import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.utils.MacOSGestureHandler
 import java.awt.Window
 import javax.swing.JFrame
+import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1142,6 +1143,10 @@ fun JxBrowserCompose(
         }
     }
     
+    // Use Swing-based context menu for text fields in HARDWARE_ACCELERATED mode (#258)
+    CompositionLocalProvider(
+        LocalContextMenuRepresentation provides SwingTextContextMenuRepresentation
+    ) {
     Box(modifier = modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
         // Navigation Bar
@@ -1624,16 +1629,24 @@ fun JxBrowserCompose(
         }
 
         // Context menu (hybrid approach - position from Compose, context from JxBrowser callback)
-        if (showContextMenu) {
-            ContextMenu(
-                items = contextMenuItems,
-                offset = lastRightClickPosition,
-                onDismissRequest = {
-                    showContextMenu = false
-                    contextMenuInfo = null
-                    focusedFieldInfo = null
+        // Uses Swing JPopupMenu for HARDWARE_ACCELERATED mode compatibility (#258)
+        LaunchedEffect(showContextMenu) {
+            if (showContextMenu) {
+                // Use actual mouse position - most reliable for context menus
+                val mouseLocation = java.awt.MouseInfo.getPointerInfo()?.location
+                if (mouseLocation != null) {
+                    SwingContextMenu.show(
+                        screenX = mouseLocation.x,
+                        screenY = mouseLocation.y,
+                        items = contextMenuItems,
+                        onDismiss = {
+                            showContextMenu = false
+                            contextMenuInfo = null
+                            focusedFieldInfo = null
+                        }
+                    )
                 }
-            )
+            }
         }
 
         // Floating dropdown overlay
@@ -1868,4 +1881,5 @@ fun JxBrowserCompose(
             )
         }
     }
+    } // CompositionLocalProvider
 }

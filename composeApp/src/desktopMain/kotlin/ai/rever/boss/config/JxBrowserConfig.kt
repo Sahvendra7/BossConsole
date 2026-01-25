@@ -24,7 +24,8 @@ object JxBrowserConfig {
     val defaultUrl: String = ConfigLoader.getConfig("jxbrowser.default.url",
         "https://www.risalabs.ai") ?: "https://www.risalabs.ai"
     
-    // Using OFF_SCREEN mode with custom context menu implementation
+    // OFF_SCREEN mode for lightweight Compose popups compatibility
+    // HARDWARE_ACCELERATED has issues with Compose overlays rendering behind browser
     val renderingMode = com.teamdev.jxbrowser.engine.RenderingMode.OFF_SCREEN
 
 } 
