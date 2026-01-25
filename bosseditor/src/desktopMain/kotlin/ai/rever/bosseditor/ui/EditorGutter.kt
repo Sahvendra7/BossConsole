@@ -70,7 +70,7 @@ fun EditorGutter(
         max(3, lineCount.toString().length)
     }
     val gutterWidth = remember(maxLineDigits) {
-        (maxLineDigits * 9 + 36).dp // ~9dp per digit + left padding + fold icon space + right padding
+        (maxLineDigits * 7).dp // ~7dp per digit only, no padding
     }
 
     val textStyle = remember {

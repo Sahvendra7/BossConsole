@@ -124,8 +124,8 @@ fun EditorCanvas(
     val gutterWidth = remember(editorState.document.lineCount, fontFamily, fontSize, showLineNumbers, foldingEnabled) {
         if (showLineNumbers) {
             val baseWidth = calculateGutterWidth(textMeasurer, editorState.document.lineCount, fontFamily, fontSize)
-            // Add space for fold indicator: 16 (size) + 8 (paddingRight) + 8 (paddingLeft) = 32px
-            val foldIndicatorSpace = if (foldingEnabled) 32f else 0f
+            // Add space for fold indicator: 16 (size) + 4 (minimal padding) = 20px
+            val foldIndicatorSpace = if (foldingEnabled) 20f else 0f
             baseWidth + foldIndicatorSpace
         } else {
             0f
@@ -668,8 +668,8 @@ private fun calculateGutterWidth(
     // Measure the widest digit (9 or 8 depending on font)
     val digitWidth = textMeasurer.measure("9", style).size.width.toFloat()
 
-    // Gutter width: digits + padding (8px left + 8px right + 8px margin)
-    return digitWidth * digits + 24f
+    // Gutter width: digits + minimal padding (8px total)
+    return digitWidth * digits + 8f
 }
 
 /**

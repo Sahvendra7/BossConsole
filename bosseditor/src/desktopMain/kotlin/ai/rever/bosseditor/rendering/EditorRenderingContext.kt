@@ -168,7 +168,7 @@ data class EditorRenderingContext(
             searchMatches: List<EditorRange> = emptyList(),
             currentSearchMatchIndex: Int = -1,
             showLineNumbers: Boolean = true,
-            gutterWidth: Float = 50f,
+            gutterWidth: Float = 30f,
             visualLineMapper: VisualLineMapper? = null,
             allFoldRegions: List<FoldRegion> = emptyList(),
             foldingEnabled: Boolean = true,

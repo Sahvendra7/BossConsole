@@ -1237,16 +1237,19 @@ object EditorCanvasRenderer {
                 colors.lineNumber
             }
 
-            // Right-align line numbers (gutter width already includes fold indicator space)
+            // Right-align line numbers with proper padding
             val measurement = TextMeasurementCache.getMeasurement(
                 textMeasurer = ctx.textMeasurer,
                 text = lineNumberText,
                 fontFamily = ctx.fontFamily,
                 fontSize = ctx.fontSize
             )
-            // Position line numbers with padding from fold indicator area
-            val foldIndicatorSpace = if (ctx.foldingEnabled) 32f else 0f
-            val x = ctx.gutterWidth - measurement.width - 8f - foldIndicatorSpace
+            // Position line numbers with padding on both sides
+            val leftPadding = 4f
+            val rightPadding = 4f
+            val foldIndicatorSpace = if (ctx.foldingEnabled) 20f else 0f
+            // Right-align but ensure minimum left padding
+            val x = maxOf(leftPadding, ctx.gutterWidth - foldIndicatorSpace - rightPadding - measurement.width)
 
             // Skip if line number is completely off-screen
             if (x + measurement.width < 0 || x > size.width) continue
@@ -1284,39 +1287,70 @@ object EditorCanvasRenderer {
         // Find fold region starting at this line
         val foldRegion = ctx.allFoldRegions.find { it.startLine == documentLine } ?: return
 
-        // Larger indicator dimensions with generous padding
+        // Fold indicator dimensions with minimal padding
         val indicatorSize = 16f
-        val paddingRight = 8f // Padding from gutter border
-        val paddingLeft = 8f // Padding from line numbers
+        val paddingRight = 4f // Minimal padding from gutter border
         val strokeWidth = 2f
 
-        // Position after line number area with padding from gutter border
+        // Position in the fold indicator area (20px allocated in EditorCanvas.kt)
         val indicatorX = ctx.gutterWidth - indicatorSize - paddingRight
         val indicatorY = y + (ctx.lineHeight - indicatorSize) / 2f
 
         val indicatorColor = colors.foldIndicator
 
         if (foldRegion.isCollapsed) {
-            // Draw right-pointing chevron (>) for collapsed
+            // ChevronRight style - › pointing right
+            // Material Icons typically use 45° angles and centered positioning
+            val chevronPadding = indicatorSize * 0.25f  // 25% padding
+            val chevronWidth = indicatorSize * 0.4f     // Width of chevron
+            val chevronHeight = indicatorSize * 0.5f    // Height of chevron
+
             val path = Path()
-            path.moveTo(indicatorX + 2f, indicatorY)
-            path.lineTo(indicatorX + indicatorSize - 2f, indicatorY + indicatorSize / 2f)
-            path.lineTo(indicatorX + 2f, indicatorY + indicatorSize)
+            val centerY = indicatorY + indicatorSize / 2f
+            val startX = indicatorX + chevronPadding
+
+            // Top line of chevron (pointing down-right)
+            path.moveTo(startX, centerY - chevronHeight / 2f)
+            path.lineTo(startX + chevronWidth, centerY)
+
+            // Bottom line of chevron (pointing up-right)
+            path.lineTo(startX, centerY + chevronHeight / 2f)
+
             drawPath(
                 path = path,
                 color = indicatorColor,
-                style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                style = Stroke(
+                    width = strokeWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round
+                )
             )
         } else {
-            // Draw down-pointing chevron (v) for expanded
+            // ExpandMore style - ˅ pointing down
+            // Material Icons typically use 45° angles and centered positioning
+            val chevronPadding = indicatorSize * 0.25f  // 25% padding
+            val chevronWidth = indicatorSize * 0.5f     // Width of chevron
+            val chevronHeight = indicatorSize * 0.4f    // Height of chevron
+
             val path = Path()
-            path.moveTo(indicatorX, indicatorY + 2f)
-            path.lineTo(indicatorX + indicatorSize / 2f, indicatorY + indicatorSize - 2f)
-            path.lineTo(indicatorX + indicatorSize, indicatorY + 2f)
+            val centerX = indicatorX + indicatorSize / 2f
+            val startY = indicatorY + chevronPadding
+
+            // Left line of chevron (pointing down-right)
+            path.moveTo(centerX - chevronWidth / 2f, startY)
+            path.lineTo(centerX, startY + chevronHeight)
+
+            // Right line of chevron (pointing down-left)
+            path.lineTo(centerX + chevronWidth / 2f, startY)
+
             drawPath(
                 path = path,
                 color = indicatorColor,
-                style = Stroke(width = strokeWidth, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                style = Stroke(
+                    width = strokeWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round
+                )
             )
         }
     }

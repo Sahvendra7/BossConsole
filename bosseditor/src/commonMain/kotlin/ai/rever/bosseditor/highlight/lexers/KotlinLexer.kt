@@ -553,7 +553,7 @@ class KotlinLexer : BaseLexer() {
         }
 
         // Check for closing at end of line
-        if (pos + 2 <= line.length &&
+        if (pos + 3 <= line.length &&
             line[pos] == '"' && line[pos + 1] == '"' && line[pos + 2] == '"') {
             tokens.add(Token(tokenStart, pos + 3, TokenType.STRING))
             return Triple(pos + 3, tokens, true)
@@ -609,7 +609,7 @@ class KotlinLexer : BaseLexer() {
         }
 
         // Check for closing at end of line
-        if (pos + 2 <= line.length &&
+        if (pos + 3 <= line.length &&
             line[pos] == '"' && line[pos + 1] == '"' && line[pos + 2] == '"') {
             tokens.add(Token(tokenStart, pos + 3, TokenType.STRING))
             return Triple(pos + 3, tokens, true)
