@@ -1,9 +1,13 @@
 package ai.rever.bosseditor.lsp.providers
 
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
 import ai.rever.bosseditor.lsp.client.LspClient
 import ai.rever.bosseditor.lsp.protocol.*
 import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
+
+private val logger = EditorLogger.forComponent("LspNavigationProvider")
 
 /**
  * LSP-based navigation provider.
@@ -113,7 +117,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP $method error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP $method error", error = e)
             emptyList()
         }
     }
@@ -216,7 +220,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP references error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP references error", error = e)
             emptyList()
         }
     }
@@ -254,7 +258,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP hover error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP hover error", error = e)
             null
         }
     }
@@ -370,7 +374,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP documentSymbol error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP documentSymbol error", error = e)
             emptyList()
         }
     }
@@ -422,7 +426,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP workspace/symbol error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP workspace/symbol error", error = e)
             emptyList()
         }
     }
@@ -460,7 +464,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP prepareRename error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP prepareRename error", error = e)
             null
         }
     }
@@ -496,7 +500,7 @@ class LspNavigationProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP rename error: ${e.message}")
+            logger.error(EditorLogCategory.NAVIGATION, "LSP rename error", error = e)
             null
         }
     }

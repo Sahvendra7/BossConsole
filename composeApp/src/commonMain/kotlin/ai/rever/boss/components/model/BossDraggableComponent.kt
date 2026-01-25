@@ -1,6 +1,8 @@
 package ai.rever.boss.components.model
 
 import ai.rever.boss.components.model.Panel.Companion.bottom
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.model.Panel.Companion.left
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -32,6 +34,7 @@ data class SidebarItem(
 // Holds the state and logic for the draggable sidebar system
 @Stable
 class BossDraggableComponent(val panelRegistry: PanelRegistry) {
+    private val logger = BossLogger.forComponent("BossDraggableComponent")
 
     companion object {
         /**
@@ -46,7 +49,7 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     init {
         // Register listener to update sidebar when panels are dynamically added/removed
         panelRegistry.addChangeListener {
-            println("🔄 [Sidebar] Panel registry changed, updating sidebar")
+            logger.debug(LogCategory.UI, "Panel registry changed, updating sidebar")
             update()
         }
     }

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import org.fife.rsta.ui.GoToDialog
 import org.fife.rsta.ui.search.FindDialog
 import org.fife.rsta.ui.search.ReplaceDialog
@@ -29,6 +31,7 @@ class RSyntaxSearchManager(
     private val textArea: RSyntaxTextArea
 ) : SearchListener {
 
+    private val logger = BossLogger.forComponent("RSyntaxSearchManager")
     private var findDialog: FindDialog? = null
     private var replaceDialog: ReplaceDialog? = null
     private var goToDialog: GoToDialog? = null
@@ -57,7 +60,7 @@ class RSyntaxSearchManager(
         if (findDialog == null) {
             val frame = getParentFrame()
             if (frame == null) {
-                println("[RSyntaxSearchManager] Cannot create Find dialog - no parent frame")
+                logger.warn(LogCategory.EDITOR, "Cannot create Find dialog - no parent frame")
                 return null
             }
             findDialog = FindDialog(frame, this).apply {
@@ -76,7 +79,7 @@ class RSyntaxSearchManager(
         if (replaceDialog == null) {
             val frame = getParentFrame()
             if (frame == null) {
-                println("[RSyntaxSearchManager] Cannot create Replace dialog - no parent frame")
+                logger.warn(LogCategory.EDITOR, "Cannot create Replace dialog - no parent frame")
                 return null
             }
             replaceDialog = ReplaceDialog(frame, this).apply {
@@ -95,7 +98,7 @@ class RSyntaxSearchManager(
         if (goToDialog == null) {
             val frame = getParentFrame()
             if (frame == null) {
-                println("[RSyntaxSearchManager] Cannot create GoTo dialog - no parent frame")
+                logger.warn(LogCategory.EDITOR, "Cannot create GoTo dialog - no parent frame")
                 return null
             }
             goToDialog = GoToDialog(frame)
@@ -121,7 +124,7 @@ class RSyntaxSearchManager(
             getFindDialog()?.apply {
                 isVisible = true
                 requestFocus()
-            } ?: println("[RSyntaxSearchManager] Find dialog unavailable")
+            } ?: logger.warn(LogCategory.EDITOR, "Find dialog unavailable")
         }
     }
 
@@ -143,7 +146,7 @@ class RSyntaxSearchManager(
             getReplaceDialog()?.apply {
                 isVisible = true
                 requestFocus()
-            } ?: println("[RSyntaxSearchManager] Replace dialog unavailable")
+            } ?: logger.warn(LogCategory.EDITOR, "Replace dialog unavailable")
         }
     }
 
@@ -155,7 +158,7 @@ class RSyntaxSearchManager(
         SwingUtilities.invokeLater {
             val dialog = getGoToDialog()
             if (dialog == null) {
-                println("[RSyntaxSearchManager] GoTo dialog unavailable")
+                logger.warn(LogCategory.EDITOR, "GoTo dialog unavailable")
                 return@invokeLater
             }
 
@@ -168,7 +171,7 @@ class RSyntaxSearchManager(
                     textArea.caretPosition = textArea.getLineStartOffset(line - 1)
                     textArea.requestFocusInWindow()
                 } catch (e: Exception) {
-                    println("[RSyntaxSearchManager] Error going to line $line: ${e.message}")
+                    logger.warn(LogCategory.EDITOR, "Error going to line", mapOf("line" to line), error = e)
                 }
             }
         }
@@ -215,7 +218,7 @@ class RSyntaxSearchManager(
         when (e.type) {
             SearchEvent.Type.MARK_ALL -> {
                 val result = SearchEngine.markAll(textArea, searchContext)
-                println("[RSyntaxSearchManager] Marked ${result.count} occurrences")
+                logger.debug(LogCategory.EDITOR, "Marked occurrences", mapOf("count" to result.count))
             }
             SearchEvent.Type.FIND -> {
                 val result = SearchEngine.find(textArea, searchContext)
@@ -235,7 +238,7 @@ class RSyntaxSearchManager(
                 showMessage(message, "Replace All")
             }
             else -> {
-                println("[RSyntaxSearchManager] Unknown search event: ${e.type}")
+                logger.debug(LogCategory.EDITOR, "Unknown search event", mapOf("type" to e.type.toString()))
             }
         }
     }

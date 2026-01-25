@@ -1,12 +1,17 @@
 package ai.rever.boss.services.passkey.supabase
 
 import ai.rever.boss.services.passkey.*
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.ktor.client.statement.*
 
 /**
  * Handles passkey registration flow operations
  */
 internal object PasskeyRegistrationHandler {
+
+    private val logger = BossLogger.forComponent("PasskeyRegistrationHandler")
     
     /**
      * Request passkey registration challenge
@@ -17,9 +22,8 @@ internal object PasskeyRegistrationHandler {
         authenticatorSelection: AuthenticatorSelectionCriteria? = null
     ): Result<PasskeyChallenge> {
         return try {
-            println("Requesting passkey registration challenge for user: $userId")
-            println("Debug - userId: '$userId', displayName: '$displayName'")
-            
+            logger.debug(LogCategory.PASSKEY, "Requesting registration challenge", mapOf("userId" to LogSanitizer.maskUserId(userId)))
+
             val challenge = PasskeyDataMapper.generateChallenge()
             val requestData = PasskeyDataMapper.createRegistrationRequest(
                 userId = userId,
@@ -27,8 +31,8 @@ internal object PasskeyRegistrationHandler {
                 challenge = challenge,
                 authenticatorSelection = authenticatorSelection
             )
-            
-            println("Debug - Request data: userId='${requestData.userId}', displayName='${requestData.displayName}', challenge='${requestData.challenge.take(10)}...')")
+
+            logger.trace(LogCategory.PASSKEY, "Registration request created")
             
             // Call Edge Function for registration challenge
             val response = SupabaseApiClient.invokeRegistrationChallenge(requestData)
@@ -43,11 +47,11 @@ internal object PasskeyRegistrationHandler {
             
             Result.success(parsedChallenge)
         } catch (e: Exception) {
-            println("Failed to request registration challenge: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to request registration challenge", error = e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * Complete passkey registration
      */
@@ -57,36 +61,34 @@ internal object PasskeyRegistrationHandler {
         challenge: String
     ): Result<PasskeyCredential> {
         return try {
-            println("Completing passkey registration for user: $userId")
-            
+            logger.debug(LogCategory.PASSKEY, "Completing passkey registration", mapOf("userId" to LogSanitizer.maskUserId(userId)))
+
             val registrationData = PasskeyDataMapper.createRegistrationData(
                 userId = userId,
                 registration = registration,
                 challenge = challenge
             )
-            
+
             // Call Edge Function for registration completion
             val response = SupabaseApiClient.completeRegistration(registrationData)
-            
+
             val responseText = response.bodyAsText()
-            println("Registration completion response: $responseText")
-            println("Response type: ${response::class.qualifiedName}")
-            println("Response status: ${response.status}")
-            
+            logger.debug(LogCategory.PASSKEY, "Registration completion response received", mapOf("status" to response.status.toString()))
+
             val result = PasskeyDataMapper.parseRegistrationResponse(responseText)
-            
+
             when {
                 result.isSuccess -> {
-                    println("Passkey registration completed successfully for user: $userId, credential: ${registration.credentialId}")
+                    logger.info(LogCategory.PASSKEY, "Passkey registration completed successfully")
                     result
                 }
                 else -> {
-                    println("Passkey registration failed: ${result.exceptionOrNull()?.message}")
+                    logger.warn(LogCategory.PASSKEY, "Passkey registration failed", error = result.exceptionOrNull())
                     result
                 }
             }
         } catch (e: Exception) {
-            println("Failed to complete registration: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to complete registration", error = e)
             Result.failure(e)
         }
     }

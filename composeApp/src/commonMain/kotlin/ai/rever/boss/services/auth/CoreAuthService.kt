@@ -12,6 +12,9 @@ import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.RoleService
 import ai.rever.boss.services.network.NetworkMonitorService
 import ai.rever.boss.utils.VersionVerifier
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +29,7 @@ import kotlin.time.ExperimentalTime
 internal object CoreAuthService {
     // Coroutine scope for auth service
     private val authScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val logger = BossLogger.forComponent("CoreAuthService")
 
     // Track when session status first resolves (authenticated or not)
     // Used by UI to know when auth system is ready
@@ -47,7 +51,7 @@ internal object CoreAuthService {
             authScope.launch {
                 val isConnected = NetworkMonitorService.checkConnectivity()
                 if (!isConnected) {
-                    println("CoreAuthService.initialize: No network connectivity, entering offline state")
+                    logger.warn(LogCategory.NETWORK, "No network connectivity, entering offline state")
                     handleOfflineStart()
                     return@launch
                 }
@@ -67,7 +71,7 @@ internal object CoreAuthService {
     private fun initializeWithNetwork() {
         // Prevent duplicate initialization (race condition fix)
         if (isInitializing) {
-            println("CoreAuthService.initializeWithNetwork: Already initializing, skipping")
+            logger.debug(LogCategory.AUTH, "Already initializing, skipping")
             return
         }
         isInitializing = true
@@ -84,8 +88,8 @@ internal object CoreAuthService {
             // Wait for session to load from storage and then set proper state
             authScope.launch {
                 SupabaseConfig.client.auth.sessionStatus.collect { sessionStatus ->
-                    println("CoreAuthService.initialize: SessionStatus changed to: ${sessionStatus::class.simpleName}")
-                    
+                    logger.debug(LogCategory.AUTH, "SessionStatus changed", mapOf("status" to sessionStatus::class.simpleName))
+
                     when (sessionStatus) {
                         is SessionStatus.Authenticated -> {
                             // Mark session as resolved (user is authenticated)
@@ -93,7 +97,7 @@ internal object CoreAuthService {
 
                             val user = sessionStatus.session.user
                             val userId = user?.id ?: ""
-                            println("CoreAuthService.initialize: Session authenticated, User ID: $userId")
+                            logger.debug(LogCategory.AUTH, "Session authenticated", mapOf("hasUserId" to userId.isNotEmpty()))
 
                             // Only update user info if not already set (e.g., by PasskeyAuthService)
                             // or if session.user has valid data
@@ -110,37 +114,37 @@ internal object CoreAuthService {
                                         createdAt = user?.createdAt?.toString() ?: "",
                                         roleClaims = roleClaims
                                     ))
-                                    val rolesInfo = if (roleClaims != null) {
-                                        "Roles: ${roleClaims.userRoles.joinToString(", ")}, Primary: ${roleClaims.userRole}, Admin: ${roleClaims.isAdmin}"
-                                    } else {
-                                        "No role claims"
-                                    }
-                                    println("CoreAuthService.initialize: Updated user info from session.user ($rolesInfo)")
+                                    logger.debug(LogCategory.AUTH, "Updated user info from session.user", mapOf(
+                                        "hasRoleClaims" to (roleClaims != null),
+                                        "isAdmin" to (roleClaims?.isAdmin ?: false)
+                                    ))
                                 } else {
                                     // Session user is null (custom JWT) - load from SessionManager
                                     SessionManager.loadSession().fold(
                                         onSuccess = { storedUser ->
                                             if (storedUser != null) {
                                                 AuthStateManager.setCurrentUser(storedUser)
-                                                println("CoreAuthService.initialize: Loaded user info via SessionManager (ID: ${storedUser.id}, Email: ${storedUser.email})")
+                                                logger.debug(LogCategory.AUTH, "Loaded user info via SessionManager", mapOf(
+                                                    "email" to LogSanitizer.maskEmail(storedUser.email)
+                                                ))
                                             } else {
-                                                println("CoreAuthService.initialize: No user data available (session.user is null and no stored data)")
+                                                logger.debug(LogCategory.AUTH, "No user data available (session.user is null and no stored data)")
                                             }
                                         },
                                         onFailure = { error ->
-                                            println("CoreAuthService.initialize: Failed to load session: ${error.message}")
+                                            logger.warn(LogCategory.AUTH, "Failed to load session", error = error)
                                         }
                                     )
                                 }
                             } else if (userId.isEmpty()) {
                                 // Session user is null but we have user data (custom auth like passkey)
-                                println("CoreAuthService.initialize: Keeping existing user info from custom auth (ID: ${currentUser.id})")
+                                logger.debug(LogCategory.AUTH, "Keeping existing user info from custom auth")
                             }
-                            
+
                             // All authentication methods (magic link, passkey, biometric) provide inherent 2FA
                             // No additional verification needed - set to Authenticated
                             AuthStateManager.setAuthState(AuthService.AuthState.Authenticated)
-                            println("CoreAuthService.initialize: Setting state to Authenticated")
+                            logger.info(LogCategory.AUTH, "Auth state set to Authenticated")
                         }
                         is SessionStatus.NotAuthenticated -> {
                             // Mark session as resolved (user is not authenticated)
@@ -150,14 +154,14 @@ internal object CoreAuthService {
                             AuthStateManager.setAuthState(AuthService.AuthState.NotAuthenticated)
                             // Reset magic link flag when session ends
                             AuthStateManager.setAuthenticatedViaMagicLink(false)
-                            println("CoreAuthService.initialize: Setting state to NotAuthenticated")
+                            logger.info(LogCategory.AUTH, "Auth state set to NotAuthenticated")
                         }
                         else -> {
                             // Keep loading state for any other status while we wait
                             if (AuthStateManager.authState.value is AuthService.AuthState.Loading) {
-                                println("CoreAuthService.initialize: Still waiting for session status: $sessionStatus")
+                                logger.debug(LogCategory.AUTH, "Still waiting for session status", mapOf("status" to sessionStatus.toString()))
                             } else {
-                                println("CoreAuthService.initialize: Other session status: $sessionStatus")
+                                logger.debug(LogCategory.AUTH, "Other session status", mapOf("status" to sessionStatus.toString()))
                             }
                         }
                     }
@@ -179,7 +183,7 @@ internal object CoreAuthService {
 
         // Start auto-retry in background
         NetworkMonitorService.startAutoRetry {
-            println("CoreAuthService: Network restored, retrying initialization")
+            logger.info(LogCategory.NETWORK, "Network restored, retrying initialization")
             initializeWithNetwork()
         }
     }
@@ -191,7 +195,7 @@ internal object CoreAuthService {
     suspend fun retryInitialization(): Boolean {
         val isConnected = NetworkMonitorService.manualRetry()
         if (isConnected) {
-            println("CoreAuthService.retryInitialization: Network restored, initializing")
+            logger.info(LogCategory.NETWORK, "Network restored, initializing")
             initializeWithNetwork()
         }
         return isConnected
@@ -206,10 +210,10 @@ internal object CoreAuthService {
             // This handles: Supabase signOut, UserDataStorage clearing, and AuthStateManager reset
             SessionManager.clearSession().fold(
                 onSuccess = {
-                    println("CoreAuthService: Session cleared successfully via SessionManager")
+                    logger.info(LogCategory.AUTH, "Session cleared successfully via SessionManager")
                 },
                 onFailure = { error ->
-                    println("CoreAuthService: SessionManager.clearSession failed: ${error.message}")
+                    logger.warn(LogCategory.AUTH, "SessionManager.clearSession failed", error = error)
                     // Continue even if SessionManager fails
                 }
             )
@@ -219,8 +223,9 @@ internal object CoreAuthService {
 
             Result.success(Unit)
         } catch (e: Exception) {
-            println("Logout failed: ${e.message}")
+            logger.error(LogCategory.AUTH, "Logout failed", error = e)
             Result.failure(e)
         }
     }
 }
+

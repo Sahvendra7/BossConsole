@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -20,6 +22,7 @@ data class BrowserSettingsData(
 )
 
 object BrowserSettingsManager {
+    private val logger = BossLogger.forComponent("BrowserSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/browser-settings.json")
     private val json = Json { 
         prettyPrint = true
@@ -57,10 +60,10 @@ object BrowserSettingsManager {
                 }
             }
         } catch (e: Exception) {
-            println("Failed to load browser settings: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to load browser settings", error = e)
         }
     }
-    
+
     suspend fun saveSettings() = withContext(Dispatchers.IO) {
         try {
             val settings = BrowserSettingsData(
@@ -76,7 +79,7 @@ object BrowserSettingsManager {
             val content = json.encodeToString(settings)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("Failed to save browser settings: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to save browser settings", error = e)
         }
     }
 

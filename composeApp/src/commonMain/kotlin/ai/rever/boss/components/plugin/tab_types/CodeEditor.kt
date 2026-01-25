@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.plugin.DefaultPlugin
@@ -39,6 +41,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
+
+private val codeEditorLogger = BossLogger.forComponent("CodeEditor")
 
 // Simple syntax highlighting for common keywords
 private val kotlinKeywords = setOf(
@@ -113,7 +117,7 @@ fun CodeEditorUI(
                 val langEnum = Language.fromFileName(filePath)
                 detectedMainFunctions = detector.detectInFile(filePath, content, langEnum)
             } catch (e: Exception) {
-                println("[CodeEditor] Error detecting main functions: ${e.message}")
+                codeEditorLogger.warn(LogCategory.EDITOR, "Error detecting main functions", error = e)
                 detectedMainFunctions = emptyList()
             }
         }
@@ -222,7 +226,7 @@ fun CodeEditorUI(
  */
 suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectPath: String, windowId: String? = null) {
     if (windowId == null) {
-        println("[CodeEditor] Cannot execute main function: no window ID")
+        codeEditorLogger.warn(LogCategory.EDITOR, "Cannot execute main function: no window ID")
         return
     }
     try {
@@ -247,7 +251,7 @@ suspend fun executeDetectedMainFunction(detected: DetectedMainFunction, projectP
 
         RunEventBus.execute(config, sourceWindowId = windowId)
     } catch (e: Exception) {
-        println("[CodeEditor] Error executing main function: ${e.message}")
+        codeEditorLogger.error(LogCategory.EDITOR, "Error executing main function", error = e)
     }
 }
 

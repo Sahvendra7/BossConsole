@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
@@ -31,6 +33,7 @@ import kotlinx.coroutines.launch
  * - Call dispose() when the ViewModel is no longer needed to cancel all coroutines
  */
 class UserSecretListViewModel {
+    private val logger = BossLogger.forComponent("UserSecretListViewModel")
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -48,7 +51,7 @@ class UserSecretListViewModel {
         // Observe secret change events for automatic synchronization
         scope.launch {
             SecretChangeNotifier.secretChangeEvents.collect { event ->
-                println("🔔 [UserSecretListVM] Received event: $event")
+                logger.debug(LogCategory.GENERAL, "Received secret change event", mapOf("event" to event.toString()))
                 // Reload secrets whenever they change in other components
                 loadSecrets()
             }
@@ -93,11 +96,11 @@ class UserSecretListViewModel {
                     currentOffset = secrets.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${secrets.size} secrets successfully (hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.GENERAL, "Loaded secrets successfully", mapOf("count" to secrets.size, "hasMore" to paginatedResult.hasMore))
             }.onFailure { exception ->
                 // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
                 if (exception is CancellationException) {
-                    println("⏸️  [UserSecretListVM] Load cancelled (new request started)")
+                    logger.debug(LogCategory.GENERAL, "Load cancelled (new request started)")
                     return@onFailure
                 }
 
@@ -106,7 +109,7 @@ class UserSecretListViewModel {
                     isLoading = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load secrets: $error")
+                logger.warn(LogCategory.GENERAL, "Failed to load secrets", error = exception)
             }
         }
     }
@@ -143,11 +146,11 @@ class UserSecretListViewModel {
                     currentOffset = state.currentOffset + newSecrets.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${newSecrets.size} more secrets (total: ${allSecrets.size}, hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.GENERAL, "Loaded more secrets", mapOf("newCount" to newSecrets.size, "total" to allSecrets.size, "hasMore" to paginatedResult.hasMore))
             }.onFailure { exception ->
                 // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
                 if (exception is CancellationException) {
-                    println("⏸️  [UserSecretListVM] Pagination cancelled (new request started)")
+                    logger.debug(LogCategory.GENERAL, "Pagination cancelled (new request started)")
                     return@onFailure
                 }
 
@@ -156,7 +159,7 @@ class UserSecretListViewModel {
                     isLoadingMore = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load more secrets: $error")
+                logger.warn(LogCategory.GENERAL, "Failed to load more secrets", error = exception)
             }
         }
     }
@@ -180,7 +183,7 @@ class UserSecretListViewModel {
         }
 
         state = state.copy(secrets = filtered)
-        println("🔍 Search: Found ${filtered.size} secrets matching '$query'")
+        logger.debug(LogCategory.GENERAL, "Search completed", mapOf("matchCount" to filtered.size, "query" to query))
     }
 
     /**

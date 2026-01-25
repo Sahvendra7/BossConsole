@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.psi
 
 import ai.rever.bosseditor.core.EditorDocument
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.highlight.SemanticTokenProvider
 import ai.rever.bosseditor.highlight.Token
 import ai.rever.bosseditor.highlight.TokenType
@@ -95,6 +97,7 @@ class SemanticHighlighter(
     private val document: EditorDocument,
     private var filePath: String
 ) {
+    private val logger = LspLogger.forComponent("SemanticHighlighter")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // Debounce job for analysis
@@ -151,7 +154,7 @@ class SemanticHighlighter(
             } catch (e: Exception) {
                 // Silently ignore analysis errors
                 if (e !is CancellationException) {
-                    println("[SemanticHighlighter] Analysis error: ${e.message}")
+                    logger.warn(LogCategory.SEMANTIC, "Analysis error", error = e)
                 }
             }
         }

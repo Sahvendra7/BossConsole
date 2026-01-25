@@ -1,5 +1,7 @@
 package ai.rever.boss.keymap.lifecycle
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentHashMap
@@ -38,6 +40,7 @@ data class ShortcutLifecycleState(
  * ```
  */
 object ShortcutLifecycleManager {
+    private val logger = BossLogger.forComponent("ShortcutLifecycleManager")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
@@ -68,7 +71,7 @@ object ShortcutLifecycleManager {
         conditions[actionId] = condition
 
         if (debugMode) {
-            println("[ShortcutLifecycleManager] Registered condition for '$actionId'")
+            logger.debug(LogCategory.UI, "Registered condition", mapOf("actionId" to actionId))
         }
 
         // Immediately evaluate the condition
@@ -89,7 +92,7 @@ object ShortcutLifecycleManager {
         _states.value = _states.value.filterKeys { it != actionId }
 
         if (debugMode) {
-            println("[ShortcutLifecycleManager] Unregistered condition for '$actionId'")
+            logger.debug(LogCategory.UI, "Unregistered condition", mapOf("actionId" to actionId))
         }
     }
 
@@ -106,7 +109,7 @@ object ShortcutLifecycleManager {
         return try {
             condition.isEnabled()
         } catch (e: Exception) {
-            println("[ShortcutLifecycleManager] Error checking condition for '$actionId': ${e.message}")
+            logger.warn(LogCategory.UI, "Error checking condition", mapOf("actionId" to actionId), error = e)
             false // Fail-safe: disable on error
         }
     }
@@ -146,7 +149,7 @@ object ShortcutLifecycleManager {
      */
     suspend fun reevaluate() {
         if (debugMode) {
-            println("[ShortcutLifecycleManager] Reevaluating all conditions (${conditions.size} total)")
+            logger.debug(LogCategory.UI, "Reevaluating all conditions", mapOf("total" to conditions.size))
         }
 
         val newStates = mutableMapOf<String, ShortcutLifecycleState>()
@@ -162,10 +165,10 @@ object ShortcutLifecycleManager {
                 )
 
                 if (debugMode) {
-                    println("[ShortcutLifecycleManager]   '$actionId': enabled=$enabled${if (!enabled) ", reason=${condition.disabledReason}" else ""}")
+                    logger.debug(LogCategory.UI, "Condition evaluated", mapOf("actionId" to actionId, "enabled" to enabled, "reason" to condition.disabledReason))
                 }
             } catch (e: Exception) {
-                println("[ShortcutLifecycleManager] Error evaluating condition for '$actionId': ${e.message}")
+                logger.warn(LogCategory.UI, "Error evaluating condition", mapOf("actionId" to actionId), error = e)
                 newStates[actionId] = ShortcutLifecycleState(
                     actionId = actionId,
                     enabled = false,
@@ -206,10 +209,10 @@ object ShortcutLifecycleManager {
             _states.value = _states.value + (actionId to newState)
 
             if (debugMode) {
-                println("[ShortcutLifecycleManager] Updated '$actionId': enabled=$enabled${if (!enabled) ", reason=${condition.disabledReason}" else ""}")
+                logger.debug(LogCategory.UI, "Updated condition", mapOf("actionId" to actionId, "enabled" to enabled, "reason" to condition.disabledReason))
             }
         } catch (e: Exception) {
-            println("[ShortcutLifecycleManager] Error evaluating condition for '$actionId': ${e.message}")
+            logger.warn(LogCategory.UI, "Error evaluating condition", mapOf("actionId" to actionId), error = e)
 
             _states.value = _states.value + (actionId to ShortcutLifecycleState(
                 actionId = actionId,
@@ -229,7 +232,7 @@ object ShortcutLifecycleManager {
         _states.value = emptyMap()
 
         if (debugMode) {
-            println("[ShortcutLifecycleManager] Cleared all conditions and states")
+            logger.debug(LogCategory.UI, "Cleared all conditions and states")
         }
     }
 

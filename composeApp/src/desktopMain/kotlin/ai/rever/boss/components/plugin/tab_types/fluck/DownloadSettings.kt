@@ -1,8 +1,12 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
+
+private val downloadSettingsLogger = BossLogger.forComponent("DownloadSettings")
 
 /**
  * Desktop implementation for getting the default downloads directory.
@@ -61,7 +65,7 @@ private fun getLinuxDownloadsDirectory(userHome: String): String {
         }
     } catch (e: Exception) {
         // Fall through to default
-        println("Could not read XDG user-dirs config: ${e.message}")
+        downloadSettingsLogger.debug(LogCategory.BROWSER, "Could not read XDG user-dirs config", mapOf("error" to (e.message ?: "Unknown")))
     }
 
     // Fallback to $HOME/Downloads

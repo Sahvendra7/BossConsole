@@ -1,5 +1,7 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +18,7 @@ import java.io.File
  * Persists settings to ~/.boss/workspace-settings.json
  */
 actual object WorkspaceSettingsManager {
+    private val logger = BossLogger.forComponent("WorkspaceSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/workspace-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -42,14 +45,14 @@ actual object WorkspaceSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<WorkspaceSettings>(content)
                 _currentSettings.value = settings
-                println("[WorkspaceSettings] Loaded settings: $settings")
+                logger.debug(LogCategory.SYSTEM, "Loaded settings")
             } else {
                 val content = json.encodeToString(WorkspaceSettings.serializer(), _currentSettings.value)
                 settingsFile.writeText(content)
-                println("[WorkspaceSettings] Created default settings file")
+                logger.debug(LogCategory.SYSTEM, "Created default settings file")
             }
         } catch (e: Exception) {
-            println("[WorkspaceSettings] Error loading settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error loading settings", error = e)
         }
     }
 
@@ -57,9 +60,9 @@ actual object WorkspaceSettingsManager {
         try {
             val content = json.encodeToString(WorkspaceSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[WorkspaceSettings] Settings saved")
+            logger.debug(LogCategory.SYSTEM, "Settings saved")
         } catch (e: Exception) {
-            println("[WorkspaceSettings] Error saving settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error saving settings", error = e)
         }
     }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.registery.PanelInfo
 import com.arkivanov.decompose.ComponentContext
 import io.ktor.client.*
@@ -24,7 +26,8 @@ class DesktopLLMRpaComponent(
     ctx: ComponentContext,
     panelInfo: PanelInfo
 ) : LLMRpaComponent(ctx, panelInfo) {
-    
+    private val logger = BossLogger.forComponent("DesktopLLMRpa")
+
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json {
@@ -50,7 +53,7 @@ class DesktopLLMRpaComponent(
         val apiKey = LLMSettings.getApiKey(provider) ?: return super.callLLMApi(request)
         val endpoint = LLMSettings.getApiEndpoint()
         
-        println("DEBUG: LLM RPA - Provider: $provider, Model: $modelId")
+        logger.debug(LogCategory.SYSTEM, "LLM RPA configuration", mapOf("provider" to provider.toString(), "model" to modelId))
         
         return try {
             withContext(Dispatchers.IO) {
@@ -63,7 +66,7 @@ class DesktopLLMRpaComponent(
             }
         } catch (e: Exception) {
             // If API fails, use enhanced mock response
-            println("LLM API call failed: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "LLM API call failed", error = e)
             super.callLLMApi(request)
         }
     }
@@ -82,9 +85,7 @@ class DesktopLLMRpaComponent(
             else -> modelId
         }
         
-        println("DEBUG: Anthropic API - Using model: $actualModelId (from $modelId)")
-        println("DEBUG: API Key present: ${apiKey.isNotBlank()}")
-        println("DEBUG: API Key length: ${apiKey.length}")
+        logger.debug(LogCategory.SYSTEM, "Anthropic API call", mapOf("actualModel" to actualModelId, "requestedModel" to modelId, "hasApiKey" to apiKey.isNotBlank()))
         
         val requestBody = buildJsonObject {
             put("model", JsonPrimitive(actualModelId))
@@ -98,7 +99,7 @@ class DesktopLLMRpaComponent(
             }
         }
         
-        println("DEBUG: Request body: ${Json.encodeToString(JsonObject.serializer(), requestBody)}")
+        logger.debug(LogCategory.SYSTEM, "Anthropic request prepared")
         
         try {
             val response = httpClient.post("https://api.anthropic.com/v1/messages") {
@@ -110,11 +111,11 @@ class DesktopLLMRpaComponent(
                 setBody(requestBody)
             }
             
-            println("DEBUG: Response status: ${response.status}")
+            logger.debug(LogCategory.SYSTEM, "Anthropic response", mapOf("status" to response.status.toString()))
             
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                println("DEBUG: Error response body: $errorBody")
+                logger.warn(LogCategory.SYSTEM, "Anthropic API error response", mapOf("status" to response.status.toString(), "body" to errorBody))
                 throw Exception("Anthropic API error: ${response.status} - $errorBody")
             }
             
@@ -124,7 +125,7 @@ class DesktopLLMRpaComponent(
             
             return parseRpaResponse(content)
         } catch (e: Exception) {
-            println("DEBUG: Exception in callAnthropicApi: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Exception in callAnthropicApi", error = e)
             throw e
         }
     }

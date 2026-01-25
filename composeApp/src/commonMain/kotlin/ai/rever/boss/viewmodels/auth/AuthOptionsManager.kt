@@ -2,6 +2,8 @@ package ai.rever.boss.viewmodels.auth
 
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.models.AvailableWebAuthnCredential
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,6 +17,7 @@ import kotlinx.coroutines.launch
  * Responsible for: checking user existence, determining available authentication options
  */
 class AuthOptionsManager {
+    private val logger = BossLogger.forComponent("AuthOptionsManager")
     private val viewModelScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _isLoading = MutableStateFlow(false)
@@ -42,11 +45,14 @@ class AuthOptionsManager {
             
             AuthService.checkUserExists(email).fold(
                 onSuccess = { userExistence ->
-                    println("AuthOptionsManager: User existence check completed - exists: ${userExistence.exists}, hasPasskeys: ${userExistence.hasPasskeys}")
+                    logger.debug(LogCategory.AUTH, "User existence check completed", mapOf(
+                        "exists" to userExistence.exists,
+                        "hasPasskeys" to userExistence.hasPasskeys
+                    ))
 
                     // Store available credentials for passkey selection
                     _availableCredentials.value = userExistence.availableCredentials
-                    println("AuthOptionsManager: Stored ${userExistence.availableCredentials.size} available credentials")
+                    logger.debug(LogCategory.AUTH, "Stored available credentials", mapOf("count" to userExistence.availableCredentials.size))
 
                     val authOptions = when {
                         userExistence.exists && userExistence.hasPasskeys -> {
@@ -63,7 +69,7 @@ class AuthOptionsManager {
                     onResult(authOptions)
                 },
                 onFailure = { error ->
-                    println("AuthOptionsManager: User existence check failed: ${error.message}")
+                    logger.warn(LogCategory.AUTH, "User existence check failed", error = error)
                     // On error, default to magic link authentication
                     _isLoading.value = false
                     onResult(AuthOptions.MagicLinkOnly(email))

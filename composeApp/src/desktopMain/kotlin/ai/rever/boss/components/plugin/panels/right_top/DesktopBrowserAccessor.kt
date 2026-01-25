@@ -1,11 +1,15 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
 import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
 import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
+
+private val browserAccessorLogger = BossLogger.forComponent("DesktopBrowserAccessor")
 
 /**
  * Desktop implementation of browser accessor using JxBrowser
@@ -142,7 +146,7 @@ private fun findBrowserForTab(
         null
     } catch (e: Exception) {
         // Handle any exceptions during browser lookup
-        println("Error finding browser for tab $tabId: ${e.message}")
+        browserAccessorLogger.warn(LogCategory.BROWSER, "Error finding browser for tab", mapOf("tabId" to tabId), error = e)
         null
     }
 }
@@ -243,7 +247,7 @@ class DesktopRpaRecorderComponent(
                 
                 if (currentRecordingPath != null) {
                     _isVideoRecording.value = true
-                    println("Started video recording: $currentRecordingPath")
+                    browserAccessorLogger.info(LogCategory.BROWSER, "Started video recording", mapOf("path" to (currentRecordingPath ?: "")))
                     showFeedback("Video recording started", FeedbackType.INFO)
                 }
             }
@@ -262,7 +266,7 @@ class DesktopRpaRecorderComponent(
             _isVideoRecording.value = false
             
             if (currentRecordingPath != null) {
-                println("Stopped video recording: $currentRecordingPath")
+                browserAccessorLogger.info(LogCategory.BROWSER, "Stopped video recording", mapOf("path" to (currentRecordingPath ?: "")))
                 showFeedback("Video recording saved", FeedbackType.SUCCESS)
             }
         }
@@ -323,7 +327,7 @@ class DesktopRpaRecorderComponent(
                     desktop.open(sessionDir)
                 }
                 
-                println("RPA Configuration and video recording saved to session: ${sessionDir.absolutePath}")
+                browserAccessorLogger.info(LogCategory.FILE, "RPA Configuration and video recording saved", mapOf("sessionDir" to sessionDir.absolutePath))
             } else {
                 // No recording, just open the rpa_config directory
                 val desktop = java.awt.Desktop.getDesktop()
@@ -331,7 +335,7 @@ class DesktopRpaRecorderComponent(
                     desktop.open(rpaConfigDir)
                 }
                 
-                println("RPA Configuration saved to: ${file.absolutePath}")
+                browserAccessorLogger.info(LogCategory.FILE, "RPA Configuration saved", mapOf("path" to file.absolutePath))
             }
             
             // Clear recording references
@@ -339,7 +343,7 @@ class DesktopRpaRecorderComponent(
             recordingSessionId = null
             
         } catch (e: Exception) {
-            println("Error saving RPA configuration: ${e.message}")
+            browserAccessorLogger.warn(LogCategory.FILE, "Error saving RPA configuration", error = e)
         }
     }
 }

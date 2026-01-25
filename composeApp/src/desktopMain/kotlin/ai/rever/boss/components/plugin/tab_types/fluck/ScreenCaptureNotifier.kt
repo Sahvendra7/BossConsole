@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import com.teamdev.jxbrowser.browser.callback.StartCaptureSessionCallback
@@ -17,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Shows a custom picker with Tab/Window/Screen tabs.
  */
 object ScreenCaptureNotifier {
+    private val logger = BossLogger.forComponent("ScreenCaptureNotifier")
 
     /**
      * Wrapper for a capture source with display info
@@ -107,7 +110,7 @@ object ScreenCaptureNotifier {
                     .forEach { allInternalTabs.add(it.tabInfo as FluckTabInfo) }
             }
         } catch (e: Exception) {
-            println("ScreenCaptureNotifier: Failed to collect internal tabs: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to collect internal tabs", error = e)
         }
 
         val browsers = sources.browsers().mapIndexed { index, browserSource ->
@@ -133,7 +136,7 @@ object ScreenCaptureNotifier {
             )
         }
 
-        println("ScreenCaptureNotifier: Full picker - Screens: ${screens.size}, Windows: ${windows.size}, Browsers: ${browsers.size}")
+        logger.debug(LogCategory.BROWSER, "Full picker sources", mapOf("screens" to screens.size, "windows" to windows.size, "browsers" to browsers.size))
 
         _captureRequest.value = CaptureRequest(
             requestId = requestId,
@@ -149,7 +152,7 @@ object ScreenCaptureNotifier {
     fun selectSource(requestId: String, source: CaptureSourceItem, audioMode: AudioCaptureMode = AudioCaptureMode.CAPTURE) {
         val pending = pendingRequests.remove(requestId)
         if (pending != null) {
-            println("ScreenCaptureNotifier: User selected '${source.name}' (${source.category})")
+            logger.debug(LogCategory.BROWSER, "User selected capture source", mapOf("name" to source.name, "category" to source.category.name))
 
             when (source.category) {
                 CaptureSourceItem.Category.BROWSER_TAB -> {
@@ -166,7 +169,7 @@ object ScreenCaptureNotifier {
                 }
             }
         } else {
-            println("ScreenCaptureNotifier: No pending request for requestId=$requestId")
+            logger.warn(LogCategory.BROWSER, "No pending request for requestId", mapOf("requestId" to requestId))
         }
         _captureRequest.value = null
     }
@@ -177,7 +180,7 @@ object ScreenCaptureNotifier {
     fun cancel(requestId: String) {
         val pending = pendingRequests.remove(requestId)
         if (pending != null) {
-            println("ScreenCaptureNotifier: User cancelled capture request")
+            logger.debug(LogCategory.BROWSER, "User cancelled capture request")
             pending.tell.cancel()
         }
         _captureRequest.value = null

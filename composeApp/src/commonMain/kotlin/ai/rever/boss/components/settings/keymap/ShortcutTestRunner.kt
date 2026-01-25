@@ -1,5 +1,7 @@
 package ai.rever.boss.components.settings.keymap
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
@@ -43,6 +45,7 @@ enum class TestStatus {
  * Provides non-destructive testing by checking lifecycle states and handler existence.
  */
 object ShortcutTestRunner {
+    private val logger = BossLogger.forComponent("ShortcutTestRunner")
     private val _testResults = MutableStateFlow<Map<String, ShortcutTestResult>>(emptyMap())
     val testResults: StateFlow<Map<String, ShortcutTestResult>> = _testResults.asStateFlow()
 
@@ -85,7 +88,7 @@ object ShortcutTestRunner {
      */
     suspend fun testShortcut(binding: KeyBinding): ShortcutTestResult {
         _currentTesting.value = binding.actionId
-        println("🧪 [ShortcutTestRunner] Testing shortcut: ${binding.description} (${binding.displayString()})")
+        logger.debug(LogCategory.UI, "Testing shortcut", mapOf("description" to binding.description, "keys" to binding.displayString()))
 
         // Step 1: Check if the binding is enabled
         if (!binding.enabled) {
@@ -96,7 +99,7 @@ object ShortcutTestRunner {
                 message = "Disabled in settings"
             )
             updateResult(result)
-            println("   ⏭️  Skipped (disabled): ${binding.description}")
+            logger.debug(LogCategory.UI, "Skipped (disabled)", mapOf("description" to binding.description))
             return result
         }
 
@@ -111,7 +114,7 @@ object ShortcutTestRunner {
                 message = "Context: $reason"
             )
             updateResult(result)
-            println("   ⏭️  Skipped (lifecycle): ${binding.description} - $reason")
+            logger.debug(LogCategory.UI, "Skipped (lifecycle)", mapOf("description" to binding.description, "reason" to reason))
             return result
         }
 
@@ -124,7 +127,7 @@ object ShortcutTestRunner {
                 message = "No handler for '${binding.actionId}'"
             )
             updateResult(result)
-            println("   ❌ Failed (no handler): ${binding.description}")
+            logger.warn(LogCategory.UI, "Failed (no handler)", mapOf("description" to binding.description, "actionId" to binding.actionId))
             return result
         }
 
@@ -138,7 +141,7 @@ object ShortcutTestRunner {
                 message = keyValidation.second
             )
             updateResult(result)
-            println("   ❌ Failed (invalid key): ${binding.description} - ${keyValidation.second}")
+            logger.warn(LogCategory.UI, "Failed (invalid key)", mapOf("description" to binding.description, "error" to keyValidation.second))
             return result
         }
 
@@ -154,9 +157,9 @@ object ShortcutTestRunner {
         updateResult(result)
 
         when (status) {
-            TestStatus.SUCCESS -> println("   ✅ Configuration valid: ${binding.description}")
-            TestStatus.FAILED -> println("   ❌ Failed: ${binding.description} - $message")
-            else -> println("   ⚠️  Warning: ${binding.description} - $message")
+            TestStatus.SUCCESS -> logger.debug(LogCategory.UI, "Configuration valid", mapOf("description" to binding.description))
+            TestStatus.FAILED -> logger.warn(LogCategory.UI, "Failed", mapOf("description" to binding.description, "message" to message))
+            else -> logger.debug(LogCategory.UI, "Warning", mapOf("description" to binding.description, "message" to message))
         }
 
         return result
@@ -266,7 +269,7 @@ object ShortcutTestRunner {
      * @param settings The keymap settings containing all shortcuts
      */
     suspend fun testAllShortcuts(settings: KeymapSettings) {
-        println("🚀 [ShortcutTestRunner] Starting batch test of ${settings.shortcuts.size} shortcuts")
+        logger.info(LogCategory.UI, "Starting batch test", mapOf("count" to settings.shortcuts.size))
 
         // Clear previous results
         _testResults.value = emptyMap()
@@ -282,7 +285,7 @@ object ShortcutTestRunner {
         }
 
         _currentTesting.value = null
-        println("✅ [ShortcutTestRunner] Batch test complete: ${countByStatus(TestStatus.SUCCESS)} success, ${countByStatus(TestStatus.FAILED)} failed, ${countByStatus(TestStatus.SKIPPED)} skipped")
+        logger.info(LogCategory.UI, "Batch test complete", mapOf("success" to countByStatus(TestStatus.SUCCESS), "failed" to countByStatus(TestStatus.FAILED), "skipped" to countByStatus(TestStatus.SKIPPED)))
     }
 
     /**
@@ -293,7 +296,7 @@ object ShortcutTestRunner {
      */
     suspend fun testCategory(settings: KeymapSettings, category: String) {
         val shortcuts = settings.shortcuts.values.filter { it.category == category }
-        println("🚀 [ShortcutTestRunner] Testing category '$category' (${shortcuts.size} shortcuts)")
+        logger.info(LogCategory.UI, "Testing category", mapOf("category" to category, "count" to shortcuts.size))
 
         for (binding in shortcuts) {
             testShortcut(binding)

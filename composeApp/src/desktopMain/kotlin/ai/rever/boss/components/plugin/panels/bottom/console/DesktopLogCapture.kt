@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.bottom.console
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.io.PrintStream
@@ -12,6 +14,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * Uses a "tee" approach: logs are sent to BOTH the original stream AND our capture buffer.
  */
 class DesktopLogCapture {
+    private val logger = BossLogger.forComponent("DesktopLogCapture")
     private val originalOut: PrintStream = System.out
     private val originalErr: PrintStream = System.err
 
@@ -42,7 +45,7 @@ class DesktopLogCapture {
         System.setOut(PrintStream(teeOut, true, Charsets.UTF_8))
         System.setErr(PrintStream(teeErr, true, Charsets.UTF_8))
 
-        println("🎬 [LogCapture] Log capture started")
+        logger.info(LogCategory.SYSTEM, "Log capture started")
     }
 
     /**
@@ -56,7 +59,7 @@ class DesktopLogCapture {
         System.setErr(originalErr)
 
         isCapturing = false
-        println("🛑 [LogCapture] Log capture stopped")
+        logger.info(LogCategory.SYSTEM, "Log capture stopped")
     }
 
     /**
@@ -71,7 +74,7 @@ class DesktopLogCapture {
      */
     fun clear() {
         buffer.clear()
-        println("🧹 [LogCapture] Log buffer cleared")
+        logger.debug(LogCategory.SYSTEM, "Log buffer cleared")
     }
 
     /**

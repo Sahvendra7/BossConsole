@@ -1,5 +1,7 @@
 package ai.rever.boss.startup
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +21,7 @@ import java.io.File
  * Default settings are provided immediately via StateFlow.
  */
 actual object StartupSettingsManager {
+    private val logger = BossLogger.forComponent("StartupSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/startup-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -52,15 +55,15 @@ actual object StartupSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<StartupSettings>(content)
                 _currentSettings.value = settings
-                println("[StartupSettings] Loaded settings: $settings")
+                logger.debug(LogCategory.SYSTEM, "Loaded settings")
             } else {
                 // Create default settings file
                 val content = json.encodeToString(StartupSettings.serializer(), _currentSettings.value)
                 settingsFile.writeText(content)
-                println("[StartupSettings] Created default settings file")
+                logger.debug(LogCategory.SYSTEM, "Created default settings file")
             }
         } catch (e: Exception) {
-            println("[StartupSettings] Error loading settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error loading settings", error = e)
             // Keep default settings on error
         }
     }
@@ -77,9 +80,9 @@ actual object StartupSettingsManager {
         try {
             val content = json.encodeToString(StartupSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[StartupSettings] Settings saved")
+            logger.debug(LogCategory.SYSTEM, "Settings saved")
         } catch (e: Exception) {
-            println("[StartupSettings] Error saving settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error saving settings", error = e)
         }
     }
 

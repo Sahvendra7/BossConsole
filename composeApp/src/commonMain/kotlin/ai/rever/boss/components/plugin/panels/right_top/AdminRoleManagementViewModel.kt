@@ -5,6 +5,8 @@ import ai.rever.boss.services.supabase.RoleService
 import ai.rever.boss.services.supabase.UserService
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.UserWithRoles
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -30,6 +32,7 @@ import kotlinx.coroutines.launch
  * - Call dispose() when the ViewModel is no longer needed to cancel all coroutines
  */
 class AdminRoleManagementViewModel {
+    private val logger = BossLogger.forComponent("AdminRoleManagement")
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -73,14 +76,14 @@ class AdminRoleManagementViewModel {
                     currentOffset = users.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${users.size} users successfully (hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.AUTH, "Loaded users successfully", mapOf("count" to users.size, "hasMore" to paginatedResult.hasMore))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load users: $error")
+                logger.error(LogCategory.AUTH, "Failed to load users", error = exception)
             }
         }
     }
@@ -94,9 +97,9 @@ class AdminRoleManagementViewModel {
 
             result.onSuccess { roles ->
                 state = state.copy(availableRoles = roles)
-                println("✅ Loaded ${roles.size} roles")
+                logger.debug(LogCategory.AUTH, "Loaded roles", mapOf("count" to roles.size))
             }.onFailure { exception ->
-                println("❌ Failed to load roles: ${exception.message}")
+                logger.error(LogCategory.AUTH, "Failed to load roles", error = exception)
                 // Fallback to empty list - UI will still work
                 state = state.copy(availableRoles = emptyList())
             }
@@ -139,14 +142,14 @@ class AdminRoleManagementViewModel {
                     currentOffset = state.currentOffset + newUsers.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${newUsers.size} more users (total: ${allUsers.size}, hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.AUTH, "Loaded more users", mapOf("newCount" to newUsers.size, "totalCount" to allUsers.size, "hasMore" to paginatedResult.hasMore))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load more users: $error")
+                logger.error(LogCategory.AUTH, "Failed to load more users", error = exception)
             }
         }
     }
@@ -161,7 +164,7 @@ class AdminRoleManagementViewModel {
             val result = RoleService.assignRoleByName(userId, roleName)
 
             if (result.isSuccess) {
-                println("✅ Successfully assigned role $roleName to user $userId")
+                logger.info(LogCategory.AUTH, "Successfully assigned role", mapOf("role" to roleName, "userId" to userId))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Role $roleName assigned successfully"
@@ -174,7 +177,7 @@ class AdminRoleManagementViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to assign role: $error"
                 )
-                println("❌ Failed to assign role: $error")
+                logger.error(LogCategory.AUTH, "Failed to assign role", mapOf("role" to roleName, "userId" to userId, "error" to error))
             }
         }
     }
@@ -189,7 +192,7 @@ class AdminRoleManagementViewModel {
             val result = RoleService.removeRoleByName(userId, roleName)
 
             if (result.isSuccess) {
-                println("✅ Successfully removed role $roleName from user $userId")
+                logger.info(LogCategory.AUTH, "Successfully removed role", mapOf("role" to roleName, "userId" to userId))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Role $roleName removed successfully"
@@ -202,7 +205,7 @@ class AdminRoleManagementViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to remove role: $error"
                 )
-                println("❌ Failed to remove role: $error")
+                logger.error(LogCategory.AUTH, "Failed to remove role", mapOf("role" to roleName, "userId" to userId, "error" to error))
             }
         }
     }
@@ -239,14 +242,14 @@ class AdminRoleManagementViewModel {
                     currentOffset = users.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Search completed: ${users.size} users found for '$query'")
+                logger.debug(LogCategory.AUTH, "Search completed", mapOf("count" to users.size, "query" to query))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
                     errorMessage = error
                 )
-                println("❌ Search failed: $error")
+                logger.error(LogCategory.AUTH, "Search failed", error = exception)
             }
         }
     }
@@ -279,14 +282,14 @@ class AdminRoleManagementViewModel {
                     currentOffset = state.currentOffset + newUsers.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${newUsers.size} more search results (total: ${allUsers.size})")
+                logger.debug(LogCategory.AUTH, "Loaded more search results", mapOf("newCount" to newUsers.size, "totalCount" to allUsers.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingMore = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load more search results: $error")
+                logger.error(LogCategory.AUTH, "Failed to load more search results", error = exception)
             }
         }
     }
@@ -375,7 +378,7 @@ class AdminRoleManagementViewModel {
             val result = UserService.deleteUser(userId)
 
             if (result.isSuccess) {
-                println("✅ Successfully deleted user $userId")
+                logger.info(LogCategory.AUTH, "Successfully deleted user", mapOf("userId" to userId))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "User deleted successfully"
@@ -392,7 +395,7 @@ class AdminRoleManagementViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to delete user: $error"
                 )
-                println("❌ Failed to delete user: $error")
+                logger.error(LogCategory.AUTH, "Failed to delete user", mapOf("userId" to userId, "error" to error))
             }
         }
     }

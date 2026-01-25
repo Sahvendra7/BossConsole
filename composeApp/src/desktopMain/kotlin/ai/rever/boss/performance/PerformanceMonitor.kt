@@ -1,5 +1,7 @@
 package ai.rever.boss.performance
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +33,7 @@ import java.util.Date
  * - Panel: Access PerformanceMonitor.history for charts
  */
 object PerformanceMonitor {
+    private val logger = BossLogger.forComponent("PerformanceMonitor")
     private val memoryMXBean: MemoryMXBean = ManagementFactory.getMemoryMXBean()
     private val memoryPoolMXBeans: List<MemoryPoolMXBean> = ManagementFactory.getMemoryPoolMXBeans()
     private val osMXBean: OperatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean()
@@ -99,7 +102,7 @@ object PerformanceMonitor {
     fun start() {
         if (monitoringJob != null) return
 
-        println("[Performance] Starting performance monitor")
+        logger.debug(LogCategory.SYSTEM, "Starting performance monitor")
 
         monitoringJob = scope.launch {
             var memoryTick = 0L
@@ -218,7 +221,7 @@ object PerformanceMonitor {
         // Cancel scope to release all coroutines and prevent memory leaks during hot reloads
         scope.coroutineContext[Job]?.cancel()
         clearResourceProviders()
-        println("[Performance] Stopped performance monitor")
+        logger.debug(LogCategory.SYSTEM, "Stopped performance monitor")
     }
 
     /**
@@ -397,7 +400,7 @@ object PerformanceMonitor {
         return try {
             provider?.invoke() ?: default()
         } catch (e: Exception) {
-            println("[Performance] Provider error: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Provider error", error = e)
             default()
         }
     }
@@ -429,7 +432,7 @@ object PerformanceMonitor {
      */
     fun requestGC() {
         System.gc()
-        println("[Performance] GC requested")
+        logger.debug(LogCategory.SYSTEM, "GC requested")
     }
 
     /**

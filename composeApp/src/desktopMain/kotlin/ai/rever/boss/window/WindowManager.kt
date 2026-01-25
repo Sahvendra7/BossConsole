@@ -1,5 +1,7 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
 import androidx.compose.runtime.mutableStateListOf
@@ -28,6 +30,7 @@ enum class WindowType {
  * DisplayUtils to provide optimal sizing across different display resolutions.
  */
 object WindowManager {
+    private val logger = BossLogger.forComponent("WindowManager")
 
     /**
      * List of all open windows
@@ -81,7 +84,7 @@ object WindowManager {
         )
 
         _windows.add(windowState)
-        println("Created new window: $windowId (type: $windowType, total windows: ${_windows.size})")
+        logger.debug(LogCategory.UI, "Created new window", mapOf("windowId" to windowId, "type" to windowType.toString(), "totalWindows" to _windows.size))
 
         return windowState
     }
@@ -102,7 +105,7 @@ object WindowManager {
         val windowState = createNewWindow(position, windowType)
         // Store the pending tab for this window
         pendingInitialTabs[windowState.id] = initialTab
-        println("Stored pending tab '${initialTab.title}' for new window: ${windowState.id}")
+        logger.debug(LogCategory.UI, "Stored pending tab for new window", mapOf("tab" to initialTab.title, "windowId" to windowState.id))
         return windowState
     }
 
@@ -114,7 +117,7 @@ object WindowManager {
      */
     fun consumePendingTab(windowId: String): TabInfo? {
         return pendingInitialTabs.remove(windowId)?.also {
-            println("Consumed pending tab '${it.title}' for window: $windowId")
+            logger.debug(LogCategory.UI, "Consumed pending tab", mapOf("tab" to it.title, "windowId" to windowId))
         }
     }
 
@@ -134,7 +137,7 @@ object WindowManager {
         val windowState = createNewWindow(position, windowType)
         // Store the pending project for this window
         pendingInitialProjects[windowState.id] = project
-        println("Stored pending project '${project.name}' for new window: ${windowState.id}")
+        logger.debug(LogCategory.UI, "Stored pending project for new window", mapOf("project" to project.name, "windowId" to windowState.id))
         return windowState
     }
 
@@ -146,7 +149,7 @@ object WindowManager {
      */
     fun consumePendingProject(windowId: String): Project? {
         return pendingInitialProjects.remove(windowId)?.also {
-            println("Consumed pending project '${it.name}' for window: $windowId")
+            logger.debug(LogCategory.UI, "Consumed pending project", mapOf("project" to it.name, "windowId" to windowId))
         }
     }
 
@@ -159,7 +162,7 @@ object WindowManager {
         val window = _windows.find { it.id == windowId }
         if (window != null) {
             _windows.remove(window)
-            println("Closed window: $windowId (remaining windows: ${_windows.size})")
+            logger.debug(LogCategory.UI, "Closed window", mapOf("windowId" to windowId, "remainingWindows" to _windows.size))
         }
     }
 
@@ -192,7 +195,7 @@ object WindowManager {
     fun moveTabToNewWindow(
         sourceWindowId: String
     ): BossWindowState {
-        println("Creating new window (tab will be moved by caller)")
+        logger.debug(LogCategory.UI, "Creating new window (tab will be moved by caller)")
 
         // Create new window - tab will be moved by caller through BossApp
         val position = calculateCascadePosition()

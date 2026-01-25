@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
@@ -10,7 +12,8 @@ import java.io.File
 import kotlin.system.exitProcess
 
 object ApplicationRestarter {
-    
+    private val logger = BossLogger.forComponent("ApplicationRestarter")
+
     private var isRestarting = false
     
     @OptIn(DelicateCoroutinesApi::class)
@@ -60,7 +63,7 @@ object ApplicationRestarter {
                     }
                 }
                 
-                println("Restarting application with command: ${command.joinToString(" ")}")
+                logger.info(LogCategory.SYSTEM, "Restarting application", mapOf("command" to command.joinToString(" ")))
                 
                 // Start new instance
                 val processBuilder = ProcessBuilder(command)
@@ -74,9 +77,9 @@ object ApplicationRestarter {
                 exitProcess(0)
                 
             } catch (e: Exception) {
-                println("Failed to restart application: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to restart application", error = e)
                 isRestarting = false
-                
+
                 // Show error and exit anyway
                 exitProcess(1)
             }
@@ -88,12 +91,12 @@ object ApplicationRestarter {
             // Close browser engine if it exists
             val engine = FluckEngine.currentEngine
             if (engine != null && !engine.isClosed) {
-                println("Closing browser engine...")
+                logger.debug(LogCategory.SYSTEM, "Closing browser engine")
                 engine.close()
                 delay(500) // Give time for engine to close
             }
         } catch (e: Exception) {
-            println("Error during graceful shutdown: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error during graceful shutdown", error = e)
         }
     }
     
@@ -119,7 +122,7 @@ object ApplicationRestarter {
         if (isRestarting) return // Prevent multiple quit attempts
         isRestarting = true
 
-        println("Quitting application for update installation...")
+        logger.info(LogCategory.SYSTEM, "Quitting application for update installation")
 
         // Use runBlocking to ensure cleanup completes synchronously
         // This prevents race conditions where the function might return
@@ -129,7 +132,7 @@ object ApplicationRestarter {
                 // Perform graceful shutdown
                 performGracefulShutdown()
 
-                println("Shutdown complete. Exiting...")
+                logger.info(LogCategory.SYSTEM, "Shutdown complete. Exiting")
 
                 // Give cleanup time to complete
                 delay(200)
@@ -138,7 +141,7 @@ object ApplicationRestarter {
                 exitProcess(0)
 
             } catch (e: Exception) {
-                println("Error during quit: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error during quit", error = e)
                 // Exit anyway
                 exitProcess(1)
             }

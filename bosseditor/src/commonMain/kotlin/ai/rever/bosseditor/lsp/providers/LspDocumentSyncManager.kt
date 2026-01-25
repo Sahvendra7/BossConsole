@@ -1,11 +1,15 @@
 package ai.rever.bosseditor.lsp.providers
 
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
 import ai.rever.bosseditor.lsp.client.LspClient
 import ai.rever.bosseditor.lsp.client.LspMethods
 import ai.rever.bosseditor.lsp.protocol.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
+
+private val logger = EditorLogger.forComponent("LspDocumentSyncManager")
 
 /**
  * Manages document synchronization between the editor and LSP server.
@@ -263,7 +267,7 @@ class LspDocumentSyncManager(
 
             } catch (e: Exception) {
                 if (e !is CancellationException) {
-                    println("[LspDocumentSyncManager] Error requesting semantic tokens: ${e.message}")
+                    logger.error(EditorLogCategory.SEMANTIC, "Error requesting semantic tokens", error = e)
                 }
             }
         }
@@ -302,7 +306,7 @@ class LspDocumentSyncManager(
                 resultId = tokens.resultId
             )
         } catch (e: Exception) {
-            println("[LspDocumentSyncManager] Error processing semantic tokens: ${e.message}")
+            logger.error(EditorLogCategory.SEMANTIC, "Error processing semantic tokens", error = e)
         }
     }
 

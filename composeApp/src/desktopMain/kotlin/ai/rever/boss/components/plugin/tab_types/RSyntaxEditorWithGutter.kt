@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.font.FontManager
 import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.window.LocalWindowId
@@ -35,6 +37,8 @@ import javax.swing.event.CaretEvent
 import javax.swing.event.CaretListener
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+
+private val rsyntaxEditorLogger = BossLogger.forComponent("RSyntaxEditorWithGutter")
 
 /**
  * A complete code editor combining RSyntaxTextArea with a Compose-based run gutter.
@@ -170,7 +174,7 @@ fun RSyntaxEditorWithGutter(
                         }
                     }
                 } catch (e: Exception) {
-                    println("[RSyntaxEditor] Error detecting main functions: ${e.message}")
+                    rsyntaxEditorLogger.warn(LogCategory.EDITOR, "Error detecting main functions", error = e)
                     withContext(Dispatchers.Main) {
                         // Only clear if file hasn't changed
                         if (filePath == currentFilePath) {
@@ -275,7 +279,7 @@ fun RSyntaxEditorWithGutter(
                             // Clear replay cache after consumption to avoid re-triggering
                             NavigationTargetBus.clearCache()
                         } catch (e: Exception) {
-                            println("[RSyntaxEditor] Error positioning cursor: ${e.message}")
+                            rsyntaxEditorLogger.warn(LogCategory.EDITOR, "Error positioning cursor", error = e)
                         }
                     }
                 }
@@ -346,7 +350,7 @@ fun RSyntaxEditorWithGutter(
                         )
                     }
                 } catch (e: Exception) {
-                    println("[RSyntaxEditor] Error updating gutter state: ${e.message}")
+                    rsyntaxEditorLogger.warn(LogCategory.EDITOR, "Error updating gutter state", error = e)
                 }
             }
         }
@@ -396,7 +400,7 @@ fun RSyntaxEditorWithGutter(
                 }
             } catch (ex: Exception) {
                 // Log but don't crash - can happen during rapid updates or document changes
-                println("[RSyntaxEditor] Error updating cursor position: ${ex.message}")
+                rsyntaxEditorLogger.debug(LogCategory.EDITOR, "Error updating cursor position", mapOf("error" to (ex.message ?: "unknown")))
             }
         }
         textArea.addCaretListener(caretListener)

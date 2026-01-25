@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
@@ -26,6 +28,8 @@ import javax.swing.SwingUtilities
 import com.teamdev.jxbrowser.browser.callback.AlertCallback
 import com.teamdev.jxbrowser.browser.callback.ConfirmCallback
 import com.teamdev.jxbrowser.browser.callback.PromptCallback
+
+private val logger = BossLogger.forComponent("BrowserFunctions")
 
 // User agent settings
 object BrowserSettings {
@@ -221,13 +225,13 @@ private fun configureBrowserPopupHandler(
                                 if (cleanedUp.compareAndSet(false, true)) {
                                     // Check if this URL is a download - if so, skip opening in new tab
                                     val isDownload = FluckEngine.isActiveDownload(loadedUrl)
-                                    println("BrowserFunctions: Popup LoadStarted - URL: $loadedUrl, isDownload: $isDownload")
+                                    logger.debug(LogCategory.BROWSER, "Popup LoadStarted", mapOf("url" to loadedUrl, "isDownload" to isDownload))
                                     if (!isDownload) {
                                         // Notify that a tab is being opened (might be download redirect)
                                         FluckEngine.notifyTabOpened()
                                         onOpenInNewTab(loadedUrl)
                                     } else {
-                                        println("BrowserFunctions: Skipping new tab for download URL")
+                                        logger.debug(LogCategory.BROWSER, "Skipping new tab for download URL")
                                     }
                                     subscription?.unsubscribe()
                                     scope.cancel()
@@ -255,19 +259,19 @@ private fun configureBrowserPopupHandler(
                             if (!popupBrowser.isClosed) {
                                 popupBrowser.close()
                             }
-                            println("Warning: Popup navigation timed out after 3s, closing browser")
+                            logger.warn(LogCategory.BROWSER, "Popup navigation timed out after 3s, closing browser")
                         }
                     }
                 } else {
                     // Check if this URL is a download - if so, skip opening in new tab
                     val isDownload = FluckEngine.isActiveDownload(targetUrl)
-                    println("BrowserFunctions: Popup with immediate URL - URL: $targetUrl, isDownload: $isDownload")
+                    logger.debug(LogCategory.BROWSER, "Popup with immediate URL", mapOf("url" to targetUrl, "isDownload" to isDownload))
                     if (!isDownload) {
                         // Notify that a tab is being opened (might be download redirect)
                         FluckEngine.notifyTabOpened()
                         onOpenInNewTab(targetUrl)
                     } else {
-                        println("BrowserFunctions: Skipping new tab for download URL")
+                        logger.debug(LogCategory.BROWSER, "Skipping new tab for download URL")
                     }
                     popupBrowser.close()
                 }
@@ -327,7 +331,7 @@ private fun configureBrowserPopupHandler(
                         // Show the popup window
                         frame.isVisible = true
                     } catch (e: Exception) {
-                        println("Error creating popup window: ${e.message}")
+                        logger.error(LogCategory.BROWSER, "Error creating popup window", error = e)
                         // Close browser on error
                         if (!popupBrowser.isClosed) {
                             popupBrowser.close()
@@ -367,7 +371,7 @@ actual fun disposeBrowser(browser: Any) {
         }
     } catch (e: Exception) {
         // Suppress exceptions during disposal to prevent crashes in cleanup code
-        println("Warning: Exception during browser disposal: ${e.message}")
+        logger.warn(LogCategory.BROWSER, "Exception during browser disposal", mapOf("error" to (e.message ?: "unknown")))
     }
 }
 
@@ -380,7 +384,7 @@ actual fun createBrowserViewState(browser: Any, window: Any?): Any? {
     } ?: getValidComposeWindow()
 
     if (awtWindow == null) {
-        println("⚠️  No valid window available for BrowserViewState - window may not be ready yet")
+        logger.warn(LogCategory.BROWSER, "No valid window available for BrowserViewState - window may not be ready yet")
         return null
     }
 
@@ -402,7 +406,7 @@ actual fun getBrowserState(
         // Verify engine is available before creating browser
         val engine = FluckEngine.engine
         if (engine.isClosed) {
-            println("⚠️ getBrowserState: Engine is closed, cannot create browser")
+            logger.warn(LogCategory.BROWSER, "getBrowserState: Engine is closed, cannot create browser")
             return null
         }
 
@@ -411,7 +415,7 @@ actual fun getBrowserState(
 
         // Verify browser was created successfully
         if (browser.isClosed) {
-            println("⚠️ getBrowserState: Browser was closed immediately after creation")
+            logger.warn(LogCategory.BROWSER, "getBrowserState: Browser was closed immediately after creation")
             return null
         }
 
@@ -419,7 +423,7 @@ actual fun getBrowserState(
         // This replaces polling - we get notified immediately when browser closes
         if (onBrowserClosed != null) {
             browser.on(BrowserClosed::class.java) {
-                println("🔔 [BrowserFunctions] BrowserClosed event fired")
+                logger.debug(LogCategory.BROWSER, "BrowserClosed event fired")
                 onBrowserClosed()
             }
         }
@@ -441,7 +445,7 @@ actual fun getBrowserState(
 
         // If browserViewState creation failed (no valid window), clean up and return null
         if (browserViewState == null) {
-            println("⚠️ getBrowserState: Could not create BrowserViewState - no valid window available")
+            logger.warn(LogCategory.BROWSER, "getBrowserState: Could not create BrowserViewState - no valid window available")
             if (!browser.isClosed) {
                 browser.close()
             }
@@ -463,8 +467,7 @@ actual fun getBrowserState(
                 "JxBrowser IPC error (Chromium process may have crashed)"
             else -> "Unknown error"
         }
-        println("❌ getBrowserState failed: $errorType")
-        println("   Details: ${e.message}")
+        logger.error(LogCategory.BROWSER, "getBrowserState failed: $errorType", mapOf("details" to (e.message ?: "none")))
         null
     }
 }
@@ -487,7 +490,7 @@ actual fun isBrowserValid(browser: Any?): Boolean {
         !jxBrowser.isClosed
     } catch (e: Exception) {
         // Any exception means browser is in bad state
-        println("⚠️ isBrowserValid: Exception checking browser state: ${e.message}")
+        logger.warn(LogCategory.BROWSER, "isBrowserValid: Exception checking browser state", mapOf("error" to (e.message ?: "unknown")))
         false
     }
 }

@@ -5,10 +5,14 @@ import ai.rever.bosseditor.features.CompletionItem
 import ai.rever.bosseditor.features.CompletionKind
 import ai.rever.bosseditor.features.CompletionProvider
 import ai.rever.bosseditor.features.CompletionResult
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
 import ai.rever.bosseditor.lsp.client.LspClient
 import ai.rever.bosseditor.lsp.protocol.*
 import kotlinx.serialization.json.*
 import kotlin.coroutines.cancellation.CancellationException
+
+private val logger = EditorLogger.forComponent("LspCompletionProvider")
 
 /**
  * LSP-based completion provider.
@@ -81,7 +85,7 @@ class LspCompletionProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP completion error: ${e.message}")
+            logger.error(EditorLogCategory.COMPLETION, "LSP completion error", error = e)
             CompletionResult(emptyList())
         }
     }
@@ -112,7 +116,7 @@ class LspCompletionProvider(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            println("LSP completion resolve error: ${e.message}")
+            logger.error(EditorLogCategory.COMPLETION, "LSP completion resolve error", error = e)
             item
         }
     }

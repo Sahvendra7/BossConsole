@@ -1,6 +1,8 @@
 package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.common.rememberFaviconLoader
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
@@ -35,6 +37,8 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private val topOfMindLogger = BossLogger.forComponent("TopOfMindDialog")
+
 @Composable
 fun TopOfMindDialog(
     splitViewState: SplitViewState? = null, // Kept for backward compatibility but not used
@@ -50,7 +54,7 @@ fun TopOfMindDialog(
 
     // Helper function to handle tab selection
     fun handleTabSelect(activeTab: ActiveTab) {
-        println("[TopOfMindDialog] Selecting tab '${activeTab.tabInfo.title}' from window '${activeTab.windowId}'")
+        topOfMindLogger.debug(LogCategory.UI, "Selecting tab", mapOf("title" to activeTab.tabInfo.title, "windowId" to activeTab.windowId))
         // Don't try to focus here - let BossApp handle focus restoration after dialog closes
         onTabSelect(activeTab)
     }

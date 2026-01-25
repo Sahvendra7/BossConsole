@@ -1,5 +1,8 @@
 package ai.rever.boss.components.auth.screens
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -23,6 +26,8 @@ import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.components.bars.horizontal.HorizontalBar
 import kotlinx.coroutines.delay
 
+private val passkeyBrowserLogger = BossLogger.forComponent("PasskeyBrowserScreen")
+
 /**
  * Screen that embeds a browser view for WebAuthn passkey registration/authentication
  *
@@ -39,7 +44,7 @@ fun PasskeyBrowserScreen(
     var isLoading by remember { mutableStateOf(true) }
     var browserError by remember { mutableStateOf<String?>(null) }
 
-    println("PasskeyBrowserScreen: Displaying WebAuthn page: $url (session: $sessionId)")
+    passkeyBrowserLogger.debug(LogCategory.AUTH, "Displaying WebAuthn page", mapOf("url" to LogSanitizer.maskUriParams(url)))
 
     // Monitor for deep link callbacks indicating success
     val deepLink by DeepLinkHandler.deepLinkFlow.collectAsState()
@@ -50,7 +55,7 @@ fun PasskeyBrowserScreen(
             link.contains("passkey/registered") ||
             link.contains("passkey/authenticated")
         )) {
-            println("PasskeyBrowserScreen: Deep link received, operation successful: $link")
+            passkeyBrowserLogger.info(LogCategory.AUTH, "Deep link received, operation successful")
 
             // Add small delay for visual feedback
             delay(500)

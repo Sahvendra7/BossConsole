@@ -1,5 +1,7 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.input.key.KeyEvent
 import ai.rever.boss.keymap.model.ShortcutContext
 import kotlinx.coroutines.*
@@ -96,6 +98,7 @@ private data class HandlerInfo(
  * Supports window-specific filtering via sourceWindowId/targetWindowId matching.
  */
 object KeyboardEventBus {
+    private val logger = BossLogger.forComponent("KeyboardEventBus")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _events = MutableSharedFlow<KeyboardEvent>(
@@ -153,7 +156,7 @@ object KeyboardEventBus {
                         return true
                     }
                 } catch (e: Exception) {
-                    println("Error in keyboard handler '${handlerInfo.handlerName}': ${e.message}")
+                    logger.warn(LogCategory.UI, "Error in keyboard handler", mapOf("handler" to handlerInfo.handlerName), error = e)
                 }
             }
         }
@@ -182,7 +185,7 @@ object KeyboardEventBus {
         handlers.computeIfAbsent(priority) { CopyOnWriteArrayList() }.add(handlerInfo)
 
         if (debugMode) {
-            println("[KeyboardEventBus] Registered handler '$handlerName' for window '$targetWindowId' with priority ${priority.name}")
+            logger.debug(LogCategory.UI, "Registered handler", mapOf("handler" to handlerName, "windowId" to targetWindowId, "priority" to priority.name))
         }
 
         // Return a job that removes the handler when cancelled
@@ -196,7 +199,7 @@ object KeyboardEventBus {
         job.invokeOnCompletion {
             handlers[priority]?.removeAll { it.handlerName == handlerName }
             if (debugMode) {
-                println("[KeyboardEventBus] Unregistered handler '$handlerName'")
+                logger.debug(LogCategory.UI, "Unregistered handler", mapOf("handler" to handlerName))
             }
         }
 
@@ -210,7 +213,7 @@ object KeyboardEventBus {
     fun clearHandlers() {
         handlers.clear()
         if (debugMode) {
-            println("[KeyboardEventBus] Cleared all handlers")
+            logger.debug(LogCategory.UI, "Cleared all handlers")
         }
     }
 

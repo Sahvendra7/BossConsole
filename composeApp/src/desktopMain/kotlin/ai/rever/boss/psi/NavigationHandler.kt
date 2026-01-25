@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea
 import org.jetbrains.kotlin.psi.KtFile
@@ -46,6 +48,8 @@ class NavigationHandler(
     private var currentFilePath: String,
     private val onNavigate: NavigationCallback
 ) {
+    private val logger = BossLogger.forComponent("NavigationHandler")
+
     /**
      * Navigation service for PSI operations.
      */
@@ -163,12 +167,12 @@ class NavigationHandler(
         val offset = textArea.viewToModel2D(e.point)
         if (offset < 0) return
 
-        println("[Navigation] Cmd+Click at offset $offset in file: $currentFilePath")
+        logger.debug(LogCategory.EDITOR, "Cmd+Click navigation", mapOf("offset" to offset, "filePath" to currentFilePath))
 
         scope.launch {
             try {
                 val psiFile = getPsiFile() ?: run {
-                    println("[Navigation] Failed to get PSI file")
+                    logger.debug(LogCategory.EDITOR, "Failed to get PSI file")
                     return@launch
                 }
 
@@ -179,7 +183,7 @@ class NavigationHandler(
                 when (result) {
                     is NavigationResult.Found -> {
                         val target = result.target
-                        println("[Navigation] Found: ${target.name} (${target.kind}) at ${target.filePath}:${target.line}:${target.column}")
+                        logger.debug(LogCategory.EDITOR, "Navigation target found", mapOf("name" to target.name, "kind" to target.kind.toString(), "filePath" to target.filePath, "line" to target.line, "column" to target.column))
                         onNavigate(NavigationEvent(
                             filePath = target.filePath,
                             offset = target.offset,
@@ -188,10 +192,10 @@ class NavigationHandler(
                         ))
                     }
                     is NavigationResult.MultipleTargets -> {
-                        println("[Navigation] Multiple targets found: ${result.targets.size}")
+                        logger.debug(LogCategory.EDITOR, "Multiple targets found", mapOf("count" to result.targets.size))
                         // For now, navigate to first target
                         result.targets.firstOrNull()?.let { target ->
-                            println("[Navigation] Using first: ${target.name} at ${target.filePath}:${target.line}")
+                            logger.debug(LogCategory.EDITOR, "Using first target", mapOf("name" to target.name, "filePath" to target.filePath, "line" to target.line))
                             onNavigate(NavigationEvent(
                                 filePath = target.filePath,
                                 offset = target.offset,
@@ -201,15 +205,14 @@ class NavigationHandler(
                         }
                     }
                     is NavigationResult.NotNavigable -> {
-                        println("[Navigation] Not navigable (e.g., keyword, literal)")
+                        logger.debug(LogCategory.EDITOR, "Not navigable (e.g., keyword, literal)")
                     }
                     is NavigationResult.Error -> {
-                        println("[Navigation] Error: ${result.message}")
+                        logger.warn(LogCategory.EDITOR, "Navigation error", mapOf("message" to result.message))
                     }
                 }
             } catch (e: Exception) {
-                println("[Navigation] Exception: ${e.message}")
-                e.printStackTrace()
+                logger.error(LogCategory.EDITOR, "Navigation exception", error = e)
             }
         }
     }
@@ -242,12 +245,12 @@ class NavigationHandler(
                         val range = if (navigable) {
                             navigationService.getNavigableRange(psiFile, offset)
                         } else null
-                        println("[Navigation] hover: navigable=$navigable, range=$range")
+                        logger.debug(LogCategory.EDITOR, "Hover check", mapOf("navigable" to navigable, "range" to (range?.toString() ?: "null")))
                         if (navigable && range != null) range else null
                     }
                 }
 
-                println("[Navigation] hover result: $result")
+                logger.debug(LogCategory.EDITOR, "Hover result", mapOf("result" to (result?.toString() ?: "null")))
                 if (result != null) {
                     highlighter.highlightRange(result.first, result.second)
                 } else {
@@ -255,7 +258,7 @@ class NavigationHandler(
                 }
 
             } catch (e: Exception) {
-                println("[Navigation] hover exception: ${e.message}")
+                logger.warn(LogCategory.EDITOR, "Hover exception", error = e)
                 highlighter.clearHighlight()
             }
         }
@@ -289,7 +292,7 @@ class NavigationHandler(
             }.also { currentPsiFile = it }
 
         } catch (e: Exception) {
-            println("[Navigation] Error parsing file: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error parsing file", error = e)
             null
         }
     }

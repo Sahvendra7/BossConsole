@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.font.FontManager
@@ -78,6 +80,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private val logger = BossLogger.forComponent("BossEditorIntegration")
 
 /**
  * BossEditor integration layer for BOSS application.
@@ -235,7 +239,7 @@ fun BossEditorIntegration(
                         else -> NavigationResolveResult.NotFound
                     }
                 } catch (e: Exception) {
-                    println("[BossEditorIntegration] Navigation error: ${e.message}")
+                    logger.warn(LogCategory.EDITOR, "Navigation error", error = e)
                     NavigationResolveResult.NotFound
                 }
             }
@@ -286,9 +290,9 @@ fun BossEditorIntegration(
                         // Clear replay cache after consumption to avoid re-triggering
                         NavigationTargetBus.clearCache()
 
-                        println("[BossEditorIntegration] Positioned cursor at line ${target.line}, column ${target.column} (window: $windowId)")
+                        logger.debug(LogCategory.EDITOR, "Positioned cursor", mapOf("line" to target.line, "column" to target.column, "windowId" to windowId))
                     } catch (e: Exception) {
-                        println("[BossEditorIntegration] Error positioning cursor: ${e.message}")
+                        logger.warn(LogCategory.EDITOR, "Error positioning cursor", error = e)
                     }
                 }
             }
@@ -316,7 +320,7 @@ fun BossEditorIntegration(
                         }
                     }
                 } catch (e: Exception) {
-                    println("[BossEditorIntegration] Error detecting main functions: ${e.message}")
+                    logger.warn(LogCategory.EDITOR, "Error detecting main functions", error = e)
                     withContext(Dispatchers.Main) {
                         if (filePath == currentFilePath) {
                             detectedMainFunctions = emptyList()
@@ -567,7 +571,7 @@ private fun BossEditorIntegrationInternal(
                         else -> NavigationResolveResult.NotFound
                     }
                 } catch (e: Exception) {
-                    println("[BossEditorIntegrationInternal] Navigation error: ${e.message}")
+                    logger.warn(LogCategory.EDITOR, "Internal navigation error", error = e)
                     NavigationResolveResult.NotFound
                 }
             }
@@ -611,7 +615,7 @@ private fun BossEditorIntegrationInternal(
                         editorState.scrollToLine(line, lineHeightPx, 600f)
                         NavigationTargetBus.clearCache()
                     } catch (e: Exception) {
-                        println("[BossEditorIntegrationInternal] Error positioning cursor: ${e.message}")
+                        logger.warn(LogCategory.EDITOR, "Internal error positioning cursor", error = e)
                     }
                 }
             }
@@ -639,7 +643,7 @@ private fun BossEditorIntegrationInternal(
                         }
                     }
                 } catch (e: Exception) {
-                    println("[BossEditorIntegrationInternal] Error detecting main functions: ${e.message}")
+                    logger.warn(LogCategory.EDITOR, "Internal error detecting main functions", error = e)
                     withContext(Dispatchers.Main) {
                         if (filePath == currentFilePath) {
                             detectedMainFunctions = emptyList()
@@ -1343,7 +1347,7 @@ private fun LargeFileEditorIntegration(
                             isLoading = false
                         }
                     } catch (e: Exception) {
-                        println("[LargeFileEditorIntegration] Error loading file: ${e.message}")
+                        logger.warn(LogCategory.FILE, "Error loading file in dialog", mapOf("path" to filePath), error = e)
                         withContext(Dispatchers.Main) {
                             isLoading = false
                         }
@@ -1405,7 +1409,7 @@ private fun LargeFileEditorIntegration(
                                         isLoading = false
                                     }
                                 } catch (e: Exception) {
-                                    println("[LargeFileEditorIntegration] Error loading file: ${e.message}")
+                                    logger.warn(LogCategory.FILE, "Error loading large file for editor", mapOf("path" to filePath), error = e)
                                     withContext(Dispatchers.Main) {
                                         isLoading = false
                                     }

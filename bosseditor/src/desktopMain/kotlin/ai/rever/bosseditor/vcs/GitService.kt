@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.vcs
 
 import ai.rever.bosseditor.features.BlameInfo
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.features.FileBlameInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +20,8 @@ import java.util.concurrent.TimeUnit
  * JVM-only: Desktop target only (see CLAUDE.md).
  */
 class GitService {
+    private val logger = LspLogger.forComponent("GitService")
+
     companion object {
         /** Timeout for git operations in seconds */
         private const val GIT_TIMEOUT_SECONDS = 30L
@@ -61,14 +65,14 @@ class GitService {
                 if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                     process.destroyForcibly()
                     outputFuture.cancel(true)
-                    println("[GitService] git blame timed out after ${GIT_TIMEOUT_SECONDS}s")
+                    logger.warn(LogCategory.GENERAL, "git blame timed out", data = mapOf("timeout" to "${GIT_TIMEOUT_SECONDS}s"))
                     return@withContext null
                 }
 
                 val gitOutput = outputFuture.get()
                 val exitCode = process.exitValue()
                 if (exitCode != 0) {
-                    println("[GitService] git blame failed with exit code $exitCode")
+                    logger.warn(LogCategory.GENERAL, "git blame failed", data = mapOf("exitCode" to exitCode))
                     return@withContext null
                 }
 
@@ -77,7 +81,7 @@ class GitService {
                 // Always rethrow CancellationException per THREADING.md
                 throw e
             } catch (e: Exception) {
-                println("[GitService] Error running git blame: ${e.message}")
+                logger.warn(LogCategory.GENERAL, "Error running git blame", error = e)
                 null
             } finally {
                 // Ensure process is cleaned up even if exception occurs during waitFor
@@ -223,7 +227,7 @@ class GitService {
                     val parsedLine = parts[2].toIntOrNull()?.minus(1)
                     // Bounds check: null (parse failure), negative, or unreasonably large
                     if (parsedLine == null || parsedLine < 0 || parsedLine > MAX_LINE_NUMBER) {
-                        println("[GitService] Invalid line number in blame output: ${parts[2]}")
+                        logger.debug(LogCategory.GENERAL, "Invalid line number in blame output", data = mapOf("line" to parts[2]))
                         i++
                         continue
                     }

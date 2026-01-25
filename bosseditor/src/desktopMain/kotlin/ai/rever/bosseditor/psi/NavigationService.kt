@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.psi
 
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.com.intellij.psi.PsiNamedElement
 import org.jetbrains.kotlin.psi.*
@@ -96,6 +98,7 @@ sealed class NavigationResult {
  * Use PSIThreadBridge.readAction { } to wrap calls.
  */
 class NavigationService {
+    private val logger = LspLogger.forComponent("NavigationService")
 
     /**
      * Go to the definition of the symbol at the given offset.
@@ -291,7 +294,7 @@ class NavigationService {
         val (fileContent, effectivePath) = if (bestMatch.filePath.startsWith("jar://")) {
             val content = readJarEntry(bestMatch.filePath)
             if (content == null) {
-                println("[Navigation] Failed to read JAR entry: ${bestMatch.filePath}")
+                logger.warn(LogCategory.NAVIGATION, "Failed to read JAR entry", data = mapOf("path" to bestMatch.filePath))
                 return null
             }
             content to bestMatch.filePath
@@ -299,7 +302,7 @@ class NavigationService {
             // Regular file path
             val targetFile = java.io.File(bestMatch.filePath)
             if (!targetFile.exists()) {
-                println("[Navigation] Target file does not exist: ${bestMatch.filePath}")
+                logger.warn(LogCategory.NAVIGATION, "Target file does not exist", data = mapOf("path" to bestMatch.filePath))
                 return null
             }
             targetFile.readText() to bestMatch.filePath
@@ -602,7 +605,7 @@ class NavigationService {
             val withoutPrefix = jarPath.removePrefix("jar://")
             val separatorIndex = withoutPrefix.indexOf("!/")
             if (separatorIndex < 0) {
-                println("[Navigation] Invalid JAR path format: $jarPath")
+                logger.warn(LogCategory.NAVIGATION, "Invalid JAR path format", data = mapOf("path" to jarPath))
                 return null
             }
 
@@ -613,14 +616,14 @@ class NavigationService {
             jarFile.use { jar ->
                 val entry = jar.getJarEntry(entryPath)
                 if (entry == null) {
-                    println("[Navigation] JAR entry not found: $entryPath in $jarFilePath")
+                    logger.warn(LogCategory.NAVIGATION, "JAR entry not found", data = mapOf("entry" to entryPath, "jar" to jarFilePath))
                     return null
                 }
 
                 jar.getInputStream(entry).bufferedReader().readText()
             }
         } catch (e: Exception) {
-            println("[Navigation] Error reading JAR entry: ${e.message}")
+            logger.warn(LogCategory.NAVIGATION, "Error reading JAR entry", error = e)
             null
         }
     }

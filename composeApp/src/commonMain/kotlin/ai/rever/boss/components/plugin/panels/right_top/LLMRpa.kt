@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
@@ -93,6 +95,7 @@ open class LLMRpaComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
+    private val logger = BossLogger.forComponent("LLMRpaComponent")
 
     private val _executionHistory = MutableStateFlow<List<LLMExecutionState>>(emptyList())
     val executionHistory: StateFlow<List<LLMExecutionState>> = _executionHistory
@@ -753,7 +756,7 @@ open class LLMRpaComponent(
         // Auto-select first tab if no tab is selected and tabs are available
         if (_selectedTab.value == null && tabs.isNotEmpty()) {
             _selectedTab.value = tabs.first()
-            println("LLM RPA: Auto-selected tab: ${tabs.first().id}")
+            logger.debug(LogCategory.SYSTEM, "Auto-selected tab", mapOf("tabId" to tabs.first().id))
         }
     }
     
@@ -802,13 +805,16 @@ open class LLMRpaComponent(
                 )
                 
                 // Log the generated actions for debugging
-                println("LLM RPA: Generated ${response.configuration.size} actions:")
+                logger.debug(LogCategory.SYSTEM, "Generated RPA actions", mapOf("count" to response.configuration.size))
                 response.configuration.forEachIndexed { index, action ->
-                    println("  Action $index: ${action.type} - ${action.name}")
-                    println("    Selector: ${action.selector.type} = ${action.selector.value}")
-                    if (action.value != null) {
-                        println("    Value: ${action.value}")
-                    }
+                    logger.debug(LogCategory.SYSTEM, "Action details", mapOf(
+                        "index" to index,
+                        "type" to action.type,
+                        "name" to action.name,
+                        "selectorType" to action.selector.type,
+                        "selectorValue" to (action.selector.value ?: "none"),
+                        "value" to (action.value ?: "none")
+                    ))
                 }
                 
                 // Execute the generated actions
@@ -855,41 +861,41 @@ open class LLMRpaComponent(
      */
     private suspend fun executeGeneratedActions(actions: List<RpaActionConfig>) {
         if (rpaExecutor == null) {
-            println("LLM RPA: Error - RPA executor is null")
+            logger.error(LogCategory.SYSTEM, "RPA executor is null")
             throw Exception("RPA executor not initialized")
         }
-        
-        println("LLM RPA: Starting execution of ${actions.size} actions")
-        
+
+        logger.info(LogCategory.SYSTEM, "Starting RPA execution", mapOf("actionCount" to actions.size))
+
         for ((index, action) in actions.withIndex()) {
             try {
-                println("LLM RPA: Executing action ${index + 1}/${actions.size}: ${action.type} - ${action.name}")
-                
+                logger.debug(LogCategory.SYSTEM, "Executing action", mapOf("index" to (index + 1), "total" to actions.size, "type" to action.type, "name" to action.name))
+
                 val result = rpaExecutor!!.executeAction(
                     action = action,
                     humanLikeMode = true,
                     speedMultiplier = 1.0f
                 )
-                
+
                 if (!result.success) {
-                    println("LLM RPA: Action failed - ${result.error}")
+                    logger.warn(LogCategory.SYSTEM, "Action failed", mapOf("error" to (result.error ?: "unknown")))
                     throw Exception(result.error ?: "Action failed")
                 }
-                
-                println("LLM RPA: Action ${index + 1} completed successfully")
-                
+
+                logger.debug(LogCategory.SYSTEM, "Action completed", mapOf("index" to (index + 1)))
+
                 // Small delay between actions
                 if (index < actions.size - 1) {
                     delay(500)
                 }
-                
+
             } catch (e: Exception) {
-                println("LLM RPA: Exception during action ${index + 1}: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Exception during action", mapOf("index" to (index + 1)), error = e)
                 throw Exception("Failed at action ${index + 1}: ${e.message}")
             }
         }
-        
-        println("LLM RPA: All actions completed successfully")
+
+        logger.info(LogCategory.SYSTEM, "All RPA actions completed successfully")
     }
     
     /**

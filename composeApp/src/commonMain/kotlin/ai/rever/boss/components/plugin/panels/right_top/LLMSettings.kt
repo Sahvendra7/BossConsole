@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -85,6 +87,7 @@ data class LLMSettingsData(
  * LLM Settings singleton
  */
 object LLMSettings {
+    private val logger = BossLogger.forComponent("LLMSettings")
     private var settings = LLMSettingsData()
     
     var selectedProvider: LLMProvider
@@ -118,16 +121,16 @@ object LLMSettings {
         // First check environment variables
         val envKey = getApiKeyFromEnvironment(provider)
         if (!envKey.isNullOrBlank()) {
-            println("DEBUG: Using API key from environment for $provider")
+            logger.debug(LogCategory.GENERAL, "Using API key from environment", mapOf("provider" to provider.name))
             return envKey
         }
         // Fall back to settings
         val settingsKey = settings.apiKeys[provider.name]
         if (!settingsKey.isNullOrBlank()) {
-            println("DEBUG: Using API key from settings for $provider")
+            logger.debug(LogCategory.GENERAL, "Using API key from settings", mapOf("provider" to provider.name))
             return settingsKey
         }
-        println("DEBUG: No API key found for $provider")
+        logger.debug(LogCategory.GENERAL, "No API key found", mapOf("provider" to provider.name))
         return null
     }
     

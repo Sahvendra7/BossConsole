@@ -1,11 +1,15 @@
 package ai.rever.boss.components.common
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.registery.TabIcon
 import ai.rever.boss.components.registery.TabInfo
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private val faviconLogger = BossLogger.forComponent("FaviconLoader")
 
 /**
  * Hook that loads favicon from cache for a given tab
@@ -33,7 +37,7 @@ fun rememberFaviconLoader(tabInfo: TabInfo): TabIcon.Image? {
                 try {
                     ai.rever.boss.cache.loadFaviconFromCache(faviconCacheKey)
                 } catch (e: Exception) {
-                    println("Error loading favicon for key '$faviconCacheKey': ${e.message}")
+                    faviconLogger.debug(LogCategory.BROWSER, "Error loading favicon", mapOf("key" to faviconCacheKey))
                     null
                 }
             }

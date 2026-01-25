@@ -4,6 +4,8 @@ import ai.rever.boss.services.supabase.RoleCreationService
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.PermissionInfo
 import ai.rever.boss.services.supabase.models.RoleWithPermissions
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -30,6 +32,7 @@ import kotlinx.coroutines.launch
  * - Call dispose() when the ViewModel is no longer needed to cancel all coroutines
  */
 class RoleCreationViewModel {
+    private val logger = BossLogger.forComponent("RoleCreationViewModel")
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -81,7 +84,7 @@ class RoleCreationViewModel {
                         showDeleteRoleDialog = false,
                         roleToDelete = null
                     )
-                    println("❌ Failed to delete role $roleName: $errorMsg")
+                    logger.error(LogCategory.AUTH, "Failed to delete role", mapOf("roleName" to roleName, "error" to errorMsg))
                 }
             )
         }
@@ -127,7 +130,7 @@ class RoleCreationViewModel {
                         showDeletePermissionDialog = false,
                         permissionToDelete = null
                     )
-                    println("❌ Failed to delete permission $permissionName: $errorMsg")
+                    logger.error(LogCategory.AUTH, "Failed to delete permission", mapOf("permissionName" to permissionName, "error" to errorMsg))
                 }
             )
         }
@@ -162,7 +165,7 @@ class RoleCreationViewModel {
                     isLoading = false,
                     errorMessage = "Failed to load roles: $error"
                 )
-                println("❌ Failed to load roles: $error")
+                logger.error(LogCategory.AUTH, "Failed to load roles", mapOf("error" to error))
                 return@launch
             }
 
@@ -172,7 +175,7 @@ class RoleCreationViewModel {
                     isLoading = false,
                     errorMessage = "Failed to load permissions: $error"
                 )
-                println("❌ Failed to load permissions: $error")
+                logger.error(LogCategory.AUTH, "Failed to load permissions", mapOf("error" to error))
                 return@launch
             }
 
@@ -181,7 +184,7 @@ class RoleCreationViewModel {
                 allPermissions = permissions.sortedBy { it.ordinal },
                 isLoading = false
             )
-            println("✅ Loaded ${roles.size} roles and ${permissions.size} permissions")
+            logger.debug(LogCategory.AUTH, "Loaded roles and permissions", mapOf("rolesCount" to roles.size, "permissionsCount" to permissions.size))
         }
     }
 
@@ -202,7 +205,7 @@ class RoleCreationViewModel {
             val result = RoleCreationService.createRole(roleName, description)
 
             if (result.isSuccess) {
-                println("✅ Successfully created role: $roleName")
+                logger.info(LogCategory.AUTH, "Successfully created role", mapOf("roleName" to roleName))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Role '$roleName' created successfully"
@@ -215,7 +218,7 @@ class RoleCreationViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to create role: $error"
                 )
-                println("❌ Failed to create role: $error")
+                logger.error(LogCategory.AUTH, "Failed to create role", mapOf("error" to error))
             }
         }
     }
@@ -237,7 +240,7 @@ class RoleCreationViewModel {
             val result = RoleCreationService.createPermission(permissionName, description)
 
             if (result.isSuccess) {
-                println("✅ Successfully created permission: $permissionName")
+                logger.info(LogCategory.AUTH, "Successfully created permission", mapOf("permissionName" to permissionName))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Permission '$permissionName' created successfully"
@@ -250,7 +253,7 @@ class RoleCreationViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to create permission: $error"
                 )
-                println("❌ Failed to create permission: $error")
+                logger.error(LogCategory.AUTH, "Failed to create permission", mapOf("error" to error))
             }
         }
     }
@@ -265,7 +268,7 @@ class RoleCreationViewModel {
             val result = RoleCreationService.assignPermissionToRole(roleName, permissionName)
 
             if (result.isSuccess) {
-                println("✅ Successfully assigned permission $permissionName to role $roleName")
+                logger.info(LogCategory.AUTH, "Successfully assigned permission", mapOf("permissionName" to permissionName, "roleName" to roleName))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Permission '$permissionName' assigned to role '$roleName'"
@@ -280,7 +283,7 @@ class RoleCreationViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to assign permission: $error"
                 )
-                println("❌ Failed to assign permission: $error")
+                logger.error(LogCategory.AUTH, "Failed to assign permission", mapOf("error" to error))
             }
         }
     }
@@ -295,7 +298,7 @@ class RoleCreationViewModel {
             val result = RoleCreationService.removePermissionFromRole(roleName, permissionName)
 
             if (result.isSuccess) {
-                println("✅ Successfully removed permission $permissionName from role $roleName")
+                logger.info(LogCategory.AUTH, "Successfully removed permission", mapOf("permissionName" to permissionName, "roleName" to roleName))
                 state = state.copy(
                     isOperationInProgress = false,
                     successMessage = "Permission '$permissionName' removed from role '$roleName'"
@@ -310,7 +313,7 @@ class RoleCreationViewModel {
                     isOperationInProgress = false,
                     errorMessage = "Failed to remove permission: $error"
                 )
-                println("❌ Failed to remove permission: $error")
+                logger.error(LogCategory.AUTH, "Failed to remove permission", mapOf("error" to error))
             }
         }
     }
@@ -326,11 +329,11 @@ class RoleCreationViewModel {
                 state = state.copy(
                     selectedRolePermissions = roleWithPerms
                 )
-                println("✅ Loaded ${roleWithPerms.permissions.size} permissions for role $roleName")
+                logger.debug(LogCategory.AUTH, "Loaded role permissions", mapOf("roleName" to roleName, "permissionCount" to roleWithPerms.permissions.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(errorMessage = "Failed to load role permissions: $error")
-                println("❌ Failed to load role permissions: $error")
+                logger.error(LogCategory.AUTH, "Failed to load role permissions", mapOf("error" to error))
             }
         }
     }

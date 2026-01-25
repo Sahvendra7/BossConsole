@@ -1,7 +1,11 @@
 package ai.rever.boss.platform
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.io.IOException
+
+private val logger = BossLogger.forComponent("FileSystemUtils")
 
 /**
  * Cross-platform file system utilities for downloads.
@@ -39,11 +43,11 @@ object FileSystemUtils {
                 }
 
                 else -> {
-                    println("Reveal in folder not supported on this OS: $osName")
+                    logger.warn(LogCategory.FILE, "Reveal in folder not supported on this OS", mapOf("os" to osName))
                 }
             }
         } catch (e: IOException) {
-            println("Failed to reveal file in folder: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to reveal file in folder", error = e)
         }
     }
 
@@ -58,7 +62,7 @@ object FileSystemUtils {
             val file = File(filePath)
 
             if (!file.exists()) {
-                println("Cannot open file - does not exist: $filePath")
+                logger.warn(LogCategory.FILE, "Cannot open file - does not exist", mapOf("path" to filePath))
                 return
             }
 
@@ -76,11 +80,11 @@ object FileSystemUtils {
                 }
 
                 else -> {
-                    println("Open file not supported on this OS: $osName")
+                    logger.warn(LogCategory.FILE, "Open file not supported on this OS", mapOf("os" to osName))
                 }
             }
         } catch (e: IOException) {
-            println("Failed to open file: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to open file", error = e)
         }
     }
 
@@ -102,7 +106,7 @@ object FileSystemUtils {
 
             usableSpace >= (requiredBytes + safetyBuffer)
         } catch (e: Exception) {
-            println("Error checking disk space: ${e.message}")
+            logger.warn(LogCategory.FILE, "Error checking disk space", error = e)
             true // Assume OK if we can't check
         }
     }
@@ -165,7 +169,7 @@ object FileSystemUtils {
                 true
             }
         } catch (e: Exception) {
-            println("Failed to create parent directory: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to create parent directory", error = e)
             false
         }
     }
@@ -181,10 +185,10 @@ object FileSystemUtils {
             val file = File(filePath)
             if (file.exists()) {
                 file.delete()
-                println("Cleaned up partial download: $filePath")
+                logger.debug(LogCategory.FILE, "Cleaned up partial download", mapOf("path" to filePath))
             }
         } catch (e: Exception) {
-            println("Failed to clean up partial file: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to clean up partial file", error = e)
         }
     }
 

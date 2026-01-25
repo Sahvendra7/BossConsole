@@ -1,6 +1,8 @@
 package ai.rever.boss.updater
 
 import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +14,7 @@ import kotlin.time.Duration
  * Central update manager that handles periodic update checks and state management
  */
 class UpdateManager {
+    private val logger = BossLogger.forComponent("UpdateManager")
 
     // Internal for access by VersionListManager
     internal val updateService = UpdateService()
@@ -44,7 +47,7 @@ class UpdateManager {
                     checkForUpdatesInternal()
                     delay(UpdateSettings.checkIntervalHours * 60 * 60 * 1000) // Convert hours to milliseconds
                 } catch (e: Exception) {
-                    println("Error in periodic update check: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Error in periodic update check", error = e)
                     delay(60 * 60 * 1000) // Retry in 1 hour on error
                 }
             }

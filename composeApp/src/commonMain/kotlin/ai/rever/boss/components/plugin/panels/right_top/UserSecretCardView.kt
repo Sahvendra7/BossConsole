@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.services.supabase.models.SecretEntryWithSharing
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.createTextClipEntry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.*
+
+private val userSecretCardLogger = BossLogger.forComponent("UserSecretCardView")
 
 /**
  * Read-only secret card view for user-level secret list
@@ -135,7 +139,7 @@ fun UserSecretCard(
                 onClick = {
                     scope.launch {
                         clipboard.setClipEntry(createTextClipEntry(secret.username))
-                        println("✅ Copied username to clipboard: ${secret.username}")
+                        userSecretCardLogger.debug(LogCategory.UI, "Copied username to clipboard", mapOf("username" to secret.username))
                     }
                 },
                 colors = ButtonDefaults.buttonColors(

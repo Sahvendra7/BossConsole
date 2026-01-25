@@ -2,6 +2,8 @@ package ai.rever.boss.window
 
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 
 /**
  * Desktop implementation of window operations
@@ -9,6 +11,8 @@ import ai.rever.boss.components.registery.TabInfo
  * Provides full multi-window support using WindowManager
  */
 actual object WindowOperations {
+    private val logger = BossLogger.forComponent("WindowOperations")
+
     /**
      * Open a tab in a new window
      *
@@ -18,7 +22,7 @@ actual object WindowOperations {
      * @param tabInfo The tab to open in the new window
      */
     actual fun openTabInNewWindow(tabInfo: TabInfo) {
-        println("Creating new window with tab: ${tabInfo.title}")
+        logger.debug(LogCategory.UI, "Creating new window with tab", mapOf("title" to tabInfo.title))
         WindowManager.createNewWindowWithTab(tabInfo)
     }
 
@@ -58,7 +62,7 @@ actual object WindowOperations {
      * @param project The project to open in the new window
      */
     actual fun createNewWindowWithProject(project: Project) {
-        println("Creating new window with project: ${project.name}")
+        logger.debug(LogCategory.UI, "Creating new window with project", mapOf("name" to project.name))
         WindowManager.createNewWindowWithProject(project)
     }
 

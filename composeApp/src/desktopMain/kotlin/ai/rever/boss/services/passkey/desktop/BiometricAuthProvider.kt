@@ -1,5 +1,7 @@
 package ai.rever.boss.services.passkey.desktop
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.passkey.MacOSBiometricAuth
 import ai.rever.boss.services.passkey.WindowsBiometricAuth
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +12,7 @@ import kotlinx.coroutines.withContext
  * Handles Touch ID on macOS, Windows Hello on Windows, and fallback for Linux
  */
 class BiometricAuthProvider {
-    
+    private val logger = BossLogger.forComponent("BiometricAuthProvider")
     private val currentPlatform = System.getProperty("os.name").lowercase()
     
     /**
@@ -21,25 +23,25 @@ class BiometricAuthProvider {
             when {
                 currentPlatform.contains("mac") -> {
                     val available = MacOSBiometricAuth.isBiometricAvailable()
-                    println("BiometricAuthProvider: macOS Touch ID availability: $available")
+                    logger.debug(LogCategory.PASSKEY, "macOS Touch ID availability", mapOf("available" to available))
                     available
                 }
                 currentPlatform.contains("windows") -> {
                     val available = WindowsBiometricAuth.isBiometricAvailable()
-                    println("BiometricAuthProvider: Windows Hello availability: $available")
+                    logger.debug(LogCategory.PASSKEY, "Windows Hello availability", mapOf("available" to available))
                     available
                 }
                 currentPlatform.contains("linux") -> {
-                    println("BiometricAuthProvider: Linux biometric support not available")
+                    logger.debug(LogCategory.PASSKEY, "Linux biometric support not available")
                     false
                 }
                 else -> {
-                    println("BiometricAuthProvider: Unknown platform: $currentPlatform")
+                    logger.warn(LogCategory.PASSKEY, "Unknown platform", mapOf("platform" to currentPlatform))
                     false
                 }
             }
         } catch (e: Exception) {
-            println("BiometricAuthProvider: Error checking biometric support: ${e.message}")
+            logger.warn(LogCategory.PASSKEY, "Error checking biometric support", error = e)
             false
         }
     }

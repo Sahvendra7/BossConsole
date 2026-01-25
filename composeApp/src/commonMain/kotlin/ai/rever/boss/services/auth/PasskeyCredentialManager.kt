@@ -2,6 +2,9 @@ package ai.rever.boss.services.auth
 
 import ai.rever.boss.services.passkey.PasskeyInfo
 import ai.rever.boss.services.passkey.SupabasePasskeyService
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import kotlin.time.ExperimentalTime
 
 /**
@@ -19,6 +22,8 @@ import kotlin.time.ExperimentalTime
  */
 @OptIn(ExperimentalTime::class)
 object PasskeyCredentialManager {
+
+    private val logger = BossLogger.forComponent("PasskeyCredentialManager")
 
     /**
      * Get user's registered passkeys from Supabase backend
@@ -58,7 +63,7 @@ object PasskeyCredentialManager {
             if (e is java.util.concurrent.CancellationException) {
                 return Result.failure(e)
             }
-            println("PasskeyCredentialManager: Failed to load passkeys: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to load passkeys", error = e)
             Result.failure(e)
         }
     }
@@ -83,11 +88,12 @@ object PasskeyCredentialManager {
                 return Result.failure(deleteResult.exceptionOrNull() ?: Exception("Failed to delete passkey"))
             }
 
-            println("PasskeyCredentialManager: Successfully deleted passkey from server: $credentialId")
+            logger.info(LogCategory.PASSKEY, "Successfully deleted passkey from server")
             Result.success(Unit)
         } catch (e: Exception) {
-            println("PasskeyCredentialManager: Failed to delete passkey: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to delete passkey", error = e)
             Result.failure(e)
         }
     }
 }
+

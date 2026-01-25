@@ -1,6 +1,8 @@
 package ai.rever.boss.viewmodels
 
 import ai.rever.boss.services.supabase.AuthService
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
  * This app uses passwordless authentication only (passkeys + magic links).
  */
 class CoreLoginViewModel {
+    private val logger = BossLogger.forComponent("CoreLoginViewModel")
     private val viewModelScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _isLoading = MutableStateFlow(false)
@@ -38,13 +41,13 @@ class CoreLoginViewModel {
 
             AuthService.sendMagicLink(email).fold(
                 onSuccess = {
-                    println("Magic link sent successfully")
+                    logger.info(LogCategory.AUTH, "Magic link sent successfully")
                     // Don't set success message as error - navigate to waiting screen instead
                     _errorMessage.value = null
                     onSuccess()
                 },
                 onFailure = { error ->
-                    println("Magic link sending failed: ${error.message}")
+                    logger.warn(LogCategory.AUTH, "Magic link sending failed", error = error)
                     _errorMessage.value = error.message
                 }
             )
@@ -65,7 +68,7 @@ class CoreLoginViewModel {
      * Called when deep link verification fails (expired/invalid token)
      */
     fun setMagicLinkVerificationError(errorMessage: String) {
-        println("CoreLoginViewModel: Setting magic link verification error: $errorMessage")
+        logger.debug(LogCategory.AUTH, "Setting magic link verification error", mapOf("error" to errorMessage))
         _errorMessage.value = errorMessage
     }
 

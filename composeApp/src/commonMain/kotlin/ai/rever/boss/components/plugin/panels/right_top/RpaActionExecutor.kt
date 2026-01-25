@@ -1,8 +1,12 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 import kotlin.time.Clock
+
+private val rpaLogger = BossLogger.forComponent("RpaActionExecutor")
 
 /**
  * Interface for executing RPA actions on a browser
@@ -488,7 +492,7 @@ suspend fun RpaActionExecutor.executeAction(
             
             else -> {
                 // Skip unknown action types instead of throwing error
-                println("RPA Executor: Skipping unknown action type: ${action.type}")
+                rpaLogger.debug(LogCategory.BROWSER, "Skipping unknown action type", mapOf("type" to action.type))
             }
         }
         

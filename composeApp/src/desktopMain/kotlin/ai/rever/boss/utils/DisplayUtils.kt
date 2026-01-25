@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
@@ -17,6 +19,7 @@ import java.awt.Toolkit
  * min/max constraints to prevent unusable sizes on extreme displays.
  */
 object DisplayUtils {
+    private val logger = BossLogger.forComponent("DisplayUtils")
 
     private val isWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     private val isMac = System.getProperty("os.name").startsWith("Mac", ignoreCase = true)
@@ -35,13 +38,13 @@ object DisplayUtils {
                 val toolkit = Toolkit.getDefaultToolkit()
                 val screenResolution = toolkit.screenResolution // DPI
                 val scalingFactor = screenResolution / 96f // 96 DPI = 100% scaling
-                println("DisplayUtils: Windows DPI: $screenResolution, scaling factor: $scalingFactor")
+                logger.debug(LogCategory.UI, "Windows DPI scaling", mapOf("dpi" to screenResolution, "scalingFactor" to scalingFactor))
                 scalingFactor
             } else {
                 1.0f // Mac Retina is already handled by GraphicsEnvironment logical pixels
             }
         } catch (e: Exception) {
-            println("DisplayUtils: Error detecting scaling factor: ${e.message}")
+            logger.warn(LogCategory.UI, "Error detecting scaling factor", error = e)
             1.0f
         }
     }
@@ -70,14 +73,14 @@ object DisplayUtils {
                 if (scalingFactor > 1.0f) {
                     width = (width / scalingFactor).toInt()
                     height = (height / scalingFactor).toInt()
-                    println("DisplayUtils: Adjusted for Windows scaling - Physical: ${displayMode.width}x${displayMode.height}, Logical: ${width}x${height}")
+                    logger.debug(LogCategory.UI, "Adjusted for Windows scaling", mapOf("physical" to "${displayMode.width}x${displayMode.height}", "logical" to "${width}x${height}"))
                 }
             }
 
-            println("DisplayUtils: Detected screen dimensions: ${width}x${height}")
+            logger.debug(LogCategory.UI, "Detected screen dimensions", mapOf("width" to width, "height" to height))
             Pair(width, height)
         } catch (e: Exception) {
-            println("DisplayUtils: Error detecting screen dimensions, using fallback: ${e.message}")
+            logger.warn(LogCategory.UI, "Error detecting screen dimensions, using fallback", error = e)
             // Fallback to common laptop resolution
             Pair(1920, 1080)
         }
@@ -202,12 +205,13 @@ object DisplayUtils {
         // so we treat them as dp directly without density conversion to avoid double scaling.
         val dpSize = DpSize(constrainedWidth.dp, constrainedHeight.dp)
 
-        println(
-            "DisplayUtils: Calculated $windowType window size: " +
-            "${constrainedWidth}x${constrainedHeight}px = ${dpSize.width}x${dpSize.height} " +
-            "(${(widthPercentage * 100).toInt()}% of ${screenWidth}x${availableHeight}, " +
-            "taskbar offset: ${taskbarOffset}px)"
-        )
+        logger.debug(LogCategory.UI, "Calculated window size", mapOf(
+            "windowType" to windowType,
+            "size" to "${constrainedWidth}x${constrainedHeight}",
+            "percentage" to "${(widthPercentage * 100).toInt()}%",
+            "screen" to "${screenWidth}x${availableHeight}",
+            "taskbarOffset" to taskbarOffset
+        ))
 
         return dpSize
     }

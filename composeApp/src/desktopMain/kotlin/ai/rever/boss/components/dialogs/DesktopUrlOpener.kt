@@ -1,7 +1,11 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.awt.Desktop
 import java.net.URI
+
+private val urlOpenerLogger = BossLogger.forComponent("DesktopUrlOpener")
 
 /**
  * Desktop implementation of URL opening
@@ -14,19 +18,19 @@ actual fun openUrlInBrowser(url: String) {
             if (desktop.isSupported(Desktop.Action.BROWSE)) {
                 desktop.browse(URI.create(url))
                 if (url.contains("/register/mobile")) {
-                    println("Opened WebAuthn registration URL in system browser: $url")
+                    urlOpenerLogger.debug(LogCategory.BROWSER, "Opened WebAuthn registration URL in system browser")
                 } else if (url.contains("/auth/mobile")) {
-                    println("Opened WebAuthn authentication URL in system browser: $url")
+                    urlOpenerLogger.debug(LogCategory.BROWSER, "Opened WebAuthn authentication URL in system browser")
                 } else {
-                    println("Opened URL in system browser: $url")
+                    urlOpenerLogger.debug(LogCategory.BROWSER, "Opened URL in system browser")
                 }
             } else {
-                println("Desktop browse not supported, URL: $url")
+                urlOpenerLogger.warn(LogCategory.BROWSER, "Desktop browse not supported")
             }
         } else {
-            println("Desktop not supported, URL: $url")
+            urlOpenerLogger.warn(LogCategory.BROWSER, "Desktop not supported")
         }
     } catch (e: Exception) {
-        println("Failed to open URL in browser: ${e.message}")
+        urlOpenerLogger.warn(LogCategory.BROWSER, "Failed to open URL in browser", error = e)
     }
 }

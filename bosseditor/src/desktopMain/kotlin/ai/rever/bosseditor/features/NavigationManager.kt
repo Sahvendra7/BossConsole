@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.core.EditorDocument
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.psi.DefinitionInfo
@@ -72,6 +74,7 @@ class NavigationManager(
     private val document: EditorDocument,
     private var filePath: String?
 ) {
+    private val logger = LspLogger.forComponent("NavigationManager")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val navigationService = NavigationService()
     private val referenceService = ReferenceService()
@@ -137,9 +140,9 @@ class NavigationManager(
         if (!PSIBootstrap.isInitialized) {
             try {
                 PSIBootstrap.initialize()
-                println("[NavigationManager] PSI initialized successfully")
+                logger.info(LogCategory.NAVIGATION, "PSI initialized successfully")
             } catch (e: Exception) {
-                println("[NavigationManager] Failed to initialize PSI: ${e.message}")
+                logger.warn(LogCategory.NAVIGATION, "Failed to initialize PSI", error = e)
             }
         }
     }
@@ -188,7 +191,7 @@ class NavigationManager(
                 PSIBootstrap.parseKotlinFile(fileName, content)
             }
         } catch (e: Exception) {
-            println("[NavigationManager] Error parsing file: ${e.message}")
+            logger.warn(LogCategory.NAVIGATION, "Error parsing file", error = e)
             null
         }
     }

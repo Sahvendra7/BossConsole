@@ -3,6 +3,8 @@ package ai.rever.boss.performance
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,6 +17,7 @@ import kotlinx.coroutines.launch
  * Uses PerformanceMonitor and PerformanceSettingsManager to provide state.
  */
 actual object PerformanceState {
+    private val logger = BossLogger.forComponent("PerformanceState")
     private val scope = CoroutineScope(Dispatchers.Main)
 
     @Composable
@@ -39,7 +42,7 @@ actual object PerformanceState {
         scope.launch {
             val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             if (focusedWindowId == null) {
-                println("PerformanceState: No window focused, cannot open performance panel")
+                logger.debug(LogCategory.UI, "No window focused, cannot open performance panel")
                 return@launch
             }
             PanelEventBus.openPanel(PanelId("performance", 15), sourceWindowId = focusedWindowId)
@@ -50,7 +53,7 @@ actual object PerformanceState {
         scope.launch {
             val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             if (focusedWindowId == null) {
-                println("PerformanceState: No window focused, cannot toggle performance panel")
+                logger.debug(LogCategory.UI, "No window focused, cannot toggle performance panel")
                 return@launch
             }
             PanelEventBus.togglePanel(PanelId("performance", 15), sourceWindowId = focusedWindowId)

@@ -1,5 +1,7 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +16,7 @@ import java.util.UUID
  * the runner settings for sidebar vs main panel terminal.
  */
 actual object RunExecutionService {
+    private val logger = BossLogger.forComponent("RunExecutionService")
     private val scope = CoroutineScope(Dispatchers.Default)
 
     private val _runningProcesses = MutableStateFlow<List<RunningProcess>>(emptyList())
@@ -60,7 +63,7 @@ actual object RunExecutionService {
             _runningProcesses.value = _runningProcesses.value + process
 
             // Use RunnerTerminalService which respects sidebar/main panel setting
-            println("[Run] Executing via RunnerTerminalService: $command")
+            logger.debug(LogCategory.TERMINAL, "Executing via RunnerTerminalService", mapOf("command" to command))
             RunnerTerminalService.openRunnerTerminal(config, windowId)
 
             // Update status to running
@@ -68,7 +71,7 @@ actual object RunExecutionService {
 
             return process
         } catch (e: Exception) {
-            println("[Run] Failed to execute: ${e.message}")
+            logger.warn(LogCategory.TERMINAL, "Failed to execute", error = e)
             return null
         }
     }
@@ -100,7 +103,7 @@ actual object RunExecutionService {
             // Note: We can't directly stop terminal processes from here
             // The user needs to use Ctrl+C in the terminal
             // This is mainly for tracking state
-            println("[Run] Stop requested for process: ${process.configName}")
+            logger.debug(LogCategory.TERMINAL, "Stop requested for process", mapOf("configName" to process.configName))
         }
     }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,6 +23,7 @@ import java.io.File
  * Issue #347: Runner settings persistence
  */
 actual object RunnerSettingsManager {
+    private val logger = BossLogger.forComponent("RunnerSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/runner-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -54,15 +57,15 @@ actual object RunnerSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<RunnerSettings>(content)
                 _currentSettings.value = settings
-                println("[RunnerSettings] Loaded settings: $settings")
+                logger.debug(LogCategory.SYSTEM, "Loaded settings")
             } else {
                 // Create default settings file
                 val content = json.encodeToString(RunnerSettings.serializer(), _currentSettings.value)
                 settingsFile.writeText(content)
-                println("[RunnerSettings] Created default settings file")
+                logger.debug(LogCategory.SYSTEM, "Created default settings file")
             }
         } catch (e: Exception) {
-            println("[RunnerSettings] Error loading settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error loading settings", error = e)
             // Keep default settings on error
         }
     }
@@ -74,9 +77,9 @@ actual object RunnerSettingsManager {
         try {
             val content = json.encodeToString(RunnerSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[RunnerSettings] Settings saved")
+            logger.debug(LogCategory.SYSTEM, "Settings saved")
         } catch (e: Exception) {
-            println("[RunnerSettings] Error saving settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error saving settings", error = e)
         }
     }
 

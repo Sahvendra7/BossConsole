@@ -1,8 +1,12 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
+
+private val logger = BossLogger.forComponent("UpdateScriptGenerator")
 
 /**
  * Generates platform-specific update helper scripts
@@ -125,7 +129,7 @@ object UpdateScriptGenerator {
         val escapedDmgPath = escapeShellArg(dmgPath)
         val escapedTargetAppPath = escapeShellArg(targetAppPath)
 
-        println("🔒 Security: Validated and escaped update script parameters")
+        logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped macOS update script parameters")
 
         val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
         tempDir.mkdirs()
@@ -233,7 +237,7 @@ object UpdateScriptGenerator {
         scriptFile.writeText(script)
         makeExecutable(scriptFile)
 
-        println("Generated macOS update script: ${scriptFile.absolutePath}")
+        logger.debug(LogCategory.SYSTEM, "Generated macOS update script", mapOf("path" to scriptFile.absolutePath))
         return scriptFile
     }
 
@@ -254,7 +258,7 @@ object UpdateScriptGenerator {
         // Escape path for Windows batch file (handles quotes, percent signs, etc.)
         val escapedMsiPath = escapeWindowsArg(msiPath)
 
-        println("🔒 Security: Validated and escaped Windows update script parameters")
+        logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped Windows update script parameters")
 
         val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
         tempDir.mkdirs()
@@ -297,7 +301,7 @@ object UpdateScriptGenerator {
 
         scriptFile.writeText(script)
 
-        println("Generated Windows update script: ${scriptFile.absolutePath}")
+        logger.debug(LogCategory.SYSTEM, "Generated Windows update script", mapOf("path" to scriptFile.absolutePath))
         return scriptFile
     }
 
@@ -318,7 +322,7 @@ object UpdateScriptGenerator {
         // Escape path for safe shell interpolation
         val escapedDebPath = escapeShellArg(debPath)
 
-        println("🔒 Security: Validated and escaped Linux DEB update script parameters")
+        logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped Linux DEB update script parameters")
 
         val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
         tempDir.mkdirs()
@@ -502,7 +506,7 @@ ASKPASS_EOF
         scriptFile.writeText(script)
         makeExecutable(scriptFile)
 
-        println("Generated Linux DEB update script: ${scriptFile.absolutePath}")
+        logger.debug(LogCategory.SYSTEM, "Generated Linux DEB update script", mapOf("path" to scriptFile.absolutePath))
         return scriptFile
     }
 
@@ -523,7 +527,7 @@ ASKPASS_EOF
         // Escape path for safe shell interpolation
         val escapedRpmPath = escapeShellArg(rpmPath)
 
-        println("🔒 Security: Validated and escaped Linux RPM update script parameters")
+        logger.debug(LogCategory.SYSTEM, "Security: Validated and escaped Linux RPM update script parameters")
 
         val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updater")
         tempDir.mkdirs()
@@ -712,7 +716,7 @@ ASKPASS_EOF
         scriptFile.writeText(script)
         makeExecutable(scriptFile)
 
-        println("Generated Linux RPM update script: ${scriptFile.absolutePath}")
+        logger.debug(LogCategory.SYSTEM, "Generated Linux RPM update script", mapOf("path" to scriptFile.absolutePath))
         return scriptFile
     }
 
@@ -739,13 +743,15 @@ ASKPASS_EOF
                     listOf("cmd", "/c", "start", "/b", scriptFile.absolutePath)
                 }
                 else -> {
-                    println("Unknown OS, attempting direct execution")
+                    logger.warn(LogCategory.SYSTEM, "Unknown OS, attempting direct execution")
                     listOf("bash", scriptFile.absolutePath)
                 }
             }
 
-            println("Launching update script: ${command.joinToString(" ")}")
-            println("Log file: ${logFile.absolutePath}")
+            logger.info(LogCategory.SYSTEM, "Launching update script", mapOf(
+                "command" to command.joinToString(" "),
+                "logFile" to logFile.absolutePath
+            ))
 
             val processBuilder = ProcessBuilder(command)
 
@@ -760,15 +766,18 @@ ASKPASS_EOF
             Thread.sleep(500)
             if (!process.isAlive) {
                 val exitCode = process.exitValue()
-                println("WARNING: Update script exited immediately with code: $exitCode")
-                println("Check log: ${logFile.absolutePath}")
+                logger.warn(LogCategory.SYSTEM, "Update script exited immediately", mapOf(
+                    "exitCode" to exitCode,
+                    "logFile" to logFile.absolutePath
+                ))
             } else {
-                println("✅ Update script launched successfully")
-                println("💡 Monitor progress: tail -f ${logFile.absolutePath}")
+                logger.info(LogCategory.SYSTEM, "Update script launched successfully", mapOf(
+                    "logFile" to logFile.absolutePath
+                ))
             }
 
         } catch (e: Exception) {
-            println("❌ Failed to launch update script: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to launch update script", error = e)
             throw e
         }
     }
@@ -791,10 +800,10 @@ ASKPASS_EOF
             permissions.add(PosixFilePermission.OTHERS_EXECUTE)
 
             Files.setPosixFilePermissions(path, permissions)
-            println("Set executable permissions on: ${file.name}")
+            logger.debug(LogCategory.SYSTEM, "Set executable permissions", mapOf("file" to file.name))
         } catch (e: Exception) {
             // Not a POSIX system (Windows) - ignore
-            println("Could not set POSIX permissions (probably Windows): ${e.message}")
+            logger.debug(LogCategory.SYSTEM, "Could not set POSIX permissions (probably Windows)")
         }
     }
 }

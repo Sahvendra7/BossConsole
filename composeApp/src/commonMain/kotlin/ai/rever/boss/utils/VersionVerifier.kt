@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlin.jvm.JvmStatic
 
 /**
@@ -12,6 +14,7 @@ import kotlin.jvm.JvmStatic
  * Usage: Call verifyVersionConsistency() early in application startup
  */
 object VersionVerifier {
+    private val logger = BossLogger.forComponent("VersionVerifier")
 
     /**
      * Verify that the runtime version matches expected version from properties.
@@ -35,34 +38,24 @@ object VersionVerifier {
             if (propsVersion != null) {
                 if (runtimeVersion != propsVersion) {
                     // VERSION MISMATCH DETECTED - This is the Issue #111 scenario!
-                    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                    println("⚠️  VERSION MISMATCH DETECTED!")
-                    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                    println("   Expected version (version.properties): $propsVersion")
-                    println("   Actual runtime version (VersionConstants): $runtimeVersion")
-                    println("")
-                    println("   This mismatch indicates VersionConstants.kt was not")
-                    println("   regenerated before the build. This is the root cause")
-                    println("   of Issue #111 where updates installed wrong versions.")
-                    println("")
-                    println("   To fix:")
-                    println("   1. Run: ./gradlew generateVersionConstants")
-                    println("   2. Rebuild the application")
-                    println("   3. Or use: ./gradlew clean build")
-                    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    logger.error(LogCategory.SYSTEM, "VERSION MISMATCH DETECTED - VersionConstants.kt not regenerated", mapOf(
+                        "expectedVersion" to propsVersion.toString(),
+                        "actualVersion" to runtimeVersion.toString(),
+                        "fix" to "Run ./gradlew generateVersionConstants or ./gradlew clean build"
+                    ))
 
                     // TODO: Consider adding analytics/crash reporting here
                     // to track how often this occurs in production
                 } else {
-                    println("✅ Version verification passed: $runtimeVersion")
+                    logger.debug(LogCategory.SYSTEM, "Version verification passed", mapOf("version" to runtimeVersion.toString()))
                 }
             } else {
                 // Production build without embedded version.properties - this is normal
-                println("ℹ️  Version verification skipped (production build): $runtimeVersion")
+                logger.debug(LogCategory.SYSTEM, "Version verification skipped (production build)", mapOf("version" to runtimeVersion.toString()))
             }
         } catch (e: Exception) {
             // Don't crash the app if verification fails
-            println("⚠️ Version verification failed: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Version verification failed", error = e)
         }
     }
 

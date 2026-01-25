@@ -1,5 +1,7 @@
 package ai.rever.boss.components.bookmarks
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +28,7 @@ import kotlinx.coroutines.launch
  * ```
  */
 class BookmarkManager {
+    private val logger = BossLogger.forComponent("BookmarkManager")
     private val fileManager = BookmarkFileManager()
     private val scope = CoroutineScope(Dispatchers.Default)
 
@@ -64,7 +67,7 @@ class BookmarkManager {
                 // Load favorite workspaces
                 _favoriteWorkspaces.value = fileManager.loadFavoriteWorkspaces()
             } catch (e: Exception) {
-                println("Error loading bookmarks: ${e.message}")
+                logger.warn(LogCategory.UI, "Error loading bookmarks", error = e)
                 // Initialize with default "Favorites" collection on error
                 _collections.value = listOf(
                     BookmarkCollection(

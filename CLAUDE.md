@@ -65,8 +65,26 @@ supabase link --project-ref pcnwqamqdnsadranufjv  # First time
 
 - Use Compose Multiplatform Resource API (not Android resources)
 - Location: `composeApp/src/commonMain/composeResources/`
-- Remove `printStackTrace()` - use `println()` for error logging
+- Use `BossLogger` for logging (not `println()` or `printStackTrace()`)
 - All Kotlin files must end with newline
+
+## Logging
+
+Use structured logging via `BossLogger` (SLF4J backend):
+
+```kotlin
+private val logger = BossLogger.forComponent("MyComponent")
+
+logger.info(LogCategory.AUTH, "User signed in", mapOf("email" to LogSanitizer.maskEmail(email)))
+logger.error(LogCategory.NETWORK, "Request failed", error = exception)
+```
+
+**Categories**: AUTH, PASSKEY, BROWSER, TERMINAL, NETWORK, UI, SYSTEM, EDITOR, FILE, WORKSPACE, GENERAL
+
+**Security**: Always use `LogSanitizer` for sensitive data:
+- `maskEmail()`, `maskToken()`, `maskCredentialId()`, `maskUserId()`, `maskUriParams()`
+
+**Config**: Set `BOSS_LOG_LEVEL` env var or `boss.log.level` system property (TRACE/DEBUG/INFO/WARN/ERROR)
 
 ## Build and Deployment
 

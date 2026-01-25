@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.font.FontManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.Dispatchers
@@ -117,6 +119,7 @@ data class CodeEditorSettingsData(
 )
 
 object CodeEditorSettingsManager {
+    private val logger = BossLogger.forComponent("CodeEditorSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/code-editor-settings.json")
     private val json = Json { 
         prettyPrint = true
@@ -149,10 +152,10 @@ object CodeEditorSettingsManager {
                 CodeEditorSettings.minimapWidth = settings.minimapWidth
             }
         } catch (e: Exception) {
-            println("Failed to load code editor settings: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Failed to load code editor settings", error = e)
         }
     }
-    
+
     suspend fun saveSettings() = withContext(Dispatchers.IO) {
         try {
             val settings = CodeEditorSettingsData(
@@ -170,7 +173,7 @@ object CodeEditorSettingsManager {
             val content = json.encodeToString(settings)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("Failed to save code editor settings: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Failed to save code editor settings", error = e)
         }
     }
 }

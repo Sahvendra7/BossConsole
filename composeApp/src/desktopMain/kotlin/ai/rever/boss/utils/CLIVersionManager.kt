@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -11,6 +13,7 @@ import java.io.File
  * silent updates when needed to keep CLI scripts synchronized.
  */
 actual object CLIVersionManager {
+    private val logger = BossLogger.forComponent("CLIVersionManager")
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     private val homeDir = System.getProperty("user.home")
@@ -41,7 +44,7 @@ actual object CLIVersionManager {
         val scriptFile = File(scriptPath)
 
         if (!scriptFile.exists()) {
-            println("CLI version check: Script not found at $scriptPath")
+            logger.debug(LogCategory.SYSTEM, "CLI version check: Script not found", mapOf("path" to scriptPath))
             return@withContext null
         }
 
@@ -57,15 +60,15 @@ actual object CLIVersionManager {
 
                 if (versionMatch != null) {
                     val version = versionMatch.groupValues[1]
-                    println("CLI version check: Found installed version $version")
+                    logger.debug(LogCategory.SYSTEM, "CLI version check: Found installed version", mapOf("version" to version))
                     return@withContext version
                 }
             }
 
-            println("CLI version check: No version found in script header")
+            logger.debug(LogCategory.SYSTEM, "CLI version check: No version found in script header")
             null
         } catch (e: Exception) {
-            println("CLI version check failed: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "CLI version check failed", error = e)
             null
         }
     }
@@ -80,7 +83,7 @@ actual object CLIVersionManager {
         val currentVersion = Version.CURRENT.toString()
 
         val isCurrent = installedVersion == currentVersion
-        println("CLI version check: Installed=$installedVersion, Current=$currentVersion, Up-to-date=$isCurrent")
+        logger.debug(LogCategory.SYSTEM, "CLI version check", mapOf("installed" to installedVersion, "current" to currentVersion, "upToDate" to isCurrent))
 
         return isCurrent
     }
@@ -93,14 +96,14 @@ actual object CLIVersionManager {
     actual suspend fun needsCLIUpdate(): Boolean {
         // Only update if CLI is installed - don't auto-install if user hasn't installed
         if (!CLIInstaller.isInstalled()) {
-            println("CLI version check: CLI not installed, skipping update")
+            logger.debug(LogCategory.SYSTEM, "CLI version check: CLI not installed, skipping update")
             return false
         }
 
         val needsUpdate = !isCLIVersionCurrent()
         if (needsUpdate) {
             val installedVersion = getInstalledCLIVersion() ?: "unknown"
-            println("CLI version check: Update needed - upgrading from $installedVersion to ${Version.CURRENT}")
+            logger.info(LogCategory.SYSTEM, "CLI version check: Update needed", mapOf("from" to installedVersion, "to" to Version.CURRENT.toString()))
         }
 
         return needsUpdate

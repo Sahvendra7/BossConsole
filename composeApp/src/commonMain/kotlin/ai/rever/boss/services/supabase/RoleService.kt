@@ -1,5 +1,7 @@
 package ai.rever.boss.services.supabase
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.models.*
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -51,6 +53,7 @@ import kotlinx.serialization.json.*
  * ```
  */
 object RoleService {
+    private val logger = BossLogger.forComponent("RoleService")
 
     /**
      * Get the Supabase client
@@ -69,18 +72,21 @@ object RoleService {
             val accessToken = session.accessToken
             val claims = decodeJWTClaims(accessToken)
 
-            // Debug: print raw claims
-            println("🔍 [RBAC DEBUG] JWT Claims parsed:")
-            println("  user_role: ${claims["user_role"]}")
-            println("  user_roles: ${claims["user_roles"]}")
-            println("  is_admin: ${claims["is_admin"]}")
+            // Debug: log role claims (without sensitive data)
+            logger.debug(LogCategory.AUTH, "JWT Claims parsed", mapOf(
+                "hasUserRole" to (claims["user_role"] != null),
+                "hasUserRoles" to (claims["user_roles"] != null),
+                "isAdmin" to (claims["is_admin"] ?: false)
+            ))
 
             val roleClaims = RoleClaims.fromJWTClaims(claims)
-            println("🔍 [RBAC DEBUG] RoleClaims created: $roleClaims")
+            roleClaims?.let { rc ->
+                logger.debug(LogCategory.AUTH, "RoleClaims created", mapOf("isAdmin" to rc.isAdmin, "roleCount" to rc.userRoles.size))
+            }
 
             roleClaims
         } catch (e: Exception) {
-            println("Failed to parse role claims: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to parse role claims", error = e)
             null
         }
     }
@@ -122,7 +128,8 @@ object RoleService {
             val decodedBytes = java.util.Base64.getUrlDecoder().decode(payload)
             val jsonString = decodedBytes.decodeToString()
 
-            println("🔍 [RBAC DEBUG] JWT Payload (first 500 chars): ${jsonString.take(500)}")
+            // Note: JWT payload not logged to avoid exposing sensitive claims
+            logger.debug(LogCategory.AUTH, "Decoding JWT payload")
 
             // Parse JSON using kotlinx.serialization (secure and reliable)
             val jsonObject = Json.parseToJsonElement(jsonString).jsonObject
@@ -136,7 +143,7 @@ object RoleService {
                 "is_admin" to jsonObject["is_admin"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
             )
         } catch (e: Exception) {
-            println("Failed to decode JWT: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to decode JWT", error = e)
             emptyMap()
         }
     }
@@ -160,7 +167,7 @@ object RoleService {
 
             Result.success(roles)
         } catch (e: Exception) {
-            println("Failed to get user roles: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to get user roles", error = e)
             Result.failure(e)
         }
     }
@@ -184,7 +191,7 @@ object RoleService {
 
             Result.success(hasRole)
         } catch (e: Exception) {
-            println("Failed to check user role: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to check user role", error = e)
             Result.failure(e)
         }
     }
@@ -212,7 +219,7 @@ object RoleService {
 
             Result.success(Unit)
         } catch (e: Exception) {
-            println("Failed to assign role: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to assign role", error = e)
             Result.failure(Exception("Failed to assign role: ${e.message}"))
         }
     }
@@ -233,7 +240,7 @@ object RoleService {
 
             Result.success(Unit)
         } catch (e: Exception) {
-            println("Failed to remove role: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to remove role", error = e)
             Result.failure(Exception("Failed to remove role: ${e.message}"))
         }
     }
@@ -256,7 +263,7 @@ object RoleService {
 
             Result.success(permissions)
         } catch (e: Exception) {
-            println("Failed to get role permissions: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to get role permissions", error = e)
             Result.failure(e)
         }
     }
@@ -289,7 +296,7 @@ object RoleService {
 
             Result.success(false)
         } catch (e: Exception) {
-            println("Failed to check permission: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Failed to check permission", error = e)
             Result.failure(e)
         }
     }

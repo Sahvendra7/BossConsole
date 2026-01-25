@@ -1,5 +1,7 @@
 package ai.rever.boss.services.supabase
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.PermissionInfo
 import ai.rever.boss.services.supabase.models.RoleWithPermissions
@@ -38,6 +40,8 @@ import kotlinx.serialization.json.*
  */
 object RoleCreationService {
 
+    private val logger = BossLogger.forComponent("RoleCreationService")
+
     /**
      * Create a new role dynamically
      *
@@ -74,7 +78,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to create role"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.createRole failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "createRole failed", error = e)
             Result.failure(e)
         }
     }
@@ -118,7 +122,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to create permission"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.createPermission failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "createPermission failed", error = e)
             Result.failure(e)
         }
     }
@@ -155,7 +159,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to get roles"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.getAllRoles failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "getAllRoles failed", error = e)
             Result.failure(e)
         }
     }
@@ -192,7 +196,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to get permissions"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.getAllPermissions failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "getAllPermissions failed", error = e)
             Result.failure(e)
         }
     }
@@ -228,7 +232,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to assign permission"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.assignPermissionToRole failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "assignPermissionToRole failed", error = e)
             Result.failure(e)
         }
     }
@@ -264,7 +268,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to remove permission"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.removePermissionFromRole failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "removePermissionFromRole failed", error = e)
             Result.failure(e)
         }
     }
@@ -300,7 +304,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to get role permissions"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.getRolePermissions failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "getRolePermissions failed", error = e)
             Result.failure(e)
         }
     }
@@ -331,7 +335,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to delete role"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.deleteRole failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "deleteRole failed", error = e)
             Result.failure(e)
         }
     }
@@ -362,7 +366,7 @@ object RoleCreationService {
                 Result.failure(Exception(result.error ?: "Failed to delete permission"))
             }
         } catch (e: Exception) {
-            println("❌ RoleCreationService.deletePermission failed: ${e.message}")
+            logger.warn(LogCategory.AUTH, "deletePermission failed", error = e)
             Result.failure(e)
         }
     }

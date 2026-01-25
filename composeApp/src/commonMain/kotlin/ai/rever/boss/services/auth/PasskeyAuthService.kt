@@ -3,6 +3,9 @@ package ai.rever.boss.services.auth
 import ai.rever.boss.services.passkey.PasskeyService
 import ai.rever.boss.services.passkey.SupabasePasskeyService
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import java.util.Base64
 import java.util.UUID
 import kotlin.time.ExperimentalTime
@@ -24,6 +27,7 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalTime::class)
 internal object PasskeyAuthService {
     private var passkeyService: PasskeyService? = null
+    private val logger = BossLogger.forComponent("PasskeyAuthService")
 
     /**
      * Set the platform-specific passkey service implementation for authentication operations.
@@ -31,7 +35,7 @@ internal object PasskeyAuthService {
      */
     fun setPasskeyService(service: PasskeyService) {
         passkeyService = service
-        println("PasskeyAuthService: Platform passkey service initialized")
+        logger.info(LogCategory.PASSKEY, "Platform passkey service initialized")
     }
 
     /**
@@ -55,7 +59,7 @@ internal object PasskeyAuthService {
             val currentUser = AuthStateManager.currentUser.value ?: return Result.failure(Exception("No user logged in"))
             val passkeyService = passkeyService ?: return Result.failure(Exception("Passkey service not available"))
             
-            println("Starting simplified passkey registration for user: ${currentUser.id}")
+            logger.info(LogCategory.PASSKEY, "Starting passkey registration", mapOf("userId" to LogSanitizer.maskUserId(currentUser.id)))
             
             val displayName = currentUser.email.ifBlank {
                 "BOSS User ${currentUser.id.take(8)}"
@@ -88,38 +92,37 @@ internal object PasskeyAuthService {
             }
             
             val registration = registrationResult.getOrThrow()
-            println("PasskeyAuthService: About to call completeRegistration with registration: ${registration.credentialId}")
-            
+            logger.debug(LogCategory.PASSKEY, "About to call completeRegistration", mapOf("credentialId" to LogSanitizer.maskCredentialId(registration.credentialId)))
+
             // Check if this is a browser-initiated registration (skip completion)
             if (registration.credentialId.startsWith("browser-registration-")) {
-                println("PasskeyAuthService: Browser registration detected, skipping completeRegistration call")
+                logger.debug(LogCategory.PASSKEY, "Browser registration detected, skipping completeRegistration call")
                 return Result.success("Browser registration initiated - complete in browser")
             }
-            
+
             // Step 3: Complete registration with Supabase backend
             val completionResult = try {
-                println("PasskeyAuthService: Calling SupabasePasskeyService.completeRegistration...")
+                logger.debug(LogCategory.PASSKEY, "Calling SupabasePasskeyService.completeRegistration")
                 SupabasePasskeyService.completeRegistration(
                     userId = currentUser.id,
                     registration = registration,
                     challenge = challenge.challenge
                 )
             } catch (e: Exception) {
-                println("PasskeyAuthService: Exception in completeRegistration: ${e.message}")
-                println("PasskeyAuthService: Stack trace: ${e.stackTraceToString()}")
+                logger.error(LogCategory.PASSKEY, "Exception in completeRegistration", error = e)
                 throw e
             }
-            
+
             if (completionResult.isFailure) {
                 return Result.failure(completionResult.exceptionOrNull() ?: Exception("Failed to complete registration"))
             }
-            
+
             val credential = completionResult.getOrThrow()
-            println("Passkey registered successfully: ${credential.credential_id}")
-            
+            logger.info(LogCategory.PASSKEY, "Passkey registered successfully")
+
             Result.success(credential.credential_id)
         } catch (e: Exception) {
-            println("Passkey registration failed: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Passkey registration failed", error = e)
             Result.failure(e)
         }
     }
@@ -132,7 +135,7 @@ internal object PasskeyAuthService {
         return try {
             val passkeyService = passkeyService ?: return Result.failure(Exception("Passkey service not available"))
             
-            println("Starting passkey authentication for user: ${email ?: "usernameless"}")
+            logger.info(LogCategory.PASSKEY, "Starting passkey authentication", mapOf("email" to (email?.let { LogSanitizer.maskEmail(it) } ?: "usernameless")))
             
             // Step 1: Request authentication challenge from Supabase with sessionId for cross-device coordination
             val sessionId = UUID.randomUUID().toString()
@@ -146,7 +149,7 @@ internal object PasskeyAuthService {
             
             // Step 2: Try platform authentication first, let browser handle fallbacks
             // No more manual flow determination - let WebAuthn API decide the best method
-            println("Attempting passkey authentication with browser-native flow selection")
+            logger.debug(LogCategory.PASSKEY, "Attempting passkey authentication with browser-native flow selection")
 
             // Filter to specific credential if provided (for multi-passkey selection)
             val filteredCredentials = if (credentialId != null) {
@@ -220,7 +223,7 @@ internal object PasskeyAuthService {
 
             return sessionResult
         } catch (e: Exception) {
-            println("Passkey authentication failed: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Passkey authentication failed", error = e)
             Result.failure(e)
         }
     }

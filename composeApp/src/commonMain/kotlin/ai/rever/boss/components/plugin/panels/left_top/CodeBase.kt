@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkTextSecondary
@@ -186,6 +188,7 @@ data class Project(
 // Global project state with persistence - manages shared recent projects list
 // Note: Selected project is per-window via WindowProjectState. This object only manages recent projects.
 object ProjectState {
+    private val logger = BossLogger.forComponent("ProjectState")
     private const val MAX_RECENT_PROJECTS = 10
     private const val RECENT_PROJECTS_FILE = "recent-projects.json"
 
@@ -263,20 +266,20 @@ object ProjectState {
                     val projectDir = java.io.File(project.path)
                     val exists = projectDir.exists() && projectDir.isDirectory
                     if (!exists) {
-                        println("Removing deleted project from recent: ${project.name} (${project.path})")
+                        logger.debug(LogCategory.FILE, "Removing deleted project from recent", mapOf("name" to project.name, "path" to project.path))
                         null
                     } else {
                         // Normalize the name to handle any legacy full paths
                         val normalizedName = project.path.extractFileName()
                         if (normalizedName != project.name) {
-                            println("Normalizing project name: '${project.name}' -> '$normalizedName'")
+                            logger.debug(LogCategory.FILE, "Normalizing project name", mapOf("old" to project.name, "new" to normalizedName))
                         }
                         project.copy(name = normalizedName)
                     }
                 }
 
                 _recentProjects.value = validProjects
-                println("Loaded ${validProjects.size} recent projects from disk (${projects.size - validProjects.size} removed)")
+                logger.debug(LogCategory.FILE, "Loaded recent projects from disk", mapOf("count" to validProjects.size, "removed" to (projects.size - validProjects.size)))
 
                 // Save cleaned list if any projects were removed
                 if (validProjects.size < projects.size) {
@@ -284,7 +287,7 @@ object ProjectState {
                 }
             }
         } catch (e: Exception) {
-            println("Failed to load recent projects: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to load recent projects", error = e)
         }
     }
 
@@ -294,7 +297,7 @@ object ProjectState {
             val json = kotlinx.serialization.json.Json.encodeToString(_recentProjects.value)
             file.writeText(json)
         } catch (e: Exception) {
-            println("Failed to save recent projects: ${e.message}")
+            logger.warn(LogCategory.FILE, "Failed to save recent projects", error = e)
         }
     }
 }
@@ -304,6 +307,7 @@ object ProjectState {
  * Each window maintains its own selected project while sharing global recent projects.
  */
 class WindowProjectState(val windowId: String) {
+    private val logger = BossLogger.forComponent("WindowProjectState")
     private val _selectedProject = MutableStateFlow(
         Project(
             name = "No Project",
@@ -318,7 +322,7 @@ class WindowProjectState(val windowId: String) {
         _selectedProject.value = updatedProject
         // Update recent projects list without affecting other windows
         ProjectState.updateRecentProjects(updatedProject)
-        println("WindowProjectState[$windowId]: Selected project '${project.name}' at ${project.path}")
+        logger.debug(LogCategory.FILE, "Selected project", mapOf("windowId" to windowId, "name" to project.name, "path" to project.path))
     }
 
     fun currentProject(): Project = _selectedProject.value
@@ -328,7 +332,8 @@ class CodeBaseComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
-    
+    private val logger = BossLogger.forComponent("CodeBaseComponent")
+
     private val _fileTree = MutableStateFlow<FileNode?>(null)
     private val fileTree: StateFlow<FileNode?> = _fileTree.asStateFlow()
     
@@ -499,7 +504,7 @@ class CodeBaseComponent(
                 scanDirectoryWithDepth(targetPath, maxDepth = 1, startDepth = 0)
             }
         } catch (e: Exception) {
-            println("Error loading children for $targetPath: ${e.message}")
+            logger.warn(LogCategory.FILE, "Error loading children", mapOf("path" to targetPath), error = e)
             null
         }
 
@@ -586,7 +591,7 @@ class CodeBaseComponent(
     ) {
         // Prevent excessive recursion on deep hierarchies (e.g., node_modules)
         if (currentDepth >= maxDepth) {
-            println("Compact load depth limit reached ($maxDepth levels)")
+            logger.debug(LogCategory.FILE, "Compact load depth limit reached", mapOf("maxDepth" to maxDepth))
             return
         }
 
@@ -597,7 +602,7 @@ class CodeBaseComponent(
             // Skip excluded directories (node_modules, .git, etc.) - they have deep hierarchies
             // that would cause excessive I/O and are not useful for compact display
             if (excludedDirectories.contains(singleChild.name)) {
-                println("Skipping compact load for excluded directory: ${singleChild.name}")
+                logger.debug(LogCategory.FILE, "Skipping compact load for excluded directory", mapOf("name" to singleChild.name))
                 return
             }
 
@@ -632,7 +637,7 @@ class CodeBaseComponent(
                 scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
             }
         } catch (e: Exception) {
-            println("Error loading children for compact path $path: ${e.message}")
+            logger.warn(LogCategory.FILE, "Error loading children for compact path", mapOf("path" to path), error = e)
             null
         }
 
@@ -842,13 +847,8 @@ class CodeBaseComponent(
                                 onToggleExpanded = ::toggleExpanded,
                                 onFileClick = { file ->
                                     if (!file.isDirectory) {
-                                        // TODO: Open file in editor
-                                        // For now, just log the file path
-                                        // In a real implementation, this would communicate with the main tab component
-                                        println("Open file: ${file.path}")
-
-                                        // You could emit an event or use a callback passed from the parent
-                                        // Example: onOpenFile?.invoke(file.path)
+                                        // File click handled via FileEventBus in FileTreeItem's onDoubleClick
+                                        logger.debug(LogCategory.FILE, "File click", mapOf("path" to file.path))
                                     }
                                 }
                             )

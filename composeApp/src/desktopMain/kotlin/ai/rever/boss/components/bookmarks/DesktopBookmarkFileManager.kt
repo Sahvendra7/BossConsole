@@ -1,5 +1,7 @@
 package ai.rever.boss.components.bookmarks
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.SystemUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,6 +16,8 @@ import java.nio.file.Paths
  * - favorite-workspaces.json: Favorite workspace IDs
  */
 actual class BookmarkFileManager {
+    private val logger = BossLogger.forComponent("BookmarkFileManager")
+
     actual fun getBookmarksDirectory(): String {
         val userHome = SystemUtils.getUserHome()
         return Paths.get(
@@ -31,7 +35,7 @@ actual class BookmarkFileManager {
             }
             dir.exists() && dir.isDirectory
         } catch (e: Exception) {
-            println("Error ensuring bookmarks directory: ${e.message}")
+            logger.warn(LogCategory.FILE, "Error ensuring bookmarks directory", error = e)
             false
         }
     }
@@ -56,7 +60,7 @@ actual class BookmarkFileManager {
 
                 true
             } catch (e: Exception) {
-                println("Error saving collections: ${e.message}")
+                logger.warn(LogCategory.FILE, "Error saving collections", error = e)
                 false
             }
         }
@@ -78,7 +82,7 @@ actual class BookmarkFileManager {
                 val json = file.readText()
                 BookmarkSerializer.deserializeCollections(json)
             } catch (e: Exception) {
-                println("Error loading collections: ${e.message}")
+                logger.warn(LogCategory.FILE, "Error loading collections", error = e)
                 emptyList()
             }
         }
@@ -103,7 +107,7 @@ actual class BookmarkFileManager {
 
                 true
             } catch (e: Exception) {
-                println("Error saving favorite workspaces: ${e.message}")
+                logger.warn(LogCategory.FILE, "Error saving favorite workspaces", error = e)
                 false
             }
         }
@@ -125,7 +129,7 @@ actual class BookmarkFileManager {
                 val json = file.readText()
                 BookmarkSerializer.deserializeFavoriteWorkspaces(json)
             } catch (e: Exception) {
-                println("Error loading favorite workspaces: ${e.message}")
+                logger.warn(LogCategory.FILE, "Error loading favorite workspaces", error = e)
                 emptyList()
             }
         }

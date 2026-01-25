@@ -1,5 +1,7 @@
 package ai.rever.boss.components.auth.screens
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Text
@@ -21,6 +23,8 @@ import kotlinx.coroutines.launch
 import java.awt.Frame
 import java.awt.Window
 
+private val logger = BossLogger.forComponent("DesktopPasskeyBrowserView")
+
 /**
  * Desktop implementation of PasskeyBrowserView using JxBrowser
  * Embeds a Chromium browser instance for WebAuthn operations
@@ -38,7 +42,7 @@ actual fun PasskeyBrowserView(
     // Initialize browser when composable enters composition
     DisposableEffect(url) {
         try {
-            println("DesktopPasskeyBrowserView: Initializing JxBrowser for URL: $url")
+            logger.debug(LogCategory.BROWSER, "Initializing JxBrowser for WebAuthn")
 
             // Get browser instance from FluckEngine (throws exception if initialization fails)
             val engine = FluckEngine.engine
@@ -47,38 +51,38 @@ actual fun PasskeyBrowserView(
             val newBrowser = engine.newBrowser()
             browser = newBrowser
 
-            println("DesktopPasskeyBrowserView: JxBrowser initialized successfully")
+            logger.debug(LogCategory.BROWSER, "JxBrowser initialized successfully")
 
             // Register load event handlers
             newBrowser.navigation().on(LoadStarted::class.java) {
-                println("DesktopPasskeyBrowserView: Page loading started")
+                logger.debug(LogCategory.BROWSER, "Page loading started")
             }
 
             newBrowser.navigation().on(LoadFinished::class.java) {
-                println("DesktopPasskeyBrowserView: Page loaded successfully: ${newBrowser.url()}")
+                logger.debug(LogCategory.BROWSER, "Page loaded successfully", mapOf("url" to newBrowser.url()))
                 coroutineScope.launch(Dispatchers.Main) {
                     onLoadComplete()
                 }
             }
 
             // Load the WebAuthn URL
-            println("DesktopPasskeyBrowserView: Loading URL: $url")
+            logger.debug(LogCategory.BROWSER, "Loading WebAuthn URL")
             newBrowser.navigation().loadUrl(url)
 
         } catch (e: Exception) {
             val errorMessage = "Failed to initialize browser: ${e.message}"
-            println("DesktopPasskeyBrowserView: $errorMessage")
+            logger.warn(LogCategory.BROWSER, errorMessage, error = e)
             initError = errorMessage
             onError(errorMessage)
         }
 
         // Cleanup on disposal
         onDispose {
-            println("DesktopPasskeyBrowserView: Disposing browser instance")
+            logger.debug(LogCategory.BROWSER, "Disposing browser instance")
             try {
                 browser?.close()
             } catch (e: Exception) {
-                println("DesktopPasskeyBrowserView: Error closing browser: ${e.message}")
+                logger.warn(LogCategory.BROWSER, "Error closing browser", error = e)
             }
         }
     }

@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.spelling
 
+import ai.rever.bosseditor.lsp.logging.LspLogger
+import ai.rever.bosseditor.lsp.logging.LogCategory
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
@@ -23,6 +25,8 @@ class SimpleSpellChecker(
     private val dictionaryPath: String? = null,
     private val customDictionaryPath: String = System.getProperty("user.home") + "/.boss/spelling/custom.txt"
 ) : SpellChecker {
+
+    private val logger = LspLogger.forComponent("SimpleSpellChecker")
 
     companion object {
         /** Maximum number of words allowed in custom dictionary to prevent memory leak */
@@ -103,7 +107,7 @@ class SimpleSpellChecker(
                 initializationError = null
             } catch (e: Exception) {
                 val errorMsg = "Failed to initialize: ${e.message}"
-                println("[SimpleSpellChecker] $errorMsg")
+                logger.warn(LogCategory.GENERAL, errorMsg, error = e)
                 // Fall back to empty dictionary but track the error
                 // Update all shared state together
                 dictionary = emptySet()
@@ -151,7 +155,7 @@ class SimpleSpellChecker(
                     }
                 }
             } catch (e: Exception) {
-                println("[SimpleSpellChecker] Failed to load dictionary: ${e.message}")
+                logger.warn(LogCategory.GENERAL, "Failed to load dictionary", error = e)
             }
         }
 
@@ -169,7 +173,7 @@ class SimpleSpellChecker(
             
             if (resourceStream == null) {
                 initializationError = "Dictionary resource not found: dictionaries/en_US.txt"
-                println("[SimpleSpellChecker] $initializationError")
+                logger.warn(LogCategory.GENERAL, initializationError!!)
                 emptySet()
             } else {
                 resourceStream.bufferedReader().use { reader ->
@@ -181,7 +185,7 @@ class SimpleSpellChecker(
             }
         } catch (e: Exception) {
             initializationError = "Failed to load dictionary: ${e.message}"
-            println("[SimpleSpellChecker] $initializationError")
+            logger.warn(LogCategory.GENERAL, initializationError!!, error = e)
             emptySet()
         }
     }
@@ -208,11 +212,11 @@ class SimpleSpellChecker(
                         }
                     }
                     if (skippedCount > 0) {
-                        println("[SimpleSpellChecker] Skipped $skippedCount words exceeding max length ($MAX_WORD_LENGTH chars)")
+                        logger.debug(LogCategory.GENERAL, "Skipped words exceeding max length", data = mapOf("count" to skippedCount, "maxLength" to MAX_WORD_LENGTH))
                     }
                 }
             } catch (e: Exception) {
-                println("[SimpleSpellChecker] Failed to load custom dictionary: ${e.message}")
+                logger.warn(LogCategory.GENERAL, "Failed to load custom dictionary", error = e)
             }
         }
     }
@@ -234,7 +238,7 @@ class SimpleSpellChecker(
                 file.parentFile?.mkdirs()
                 file.writeText(wordsSnapshot.joinToString("\n"))
             } catch (e: Exception) {
-                println("[SimpleSpellChecker] Failed to save custom dictionary: ${e.message}")
+                logger.warn(LogCategory.GENERAL, "Failed to save custom dictionary", error = e)
             }
         }
     }
@@ -374,12 +378,12 @@ class SimpleSpellChecker(
             synchronized(dictionaryLock) {
                 // Security: Validate word length to prevent OOM
                 if (normalized.length > MAX_WORD_LENGTH) {
-                    println("[SimpleSpellChecker] Word exceeds max length ($MAX_WORD_LENGTH chars): '${normalized.take(20)}...'")
+                    logger.warn(LogCategory.GENERAL, "Word exceeds max length", data = mapOf("maxLength" to MAX_WORD_LENGTH, "wordPreview" to normalized.take(20)))
                     return
                 }
                 // Prevent unbounded dictionary growth to avoid memory leak
                 if (customDictionary.size >= MAX_CUSTOM_DICTIONARY_SIZE) {
-                    println("[SimpleSpellChecker] Custom dictionary limit reached ($MAX_CUSTOM_DICTIONARY_SIZE words). Cannot add '$normalized'.")
+                    logger.warn(LogCategory.GENERAL, "Custom dictionary limit reached", data = mapOf("limit" to MAX_CUSTOM_DICTIONARY_SIZE))
                     return
                 }
                 shouldSave = customDictionary.add(normalized)

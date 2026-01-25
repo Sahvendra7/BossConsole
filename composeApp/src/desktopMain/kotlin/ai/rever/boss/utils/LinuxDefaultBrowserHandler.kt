@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -15,6 +17,7 @@ import java.io.InputStreamReader
  * - Check if BOSS is the current default browser
  */
 object LinuxDefaultBrowserHandler {
+    private val logger = BossLogger.forComponent("LinuxDefaultBrowserHandler")
     private val DESKTOP_FILE_PATH = File(
         System.getProperty("user.home"),
         ".local/share/applications/boss.desktop"
@@ -29,14 +32,14 @@ object LinuxDefaultBrowserHandler {
         try {
             val defaultBrowser = getDefaultWebBrowser()
 
-            println("Linux default browser check: $defaultBrowser")
+            logger.debug(LogCategory.BROWSER, "Linux default browser check", mapOf("defaultBrowser" to (defaultBrowser ?: "none")))
 
             // BOSS is default if xdg-settings returns "boss.desktop"
             val isDefault = defaultBrowser == "boss.desktop"
 
             Result.success(isDefault)
         } catch (e: Exception) {
-            println("Error checking default browser on Linux: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error checking default browser on Linux", error = e)
             Result.failure(e)
         }
     }
@@ -51,7 +54,7 @@ object LinuxDefaultBrowserHandler {
             // First check if already default
             val checkResult = isDefaultBrowser()
             if (checkResult.isSuccess && checkResult.getOrNull() == true) {
-                println("BOSS is already the default browser")
+                logger.debug(LogCategory.BROWSER, "BOSS is already the default browser")
                 return@withContext Result.success(true)
             }
 
@@ -73,14 +76,14 @@ object LinuxDefaultBrowserHandler {
             setMimeTypeAssociations()
 
             if (xdgResult) {
-                println("✅ Successfully set BOSS as default browser on Linux")
+                logger.info(LogCategory.BROWSER, "Successfully set BOSS as default browser on Linux")
                 Result.success(true)
             } else {
-                println("⚠️ xdg-settings may have failed, but MIME types are set")
+                logger.warn(LogCategory.BROWSER, "xdg-settings may have failed, but MIME types are set")
                 Result.success(true)
             }
         } catch (e: Exception) {
-            println("Error setting default browser on Linux: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error setting default browser on Linux", error = e)
             Result.failure(e)
         }
     }
@@ -106,7 +109,7 @@ object LinuxDefaultBrowserHandler {
                 null
             }
         } catch (e: Exception) {
-            println("Error getting default web browser: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error getting default web browser", error = e)
             null
         }
     }
@@ -118,7 +121,7 @@ object LinuxDefaultBrowserHandler {
         return try {
             val appPath = getApplicationPath()
             if (appPath.isNullOrEmpty()) {
-                println("Could not determine application path")
+                logger.warn(LogCategory.BROWSER, "Could not determine application path")
                 return false
             }
 
@@ -148,10 +151,10 @@ object LinuxDefaultBrowserHandler {
             // Make executable
             DESKTOP_FILE_PATH.setExecutable(true, false)
 
-            println("✅ Created .desktop file at ${DESKTOP_FILE_PATH.absolutePath}")
+            logger.info(LogCategory.BROWSER, "Created .desktop file", mapOf("path" to DESKTOP_FILE_PATH.absolutePath))
             true
         } catch (e: Exception) {
-            println("Error creating .desktop file: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error creating .desktop file", error = e)
             false
         }
     }
@@ -187,7 +190,7 @@ object LinuxDefaultBrowserHandler {
                 }
             }
         } catch (e: Exception) {
-            println("Error determining application path: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error determining application path", error = e)
             null
         }
     }
@@ -224,12 +227,12 @@ object LinuxDefaultBrowserHandler {
             process.waitFor()
 
             if (process.exitValue() == 0) {
-                println("✅ Updated desktop database")
+                logger.debug(LogCategory.BROWSER, "Updated desktop database")
             } else {
-                println("⚠️ update-desktop-database may have failed (non-critical)")
+                logger.debug(LogCategory.BROWSER, "update-desktop-database may have failed (non-critical)")
             }
         } catch (e: Exception) {
-            println("Note: update-desktop-database not available or failed: ${e.message}")
+            logger.debug(LogCategory.BROWSER, "update-desktop-database not available or failed")
         }
     }
 
@@ -252,14 +255,14 @@ object LinuxDefaultBrowserHandler {
             process.waitFor()
 
             if (process.exitValue() == 0) {
-                println("✅ Set default browser via xdg-settings")
+                logger.debug(LogCategory.BROWSER, "Set default browser via xdg-settings")
                 true
             } else {
-                println("⚠️ xdg-settings failed: $output")
+                logger.warn(LogCategory.BROWSER, "xdg-settings failed", mapOf("output" to output))
                 false
             }
         } catch (e: Exception) {
-            println("Error running xdg-settings: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error running xdg-settings", error = e)
             false
         }
     }
@@ -286,12 +289,12 @@ object LinuxDefaultBrowserHandler {
                 process.waitFor()
 
                 if (process.exitValue() == 0) {
-                    println("✅ Set MIME association for $mimeType")
+                    logger.debug(LogCategory.BROWSER, "Set MIME association", mapOf("mimeType" to mimeType))
                 } else {
-                    println("⚠️ Failed to set MIME association for $mimeType")
+                    logger.warn(LogCategory.BROWSER, "Failed to set MIME association", mapOf("mimeType" to mimeType))
                 }
             } catch (e: Exception) {
-                println("Error setting MIME association for $mimeType: ${e.message}")
+                logger.error(LogCategory.BROWSER, "Error setting MIME association", mapOf("mimeType" to mimeType), e)
             }
         }
     }

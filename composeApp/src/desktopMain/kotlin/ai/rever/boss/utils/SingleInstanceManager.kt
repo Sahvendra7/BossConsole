@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -37,6 +39,8 @@ import kotlin.concurrent.thread
  * ```
  */
 object SingleInstanceManager {
+    private val logger = BossLogger.forComponent("SingleInstanceManager")
+
     private const val LOCK_FILE_NAME = "boss-instance.lock"
     private const val IPC_PORT_BASE = 56789
     private const val IPC_PORT_RANGE = 10 // Try ports 56789-56798
@@ -67,11 +71,11 @@ object SingleInstanceManager {
                 true
             } else {
                 // Stale lock file
-                println("Stale lock file detected (PID: $pid)")
+                logger.debug(LogCategory.SYSTEM, "Stale lock file detected", mapOf("pid" to (pid ?: "null")))
                 false
             }
         } catch (e: Exception) {
-            println("Error checking lock file: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error checking lock file", error = e)
             false
         }
     }
@@ -91,11 +95,11 @@ object SingleInstanceManager {
             if (lockFile!!.exists()) {
                 val pid = lockFile!!.readText().trim().toLongOrNull()
                 if (pid != null && isProcessAlive(pid)) {
-                    println("Another instance is running (PID: $pid)")
+                    logger.info(LogCategory.SYSTEM, "Another instance is running", mapOf("pid" to pid))
                     return false
                 } else {
                     // Stale lock - delete and continue
-                    println("Removing stale lock file (PID: $pid)")
+                    logger.debug(LogCategory.SYSTEM, "Removing stale lock file", mapOf("pid" to (pid ?: "null")))
                     lockFile!!.delete()
                 }
             }
@@ -107,17 +111,17 @@ object SingleInstanceManager {
                 // Write current PID to lock file
                 val currentPid = ProcessHandle.current().pid()
                 lockFile!!.writeText("$currentPid\n$actualPort")
-                println("Acquired single-instance lock (PID: $currentPid)")
+                logger.info(LogCategory.SYSTEM, "Acquired single-instance lock", mapOf("pid" to currentPid))
 
                 // Start IPC server
                 startServer()
                 true
             } else {
-                println("Failed to create lock file")
+                logger.warn(LogCategory.SYSTEM, "Failed to create lock file")
                 false
             }
         } catch (e: Exception) {
-            println("Failed to acquire lock: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to acquire lock", error = e)
             false
         }
     }
@@ -136,7 +140,7 @@ object SingleInstanceManager {
                 serverSocket = ServerSocket(port, 5, InetAddress.getLoopbackAddress())
                 actualPort = port
                 boundSuccessfully = true
-                println("IPC server started on port $port")
+                logger.debug(LogCategory.SYSTEM, "IPC server started", mapOf("port" to port))
 
                 // Update lock file with actual port atomically
                 // Write PID and port together to prevent race condition
@@ -154,15 +158,17 @@ object SingleInstanceManager {
 
         if (!boundSuccessfully) {
             // Port exhaustion - clean up lock file and fail gracefully
-            println("ERROR: Failed to start IPC server on any port in range $IPC_PORT_BASE-${IPC_PORT_BASE + IPC_PORT_RANGE - 1}")
-            println("Last error: ${lastException?.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to start IPC server on any port", mapOf(
+                "portRange" to "$IPC_PORT_BASE-${IPC_PORT_BASE + IPC_PORT_RANGE - 1}",
+                "lastError" to (lastException?.message ?: "unknown")
+            ))
 
             // Delete lock file so next instance can try again
             try {
                 lockFile?.delete()
                 lockFile = null
             } catch (e: Exception) {
-                println("Failed to clean up lock file: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Failed to clean up lock file", error = e)
             }
 
             throw java.io.IOException(
@@ -174,7 +180,7 @@ object SingleInstanceManager {
         // Start listener thread
         isListening = true
         listenerThread = thread(isDaemon = true, name = "BOSS-IPC-Listener") {
-            println("IPC listener thread started")
+            logger.trace(LogCategory.SYSTEM, "IPC listener thread started")
 
             while (isListening && !Thread.currentThread().isInterrupted) {
                 try {
@@ -184,17 +190,17 @@ object SingleInstanceManager {
                     }
                 } catch (e: SocketException) {
                     if (isListening) {
-                        println("Socket error in IPC listener: ${e.message}")
+                        logger.warn(LogCategory.SYSTEM, "Socket error in IPC listener", error = e)
                     }
                     break
                 } catch (e: Exception) {
                     if (isListening) {
-                        println("Error in IPC listener: ${e.message}")
+                        logger.warn(LogCategory.SYSTEM, "Error in IPC listener", error = e)
                     }
                 }
             }
 
-            println("IPC listener thread stopped")
+            logger.trace(LogCategory.SYSTEM, "IPC listener thread stopped")
         }
     }
 
@@ -211,17 +217,17 @@ object SingleInstanceManager {
                     val url = reader.readLine()
 
                     if (url.isNullOrBlank()) {
-                        println("Received empty URL from new instance")
+                        logger.debug(LogCategory.SYSTEM, "Received empty URL from new instance")
                         return@use
                     }
 
-                    println("Received URL from new instance: $url")
+                    logger.info(LogCategory.SYSTEM, "Received URL from new instance")
 
                     // Process the URL
                     if (url.startsWith("boss://") || url.startsWith("http://") || url.startsWith("https://")) {
                         DeepLinkHandler.processDeepLink(url)
                     } else {
-                        println("Invalid URL protocol: $url")
+                        logger.warn(LogCategory.SYSTEM, "Invalid URL protocol received")
                     }
 
                     // Send acknowledgment
@@ -229,9 +235,9 @@ object SingleInstanceManager {
                     writer.println("OK")
                 }
             } catch (e: SocketTimeoutException) {
-                println("Client connection timeout")
+                logger.warn(LogCategory.SYSTEM, "Client connection timeout")
             } catch (e: Exception) {
-                println("Error handling client: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error handling client", error = e)
             }
         }
     }
@@ -242,7 +248,7 @@ object SingleInstanceManager {
      */
     fun sendToExistingInstance(url: String): Boolean {
         if (url.isBlank()) {
-            println("Cannot send empty URL")
+            logger.warn(LogCategory.SYSTEM, "Cannot send empty URL to existing instance")
             return false
         }
 
@@ -250,7 +256,7 @@ object SingleInstanceManager {
         val port = getPortFromLockFile() ?: IPC_PORT_BASE
 
         return try {
-            println("Attempting to connect to existing instance on port $port...")
+            logger.debug(LogCategory.SYSTEM, "Attempting to connect to existing instance", mapOf("port" to port))
 
             // Create socket with connection timeout
             val socket = Socket()
@@ -266,22 +272,22 @@ object SingleInstanceManager {
                 // Send URL
                 val writer = PrintWriter(it.getOutputStream(), true)
                 writer.println(url)
-                println("Sent URL to existing instance")
+                logger.debug(LogCategory.SYSTEM, "Sent URL to existing instance")
 
                 // Wait for acknowledgment
                 val reader = BufferedReader(InputStreamReader(it.getInputStream()))
                 val response = reader.readLine()
 
                 if (response == "OK") {
-                    println("Existing instance acknowledged URL")
+                    logger.info(LogCategory.SYSTEM, "Existing instance acknowledged URL")
                     true
                 } else {
-                    println("Unexpected response from existing instance: $response")
+                    logger.warn(LogCategory.SYSTEM, "Unexpected response from existing instance", mapOf("response" to (response ?: "null")))
                     false
                 }
             }
         } catch (e: Exception) {
-            println("Failed to send URL to existing instance: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to send URL to existing instance", error = e)
             false
         }
     }
@@ -305,7 +311,7 @@ object SingleInstanceManager {
                 null
             }
         } catch (e: Exception) {
-            println("Error reading port from lock file: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error reading port from lock file", error = e)
             null
         }
     }
@@ -332,7 +338,7 @@ object SingleInstanceManager {
     fun startListening(onUrlReceived: (String) -> Unit) {
         // IPC server is already started by acquireLock()
         // This method exists for API completeness but doesn't need to do anything
-        println("Already listening for URLs via IPC server")
+        logger.debug(LogCategory.SYSTEM, "Already listening for URLs via IPC server")
     }
 
     /**
@@ -340,7 +346,7 @@ object SingleInstanceManager {
      * Should be called on application shutdown
      */
     fun release() {
-        println("Releasing single-instance lock...")
+        logger.info(LogCategory.SYSTEM, "Releasing single-instance lock...")
 
         // Stop listening
         isListening = false
@@ -350,14 +356,14 @@ object SingleInstanceManager {
             serverSocket?.close()
             serverSocket = null
         } catch (e: Exception) {
-            println("Error closing server socket: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error closing server socket", error = e)
         }
 
         // Wait for listener thread to finish
         try {
             listenerThread?.join(1000)
         } catch (e: Exception) {
-            println("Error waiting for listener thread: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error waiting for listener thread", error = e)
         }
 
         // Delete lock file
@@ -365,9 +371,9 @@ object SingleInstanceManager {
             lockFile?.delete()
             lockFile = null
         } catch (e: Exception) {
-            println("Error deleting lock file: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error deleting lock file", error = e)
         }
 
-        println("Single-instance lock released")
+        logger.info(LogCategory.SYSTEM, "Single-instance lock released")
     }
 }

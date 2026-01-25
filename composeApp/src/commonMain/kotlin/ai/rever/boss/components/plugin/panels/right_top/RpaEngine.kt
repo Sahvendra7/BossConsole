@@ -2,6 +2,8 @@
 
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
@@ -42,6 +44,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 import kotlinx.serialization.Serializable
+
+private val rpaEngineLogger = BossLogger.forComponent("RpaEngine")
 
 /**
  * RPA Engine Panel - Executes RPA configurations in browser
@@ -782,11 +786,10 @@ open class RpaEngineComponent(
                 if (tabIndex >= 0) {
                     activeComponent.selectTab(tabIndex)
                     
-                    println("============================================================")
-                    println("RPA Engine: Created new Fluck tab")
-                    println("Tab: RPA: ${config.name}")
-                    println("Initial URL: $firstNavUrl")
-                    println("============================================================")
+                    rpaEngineLogger.info(LogCategory.UI, "RPA Engine: Created new Fluck tab", mapOf(
+                        "name" to config.name,
+                        "initialUrl" to firstNavUrl
+                    ))
                 }
             }
         }

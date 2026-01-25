@@ -4,6 +4,9 @@ import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.RoleService
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.user.UserSession
 import kotlin.time.ExperimentalTime
@@ -24,6 +27,8 @@ import kotlin.time.ExperimentalTime
  */
 @OptIn(ExperimentalTime::class)
 object SessionManager {
+
+    private val logger = BossLogger.forComponent("SessionManager")
 
     /**
      * Authentication method enum for tracking how user authenticated
@@ -56,7 +61,10 @@ object SessionManager {
         expiresIn: Long = 3600L
     ): Result<Unit> {
         return try {
-            println("SessionManager: Establishing session for ${userInfo.email} (via ${authMethod.name.lowercase()})")
+            logger.info(LogCategory.AUTH, "Establishing session", mapOf(
+                "email" to LogSanitizer.maskEmail(userInfo.email),
+                "method" to authMethod.name.lowercase()
+            ))
 
             // Step 1: Import session into Supabase Auth for persistence and auto-refresh
             try {
@@ -69,26 +77,24 @@ object SessionManager {
                         user = null  // Supabase-KT doesn't populate this for custom JWTs - expected behavior
                     )
                 )
-                println("SessionManager: ✅ Session imported successfully with importSession()")
-                println("SessionManager: ✅ Session will persist across app restarts")
-                println("SessionManager: ✅ Access token will auto-refresh using refresh token")
+                logger.debug(LogCategory.AUTH, "Session imported successfully with importSession()")
             } catch (e: Exception) {
-                println("SessionManager: ❌ Failed to import session: ${e.message}")
+                logger.error(LogCategory.AUTH, "Failed to import session", error = e)
                 return Result.failure(Exception("Failed to establish Supabase session: ${e.message}"))
             }
 
             // Step 2: Verify session was established
             val currentSession = SupabaseConfig.client.auth.currentSessionOrNull()
             if (currentSession == null) {
-                println("SessionManager: ❌ Session verification failed - no current session")
+                logger.error(LogCategory.AUTH, "Session verification failed - no current session")
                 return Result.failure(Exception("Failed to establish Supabase session"))
             }
-            println("SessionManager: ✅ Session verification successful")
+            logger.debug(LogCategory.AUTH, "Session verification successful")
 
             // Step 3: Persist user data separately (required for custom auth providers)
             // This is NOT a workaround - it's the correct pattern for custom JWTs
             UserDataStorage.saveUserData(userInfo, authenticatedVia = authMethod.name.lowercase())
-            println("SessionManager: ✅ User data persisted to storage")
+            logger.debug(LogCategory.AUTH, "User data persisted to storage")
 
             // Step 4: Update global auth state
             AuthStateManager.setCurrentUser(userInfo)
@@ -104,12 +110,12 @@ object SessionManager {
             }
 
             AuthStateManager.setAuthState(AuthService.AuthState.Authenticated)
-            println("SessionManager: ✅ Auth state updated to Authenticated")
-
-            println("SessionManager: Session establishment complete for ${userInfo.email}")
+            logger.info(LogCategory.AUTH, "Session established successfully", mapOf(
+                "email" to LogSanitizer.maskEmail(userInfo.email)
+            ))
             Result.success(Unit)
         } catch (e: Exception) {
-            println("SessionManager: Session establishment failed: ${e.message}")
+            logger.error(LogCategory.AUTH, "Session establishment failed", error = e)
             Result.failure(e)
         }
     }
@@ -129,12 +135,12 @@ object SessionManager {
             val currentSession = SupabaseConfig.client.auth.currentSessionOrNull()
 
             if (currentSession != null) {
-                println("SessionManager: Found existing Supabase session")
+                logger.debug(LogCategory.AUTH, "Found existing Supabase session")
 
                 // Try to get user from session.user first (standard Supabase auth)
                 val sessionUser = currentSession.user
                 if (sessionUser?.id?.isNotEmpty() == true) {
-                    println("SessionManager: Using user data from session.user (standard auth)")
+                    logger.debug(LogCategory.AUTH, "Using user data from session.user (standard auth)")
                     // Parse role claims from JWT
                     val roleClaims = RoleService.parseRoleClaimsFromSession(currentSession)
 
@@ -148,7 +154,7 @@ object SessionManager {
                 }
 
                 // Session user is null (custom JWT) - load from persistent storage
-                println("SessionManager: session.user is null (custom JWT), loading from storage")
+                logger.debug(LogCategory.AUTH, "session.user is null (custom JWT), loading from storage")
                 val storedUser = UserDataStorage.loadUserData()
 
                 if (storedUser != null) {
@@ -161,18 +167,21 @@ object SessionManager {
                         createdAt = storedUser.createdAt,
                         roleClaims = roleClaims
                     )
-                    println("SessionManager: ✅ Loaded user from storage (${storedUser.email}) with role claims: isAdmin=${roleClaims?.isAdmin}")
+                    logger.info(LogCategory.AUTH, "Loaded user from storage", mapOf(
+                        "email" to LogSanitizer.maskEmail(storedUser.email),
+                        "isAdmin" to (roleClaims?.isAdmin ?: false)
+                    ))
                     return Result.success(userWithRoles)
                 } else {
-                    println("SessionManager: ⚠️ No stored user data found")
+                    logger.debug(LogCategory.AUTH, "No stored user data found")
                     return Result.success(null)
                 }
             } else {
-                println("SessionManager: No existing Supabase session")
+                logger.debug(LogCategory.AUTH, "No existing Supabase session")
                 return Result.success(null)
             }
         } catch (e: Exception) {
-            println("SessionManager: Failed to load session: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to load session", error = e)
             Result.failure(e)
         }
     }
@@ -189,7 +198,7 @@ object SessionManager {
      */
     suspend fun clearSession(): Result<Unit> {
         return try {
-            println("SessionManager: Clearing session")
+            logger.info(LogCategory.AUTH, "Clearing session")
 
             // Get current user ID before clearing for cleanup purposes
             AuthStateManager.currentUser.value?.id
@@ -197,26 +206,27 @@ object SessionManager {
             // Step 1: Sign out from Supabase (network request)
             try {
                 SupabaseConfig.client.auth.signOut()
-                println("SessionManager: ✅ Signed out from Supabase")
+                logger.debug(LogCategory.AUTH, "Signed out from Supabase")
             } catch (e: Exception) {
-                println("SessionManager: ⚠️ Supabase signOut failed: ${e.message}")
+                logger.warn(LogCategory.AUTH, "Supabase signOut failed", error = e)
                 // Continue with cleanup even if network request fails
             }
 
             // Step 2: Clear persisted user data
             UserDataStorage.clearUserData()
-            println("SessionManager: ✅ Cleared user data storage")
+            logger.debug(LogCategory.AUTH, "Cleared user data storage")
 
             // Step 3: Reset auth state
             AuthStateManager.reset()
-            println("SessionManager: ✅ Reset auth state")
+            logger.debug(LogCategory.AUTH, "Reset auth state")
 
-            println("SessionManager: Session cleared successfully")
+            logger.info(LogCategory.AUTH, "Session cleared successfully")
             Result.success(Unit)
         } catch (e: Exception) {
-            println("SessionManager: Failed to clear session: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to clear session", error = e)
             Result.failure(e)
         }
     }
 
 }
+

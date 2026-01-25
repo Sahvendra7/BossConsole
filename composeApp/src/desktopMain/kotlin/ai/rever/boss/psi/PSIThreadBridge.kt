@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -29,6 +31,7 @@ import kotlin.concurrent.write
  * ```
  */
 object PSIThreadBridge {
+    private val logger = BossLogger.forComponent("PSIThreadBridge")
 
     /**
      * Dedicated thread pool for PSI operations.
@@ -118,7 +121,7 @@ object PSIThreadBridge {
         try {
             psiExecutor.close()
         } catch (e: Exception) {
-            println("[PSI] Error shutting down thread pool: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error shutting down thread pool", error = e)
         }
     }
 }

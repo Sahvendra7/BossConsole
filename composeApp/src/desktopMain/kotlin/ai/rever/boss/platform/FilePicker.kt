@@ -1,11 +1,15 @@
 package ai.rever.boss.platform
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import javax.swing.SwingUtilities
+
+private val filePickerLogger = BossLogger.forComponent("FilePicker")
 
 @Composable
 actual fun rememberFilePicker(
@@ -93,7 +97,7 @@ actual fun pickSaveFile(
             }
         }
     } catch (e: Exception) {
-        println("Error showing save file dialog: ${e.message}")
+        filePickerLogger.warn(LogCategory.FILE, "Error showing save file dialog", error = e)
         result = null
     }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.workspaces.CommandProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +67,7 @@ data class CustomTemplatesData(
  * Uses StateFlow for reactive UI updates.
  */
 object SplitTemplatesManager {
+    private val logger = BossLogger.forComponent("SplitTemplatesManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/split-templates.json")
     private val json = Json {
         prettyPrint = true
@@ -271,10 +274,10 @@ object SplitTemplatesManager {
                 val data = json.decodeFromString<CustomTemplatesData>(content)
                 _customTemplates.value = data.templates
                 updateAllTemplates()
-                println("[SplitTemplatesManager] Loaded ${data.templates.size} custom templates")
+                logger.debug(LogCategory.SYSTEM, "Loaded custom templates", mapOf("count" to data.templates.size))
             }
         } catch (e: Exception) {
-            println("[SplitTemplatesManager] Error loading: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error loading templates", error = e)
         }
     }
 
@@ -288,7 +291,7 @@ object SplitTemplatesManager {
             val content = json.encodeToString(CustomTemplatesData.serializer(), data)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("[SplitTemplatesManager] Error saving: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error saving templates", error = e)
         }
     }
 
@@ -385,7 +388,7 @@ object SplitTemplatesManager {
             // Convert SSH URL to HTTPS if needed
             convertGitUrlToWebUrl(url)
         } catch (e: Exception) {
-            println("[SplitTemplatesManager] Error getting git remote: ${e.message}")
+            logger.debug(LogCategory.SYSTEM, "Error getting git remote")
             "https://google.com"
         }
     }
@@ -436,7 +439,7 @@ object SplitTemplatesManager {
                 file.length() > 0
             } ?: false
         } catch (e: Exception) {
-            println("[SplitTemplatesManager] Error checking Claude session: ${e.message}")
+            logger.debug(LogCategory.SYSTEM, "Error checking Claude session")
             false
         }
     }

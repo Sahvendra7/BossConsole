@@ -2,6 +2,8 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.WebsiteMatchingUtil
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+
+private val secretDialogLogger = BossLogger.forComponent("SecretSelectionDialog")
 
 /**
  * Dialog for browsing and selecting secrets for auto-fill.
@@ -248,7 +252,7 @@ fun SecretSelectionDialog(
                                             }
                                             is FormFieldInjector.FillResult.Error -> {
                                                 // Keep dialog open on error
-                                                println("❌ Failed to fill: ${result.message}")
+                                                secretDialogLogger.warn(LogCategory.BROWSER, "Failed to fill credentials", mapOf("error" to result.message))
                                             }
                                         }
                                     }

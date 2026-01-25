@@ -1,6 +1,8 @@
 package ai.rever.boss.utils
 
 import ai.rever.boss.services.supabase.models.SecretEntry
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 
 /**
  * Utility for matching secrets to website domains.
@@ -14,6 +16,7 @@ import ai.rever.boss.services.supabase.models.SecretEntry
  * Used by Issue #56 - Secret Access Integration with Fluck Browser
  */
 object WebsiteMatchingUtil {
+    private val logger = BossLogger.forComponent("WebsiteMatchingUtil")
 
     /**
      * Represents a matched secret with its relevance score
@@ -95,7 +98,7 @@ object WebsiteMatchingUtil {
 
             host
         } catch (e: Exception) {
-            println("❌ [WebsiteMatchingUtil] Failed to extract domain from: $url - ${e.message}")
+            logger.debug(LogCategory.BROWSER, "Failed to extract domain", mapOf("url" to url))
             null
         }
     }

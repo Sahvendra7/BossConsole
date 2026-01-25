@@ -1,6 +1,8 @@
 package ai.rever.boss.updater
 
 import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -20,6 +22,8 @@ sealed class InstallResult {
 }
 
 object UpdateInstaller {
+
+    private val logger = BossLogger.forComponent("UpdateInstaller")
 
     /**
      * Validate download file for security concerns
@@ -57,9 +61,10 @@ object UpdateInstaller {
         // Ensure canonicalized path is in expected temp directory
         val expectedTempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates").canonicalPath
         if (!canonicalPath.startsWith(expectedTempDir)) {
-            println("⚠️ Security Warning: Download file outside expected directory")
-            println("   Expected: $expectedTempDir")
-            println("   Actual: $canonicalPath")
+            logger.warn(LogCategory.SYSTEM, "Download file outside expected directory", mapOf(
+                "expected" to expectedTempDir,
+                "actual" to canonicalPath
+            ))
         }
 
         // Check for suspicious characters in filename
@@ -70,10 +75,10 @@ object UpdateInstaller {
 
         // Check for shell metacharacters (defense in depth)
         if (filename.contains('$') || filename.contains('`') || filename.contains(';')) {
-            println("⚠️ Security Warning: Filename contains shell metacharacters: $filename")
+            logger.warn(LogCategory.SYSTEM, "Filename contains shell metacharacters", mapOf("filename" to filename))
         }
 
-        println("✅ Security: Validated download file: ${downloadFile.name}")
+        logger.debug(LogCategory.SYSTEM, "Validated download file", mapOf("filename" to downloadFile.name))
     }
 
     /**
@@ -92,7 +97,7 @@ object UpdateInstaller {
     private fun extractVersionFromFilename(file: File): Version? {
         return try {
             val filename = file.name
-            println("Extracting version from filename: $filename")
+            logger.debug(LogCategory.SYSTEM, "Extracting version from filename", mapOf("filename" to filename))
 
             // Remove BOSS- prefix and file extension (with architecture suffixes)
             val versionStr = filename
@@ -110,11 +115,11 @@ object UpdateInstaller {
                 .removeSuffix(".deb")
                 .removeSuffix(".rpm")
 
-            println("Extracted version string: $versionStr")
+            logger.debug(LogCategory.SYSTEM, "Extracted version string", mapOf("version" to versionStr))
 
             Version.parse(versionStr)
         } catch (e: Exception) {
-            println("Failed to extract version from filename: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to extract version from filename", error = e)
             null
         }
     }
@@ -131,33 +136,37 @@ object UpdateInstaller {
         val downloadedVersion = extractVersionFromFilename(downloadFile)
 
         if (downloadedVersion == null) {
-            println("⚠️ Cannot verify update version - version extraction failed")
-            println("   Filename: ${downloadFile.name}")
-            println("   Proceeding with caution...")
+            logger.warn(LogCategory.SYSTEM, "Cannot verify update version - extraction failed", mapOf(
+                "filename" to downloadFile.name
+            ))
             // Allow installation if version cannot be extracted (for manual updates)
             return true
         }
 
         val currentVersion = Version.CURRENT
 
-        println("Version check:")
-        println("  Current: $currentVersion")
-        println("  Download: $downloadedVersion")
+        logger.info(LogCategory.SYSTEM, "Version check", mapOf(
+            "current" to currentVersion.toString(),
+            "download" to downloadedVersion.toString()
+        ))
 
         if (downloadedVersion < currentVersion) {
-            println("❌ DOWNGRADE DETECTED!")
-            println("   Cannot install older version $downloadedVersion")
-            println("   Current version is $currentVersion")
-            println("   This is prevented to avoid Issue #111")
+            logger.error(LogCategory.SYSTEM, "Downgrade detected - cannot install older version", mapOf(
+                "downloadVersion" to downloadedVersion.toString(),
+                "currentVersion" to currentVersion.toString()
+            ))
             return false
         }
 
         if (downloadedVersion == currentVersion) {
-            println("⚠️ Same version detected ($downloadedVersion)")
-            println("   Allowing reinstall of same version")
-            // Allow reinstall of same version (useful for repairs)
+            logger.info(LogCategory.SYSTEM, "Same version detected - allowing reinstall", mapOf(
+                "version" to downloadedVersion.toString()
+            ))
         } else {
-            println("✅ Update verified: $currentVersion → $downloadedVersion")
+            logger.info(LogCategory.SYSTEM, "Update verified", mapOf(
+                "from" to currentVersion.toString(),
+                "to" to downloadedVersion.toString()
+            ))
         }
 
         return true
@@ -173,7 +182,7 @@ object UpdateInstaller {
         return try {
             val downloadFile = File(downloadPath)
             if (!downloadFile.exists()) {
-                println("Update file not found: $downloadPath")
+                logger.error(LogCategory.SYSTEM, "Update file not found", mapOf("path" to downloadPath))
                 return InstallResult.Error("Update file not found")
             }
 
@@ -195,13 +204,19 @@ object UpdateInstaller {
                 else -> listOf(".jar")
             }
             if (!validExtensions.any { fileName.endsWith(it) }) {
-                println("❌ File type mismatch: $fileName not valid for platform ${getCurrentPlatform()}")
-                println("   Expected one of: $validExtensions")
+                logger.error(LogCategory.SYSTEM, "File type mismatch", mapOf(
+                    "filename" to fileName,
+                    "platform" to getCurrentPlatform(),
+                    "expected" to validExtensions.joinToString()
+                ))
                 return InstallResult.Error(
                     "Downloaded file type '$fileName' is not valid for this platform. Expected: ${validExtensions.joinToString()}"
                 )
             }
-            println("✅ File type validated: $fileName is valid for ${getCurrentPlatform()}")
+            logger.debug(LogCategory.SYSTEM, "File type validated", mapOf(
+                "filename" to fileName,
+                "platform" to getCurrentPlatform()
+            ))
 
             // Route based on actual file extension (not platform) to handle fallback cases
             // e.g., when .deb isn't available but .jar is for Linux ARM64
@@ -212,12 +227,12 @@ object UpdateInstaller {
                 fileName.endsWith(".rpm") -> installLinuxRpmUpdate(downloadFile)
                 fileName.endsWith(".jar") -> installJarUpdate(downloadFile)
                 else -> {
-                    println("Unknown update file type: ${downloadFile.name}")
+                    logger.error(LogCategory.SYSTEM, "Unknown update file type", mapOf("filename" to downloadFile.name))
                     InstallResult.Error("Unknown update file type: ${downloadFile.extension}")
                 }
             }
         } catch (e: Exception) {
-            println("Error installing update: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Error installing update", error = e)
             InstallResult.Error(e.message ?: "Unknown error")
         }
     }
@@ -234,7 +249,7 @@ object UpdateInstaller {
     private suspend fun installMacOSUpdate(downloadFile: File): InstallResult {
         return withContext(Dispatchers.IO) {
             try {
-                println("Starting macOS update installation...")
+                logger.info(LogCategory.SYSTEM, "Starting macOS update installation")
 
                 // Validate download file for security (early check)
                 validateDownloadFile(downloadFile, ".dmg")
@@ -242,16 +257,14 @@ object UpdateInstaller {
                 // Get current application bundle path
                 val currentAppPath = getCurrentApplicationPath()
                 if (currentAppPath == null) {
-                    println("⚠️ Could not determine current application path")
-                    println("   This is expected when running in development mode (IDE/Gradle)")
-                    println("   Falling back to manual DMG installation")
+                    logger.warn(LogCategory.SYSTEM, "Could not determine app path - falling back to manual DMG install")
                     return@withContext openDMGForManualInstallation(downloadFile)
                 }
 
-                println("🎯 Target application path: $currentAppPath")
+                logger.debug(LogCategory.SYSTEM, "Target application path", mapOf("path" to currentAppPath))
 
                 // Verify DMG is valid by attempting to mount it
-                println("📦 Mounting DMG for verification...")
+                logger.debug(LogCategory.SYSTEM, "Mounting DMG for verification")
                 val mountTest = ProcessBuilder(
                     "hdiutil", "attach", downloadFile.absolutePath,
                     "-nobrowse", "-quiet", "-verify"
@@ -259,41 +272,41 @@ object UpdateInstaller {
                 mountTest.waitFor()
 
                 if (mountTest.exitValue() != 0) {
-                    println("❌ DMG mounting failed")
+                    logger.error(LogCategory.SYSTEM, "DMG mounting failed")
                     return@withContext InstallResult.Error("Failed to mount DMG for verification")
                 }
 
                 // Find the mounted volume
                 val mountedVolume = findMountedBossVolume()
                 if (mountedVolume == null) {
-                    println("❌ Could not find mounted BOSS volume after successful mount")
+                    logger.error(LogCategory.SYSTEM, "Could not find mounted BOSS volume")
                     cleanupDMG(null) // Try to cleanup any stray mounts
                     return@withContext InstallResult.Error("Could not locate mounted DMG volume")
                 }
 
                 // Use try-finally to ensure DMG is always unmounted, even if exceptions occur
                 try {
-                    println("📂 Verifying DMG contents (volume: ${mountedVolume.name})...")
+                    logger.debug(LogCategory.SYSTEM, "Verifying DMG contents", mapOf("volume" to mountedVolume.name))
 
                     // Verify app bundle exists in DMG
                     val appBundle = findAppBundleInVolume(mountedVolume)
                         ?: throw IllegalStateException("Could not find BOSS.app in mounted DMG")
 
-                    println("✅ DMG verified successfully (found: ${appBundle.name})")
+                    logger.info(LogCategory.SYSTEM, "DMG verified successfully", mapOf("appBundle" to appBundle.name))
 
                     // DMG is valid - now we can safely unmount it (script will remount it)
                     // Unmounting happens in the finally block below
 
                 } finally {
                     // CRITICAL: Always unmount the DMG, even if verification failed
-                    println("🧹 Cleaning up verification mount...")
+                    logger.debug(LogCategory.SYSTEM, "Cleaning up verification mount")
                     cleanupDMG(mountedVolume)
                 }
 
                 // At this point, DMG has been verified and unmounted
                 // Generate the update script that will remount, install, and cleanup
                 val currentPid = ProcessHandle.current().pid()
-                println("📝 Generating update script (PID: $currentPid)")
+                logger.debug(LogCategory.SYSTEM, "Generating update script", mapOf("pid" to currentPid))
 
                 val scriptFile = UpdateScriptGenerator.generateMacOSUpdateScript(
                     dmgPath = downloadFile.absolutePath,
@@ -302,7 +315,7 @@ object UpdateInstaller {
                 )
 
                 // Launch the script in the background
-                println("🚀 Launching update script")
+                logger.info(LogCategory.SYSTEM, "Launching update script")
                 UpdateScriptGenerator.launchScript(scriptFile)
 
                 // Return RequiresRestart - the UpdateManager will handle quitting
@@ -311,7 +324,7 @@ object UpdateInstaller {
                 )
 
             } catch (e: Exception) {
-                println("❌ Error during update preparation: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error during update preparation", error = e)
                 InstallResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -324,14 +337,14 @@ object UpdateInstaller {
     private suspend fun installWindowsUpdate(downloadFile: File): InstallResult {
         return withContext(Dispatchers.IO) {
             try {
-                println("Starting Windows update installation...")
+                logger.info(LogCategory.SYSTEM, "Starting Windows update installation")
 
                 // Validate download file for security (early check)
                 validateDownloadFile(downloadFile, ".msi")
 
                 // Generate update script with current process PID
                 val currentPid = ProcessHandle.current().pid()
-                println("📝 Generating update script (PID: $currentPid)")
+                logger.debug(LogCategory.SYSTEM, "Generating update script", mapOf("pid" to currentPid))
 
                 val scriptFile = UpdateScriptGenerator.generateWindowsUpdateScript(
                     msiPath = downloadFile.absolutePath,
@@ -339,7 +352,7 @@ object UpdateInstaller {
                 )
 
                 // Launch the script in the background
-                println("🚀 Launching update script")
+                logger.info(LogCategory.SYSTEM, "Launching update script")
                 UpdateScriptGenerator.launchScript(scriptFile)
 
                 // Return RequiresRestart
@@ -348,7 +361,7 @@ object UpdateInstaller {
                 )
 
             } catch (e: Exception) {
-                println("❌ Error during update preparation: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error during update preparation", error = e)
                 InstallResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -361,7 +374,7 @@ object UpdateInstaller {
     private suspend fun installJarUpdate(downloadFile: File): InstallResult {
         return withContext(Dispatchers.IO) {
             try {
-                println("Starting JAR update installation...")
+                logger.info(LogCategory.SYSTEM, "Starting JAR update installation")
 
                 // Validate download file for security (early check)
                 validateDownloadFile(downloadFile, ".jar")
@@ -369,23 +382,23 @@ object UpdateInstaller {
                 // Get current JAR path
                 val currentJar = getCurrentJarPath()
                 if (currentJar == null) {
-                    println("❌ Could not determine current JAR path")
+                    logger.error(LogCategory.SYSTEM, "Could not determine current JAR path")
                     return@withContext InstallResult.Error("Could not locate current JAR")
                 }
 
                 // Backup current JAR
                 val backupJar = File(currentJar.parentFile, "${currentJar.name}.backup")
                 currentJar.copyTo(backupJar, overwrite = true)
-                println("📦 Backed up current JAR to: ${backupJar.absolutePath}")
+                logger.debug(LogCategory.SYSTEM, "Backed up current JAR", mapOf("backup" to backupJar.absolutePath))
 
                 // Replace current JAR
                 downloadFile.copyTo(currentJar, overwrite = true)
 
-                println("✅ JAR updated successfully")
+                logger.info(LogCategory.SYSTEM, "JAR updated successfully")
                 InstallResult.Success("Update installed. Restart the app to use the new version.")
 
             } catch (e: Exception) {
-                println("❌ Failed to update JAR: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to update JAR", error = e)
                 InstallResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -398,14 +411,14 @@ object UpdateInstaller {
     private suspend fun installLinuxDebUpdate(downloadFile: File): InstallResult {
         return withContext(Dispatchers.IO) {
             try {
-                println("Starting Linux DEB update installation...")
+                logger.info(LogCategory.SYSTEM, "Starting Linux DEB update installation")
 
                 // Validate download file for security (early check)
                 validateDownloadFile(downloadFile, ".deb")
 
                 // Generate update script with current process PID
                 val currentPid = ProcessHandle.current().pid()
-                println("📝 Generating DEB update script (PID: $currentPid)")
+                logger.debug(LogCategory.SYSTEM, "Generating DEB update script", mapOf("pid" to currentPid))
 
                 val scriptFile = UpdateScriptGenerator.generateLinuxDebUpdateScript(
                     debPath = downloadFile.absolutePath,
@@ -413,7 +426,7 @@ object UpdateInstaller {
                 )
 
                 // Launch the script in the background
-                println("🚀 Launching DEB update script")
+                logger.info(LogCategory.SYSTEM, "Launching DEB update script")
                 UpdateScriptGenerator.launchScript(scriptFile)
 
                 // Return RequiresRestart
@@ -422,7 +435,7 @@ object UpdateInstaller {
                 )
 
             } catch (e: Exception) {
-                println("❌ Error during DEB update preparation: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error during DEB update preparation", error = e)
                 InstallResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -435,14 +448,14 @@ object UpdateInstaller {
     private suspend fun installLinuxRpmUpdate(downloadFile: File): InstallResult {
         return withContext(Dispatchers.IO) {
             try {
-                println("Starting Linux RPM update installation...")
+                logger.info(LogCategory.SYSTEM, "Starting Linux RPM update installation")
 
                 // Validate download file for security (early check)
                 validateDownloadFile(downloadFile, ".rpm")
 
                 // Generate update script with current process PID
                 val currentPid = ProcessHandle.current().pid()
-                println("📝 Generating RPM update script (PID: $currentPid)")
+                logger.debug(LogCategory.SYSTEM, "Generating RPM update script", mapOf("pid" to currentPid))
 
                 val scriptFile = UpdateScriptGenerator.generateLinuxRpmUpdateScript(
                     rpmPath = downloadFile.absolutePath,
@@ -450,7 +463,7 @@ object UpdateInstaller {
                 )
 
                 // Launch the script in the background
-                println("🚀 Launching RPM update script")
+                logger.info(LogCategory.SYSTEM, "Launching RPM update script")
                 UpdateScriptGenerator.launchScript(scriptFile)
 
                 // Return RequiresRestart
@@ -459,7 +472,7 @@ object UpdateInstaller {
                 )
 
             } catch (e: Exception) {
-                println("❌ Error during RPM update preparation: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Error during RPM update preparation", error = e)
                 InstallResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -471,11 +484,11 @@ object UpdateInstaller {
      */
     fun getCurrentApplicationPath(): String? {
         return try {
-            println("🔍 Attempting to detect current application path...")
+            logger.debug(LogCategory.SYSTEM, "Detecting current application path")
 
             // Method 1: Check java.library.path for .app bundle
             val libraryPath = System.getProperty("java.library.path")
-            println("   java.library.path: $libraryPath")
+            logger.trace(LogCategory.SYSTEM, "java.library.path", mapOf("path" to (libraryPath ?: "null")))
 
             val bundlePath = libraryPath
                 ?.split(":")
@@ -483,20 +496,20 @@ object UpdateInstaller {
                 ?.let { "${it.substringBefore(".app")}.app" }
 
             if (bundlePath?.contains(".app") == true && File(bundlePath).exists()) {
-                println("✅ Found app bundle via library path: $bundlePath")
+                logger.debug(LogCategory.SYSTEM, "Found app bundle via library path", mapOf("path" to bundlePath))
                 return bundlePath
             }
 
             // Method 2: Try to find app bundle from current JAR/class location
             val jarPath = UpdateInstaller::class.java.protectionDomain.codeSource.location.path
-            println("   Current code source: $jarPath")
+            logger.trace(LogCategory.SYSTEM, "Current code source", mapOf("path" to jarPath))
 
             var currentFile = File(jarPath)
             // Walk up the directory tree looking for .app bundle
             for (i in 0..5) {
-                println("   Checking parent $i: ${currentFile.absolutePath}")
+                logger.trace(LogCategory.SYSTEM, "Checking parent", mapOf("index" to i, "path" to currentFile.absolutePath))
                 if (currentFile.name.endsWith(".app")) {
-                    println("✅ Found app bundle via directory traversal: ${currentFile.absolutePath}")
+                    logger.debug(LogCategory.SYSTEM, "Found app bundle via directory traversal", mapOf("path" to currentFile.absolutePath))
                     return currentFile.absolutePath
                 }
                 currentFile = currentFile.parentFile ?: break
@@ -505,16 +518,15 @@ object UpdateInstaller {
             // Method 3: Check if running from Applications folder
             val applicationsPath = "/Applications/BOSS.app"
             if (File(applicationsPath).exists()) {
-                println("✅ Found BOSS in Applications folder: $applicationsPath")
+                logger.debug(LogCategory.SYSTEM, "Found BOSS in Applications folder", mapOf("path" to applicationsPath))
                 return applicationsPath
             }
 
-            println("❌ Could not determine application path - running in development mode?")
-            println("   This is normal when running from IDE/Gradle")
+            logger.debug(LogCategory.SYSTEM, "Could not determine application path - likely dev mode")
             null
 
         } catch (e: Exception) {
-            println("❌ Error getting application path: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Error getting application path", error = e)
             null
         }
     }
@@ -545,10 +557,10 @@ object UpdateInstaller {
         return try {
             val process = ProcessBuilder("open", downloadFile.absolutePath).start()
             process.waitFor()
-            println("DMG opened for manual installation: ${downloadFile.absolutePath}")
+            logger.info(LogCategory.SYSTEM, "DMG opened for manual installation", mapOf("path" to downloadFile.absolutePath))
             InstallResult.Success("DMG opened for manual installation")
         } catch (e: Exception) {
-            println("Failed to open DMG: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to open DMG", error = e)
             InstallResult.Error(e.message ?: "Failed to open DMG")
         }
     }
@@ -562,7 +574,7 @@ object UpdateInstaller {
                 ProcessBuilder("hdiutil", "detach", mountedVolume.absolutePath, "-quiet")
                     .start()
                     .waitFor()
-                println("DMG unmounted successfully")
+                logger.debug(LogCategory.SYSTEM, "DMG unmounted successfully")
             } else {
                 // Try to unmount any BOSS volume
                 val bossVolume = findMountedBossVolume()
@@ -570,11 +582,11 @@ object UpdateInstaller {
                     ProcessBuilder("hdiutil", "detach", bossVolume.absolutePath, "-quiet")
                         .start()
                         .waitFor()
-                    println("DMG unmounted successfully")
+                    logger.debug(LogCategory.SYSTEM, "DMG unmounted successfully")
                 }
             }
         } catch (e: Exception) {
-            println("Warning: Could not unmount DMG: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Could not unmount DMG", error = e)
         }
     }
 
@@ -628,7 +640,7 @@ object UpdateInstaller {
 
             "Linux"
         } catch (e: Exception) {
-            println("Could not detect Linux distro type: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Could not detect Linux distro type", error = e)
             "Linux"
         }
     }

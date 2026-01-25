@@ -1,5 +1,7 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.awt.Robot
 import java.awt.event.KeyEvent
 
@@ -17,12 +19,13 @@ import java.awt.event.KeyEvent
  * - Windows/Linux: Ctrl
  */
 object ClipboardHelper {
+    private val logger = BossLogger.forComponent("ClipboardHelper")
+
     private val robot by lazy {
         try {
             Robot()
         } catch (e: Exception) {
-            println("⚠️  Failed to initialize Robot for clipboard operations: ${e.message}")
-            println("   Clipboard menu items may not work. This can happen if accessibility permissions are not granted.")
+            logger.warn(LogCategory.UI, "Failed to initialize Robot for clipboard operations - may need accessibility permissions", error = e)
             null
         }
     }
@@ -40,9 +43,9 @@ object ClipboardHelper {
                 it.keyPress(KeyEvent.VK_C)
                 it.keyRelease(KeyEvent.VK_C)
                 it.keyRelease(modifierKey)
-                println("📋 Copy operation triggered")
+                logger.debug(LogCategory.UI, "Copy operation triggered")
             } catch (e: Exception) {
-                println("❌ Copy failed: ${e.message}")
+                logger.warn(LogCategory.UI, "Copy operation failed", error = e)
             }
         }
     }
@@ -57,9 +60,9 @@ object ClipboardHelper {
                 it.keyPress(KeyEvent.VK_V)
                 it.keyRelease(KeyEvent.VK_V)
                 it.keyRelease(modifierKey)
-                println("📋 Paste operation triggered")
+                logger.debug(LogCategory.UI, "Paste operation triggered")
             } catch (e: Exception) {
-                println("❌ Paste failed: ${e.message}")
+                logger.warn(LogCategory.UI, "Paste operation failed", error = e)
             }
         }
     }
@@ -74,9 +77,9 @@ object ClipboardHelper {
                 it.keyPress(KeyEvent.VK_X)
                 it.keyRelease(KeyEvent.VK_X)
                 it.keyRelease(modifierKey)
-                println("📋 Cut operation triggered")
+                logger.debug(LogCategory.UI, "Cut operation triggered")
             } catch (e: Exception) {
-                println("❌ Cut failed: ${e.message}")
+                logger.warn(LogCategory.UI, "Cut operation failed", error = e)
             }
         }
     }
@@ -91,9 +94,9 @@ object ClipboardHelper {
                 it.keyPress(KeyEvent.VK_A)
                 it.keyRelease(KeyEvent.VK_A)
                 it.keyRelease(modifierKey)
-                println("📋 Select All operation triggered")
+                logger.debug(LogCategory.UI, "Select All operation triggered")
             } catch (e: Exception) {
-                println("❌ Select All failed: ${e.message}")
+                logger.warn(LogCategory.UI, "Select All operation failed", error = e)
             }
         }
     }

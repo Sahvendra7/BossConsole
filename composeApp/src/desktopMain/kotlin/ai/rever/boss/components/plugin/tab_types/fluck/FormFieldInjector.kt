@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
 import kotlin.time.Duration.Companion.seconds
@@ -16,6 +18,7 @@ import kotlin.time.Duration.Companion.seconds
  * Used by Issue #56 - Secret Access Integration with Fluck Browser
  */
 object FormFieldInjector {
+    private val logger = BossLogger.forComponent("FormFieldInjector")
 
     /**
      * Fill modes for credential injection
@@ -687,7 +690,7 @@ object FormFieldInjector {
                 """.trimIndent())
             }
         } catch (e: Exception) {
-            println("Failed to apply discrete mode: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to apply discrete mode", error = e)
         }
     }
 
@@ -733,7 +736,7 @@ object FormFieldInjector {
                 """.trimIndent())
             }
         } catch (e: Exception) {
-            println("Failed to remove discrete mode: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to remove discrete mode", error = e)
         }
     }
 

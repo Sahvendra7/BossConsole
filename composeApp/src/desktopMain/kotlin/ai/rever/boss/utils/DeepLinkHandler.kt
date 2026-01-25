@@ -7,6 +7,9 @@ import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.registery.PanelId
 import ai.rever.boss.utils.extractFileName
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +26,7 @@ actual object DeepLinkHandler {
     actual val deepLinkFlow: StateFlow<String?> = _deepLinkFlow
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val logger = BossLogger.forComponent("DeepLinkHandler")
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
@@ -45,20 +49,20 @@ actual object DeepLinkHandler {
             try {
                 Desktop.getDesktop().setOpenURIHandler { event ->
                     val uri = event.uri.toString()
-                    println("Received deep link (macOS): $uri")
+                    logger.info(LogCategory.SYSTEM, "Received deep link (macOS)", mapOf("uri" to LogSanitizer.maskUriParams(uri)))
 
                     // Handle http/https URLs for default browser functionality
                     if (uri.startsWith("http://") || uri.startsWith("https://")) {
-                        println("Handling as HTTP(S) URL")
+                        logger.debug(LogCategory.BROWSER, "Handling as HTTP(S) URL")
                         URLHandlerService.handleURL(uri)
                     } else {
                         // Handle boss:// deep links for auth
                         _deepLinkFlow.value = uri
                     }
                 }
-                println("macOS deep link handler registered successfully")
+                logger.info(LogCategory.SYSTEM, "macOS deep link handler registered successfully")
             } catch (e: Exception) {
-                println("Failed to set up macOS deep link handler: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to set up macOS deep link handler", error = e)
             }
         }
     }
@@ -68,12 +72,12 @@ actual object DeepLinkHandler {
         try {
             // Register protocol if not already registered
             if (!WindowsProtocolHandler.isProtocolRegistered()) {
-                println("Registering Windows protocol handler...")
+                logger.info(LogCategory.SYSTEM, "Registering Windows protocol handler")
                 WindowsProtocolHandler.registerProtocol()
             } else {
-                println("Windows protocol handler already registered")
+                logger.debug(LogCategory.SYSTEM, "Windows protocol handler already registered")
             }
-            
+
             // On Windows, deep links come through command line args when the app is already running
             // For new instances, we need to check args in main()
             if (Desktop.isDesktopSupported()) {
@@ -81,11 +85,11 @@ actual object DeepLinkHandler {
                 try {
                     Desktop.getDesktop().setOpenURIHandler { event ->
                         val uri = event.uri.toString()
-                        println("Received deep link (Windows via Desktop): $uri")
+                        logger.info(LogCategory.SYSTEM, "Received deep link (Windows via Desktop)", mapOf("uri" to LogSanitizer.maskUriParams(uri)))
 
                         // Handle http/https URLs for default browser functionality
                         if (uri.startsWith("http://") || uri.startsWith("https://")) {
-                            println("Handling as HTTP(S) URL")
+                            logger.debug(LogCategory.BROWSER, "Handling as HTTP(S) URL")
                             URLHandlerService.handleURL(uri)
                         } else {
                             // Handle boss:// deep links for auth
@@ -93,11 +97,11 @@ actual object DeepLinkHandler {
                         }
                     }
                 } catch (e: Exception) {
-                    println("Desktop.setOpenURIHandler not supported on Windows: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Desktop.setOpenURIHandler not supported on Windows", error = e)
                 }
             }
         } catch (e: Exception) {
-            println("Failed to set up Windows deep link handler: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to set up Windows deep link handler", error = e)
         }
     }
     
@@ -107,11 +111,11 @@ actual object DeepLinkHandler {
             try {
                 Desktop.getDesktop().setOpenURIHandler { event ->
                     val uri = event.uri.toString()
-                    println("Received deep link: $uri")
+                    logger.info(LogCategory.SYSTEM, "Received deep link", mapOf("uri" to LogSanitizer.maskUriParams(uri)))
 
                     // Handle http/https URLs for default browser functionality
                     if (uri.startsWith("http://") || uri.startsWith("https://")) {
-                        println("Handling as HTTP(S) URL")
+                        logger.debug(LogCategory.BROWSER, "Handling as HTTP(S) URL")
                         URLHandlerService.handleURL(uri)
                     } else {
                         // Handle boss:// deep links for auth
@@ -119,7 +123,7 @@ actual object DeepLinkHandler {
                     }
                 }
             } catch (e: Exception) {
-                println("Failed to set up deep link handler: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to set up deep link handler", error = e)
             }
         }
     }
@@ -130,14 +134,14 @@ actual object DeepLinkHandler {
     fun processCommandLineArgs(args: Array<String>) {
         if (isWindows) {
             WindowsProtocolHandler.extractDeepLinkFromArgs(args)?.let { url ->
-                println("Received deep link from command line: $url")
+                logger.info(LogCategory.SYSTEM, "Received deep link from command line", mapOf("uri" to LogSanitizer.maskUriParams(url)))
                 processDeepLink(url)
             }
         }
     }
-    
+
     actual fun processDeepLink(uri: String) {
-        println("DeepLinkHandler: Processing deep link: $uri")
+        logger.info(LogCategory.SYSTEM, "Processing deep link", mapOf("uri" to LogSanitizer.maskUriParams(uri)))
 
         when {
             uri.startsWith("boss://url") -> handleUrlLink(uri)
@@ -164,7 +168,7 @@ actual object DeepLinkHandler {
      *   boss://terminal?command=ls%20-la
      */
     private fun handleTerminalLink(uri: String) {
-        println("DeepLinkHandler: Handling terminal link")
+        logger.debug(LogCategory.TERMINAL, "Handling terminal link")
 
         val params = parseQueryParams(uri)
         val command = params["command"]?.urlDecode()
@@ -173,7 +177,7 @@ actual object DeepLinkHandler {
         val cliCommand = ai.rever.boss.cli.CLICommand.OpenTerminal(command)
         ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
 
-        println("DeepLinkHandler: Terminal command queued${if (command != null) " with command: $command" else ""}")
+        logger.info(LogCategory.TERMINAL, "Terminal command queued", mapOf("hasCommand" to (command != null)))
     }
 
     /**
@@ -183,25 +187,25 @@ actual object DeepLinkHandler {
      *   boss://folder?path=/path&name=MyProject
      */
     private fun handleFolderLink(uri: String) {
-        println("DeepLinkHandler: Handling folder link")
+        logger.debug(LogCategory.FILE, "Handling folder link")
 
         val params = parseQueryParams(uri)
         val path = params["path"]?.urlDecode()
 
         if (path == null) {
-            println("DeepLinkHandler: Missing 'path' parameter in folder deep link")
+            logger.warn(LogCategory.FILE, "Missing 'path' parameter in folder deep link")
             return
         }
 
         val folder = File(path).absoluteFile
 
         if (!folder.exists()) {
-            println("DeepLinkHandler: Folder does not exist: ${folder.absolutePath}")
+            logger.warn(LogCategory.FILE, "Folder does not exist", mapOf("path" to folder.absolutePath))
             return
         }
 
         if (!folder.isDirectory) {
-            println("DeepLinkHandler: Path is not a directory: ${folder.absolutePath}")
+            logger.warn(LogCategory.FILE, "Path is not a directory", mapOf("path" to folder.absolutePath))
             return
         }
 
@@ -224,15 +228,15 @@ actual object DeepLinkHandler {
                 // Fall back to just updating recent projects if no window state available
                 ProjectState.updateRecentProjects(project)
             }
-            println("DeepLinkHandler: Folder opened in codebase: ${folder.absolutePath}")
+            logger.info(LogCategory.FILE, "Folder opened in codebase", mapOf("path" to folder.absolutePath))
 
             // Emit panel open event to show the codebase panel
             if (focusedWindowId == null) {
-                println("DeepLinkHandler: No window focused, cannot open codebase panel")
+                logger.warn(LogCategory.UI, "No window focused, cannot open codebase panel")
                 return@launch
             }
             PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = focusedWindowId)
-            println("DeepLinkHandler: Emitted codebase panel open event (window: $focusedWindowId)")
+            logger.debug(LogCategory.UI, "Emitted codebase panel open event", mapOf("windowId" to focusedWindowId))
         }
     }
 
@@ -245,13 +249,13 @@ actual object DeepLinkHandler {
      *   boss://plugin?id=secret-manager
      */
     private fun handlePluginLink(uri: String) {
-        println("DeepLinkHandler: Handling plugin link")
+        logger.debug(LogCategory.UI, "Handling plugin link")
 
         val params = parseQueryParams(uri)
         val panelIdStr = params["id"]?.urlDecode()
 
         if (panelIdStr == null) {
-            println("DeepLinkHandler: Missing 'id' parameter in plugin deep link")
+            logger.warn(LogCategory.UI, "Missing 'id' parameter in plugin deep link")
             return
         }
 
@@ -267,11 +271,11 @@ actual object DeepLinkHandler {
 
             val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             if (focusedWindowId == null) {
-                println("DeepLinkHandler: No window focused, cannot open panel: $panelIdStr")
+                logger.warn(LogCategory.UI, "No window focused, cannot open panel", mapOf("panelId" to panelIdStr))
                 return@launch
             }
             PanelEventBus.openPanel(panelId, sourceWindowId = focusedWindowId)
-            println("DeepLinkHandler: Emitted panel open event for: $panelIdStr (window: $focusedWindowId)")
+            logger.info(LogCategory.UI, "Emitted panel open event", mapOf("panelId" to panelIdStr, "windowId" to focusedWindowId))
         }
     }
 
@@ -281,13 +285,13 @@ actual object DeepLinkHandler {
      *   boss://url?url=https%3A%2F%2Fexample.com
      */
     private fun handleUrlLink(uri: String) {
-        println("DeepLinkHandler: Handling URL link")
+        logger.debug(LogCategory.BROWSER, "Handling URL link")
 
         val params = parseQueryParams(uri)
         val url = params["url"]?.urlDecode()
 
         if (url == null) {
-            println("DeepLinkHandler: Missing 'url' parameter in URL deep link")
+            logger.warn(LogCategory.BROWSER, "Missing 'url' parameter in URL deep link")
             return
         }
 
@@ -295,7 +299,7 @@ actual object DeepLinkHandler {
         val cliCommand = ai.rever.boss.cli.CLICommand.OpenUrl(url)
         ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
 
-        println("DeepLinkHandler: URL command queued: $url")
+        logger.info(LogCategory.BROWSER, "URL command queued", mapOf("url" to url))
     }
 
     /**
@@ -304,13 +308,13 @@ actual object DeepLinkHandler {
      *   boss://workspace?path=/path/to/workspace.json
      */
     private fun handleWorkspaceLink(uri: String) {
-        println("DeepLinkHandler: Handling workspace link")
+        logger.debug(LogCategory.WORKSPACE, "Handling workspace link")
 
         val params = parseQueryParams(uri)
         val path = params["path"]?.urlDecode()
 
         if (path == null) {
-            println("DeepLinkHandler: Missing 'path' parameter in workspace deep link")
+            logger.warn(LogCategory.WORKSPACE, "Missing 'path' parameter in workspace deep link")
             return
         }
 
@@ -318,7 +322,7 @@ actual object DeepLinkHandler {
         val cliCommand = ai.rever.boss.cli.CLICommand.LoadWorkspace(path)
         ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
 
-        println("DeepLinkHandler: Workspace command queued: $path")
+        logger.info(LogCategory.WORKSPACE, "Workspace command queued", mapOf("path" to path))
     }
 
     /**
@@ -327,13 +331,13 @@ actual object DeepLinkHandler {
      *   boss://file?path=/path/to/file.kt
      */
     private fun handleFileLink(uri: String) {
-        println("DeepLinkHandler: Handling file link")
+        logger.debug(LogCategory.FILE, "Handling file link")
 
         val params = parseQueryParams(uri)
         val path = params["path"]?.urlDecode()
 
         if (path == null) {
-            println("DeepLinkHandler: Missing 'path' parameter in file deep link")
+            logger.warn(LogCategory.FILE, "Missing 'path' parameter in file deep link")
             return
         }
 
@@ -341,7 +345,7 @@ actual object DeepLinkHandler {
         val cliCommand = ai.rever.boss.cli.CLICommand.OpenFile(path)
         ai.rever.boss.cli.CLICommandHandler.getInstance().queueCommand(cliCommand)
 
-        println("DeepLinkHandler: File command queued: $path")
+        logger.info(LogCategory.FILE, "File command queued", mapOf("path" to path))
     }
 
     /**
@@ -367,7 +371,7 @@ actual object DeepLinkHandler {
         return try {
             URLDecoder.decode(this, "UTF-8")
         } catch (e: Exception) {
-            println("DeepLinkHandler: Error decoding URL: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error decoding URL", error = e)
             this
         }
     }
@@ -400,11 +404,11 @@ actual object DeepLinkHandler {
             
             null
         } catch (e: Exception) {
-            println("Error extracting verification token: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Error extracting verification token", error = e)
             null
         }
     }
-    
+
     actual fun extractVerificationType(uri: String): String? {
         // Extract type from URLs like: boss://auth/verify#access_token=xxx&type=recovery
         return try {
@@ -432,7 +436,7 @@ actual object DeepLinkHandler {
             
             null
         } catch (e: Exception) {
-            println("Error extracting verification type: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Error extracting verification type", error = e)
             null
         }
     }

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +28,7 @@ class FileModificationTracker(
     initialContent: String,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
+    private val logger = BossLogger.forComponent("FileModificationTracker")
     /**
      * State representing the current modification status.
      */
@@ -110,11 +113,11 @@ class FileModificationTracker(
                     )
                 }
 
-                println("[FileModificationTracker] Saved file: $filePath")
+                logger.debug(LogCategory.FILE, "Saved file", mapOf("path" to filePath))
                 true
             } catch (e: Exception) {
                 val errorMsg = "Failed to save file: ${e.message}"
-                println("[FileModificationTracker] $errorMsg")
+                logger.warn(LogCategory.FILE, "Failed to save file", error = e)
 
                 withContext(Dispatchers.Main) {
                     _state.value = _state.value.copy(
@@ -153,13 +156,13 @@ class FileModificationTracker(
             try {
                 val file = File(filePath)
                 if (!file.exists()) {
-                    println("[FileModificationTracker] File does not exist: $filePath")
+                    logger.debug(LogCategory.FILE, "File does not exist", mapOf("path" to filePath))
                     return@withContext false
                 }
 
                 // Check file size before loading to prevent memory issues
                 if (file.length() > EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE) {
-                    println("[FileModificationTracker] File too large to reload: ${file.length()} bytes (max: ${EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE})")
+                    logger.warn(LogCategory.FILE, "File too large to reload", mapOf("size" to file.length(), "maxSize" to EditorDocument.DEFAULT_MAX_DOCUMENT_SIZE))
                     return@withContext false
                 }
 
@@ -174,10 +177,10 @@ class FileModificationTracker(
                     )
                 }
 
-                println("[FileModificationTracker] Reloaded file: $filePath")
+                logger.debug(LogCategory.FILE, "Reloaded file", mapOf("path" to filePath))
                 true
             } catch (e: Exception) {
-                println("[FileModificationTracker] Failed to reload: ${e.message}")
+                logger.warn(LogCategory.FILE, "Failed to reload file", error = e)
                 false
             }
         }
@@ -240,7 +243,7 @@ class FileModificationTracker(
                         FileModificationTracker(filePath, content, scope)
                     }
                 } catch (e: Exception) {
-                    println("[FileModificationTracker] Failed to create from file: ${e.message}")
+                    BossLogger.forComponent("FileModificationTracker").warn(LogCategory.FILE, "Failed to create from file", error = e)
                     null
                 }
             }

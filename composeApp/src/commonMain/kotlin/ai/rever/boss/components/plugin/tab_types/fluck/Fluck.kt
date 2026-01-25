@@ -3,6 +3,8 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -307,6 +309,7 @@ open class FluckTabComponent(
     private val onFaviconCacheKeyUpdate: ((String?) -> Unit)? = null,
     private val onCloseTab: (() -> Unit)? = null
 ) : TabComponentWithUI, ComponentContext by componentContext {
+    private val logger = BossLogger.forComponent("FluckTabComponent")
 
     // Cache the FluckTabInfo cast to avoid repeated casting during recompositions
     private val fluckTabInfo: FluckTabInfo? = config as? FluckTabInfo
@@ -368,12 +371,12 @@ open class FluckTabComponent(
 
         // Prevent infinite recovery loops
         if (recoveryAttempts > maxRecoveryAttempts) {
-            println("❌ [FluckTabComponent] Max recovery attempts ($maxRecoveryAttempts) reached for tab ${config.id}, giving up")
+            logger.error(LogCategory.BROWSER, "Max recovery attempts reached", mapOf("maxAttempts" to maxRecoveryAttempts, "tabId" to config.id))
             browserError = Exception("Browser recovery failed after $maxRecoveryAttempts attempts. Please close and reopen this tab.")
             return false
         }
 
-        println("🔄 [FluckTabComponent] $reason for tab ${config.id}, triggering recovery (attempt $recoveryAttempts/$maxRecoveryAttempts)")
+        logger.info(LogCategory.BROWSER, "Triggering recovery", mapOf("reason" to reason, "tabId" to config.id, "attempt" to "$recoveryAttempts/$maxRecoveryAttempts"))
         browserState = null
         browserError = null
         retryCount = 0
@@ -388,7 +391,7 @@ open class FluckTabComponent(
      */
     private fun resetRecoveryCounter() {
         if (recoveryAttempts > 0) {
-            println("✅ [FluckTabComponent] Browser recovered successfully for tab ${config.id}, resetting recovery counter")
+            logger.info(LogCategory.BROWSER, "Browser recovered successfully, resetting recovery counter", mapOf("tabId" to config.id))
             recoveryAttempts = 0
         }
     }
@@ -448,14 +451,14 @@ open class FluckTabComponent(
             // Early exit if already disposed (Issue #351)
             // This prevents "coroutine scope left the composition" errors during session restore
             if (isDisposed) {
-                println("⚠️ [FluckTabComponent] Skipping browser init - tab already disposed: ${config.id}")
+                logger.warn(LogCategory.BROWSER, "Skipping browser init - tab already disposed", mapOf("tabId" to config.id))
                 return@LaunchedEffect
             }
 
             if (this@FluckTabComponent.browserState == null && browserError == null) {
                 // Check if we should retry
                 if (retryCount >= maxRetries) {
-                    println("❌ [BrowserRetry] Max retries ($maxRetries) exhausted for tab ${config.id}")
+                    logger.error(LogCategory.BROWSER, "Max retries exhausted", mapOf("maxRetries" to maxRetries, "tabId" to config.id))
                     browserError = Exception("Failed to initialize browser after $maxRetries attempts")
                     return@LaunchedEffect
                 }
@@ -465,14 +468,14 @@ open class FluckTabComponent(
                     val delayMs = 100L * (1 shl retryCount)
 
                     if (retryCount > 0) {
-                        println("🔄 [BrowserRetry] Attempt ${retryCount + 1}/$maxRetries for tab ${config.id}, waiting ${delayMs}ms")
+                        logger.info(LogCategory.BROWSER, "Browser retry attempt", mapOf("attempt" to "${retryCount + 1}/$maxRetries", "tabId" to config.id, "delayMs" to delayMs))
                     }
 
                     kotlinx.coroutines.delay(delayMs)
 
                     // Check again after delay - tab may have been disposed during wait (Issue #351)
                     if (isDisposed) {
-                        println("⚠️ [FluckTabComponent] Tab disposed during init delay: ${config.id}")
+                        logger.warn(LogCategory.BROWSER, "Tab disposed during init delay", mapOf("tabId" to config.id))
                         return@LaunchedEffect
                     }
 
@@ -495,7 +498,7 @@ open class FluckTabComponent(
                                     }
                                 }
                             } else {
-                                println("🔔 [FluckTabComponent] Browser closed for disposed tab ${config.id}, skipping recovery")
+                                logger.debug(LogCategory.BROWSER, "Browser closed for disposed tab, skipping recovery", mapOf("tabId" to config.id))
                             }
                         },
                         window = currentWindow
@@ -509,7 +512,7 @@ open class FluckTabComponent(
                         browserEngineGeneration = getEngineGeneration()
 
                         if (retryCount > 0) {
-                            println("✅ [BrowserRetry] Success on attempt ${retryCount + 1}/$maxRetries for tab ${config.id}")
+                            logger.info(LogCategory.BROWSER, "Browser retry succeeded", mapOf("attempt" to "${retryCount + 1}/$maxRetries", "tabId" to config.id))
                         }
 
                         // Reset retry count and recovery counter on success
@@ -522,9 +525,9 @@ open class FluckTabComponent(
                         // Check if there's a known engine initialization error
                         val engineError = getEngineInitError()
                         if (engineError != null) {
-                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: $engineError")
+                            logger.warn(LogCategory.BROWSER, "Browser init failed", mapOf("attempt" to "$retryCount/$maxRetries", "error" to engineError))
                         } else {
-                            println("⚠️  [BrowserRetry] Failed attempt ${retryCount}/$maxRetries: Could not initialize browser - window not ready")
+                            logger.warn(LogCategory.BROWSER, "Browser init failed - window not ready", mapOf("attempt" to "$retryCount/$maxRetries"))
                         }
 
                         if (retryCount < maxRetries) {
@@ -541,7 +544,7 @@ open class FluckTabComponent(
                     }
                 } catch (e: Exception) {
                     retryCount++
-                    println("⚠️  [BrowserRetry] Failed attempt $retryCount/$maxRetries: ${e.message}")
+                    logger.warn(LogCategory.BROWSER, "Browser retry failed", mapOf("attempt" to "$retryCount/$maxRetries", "error" to (e.message ?: "unknown")))
 
                     if (retryCount < maxRetries) {
                         // Trigger retry by incrementing retryTrigger
@@ -549,7 +552,7 @@ open class FluckTabComponent(
                     } else {
                         // Max retries reached - check for engine error first
                         val engineError = getEngineInitError()
-                        println("❌ [BrowserRetry] Max retries exhausted for tab ${config.id}: ${engineError ?: e.message}")
+                        logger.error(LogCategory.BROWSER, "Max retries exhausted", mapOf("tabId" to config.id, "error" to (engineError ?: e.message ?: "unknown")))
                         browserError = if (engineError != null) {
                             Exception(engineError)
                         } else {
@@ -789,7 +792,7 @@ open class FluckTabComponent(
                         browser?.let { disposeBrowser(it) }
                     }
                 } catch (e: Exception) {
-                    println("Error disposing browser: ${e.message}")
+                    logger.warn(LogCategory.BROWSER, "Error disposing browser", mapOf("error" to (e.message ?: "unknown")))
                 }
             }
         }
@@ -826,7 +829,7 @@ open class FluckTabComponent(
                     browser?.let { disposeBrowser(it) }
                 }
             } catch (e: Exception) {
-                println("Error disposing browser (blocking): ${e.message}")
+                logger.warn(LogCategory.BROWSER, "Error disposing browser (blocking)", mapOf("error" to (e.message ?: "unknown")))
             }
         }
     }

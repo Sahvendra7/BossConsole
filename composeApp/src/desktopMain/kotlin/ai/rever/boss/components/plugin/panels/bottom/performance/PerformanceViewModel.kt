@@ -3,6 +3,8 @@ package ai.rever.boss.components.plugin.panels.bottom.performance
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.performance.PerformanceMonitor
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import ai.rever.boss.performance.PerformanceSettings
 import ai.rever.boss.performance.PerformanceSettingsManager
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
  * ViewModel for Performance panel.
  */
 class PerformanceViewModel {
+    private val logger = BossLogger.forComponent("PerformanceViewModel")
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     val currentSnapshot: StateFlow<PerformanceSnapshot?> = PerformanceMonitor.currentSnapshot
@@ -77,7 +80,7 @@ class PerformanceViewModel {
                     if (focusedWindowId != null) {
                         FileEventBus.openFile(filePath, sourceWindowId = focusedWindowId)
                     } else {
-                        println("PerformanceViewModel: No window focused, cannot open exported metrics file")
+                        logger.debug(LogCategory.UI, "No window focused, cannot open exported metrics file")
                     }
                 }
                 .onFailure { error ->

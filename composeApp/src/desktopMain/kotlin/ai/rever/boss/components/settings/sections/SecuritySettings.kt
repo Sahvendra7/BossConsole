@@ -1,5 +1,7 @@
 package ai.rever.boss.components.settings.sections
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
@@ -28,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+
+private val securitySettingsLogger = BossLogger.forComponent("SecuritySettings")
 
 /**
  * WebAuthn capabilities information
@@ -196,7 +200,7 @@ fun SecuritySettings() {
 
                                 // Fallback: Close embedded browser if new passkey detected during registration
                                 if (showEmbeddedBrowser && passkeys.size > initialPasskeyCount) {
-                                    println("SecuritySettings: New passkey detected via polling (count: $currentCount -> ${passkeys.size}), closing embedded browser")
+                                        securitySettingsLogger.debug(LogCategory.PASSKEY, "New passkey detected via polling, closing embedded browser", mapOf("previousCount" to currentCount, "newCount" to passkeys.size))
                                     showEmbeddedBrowser = false
                                 }
                             }
@@ -212,7 +216,7 @@ fun SecuritySettings() {
     LaunchedEffect(passkeyState) {
         if (passkeyState is PasskeyState.ShowEmbeddedBrowser) {
             val browserState = passkeyState as PasskeyState.ShowEmbeddedBrowser
-            println("SecuritySettings: Passkey state changed to ShowEmbeddedBrowser, showing browser screen")
+            securitySettingsLogger.debug(LogCategory.PASSKEY, "Passkey state changed to ShowEmbeddedBrowser, showing browser screen")
             passkeyBrowserUrl = browserState.url
             passkeyBrowserSessionId = browserState.sessionId
             initialPasskeyCount = passkeyFactors.size  // Track initial count for polling fallback detection
@@ -708,13 +712,13 @@ fun SecuritySettings() {
             url = passkeyBrowserUrl,
             sessionId = passkeyBrowserSessionId,
             onSuccess = {
-                println("SecuritySettings: Passkey browser registration successful")
+                securitySettingsLogger.info(LogCategory.PASSKEY, "Passkey browser registration successful")
                 showEmbeddedBrowser = false
                 // Trigger refresh of passkey list after successful registration
                 refreshKey++
             },
             onBack = {
-                println("SecuritySettings: User cancelled passkey registration from browser")
+                securitySettingsLogger.debug(LogCategory.PASSKEY, "User cancelled passkey registration from browser")
                 showEmbeddedBrowser = false
             }
         )

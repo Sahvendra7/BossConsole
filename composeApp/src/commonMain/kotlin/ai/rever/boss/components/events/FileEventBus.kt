@@ -1,6 +1,8 @@
 package ai.rever.boss.components.events
 
 import ai.rever.boss.utils.extractFileName
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.dashboard.RecentFilesManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -189,6 +191,7 @@ fun validateFilePath(filePath: String): FileValidationResult {
 }
 
 object FileEventBus {
+    private val logger = BossLogger.forComponent("FileEventBus")
     private val _fileOpenEvents = MutableSharedFlow<FileOpenEvent>(
         replay = 0,  // Don't replay past events to new subscribers (new windows)
         extraBufferCapacity = 10  // Buffer up to 10 events if collector not ready yet
@@ -212,7 +215,7 @@ object FileEventBus {
         // Track file open in dashboard
         RecentFilesManager.recordFileOpen(cleanPath, projectPath)
 
-        println("[FileEventBus] openFile: $cleanPath:$line:$column (window: $sourceWindowId)")
+        logger.debug(LogCategory.FILE, "Opening file", mapOf("path" to cleanPath, "line" to line, "column" to column, "window" to sourceWindowId))
         _fileOpenEvents.emit(FileOpenEvent(cleanPath, fileName, line, column, sourceWindowId))
     }
 }

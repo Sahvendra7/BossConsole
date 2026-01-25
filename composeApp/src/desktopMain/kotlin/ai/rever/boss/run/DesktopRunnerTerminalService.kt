@@ -3,6 +3,8 @@ package ai.rever.boss.run
 import ai.rever.boss.components.events.RunnerTerminalEventBus
 import ai.rever.boss.components.plugin.panels.bottom.terminal.SIDEBAR_TERMINAL_ID
 import ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,7 @@ import kotlin.concurrent.withLock
  * Issue #347: Runner should open in terminal sidebar panel with run/stop state management
  */
 actual object RunnerTerminalService {
+    private val logger = BossLogger.forComponent("RunnerTerminalService")
 
     // Single lock for ALL state updates - used by both suspend and non-suspend functions
     // Using ReentrantLock instead of Mutex + synchronized to prevent independent lock issues
@@ -138,8 +141,7 @@ actual object RunnerTerminalService {
         }
 
         // Emit event outside lock (avoid holding lock during I/O)
-        println("[Runner] Opening terminal for config: ${config.name}")
-        println("[Runner] Command: $command")
+        logger.debug(LogCategory.TERMINAL, "Opening terminal for config", mapOf("configName" to config.name, "command" to command))
         RunnerTerminalEventBus.openRunnerTerminal(
             terminalId = terminalId,
             command = command,
@@ -165,13 +167,13 @@ actual object RunnerTerminalService {
         // Get terminal ID, validate under lock
         val terminalId = stateLock.withLock {
             if (!isConfigRunningInWindow(windowId, configId)) {
-                println("[Runner] Config $configId is not running in window $windowId")
+                logger.debug(LogCategory.TERMINAL, "Config not running in window", mapOf("configId" to configId, "windowId" to windowId))
                 return false
             }
 
             val id = _configToTerminal.value[configId]
             if (id == null) {
-                println("[Runner] No terminal found for config $configId")
+                logger.debug(LogCategory.TERMINAL, "No terminal found for config", mapOf("configId" to configId))
                 return false
             }
 
@@ -191,9 +193,9 @@ actual object RunnerTerminalService {
         // Perform I/O operations outside lock (window-scoped)
         val closed = TabbedTerminalStateRegistry.closeActiveTab(windowId, terminalId)
         if (closed) {
-            println("[Runner] Closed terminal tab: $terminalId (config: $configId, window: $windowId)")
+            logger.debug(LogCategory.TERMINAL, "Closed terminal tab", mapOf("terminalId" to terminalId, "configId" to configId, "windowId" to windowId))
         } else {
-            println("[Runner] Failed to close tab - terminal not found: $terminalId (window: $windowId)")
+            logger.debug(LogCategory.TERMINAL, "Failed to close tab - terminal not found", mapOf("terminalId" to terminalId, "windowId" to windowId))
         }
 
         // Clear sidebar tab tracking if this was a sidebar config (window-scoped)
@@ -221,7 +223,7 @@ actual object RunnerTerminalService {
         windowId: String,
         onTerminalCreated: (String) -> Unit
     ): String {
-        println("[Runner] Re-running config: ${config.name}")
+        logger.debug(LogCategory.TERMINAL, "Re-running config", mapOf("configName" to config.name))
 
         // Check if using sidebar mode - Ctrl+C will be handled by openInSidebarTerminal
         val usesSidebar = RunnerSettingsManager.currentSettings.value.terminalTarget == RunnerTerminalTarget.SIDEBAR_PANEL
@@ -257,13 +259,13 @@ actual object RunnerTerminalService {
                 // Send Ctrl+C to stop the running process (window-scoped)
                 val sent = TabbedTerminalStateRegistry.sendCtrlC(existingWindowId, existingTerminalId)
                 if (sent) {
-                    println("[Runner] Sent Ctrl+C to stop existing process (window: $existingWindowId)")
+                    logger.debug(LogCategory.TERMINAL, "Sent Ctrl+C to stop existing process", mapOf("windowId" to existingWindowId))
                 }
                 // Close the terminal tab (in the window where it exists)
                 RunnerTerminalEventBus.closeRunnerTerminal(existingTerminalId, sourceWindowId = existingWindowId)
             } catch (e: Exception) {
                 // Log error but continue - we've already updated state for new terminal
-                println("[Runner] Error stopping existing terminal: ${e.message}")
+                logger.warn(LogCategory.TERMINAL, "Error stopping existing terminal", mapOf("error" to (e.message ?: "unknown")))
             }
         }
 
@@ -298,7 +300,7 @@ actual object RunnerTerminalService {
                 _runningConfigs.update { it - configIds }
                 // Clean up window mapping
                 configIds.forEach { removeAllWindowsFromConfig(it) }
-                println("[Runner] Terminal stopped: $terminalId (configs: $configIds)")
+                logger.debug(LogCategory.TERMINAL, "Terminal stopped", mapOf("terminalId" to terminalId, "configs" to configIds.toString()))
             }
         }
     }
@@ -320,7 +322,7 @@ actual object RunnerTerminalService {
                 _runningConfigs.update { it - configIds }
                 // Clean up window mapping
                 configIds.forEach { removeAllWindowsFromConfig(it) }
-                println("[Runner] Terminal removed: $terminalId (configs: $configIds, window: $windowId)")
+                logger.debug(LogCategory.TERMINAL, "Terminal removed", mapOf("terminalId" to terminalId, "configs" to configIds.toString(), "windowId" to windowId))
             }
             terminalId == SIDEBAR_TERMINAL_ID
         }
@@ -355,7 +357,7 @@ actual object RunnerTerminalService {
                 removeConfigFromTerminal(terminalId, configId)
                 _runningConfigs.update { it - configId }
                 removeWindowFromConfig(configId, windowId)
-                println("[Runner] Config removed: $configId (terminal: $terminalId, window: $windowId)")
+                logger.debug(LogCategory.TERMINAL, "Config removed", mapOf("configId" to configId, "terminalId" to terminalId, "windowId" to windowId))
             }
         }
     }
@@ -383,7 +385,7 @@ actual object RunnerTerminalService {
             }
 
             if (configsToRemove.isNotEmpty()) {
-                println("[Runner] Cleaned up ${configsToRemove.size} configs for closed window: $windowId")
+                logger.debug(LogCategory.TERMINAL, "Cleaned up configs for closed window", mapOf("count" to configsToRemove.size, "windowId" to windowId))
             }
         }
     }
@@ -436,9 +438,9 @@ actual object RunnerTerminalService {
                 _runningConfigs.update { it - configId }
                 removeWindowFromConfig(configId, windowId)
             }
-            println("[Runner] Failed to open in sidebar terminal - panel may not be open (window=$windowId)")
+            logger.debug(LogCategory.TERMINAL, "Failed to open in sidebar terminal - panel may not be open", mapOf("windowId" to windowId))
         } else {
-            println("[Runner] Opened command in sidebar terminal: $tabTitle (window=$windowId, mapped to $SIDEBAR_TERMINAL_ID, isRerun=$isRerun)")
+            logger.debug(LogCategory.TERMINAL, "Opened command in sidebar terminal", mapOf("tabTitle" to tabTitle, "windowId" to windowId, "mappedTo" to SIDEBAR_TERMINAL_ID, "isRerun" to isRerun))
         }
         return success
     }

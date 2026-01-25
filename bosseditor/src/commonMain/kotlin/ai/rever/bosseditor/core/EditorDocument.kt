@@ -1,5 +1,10 @@
 package ai.rever.bosseditor.core
 
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
+
+private val logger = EditorLogger.forComponent("EditorDocument")
+
 /**
  * A text document backed by a gap buffer for efficient editing.
  *
@@ -516,7 +521,8 @@ class EditorDocument(initialText: String = "") : ITextModel {
             try {
                 listener.documentChanged(change)
             } catch (e: Exception) {
-                println("[EditorDocument] ${e::class.simpleName} in listener ${listener::class.simpleName}: ${e.message}")
+                logger.error(EditorLogCategory.EDITOR, "Error in document change listener",
+                    data = mapOf("listener" to (listener::class.simpleName ?: "unknown")), error = e)
             }
         }
     }

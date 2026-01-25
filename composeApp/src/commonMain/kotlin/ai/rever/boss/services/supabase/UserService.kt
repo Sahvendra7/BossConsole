@@ -1,5 +1,7 @@
 package ai.rever.boss.services.supabase
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.models.*
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.put
  * - Query individual user details
  */
 object UserService {
+    private val logger = BossLogger.forComponent("UserService")
 
     /**
      * Get the Supabase client
@@ -56,10 +59,10 @@ object UserService {
             val hasMore = users.size > limit
             val actualUsers = if (hasMore) users.take(limit) else users
 
-            println("✅ Fetched ${actualUsers.size} users (offset: $offset, hasMore: $hasMore)")
+            logger.debug(LogCategory.AUTH, "Fetched users", mapOf("count" to actualUsers.size, "offset" to offset, "hasMore" to hasMore))
             Result.success(PaginatedResult(actualUsers, hasMore))
         } catch (e: Exception) {
-            println("❌ Failed to fetch users: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to fetch users", error = e)
             Result.failure(Exception("Failed to fetch users: ${e.message}"))
         }
     }
@@ -88,7 +91,7 @@ object UserService {
 
             val paginatedUsers = usersResult.getOrThrow()
             val users = paginatedUsers.data
-            println("🔍 Fetching roles for ${users.size} users (offset: $offset)")
+            logger.debug(LogCategory.AUTH, "Fetching roles for users", mapOf("count" to users.size, "offset" to offset))
 
             // Step 2: Fetch roles for each user
             val usersWithRoles = users.map { user ->
@@ -107,10 +110,10 @@ object UserService {
                 )
             }
 
-            println("✅ Successfully fetched ${usersWithRoles.size} users with roles (hasMore: ${paginatedUsers.hasMore})")
+            logger.debug(LogCategory.AUTH, "Successfully fetched users with roles", mapOf("count" to usersWithRoles.size, "hasMore" to paginatedUsers.hasMore))
             Result.success(PaginatedResult(usersWithRoles, paginatedUsers.hasMore))
         } catch (e: Exception) {
-            println("❌ Failed to fetch users with roles: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to fetch users with roles", error = e)
             Result.failure(Exception("Failed to fetch users with roles: ${e.message}"))
         }
     }
@@ -151,7 +154,7 @@ object UserService {
             val hasMore = users.size > limit
             val actualUsers = if (hasMore) users.take(limit) else users
 
-            println("🔍 Search found ${actualUsers.size} users matching '$searchQuery' (offset: $offset, hasMore: $hasMore)")
+            logger.debug(LogCategory.AUTH, "Search found users", mapOf("count" to actualUsers.size, "query" to searchQuery, "offset" to offset, "hasMore" to hasMore))
 
             // Step 2: Fetch roles for each user
             val usersWithRoles = actualUsers.map { user ->
@@ -170,10 +173,10 @@ object UserService {
                 )
             }
 
-            println("✅ Successfully fetched ${usersWithRoles.size} users with roles for search '$searchQuery'")
+            logger.debug(LogCategory.AUTH, "Successfully fetched users with roles for search", mapOf("count" to usersWithRoles.size, "query" to searchQuery))
             Result.success(PaginatedResult(usersWithRoles, hasMore))
         } catch (e: Exception) {
-            println("❌ Failed to search users: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to search users", error = e)
             Result.failure(Exception("Failed to search users: ${e.message}"))
         }
     }
@@ -193,7 +196,7 @@ object UserService {
 
             Result.success(user)
         } catch (e: Exception) {
-            println("❌ Failed to fetch user $userId: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to fetch user", mapOf("userId" to userId, "error" to (e.message ?: "unknown")))
             Result.failure(Exception("Failed to fetch user: ${e.message}"))
         }
     }
@@ -225,7 +228,7 @@ object UserService {
 
             Result.success(userWithRoles)
         } catch (e: Exception) {
-            println("❌ Failed to fetch user with roles: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to fetch user with roles", error = e)
             Result.failure(Exception("Failed to fetch user with roles: ${e.message}"))
         }
     }
@@ -245,7 +248,7 @@ object UserService {
      */
     suspend fun deleteUser(userId: String): Result<Unit> {
         return try {
-            println("🗑️  Attempting to delete user: $userId")
+            logger.info(LogCategory.AUTH, "Attempting to delete user", mapOf("userId" to userId))
 
             // Call the PostgreSQL delete_user function via RPC
             client.postgrest.rpc(
@@ -255,10 +258,10 @@ object UserService {
                 }
             )
 
-            println("✅ Successfully deleted user: $userId")
+            logger.info(LogCategory.AUTH, "Successfully deleted user", mapOf("userId" to userId))
             Result.success(Unit)
         } catch (e: Exception) {
-            println("❌ Failed to delete user: ${e.message}")
+            logger.error(LogCategory.AUTH, "Failed to delete user", error = e)
             Result.failure(Exception("Failed to delete user: ${e.message}"))
         }
     }

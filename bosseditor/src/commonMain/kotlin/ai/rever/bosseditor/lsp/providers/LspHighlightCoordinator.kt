@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.lsp.providers
 
 import ai.rever.bosseditor.highlight.HighlightLayer
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
 import ai.rever.bosseditor.lsp.client.LspClient
 import ai.rever.bosseditor.lsp.client.LspMethods
 import ai.rever.bosseditor.lsp.protocol.PublishDiagnosticsParams
@@ -8,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.json.*
+
+private val logger = EditorLogger.forComponent("LspHighlightCoordinator")
 
 /**
  * Coordinates LSP-based highlighting with BossEditor's HighlightLayer.
@@ -193,7 +197,7 @@ class LspHighlightCoordinator(
                 )
             )
         } catch (e: Exception) {
-            println("[LspHighlightCoordinator] Error parsing diagnostics: ${e.message}")
+            logger.error(EditorLogCategory.DIAGNOSTICS, "Error parsing diagnostics", error = e)
         }
     }
 

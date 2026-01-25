@@ -1,5 +1,7 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -42,6 +44,7 @@ data class UpdateSettingsData(
  * Automatically loads settings on initialization.
  */
 actual object UpdateSettingsManager {
+    private val logger = BossLogger.forComponent("UpdateSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/update-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -70,12 +73,12 @@ actual object UpdateSettingsManager {
                 UpdateSettings.autoCheckEnabled = settings.autoCheckEnabled
                 UpdateSettings.checkIntervalHours = settings.checkIntervalHours
 
-                println("✅ Loaded update settings: autoCheck=${settings.autoCheckEnabled}")
+                logger.debug(LogCategory.SYSTEM, "Loaded update settings", mapOf("autoCheck" to settings.autoCheckEnabled))
             } else {
-                println("ℹ️ No saved update settings found, using defaults")
+                logger.debug(LogCategory.SYSTEM, "No saved update settings found, using defaults")
             }
         } catch (e: Exception) {
-            println("⚠️ Failed to load update settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load update settings", error = e)
             // Continue with defaults
         }
     }
@@ -94,9 +97,9 @@ actual object UpdateSettingsManager {
             val content = json.encodeToString(UpdateSettingsData.serializer(), settings)
             settingsFile.writeText(content)
 
-            println("✅ Saved update settings to: ${settingsFile.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Saved update settings", mapOf("path" to settingsFile.absolutePath))
         } catch (e: Exception) {
-            println("❌ Failed to save update settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to save update settings", error = e)
         }
     }
 }

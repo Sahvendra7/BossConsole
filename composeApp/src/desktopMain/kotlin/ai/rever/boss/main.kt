@@ -14,6 +14,8 @@ import ai.rever.boss.psi.PSIThreadBridge
 import ai.rever.boss.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.window.AWTKeyboardInterceptor
 import ai.rever.boss.window.WindowManager
@@ -39,6 +41,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.swing.JPopupMenu
 
+private val logger = BossLogger.forComponent("Main")
+
 fun main(args: Array<String>) {
     // Set WM_CLASS for Linux desktop integration (must be before any AWT init)
     setLinuxWMClass()
@@ -50,10 +54,15 @@ fun main(args: Array<String>) {
     // This ensures Swing popup menus (context menus) appear above the browser view
     JPopupMenu.setDefaultLightWeightPopupEnabled(false)
 
+    // Initialize logging framework early
+    BossLogger.configureFromEnvironment()
+    BossLogger.initialize()  // Register shutdown hook for log flushing
+    logger.info(LogCategory.SYSTEM, "BOSS starting up")
+
     // Single-instance check: ensure only one BOSS instance runs
     // On Windows, this prevents multiple windows when clicking deep links
     if (!SingleInstanceManager.acquireLock()) {
-        println("Another BOSS instance is already running")
+        logger.info(LogCategory.SYSTEM, "Another BOSS instance is already running")
 
         // Check if we have a deep link or URL to send to the existing instance
         val deepLink = args.firstOrNull {
@@ -63,7 +72,7 @@ fun main(args: Array<String>) {
         }
 
         if (deepLink != null) {
-            println("Sending URL to existing instance: $deepLink")
+            logger.info(LogCategory.SYSTEM, "Sending URL to existing instance")
 
             // Try to send with retry logic (important for auth deep links during sign-in)
             // Note: runBlocking is acceptable here as this runs during pre-UI initialization,
@@ -72,11 +81,14 @@ fun main(args: Array<String>) {
             val maxRetries = 3
             for (attempt in 1..maxRetries) {
                 if (SingleInstanceManager.sendToExistingInstance(deepLink)) {
-                    println("URL sent successfully on attempt $attempt. Exiting this instance.")
+                    logger.info(LogCategory.SYSTEM, "URL sent successfully", mapOf("attempt" to attempt))
                     success = true
                     break
                 } else {
-                    println("Failed to send URL (attempt $attempt/$maxRetries)")
+                    logger.warn(LogCategory.SYSTEM, "Failed to send URL", mapOf(
+                        "attempt" to attempt,
+                        "maxRetries" to maxRetries
+                    ))
                     if (attempt < maxRetries) {
                         // Use coroutine delay instead of Thread.sleep to avoid blocking
                         kotlinx.coroutines.runBlocking {
@@ -91,26 +103,13 @@ fun main(args: Array<String>) {
             } else {
                 // IPC failed after retries - DO NOT create new window
                 // This prevents duplicate windows during sign-in
-                val switchKeyHint = when {
-                    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "Cmd+Tab"
-                    else -> "Alt+Tab"
-                }
-
-                println("ERROR: Could not send URL to existing BOSS instance after $maxRetries attempts.")
-                println("The existing BOSS window is still running. Please:")
-                println("  1. Switch to the existing window ($switchKeyHint)")
-                println("  2. Manually paste the URL if needed: $deepLink")
-                println("")
-                println("This prevents creating duplicate windows during authentication.")
+                logger.error(LogCategory.SYSTEM, "Could not send URL to existing instance after retries", mapOf(
+                    "maxRetries" to maxRetries
+                ))
                 exitProcess(1)
             }
         } else {
-            val switchKeyHint = when {
-                System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "Cmd+Tab"
-                else -> "Alt+Tab"
-            }
-            println("No URL to send. The existing BOSS window should already be visible.")
-            println("Use $switchKeyHint to switch to the existing window, or close it to start a new instance.")
+            logger.info(LogCategory.SYSTEM, "No URL to send - existing BOSS window should be visible")
             exitProcess(0)
         }
     }
@@ -121,23 +120,23 @@ fun main(args: Array<String>) {
             // Stop performance monitoring to cancel background coroutines
             ai.rever.boss.performance.PerformanceMonitor.stop()
         } catch (e: Exception) {
-            println("Error stopping performance monitor: ${e.message}")
+            // Can't use logger in shutdown hook reliably, use System.err
+            System.err.println("Error stopping performance monitor: ${e.message}")
         }
         try {
             // Close browser engine first to release lock files
             val engine = ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.currentEngine
             if (engine != null && !engine.isClosed) {
-                println("Closing browser engine...")
                 engine.close()
             }
         } catch (e: Exception) {
-            println("Error closing browser engine: ${e.message}")
+            System.err.println("Error closing browser engine: ${e.message}")
         }
         try {
             // Shutdown project indexer
             ProjectIndexer.shutdownGlobal()
         } catch (e: Exception) {
-            println("Error shutting down project indexer: ${e.message}")
+            System.err.println("Error shutting down project indexer: ${e.message}")
         }
         try {
             // Shutdown PSI to prevent memory leaks
@@ -146,31 +145,37 @@ fun main(args: Array<String>) {
                 PSIThreadBridge.shutdown()
             }
         } catch (e: Exception) {
-            println("Error shutting down PSI: ${e.message}")
+            System.err.println("Error shutting down PSI: ${e.message}")
         }
         try {
             // Close HTTP client for high-quality favicon service
             ai.rever.boss.cache.HighQualityFaviconService.close()
         } catch (e: Exception) {
-            println("Error closing favicon HTTP client: ${e.message}")
+            System.err.println("Error closing favicon HTTP client: ${e.message}")
         }
         try {
             // Uninstall AWT keyboard interceptor
             AWTKeyboardInterceptor.uninstall()
         } catch (e: Exception) {
-            println("Error uninstalling keyboard interceptor: ${e.message}")
+            System.err.println("Error uninstalling keyboard interceptor: ${e.message}")
+        }
+        try {
+            // Shutdown BossLogger
+            BossLogger.shutdown()
+        } catch (e: Exception) {
+            System.err.println("Error shutting down logger: ${e.message}")
         }
         SingleInstanceManager.release()
     })
 
-    println("Successfully acquired single-instance lock. Starting BOSS...")
+    logger.info(LogCategory.SYSTEM, "Successfully acquired single-instance lock")
 
     // Proactively clean up stale JxBrowser lock files from previous sessions
     // This is especially important for debug mode where shutdown hooks may not run
     try {
         ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.proactiveCleanupOnStartup()
     } catch (e: Exception) {
-        println("Warning: Proactive browser lock cleanup failed: ${e.message}")
+        logger.warn(LogCategory.SYSTEM, "Proactive browser lock cleanup failed", error = e)
     }
 
     // Parse CLI arguments if provided
@@ -184,12 +189,12 @@ fun main(args: Array<String>) {
             // If it's a deep link, let DeepLinkHandler process it
             // Otherwise, treat as CLI command
             if (!hasDeepLink) {
-                println("CLI: Processing arguments: ${args.joinToString(" ")}")
+                logger.debug(LogCategory.SYSTEM, "Processing CLI arguments", mapOf("args" to args.joinToString(" ")))
                 createBossCLI().main(args)
                 // Commands are queued, continue with app initialization
             }
         } catch (e: Exception) {
-            println("CLI Error: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "CLI error", error = e)
             // Don't exit - let the app start normally
             // CLI errors shouldn't prevent GUI from launching
         }
@@ -212,7 +217,7 @@ fun main(args: Array<String>) {
     try {
         PSIBootstrap.initialize()
     } catch (e: Exception) {
-        println("Warning: PSI initialization failed: ${e.message}")
+        logger.warn(LogCategory.SYSTEM, "PSI initialization failed", error = e)
         // Continue - navigation will just be disabled
     }
 
@@ -242,42 +247,26 @@ fun main(args: Array<String>) {
     // Start performance monitoring from app startup
     ai.rever.boss.performance.PerformanceMonitor.start()
 
-    // Debug: Check environment variables
-    println("=== Checking LLM API Keys in Environment ===")
-    println("Current working directory: ${System.getProperty("user.dir")}")
-    println("Java version: ${System.getProperty("java.version")}")
-    println("OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")}")
-    
-    val apiKeys = mapOf(
-        "ANTHROPIC_API_KEY" to System.getenv("ANTHROPIC_API_KEY"),
-        "OPENAI_API_KEY" to System.getenv("OPENAI_API_KEY"),
-        "TOGETHER_API_KEY" to System.getenv("TOGETHER_API_KEY"),
-        "CUSTOM_LLM_API_KEY" to System.getenv("CUSTOM_LLM_API_KEY")
+    // Debug: Log environment info
+    logger.debug(LogCategory.SYSTEM, "Environment info", mapOf(
+        "cwd" to System.getProperty("user.dir"),
+        "javaVersion" to System.getProperty("java.version"),
+        "os" to "${System.getProperty("os.name")} ${System.getProperty("os.version")}"
+    ))
+
+    // Log API key availability (without exposing values)
+    val apiKeyStatus = mapOf(
+        "ANTHROPIC_API_KEY" to (System.getenv("ANTHROPIC_API_KEY") != null),
+        "OPENAI_API_KEY" to (System.getenv("OPENAI_API_KEY") != null),
+        "TOGETHER_API_KEY" to (System.getenv("TOGETHER_API_KEY") != null),
+        "CUSTOM_LLM_API_KEY" to (System.getenv("CUSTOM_LLM_API_KEY") != null)
     )
-    
-    apiKeys.forEach { (key, value) ->
-        if (value != null) {
-            println("$key = ${value.take(10)}...${if (value.length > 10) " (${value.length} chars)" else ""}")
-        } else {
-            println("$key = (not set)")
-        }
-    }
-    
-    // Check all environment variables starting with certain patterns
-    println("\n=== All ENV vars containing 'ANTHROPIC' or 'CLAUDE' ===")
-    System.getenv().filterKeys { 
-        it.contains("ANTHROPIC", ignoreCase = true) || 
-        it.contains("CLAUDE", ignoreCase = true) 
-    }.forEach { (key, value) ->
-        println("$key = ${value.take(20)}...${if (value.length > 20) " (truncated)" else ""}")
-    }
-    
-    println("===========================================")
+    logger.debug(LogCategory.SYSTEM, "API key availability", apiKeyStatus.mapValues { if (it.value) "set" else "not set" })
 
     // Check if Chromium needs to be downloaded (for debug/dev builds)
     val chromiumNeedsDownload = !ChromiumAutoDownloader.isChromiumInstalled()
     if (chromiumNeedsDownload) {
-        println("BOSS-branded Chromium not found. Will prompt for download...")
+        logger.info(LogCategory.SYSTEM, "BOSS-branded Chromium not found - will prompt for download")
     }
 
     // Create initial window BEFORE application{} to prevent auto-recreation
@@ -434,7 +423,6 @@ private fun setupNativeLibraryPaths() {
         val bundledNatives = File(appPath, "../../app/pty4j-native")
         if (bundledNatives.exists()) {
             System.setProperty("pty4j.preferred.native.folder", bundledNatives.absolutePath)
-            println("Using bundled PTY4J natives: ${bundledNatives.absolutePath}")
         }
     }
     
@@ -470,7 +458,10 @@ private fun extractPty4jNatives(targetDir: File) {
                 "freebsd/$arch" to "libpty.so"
             }
             else -> {
-                println("Warning: Unsupported platform for PTY4J: $osName/$osArch")
+                logger.warn(LogCategory.SYSTEM, "Unsupported platform for PTY4J", mapOf(
+                    "os" to osName,
+                    "arch" to osArch
+                ))
                 return
             }
         }
@@ -484,7 +475,7 @@ private fun extractPty4jNatives(targetDir: File) {
         // Check if native library already exists
         val libptyFile = File(platformDir, libName)
         if (libptyFile.exists() && libptyFile.length() > 0) {
-            println("PTY4J natives already extracted for $platformPath")
+            logger.trace(LogCategory.SYSTEM, "PTY4J natives already extracted", mapOf("platform" to platformPath))
             return
         }
 
@@ -510,7 +501,10 @@ private fun extractPty4jNatives(targetDir: File) {
                         }
                     }
                     libptyFile.setExecutable(true)
-                    println("Extracted PTY4J native from: $resource to ${libptyFile.absolutePath}")
+                    logger.debug(LogCategory.SYSTEM, "Extracted PTY4J native", mapOf(
+                        "resource" to resource,
+                        "target" to libptyFile.absolutePath
+                    ))
                     extracted = true
                     break
                 }
@@ -520,11 +514,13 @@ private fun extractPty4jNatives(targetDir: File) {
         }
 
         if (!extracted) {
-            println("Warning: Could not extract PTY4J native libraries for $platformPath")
-            println("Searched for: $nativeResources")
+            logger.warn(LogCategory.SYSTEM, "Could not extract PTY4J native libraries", mapOf(
+                "platform" to platformPath,
+                "searchedResources" to nativeResources.joinToString()
+            ))
         }
     } catch (e: Exception) {
-        println("Error extracting PTY4J natives: ${e.message}")
+        logger.error(LogCategory.SYSTEM, "Error extracting PTY4J natives", error = e)
     }
 }
 

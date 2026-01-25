@@ -1,5 +1,7 @@
 package ai.rever.boss.cache
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toAwtImage
@@ -15,6 +17,7 @@ import javax.imageio.ImageIO
  * Stores favicons as PNG files in the application's cache directory.
  */
 object FaviconCache {
+    private val logger = BossLogger.forComponent("FaviconCache")
     private const val MAX_FAVICON_SIZE_BYTES = 100 * 1024 // 100KB limit
     private const val CACHE_DIR_NAME = "favicon-cache"
 
@@ -54,7 +57,7 @@ object FaviconCache {
 
             if (tempFile.length() > MAX_FAVICON_SIZE_BYTES) {
                 tempFile.delete()
-                println("⚠️ [FaviconCache] Favicon too large (${tempFile.length()} bytes > $MAX_FAVICON_SIZE_BYTES bytes), skipping cache")
+                logger.debug(LogCategory.BROWSER, "Favicon too large, skipping cache", mapOf("size" to tempFile.length(), "maxSize" to MAX_FAVICON_SIZE_BYTES))
                 return null
             }
 
@@ -62,12 +65,12 @@ object FaviconCache {
             val renamed = tempFile.renameTo(cacheFile)
             if (!renamed) {
                 tempFile.delete()
-                println("❌ [FaviconCache] Error saving favicon for $url: rename failed")
+                logger.warn(LogCategory.BROWSER, "Error saving favicon: rename failed")
                 return null
             }
             return cacheKey
         } catch (e: Exception) {
-            println("❌ [FaviconCache] Error saving favicon for $url: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error saving favicon", error = e)
             return null
         }
     }
@@ -88,7 +91,7 @@ object FaviconCache {
             // Read PNG file
             val bufferedImage = ImageIO.read(cacheFile)
             if (bufferedImage == null) {
-                println("❌ [FaviconCache] Failed to read cached favicon: $cacheKey")
+                logger.warn(LogCategory.BROWSER, "Failed to read cached favicon", mapOf("cacheKey" to cacheKey))
                 return null
             }
 
@@ -97,7 +100,7 @@ object FaviconCache {
             val painter = BitmapPainter(imageBitmap)
             return TabIcon.Image(painter)
         } catch (e: Exception) {
-            println("❌ [FaviconCache] Error loading favicon for key $cacheKey: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error loading favicon", mapOf("cacheKey" to cacheKey), error = e)
             return null
         }
     }
@@ -110,7 +113,7 @@ object FaviconCache {
         try {
             cacheDir.listFiles()?.forEach { it.delete() }
         } catch (e: Exception) {
-            println("❌ [FaviconCache] Error clearing cache: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error clearing cache", error = e)
         }
     }
 
@@ -130,7 +133,7 @@ object FaviconCache {
                 }
             }
         } catch (e: Exception) {
-            println("❌ [FaviconCache] Error cleaning up cache: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error cleaning up cache", error = e)
         }
     }
 

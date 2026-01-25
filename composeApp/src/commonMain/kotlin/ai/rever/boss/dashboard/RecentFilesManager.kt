@@ -1,5 +1,7 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,6 +16,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import ai.rever.boss.utils.extractFileName
+
+private val recentFilesLogger = BossLogger.forComponent("RecentFilesManager")
 
 /**
  * Data class representing a recently opened file.
@@ -74,10 +78,10 @@ object RecentFilesManager {
                 val content = settingsFile.readText()
                 val data = json.decodeFromString<RecentFilesData>(content)
                 _recentFiles.value = data.files
-                println("[RecentFilesManager] Loaded ${data.files.size} recent files")
+                recentFilesLogger.debug(LogCategory.FILE, "Loaded recent files", mapOf("count" to data.files.size))
             }
         } catch (e: Exception) {
-            println("[RecentFilesManager] Error loading: ${e.message}")
+            recentFilesLogger.warn(LogCategory.FILE, "Error loading recent files", error = e)
         }
     }
 
@@ -103,7 +107,7 @@ object RecentFilesManager {
             val content = json.encodeToString(RecentFilesData.serializer(), data)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("[RecentFilesManager] Error saving: ${e.message}")
+            recentFilesLogger.warn(LogCategory.FILE, "Error saving recent files", error = e)
         }
     }
 

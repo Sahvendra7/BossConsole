@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadManager
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadStatus
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
@@ -32,6 +34,8 @@ import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
+private val downloadsLogger = BossLogger.forComponent("Downloads")
 
 /**
  * Downloads sidebar panel component
@@ -189,19 +193,19 @@ private fun SidebarDownloadItem(
                                 if (file.exists()) {
                                     val deleted = file.delete()
                                     if (deleted) {
-                                        println("Deleted file: ${download.destinationPath}")
+                                        downloadsLogger.debug(LogCategory.FILE, "Deleted file", mapOf("path" to download.destinationPath))
                                         // Remove from download list after successful deletion
                                         downloadManager.removeDownload(download.id)
                                     } else {
-                                        println("Failed to delete file: ${download.destinationPath}")
+                                        downloadsLogger.warn(LogCategory.FILE, "Failed to delete file", mapOf("path" to download.destinationPath))
                                     }
                                 } else {
                                     // File doesn't exist, just remove from list
-                                    println("File not found, removing from list: ${download.destinationPath}")
+                                    downloadsLogger.debug(LogCategory.FILE, "File not found, removing from list", mapOf("path" to download.destinationPath))
                                     downloadManager.removeDownload(download.id)
                                 }
                             } catch (e: Exception) {
-                                println("Error deleting file: ${e.message}")
+                                downloadsLogger.warn(LogCategory.FILE, "Error deleting file", error = e)
                             }
                         }
                     }
@@ -362,9 +366,9 @@ private fun SidebarDownloadItem(
                                         FileSystemUtils.cleanupPartialFile(download.destinationPath)
                                         // Remove from download list
                                         downloadManager.removeDownload(download.id)
-                                        println("Deleted paused download: ${download.id}")
+                                        downloadsLogger.debug(LogCategory.FILE, "Deleted paused download", mapOf("downloadId" to download.id))
                                     } catch (e: Exception) {
-                                        println("Error deleting paused download: ${e.message}")
+                                        downloadsLogger.warn(LogCategory.FILE, "Error deleting paused download", error = e)
                                     }
                                 }
                             },

@@ -1,5 +1,7 @@
 package ai.rever.boss.scrollbar
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import java.io.File
  * - Graceful error handling with fallback to defaults
  */
 actual object ScrollbarSettingsManager {
+    private val logger = BossLogger.forComponent("ScrollbarSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/scrollbar-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -45,7 +48,7 @@ actual object ScrollbarSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<ScrollbarSettings>(content)
                 _currentSettings.value = settings
-                println("[Scrollbar] Loaded settings from ${settingsFile.absolutePath}")
+                logger.debug(LogCategory.SYSTEM, "Loaded settings", mapOf("path" to settingsFile.absolutePath))
             } else {
                 // First run - create default settings file
                 val defaults = getDefaultSettings()
@@ -55,13 +58,13 @@ actual object ScrollbarSettingsManager {
                 try {
                     val content = json.encodeToString(ScrollbarSettings.serializer(), defaults)
                     settingsFile.writeText(content)
-                    println("[Scrollbar] Created default settings at ${settingsFile.absolutePath}")
+                    logger.debug(LogCategory.SYSTEM, "Created default settings", mapOf("path" to settingsFile.absolutePath))
                 } catch (e: Exception) {
-                    println("[Scrollbar] Warning: Could not write default settings file: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Could not write default settings file", error = e)
                 }
             }
         } catch (e: Exception) {
-            println("[Scrollbar] Failed to load settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load settings", error = e)
             _currentSettings.value = getDefaultSettings()
         }
     }
@@ -73,9 +76,9 @@ actual object ScrollbarSettingsManager {
         try {
             val content = json.encodeToString(ScrollbarSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[Scrollbar] Settings saved to ${settingsFile.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Settings saved", mapOf("path" to settingsFile.absolutePath))
         } catch (e: Exception) {
-            println("[Scrollbar] Failed to save settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to save settings", error = e)
         }
     }
 

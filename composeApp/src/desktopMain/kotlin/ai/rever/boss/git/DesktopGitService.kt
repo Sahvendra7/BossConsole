@@ -1,5 +1,7 @@
 package ai.rever.boss.git
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.GitTerminalEventBus
 import ai.rever.boss.window.WindowGitState
 import ai.rever.boss.window.WindowGitStateRegistry
@@ -23,6 +25,7 @@ import java.io.InputStreamReader
  * All I/O operations run on Dispatchers.IO for non-blocking execution.
  */
 actual object GitService {
+    private val logger = BossLogger.forComponent("GitService")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val _currentBranch = MutableStateFlow<String?>(null)
@@ -104,7 +107,7 @@ actual object GitService {
             _remoteBranches.value = getRemoteBranchList(projectPath)
         } catch (e: Exception) {
             _lastError.value = e.message
-            println("[GitService] Error refreshing: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error refreshing git state", error = e)
         } finally {
             _isLoading.value = false
         }
@@ -243,7 +246,7 @@ actual object GitService {
                 else -> null
             }
         } catch (e: Exception) {
-            println("[GitService] Error getting PR URL: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error getting PR URL", error = e)
             null
         }
     }
@@ -328,7 +331,7 @@ actual object GitService {
             _fileStatus.value = statuses
             statuses
         } catch (e: Exception) {
-            println("[GitService] Error getting status: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error getting git status", error = e)
             emptyList()
         }
     }
@@ -529,7 +532,7 @@ actual object GitService {
             _commitLog.value = commits
             commits
         } catch (e: Exception) {
-            println("[GitService] Error getting log: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error getting git log", error = e)
             emptyList()
         }
     }
@@ -705,7 +708,7 @@ actual object GitService {
             _stashList.value = stashes
             stashes
         } catch (e: Exception) {
-            println("[GitService] Error getting stash list: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error getting stash list", error = e)
             emptyList()
         }
     }
@@ -792,7 +795,7 @@ actual object GitService {
             val exitCode = process.waitFor()
             exitCode == 0
         } catch (e: Exception) {
-            println("[GitService] Git not available: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Git not available", error = e)
             false
         }
     }
@@ -992,7 +995,7 @@ actual object GitService {
                     remote = remote
                 )
             } catch (e: Exception) {
-                println("[GitService] Error refreshing for window: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error refreshing git for window", error = e)
             } finally {
                 windowGitState.setLoading(false)
             }
@@ -1020,7 +1023,7 @@ actual object GitService {
                 windowGitState.updateStashList(stashes)
                 stashes
             } catch (e: Exception) {
-                println("[GitService] Error getting stash list for window: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error getting stash list for window", error = e)
                 emptyList()
             }
         }
@@ -1047,7 +1050,7 @@ actual object GitService {
                 windowGitState.updateFileStatus(statuses)
                 statuses
             } catch (e: Exception) {
-                println("[GitService] Error getting status for window: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error getting status for window", error = e)
                 emptyList()
             }
         }
@@ -1076,7 +1079,7 @@ actual object GitService {
                 windowGitState.updateCommitLog(commits)
                 commits
             } catch (e: Exception) {
-                println("[GitService] Error getting log for window: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error getting log for window", error = e)
                 emptyList()
             }
         }

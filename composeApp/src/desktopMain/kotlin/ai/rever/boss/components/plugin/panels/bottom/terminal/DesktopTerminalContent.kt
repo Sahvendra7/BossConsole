@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.FileValidationResult
 import ai.rever.boss.components.events.KeyboardShortcutInterceptor
 import ai.rever.boss.components.events.KeyEventSource
@@ -46,6 +48,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
+
+private val logger = BossLogger.forComponent("DesktopTerminalContent")
 
 /** ID for the sidebar terminal panel's persistent state */
 const val SIDEBAR_TERMINAL_ID = "sidebar-terminal"
@@ -391,7 +395,7 @@ object TabbedTerminalStateRegistry {
         }
         // Also clean up sidebar config tracking for this window
         clearSidebarConfigTrackingForWindow(windowId)
-        println("[TabbedTerminalStateRegistry] Removed ${keysToRemove.size} terminals for window: $windowId")
+        logger.debug(LogCategory.TERMINAL, "Removed terminals for window", mapOf("count" to keysToRemove.size, "windowId" to windowId))
         return keysToRemove.size
     }
 
@@ -483,7 +487,7 @@ object TabbedTerminalStateRegistry {
         isRerun: Boolean = false
     ): Boolean {
         val terminalExists = contains(windowId, SIDEBAR_TERMINAL_ID)
-        println("[SidebarTerminal] newSidebarTab: windowId=$windowId, isRerun=$isRerun, terminalExists=$terminalExists, configId=$configId, command=$command")
+        logger.debug(LogCategory.TERMINAL, "newSidebarTab", mapOf("windowId" to windowId, "isRerun" to isRerun, "terminalExists" to terminalExists, "configId" to (configId ?: "none"), "command" to command))
 
         if (isRerun && configId != null) {
             // Re-run: send Ctrl+C to the config's tab by stable tabId, wait, then send new command
@@ -492,7 +496,7 @@ object TabbedTerminalStateRegistry {
             val tabId = sidebarConfigToTabId[configKey]
 
             if (tabId != null) {
-                println("[SidebarTerminal] Re-run: switching to tab '$tabId', sending Ctrl+C, then command after delay")
+                logger.debug(LogCategory.TERMINAL, "Re-run: switching to tab, sending Ctrl+C, then command after delay", mapOf("tabId" to tabId))
                 state.switchToTab(tabId) // Switch to the tab first so user sees it
                 state.sendCtrlC(tabId) // Ctrl+C to specific tab by stable ID
 
@@ -510,7 +514,7 @@ object TabbedTerminalStateRegistry {
                 }
             } else {
                 // Fallback: no tabId tracked, send to active tab
-                println("[SidebarTerminal] Re-run: no tabId for config, sending to active tab")
+                logger.debug(LogCategory.TERMINAL, "Re-run: no tabId for config, sending to active tab")
                 state.sendInput(byteArrayOf(0x03))
                 val delayMs = ai.rever.boss.run.RunnerSettingsManager.currentSettings.value.rerunDelayMs
                 val fullCommand = ShellUtils.buildCommandWithWorkingDirectory(command, workingDirectory)
@@ -526,12 +530,12 @@ object TabbedTerminalStateRegistry {
             }
         } else if (!terminalExists) {
             // First run, panel not open yet: set pending command for TabbedTerminalContent to use
-            println("[SidebarTerminal] First run (panel opening): setting pending command with configId=$configId for window=$windowId")
+            logger.debug(LogCategory.TERMINAL, "First run (panel opening): setting pending command", mapOf("configId" to (configId ?: "none"), "windowId" to windowId))
             setPendingSidebarCommand(windowId, command, workingDirectory, configId)
         } else {
             // Panel already open, new config: create a new tab with configId as stable tabId
             val state = get(windowId, SIDEBAR_TERMINAL_ID) ?: return false
-            println("[SidebarTerminal] New config (panel open): creating new tab with tabId=$configId")
+            logger.debug(LogCategory.TERMINAL, "New config (panel open): creating new tab", mapOf("tabId" to (configId ?: "none")))
 
             // Normalize initialCommand to ensure auto-execution on Windows
             // BossTerm's createTab doesn't append \n on Windows but does on Linux/macOS
@@ -550,7 +554,7 @@ object TabbedTerminalStateRegistry {
             if (configId != null) {
                 val configKey = sidebarConfigKey(windowId, configId)
                 sidebarConfigToTabId[configKey] = configId
-                println("[SidebarTerminal] Recorded tabId '$configId' for config in window=$windowId")
+                logger.debug(LogCategory.TERMINAL, "Recorded tabId for config", mapOf("tabId" to configId, "windowId" to windowId))
             }
         }
         return true
@@ -567,7 +571,7 @@ object TabbedTerminalStateRegistry {
     fun registerSidebarTabId(windowId: String, configId: String, tabId: String) {
         val configKey = sidebarConfigKey(windowId, configId)
         sidebarConfigToTabId[configKey] = tabId
-        println("[SidebarTerminal] Registered tabId '$tabId' for config '$configId' in window=$windowId")
+        logger.debug(LogCategory.TERMINAL, "Registered tabId for config", mapOf("tabId" to tabId, "configId" to configId, "windowId" to windowId))
     }
 
     /**
@@ -630,7 +634,7 @@ object TabbedTerminalStateRegistry {
             try {
                 state.dispose()
             } catch (e: Exception) {
-                println("Error disposing terminal state: ${e.message}")
+                logger.warn(LogCategory.TERMINAL, "Error disposing terminal state", error = e)
             }
         }
         states.clear()
@@ -638,7 +642,7 @@ object TabbedTerminalStateRegistry {
         sidebarConfigToTabId.clear()
         // Increment generation to trigger UI recomposition
         _resetGeneration.value++
-        println("[TabbedTerminalStateRegistry] Reset complete: disposed $count terminal states, generation=${_resetGeneration.value}")
+        logger.info(LogCategory.TERMINAL, "Reset complete: disposed terminal states", mapOf("count" to count, "generation" to _resetGeneration.value))
         return count
     }
 }
@@ -675,13 +679,13 @@ private object TerminalStateRegistry {
             try {
                 state.dispose()
             } catch (e: Exception) {
-                println("Error disposing embeddable terminal state: ${e.message}")
+                logger.warn(LogCategory.TERMINAL, "Error disposing embeddable terminal state", error = e)
             }
         }
         states.clear()
         // Increment generation to trigger UI recomposition
         _resetGeneration.value++
-        println("[TerminalStateRegistry] Reset complete: disposed $count terminal states, generation=${_resetGeneration.value}")
+        logger.info(LogCategory.TERMINAL, "TerminalStateRegistry reset complete", mapOf("count" to count, "generation" to _resetGeneration.value))
         return count
     }
 }
@@ -696,7 +700,7 @@ fun resetAllTerminalStates(): Int {
     val tabbedCount = TabbedTerminalStateRegistry.resetAllTerminals()
     val embeddableCount = TerminalStateRegistry.resetAll()
     val total = tabbedCount + embeddableCount
-    println("[Terminal] Total reset: disposed $total terminal states (tabbed=$tabbedCount, embeddable=$embeddableCount)")
+    logger.info(LogCategory.TERMINAL, "Total terminal reset complete", mapOf("total" to total, "tabbed" to tabbedCount, "embeddable" to embeddableCount))
     return total
 }
 
@@ -765,7 +769,7 @@ private fun handleTerminalLinkClick(info: HyperlinkInfo, scope: CoroutineScope, 
                         TerminalLinkEventBus.emitLinkClick(urlWithLocation, terminalId, windowId)
                     }
                     is FileValidationResult.Invalid -> {
-                        println("[Terminal] Cannot open file: ${result.reason}")
+                        logger.warn(LogCategory.TERMINAL, "Cannot open file from terminal link", mapOf("reason" to result.reason))
                     }
                 }
             }

@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -18,6 +20,7 @@ import java.io.InputStreamReader
  * due to security restrictions. We open Windows Settings for user to select.
  */
 object WindowsDefaultBrowserHandler {
+    private val logger = BossLogger.forComponent("WindowsDefaultBrowserHandler")
     // Registry paths
     private const val START_MENU_KEY = "HKEY_CURRENT_USER\\SOFTWARE\\Clients\\StartMenuInternet\\BOSS"
     private const val REGISTERED_APPS = "HKEY_CURRENT_USER\\SOFTWARE\\RegisteredApplications"
@@ -34,14 +37,17 @@ object WindowsDefaultBrowserHandler {
             val httpDefault = getDefaultBrowserProgId("http")
             val httpsDefault = getDefaultBrowserProgId("https")
 
-            println("Windows default browser check: http=$httpDefault, https=$httpsDefault")
+            logger.debug(LogCategory.BROWSER, "Windows default browser check", mapOf(
+                "httpDefault" to (httpDefault ?: "none"),
+                "httpsDefault" to (httpsDefault ?: "none")
+            ))
 
             // BOSS is default if both schemes point to BOSS
             val isDefault = httpDefault == "BOSS" && httpsDefault == "BOSS"
 
             Result.success(isDefault)
         } catch (e: Exception) {
-            println("Error checking default browser on Windows: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error checking default browser on Windows", error = e)
             Result.failure(e)
         }
     }
@@ -67,10 +73,10 @@ object WindowsDefaultBrowserHandler {
             openDefaultAppsSettings()
 
             // Return false to indicate user action is required
-            println("⚠️ Windows Settings opened - user must manually select BOSS as default")
+            logger.info(LogCategory.BROWSER, "Windows Settings opened - user must manually select BOSS as default")
             Result.success(false)
         } catch (e: Exception) {
-            println("Error setting default browser on Windows: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error setting default browser on Windows", error = e)
             Result.failure(e)
         }
     }
@@ -97,7 +103,7 @@ object WindowsDefaultBrowserHandler {
             val regex = """ProgId\s+REG_SZ\s+(.+)""".toRegex()
             regex.find(output)?.groupValues?.get(1)?.trim()
         } catch (e: Exception) {
-            println("Error querying default browser for $scheme: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error querying default browser", mapOf("scheme" to scheme), e)
             null
         }
     }
@@ -111,11 +117,11 @@ object WindowsDefaultBrowserHandler {
         try {
             val appPath = getApplicationPath()
             if (appPath.isNullOrEmpty()) {
-                println("Could not determine application path for browser registration")
+                logger.warn(LogCategory.BROWSER, "Could not determine application path for browser registration")
                 return false
             }
 
-            println("Registering BOSS as browser candidate with path: $appPath")
+            logger.info(LogCategory.BROWSER, "Registering BOSS as browser candidate", mapOf("path" to appPath))
 
             // Create registry entries
             val commands = listOf(
@@ -159,23 +165,23 @@ object WindowsDefaultBrowserHandler {
                     val exitCode = process.waitFor()
 
                     if (exitCode == 0) {
-                        println("✅ Registry command succeeded")
+                        logger.trace(LogCategory.BROWSER, "Registry command succeeded", mapOf("index" to index))
                     } else {
-                        println("❌ Registry command failed: $command")
+                        logger.warn(LogCategory.BROWSER, "Registry command failed", mapOf("index" to index))
 
                         // Fail fast on critical keys (first 3: main key, DefaultIcon, shell command)
                         if (index < 3) {
-                            println("⚠️ Critical registry key failed, aborting registration")
+                            logger.error(LogCategory.BROWSER, "Critical registry key failed, aborting registration")
                             return false
                         }
                         allSucceeded = false
                     }
                 } catch (e: Exception) {
-                    println("Error executing registry command: ${e.message}")
+                    logger.error(LogCategory.BROWSER, "Error executing registry command", error = e)
 
                     // Fail fast on critical keys
                     if (index < 3) {
-                        println("⚠️ Critical registry key failed with exception, aborting registration")
+                        logger.error(LogCategory.BROWSER, "Critical registry key failed with exception, aborting registration")
                         return false
                     }
                     allSucceeded = false
@@ -183,12 +189,12 @@ object WindowsDefaultBrowserHandler {
             }
 
             if (allSucceeded) {
-                println("✅ BOSS successfully registered as browser candidate")
+                logger.info(LogCategory.BROWSER, "BOSS successfully registered as browser candidate")
             }
 
             return allSucceeded
         } catch (e: Exception) {
-            println("Failed to register as browser candidate: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Failed to register as browser candidate", error = e)
             return false
         }
     }
@@ -230,7 +236,7 @@ object WindowsDefaultBrowserHandler {
                 }
             }
         } catch (e: Exception) {
-            println("Error determining application path: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error determining application path", error = e)
             null
         }
     }
@@ -246,9 +252,9 @@ object WindowsDefaultBrowserHandler {
             val process = Runtime.getRuntime().exec("cmd /c start ms-settings:defaultapps")
             process.waitFor()
 
-            println("Opened Windows Settings - Default Apps")
+            logger.debug(LogCategory.BROWSER, "Opened Windows Settings - Default Apps")
         } catch (e: Exception) {
-            println("Error opening Windows Settings: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error opening Windows Settings", error = e)
         }
     }
 

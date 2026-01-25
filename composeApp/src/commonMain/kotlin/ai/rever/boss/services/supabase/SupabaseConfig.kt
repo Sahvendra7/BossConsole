@@ -1,5 +1,7 @@
 package ai.rever.boss.services.supabase
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Supabase configuration and client management
  */
 object SupabaseConfig {
+    private val logger = BossLogger.forComponent("SupabaseConfig")
 
     private var _client: SupabaseClient? = null
     private val _isInitialized = MutableStateFlow(false)
@@ -30,7 +33,7 @@ object SupabaseConfig {
      */
     fun initialize(url: String, anonKey: String) {
         if (_client != null) {
-            println("Supabase client already initialized")
+            logger.debug(LogCategory.NETWORK, "Supabase client already initialized")
             return
         }
         
@@ -65,9 +68,9 @@ object SupabaseConfig {
             }
             
             _isInitialized.value = true
-            println("Supabase client initialized successfully")
+            logger.info(LogCategory.NETWORK, "Supabase client initialized successfully")
         } catch (e: Exception) {
-            println("Failed to initialize Supabase client: ${e.message}")
+            logger.error(LogCategory.NETWORK, "Failed to initialize Supabase client", error = e)
             throw e
         }
     }

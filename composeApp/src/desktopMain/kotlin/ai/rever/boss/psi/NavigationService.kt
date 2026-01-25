@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.com.intellij.psi.PsiNamedElement
 import org.jetbrains.kotlin.psi.*
@@ -77,6 +79,7 @@ sealed class NavigationResult {
  * Use PSIThreadBridge.readAction { } to wrap calls.
  */
 class NavigationService {
+    private val logger = BossLogger.forComponent("NavigationService")
 
     /**
      * Go to the definition of the symbol at the given offset.
@@ -99,7 +102,7 @@ class NavigationService {
             NavigationResult.Found(target)
 
         } catch (e: Exception) {
-            println("[Navigation] Error during go-to-definition: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error during go-to-definition", error = e)
             NavigationResult.Error(e.message ?: "Unknown error")
         }
     }
@@ -142,20 +145,20 @@ class NavigationService {
         }
 
         if (symbolName.isNullOrEmpty() || symbolName.length < 2) {
-            println("[Navigation] Symbol name too short or empty: '$symbolName'")
+            logger.debug(LogCategory.EDITOR, "Symbol name too short or empty", mapOf("symbolName" to symbolName))
             return null
         }
 
-        println("[Navigation] Looking up symbol in index: '$symbolName'")
+        logger.debug(LogCategory.EDITOR, "Looking up symbol in index", mapOf("symbolName" to symbolName))
 
         // Look up symbol in the project index
         val indexer = ProjectIndexer.current ?: run {
-            println("[Navigation] ProjectIndexer.current is null")
+            logger.debug(LogCategory.EDITOR, "ProjectIndexer.current is null")
             return null
         }
         val declarations = indexer.index.findByName(symbolName)
 
-        println("[Navigation] Found ${declarations.size} declarations for '$symbolName'")
+        logger.debug(LogCategory.EDITOR, "Found declarations for symbol", mapOf("count" to declarations.size, "symbolName" to symbolName))
 
         if (declarations.isEmpty()) {
             return null
@@ -182,14 +185,14 @@ class NavigationService {
             }
             .firstOrNull() ?: return null
 
-        println("[Navigation] Best match: ${bestMatch.name} (${bestMatch.kind}) at ${bestMatch.filePath} (library: ${bestMatch.isLibrary})")
+        logger.debug(LogCategory.EDITOR, "Best match found", mapOf("name" to bestMatch.name, "kind" to bestMatch.kind.toString(), "filePath" to bestMatch.filePath, "isLibrary" to bestMatch.isLibrary))
 
         // Handle JAR paths for library sources
         // JAR paths look like: jar:///path/to/sources.jar!/package/File.kt
         val (fileContent, effectivePath) = if (bestMatch.filePath.startsWith("jar://")) {
             val content = readJarEntry(bestMatch.filePath)
             if (content == null) {
-                println("[Navigation] Failed to read JAR entry: ${bestMatch.filePath}")
+                logger.warn(LogCategory.EDITOR, "Failed to read JAR entry", mapOf("filePath" to bestMatch.filePath))
                 return null
             }
             content to bestMatch.filePath
@@ -197,7 +200,7 @@ class NavigationService {
             // Regular file path
             val targetFile = java.io.File(bestMatch.filePath)
             if (!targetFile.exists()) {
-                println("[Navigation] Target file does not exist: ${bestMatch.filePath}")
+                logger.warn(LogCategory.EDITOR, "Target file does not exist", mapOf("filePath" to bestMatch.filePath))
                 return null
             }
             targetFile.readText() to bestMatch.filePath
@@ -441,7 +444,7 @@ class NavigationService {
                 if (indexer != null) {
                     val matches = indexer.index.findByName(symbolName)
                     if (matches.isNotEmpty()) {
-                        println("[Navigation] isNavigable: '$symbolName' found in index (${matches.size} matches)")
+                        logger.debug(LogCategory.EDITOR, "isNavigable: symbol found in index", mapOf("symbolName" to symbolName, "matchCount" to matches.size))
                         return true
                     }
                 }
@@ -501,7 +504,7 @@ class NavigationService {
             val withoutPrefix = jarPath.removePrefix("jar://")
             val separatorIndex = withoutPrefix.indexOf("!/")
             if (separatorIndex < 0) {
-                println("[Navigation] Invalid JAR path format: $jarPath")
+                logger.warn(LogCategory.EDITOR, "Invalid JAR path format", mapOf("jarPath" to jarPath))
                 return null
             }
 
@@ -512,14 +515,14 @@ class NavigationService {
             jarFile.use { jar ->
                 val entry = jar.getJarEntry(entryPath)
                 if (entry == null) {
-                    println("[Navigation] JAR entry not found: $entryPath in $jarFilePath")
+                    logger.warn(LogCategory.EDITOR, "JAR entry not found", mapOf("entryPath" to entryPath, "jarFilePath" to jarFilePath))
                     return null
                 }
 
                 jar.getInputStream(entry).bufferedReader().readText()
             }
         } catch (e: Exception) {
-            println("[Navigation] Error reading JAR entry: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error reading JAR entry", error = e)
             null
         }
     }

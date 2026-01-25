@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkTextSecondary
@@ -73,6 +75,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
+
+private val bookmarksLogger = BossLogger.forComponent("Bookmarks")
 
 /**
  * Represents the hierarchical tab structure within a workspace
@@ -264,7 +268,7 @@ class BookmarksPanel(
                             }))
                             add(ContextMenuItem("Import Collection", Icons.Outlined.FileUpload, onClick = {
                                 // TODO: Implement import functionality
-                                println("Import collection requested")
+                                bookmarksLogger.debug(LogCategory.UI, "Import collection requested")
                             }))
                         }
                     )
@@ -1050,7 +1054,7 @@ private fun CollectionItem(
                             // Export Collection
                             add(ContextMenuItem("Export Collection", Icons.Outlined.FileDownload, onClick = {
                                 // TODO: Implement export functionality
-                                println("Export collection: ${collection.name}")
+                                bookmarksLogger.debug(LogCategory.UI, "Export collection", mapOf("name" to collection.name))
                             }))
 
                             // Delete Collection (if not favorites)
@@ -1228,7 +1232,7 @@ private fun WorkspaceItem(
                             add(ContextMenuItem("Export Workspace", Icons.Outlined.FileDownload, onClick = {
                                 val json = workspaceManager.exportWorkspace(workspace)
                                 // TODO: Save json to file or show dialog
-                                println("Exported workspace: $json")
+                                bookmarksLogger.debug(LogCategory.UI, "Exported workspace")
                             }))
 
                             // TODO: Duplicate Workspace (API not yet available)

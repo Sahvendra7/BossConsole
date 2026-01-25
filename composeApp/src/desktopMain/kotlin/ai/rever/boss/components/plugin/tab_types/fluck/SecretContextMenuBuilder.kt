@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.WebsiteMatchingUtil
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
  * Used by Issue #56 - Secret Access Integration with Fluck Browser
  */
 object SecretContextMenuBuilder {
+    private val logger = BossLogger.forComponent("SecretContextMenuBuilder")
 
     /**
      * Build secret context menu for a focused form field.
@@ -190,7 +193,7 @@ object SecretContextMenuBuilder {
         onDismiss: () -> Unit
     ) {
         try {
-            println("🔐 [SecretContextMenuBuilder] Filling credentials for: ${secret.website}")
+            logger.debug(LogCategory.GENERAL, "Filling credentials", mapOf("website" to secret.website))
 
             val result = FormFieldInjector.fillCredentials(
                 browser = browser,
@@ -201,20 +204,20 @@ object SecretContextMenuBuilder {
 
             when (result) {
                 is FormFieldInjector.FillResult.Success -> {
-                    println("✅ [SecretContextMenuBuilder] ${result.message}")
+                    logger.info(LogCategory.GENERAL, "Credentials filled successfully", mapOf("message" to result.message))
                     onDismiss()
                 }
                 is FormFieldInjector.FillResult.PartialSuccess -> {
-                    println("⚠️ [SecretContextMenuBuilder] ${result.message}")
+                    logger.warn(LogCategory.GENERAL, "Credential fill partial", mapOf("message" to result.message))
                     onDismiss()
                 }
                 is FormFieldInjector.FillResult.Error -> {
-                    println("❌ [SecretContextMenuBuilder] ${result.message}")
+                    logger.warn(LogCategory.GENERAL, "Credential fill failed", mapOf("message" to result.message))
                     // Keep menu open on error so user can try another secret
                 }
             }
         } catch (e: Exception) {
-            println("❌ [SecretContextMenuBuilder] Exception filling credentials: ${e.message}")
+            logger.error(LogCategory.GENERAL, "Exception filling credentials", error = e)
         }
     }
 

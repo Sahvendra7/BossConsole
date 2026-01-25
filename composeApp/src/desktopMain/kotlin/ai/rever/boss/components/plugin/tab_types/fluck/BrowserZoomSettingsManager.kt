@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -33,6 +35,7 @@ data class BrowserZoomSettingsData(
  * so users can have different zoom levels for different websites.
  */
 object BrowserZoomSettingsManager {
+    private val logger = BossLogger.forComponent("BrowserZoomSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/browser-zoom-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -88,7 +91,7 @@ object BrowserZoomSettingsManager {
                 settings = json.decodeFromString<BrowserZoomSettingsData>(content)
             }
         } catch (e: Exception) {
-            println("Error loading zoom settings: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error loading zoom settings", error = e)
             settings = BrowserZoomSettingsData()
         }
     }
@@ -102,7 +105,7 @@ object BrowserZoomSettingsManager {
                 settingsFile.parentFile?.mkdirs()
                 settingsFile.writeText(json.encodeToString(settings))
             } catch (e: Exception) {
-                println("Error saving zoom settings: ${e.message}")
+                logger.warn(LogCategory.BROWSER, "Error saving zoom settings", error = e)
             }
         }
     }
@@ -115,7 +118,7 @@ object BrowserZoomSettingsManager {
             settingsFile.parentFile?.mkdirs()
             settingsFile.writeText(json.encodeToString(settings))
         } catch (e: Exception) {
-            println("Error saving zoom settings: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error saving zoom settings (sync)", error = e)
         }
     }
 

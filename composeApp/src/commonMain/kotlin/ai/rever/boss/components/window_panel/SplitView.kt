@@ -1,5 +1,7 @@
 package ai.rever.boss.components.window_panel
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import BossDarkAccent
 import ai.rever.boss.components.model.Panel
 import ai.rever.boss.components.model.PanelDropZones
@@ -98,6 +100,8 @@ data class PanelBounds(
 enum class NavigationDirection {
     LEFT, RIGHT, UP, DOWN
 }
+
+private val splitViewLogger = BossLogger.forComponent("SplitView")
 
 @Stable
 class SplitViewState(
@@ -251,7 +255,7 @@ class SplitViewState(
             // Try to get first available panel
             val firstPanel = getAllPanels().firstOrNull()
             if (firstPanel == null) {
-                println("SplitView: ERROR - No panels available to create tab")
+                splitViewLogger.error(LogCategory.UI, "No panels available to create tab")
                 return
             }
 
@@ -270,7 +274,7 @@ class SplitViewState(
                 component.selectTab(tabIndex)
                 setActivePanel(firstPanel.id)
             } else {
-                println("SplitView: ERROR - Failed to add tab to panel")
+                splitViewLogger.error(LogCategory.UI, "Failed to add tab to panel")
             }
             return
         }
@@ -324,7 +328,7 @@ class SplitViewState(
             // Try to get first available panel
             val firstPanel = getAllPanels().firstOrNull()
             if (firstPanel == null) {
-                println("SplitView: ERROR - No panels available to create terminal tab")
+                splitViewLogger.error(LogCategory.UI, "No panels available to create terminal tab")
                 return
             }
 
@@ -343,9 +347,9 @@ class SplitViewState(
             if (tabIndex >= 0) {
                 component.selectTab(tabIndex)
                 setActivePanel(firstPanel.id)
-                println("SplitView: Terminal tab created in first panel${if (command != null) " with command: $command" else ""}")
+                splitViewLogger.debug(LogCategory.UI, "Terminal tab created in first panel", if (command != null) mapOf("command" to command) else emptyMap())
             } else {
-                println("SplitView: ERROR - Failed to add terminal tab to panel")
+                splitViewLogger.error(LogCategory.UI, "Failed to add terminal tab to panel")
             }
             return
         }
@@ -362,9 +366,9 @@ class SplitViewState(
         val tabIndex = activeComponent.addTab(terminalTab)
         if (tabIndex >= 0) {
             activeComponent.selectTab(tabIndex)
-            println("SplitView: Terminal tab created${if (command != null) " with command: $command" else ""}")
+            splitViewLogger.debug(LogCategory.UI, "Terminal tab created", if (command != null) mapOf("command" to command) else emptyMap())
         } else {
-            println("SplitView: ERROR - Failed to create terminal tab")
+            splitViewLogger.error(LogCategory.UI, "Failed to create terminal tab")
         }
     }
 

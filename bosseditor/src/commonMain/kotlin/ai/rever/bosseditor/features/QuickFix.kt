@@ -1,6 +1,10 @@
 package ai.rever.bosseditor.features
 
 import ai.rever.bosseditor.core.EditorRange
+import ai.rever.bosseditor.logging.EditorLogCategory
+import ai.rever.bosseditor.logging.EditorLogger
+
+private val logger = EditorLogger.forComponent("QuickFix")
 
 /**
  * Represents a quick fix action that can be applied to resolve an issue.
@@ -32,7 +36,7 @@ data class QuickFix(
             actionHandler()
             true
         } catch (e: Exception) {
-            println("[QuickFix] Error executing '$title': ${e.message}")
+            logger.error(EditorLogCategory.EDITOR, "Error executing quick fix", data = mapOf("title" to title), error = e)
             false
         }
     }

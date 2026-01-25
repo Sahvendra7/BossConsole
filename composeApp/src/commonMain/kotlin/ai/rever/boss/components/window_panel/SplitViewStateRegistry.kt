@@ -1,8 +1,12 @@
 package ai.rever.boss.components.window_panel
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+private val splitViewStateRegistryLogger = BossLogger.forComponent("SplitViewStateRegistry")
 
 /**
  * Global registry for tracking SplitViewState instances across all open windows.
@@ -27,9 +31,9 @@ object SplitViewStateRegistry {
      * @param state The SplitViewState instance for this window
      */
     fun register(windowId: String, state: SplitViewState) {
-        println("[SplitViewStateRegistry] Registering state for window: $windowId")
+        splitViewStateRegistryLogger.debug(LogCategory.UI, "Registering state for window", mapOf("windowId" to windowId))
         _states.value = _states.value + (windowId to state)
-        println("[SplitViewStateRegistry] Total registered windows: ${_states.value.size}")
+        splitViewStateRegistryLogger.debug(LogCategory.UI, "Total registered windows", mapOf("count" to _states.value.size))
     }
 
     /**
@@ -39,9 +43,9 @@ object SplitViewStateRegistry {
      * @param windowId Unique identifier for the window
      */
     fun unregister(windowId: String) {
-        println("[SplitViewStateRegistry] Unregistering state for window: $windowId")
+        splitViewStateRegistryLogger.debug(LogCategory.UI, "Unregistering state for window", mapOf("windowId" to windowId))
         _states.value = _states.value - windowId
-        println("[SplitViewStateRegistry] Total registered windows: ${_states.value.size}")
+        splitViewStateRegistryLogger.debug(LogCategory.UI, "Total registered windows", mapOf("count" to _states.value.size))
     }
 
     /**

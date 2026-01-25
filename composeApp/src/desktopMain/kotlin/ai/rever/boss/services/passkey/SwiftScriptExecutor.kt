@@ -1,5 +1,7 @@
 package ai.rever.boss.services.passkey
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 
 /**
@@ -7,6 +9,7 @@ import java.io.File
  * Handles temporary file creation and cleanup for Swift code execution
  */
 object SwiftScriptExecutor {
+    private val logger = BossLogger.forComponent("SwiftScriptExecutor")
 
     /**
      * Execute a Swift file with arguments and return the output
@@ -26,7 +29,7 @@ object SwiftScriptExecutor {
         val output = process.inputStream.bufferedReader().readText().trim()
         val exitCode = process.waitFor()
         
-        println("SwiftScriptExecutor: Executed $fileName, exit code: $exitCode")
+        logger.debug(LogCategory.PASSKEY, "Executed Swift file", mapOf("fileName" to fileName, "exitCode" to exitCode))
         
         return output
     }
@@ -36,7 +39,7 @@ object SwiftScriptExecutor {
      */
     private fun getSwiftFilesDirectory(): File {
         val projectDir = System.getProperty("user.dir")
-        println("SwiftScriptExecutor: Project dir: $projectDir")
+        logger.debug(LogCategory.PASSKEY, "Project dir", mapOf("path" to projectDir))
         
         // Try multiple possible paths
         val possiblePaths = listOf(
@@ -46,9 +49,9 @@ object SwiftScriptExecutor {
         
         for (path in possiblePaths) {
             val dir = File(path)
-            println("SwiftScriptExecutor: Checking path: ${dir.absolutePath}")
+            logger.debug(LogCategory.PASSKEY, "Checking path", mapOf("path" to dir.absolutePath))
             if (dir.exists() && dir.isDirectory) {
-                println("SwiftScriptExecutor: Found Swift directory: ${dir.absolutePath}")
+                logger.debug(LogCategory.PASSKEY, "Found Swift directory", mapOf("path" to dir.absolutePath))
                 return dir
             }
         }
@@ -65,7 +68,7 @@ object SwiftScriptExecutor {
             val exitCode = process.waitFor()
             exitCode == 0
         } catch (e: Exception) {
-            println("SwiftScriptExecutor: Swift not available: ${e.message}")
+            logger.debug(LogCategory.PASSKEY, "Swift not available")
             false
         }
     }

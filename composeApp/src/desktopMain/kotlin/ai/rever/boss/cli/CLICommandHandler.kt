@@ -2,6 +2,8 @@ package ai.rever.boss.cli
 
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.components.events.FileEventBus
@@ -23,6 +25,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * Thread Safety: All UI operations use Dispatchers.Main.
  */
 class CLICommandHandler private constructor() {
+    private val logger = BossLogger.forComponent("CLICommandHandler")
+
     private val commandQueue = ConcurrentLinkedQueue<CLICommand>()
     private val terminalQueue = ConcurrentLinkedQueue<String>()  // Use empty string as sentinel for null
     private val workspaceQueue = ConcurrentLinkedQueue<String>()
@@ -69,7 +73,7 @@ class CLICommandHandler private constructor() {
         this.getSplitViewState = getSplitViewState
         this.isInitialized = true
 
-        println("CLI: Initialized with services")
+        logger.info(LogCategory.SYSTEM, "CLI initialized with services")
 
         // Execute queued commands
         executeQueuedCommands()
@@ -87,7 +91,7 @@ class CLICommandHandler private constructor() {
             }
         } else {
             commandQueue.offer(command)
-            println("CLI: Queued command: $command")
+            logger.debug(LogCategory.SYSTEM, "Queued command", mapOf("command" to command.toString()))
         }
     }
 
@@ -97,7 +101,7 @@ class CLICommandHandler private constructor() {
      */
     fun markTerminalHandlerReady() {
         isTerminalHandlerReady = true
-        println("CLI: Terminal handler marked as ready")
+        logger.debug(LogCategory.SYSTEM, "Terminal handler marked as ready")
 
         // Process queued terminal events
         scope.launch {
@@ -106,11 +110,13 @@ class CLICommandHandler private constructor() {
                 if (command != null) {
                     // Convert empty string sentinel back to null
                     val actualCommand = if (command.isEmpty()) null else command
-                    println("CLI: Processing queued terminal command${if (actualCommand != null) ": $actualCommand" else " (no command)"}")
+                    logger.debug(LogCategory.SYSTEM, "Processing queued terminal command", mapOf(
+                        "hasCommand" to (actualCommand != null)
+                    ))
                     try {
                         handleOpenTerminal(actualCommand)
                     } catch (e: Exception) {
-                        println("CLI: Failed to process queued terminal event: ${e.message}")
+                        logger.error(LogCategory.SYSTEM, "Failed to process queued terminal event", error = e)
                     }
                 }
             }
@@ -123,18 +129,18 @@ class CLICommandHandler private constructor() {
      */
     fun markFileHandlerReady() {
         isFileHandlerReady = true
-        println("CLI: File handler marked as ready")
+        logger.debug(LogCategory.SYSTEM, "File handler marked as ready")
 
         // Process queued file events
         scope.launch {
             while (fileQueue.isNotEmpty()) {
                 val filePath = fileQueue.poll()
                 if (filePath != null) {
-                    println("CLI: Processing queued file: $filePath")
+                    logger.debug(LogCategory.SYSTEM, "Processing queued file", mapOf("path" to filePath))
                     try {
                         handleOpenFile(filePath)
                     } catch (e: Exception) {
-                        println("CLI: Failed to process queued file event: ${e.message}")
+                        logger.error(LogCategory.SYSTEM, "Failed to process queued file event", error = e)
                     }
                 }
             }
@@ -147,18 +153,18 @@ class CLICommandHandler private constructor() {
      */
     fun markWorkspaceHandlerReady() {
         isWorkspaceHandlerReady = true
-        println("CLI: Workspace handler marked as ready")
+        logger.debug(LogCategory.SYSTEM, "Workspace handler marked as ready")
 
         // Process queued workspace loads
         scope.launch {
             while (workspaceQueue.isNotEmpty()) {
                 val configPath = workspaceQueue.poll()
                 if (configPath != null) {
-                    println("CLI: Processing queued workspace: $configPath")
+                    logger.debug(LogCategory.SYSTEM, "Processing queued workspace", mapOf("path" to configPath))
                     try {
                         handleLoadWorkspace(configPath)
                     } catch (e: Exception) {
-                        println("CLI: Failed to process queued workspace: ${e.message}")
+                        logger.error(LogCategory.SYSTEM, "Failed to process queued workspace", error = e)
                     }
                 }
             }
@@ -182,7 +188,7 @@ class CLICommandHandler private constructor() {
 
     private suspend fun executeCommand(command: CLICommand) {
         try {
-            println("CLI: Executing command: $command")
+            logger.debug(LogCategory.SYSTEM, "Executing command", mapOf("command" to command.toString()))
 
             when (command) {
                 is CLICommand.OpenUrl -> handleOpenUrl(command.url)
@@ -190,11 +196,11 @@ class CLICommandHandler private constructor() {
                 is CLICommand.OpenFile -> {
                     if (isFileHandlerReady) {
                         // File handler ready - execute immediately
-                        println("CLI: File handler ready, executing immediately: ${command.filePath}")
+                        logger.debug(LogCategory.SYSTEM, "File handler ready, executing immediately", mapOf("path" to command.filePath))
                         handleOpenFile(command.filePath)
                     } else {
                         // File handler not ready - queue for later (cold start)
-                        println("CLI: File handler not ready, queueing file: ${command.filePath}")
+                        logger.debug(LogCategory.SYSTEM, "File handler not ready, queueing file", mapOf("path" to command.filePath))
                         fileQueue.add(command.filePath)
                     }
                 }
@@ -204,18 +210,22 @@ class CLICommandHandler private constructor() {
 
                     if (isTerminalHandlerReady) {
                         // Terminal handler ready - execute immediately
-                        println("CLI: Terminal handler ready, executing immediately: ${if (queuedCommand.isEmpty()) "(no command)" else queuedCommand}")
+                        logger.debug(LogCategory.SYSTEM, "Terminal handler ready, executing immediately", mapOf(
+                            "hasCommand" to queuedCommand.isNotEmpty()
+                        ))
                         val actualCommand = if (queuedCommand.isEmpty()) null else queuedCommand
                         handleOpenTerminal(actualCommand)
                     } else {
                         // Terminal handler not ready - queue for later (cold start)
-                        println("CLI: Terminal handler not ready, queueing command: ${if (queuedCommand.isEmpty()) "(no command)" else queuedCommand}")
+                        logger.debug(LogCategory.SYSTEM, "Terminal handler not ready, queueing", mapOf(
+                            "hasCommand" to queuedCommand.isNotEmpty()
+                        ))
                         terminalQueue.add(queuedCommand)
                     }
                 }
             }
         } catch (e: Exception) {
-            println("CLI: Error executing command: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Error executing command", error = e)
         }
     }
 
@@ -226,7 +236,7 @@ class CLICommandHandler private constructor() {
         // Normalize and validate URL (adds https:// if missing)
         val normalizedUrl = CLISecurityValidator.normalizeAndValidateUrl(url)
         if (normalizedUrl == null) {
-            println("CLI: Invalid URL: $url")
+            logger.warn(LogCategory.SYSTEM, "Invalid URL", mapOf("url" to url))
             return
         }
 
@@ -237,7 +247,7 @@ class CLICommandHandler private constructor() {
 
     /**
      * Loads workspace configuration from file.
-     * 
+     *
      * Emits workspace load event via WorkspaceEventBus for BossApp to handle.
      * This ensures workspace loading has access to splitViewState and workspaceManager.
      */
@@ -245,25 +255,25 @@ class CLICommandHandler private constructor() {
         // Validate file exists
         val file = File(configPath).absoluteFile
         if (!file.exists()) {
-            println("CLI: Workspace config not found: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Workspace config not found", mapOf("path" to file.absolutePath))
             return
         }
 
         if (!file.canRead()) {
-            println("CLI: Cannot read workspace config: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Cannot read workspace config", mapOf("path" to file.absolutePath))
             return
         }
 
         // Validate path for security (prevent path traversal)
         if (!CLISecurityValidator.isValidPath(file.absolutePath)) {
-            println("CLI: Invalid workspace path (security check failed): ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Invalid workspace path (security check failed)", mapOf("path" to file.absolutePath))
             return
         }
 
         // Queue workspace if handler not ready (cold start)
         // This ensures workspace loads AFTER Last Session, preventing tab destruction
         if (!isWorkspaceHandlerReady) {
-            println("CLI: Workspace handler not ready, queueing workspace: ${file.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Workspace handler not ready, queueing", mapOf("path" to file.absolutePath))
             workspaceQueue.add(file.absolutePath)
             return
         }
@@ -271,14 +281,17 @@ class CLICommandHandler private constructor() {
         // Get focused window ID for multi-window support
         val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
         if (focusedWindowId == null) {
-            println("CLI: No window focused, cannot load workspace: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "No window focused, cannot load workspace", mapOf("path" to file.absolutePath))
             return
         }
 
         // Emit workspace load event - BossApp will handle the actual loading
         // This is much simpler than trying to access splitViewState from CLI layer
         ai.rever.boss.components.events.WorkspaceEventBus.loadWorkspace(file.absolutePath, sourceWindowId = focusedWindowId)
-        println("CLI: Emitted workspace load event for ${file.absolutePath} (window: $focusedWindowId)")
+        logger.debug(LogCategory.SYSTEM, "Emitted workspace load event", mapOf(
+            "path" to file.absolutePath,
+            "windowId" to focusedWindowId
+        ))
     }
 
     /**
@@ -291,30 +304,30 @@ class CLICommandHandler private constructor() {
         val file = File(filePath).absoluteFile
 
         if (!file.exists()) {
-            println("CLI: File not found: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "File not found", mapOf("path" to file.absolutePath))
             return
         }
 
         if (!file.isFile) {
-            println("CLI: Not a file: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Not a file", mapOf("path" to file.absolutePath))
             return
         }
 
         if (!file.canRead()) {
-            println("CLI: Cannot read file: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Cannot read file", mapOf("path" to file.absolutePath))
             return
         }
 
         // Security validation
         if (!CLISecurityValidator.isValidPath(file.absolutePath)) {
-            println("CLI: Invalid file path (security check failed): ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Invalid file path (security check failed)", mapOf("path" to file.absolutePath))
             return
         }
 
         // Get focused window ID for multi-window support
         val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
         if (focusedWindowId == null) {
-            println("CLI: No window focused, cannot open file: ${file.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "No window focused, cannot open file", mapOf("path" to file.absolutePath))
             return
         }
 
@@ -326,29 +339,15 @@ class CLICommandHandler private constructor() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 FileEventBus.openFile(file.absolutePath, sourceWindowId = focusedWindowId)
-                println("CLI: Emitted file open event for ${file.absolutePath} (window: $focusedWindowId)")
+                logger.debug(LogCategory.SYSTEM, "Emitted file open event", mapOf(
+                    "path" to file.absolutePath,
+                    "windowId" to focusedWindowId
+                ))
 
                 // CRITICAL: Wait for file tab to actually be created before decrementing
-                // The event emission is instant, but file tab creation is async and takes time.
-                // If we decrement immediately, BossApp's state check will see 0 tabs + isProcessing=false
-                // and show New Tab Dialog / load Last Session, which clears panels and destroys
-                // the tab being created.
-                //
-                // Timeline without delay:
-                // - t=0ms: Event emitted, counter decremented to 0
-                // - t=0ms: File tab creation starts (async)
-                // - t=200ms: BossApp debounce checks: tabs=0, isProcessing=false → shows dialog
-                // - t=250ms: File tab creation completes but gets immediately destroyed
-                //
-                // With 500ms delay:
-                // - t=0ms: Event emitted
-                // - t=0ms: File tab creation starts (async)
-                // - t=200ms: BossApp debounce checks: tabs=0, but isProcessing=true → waits
-                // - t=250ms: File tab creation completes, tabs=1
-                // - t=500ms: Counter decremented, isProcessing=false (tab already exists)
                 delay(500)
             } catch (e: Exception) {
-                println("CLI: Failed to emit file event: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to emit file event", error = e)
             } finally {
                 // Always decrement, even on error
                 ai.rever.boss.services.FileHandlerService.decrementProcessing()
@@ -363,23 +362,23 @@ class CLICommandHandler private constructor() {
         val folder = File(folderPath).absoluteFile
 
         if (!folder.exists()) {
-            println("CLI: Folder not found: ${folder.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Folder not found", mapOf("path" to folder.absolutePath))
             return
         }
 
         if (!folder.isDirectory) {
-            println("CLI: Not a directory: ${folder.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Not a directory", mapOf("path" to folder.absolutePath))
             return
         }
 
         if (!folder.canRead()) {
-            println("CLI: Cannot read folder: ${folder.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Cannot read folder", mapOf("path" to folder.absolutePath))
             return
         }
 
         // Security validation
         if (!CLISecurityValidator.isValidPath(folder.absolutePath)) {
-            println("CLI: Invalid folder path (security check failed): ${folder.absolutePath}")
+            logger.warn(LogCategory.SYSTEM, "Invalid folder path (security check failed)", mapOf("path" to folder.absolutePath))
             return
         }
 
@@ -400,7 +399,7 @@ class CLICommandHandler private constructor() {
                 // Fall back to just updating recent projects if no window state available
                 ai.rever.boss.components.plugin.panels.left_top.ProjectState.updateRecentProjects(project)
             }
-            println("CLI: Folder opened in codebase plugin: ${folder.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Folder opened in codebase plugin", mapOf("path" to folder.absolutePath))
         }
     }
 
@@ -413,14 +412,14 @@ class CLICommandHandler private constructor() {
     private suspend fun handleOpenTerminal(command: String?) {
         // Validate command for security if provided
         if (command != null && !CLISecurityValidator.isValidCommand(command)) {
-            println("CLI: Invalid terminal command (security check failed): $command")
+            logger.warn(LogCategory.SYSTEM, "Invalid terminal command (security check failed)")
             return
         }
 
         // Get focused window ID for multi-window support
         val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
         if (focusedWindowId == null) {
-            println("CLI: No window focused, cannot open terminal")
+            logger.warn(LogCategory.SYSTEM, "No window focused, cannot open terminal")
             return
         }
 
@@ -432,29 +431,15 @@ class CLICommandHandler private constructor() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
                 TerminalEventBus.openTerminal(command, sourceWindowId = focusedWindowId)
-                println("CLI: Emitted terminal open event${if (command != null) " with command: $command" else ""} (window: $focusedWindowId)")
+                logger.debug(LogCategory.SYSTEM, "Emitted terminal open event", mapOf(
+                    "hasCommand" to (command != null),
+                    "windowId" to focusedWindowId
+                ))
 
                 // CRITICAL: Wait for terminal tab to actually be created before decrementing
-                // The event emission is instant, but terminal tab creation is async and takes time.
-                // If we decrement immediately, BossApp's state check will see 0 tabs + isProcessing=false
-                // and show New Tab Dialog / load Last Session, which clears panels and destroys
-                // the tab being created.
-                //
-                // Timeline without delay:
-                // - t=0ms: Event emitted, counter decremented to 0
-                // - t=0ms: Terminal tab creation starts (async)
-                // - t=200ms: BossApp debounce checks: tabs=0, isProcessing=false → shows dialog
-                // - t=250ms: Terminal tab creation completes but gets immediately destroyed
-                //
-                // With 500ms delay:
-                // - t=0ms: Event emitted
-                // - t=0ms: Terminal tab creation starts (async)
-                // - t=200ms: BossApp debounce checks: tabs=0, but isProcessing=true → waits
-                // - t=250ms: Terminal tab creation completes, tabs=1
-                // - t=500ms: Counter decremented, isProcessing=false (tab already exists)
                 delay(500)
             } catch (e: Exception) {
-                println("CLI: Failed to emit terminal event: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to emit terminal event", error = e)
             } finally {
                 // Always decrement, even on error
                 ai.rever.boss.services.TerminalHandlerService.decrementProcessing()

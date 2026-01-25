@@ -1,5 +1,7 @@
 package ai.rever.boss.viewmodels
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
 import ai.rever.boss.services.supabase.models.*
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
  * Responsible for: passkey authentication, registration, cross-device authentication
  */
 class PasskeyAuthViewModel {
+    private val logger = BossLogger.forComponent("PasskeyAuthViewModel")
     private val viewModelScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // Store authentication job reference for cancellation
@@ -69,7 +72,7 @@ class PasskeyAuthViewModel {
             )
         }
         _availablePasskeys.value = passkeyInfos
-        println("PasskeyAuthViewModel: Set ${passkeyInfos.size} available passkeys from credentials")
+        logger.debug(LogCategory.PASSKEY, "Set available passkeys from credentials", mapOf("count" to passkeyInfos.size))
     }
 
     /**
@@ -95,7 +98,7 @@ class PasskeyAuthViewModel {
         authJob = null
         _isLoading.value = false
         _errorMessage.value = null
-        println("PasskeyAuthViewModel: Authentication cancelled")
+        logger.debug(LogCategory.PASSKEY, "Authentication cancelled")
     }
 
     /**
@@ -115,12 +118,12 @@ class PasskeyAuthViewModel {
             // This will trigger Touch ID and identify the user from their credential
             AuthService.authenticateWithPasskey(email = email).fold(
                 onSuccess = {
-                    println("PasskeyAuthViewModel: Email + Touch ID authentication successful")
+                    logger.info(LogCategory.PASSKEY, "Email + Touch ID authentication successful")
                     _isLoading.value = false
                     onSuccess()
                 },
                 onFailure = { error ->
-                    println("PasskeyAuthViewModel: Email + Touch ID authentication failed: ${error.message}")
+                    logger.warn(LogCategory.PASSKEY, "Email + Touch ID authentication failed", error = error)
 
                     // Check if this is a cross-device authentication requirement
                     if (error is CrossDeviceAuthenticationRequired) {
@@ -131,12 +134,12 @@ class PasskeyAuthViewModel {
                             _crossDeviceChallenge.value = error.challenge
                             _crossDeviceSessionId.value = error.sessionId
                         } else {
-                            println("PasskeyAuthViewModel: Browser already opened (embedded), skipping QR dialog")
+                            logger.debug(LogCategory.PASSKEY, "Browser already opened (embedded), skipping QR dialog")
                         }
                         _isLoading.value = false
                         return@fold
                     }
-                    
+
                     _errorMessage.value = when {
                         error.message?.contains("not supported") == true -> 
                             "Touch ID authentication is not supported on this device"
@@ -170,12 +173,12 @@ class PasskeyAuthViewModel {
             // Authenticate with specific credential ID
             AuthService.authenticateWithPasskey(email = email, credentialId = credentialId).fold(
                 onSuccess = {
-                    println("PasskeyAuthViewModel: Specific passkey authentication successful")
+                    logger.info(LogCategory.PASSKEY, "Specific passkey authentication successful")
                     _isLoading.value = false
                     onSuccess()
                 },
                 onFailure = { error ->
-                    println("PasskeyAuthViewModel: Specific passkey authentication failed: ${error.message}")
+                    logger.warn(LogCategory.PASSKEY, "Specific passkey authentication failed", error = error)
 
                     // Check if this is a cross-device authentication requirement
                     if (error is CrossDeviceAuthenticationRequired) {
@@ -186,7 +189,7 @@ class PasskeyAuthViewModel {
                             _crossDeviceChallenge.value = error.challenge
                             _crossDeviceSessionId.value = error.sessionId
                         } else {
-                            println("PasskeyAuthViewModel: Browser already opened (embedded), skipping QR dialog")
+                            logger.debug(LogCategory.PASSKEY, "Browser already opened (embedded), skipping QR dialog")
                         }
                         _isLoading.value = false
                         return@fold

@@ -1,5 +1,7 @@
 package ai.rever.boss.config
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,6 +24,7 @@ import java.util.concurrent.TimeUnit
  *                 and add to local.properties: GITHUB_TOKEN=ghp_your_token_here
  */
 object GitHubConfig {
+    private val logger = BossLogger.forComponent("GitHubConfig")
     private const val GH_TIMEOUT_SECONDS = 5L
 
     /**
@@ -94,7 +97,7 @@ object GitHubConfig {
             // Wait for process to complete with timeout
             if (!process.waitFor(GH_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
-                println("⚠️ GitHub CLI token retrieval timed out after ${GH_TIMEOUT_SECONDS}s")
+                logger.warn(LogCategory.NETWORK, "GitHub CLI token retrieval timed out", mapOf("timeoutSeconds" to GH_TIMEOUT_SECONDS))
                 return null
             }
 
@@ -104,24 +107,24 @@ object GitHubConfig {
 
             when {
                 exitCode != 0 -> {
-                    println("⚠️ GitHub CLI not authenticated (exit code $exitCode)")
+                    logger.debug(LogCategory.NETWORK, "GitHub CLI not authenticated", mapOf("exitCode" to exitCode))
                     null
                 }
                 output.isBlank() -> {
-                    println("⚠️ GitHub CLI returned empty token")
+                    logger.debug(LogCategory.NETWORK, "GitHub CLI returned empty token")
                     null
                 }
                 output.contains("not logged in", ignoreCase = true) -> {
-                    println("⚠️ GitHub CLI: not logged in")
+                    logger.debug(LogCategory.NETWORK, "GitHub CLI: not logged in")
                     null
                 }
                 else -> {
-                    println("✅ Retrieved GitHub token from GitHub CLI (gh)")
+                    logger.debug(LogCategory.NETWORK, "Retrieved GitHub token from GitHub CLI")
                     output
                 }
             }
         } catch (e: Exception) {
-            println("⚠️ GitHub CLI not available: ${e.message}")
+            logger.debug(LogCategory.NETWORK, "GitHub CLI not available")
             null
         } finally {
             process?.let {

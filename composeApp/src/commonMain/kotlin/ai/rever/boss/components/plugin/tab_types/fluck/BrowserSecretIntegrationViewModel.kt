@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.services.supabase.SecretService
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.models.SecretEntry
 import ai.rever.boss.utils.WebsiteMatchingUtil
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import kotlinx.coroutines.launch
  * Used by Issue #56 - Secret Access Integration with Fluck Browser
  */
 class BrowserSecretIntegrationViewModel {
+    private val logger = BossLogger.forComponent("BrowserSecretIntegrationViewModel")
 
     /**
      * Current integration state
@@ -100,7 +103,7 @@ class BrowserSecretIntegrationViewModel {
                 onFailure = { error ->
                     // Silently ignore cancellation - it's expected when a new load starts (Issue #352)
                     if (error is CancellationException) {
-                        println("⏸️  [BrowserSecretVM] Load cancelled (new request started)")
+                        logger.debug(LogCategory.BROWSER, "Load cancelled (new request started)")
                         return@launch
                     }
 

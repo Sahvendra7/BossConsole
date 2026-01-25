@@ -1,5 +1,7 @@
 package ai.rever.boss.components.window_panel.components.main_window_panels
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
@@ -87,6 +89,8 @@ import com.arkivanov.essenty.lifecycle.LifecycleRegistry
 import kotlin.time.Clock
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
+
+private val bossMainWindowPanelLogger = BossLogger.forComponent("BossMainWindowPanel")
 
 /**
  * Wrapper for BossTabButton that loads and displays favicons from cache
@@ -813,7 +817,7 @@ fun BossTabsComponent.BossMainPanelContent(
                 onActivatePlugin = { pluginId ->
                     // Plugin activation is handled via sidebar panels
                     // Dashboard displays available plugins but activation uses existing sidebar UI
-                    println("[Dashboard] Plugin activation requested: $pluginId")
+                    bossMainWindowPanelLogger.debug(LogCategory.UI, "Plugin activation requested", mapOf("pluginId" to pluginId))
                 },
                 onShowSettings = onShowSettings,
                 onNewProject = { onNewProject?.invoke() }
@@ -1147,7 +1151,7 @@ class BossTabsComponent(
 
             if (tabUrl == url) {
                 indicesToRemove.add(i)
-                println("TabsComponent: Found tab to close at index $i with URL: $url")
+                bossMainWindowPanelLogger.debug(LogCategory.UI, "Found tab to close", mapOf("index" to i))
             }
         }
 
@@ -1157,7 +1161,7 @@ class BossTabsComponent(
         }
 
         if (indicesToRemove.isNotEmpty()) {
-            println("TabsComponent: Closed ${indicesToRemove.size} tab(s) with URL: $url")
+            bossMainWindowPanelLogger.debug(LogCategory.UI, "Closed tabs", mapOf("count" to indicesToRemove.size))
         }
     }
 
@@ -1166,10 +1170,10 @@ class BossTabsComponent(
         val tabs = tabsState.value.tabs
         if (tabs.isNotEmpty()) {
             val lastIndex = tabs.size - 1
-            println("TabsComponent: Closing most recent tab at index $lastIndex")
+            bossMainWindowPanelLogger.debug(LogCategory.UI, "Closing most recent tab", mapOf("index" to lastIndex))
             removeTab(lastIndex)
         } else {
-            println("TabsComponent: No tabs to close")
+            bossMainWindowPanelLogger.debug(LogCategory.UI, "No tabs to close")
         }
     }
 

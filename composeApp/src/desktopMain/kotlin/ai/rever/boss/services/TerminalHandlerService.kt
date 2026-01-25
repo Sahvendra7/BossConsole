@@ -1,6 +1,8 @@
 package ai.rever.boss.services
 
 import ai.rever.boss.cli.CLICommandHandler
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.mutableStateOf
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -12,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Uses hybrid AtomicInteger + mutableStateOf for thread safety and Compose reactivity.
  */
 actual object TerminalHandlerService {
+    private val logger = BossLogger.forComponent("TerminalHandlerService")
     private val processingCount = AtomicInteger(0)
     private val _isProcessing = mutableStateOf(false)
 
@@ -36,7 +39,7 @@ actual object TerminalHandlerService {
     internal fun incrementProcessing() {
         val count = processingCount.incrementAndGet()
         _isProcessing.value = (count > 0)
-        println("TerminalHandlerService: incrementProcessing (count: $count, isProcessing: ${_isProcessing.value})")
+        logger.debug(LogCategory.TERMINAL, "incrementProcessing", mapOf("count" to count, "isProcessing" to _isProcessing.value))
     }
 
     /**
@@ -47,6 +50,6 @@ actual object TerminalHandlerService {
     internal fun decrementProcessing() {
         val count = processingCount.decrementAndGet()
         _isProcessing.value = (count > 0)
-        println("TerminalHandlerService: decrementProcessing (count: $count, isProcessing: ${_isProcessing.value})")
+        logger.debug(LogCategory.TERMINAL, "decrementProcessing", mapOf("count" to count, "isProcessing" to _isProcessing.value))
     }
 }

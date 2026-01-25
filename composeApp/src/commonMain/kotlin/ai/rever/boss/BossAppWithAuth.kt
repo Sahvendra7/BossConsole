@@ -1,5 +1,7 @@
 package ai.rever.boss
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.*
 import androidx.compose.runtime.key
 import ai.rever.boss.components.auth.LoginScreen
@@ -14,6 +16,7 @@ import ai.rever.boss.utils.WindowFocusManager
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.launch
 
+private val logger = BossLogger.forComponent("BossAppWithAuth")
 
 /**
  * Main app entry point with authentication
@@ -44,7 +47,7 @@ fun ComponentContext.BossAppWithAuth(
         // Todo: Why this can not be in DeepLinkHandler itself, may be we can just have
         //  LaunchedEffect here and rest of the code inside DeepLinkHandler
         deepLink?.let { uri ->
-            println("Received deep link in app: $uri")
+            logger.debug(LogCategory.AUTH, "Received deep link in app", mapOf("uri" to uri))
 
             // Bring window to front
             WindowFocusManager.bringToFront()
@@ -53,21 +56,21 @@ fun ComponentContext.BossAppWithAuth(
                 val regex = Regex("sessionId=([^&]+)")
                 regex.find(uri)?.groupValues?.get(1)
             } catch (_: Exception) {
-                println("BossAppWithAuth: Failed to extract sessionId from deep link: $uri")
+                logger.warn(LogCategory.AUTH, "Failed to extract sessionId from deep link", mapOf("uri" to uri))
                 null
             }
 
             when {
                 uri.contains("passkey/registered") -> {
                     sessionId?.let { id ->
-                        println("BossAppWithAuth: Passkey registration completed for session: $id")
+                        logger.info(LogCategory.AUTH, "Passkey registration completed", mapOf("sessionId" to id))
                         PasskeySessionEventHandler.handleRegistrationCompleted(id)
                     }
                     DeepLinkHandler.clearDeepLink()
                 }
                 uri.contains("passkey/authenticated") -> {
                     sessionId?.let { id ->
-                        println("BossAppWithAuth: Passkey authentication completed for session: $id")
+                        logger.info(LogCategory.AUTH, "Passkey authentication completed", mapOf("sessionId" to id))
 
                         // Trigger the polling check to complete authentication
                         coroutineScope.launch {
@@ -75,12 +78,12 @@ fun ComponentContext.BossAppWithAuth(
                             // an immediate check when we receive the deep link
                             val metadata = PasskeySessionEventHandler.getSessionMetadata(id)
                             metadata?.let { session ->
-                                println("BossAppWithAuth: Checking authentication status for session: $id")
+                                logger.debug(LogCategory.AUTH, "Checking authentication status", mapOf("sessionId" to id))
 
                                 // Notify that authentication completed
                                 PasskeySessionEventHandler.handleAuthenticationCompleted(id)
                             } ?: run {
-                                println("BossAppWithAuth: No metadata found for session: $id")
+                                logger.warn(LogCategory.AUTH, "No metadata found for session", mapOf("sessionId" to id))
                             }
                         }
                     }
@@ -90,14 +93,14 @@ fun ComponentContext.BossAppWithAuth(
                     val token = DeepLinkHandler.extractVerificationToken(uri)
                     val type = DeepLinkHandler.extractVerificationType(uri) ?: "magiclink"
                     token?.let { token ->
-                        println("Extracted verification token: $token, type: $type")
+                        logger.debug(LogCategory.AUTH, "Extracted verification token", mapOf("type" to type))
                         coroutineScope.launch {
                             // Handle magic link authentication
-                            println("BossAppWithAuth: Starting magic link authentication process")
+                            logger.info(LogCategory.AUTH, "Starting magic link authentication process")
 
                             AuthService.verifyEmail(token, type).fold(
                                 onSuccess = {
-                                    println("BossAppWithAuth: Magic link authentication successful")
+                                    logger.info(LogCategory.AUTH, "Magic link authentication successful")
                                     if (authState is AuthService.AuthState.NotAuthenticated) {
                                         // Trigger a refresh to check if user can now sign in
                                         AuthService.initialize()
@@ -105,7 +108,7 @@ fun ComponentContext.BossAppWithAuth(
 
                                 },
                                 onFailure = { error ->
-                                    println("BossAppWithAuth: Magic link authentication failed: ${error.message}")
+                                    logger.error(LogCategory.AUTH, "Magic link authentication failed", error = error)
                                     // Set error so UI can display it
                                     MagicLinkErrorService.setError(
                                         error.message ?: "Magic link verification failed"
@@ -120,7 +123,7 @@ fun ComponentContext.BossAppWithAuth(
                 else -> {
                     // Route non-auth deep links (boss://url, boss://file, boss://folder, boss://terminal, boss://workspace)
                     // back to DeepLinkHandler for processing
-                    println("BossAppWithAuth: Routing non-auth deep link to DeepLinkHandler")
+                    logger.debug(LogCategory.AUTH, "Routing non-auth deep link to DeepLinkHandler")
                     DeepLinkHandler.processDeepLink(uri)
                     DeepLinkHandler.clearDeepLink()
                 }
@@ -130,19 +133,19 @@ fun ComponentContext.BossAppWithAuth(
     
     // Debug auth state changes
     LaunchedEffect(authState) {
-        println("BossAppWithAuth: AuthState changed to: $authState")
+        logger.debug(LogCategory.AUTH, "AuthState changed", mapOf("state" to authState.toString()))
     }
     
     when (authState) {
         is AuthService.AuthState.Loading -> {
             // Show loading screen
-            println("BossAppWithAuth: Showing loading screen")
+            logger.debug(LogCategory.AUTH, "Showing loading screen")
             LoadingScreen()
         }
 
         is AuthService.AuthState.Offline -> {
             // Show offline screen with retry button
-            println("BossAppWithAuth: Showing offline screen")
+            logger.debug(LogCategory.AUTH, "Showing offline screen")
             OfflineScreen(
                 onRetry = {
                     CoreAuthService.retryInitialization()

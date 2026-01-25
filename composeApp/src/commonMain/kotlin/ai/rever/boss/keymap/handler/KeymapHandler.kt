@@ -1,6 +1,8 @@
 package ai.rever.boss.keymap.handler
 
 import ai.rever.boss.keymap.model.KeyBinding
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.model.ShortcutContext
@@ -28,6 +30,7 @@ import androidx.compose.ui.input.key.KeyEvent
 class KeymapHandler(
     settings: KeymapSettings
 ) {
+    private val logger = BossLogger.forComponent("KeymapHandler")
     private val matcher = KeymapMatcher(settings)
     private var _settings = settings
 
@@ -64,9 +67,9 @@ class KeymapHandler(
         val handled = executor(binding.actionId)
 
         if (handled) {
-            println("[Keymap] Executed action: ${binding.actionId} (${binding.description})")
+            logger.debug(LogCategory.UI, "Executed action", mapOf("actionId" to binding.actionId, "description" to binding.description))
         } else {
-            println("[Keymap] Failed to execute action: ${binding.actionId}")
+            logger.debug(LogCategory.UI, "Failed to execute action", mapOf("actionId" to binding.actionId))
         }
 
         return handled

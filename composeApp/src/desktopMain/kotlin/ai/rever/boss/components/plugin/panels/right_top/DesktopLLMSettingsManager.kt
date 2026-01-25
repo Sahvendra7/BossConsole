@@ -1,9 +1,13 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.config.ConfigLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+
+private val logger = BossLogger.forComponent("LLMSettingsManager")
 
 /**
  * Desktop implementation of environment variable access
@@ -17,10 +21,10 @@ actual fun getEnvironmentVariable(name: String): String? {
     // First try ConfigLoader which checks multiple sources including local.properties
     val configValue = ConfigLoader.getConfig(name)
     if (!configValue.isNullOrBlank()) {
-        println("DEBUG: Found $name from ConfigLoader (env/system/local.properties)")
+        logger.debug(LogCategory.SYSTEM, "Found env var from ConfigLoader", mapOf("name" to name))
         return configValue
     }
-    
+
     // Try launchctl getenv for system-wide environment variables (macOS)
     try {
         val process = ProcessBuilder("launchctl", "getenv", name).start()
@@ -28,14 +32,14 @@ actual fun getEnvironmentVariable(name: String): String? {
         if (process.exitValue() == 0) {
             val result = process.inputStream.bufferedReader().readText().trim()
             if (result.isNotBlank()) {
-                println("DEBUG: Found $name from launchctl getenv")
+                logger.debug(LogCategory.SYSTEM, "Found env var from launchctl", mapOf("name" to name))
                 return result
             }
         }
     } catch (e: Exception) {
         // launchctl might not be available or might fail - this is normal
     }
-    
+
     // Fallback to reading from ~/.boss/env_vars file for DMG distributions
     try {
         val envFile = File(System.getProperty("user.home"), ".boss/env_vars")
@@ -52,15 +56,15 @@ actual fun getEnvironmentVariable(name: String): String? {
                 }
             val result = envVars[name]
             if (!result.isNullOrBlank()) {
-                println("DEBUG: Found $name from ~/.boss/env_vars file")
+                logger.debug(LogCategory.SYSTEM, "Found env var from ~/.boss/env_vars", mapOf("name" to name))
                 return result
             }
         }
     } catch (e: Exception) {
-        println("Warning: Could not read environment variables file: ${e.message}")
+        logger.warn(LogCategory.SYSTEM, "Could not read environment variables file", error = e)
     }
-    
-    println("DEBUG: No $name found in any location (System.getenv, launchctl, or ~/.boss/env_vars)")
+
+    logger.debug(LogCategory.SYSTEM, "Env var not found in any location", mapOf("name" to name))
     return null
 }
 
@@ -78,21 +82,21 @@ actual object LLMSettingsManager {
                     LLMSettings.loadFromJson(json)
                 }
             } catch (e: Exception) {
-                println("Error loading LLM settings: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error loading LLM settings", error = e)
             }
         }
     }
-    
+
     actual suspend fun saveSettings() {
         withContext(Dispatchers.IO) {
             try {
                 settingsFile.parentFile?.mkdirs()
                 settingsFile.writeText(LLMSettings.toJson())
-                
+
                 // Create env_vars template file if it doesn't exist
                 createEnvVarsTemplateIfNeeded()
             } catch (e: Exception) {
-                println("Error saving LLM settings: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error saving LLM settings", error = e)
             }
         }
     }
@@ -135,11 +139,10 @@ actual object LLMSettingsManager {
                 """.trimIndent()
 
                 envFile.writeText(template)
-                println("Created environment variables template at: ${envFile.absolutePath}")
-                println("⚠️  IMPORTANT: Edit ~/.boss/env_vars and add your SUPABASE_URL and SUPABASE_ANON_KEY")
+                logger.info(LogCategory.SYSTEM, "Created environment variables template", mapOf("path" to envFile.absolutePath))
             }
         } catch (e: Exception) {
-            println("Warning: Could not create env_vars template: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Could not create env_vars template", error = e)
         }
     }
 }

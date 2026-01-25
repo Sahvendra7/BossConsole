@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
@@ -86,6 +88,7 @@ import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
 
+private val jxBrowserComposeLogger = BossLogger.forComponent("JxBrowserCompose")
 
 // Helper function to process URL input - either as URL or search query
 private fun processUrlInput(input: String): String {
@@ -712,7 +715,7 @@ fun JxBrowserCompose(
                 } catch (e: Exception) {
                     // Issue #255: Handle favicon conversion errors (ignore "closed object" exceptions)
                     if (e.message?.contains("closed object") != true) {
-                        println("❌ [JxBrowser Native] Error converting favicon: ${e.message}")
+                        jxBrowserComposeLogger.warn(LogCategory.BROWSER, "Error converting favicon", error = e)
                         // Set default Language icon on error
                         onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
                     }
@@ -1774,11 +1777,11 @@ fun JxBrowserCompose(
                     isCreating = true
                     coroutineScope.launch {
                         try {
-                            println("🔐 [JxBrowserCompose] Creating secret for: ${request.website}")
+                            jxBrowserComposeLogger.debug(LogCategory.GENERAL, "Creating secret", mapOf("website" to request.website))
                             val result = ai.rever.boss.services.supabase.SecretService.createSecret(request)
                             result.fold(
                                 onSuccess = {
-                                    println("✅ [JxBrowserCompose] Secret created successfully for ${request.website}")
+                                    jxBrowserComposeLogger.info(LogCategory.GENERAL, "Secret created successfully", mapOf("website" to request.website))
 
                                     // Reload secrets and wait for completion
                                     secretViewModel.reloadSecrets()
@@ -1789,15 +1792,15 @@ fun JxBrowserCompose(
                                     secretViewModel.hideQuickCreateDialog()
                                     isCreating = false
 
-                                    println("✅ [JxBrowserCompose] Secret added and list refreshed - total secrets now: ${secretViewModel.state.allSecrets.size}")
+                                    jxBrowserComposeLogger.debug(LogCategory.GENERAL, "Secret added and list refreshed", mapOf("totalSecrets" to secretViewModel.state.allSecrets.size))
                                 },
                                 onFailure = { error ->
-                                    println("❌ [JxBrowserCompose] Failed to create secret: ${error.message}")
+                                    jxBrowserComposeLogger.warn(LogCategory.GENERAL, "Failed to create secret", mapOf("error" to (error.message ?: "unknown")))
                                     isCreating = false
                                 }
                             )
                         } catch (e: Exception) {
-                            println("❌ [JxBrowserCompose] Exception creating secret: ${e.message}")
+                            jxBrowserComposeLogger.error(LogCategory.GENERAL, "Exception creating secret", error = e)
                             isCreating = false
                         }
                     }

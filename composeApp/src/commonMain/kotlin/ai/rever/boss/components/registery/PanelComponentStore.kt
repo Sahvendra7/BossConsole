@@ -1,5 +1,7 @@
 package ai.rever.boss.components.registery
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.arkivanov.decompose.ComponentContext
@@ -8,6 +10,7 @@ class PanelComponentStore(
     private val rootContext: ComponentContext,
     private val registry: PanelRegistry
 ) {
+    private val logger = BossLogger.forComponent("PanelComponentStore")
     // Map of active components by panel ID
     val activeComponents: SnapshotStateMap<PanelId, PanelComponentWithUI> = mutableStateMapOf()
 
@@ -52,11 +55,11 @@ class PanelComponentStore(
         // Get current component
         val currentComponent = activeComponents[panelId]
         if (currentComponent == null) {
-            println("⚠️  [PanelComponentStore] Cannot reset panel: ${panelId.panelId} (not active)")
+            logger.warn(LogCategory.UI, "Cannot reset panel - not active", mapOf("panelId" to panelId.panelId))
             return false
         }
 
-        println("🔄 [PanelComponentStore] Resetting panel: ${panelId.panelId}")
+        logger.debug(LogCategory.UI, "Resetting panel", mapOf("panelId" to panelId.panelId))
 
         try {
             // Call lifecycle hook for cleanup
@@ -68,7 +71,7 @@ class PanelComponentStore(
             // Create new component instance
             val newComponent = registry.createComponent(panelId, rootContext)
             if (newComponent == null) {
-                println("❌ [PanelComponentStore] Failed to create new component for: ${panelId.panelId}")
+                logger.warn(LogCategory.UI, "Failed to create new component", mapOf("panelId" to panelId.panelId))
                 return false
             }
 
@@ -78,10 +81,10 @@ class PanelComponentStore(
             // Store and activate new component
             activeComponents[panelId] = newComponent
 
-            println("✅ [PanelComponentStore] Successfully reset panel: ${panelId.panelId}")
+            logger.info(LogCategory.UI, "Successfully reset panel", mapOf("panelId" to panelId.panelId))
             return true
         } catch (e: Exception) {
-            println("❌ [PanelComponentStore] Error resetting panel ${panelId.panelId}: ${e.message}")
+            logger.error(LogCategory.UI, "Error resetting panel", mapOf("panelId" to panelId.panelId), error = e)
             return false
         }
     }

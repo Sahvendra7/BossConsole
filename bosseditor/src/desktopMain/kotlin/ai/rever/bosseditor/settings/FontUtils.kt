@@ -1,10 +1,14 @@
 package ai.rever.bosseditor.settings
 
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Typeface
 import org.jetbrains.skia.FontMgr
 import org.jetbrains.skia.FontStyle
+
+private val fontLogger = LspLogger.forComponent("FontUtils")
 
 /**
  * Special value indicating the default editor font should be used.
@@ -152,7 +156,7 @@ private fun tryLoadSystemFont(fontName: String): FontFamily? {
             null
         }
     } catch (e: Exception) {
-        System.err.println("Failed to load font '$fontName': ${e.message}")
+        fontLogger.warn(LogCategory.GENERAL, "Failed to load font", data = mapOf("font" to fontName), error = e)
         null
     }
 }

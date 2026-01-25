@@ -1,12 +1,15 @@
 package ai.rever.boss.git
 
 import ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 
 /**
  * Desktop implementation of GitTerminalService.
  * Uses TabbedTerminalStateRegistry to open git commands in the sidebar terminal.
  */
 actual object GitTerminalService {
+    private val logger = BossLogger.forComponent("GitTerminalService")
 
     /**
      * Open a git command in the sidebar terminal panel.
@@ -36,9 +39,9 @@ actual object GitTerminalService {
         )
 
         if (success) {
-            println("[GitTerminal] Opened command in sidebar terminal: $operationName (window: $windowId)")
+            logger.debug(LogCategory.TERMINAL, "Opened command in sidebar terminal", mapOf("operationName" to operationName, "windowId" to windowId))
         } else {
-            println("[GitTerminal] Failed to open in sidebar terminal - panel may not be open (window: $windowId)")
+            logger.warn(LogCategory.TERMINAL, "Failed to open in sidebar terminal - panel may not be open", mapOf("windowId" to windowId))
         }
 
         return success

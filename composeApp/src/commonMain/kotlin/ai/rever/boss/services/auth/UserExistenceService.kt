@@ -3,6 +3,9 @@ package ai.rever.boss.services.auth
 import ai.rever.boss.services.passkey.PasskeyService
 import ai.rever.boss.services.passkey.SupabasePasskeyService
 import ai.rever.boss.services.supabase.models.*
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.ktor.http.encodeURLParameter
 
 /**
@@ -10,6 +13,7 @@ import io.ktor.http.encodeURLParameter
  */
 internal object UserExistenceService {
     private var passkeyService: PasskeyService? = null
+    private val logger = BossLogger.forComponent("UserExistenceService")
     
     /**
      * Set the platform-specific passkey service implementation
@@ -23,39 +27,39 @@ internal object UserExistenceService {
      */
     suspend fun checkUserExists(email: String): Result<UserExistence> {
         return try {
-            println("Checking if user exists with email: $email")
-            
+            logger.debug(LogCategory.AUTH, "Checking if user exists", mapOf("email" to LogSanitizer.maskEmail(email)))
+
             // Check if user actually exists by attempting to get authentication challenge
             // If user doesn't exist, the server will return a 404 "User not found" error
-            
+
             var userExists = true // Default to true for security
             val hasPasskeys = try {
                 // ALWAYS check server first for available authentication methods
                 val challengeResult = SupabasePasskeyService.requestAuthenticationChallenge(email, "check-${java.util.UUID.randomUUID()}")
-                
+
                 if (challengeResult.isSuccess) {
                     val challenge = challengeResult.getOrNull()
                     // If we get a challenge with allowCredentials, it means passkeys exist on server
                     val hasServerPasskeys = challenge?.allowCredentials?.isNotEmpty() == true
-                    println("Server passkeys check result: $hasServerPasskeys")
+                    logger.debug(LogCategory.AUTH, "Server passkeys check result", mapOf("hasPasskeys" to hasServerPasskeys))
                     userExists = true // User exists if we got a successful challenge response
                     hasServerPasskeys
                 } else {
                     val errorMessage = challengeResult.exceptionOrNull()?.message ?: ""
-                    println("Authentication challenge failed: $errorMessage")
+                    logger.debug(LogCategory.AUTH, "Authentication challenge failed")
 
                     // Check if the error indicates user doesn't exist
                     if (errorMessage.contains("User not found") || errorMessage.contains("404")) {
-                        println("User does not exist on server")
+                        logger.debug(LogCategory.AUTH, "User does not exist on server")
                         userExists = false
                     }
 
                     // No local fallback - authentication requires server connection
-                    println("Cannot check passkeys availability (server error)")
+                    logger.debug(LogCategory.AUTH, "Cannot check passkeys availability (server error)")
                     false
                 }
             } catch (e: Exception) {
-                println("Could not check passkeys availability: ${e.message}")
+                logger.warn(LogCategory.AUTH, "Could not check passkeys availability", error = e)
                 // If we can't check passkeys, assume false for security
                 false
             }
@@ -97,20 +101,21 @@ internal object UserExistenceService {
                     emptyList()
                 }
             } catch (e: Exception) {
-                println("Error getting credential details: ${e.message}")
+                logger.warn(LogCategory.AUTH, "Error getting credential details", error = e)
                 emptyList()
             }
-            
+
             Result.success(UserExistence(
                 exists = userExists, // Use actual server response
                 hasPasskeys = hasPasskeys,
                 email = email,
                 availableCredentials = availableCredentials
             ))
-            
+
         } catch (e: Exception) {
-            println("Error checking user existence: ${e.message}")
+            logger.error(LogCategory.AUTH, "Error checking user existence", error = e)
             Result.failure(e)
         }
     }
 }
+

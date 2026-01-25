@@ -1,5 +1,7 @@
 package ai.rever.boss.components.auth.screens
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -38,6 +40,8 @@ import BossDarkSuccess
 import ai.rever.boss.components.auth.forms.*
 import ai.rever.boss.viewmodels.LoginViewModel
 import kotlinx.coroutines.delay
+
+private val logger = BossLogger.forComponent("MagicLinkWaitingScreen")
 
 /**
  * Screen displayed after magic link has been sent, providing waiting instructions,
@@ -197,7 +201,7 @@ fun MagicLinkWaitingScreen(
                         // Check if user is already authenticated - if so, don't send magic link
                         val authState = AuthService.authState.value
                         if (authState is AuthService.AuthState.Authenticated) {
-                            println("MagicLinkWaitingScreen: User is already authenticated, skipping magic link resend")
+                            logger.debug(LogCategory.AUTH, "User already authenticated, skipping magic link resend")
                             showSuccessMessage = true // Show success message without actually sending
                             return@OutlinedButton
                         }
@@ -348,7 +352,7 @@ fun MagicLinkWaitingScreen(
  */
 private fun processMagicLink(magicLinkUrl: String, onSuccess: () -> Unit) {
     try {
-        println("Processing manual magic link: $magicLinkUrl")
+        logger.debug(LogCategory.AUTH, "Processing manual magic link")
         
         // Handle different URL formats and ensure HTTPS for security
         val processedUrl = when {
@@ -362,7 +366,7 @@ private fun processMagicLink(magicLinkUrl: String, onSuccess: () -> Unit) {
                 if (token != null) {
                     "boss://auth/verify?token=$token&type=$type"
                 } else {
-                    println("Failed to extract token from URL: $magicLinkUrl")
+                    logger.warn(LogCategory.AUTH, "Failed to extract token from URL")
                     return
                 }
             }
@@ -370,7 +374,7 @@ private fun processMagicLink(magicLinkUrl: String, onSuccess: () -> Unit) {
             // Force HTTPS for security - convert HTTP to HTTPS
             magicLinkUrl.startsWith("http://") -> {
                 val httpsUrl = magicLinkUrl.replaceFirst("http://", "https://")
-                println("Converting insecure HTTP to HTTPS: $httpsUrl")
+                logger.debug(LogCategory.AUTH, "Converting insecure HTTP to HTTPS")
                 httpsUrl
             }
             
@@ -382,13 +386,13 @@ private fun processMagicLink(magicLinkUrl: String, onSuccess: () -> Unit) {
             
             else -> magicLinkUrl
         }
-        
-        println("Processed URL: $processedUrl")
+
+        logger.debug(LogCategory.AUTH, "Processed URL for deep link")
         ai.rever.boss.utils.DeepLinkHandler.processDeepLink(processedUrl)
         onSuccess()
-        
+
     } catch (e: Exception) {
-        println("Error processing manual magic link: ${e.message}")
+        logger.warn(LogCategory.AUTH, "Error processing manual magic link", error = e)
     }
 }
 
@@ -403,7 +407,7 @@ private fun extractTokenFromUrl(url: String): String? {
         
         url.substring(tokenValueStart, tokenEnd)
     } catch (e: Exception) {
-        println("Error extracting token from URL: ${e.message}")
+        logger.warn(LogCategory.AUTH, "Error extracting token from URL", error = e)
         null
     }
 }
@@ -419,7 +423,7 @@ private fun extractTypeFromUrl(url: String): String? {
         
         url.substring(typeValueStart, typeEnd)
     } catch (e: Exception) {
-        println("Error extracting type from URL: ${e.message}")
+        logger.warn(LogCategory.AUTH, "Error extracting type from URL", error = e)
         null
     }
 }

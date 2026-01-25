@@ -1,5 +1,7 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -12,6 +14,7 @@ actual fun createMainFunctionDetector(): MainFunctionDetector = DesktopMainFunct
  * Detects main functions in Kotlin, Java, Python, JavaScript, TypeScript, Go, and Rust.
  */
 class DesktopMainFunctionDetector : MainFunctionDetector {
+    private val logger = BossLogger.forComponent("DesktopMainFunctionDetector")
 
     companion object {
         // Regex patterns for main function detection
@@ -111,7 +114,7 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
                             )
                         }
                     } catch (e: Exception) {
-                        println("Error scanning file ${file.absolutePath}: ${e.message}")
+                        logger.debug(LogCategory.EDITOR, "Error scanning file", mapOf("path" to file.absolutePath))
                     }
                 }
             }

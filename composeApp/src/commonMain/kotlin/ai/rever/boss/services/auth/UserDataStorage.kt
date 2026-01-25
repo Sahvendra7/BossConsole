@@ -6,6 +6,9 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
 import ai.rever.boss.services.supabase.models.UserInfo
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 
 /**
  * Persistent storage for user data to survive app restarts
@@ -76,6 +79,7 @@ object UserDataStorage {
         ignoreUnknownKeys = true
         prettyPrint = true
     }
+    private val logger = BossLogger.forComponent("UserDataStorage")
 
     @Serializable
     data class StoredUserData(
@@ -103,9 +107,9 @@ object UserDataStorage {
             )
             val content = json.encodeToString(data)
             storageFile.writeText(content)
-            println("UserDataStorage: Saved user data for ${user.email}")
+            logger.debug(LogCategory.AUTH, "Saved user data", mapOf("email" to LogSanitizer.maskEmail(user.email)))
         } catch (e: Exception) {
-            println("UserDataStorage: Error saving user data: ${e.message}")
+            logger.error(LogCategory.AUTH, "Error saving user data", error = e)
         }
     }
 
@@ -117,18 +121,21 @@ object UserDataStorage {
             if (storageFile.exists()) {
                 val content = storageFile.readText()
                 val data = json.decodeFromString<StoredUserData>(content)
-                println("UserDataStorage: Loaded user data for ${data.email} (authenticated via: ${data.authenticatedVia})")
+                logger.debug(LogCategory.AUTH, "Loaded user data", mapOf(
+                    "email" to LogSanitizer.maskEmail(data.email),
+                    "authenticatedVia" to (data.authenticatedVia ?: "unknown")
+                ))
                 UserInfo(
                     id = data.id,
                     email = data.email,
                     createdAt = data.createdAt
                 )
             } else {
-                println("UserDataStorage: No stored user data found")
+                logger.debug(LogCategory.AUTH, "No stored user data found")
                 null
             }
         } catch (e: Exception) {
-            println("UserDataStorage: Error loading user data: ${e.message}")
+            logger.error(LogCategory.AUTH, "Error loading user data", error = e)
             null
         }
     }
@@ -140,10 +147,11 @@ object UserDataStorage {
         try {
             if (storageFile.exists()) {
                 storageFile.delete()
-                println("UserDataStorage: Cleared user data")
+                logger.debug(LogCategory.AUTH, "Cleared user data")
             }
         } catch (e: Exception) {
-            println("UserDataStorage: Error clearing user data: ${e.message}")
+            logger.error(LogCategory.AUTH, "Error clearing user data", error = e)
         }
     }
 }
+

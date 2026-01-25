@@ -1,5 +1,7 @@
 package ai.rever.boss.font
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Typeface
@@ -23,6 +25,8 @@ import java.io.File
  * Inspired by BossTerm's FontUtils and IntelliJ's FontPreferences.
  */
 object FontManager {
+
+    private val logger = BossLogger.forComponent("FontManager")
 
     // ===================
     // Constants
@@ -213,7 +217,7 @@ object FontManager {
                     Font(fontName, style, size)
                 } else {
                     // Fallback to bundled JetBrains Mono
-                    println("[FontManager] Font '$fontName' not found, using bundled JetBrains Mono")
+                    logger.debug(LogCategory.SYSTEM, "Font not found, using bundled JetBrains Mono", mapOf("fontName" to fontName))
                     loadBundledAWTFont("JetBrains Mono", style, size)
                 }
             }
@@ -341,9 +345,9 @@ object FontManager {
             firaCodeBoldFile?.let { registerFontFile(ge, it) }
 
             bundledFontsRegistered = true
-            println("[FontManager] Bundled fonts registered successfully")
+            logger.info(LogCategory.SYSTEM, "Bundled fonts registered successfully")
         } catch (e: Exception) {
-            println("[FontManager] Failed to register bundled fonts: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to register bundled fonts", error = e)
         }
     }
 
@@ -354,7 +358,7 @@ object FontManager {
         return try {
             val fontStream = javaClass.classLoader?.getResourceAsStream(resourcePath)
             if (fontStream == null) {
-                println("[FontManager] Font resource not found: $resourcePath")
+                logger.warn(LogCategory.SYSTEM, "Font resource not found", mapOf("resourcePath" to resourcePath))
                 return null
             }
 
@@ -369,7 +373,7 @@ object FontManager {
 
             tempFile
         } catch (e: Exception) {
-            println("[FontManager] Failed to extract font '$resourcePath': ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to extract font", mapOf("resourcePath" to resourcePath), error = e)
             null
         }
     }
@@ -382,7 +386,7 @@ object FontManager {
             val font = Font.createFont(Font.TRUETYPE_FONT, file)
             ge.registerFont(font)
         } catch (e: Exception) {
-            println("[FontManager] Failed to register font '${file.name}': ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to register font", mapOf("fileName" to file.name), error = e)
         }
     }
 
@@ -400,7 +404,7 @@ object FontManager {
         return try {
             Font(familyName, style, size)
         } catch (e: Exception) {
-            println("[FontManager] Failed to load bundled font '$familyName': ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load bundled font", mapOf("familyName" to familyName), error = e)
             Font(platformDefaultFont, style, size)
         }
     }
@@ -416,7 +420,7 @@ object FontManager {
         return try {
             val fontStream = javaClass.classLoader?.getResourceAsStream(resourcePath)
             if (fontStream == null) {
-                println("[FontManager] Font resource not found: $resourcePath")
+                logger.warn(LogCategory.SYSTEM, "Font resource not found for Compose", mapOf("resourcePath" to resourcePath))
                 return FontFamily.Monospace
             }
 
@@ -436,7 +440,7 @@ object FontManager {
                 )
             )
         } catch (e: Exception) {
-            println("[FontManager] Failed to load bundled Compose font: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load bundled Compose font", error = e)
             FontFamily.Monospace
         }
     }

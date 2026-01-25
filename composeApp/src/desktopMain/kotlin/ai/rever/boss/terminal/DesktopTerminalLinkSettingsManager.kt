@@ -1,5 +1,7 @@
 package ai.rever.boss.terminal
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,6 +23,7 @@ import java.io.File
  * Issue #346: Terminal link click prompt with remember preference
  */
 actual object TerminalLinkSettingsManager {
+    private val logger = BossLogger.forComponent("TerminalLinkSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/terminal-link-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -54,15 +57,15 @@ actual object TerminalLinkSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<TerminalLinkSettings>(content)
                 _currentSettings.value = settings
-                println("[TerminalLinkSettings] Loaded settings: $settings")
+                logger.debug(LogCategory.TERMINAL, "Loaded settings")
             } else {
                 // Create default settings file
                 val content = json.encodeToString(TerminalLinkSettings.serializer(), _currentSettings.value)
                 settingsFile.writeText(content)
-                println("[TerminalLinkSettings] Created default settings file")
+                logger.debug(LogCategory.TERMINAL, "Created default settings file")
             }
         } catch (e: Exception) {
-            println("[TerminalLinkSettings] Error loading settings: ${e.message}")
+            logger.warn(LogCategory.TERMINAL, "Error loading settings", error = e)
             // Keep default settings on error
         }
     }
@@ -74,9 +77,9 @@ actual object TerminalLinkSettingsManager {
         try {
             val content = json.encodeToString(TerminalLinkSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[TerminalLinkSettings] Settings saved")
+            logger.debug(LogCategory.TERMINAL, "Settings saved")
         } catch (e: Exception) {
-            println("[TerminalLinkSettings] Error saving settings: ${e.message}")
+            logger.warn(LogCategory.TERMINAL, "Error saving settings", error = e)
         }
     }
 

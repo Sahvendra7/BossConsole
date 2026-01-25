@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -17,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private val roleCreationLogger = BossLogger.forComponent("RoleCreationPanel")
 
 /**
  * Panel info for Role Creation
@@ -92,7 +96,7 @@ class RoleCreationComponent(
  * - Guarantees exactly one register/unregister per status change
  */
 fun DefaultPlugin.registerRoleCreation() {
-    println("🔧 [RoleCreationPanel] Initializing role creation panel registration")
+    roleCreationLogger.debug(LogCategory.UI, "Initializing role creation panel registration")
 
     // Observe auth state and dynamically register/unregister panel
     // Use pluginScope instead of GlobalScope to tie the lifecycle to the plugin
@@ -102,17 +106,17 @@ fun DefaultPlugin.registerRoleCreation() {
             .distinctUntilChanged()  // Only emit when admin status actually changes
             .collect { isAdmin ->
                 val user = AuthStateManager.currentUser.value
-                println("🔧 [RoleCreationPanel] Admin status changed: isAdmin=$isAdmin, user=${user?.email}")
+                roleCreationLogger.debug(LogCategory.UI, "Admin status changed", mapOf("isAdmin" to isAdmin, "user" to (user?.email ?: "null")))
 
                 if (isAdmin) {
                     // User is admin - register panel
-                    println("✅ [RoleCreationPanel] Registering role creation panel for ${user?.email}")
+                    roleCreationLogger.info(LogCategory.UI, "Registering role creation panel", mapOf("user" to (user?.email ?: "unknown")))
                     panelRegistry.registerPanel(RoleCreationInfo) { ctx, panelInfo ->
                         RoleCreationComponent(ctx, panelInfo)
                     }
                 } else {
                     // User is not admin - unregister panel
-                    println("❌ [RoleCreationPanel] Unregistering role creation panel")
+                    roleCreationLogger.info(LogCategory.UI, "Unregistering role creation panel")
                     panelRegistry.unregisterPanel(RoleCreationInfo.id)
                 }
             }

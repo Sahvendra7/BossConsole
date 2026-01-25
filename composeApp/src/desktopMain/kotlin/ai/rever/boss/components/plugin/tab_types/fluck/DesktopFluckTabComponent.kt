@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.registery.TabInfo
 import ai.rever.boss.components.registery.TabIcon
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -29,6 +31,8 @@ actual fun createFluckTabComponent(
         onCloseTab = onCloseTab
     )
 }
+
+private val fluckTabLogger = BossLogger.forComponent("DesktopFluckTabComponent")
 
 class DesktopFluckTabComponent(
     config: TabInfo,
@@ -69,9 +73,9 @@ class DesktopFluckTabComponent(
                 val currentLevel = lockedBrowser.zoom().level().value()
                 val newLevel = getNextZoomLevel(currentLevel, isZoomIn = true)
                 lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
-                println("🔍 Zoom In: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
+                fluckTabLogger.debug(LogCategory.BROWSER, "Zoom In", mapOf("from" to "${(currentLevel * 100).toInt()}%", "to" to "${(newLevel * 100).toInt()}%"))
             } catch (e: Exception) {
-                println("Error zooming in: ${e.message}")
+                fluckTabLogger.warn(LogCategory.BROWSER, "Error zooming in", error = e)
             }
         }
     }
@@ -84,9 +88,9 @@ class DesktopFluckTabComponent(
                 val currentLevel = lockedBrowser.zoom().level().value()
                 val newLevel = getNextZoomLevel(currentLevel, isZoomIn = false)
                 lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.of(newLevel))
-                println("🔍 Zoom Out: ${(currentLevel * 100).toInt()}% → ${(newLevel * 100).toInt()}%")
+                fluckTabLogger.debug(LogCategory.BROWSER, "Zoom Out", mapOf("from" to "${(currentLevel * 100).toInt()}%", "to" to "${(newLevel * 100).toInt()}%"))
             } catch (e: Exception) {
-                println("Error zooming out: ${e.message}")
+                fluckTabLogger.warn(LogCategory.BROWSER, "Error zooming out", error = e)
             }
         }
     }
@@ -97,9 +101,9 @@ class DesktopFluckTabComponent(
             try {
                 val lockedBrowser = LockedBrowser(jxBrowser, browserLock)
                 lockedBrowser.zoom().level(com.teamdev.jxbrowser.zoom.ZoomLevel.P_100)
-                println("🔍 Actual Size: Reset to 100%")
+                fluckTabLogger.debug(LogCategory.BROWSER, "Actual Size: Reset to 100%")
             } catch (e: Exception) {
-                println("Error resetting zoom: ${e.message}")
+                fluckTabLogger.warn(LogCategory.BROWSER, "Error resetting zoom", error = e)
             }
         }
     }

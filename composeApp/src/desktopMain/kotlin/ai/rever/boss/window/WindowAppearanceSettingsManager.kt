@@ -1,5 +1,7 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import java.io.File
  * - Graceful error handling with fallback to defaults
  */
 actual object WindowAppearanceSettingsManager {
+    private val logger = BossLogger.forComponent("WindowAppearanceSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/window-appearance-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -45,7 +48,7 @@ actual object WindowAppearanceSettingsManager {
                 val content = settingsFile.readText()
                 val settings = json.decodeFromString<WindowAppearanceSettings>(content)
                 _currentSettings.value = settings
-                println("[WindowAppearance] Loaded settings from ${settingsFile.absolutePath}")
+                logger.debug(LogCategory.SYSTEM, "Loaded settings", mapOf("path" to settingsFile.absolutePath))
             } else {
                 // First run - create default settings file with platform-specific defaults
                 val defaults = getDefaultSettings()
@@ -55,13 +58,13 @@ actual object WindowAppearanceSettingsManager {
                 try {
                     val content = json.encodeToString(WindowAppearanceSettings.serializer(), defaults)
                     settingsFile.writeText(content)
-                    println("[WindowAppearance] Created default settings at ${settingsFile.absolutePath}")
+                    logger.debug(LogCategory.SYSTEM, "Created default settings", mapOf("path" to settingsFile.absolutePath))
                 } catch (e: Exception) {
-                    println("[WindowAppearance] Warning: Could not write default settings file: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Could not write default settings file", error = e)
                 }
             }
         } catch (e: Exception) {
-            println("[WindowAppearance] Failed to load settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load settings", error = e)
             _currentSettings.value = getDefaultSettings()
         }
     }
@@ -73,9 +76,9 @@ actual object WindowAppearanceSettingsManager {
         try {
             val content = json.encodeToString(WindowAppearanceSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[WindowAppearance] Settings saved to ${settingsFile.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Settings saved", mapOf("path" to settingsFile.absolutePath))
         } catch (e: Exception) {
-            println("[WindowAppearance] Failed to save settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to save settings", error = e)
         }
     }
 

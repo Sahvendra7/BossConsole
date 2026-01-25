@@ -1,6 +1,8 @@
 package ai.rever.bosseditor.largefile
 
 import ai.rever.bosseditor.core.EditorPosition
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.ScrollOffset
 import ai.rever.bosseditor.scrollbar.EditorScrollbar
@@ -82,6 +84,8 @@ import androidx.compose.ui.unit.sp
 import java.awt.event.MouseEvent
 import java.awt.event.MouseWheelEvent
 import java.io.File
+
+private val largeFileLogger = LspLogger.forComponent("LargeFileViewer")
 
 /**
  * Read-only viewer for large files using page-based loading.
@@ -768,7 +772,7 @@ private fun LargeFileCanvas(
                     )
                 }
             } catch (e: Exception) {
-                println("LargeFileViewer: Failed to render line $line: ${e.message}")
+                largeFileLogger.warn(LogCategory.GENERAL, "Failed to render line", data = mapOf("line" to line), error = e)
             }
         }
 

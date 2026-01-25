@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.platform.FileSystemUtils
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
+private val downloadPanelLogger = BossLogger.forComponent("DownloadPanel")
 
 /**
  * Download panel UI component that displays active and recent downloads.
@@ -257,9 +261,9 @@ private fun DownloadItemRow(download: DownloadItem, downloadManager: DownloadMan
                                     FileSystemUtils.cleanupPartialFile(download.destinationPath)
                                     // Remove from download list
                                     downloadManager.removeDownload(download.id)
-                                    println("Deleted paused download: ${download.id}")
+                                    downloadPanelLogger.debug(LogCategory.BROWSER, "Deleted paused download", mapOf("id" to download.id))
                                 } catch (e: Exception) {
-                                    println("Error deleting paused download: ${e.message}")
+                                    downloadPanelLogger.warn(LogCategory.BROWSER, "Error deleting paused download", error = e)
                                 }
                             }
                         }

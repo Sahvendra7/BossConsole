@@ -1,5 +1,7 @@
 package ai.rever.boss.config
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.VersionConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +22,7 @@ import java.util.zip.ZipInputStream
  * and extracting it to ~/.boss/boss-chromium/
  */
 object ChromiumAutoDownloader {
+    private val logger = BossLogger.forComponent("ChromiumAutoDownloader")
     // JxBrowser version from generated VersionConstants (source: gradle/libs.versions.toml)
     private val JXBROWSER_VERSION = VersionConstants.JXBROWSER_VERSION
     private const val RELEASES_BASE_URL = "https://github.com/risa-labs-inc/BossConsole-Releases/releases/download"
@@ -65,13 +68,16 @@ object ChromiumAutoDownloader {
         // Check version matches current JxBrowser version
         val versionFile = dir.resolve(VERSION_FILE).toFile()
         if (!versionFile.exists()) {
-            println("Chromium version file not found, will re-download to ensure compatibility")
+            logger.debug(LogCategory.BROWSER, "Chromium version file not found, will re-download")
             return false
         }
 
         val installedVersion = versionFile.readText().trim()
         if (installedVersion != JXBROWSER_VERSION) {
-            println("Chromium version mismatch: installed=$installedVersion, required=$JXBROWSER_VERSION")
+            logger.info(LogCategory.BROWSER, "Chromium version mismatch", mapOf(
+                "installed" to installedVersion,
+                "required" to JXBROWSER_VERSION
+            ))
             return false
         }
 
@@ -81,7 +87,7 @@ object ChromiumAutoDownloader {
             val executableName = executableNameFile.readText().trim()
             val executablePath = dir.resolve("$executableName/Contents/MacOS/BOSS").toFile()
             if (executablePath.exists() && !executablePath.canExecute()) {
-                println("Chromium executable missing execute permission, will re-download: $executablePath")
+                logger.info(LogCategory.BROWSER, "Chromium executable missing execute permission, will re-download")
                 return false
             }
         }
@@ -110,7 +116,7 @@ object ChromiumAutoDownloader {
             os.contains("linux") && (arch.contains("aarch64") || arch.contains("arm64")) -> "linux-arm64"
             os.contains("linux") -> "linux-x64"
             else -> {
-                println("Unknown platform: $os / $arch, defaulting to linux-x64")
+                logger.warn(LogCategory.BROWSER, "Unknown platform, defaulting to linux-x64", mapOf("os" to os, "arch" to arch))
                 "linux-x64"
             }
         }
@@ -135,8 +141,10 @@ object ChromiumAutoDownloader {
             val targetDir = getChromiumDir()
             val url = getDownloadUrl()
 
-            println("Downloading BOSS-branded Chromium from: $url")
-            println("Target directory: $targetDir")
+            logger.info(LogCategory.BROWSER, "Downloading BOSS-branded Chromium", mapOf(
+                "url" to url,
+                "targetDir" to targetDir.toString()
+            ))
 
             try {
                 // Create parent directories
@@ -169,7 +177,7 @@ object ChromiumAutoDownloader {
 
                     // Write version file to track installed version
                     targetDir.resolve(VERSION_FILE).toFile().writeText(JXBROWSER_VERSION)
-                    println("Version file written: $JXBROWSER_VERSION")
+                    logger.debug(LogCategory.BROWSER, "Version file written", mapOf("version" to JXBROWSER_VERSION))
 
                     // Clean up old JxBrowser default Chromium directory if it exists
                     cleanupOldChromium()
@@ -179,7 +187,7 @@ object ChromiumAutoDownloader {
                     // that can cause crashes on first launch after extraction
                     kotlinx.coroutines.delay(500)
 
-                    println("BOSS-branded Chromium installed successfully to: $targetDir")
+                    logger.info(LogCategory.BROWSER, "BOSS-branded Chromium installed successfully", mapOf("path" to targetDir.toString()))
                     onProgress(DownloadProgress(0, 0, isComplete = true))
                     Result.success(targetDir)
                 } finally {
@@ -187,12 +195,11 @@ object ChromiumAutoDownloader {
                     try {
                         Files.deleteIfExists(tempFile)
                     } catch (e: Exception) {
-                        println("Warning: Could not delete temp file: ${e.message}")
+                        logger.debug(LogCategory.BROWSER, "Could not delete temp file")
                     }
                 }
             } catch (e: Exception) {
-                println("Chromium download failed: ${e.message}")
-                e.printStackTrace()
+                logger.error(LogCategory.BROWSER, "Chromium download failed", error = e)
                 onProgress(DownloadProgress(0, 0, error = e.message ?: "Unknown error"))
                 Result.failure(e)
             }
@@ -240,7 +247,7 @@ object ChromiumAutoDownloader {
                 }
             }
 
-            println("Downloaded ${bytesDownloaded / (1024 * 1024)}MB to $targetPath")
+            logger.debug(LogCategory.BROWSER, "Download complete", mapOf("sizeMB" to bytesDownloaded / (1024 * 1024)))
         } finally {
             connection.disconnect()
         }
@@ -250,7 +257,7 @@ object ChromiumAutoDownloader {
      * Extract a zip file to a target directory
      */
     private fun extractZip(zipPath: Path, targetDir: Path) {
-        println("Extracting to: $targetDir")
+        logger.debug(LogCategory.BROWSER, "Extracting Chromium", mapOf("targetDir" to targetDir.toString()))
         Files.createDirectories(targetDir)
 
         ZipInputStream(Files.newInputStream(zipPath)).use { zis ->
@@ -301,7 +308,7 @@ object ChromiumAutoDownloader {
             }
         }
 
-        println("Extraction complete")
+        logger.debug(LogCategory.BROWSER, "Extraction complete")
     }
 
     /**
@@ -312,12 +319,12 @@ object ChromiumAutoDownloader {
     private fun cleanupOldChromium() {
         val oldDir = Paths.get(System.getProperty("user.home"), ".boss", "jxbrowser-chromium")
         if (oldDir.toFile().exists()) {
-            println("Cleaning up old JxBrowser Chromium at: $oldDir")
+            logger.debug(LogCategory.BROWSER, "Cleaning up old JxBrowser Chromium", mapOf("path" to oldDir.toString()))
             try {
                 oldDir.toFile().deleteRecursively()
-                println("✅ Old Chromium directory cleaned up (~500MB freed)")
+                logger.info(LogCategory.BROWSER, "Old Chromium directory cleaned up (~500MB freed)")
             } catch (e: Exception) {
-                println("⚠️ Could not clean up old Chromium: ${e.message}")
+                logger.warn(LogCategory.BROWSER, "Could not clean up old Chromium", error = e)
                 // Non-fatal - don't fail the download
             }
         }

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +16,7 @@ import kotlin.time.Clock
  * Manages layout workspaces with file-based storage
  */
 class WorkspaceManager {
+    private val logger = BossLogger.forComponent("WorkspaceManager")
     private val _currentWorkspace = MutableStateFlow<LayoutWorkspace?>(null)
     val currentWorkspace: StateFlow<LayoutWorkspace?> = _currentWorkspace.asStateFlow()
     
@@ -61,7 +64,7 @@ class WorkspaceManager {
                 }
             } catch (e: Exception) {
                 // Log error but continue with predefined workspaces
-                println("Error loading workspaces: ${e.message}")
+                logger.warn(LogCategory.WORKSPACE, "Error loading workspaces", error = e)
             }
 
             _workspaces.value = allWorkspaces
@@ -194,7 +197,7 @@ class WorkspaceManager {
         // Don't allow renaming to an existing name or empty name
         if (newName.isEmpty() || newName == oldName) return
         if (_workspaces.value.any { it.name == newName }) {
-            println("Workspace with name '$newName' already exists")
+            logger.debug(LogCategory.WORKSPACE, "Workspace with name already exists", mapOf("name" to newName))
             return
         }
 

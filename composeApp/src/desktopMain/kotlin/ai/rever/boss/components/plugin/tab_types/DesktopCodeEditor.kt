@@ -1,10 +1,14 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import java.io.File
+
+private val codeEditorLogger = BossLogger.forComponent("DesktopCodeEditor")
 
 actual fun readFileContent(filePath: String): String? {
     return try {
@@ -50,7 +54,7 @@ actual fun writeFileContent(filePath: String, content: String): Boolean {
         file.writeText(content)
         true
     } catch (e: Exception) {
-        println("[DesktopCodeEditor] Error writing file: ${e.message}")
+        codeEditorLogger.warn(LogCategory.EDITOR, "Error writing file", error = e)
         false
     }
 }

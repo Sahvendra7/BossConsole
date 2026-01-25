@@ -1,5 +1,7 @@
 package ai.rever.boss.services
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.URLEventBus
 import ai.rever.boss.utils.WindowFocusManager
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * 6. Tab displayed in active window (or new window if none exist)
  */
 actual object URLHandlerService {
+    private val logger = BossLogger.forComponent("URLHandlerService")
 
     // Queue for URLs received before the app is ready
     private val urlQueue = mutableListOf<String>()
@@ -73,7 +76,7 @@ actual object URLHandlerService {
     private fun processQueuedURLs() {
         if (urlQueue.isEmpty()) return
 
-        println("URLHandlerService: Processing ${urlQueue.size} queued URL(s)")
+        logger.debug(LogCategory.BROWSER, "Processing queued URLs", mapOf("count" to urlQueue.size))
         val urls = urlQueue.toList()
         urlQueue.clear()
 
@@ -94,7 +97,7 @@ actual object URLHandlerService {
      */
     actual fun handleURL(url: String) {
         if (!isAppReady) {
-            println("URLHandlerService: App not ready, queueing URL: $url")
+            logger.debug(LogCategory.BROWSER, "App not ready, queueing URL", mapOf("url" to url))
             urlQueue.add(url)
             return
         }
@@ -117,22 +120,22 @@ actual object URLHandlerService {
         var incremented = false
 
         try {
-            println("URLHandlerService: Received URL: $url")
+            logger.debug(LogCategory.BROWSER, "Received URL", mapOf("url" to url))
 
             // Validate URL
             if (!isValidURL(url)) {
-                println("URLHandlerService: Invalid URL: $url")
+                logger.warn(LogCategory.BROWSER, "Invalid URL", mapOf("url" to url))
                 return
             }
 
             // Bring BOSS window to front BEFORE processing URL
             WindowFocusManager.bringToFront()
-            println("URLHandlerService: Brought window to front")
+            logger.debug(LogCategory.BROWSER, "Brought window to front")
 
             // Get focused window ID for multi-window support
             val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             if (focusedWindowId == null) {
-                println("URLHandlerService: No window focused, cannot open URL: $url")
+                logger.warn(LogCategory.BROWSER, "No window focused, cannot open URL", mapOf("url" to url))
                 return
             }
 
@@ -143,13 +146,13 @@ actual object URLHandlerService {
             val count = processingCount.incrementAndGet()
             _isProcessing.value = (count > 0)
             incremented = true  // Mark that THIS invocation incremented
-            println("URLHandlerService: Processing count incremented: $count, isProcessing: ${_isProcessing.value}")
+            logger.debug(LogCategory.BROWSER, "Processing count incremented", mapOf("count" to count, "isProcessing" to _isProcessing.value))
 
             // Emit URL open event - focused window will handle it
             CoroutineScope(Dispatchers.Main).launch {
                 try {
                     URLEventBus.openURL(url, title, sourceWindowId = focusedWindowId)
-                    println("URLHandlerService: Emitted URL open event for $url (window: $focusedWindowId)")
+                    logger.debug(LogCategory.BROWSER, "Emitted URL open event", mapOf("url" to url, "windowId" to focusedWindowId))
                     
                     // CRITICAL: Wait for tab to actually be created before decrementing
                     // The event emission is instant, but tab creation (splitViewState.openUrlInActivePanel)
@@ -174,17 +177,17 @@ actual object URLHandlerService {
                     // Decrement counter after tab has time to be created
                     val count = processingCount.decrementAndGet()
                     _isProcessing.value = (count > 0)
-                    println("URLHandlerService: Processing count decremented: $count, isProcessing: ${_isProcessing.value}")
+                    logger.debug(LogCategory.BROWSER, "Processing count decremented", mapOf("count" to count, "isProcessing" to _isProcessing.value))
                 }
             }
         } catch (e: Exception) {
-            println("URLHandlerService: Error handling URL: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error handling URL", error = e)
             // Only decrement if THIS specific invocation actually incremented
             // This prevents decrementing other threads' counts in multi-threaded scenarios
             if (incremented) {
                 val count = processingCount.decrementAndGet()
                 _isProcessing.value = (count > 0)
-                println("URLHandlerService: Processing count decremented due to error: $count, isProcessing: ${_isProcessing.value}")
+                logger.debug(LogCategory.BROWSER, "Processing count decremented due to error", mapOf("count" to count, "isProcessing" to _isProcessing.value))
             }
         }
     }
@@ -223,7 +226,7 @@ actual object URLHandlerService {
             // Domain must not be empty and should contain at least one character
             return domain.isNotEmpty() && domain.contains(".")
         } catch (e: Exception) {
-            println("URLHandlerService: URL validation error: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "URL validation error", error = e)
             return false
         }
     }
@@ -264,7 +267,7 @@ actual object URLHandlerService {
 
             cleanDomain.ifEmpty { null }
         } catch (e: Exception) {
-            println("URLHandlerService: Domain extraction error: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Domain extraction error", error = e)
             null
         }
     }

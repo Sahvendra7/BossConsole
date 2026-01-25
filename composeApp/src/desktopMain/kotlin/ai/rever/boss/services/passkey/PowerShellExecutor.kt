@@ -1,5 +1,7 @@
 package ai.rever.boss.services.passkey
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -12,6 +14,7 @@ import java.util.concurrent.TimeUnit
  * Similar to SwiftScriptExecutor but for Windows PowerShell
  */
 object PowerShellExecutor {
+    private val logger = BossLogger.forComponent("PowerShellExecutor")
 
     private val powerShellScriptsDir: String by lazy {
         findPowerShellScriptsDirectory()
@@ -31,7 +34,7 @@ object PowerShellExecutor {
             val exitCode = process.waitFor(5, TimeUnit.SECONDS)
             exitCode && process.exitValue() == 0
         } catch (e: Exception) {
-            println("PowerShellExecutor: PowerShell not available: ${e.message}")
+            logger.debug(LogCategory.PASSKEY, "PowerShell not available")
             false
         }
     }
@@ -50,7 +53,7 @@ object PowerShellExecutor {
             val command = mutableListOf("powershell", "-ExecutionPolicy", "Bypass", "-File", scriptPath.toString())
             command.addAll(args)
 
-            println("PowerShellExecutor: Executing: ${command.joinToString(" ")}")
+            logger.debug(LogCategory.PASSKEY, "Executing PowerShell script", mapOf("script" to scriptName))
 
             val process = ProcessBuilder(command)
                 .redirectErrorStream(true)
@@ -66,7 +69,7 @@ object PowerShellExecutor {
             output.trim()
 
         } catch (e: Exception) {
-            println("PowerShellExecutor: Error executing PowerShell script: ${e.message}")
+            logger.warn(LogCategory.PASSKEY, "Error executing PowerShell script", error = e)
             throw e
         }
     }
@@ -76,7 +79,7 @@ object PowerShellExecutor {
      */
     private fun findPowerShellScriptsDirectory(): String {
         val projectDir = System.getProperty("user.dir")
-        println("PowerShellExecutor: Project dir: $projectDir")
+        logger.debug(LogCategory.PASSKEY, "Project dir", mapOf("path" to projectDir))
 
         // Look for the powershell directory in various locations
         val possiblePaths = listOf(
@@ -85,10 +88,10 @@ object PowerShellExecutor {
         )
 
         for (path in possiblePaths) {
-            println("PowerShellExecutor: Checking path: $path")
+            logger.debug(LogCategory.PASSKEY, "Checking path", mapOf("path" to path))
             val dir = File(path)
             if (dir.exists() && dir.isDirectory) {
-                println("PowerShellExecutor: Found PowerShell directory: $path")
+                logger.debug(LogCategory.PASSKEY, "Found PowerShell directory", mapOf("path" to path))
                 return path
             }
         }
@@ -97,7 +100,7 @@ object PowerShellExecutor {
         val defaultPath = possiblePaths.first()
         val dir = File(defaultPath)
         if (dir.mkdirs()) {
-            println("PowerShellExecutor: Created PowerShell directory: $defaultPath")
+            logger.debug(LogCategory.PASSKEY, "Created PowerShell directory", mapOf("path" to defaultPath))
             return defaultPath
         } else {
             throw RuntimeException("Could not find or create PowerShell scripts directory")

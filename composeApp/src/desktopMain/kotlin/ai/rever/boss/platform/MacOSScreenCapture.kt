@@ -1,5 +1,7 @@
 package ai.rever.boss.platform
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import com.sun.jna.Library
 import com.sun.jna.Native
 
@@ -8,12 +10,14 @@ import com.sun.jna.Native
  * These APIs allow checking and requesting screen recording permission
  * from the main application process.
  */
+private val macOSScreenCaptureLogger = BossLogger.forComponent("MacOSScreenCapture")
+
 private interface CoreGraphics : Library {
     companion object {
         val INSTANCE: CoreGraphics? = try {
             Native.load("CoreGraphics", CoreGraphics::class.java)
         } catch (e: Exception) {
-            println("CoreGraphics not available: ${e.message}")
+            macOSScreenCaptureLogger.debug(LogCategory.SYSTEM, "CoreGraphics not available", mapOf("error" to (e.message ?: "unknown")))
             null
         }
     }
@@ -49,7 +53,7 @@ object MacOSScreenCapture {
         return try {
             CoreGraphics.INSTANCE?.CGPreflightScreenCaptureAccess() ?: true
         } catch (e: Exception) {
-            println("Error checking screen capture permission: ${e.message}")
+            macOSScreenCaptureLogger.warn(LogCategory.SYSTEM, "Error checking screen capture permission", error = e)
             true // Assume granted on error
         }
     }
@@ -65,10 +69,10 @@ object MacOSScreenCapture {
 
         return try {
             val result = CoreGraphics.INSTANCE?.CGRequestScreenCaptureAccess() ?: true
-            println("Screen capture permission request result: $result")
+            macOSScreenCaptureLogger.debug(LogCategory.SYSTEM, "Screen capture permission request", mapOf("result" to result))
             result
         } catch (e: Exception) {
-            println("Error requesting screen capture permission: ${e.message}")
+            macOSScreenCaptureLogger.warn(LogCategory.SYSTEM, "Error requesting screen capture permission", error = e)
             true // Assume granted on error
         }
     }

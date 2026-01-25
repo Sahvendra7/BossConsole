@@ -1,11 +1,15 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.io.path.createTempFile
+
+private val logger = BossLogger.forComponent("MacOSDefaultBrowserHandler")
 
 /**
  * macOS-specific handler for default browser functionality
@@ -29,14 +33,14 @@ object MacOSDefaultBrowserHandler {
             val httpDefault = getDefaultHandlerViaDefaults("http")
             val httpsDefault = getDefaultHandlerViaDefaults("https")
 
-            println("macOS default browser check: http=$httpDefault, https=$httpsDefault")
+            logger.debug(LogCategory.BROWSER, "macOS default browser check", mapOf("httpHandler" to (httpDefault ?: "none"), "httpsHandler" to (httpsDefault ?: "none")))
 
             // BOSS is default if both schemes point to our bundle ID
             val isDefault = httpDefault == BUNDLE_ID && httpsDefault == BUNDLE_ID
 
             Result.success(isDefault)
         } catch (e: Exception) {
-            println("Error checking default browser on macOS: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error checking default browser on macOS", error = e)
             Result.failure(e)
         }
     }
@@ -51,7 +55,7 @@ object MacOSDefaultBrowserHandler {
             // First check if already default
             val checkResult = isDefaultBrowser()
             if (checkResult.isSuccess && checkResult.getOrNull() == true) {
-                println("BOSS is already the default browser")
+                logger.info(LogCategory.BROWSER, "BOSS is already the default browser")
                 return@withContext Result.success(true)
             }
 
@@ -60,16 +64,16 @@ object MacOSDefaultBrowserHandler {
             val setHttpsResult = setDefaultHandlerForScheme("https")
 
             if (setHttpResult && setHttpsResult) {
-                println("✅ Successfully set BOSS as default browser on macOS")
+                logger.info(LogCategory.BROWSER, "Successfully set BOSS as default browser on macOS")
                 Result.success(true)
             } else {
                 // If Swift approach fails, open System Preferences
-                println("⚠️ Could not set default programmatically, opening System Preferences")
+                logger.warn(LogCategory.BROWSER, "Could not set default programmatically, opening System Preferences")
                 openSystemPreferences()
                 Result.success(false)
             }
         } catch (e: Exception) {
-            println("Error setting default browser on macOS: ${e.message}")
+            logger.error(LogCategory.BROWSER, "Error setting default browser on macOS", error = e)
             Result.failure(e)
         }
     }
@@ -97,7 +101,7 @@ object MacOSDefaultBrowserHandler {
             val regex = """LSHandlerURLScheme\s*=\s*"?$scheme"?;[^}]*LSHandlerRoleAll\s*=\s*"?([^";]+)"?""".toRegex()
             regex.find(output)?.groupValues?.get(1)
         } catch (e: Exception) {
-            println("Error reading defaults: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error reading defaults", error = e)
             null
         }
     }
@@ -140,11 +144,11 @@ object MacOSDefaultBrowserHandler {
 
             val exitCode = process.waitFor()
 
-            println("Swift script output for $scheme: $output")
+            logger.debug(LogCategory.BROWSER, "Swift script output", mapOf("scheme" to scheme, "output" to output.trim()))
 
             exitCode == 0
         } catch (e: Exception) {
-            println("Error setting default handler for $scheme: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error setting default handler", mapOf("scheme" to scheme, "error" to (e.message ?: "unknown")))
             false
         }
     }
@@ -162,9 +166,9 @@ object MacOSDefaultBrowserHandler {
 
             process.waitFor()
 
-            println("Opened System Preferences for user to set default browser")
+            logger.info(LogCategory.BROWSER, "Opened System Preferences for user to set default browser")
         } catch (e: Exception) {
-            println("Error opening System Preferences: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Error opening System Preferences", error = e)
         }
     }
 
@@ -177,13 +181,13 @@ object MacOSDefaultBrowserHandler {
                 Desktop.getDesktop().setOpenURIHandler { event ->
                     val uri = event.uri.toString()
                     if (uri.startsWith("http://") || uri.startsWith("https://")) {
-                        println("Received HTTP(S) URL (macOS): $uri")
+                        logger.debug(LogCategory.BROWSER, "Received HTTP(S) URL (macOS)", mapOf("uri" to uri))
                         onURL(uri)
                     }
                 }
-                println("✅ Registered macOS URL handler for http/https")
+                logger.info(LogCategory.BROWSER, "Registered macOS URL handler for http/https")
             } catch (e: Exception) {
-                println("Failed to register macOS URL handler: ${e.message}")
+                logger.error(LogCategory.BROWSER, "Failed to register macOS URL handler", error = e)
             }
         }
     }

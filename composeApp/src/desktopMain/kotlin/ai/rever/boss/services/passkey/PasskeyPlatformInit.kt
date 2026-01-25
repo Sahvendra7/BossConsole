@@ -1,5 +1,7 @@
 package ai.rever.boss.services.passkey
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.supabase.AuthService
 
 /**
@@ -7,7 +9,8 @@ import ai.rever.boss.services.supabase.AuthService
  * This initializes the DesktopPasskeyService and registers it with AuthService
  */
 object PasskeyPlatformInit {
-    
+    private val logger = BossLogger.forComponent("PasskeyPlatformInit")
+
     private var isInitialized = false
     private var desktopPasskeyService: DesktopPasskeyService? = null
     
@@ -17,12 +20,12 @@ object PasskeyPlatformInit {
      */
     fun initialize() {
         if (isInitialized) {
-            println("PasskeyPlatformInit: Already initialized")
+            logger.debug(LogCategory.PASSKEY, "Already initialized")
             return
         }
-        
+
         try {
-            println("PasskeyPlatformInit: Initializing desktop passkey service...")
+            logger.debug(LogCategory.PASSKEY, "Initializing desktop passkey service")
             
             // Create and initialize the desktop passkey service
             desktopPasskeyService = DesktopPasskeyService()
@@ -31,10 +34,10 @@ object PasskeyPlatformInit {
             AuthService.setPasskeyService(desktopPasskeyService!!)
             
             isInitialized = true
-            println("PasskeyPlatformInit: Desktop passkey service initialized successfully")
-            
+            logger.info(LogCategory.PASSKEY, "Desktop passkey service initialized successfully")
+
         } catch (e: Exception) {
-            println("PasskeyPlatformInit: Failed to initialize passkey service: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to initialize passkey service", error = e)
             
             // Continue without passkey support if initialization fails
             isInitialized = false

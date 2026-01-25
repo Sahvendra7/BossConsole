@@ -3,11 +3,15 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+
+private val logger = BossLogger.forComponent("RpaRecorderIntegration")
 
 /**
  * Integration utilities for connecting RPA Recorder to browser instances
@@ -139,7 +143,7 @@ fun RpaRecorderContent(
                     component.updateAvailableTabs(tabs)
                 } catch (e: Exception) {
                     // Handle any errors during tab collection
-                    println("Error collecting tabs: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Error collecting tabs", mapOf("error" to (e.message ?: "unknown")))
                 }
                 
                 delay(1000) // Update every second
@@ -186,15 +190,15 @@ fun RpaRecorderComponent.updateConnectionStatus(connected: Boolean) {
 
 suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
     try {
-        println("RPA Recorder Integration: Connecting to browser")
-        
+        logger.debug(LogCategory.SYSTEM, "Connecting to browser")
+
         // Store browser connection reference
         browserConnection = browser
-        
+
         // Inject the event capture script
-        println("RPA Recorder Integration: Injecting event capture script")
+        logger.debug(LogCategory.SYSTEM, "Injecting event capture script")
         val scriptResult = browser.executeJavaScript(RpaEventCapture.eventCaptureScript)
-        println("RPA Recorder Integration: Event capture script injected, result: $scriptResult")
+        logger.debug(LogCategory.SYSTEM, "Event capture script injected", mapOf("result" to scriptResult.toString()))
         
         // Set up callback handler
         browser.executeJavaScript("""
@@ -207,15 +211,15 @@ suspend fun RpaRecorderComponent.connectToBrowser(browser: BrowserIntegration) {
             console.log('RPA Recorder: Callback handler installed');
         """.trimIndent())
         
-        println("RPA Recorder Integration: Starting action polling")
+        logger.debug(LogCategory.SYSTEM, "Starting action polling")
         // Start polling for recorded actions
         startActionPolling(browser)
-        
+
         // Add initial navigation action now that we have browser connection
         addInitialNavigation()
-        
+
     } catch (e: Exception) {
-        println("RPA Recorder Integration: Error connecting to browser: ${e.message}")
+        logger.error(LogCategory.SYSTEM, "Error connecting to browser", error = e)
     }
 }
 
@@ -237,7 +241,7 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
             try {
                 // Check if browser is still available before accessing
                 if (!browser.isBrowserAvailable()) {
-                    println("RPA Recorder: Browser no longer available, stopping polling")
+                    logger.debug(LogCategory.SYSTEM, "Browser no longer available, stopping polling")
                     break
                 }
 
@@ -249,12 +253,12 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
 
                     // Re-inject event capture script after navigation
                     if (pollCount > 0) { // Skip first iteration
-                        println("RPA Recorder: Page navigated to $currentUrl, re-injecting event capture")
+                        logger.debug(LogCategory.SYSTEM, "Page navigated, re-injecting event capture", mapOf("url" to currentUrl))
                         delay(500) // Wait for page to stabilize
 
                         // Check browser availability before re-injecting scripts
                         if (!browser.isBrowserAvailable()) {
-                            println("RPA Recorder: Browser disposed during navigation, stopping polling")
+                            logger.debug(LogCategory.SYSTEM, "Browser disposed during navigation, stopping polling")
                             break
                         }
 
@@ -273,7 +277,7 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
 
                 // Check browser availability before retrieving actions
                 if (!browser.isBrowserAvailable()) {
-                    println("RPA Recorder: Browser disposed, stopping polling")
+                    logger.debug(LogCategory.SYSTEM, "Browser disposed, stopping polling")
                     break
                 }
 
@@ -287,16 +291,16 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
                 """.trimIndent()) as? String
 
                 if (!actions.isNullOrEmpty() && actions != "[]") {
-                    println("RPA Recorder Polling: Found actions: $actions")
+                    logger.debug(LogCategory.SYSTEM, "Found recorded actions", mapOf("actions" to actions))
                     // Parse and process actions
                     val actionsList = kotlinx.serialization.json.Json.decodeFromString<List<String>>(actions)
                     actionsList.forEach { actionJson ->
                         try {
                             val action = kotlinx.serialization.json.Json.decodeFromString<RecordedAction>(actionJson)
                             onActionRecorded(action)
-                            println("RPA Recorder Polling: Recorded action - Type: ${action.type}, Value: ${action.value}")
+                            logger.debug(LogCategory.SYSTEM, "Recorded action", mapOf("type" to action.type, "value" to (action.value ?: "none")))
                         } catch (e: Exception) {
-                            println("RPA Recorder Polling: Error parsing action: ${e.message}")
+                            logger.warn(LogCategory.SYSTEM, "Error parsing action", mapOf("error" to (e.message ?: "unknown")))
                         }
                     }
                 }
@@ -305,8 +309,7 @@ private fun RpaRecorderComponent.startActionPolling(browser: BrowserIntegration)
 
             } catch (e: Exception) {
                 // Log error and break the loop to prevent freeze
-                println("RPA Recorder Polling: Error - ${e.message}")
-                println("RPA Recorder: Stopping polling due to error")
+                logger.error(LogCategory.SYSTEM, "Polling error, stopping", error = e)
                 break
             }
 

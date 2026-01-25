@@ -1,6 +1,9 @@
 package ai.rever.boss.services.passkey.supabase
 
 import ai.rever.boss.services.passkey.*
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.ktor.client.statement.*
 import io.ktor.http.*
 
@@ -13,6 +16,8 @@ class NoPasskeysFoundException(message: String) : Exception(message)
  * Handles passkey authentication flow operations
  */
 internal object PasskeyAuthenticationHandler {
+
+    private val logger = BossLogger.forComponent("PasskeyAuthenticationHandler")
     
     /**
      * Request passkey authentication challenge
@@ -22,47 +27,43 @@ internal object PasskeyAuthenticationHandler {
         sessionId: String? = null
     ): Result<PasskeyAuthenticationChallenge> {
         return try {
-            println("🔍 [DEBUG] Requesting passkey authentication challenge for user: ${email ?: "usernameless"}")
-            println("🔍 [DEBUG] SessionId: $sessionId")
-            
+            logger.debug(LogCategory.PASSKEY, "Requesting authentication challenge", mapOf(
+                "email" to (email?.let { LogSanitizer.maskEmail(it) } ?: "usernameless"),
+                "hasSessionId" to (sessionId != null)
+            ))
+
             val challenge = PasskeyDataMapper.generateChallenge()
-            println("🔍 [DEBUG] Generated challenge: ${challenge.take(20)}...")
-            
+
             val requestData = PasskeyDataMapper.createAuthenticationRequest(
                 email = email,
                 challenge = challenge,
                 sessionId = sessionId
             )
-            println("🔍 [DEBUG] Request data: ${PasskeyDataMapper.publicJson.encodeToString(PasskeyAuthenticationRequest.serializer(), requestData)}")
-            
-            println("🔍 [DEBUG] About to call SupabaseApiClient.invokeAuthenticationChallenge()")
-            
+
             // Call Edge Function for authentication challenge - operation is in body
             val response = SupabaseApiClient.invokeAuthenticationChallenge(requestData)
-            
-            println("🔍 [DEBUG] Got response, status: ${response.status}")
+
+            logger.trace(LogCategory.PASSKEY, "Got response", mapOf("status" to response.status.toString()))
             val responseText = response.bodyAsText()
-            println("🔍 [DEBUG] Response text: $responseText")
-            
+
             // Check if the response indicates no passkeys found (404)
             if (response.status.value == 404 && responseText.contains("No passkeys found")) {
-                println("🔍 [DEBUG] No passkeys found for user - this is expected for users without passkeys")
+                logger.debug(LogCategory.PASSKEY, "No passkeys found for user - expected for users without passkeys")
                 return Result.failure(NoPasskeysFoundException("No passkeys found for user"))
             }
-            
+
             // Check for other error statuses
             if (response.status.value >= 400) {
-                println("❌ [ERROR] Server returned error status: ${response.status}")
+                logger.warn(LogCategory.PASSKEY, "Server returned error status", mapOf("status" to response.status.toString()))
                 return Result.failure(Exception("Server error: $responseText"))
             }
-            
+
             val challengeResponse = PasskeyDataMapper.parseAuthenticationChallenge(responseText)
-            println("🔍 [DEBUG] Parsed challenge response successfully")
-            
+            logger.debug(LogCategory.PASSKEY, "Parsed challenge response successfully")
+
             Result.success(challengeResponse)
         } catch (e: Exception) {
-            println("❌ [ERROR] Failed to request authentication challenge: ${e.message}")
-            println("❌ [ERROR] Exception type: ${e::class.simpleName}")
+            logger.error(LogCategory.PASSKEY, "Failed to request authentication challenge", error = e)
             Result.failure(e)
         }
     }
@@ -75,56 +76,56 @@ internal object PasskeyAuthenticationHandler {
         challenge: String
     ): Result<PasskeyAuthenticationResult> {
         return try {
-            println("Completing passkey authentication for credential: ${assertion.credentialId}")
-            
+            logger.debug(LogCategory.PASSKEY, "Completing authentication", mapOf("credentialId" to LogSanitizer.maskCredentialId(assertion.credentialId)))
+
             val authenticationData = PasskeyDataMapper.createAuthenticationData(
                 assertion = assertion,
                 challenge = challenge
             )
-            
+
             // Call Edge Function for authentication completion
             val response = SupabaseApiClient.completeAuthentication(authenticationData)
-            
+
             val responseText = response.bodyAsText()
             val authResult = PasskeyDataMapper.parseAuthenticationResult(responseText)
-            
+
             if (authResult.success) {
-                println("Passkey authentication completed successfully for user: ${authResult.userId}")
+                logger.info(LogCategory.PASSKEY, "Passkey authentication completed successfully")
                 Result.success(authResult)
             } else {
-                println("Passkey authentication failed: ${authResult.error}")
+                logger.warn(LogCategory.PASSKEY, "Passkey authentication failed", mapOf("error" to (authResult.error ?: "unknown")))
                 Result.failure(Exception(authResult.error ?: "Authentication failed"))
             }
         } catch (e: Exception) {
-            println("Failed to complete authentication: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to complete authentication", error = e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * Check authentication status for cross-device flows
      */
     suspend fun checkStatus(challenge: String, sessionId: String? = null): Result<PasskeyAuthenticationResult> {
         return try {
-            println("Checking authentication status for challenge: ${challenge.take(10)}...")
-            
+            logger.debug(LogCategory.PASSKEY, "Checking authentication status")
+
             // Use sessionId for status check endpoint (GET /auth/status/{sessionId})
             val effectiveSessionId = sessionId ?: challenge // Fallback to challenge if no sessionId
 
             val response = SupabaseApiClient.checkAuthenticationStatus(effectiveSessionId)
-            
+
             val responseText = response.bodyAsText()
-            println("Authentication status check response: $responseText")
-            
+            logger.trace(LogCategory.PASSKEY, "Authentication status check response received")
+
             if (!response.status.isSuccess()) {
                 return Result.failure(Exception("Failed to check authentication status: HTTP ${response.status.value}"))
             }
-            
+
             val authResult = PasskeyDataMapper.parseAuthenticationResult(responseText)
             Result.success(authResult)
-            
+
         } catch (e: Exception) {
-            println("Error checking authentication status: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Error checking authentication status", error = e)
             Result.failure(e)
         }
     }

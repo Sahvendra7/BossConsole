@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.model.Panel.Companion.right
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.*
@@ -34,6 +36,7 @@ class FluckPanelComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
+    private val logger = BossLogger.forComponent("FluckPanelComponent")
 
     // Create browser instance with error handling
     private var browserError: Throwable? = null
@@ -41,16 +44,16 @@ class FluckPanelComponent(
         createBrowser()
     } catch (e: Throwable) {
         browserError = e
-        println("Failed to create browser: ${e.message}")
+        logger.warn(LogCategory.BROWSER, "Failed to create browser", error = e)
         null
     }
-    
+
     private val browserViewState: Any? = browser?.let {
         try {
             createBrowserViewState(it)
         } catch (e: Throwable) {
             browserError = e
-            println("Failed to create browser view state: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to create browser view state", error = e)
             null
         }
     }

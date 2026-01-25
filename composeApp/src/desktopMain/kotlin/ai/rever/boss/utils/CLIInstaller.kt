@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -7,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 
 actual object CLIInstaller {
+    private val logger = BossLogger.forComponent("CLIInstaller")
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
@@ -66,7 +69,7 @@ actual object CLIInstaller {
                 installUnix()
             }
         } catch (e: Exception) {
-            println("CLI installation error: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "CLI installation error", error = e)
             CLIInstallResult(
                 success = false,
                 message = "Installation failed: ${e.message ?: "Unknown error"}",
@@ -188,7 +191,7 @@ actual object CLIInstaller {
                 requiresRestart = false
             )
         } catch (e: Exception) {
-            println("Homebrew-style installation failed: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Homebrew-style installation failed, falling back to legacy", error = e)
             // Fall back to legacy installation
             return installLegacyUnix()
         }
@@ -248,7 +251,7 @@ actual object CLIInstaller {
             val stream = CLIInstaller::class.java.getResourceAsStream(resourcePath)
             stream?.bufferedReader()?.use { it.readText() }
         } catch (e: Exception) {
-            println("Failed to read resource $scriptName: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to read resource", mapOf("scriptName" to scriptName), error = e)
             null
         }
     }
@@ -269,12 +272,12 @@ actual object CLIInstaller {
             perms.add(PosixFilePermission.OTHERS_EXECUTE)
             Files.setPosixFilePermissions(path, perms)
         } catch (e: Exception) {
-            println("Failed to make file executable: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to make file executable", error = e)
             // Fallback to chmod command
             try {
                 ProcessBuilder("chmod", "+x", file.absolutePath).start().waitFor()
             } catch (e2: Exception) {
-                println("chmod fallback also failed: ${e2.message}")
+                logger.warn(LogCategory.SYSTEM, "chmod fallback also failed", error = e2)
             }
         }
     }
@@ -326,7 +329,7 @@ actual object CLIInstaller {
                     alreadyConfigured = false
                 )
             } catch (e: Exception) {
-                println("Failed to update $configPath: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Failed to update shell config", mapOf("configPath" to configPath), error = e)
                 continue
             }
         }
@@ -360,7 +363,7 @@ actual object CLIInstaller {
             process.waitFor()
             process.exitValue() == 0
         } catch (e: Exception) {
-            println("Failed to update Windows PATH: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to update Windows PATH", error = e)
             false
         }
     }

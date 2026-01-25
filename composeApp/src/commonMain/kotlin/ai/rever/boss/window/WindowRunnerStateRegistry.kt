@@ -1,7 +1,11 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
+
+private val windowRunnerStateRegistryLogger = BossLogger.forComponent("WindowRunnerStateRegistry")
 
 /**
  * CompositionLocal to provide WindowRunnerState to descendant composables.
@@ -25,7 +29,7 @@ object WindowRunnerStateRegistry {
     fun register(windowId: String): WindowRunnerState {
         val state = WindowRunnerState(windowId)
         _states[windowId] = state
-        println("WindowRunnerStateRegistry: Registered state for window: $windowId")
+        windowRunnerStateRegistryLogger.debug(LogCategory.UI, "Registered state for window", mapOf("windowId" to windowId))
         return state
     }
 
@@ -39,7 +43,7 @@ object WindowRunnerStateRegistry {
      */
     fun getOrCreate(windowId: String): WindowRunnerState =
         _states.getOrPut(windowId) {
-            println("WindowRunnerStateRegistry: Creating new state for window: $windowId")
+            windowRunnerStateRegistryLogger.debug(LogCategory.UI, "Creating new state for window", mapOf("windowId" to windowId))
             WindowRunnerState(windowId)
         }
 
@@ -48,7 +52,7 @@ object WindowRunnerStateRegistry {
      */
     fun unregister(windowId: String) {
         _states.remove(windowId)
-        println("WindowRunnerStateRegistry: Unregistered state for window: $windowId")
+        windowRunnerStateRegistryLogger.debug(LogCategory.UI, "Unregistered state for window", mapOf("windowId" to windowId))
     }
 
     /**

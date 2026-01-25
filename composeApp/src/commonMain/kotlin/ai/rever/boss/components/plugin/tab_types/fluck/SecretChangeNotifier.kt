@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.asSharedFlow
  * - BrowserSecretIntegrationViewModel (browser auto-fill)
  */
 object SecretChangeNotifier {
+    private val logger = BossLogger.forComponent("SecretChangeNotifier")
 
     /**
      * Types of secret change events
@@ -53,7 +56,7 @@ object SecretChangeNotifier {
      * Notify observers that a secret was created.
      */
     suspend fun notifySecretCreated(secretId: String, website: String) {
-        println("📢 [SecretChangeNotifier] Notifying secret created: $secretId ($website)")
+        logger.debug(LogCategory.GENERAL, "Notifying secret created", mapOf("secretId" to secretId, "website" to website))
         _secretChangeEvents.emit(SecretChangeEvent.Created(secretId, website))
     }
 
@@ -61,7 +64,7 @@ object SecretChangeNotifier {
      * Notify observers that a secret was updated.
      */
     suspend fun notifySecretUpdated(secretId: String) {
-        println("📢 [SecretChangeNotifier] Notifying secret updated: $secretId")
+        logger.debug(LogCategory.GENERAL, "Notifying secret updated", mapOf("secretId" to secretId))
         _secretChangeEvents.emit(SecretChangeEvent.Updated(secretId))
     }
 
@@ -69,7 +72,7 @@ object SecretChangeNotifier {
      * Notify observers that a secret was deleted.
      */
     suspend fun notifySecretDeleted(secretId: String) {
-        println("📢 [SecretChangeNotifier] Notifying secret deleted: $secretId")
+        logger.debug(LogCategory.GENERAL, "Notifying secret deleted", mapOf("secretId" to secretId))
         _secretChangeEvents.emit(SecretChangeEvent.Deleted(secretId))
     }
 
@@ -77,7 +80,7 @@ object SecretChangeNotifier {
      * Notify observers to refresh their secret lists (bulk operation or unknown change).
      */
     suspend fun notifyRefresh() {
-        println("📢 [SecretChangeNotifier] Notifying refresh")
+        logger.debug(LogCategory.GENERAL, "Notifying refresh")
         _secretChangeEvents.emit(SecretChangeEvent.Refresh)
     }
 }

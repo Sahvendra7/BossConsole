@@ -1,5 +1,7 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +57,7 @@ private data class BrowserHistoryEntry(
  * Uses StateFlow for reactive UI updates.
  */
 object RecentBrowserPagesManager {
+    private val logger = BossLogger.forComponent("RecentBrowserPagesManager")
     private const val MAX_PAGES = 30
     private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
     private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-browser-pages.json")
@@ -211,13 +214,13 @@ object RecentBrowserPagesManager {
                 val content = settingsFile.readText()
                 val data = json.decodeFromString<RecentBrowserPagesData>(content)
                 _recentPages.value = data.pages
-                println("[RecentBrowserPagesManager] Loaded ${data.pages.size} recent pages")
+                logger.debug(LogCategory.SYSTEM, "Loaded recent pages", mapOf("count" to data.pages.size))
             } else {
                 // Bootstrap from existing browser history if available
                 bootstrapFromBrowserHistory()
             }
         } catch (e: Exception) {
-            println("[RecentBrowserPagesManager] Error loading: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error loading recent pages", error = e)
             // Try to bootstrap even on error
             bootstrapFromBrowserHistory()
         }
@@ -255,10 +258,10 @@ object RecentBrowserPagesManager {
             if (recentPages.isNotEmpty()) {
                 _recentPages.value = recentPages
                 saveImmediately()
-                println("[RecentBrowserPagesManager] Bootstrapped ${recentPages.size} pages from browser history")
+                logger.debug(LogCategory.SYSTEM, "Bootstrapped pages from browser history", mapOf("count" to recentPages.size))
             }
         } catch (e: Exception) {
-            println("[RecentBrowserPagesManager] Error bootstrapping from browser history: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error bootstrapping from browser history", error = e)
         }
     }
 
@@ -284,7 +287,7 @@ object RecentBrowserPagesManager {
             val content = json.encodeToString(RecentBrowserPagesData.serializer(), data)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("[RecentBrowserPagesManager] Error saving: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Error saving recent pages", error = e)
         }
     }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,7 @@ import kotlin.time.Duration.Companion.hours
 class VersionListManager(
     private val updateService: UpdateService
 ) {
+    private val logger = BossLogger.forComponent("VersionListManager")
     private val _versions = MutableStateFlow<List<VersionInfo>>(emptyList())
     val versions: StateFlow<List<VersionInfo>> = _versions
 
@@ -59,7 +62,7 @@ class VersionListManager(
             lastFetchTime = now
         } catch (e: Exception) {
             _error.value = "Failed to fetch versions: ${e.message}"
-            println("Error fetching version list: ${e.message}")
+            logger.warn(LogCategory.NETWORK, "Error fetching version list", error = e)
         } finally {
             _isLoading.value = false
         }

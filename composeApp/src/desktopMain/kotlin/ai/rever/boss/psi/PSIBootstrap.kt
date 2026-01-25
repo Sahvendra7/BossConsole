@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.config.CompilerConfiguration
@@ -28,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * rather than standalone IntelliJ libraries to avoid class shadowing conflicts.
  */
 object PSIBootstrap {
+    private val logger = BossLogger.forComponent("PSIBootstrap")
 
     private val initialized = AtomicBoolean(false)
     private var rootDisposable: Disposable? = null
@@ -83,7 +86,7 @@ object PSIBootstrap {
             initialized.set(true)
 
         } catch (e: Exception) {
-            println("[PSI] Failed to initialize: ${e.message}")
+            logger.error(LogCategory.EDITOR, "Failed to initialize PSI", error = e)
             shutdown()
             throw RuntimeException("Failed to initialize PSI", e)
         }
@@ -110,7 +113,7 @@ object PSIBootstrap {
             initialized.set(false)
 
         } catch (e: Exception) {
-            println("[PSI] Error during shutdown: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error during shutdown", error = e)
         }
     }
 
@@ -151,7 +154,7 @@ object PSIBootstrap {
         val content = try {
             file.readText()
         } catch (e: Exception) {
-            println("[PSI] Failed to read file ${file.name}: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Failed to read file", mapOf("fileName" to file.name), error = e)
             return null
         }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.services.auth
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -11,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * - Triggering appropriate UI updates and authentication completion
  */
 object PasskeySessionEventHandler {
+
+    private val logger = BossLogger.forComponent("PasskeySessionEventHandler")
 
     /**
      * Passkey session event types
@@ -45,14 +49,14 @@ object PasskeySessionEventHandler {
      * Handle passkey registration completion from deep link
      */
     fun handleRegistrationCompleted(sessionId: String) {
-        println("PasskeySessionEventHandler: Registration completed for session: $sessionId")
+        logger.info(LogCategory.PASSKEY, "Registration completed for session")
 
         val metadata = activeSessions[sessionId]
         if (metadata != null) {
             _sessionEvents.value = PasskeySessionEvent.RegistrationCompleted(sessionId)
-            println("PasskeySessionEventHandler: Notified listeners of registration completion")
+            logger.debug(LogCategory.PASSKEY, "Notified listeners of registration completion")
         } else {
-            println("PasskeySessionEventHandler: Warning - No active session found for: $sessionId")
+            logger.warn(LogCategory.PASSKEY, "No active session found for registration completion")
         }
     }
 
@@ -60,14 +64,14 @@ object PasskeySessionEventHandler {
      * Handle passkey authentication completion from deep link
      */
     fun handleAuthenticationCompleted(sessionId: String) {
-        println("PasskeySessionEventHandler: Authentication completed for session: $sessionId")
+        logger.info(LogCategory.PASSKEY, "Authentication completed for session")
 
         val metadata = activeSessions[sessionId]
         if (metadata != null) {
             _sessionEvents.value = PasskeySessionEvent.AuthenticationCompleted(sessionId)
-            println("PasskeySessionEventHandler: Notified listeners of authentication completion")
+            logger.debug(LogCategory.PASSKEY, "Notified listeners of authentication completion")
         } else {
-            println("PasskeySessionEventHandler: Warning - No active session found for: $sessionId")
+            logger.warn(LogCategory.PASSKEY, "No active session found for authentication completion")
         }
     }
 

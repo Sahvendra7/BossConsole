@@ -1,11 +1,14 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
 
 /**
  * Windows-specific protocol handler for registering URL schemes
  */
 object WindowsProtocolHandler {
+    private val logger = BossLogger.forComponent("WindowsProtocolHandler")
     private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     
     /**
@@ -32,29 +35,26 @@ object WindowsProtocolHandler {
             // 3. Determine if registration is needed
             val needsRegistration = when {
                 currentCommand == null -> {
-                    println("Protocol not registered. Registering...")
+                    logger.info(LogCategory.SYSTEM, "Protocol not registered. Registering...")
                     true
                 }
                 !commandPointsToValidExecutable(currentCommand) -> {
-                    println("Protocol points to invalid path: $currentCommand")
-                    println("Re-registering with correct path...")
+                    logger.info(LogCategory.SYSTEM, "Protocol points to invalid path, re-registering", mapOf("command" to currentCommand))
                     true
                 }
                 !currentCommand.contains(appPath, ignoreCase = true) -> {
                     // SAFETY CHECK: Only re-register if current path doesn't exist
                     val currentExePath = extractExecutablePath(currentCommand)
                     if (currentExePath != null && File(currentExePath).exists()) {
-                        println("Protocol already registered to different valid BOSS installation: $currentExePath")
-                        println("Skipping re-registration to avoid conflicts.")
+                        logger.info(LogCategory.SYSTEM, "Protocol already registered to different valid BOSS installation, skipping", mapOf("path" to currentExePath))
                         false
                     } else {
-                        println("Protocol points to non-existent path: $currentCommand")
-                        println("Re-registering with current installation path...")
+                        logger.info(LogCategory.SYSTEM, "Protocol points to non-existent path, re-registering", mapOf("command" to currentCommand))
                         true
                     }
                 }
                 else -> {
-                    println("Protocol already correctly registered.")
+                    logger.debug(LogCategory.SYSTEM, "Protocol already correctly registered")
                     false
                 }
             }
@@ -64,7 +64,7 @@ object WindowsProtocolHandler {
                 performRegistration(appPath)
             }
         } catch (e: Exception) {
-            println("Failed to register Windows protocol: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to register Windows protocol", error = e)
         }
     }
 
@@ -72,8 +72,7 @@ object WindowsProtocolHandler {
      * Perform the actual registry writes
      */
     private fun performRegistration(appPath: String) {
-        println("=== BOSS Protocol Registration ===")
-        println("Registering boss:// protocol for: $appPath")
+        logger.info(LogCategory.SYSTEM, "Starting BOSS protocol registration", mapOf("appPath" to appPath))
 
         val commands = listOf(
             // Create protocol key
@@ -95,19 +94,21 @@ object WindowsProtocolHandler {
                 if (exitCode == 0) {
                     successCount++
                 } else {
-                    println("WARNING: Registry command failed (exit $exitCode)")
+                    logger.warn(LogCategory.SYSTEM, "Registry command failed", mapOf("exitCode" to exitCode))
                 }
             } catch (e: Exception) {
-                println("ERROR: Failed to execute registry command: ${e.message}")
+                logger.error(LogCategory.SYSTEM, "Failed to execute registry command", error = e)
             }
         }
 
         if (successCount == commands.size) {
-            println("✓ Protocol registration successful")
+            logger.info(LogCategory.SYSTEM, "Protocol registration successful")
         } else {
-            println("⚠ Protocol registration partial ($successCount/${commands.size} succeeded)")
+            logger.warn(LogCategory.SYSTEM, "Protocol registration partial", mapOf(
+                "successCount" to successCount,
+                "totalCommands" to commands.size
+            ))
         }
-        println("===================================")
     }
     
     /**
@@ -136,10 +137,10 @@ object WindowsProtocolHandler {
             if (!jpackagePath.isNullOrEmpty()) {
                 val file = File(jpackagePath)
                 if (file.exists()) {
-                    println("Detected jpackage installation: $jpackagePath")
+                    logger.debug(LogCategory.SYSTEM, "Detected jpackage installation", mapOf("path" to jpackagePath))
                     return jpackagePath
                 } else {
-                    println("WARNING: jpackage.app-path set but file doesn't exist: $jpackagePath")
+                    logger.warn(LogCategory.SYSTEM, "jpackage.app-path set but file doesn't exist", mapOf("path" to jpackagePath))
                 }
             }
 
@@ -156,7 +157,7 @@ object WindowsProtocolHandler {
                         launcherPath.absolutePath
                     } else {
                         // Cannot use "javaw.exe -jar" as registry needs executable path
-                        println("WARNING: Running from JAR without launcher executable")
+                        logger.warn(LogCategory.SYSTEM, "Running from JAR without launcher executable")
                         null
                     }
                 }
@@ -166,12 +167,12 @@ object WindowsProtocolHandler {
                 }
                 else -> {
                     // Development environment - return null to skip registration
-                    println("INFO: Running in development mode. Deep links require MSI installation.")
+                    logger.debug(LogCategory.SYSTEM, "Running in development mode - deep links require MSI installation")
                     null
                 }
             }
         } catch (e: Exception) {
-            println("Error determining application path: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Error determining application path", error = e)
             null
         }
     }

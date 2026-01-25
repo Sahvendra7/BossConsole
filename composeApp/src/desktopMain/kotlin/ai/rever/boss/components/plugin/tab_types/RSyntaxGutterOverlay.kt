@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.run.DetectedMainFunction
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
 import androidx.compose.foundation.layout.*
@@ -20,6 +22,8 @@ import java.awt.event.AdjustmentListener
 import javax.swing.SwingUtilities
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+
+private val gutterLogger = BossLogger.forComponent("RSyntaxGutterOverlay")
 
 /**
  * Data class to hold gutter state synchronized with RSyntaxTextArea.
@@ -84,7 +88,7 @@ fun RSyntaxGutterOverlay(
                         detectedMainFunctions = detected
                     }
                 } catch (e: Exception) {
-                    println("[RSyntaxGutter] Error detecting main functions: ${e.message}")
+                    gutterLogger.warn(LogCategory.EDITOR, "Error detecting main functions", error = e)
                     withContext(Dispatchers.Main) {
                         detectedMainFunctions = emptyList()
                     }
@@ -126,7 +130,7 @@ fun RSyntaxGutterOverlay(
                         )
                     }
                 } catch (e: Exception) {
-                    println("[RSyntaxGutter] Error updating state: ${e.message}")
+                    gutterLogger.warn(LogCategory.EDITOR, "Error updating state", error = e)
                 }
             }
         }

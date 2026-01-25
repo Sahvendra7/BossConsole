@@ -1,5 +1,7 @@
 package ai.rever.boss.services.auth
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,13 +15,14 @@ import kotlinx.coroutines.flow.asStateFlow
 object MagicLinkErrorService {
     private val _verificationError = MutableStateFlow<String?>(null)
     val verificationError: StateFlow<String?> = _verificationError.asStateFlow()
+    private val logger = BossLogger.forComponent("MagicLinkErrorService")
 
     /**
      * Set magic link verification error
      * Called from BossAppWithAuth when deep link verification fails
      */
     fun setError(message: String) {
-        println("MagicLinkErrorService: Setting error: $message")
+        logger.warn(LogCategory.AUTH, "Setting magic link error", mapOf("message" to message))
         _verificationError.value = message
     }
 
@@ -28,7 +31,8 @@ object MagicLinkErrorService {
      * Called when user navigates away or resends magic link
      */
     fun clearError() {
-        println("MagicLinkErrorService: Clearing error")
+        logger.debug(LogCategory.AUTH, "Clearing magic link error")
         _verificationError.value = null
     }
 }
+

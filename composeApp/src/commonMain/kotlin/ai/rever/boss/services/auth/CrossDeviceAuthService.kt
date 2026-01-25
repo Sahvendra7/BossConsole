@@ -4,12 +4,16 @@ import ai.rever.boss.components.dialogs.openUrlInBrowser
 import ai.rever.boss.services.passkey.SupabasePasskeyService
 import ai.rever.boss.services.passkey.supabase.PasskeyAuthenticationResult
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.delay
 
 /**
  * Handles cross-device authentication coordination and QR code flows
  */
 internal object CrossDeviceAuthService {
+
+    private val logger = BossLogger.forComponent("CrossDeviceAuthService")
 
     /**
      * Check authentication status for cross-device flow
@@ -46,24 +50,24 @@ internal object CrossDeviceAuthService {
      */
     suspend fun pollForAuthenticationCompletion(challenge: String, sessionId: String? = null): Result<PasskeyAuthenticationResult> {
         return try {
-            println("Polling for cross-device authentication completion...")
-            
+            logger.debug(LogCategory.PASSKEY, "Polling for cross-device authentication completion")
+
             var attempts = 0
             val maxAttempts = 60 // 2 minutes with 2-second intervals
-            
+
             while (attempts < maxAttempts) {
                 delay(2000) // Wait 2 seconds between attempts
                 attempts++
-                
-                println("Polling attempt $attempts/$maxAttempts...")
-                
+
+                logger.trace(LogCategory.PASSKEY, "Polling attempt", mapOf("attempt" to attempts, "maxAttempts" to maxAttempts))
+
                 // Check if authentication was completed by polling the challenge
                 val checkResult = SupabasePasskeyService.checkAuthenticationStatus(challenge, sessionId)
-                
+
                 if (checkResult.isSuccess) {
                     val authData = checkResult.getOrThrow()
                     if (authData.success) {
-                        println("Cross-device authentication completed successfully!")
+                        logger.info(LogCategory.PASSKEY, "Cross-device authentication completed successfully")
                         return Result.success(authData)
                     }
                 } else {
@@ -75,11 +79,11 @@ internal object CrossDeviceAuthService {
                     }
                 }
             }
-            
+
             // Timeout reached
             Result.failure(Exception("Authentication timeout - QR code was not scanned within 2 minutes"))
         } catch (e: Exception) {
-            println("Error during authentication polling: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Error during authentication polling", error = e)
             Result.failure(e)
         }
     }
@@ -92,24 +96,24 @@ internal object CrossDeviceAuthService {
         onAuthenticationComplete: suspend (PasskeyAuthenticationResult) -> Result<Unit>
     ): Result<Unit> {
         return try {
-            println("Cross-device authentication required - starting cross-device flow")
+            logger.info(LogCategory.PASSKEY, "Cross-device authentication required - starting flow")
 
             // Check if browser is already opened (e.g., embedded browser)
             if (exception.browserAlreadyOpened) {
-                println("Browser already opened (embedded), skipping system browser opening")
+                logger.debug(LogCategory.PASSKEY, "Browser already opened (embedded), skipping system browser opening")
             } else {
                 // Open browser with the QR URL for mobile authentication
                 try {
                     openUrlInBrowser(exception.qrCodeUrl)
-                    println("Opened mobile authentication URL: ${exception.qrCodeUrl}")
+                    logger.debug(LogCategory.PASSKEY, "Opened mobile authentication URL")
                 } catch (e: Exception) {
-                    println("Failed to open mobile authentication URL: ${e.message}")
+                    logger.error(LogCategory.PASSKEY, "Failed to open mobile authentication URL", error = e)
                     return Result.failure(Exception("Failed to open mobile authentication: ${e.message}"))
                 }
             }
 
             // Poll for authentication completion instead of calling completeAuthentication
-            println("Polling for cross-device authentication completion...")
+            logger.debug(LogCategory.PASSKEY, "Polling for cross-device authentication completion")
             val pollingResult = pollForAuthenticationCompletion(exception.challenge, exception.sessionId)
 
             if (pollingResult.isSuccess) {
@@ -119,8 +123,9 @@ internal object CrossDeviceAuthService {
                 return Result.failure(pollingResult.exceptionOrNull() ?: Exception("Cross-device authentication failed"))
             }
         } catch (e: Exception) {
-            println("Cross-device authentication handling failed: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Cross-device authentication handling failed", error = e)
             Result.failure(e)
         }
     }
 }
+

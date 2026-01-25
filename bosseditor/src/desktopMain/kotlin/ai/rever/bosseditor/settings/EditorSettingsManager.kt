@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.settings
 
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +29,7 @@ import java.io.File
 class EditorSettingsManager private constructor(
     private val settingsPath: String = DEFAULT_SETTINGS_PATH
 ) {
+    private val logger = LspLogger.forComponent("EditorSettingsManager")
     private val _settings = MutableStateFlow(EditorSettings.Default)
     val settings: StateFlow<EditorSettings> = _settings.asStateFlow()
 
@@ -75,7 +78,7 @@ class EditorSettingsManager private constructor(
                 _settings.value = json.decodeFromString<EditorSettings>(content)
             }
         } catch (e: Exception) {
-            println("EditorSettingsManager: Failed to load settings, using defaults: ${e.message}")
+            logger.warn(LogCategory.GENERAL, "Failed to load settings, using defaults", error = e)
             _settings.value = EditorSettings.Default
         }
     }
@@ -90,7 +93,7 @@ class EditorSettingsManager private constructor(
             val content = json.encodeToString(EditorSettings.serializer(), _settings.value)
             file.writeText(content)
         } catch (e: Exception) {
-            println("EditorSettingsManager: Failed to save settings: ${e.message}")
+            logger.warn(LogCategory.GENERAL, "Failed to save settings", error = e)
         }
     }
 

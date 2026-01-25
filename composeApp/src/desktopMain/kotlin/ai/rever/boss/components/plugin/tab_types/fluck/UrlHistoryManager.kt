@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -17,6 +19,7 @@ data class UrlHistoryEntry(
 )
 
 object UrlHistoryManager {
+    private val logger = BossLogger.forComponent("UrlHistoryManager")
     private val historyFile = File(System.getProperty("user.home"), ".boss/browser-history.json")
     private val history = ConcurrentHashMap<String, UrlHistoryEntry>()
     private val json = Json { 
@@ -40,7 +43,7 @@ object UrlHistoryManager {
                 }
             }
         } catch (e: Exception) {
-            println("Failed to load browser history: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to load browser history", error = e)
         }
     }
     
@@ -52,7 +55,7 @@ object UrlHistoryManager {
                 .take(1000) // Keep only top 1000 entries
             historyFile.writeText(json.encodeToString(entries))
         } catch (e: Exception) {
-            println("Failed to save browser history: ${e.message}")
+            logger.warn(LogCategory.BROWSER, "Failed to save browser history", error = e)
         }
     }
     

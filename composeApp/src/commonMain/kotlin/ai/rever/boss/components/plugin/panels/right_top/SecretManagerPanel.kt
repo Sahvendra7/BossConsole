@@ -1,5 +1,8 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -17,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private val secretManagerLogger = BossLogger.forComponent("SecretManagerPanel")
 
 /**
  * Panel info for Secret Manager
@@ -76,13 +81,13 @@ class SecretManagerComponent(
     }
 
     override fun onInitialized() {
-        println("🎬 [SecretManager] Panel initialized")
+        secretManagerLogger.debug(LogCategory.AUTH, "Panel initialized")
         // ViewModel already loads secrets in its init block
         // No additional initialization needed
     }
 
     override fun onBeforeReset() {
-        println("🔄 [SecretManager] Preparing to reset panel")
+        secretManagerLogger.debug(LogCategory.AUTH, "Preparing to reset panel")
         // ViewModel will be disposed automatically by Decompose lifecycle
         // A fresh ViewModel will be created with the new component instance
     }
@@ -108,7 +113,7 @@ class SecretManagerComponent(
  * - Guarantees exactly one register/unregister per status change
  */
 fun DefaultPlugin.registerSecretManager() {
-    println("🔧 [SecretManagerPanel] Initializing secret manager panel registration")
+    secretManagerLogger.debug(LogCategory.AUTH, "Initializing secret manager panel registration")
 
     // Observe auth state and dynamically register/unregister panel
     // Use pluginScope instead of GlobalScope to tie the lifecycle to the plugin
@@ -122,17 +127,17 @@ fun DefaultPlugin.registerSecretManager() {
             .distinctUntilChanged()  // Only emit when permission status actually changes
             .collect { hasPermission ->
                 val user = AuthStateManager.currentUser.value
-                println("🔧 [SecretManagerPanel] Permission status changed: hasPermission=$hasPermission, user=${user?.email}")
+                secretManagerLogger.debug(LogCategory.AUTH, "Permission status changed", mapOf("hasPermission" to hasPermission, "user" to LogSanitizer.maskEmail(user?.email ?: "")))
 
                 if (hasPermission) {
                     // User has permission - register panel
-                    println("✅ [SecretManagerPanel] Registering secret manager panel for ${user?.email}")
+                    secretManagerLogger.info(LogCategory.AUTH, "Registering secret manager panel", mapOf("user" to LogSanitizer.maskEmail(user?.email ?: "")))
                     panelRegistry.registerPanel(SecretManagerInfo) { ctx, panelInfo ->
                         SecretManagerComponent(ctx, panelInfo)
                     }
                 } else {
                     // User does not have permission - unregister panel
-                    println("❌ [SecretManagerPanel] Unregistering secret manager panel")
+                    secretManagerLogger.info(LogCategory.AUTH, "Unregistering secret manager panel")
                     panelRegistry.unregisterPanel(SecretManagerInfo.id)
                 }
             }

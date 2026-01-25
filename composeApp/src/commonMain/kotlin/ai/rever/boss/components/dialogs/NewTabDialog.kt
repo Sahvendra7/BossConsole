@@ -1,5 +1,7 @@
 package ai.rever.boss.components.dialogs
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.extractFileName
@@ -59,6 +61,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+private val newTabDialogLogger = BossLogger.forComponent("NewTabDialog")
+
 /**
  * Validates and sanitizes a file path to prevent path traversal attacks.
  *
@@ -80,20 +84,20 @@ private fun validateFilePath(path: String, basePath: String? = null): String? {
 
             // The file must be within the base directory
             if (!canonicalPath.startsWith(canonicalBase)) {
-                println("[PathValidation] Path traversal attempt blocked: $path (outside $basePath)")
+                newTabDialogLogger.warn(LogCategory.FILE, "Path traversal attempt blocked", mapOf("path" to path))
                 return null
             }
         }
 
         // Validate the file exists
         if (!file.exists()) {
-            println("[PathValidation] File does not exist: $path")
+            newTabDialogLogger.debug(LogCategory.FILE, "File does not exist", mapOf("path" to path))
             return null
         }
 
         canonicalPath
     } catch (e: Exception) {
-        println("[PathValidation] Invalid path: $path - ${e.message}")
+        newTabDialogLogger.debug(LogCategory.FILE, "Invalid path", mapOf("path" to path))
         null
     }
 }
@@ -355,7 +359,7 @@ fun NewTabDialog(
                                         scanDirectory(selectedProject.path)
                                     }
                                 } catch (e: Exception) {
-                                    println("[NewTabDialog] Error scanning directory: ${e.message}")
+                                    newTabDialogLogger.warn(LogCategory.FILE, "Error scanning directory", error = e)
                                     null
                                 }
                                 isLoadingTree = false
@@ -578,7 +582,7 @@ fun NewTabDialog(
                                                                         }
                                                                     }
                                                                 } catch (e: Exception) {
-                                                                    println("[NewTabDialog] Error loading folder children: ${e.message}")
+                                                                    newTabDialogLogger.warn(LogCategory.FILE, "Error loading folder children", error = e)
                                                                 }
                                                             }
                                                         }
@@ -951,7 +955,7 @@ private fun handleCreateTab(
             val validatedPath = validateFilePath(input.trim())
             if (validatedPath == null) {
                 // Path validation failed - don't create the tab
-                println("[NewTabDialog] File path validation failed: ${input.trim()}")
+                newTabDialogLogger.warn(LogCategory.FILE, "File path validation failed", mapOf("path" to input.trim()))
                 return
             }
             validatedPath

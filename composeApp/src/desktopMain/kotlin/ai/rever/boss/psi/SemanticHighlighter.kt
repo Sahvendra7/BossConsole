@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea
 import org.fife.ui.rsyntaxtextarea.Token
@@ -89,6 +91,7 @@ object SemanticCache {
 class SemanticHighlighter(
     private val textArea: RSyntaxTextArea
 ) {
+    private val logger = BossLogger.forComponent("SemanticHighlighter")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // Debounce job for analysis
@@ -149,7 +152,7 @@ class SemanticHighlighter(
             } catch (e: Exception) {
                 // Silently ignore analysis errors
                 if (e !is CancellationException) {
-                    println("[SemanticHighlighter] Analysis error: ${e.message}")
+                    logger.debug(LogCategory.EDITOR, "Analysis error", mapOf("error" to (e.message ?: "Unknown")))
                 }
             }
         }

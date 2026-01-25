@@ -1,5 +1,7 @@
 package ai.rever.boss.services.network
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +20,7 @@ import java.net.URL
  * Service for monitoring network connectivity with auto-retry
  */
 object NetworkMonitorService {
+    private val logger = BossLogger.forComponent("NetworkMonitorService")
     private val _networkState = MutableStateFlow<NetworkState>(NetworkState.Checking)
     val networkState: StateFlow<NetworkState> = _networkState.asStateFlow()
 
@@ -49,7 +52,7 @@ object NetworkMonitorService {
             performConnectivityCheck(CONNECTIVITY_CHECK_URL) ||
                 performConnectivityCheck(FALLBACK_CHECK_URL)
         } catch (e: Exception) {
-            println("NetworkMonitorService: Connectivity check failed: ${e.message}")
+            logger.warn(LogCategory.NETWORK, "Connectivity check failed", error = e)
             false
         }
 
@@ -85,7 +88,7 @@ object NetworkMonitorService {
             connection.disconnect()
             responseCode in 200..399
         } catch (e: Exception) {
-            println("NetworkMonitorService: Connectivity check to $urlString failed: ${e.message}")
+            logger.debug(LogCategory.NETWORK, "Connectivity check failed", mapOf("url" to urlString))
             false
         }
     }

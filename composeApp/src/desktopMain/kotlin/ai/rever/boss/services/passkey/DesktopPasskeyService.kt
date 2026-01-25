@@ -1,5 +1,7 @@
 package ai.rever.boss.services.passkey
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.services.passkey.desktop.*
 import ai.rever.boss.services.supabase.CrossDeviceAuthenticationRequired
 import ai.rever.boss.services.supabase.getSupabaseFunctionUrl
@@ -16,7 +18,8 @@ import java.util.*
  * Supports macOS Touch ID, Windows Hello, and cross-device browser authentication
  */
 class DesktopPasskeyService : PasskeyService {
-    
+    private val logger = BossLogger.forComponent("DesktopPasskeyService")
+
     private val _passkeyState = MutableStateFlow<PasskeyState>(PasskeyState.Idle)
     override val passkeyState: StateFlow<PasskeyState> = _passkeyState.asStateFlow()
     
@@ -38,10 +41,13 @@ class DesktopPasskeyService : PasskeyService {
     override suspend fun isPasskeySupported(): Boolean {
         return try {
             val isSupported = biometricAuthProvider.isBiometricSupported()
-            println("DesktopPasskeyService: Passkey support check result: $isSupported (platform: ${biometricAuthProvider.getCurrentPlatform()})")
+            logger.debug(LogCategory.PASSKEY, "Passkey support check result", mapOf(
+                "isSupported" to isSupported,
+                "platform" to biometricAuthProvider.getCurrentPlatform()
+            ))
             isSupported
         } catch (e: Exception) {
-            println("DesktopPasskeyService: Error checking passkey support: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Error checking passkey support", error = e)
             false
         }
     }
@@ -55,7 +61,7 @@ class DesktopPasskeyService : PasskeyService {
             _passkeyState.value = PasskeyState.Loading
             
             val challengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(challenge)
-            println("DesktopPasskeyService: Starting WebAuthn registration via browser for user: $userId")
+            logger.info(LogCategory.PASSKEY, "Starting WebAuthn registration via browser")
             
             // Build server WebAuthn registration URL using RESTful endpoint
             val sessionId = UUID.randomUUID().toString()
@@ -68,14 +74,14 @@ class DesktopPasskeyService : PasskeyService {
                 "rpName=${URLEncoder.encode("BOSS", "UTF-8")}"
             
             // Open WebAuthn registration page in embedded Fluck browser
-            println("DesktopPasskeyService: Opening WebAuthn registration in embedded browser: $registrationUrl")
+            logger.debug(LogCategory.PASSKEY, "Opening WebAuthn registration in embedded browser")
             _passkeyState.value = PasskeyState.UserGestureRequired
 
             // Try to use embedded Fluck browser first, fallback to system browser if needed
             val browserResult = browserManager.openInFluckBrowser(registrationUrl, sessionId)
             if (browserResult.isFailure) {
                 // Fallback to system browser if Fluck is not available
-                println("DesktopPasskeyService: Fluck browser not available, using system browser fallback")
+                logger.debug(LogCategory.PASSKEY, "Fluck browser not available, using system browser fallback")
                 val systemBrowserResult = browserManager.openInSystemBrowser(registrationUrl)
                 if (systemBrowserResult.isFailure) {
                     throw systemBrowserResult.exceptionOrNull() ?: Exception("Failed to open browser")
@@ -84,21 +90,21 @@ class DesktopPasskeyService : PasskeyService {
             } else {
                 // Set state to show embedded browser in UI
                 _passkeyState.value = PasskeyState.ShowEmbeddedBrowser(registrationUrl, sessionId)
-                println("DesktopPasskeyService: Embedded browser ready for WebAuthn registration")
+                logger.debug(LogCategory.PASSKEY, "Embedded browser ready for WebAuthn registration")
             }
 
             // Return a special result that tells AuthService not to call completeRegistration
             Result.success(dataMapper.createBrowserPasskeyRegistration(sessionId))
             
         } catch (e: Exception) {
-            println("DesktopPasskeyService: Browser registration error: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Browser registration error", error = e)
             val errorCode = dataMapper.mapPlatformError(e)
             _passkeyState.value = PasskeyState.Error(e.message ?: "Registration failed", errorCode)
             Result.failure(e)
         }
     }
-    
-    
+
+
     override suspend fun authenticateWithPasskey(
         challenge: ByteArray,
         allowedCredentials: List<String>?,
@@ -109,8 +115,8 @@ class DesktopPasskeyService : PasskeyService {
     ): Result<PasskeyAssertion> = withContext(Dispatchers.Main) {
         try {
             _passkeyState.value = PasskeyState.Loading
-            
-            println("DesktopPasskeyService: Starting biometric authentication on ${biometricAuthProvider.getCurrentPlatform()}...")
+
+            logger.info(LogCategory.PASSKEY, "Starting biometric authentication", mapOf("platform" to biometricAuthProvider.getCurrentPlatform()))
             _passkeyState.value = PasskeyState.UserGestureRequired
             
             // Determine authentication method based on credential transports instead of ID patterns
@@ -122,10 +128,13 @@ class DesktopPasskeyService : PasskeyService {
             
             val currentPlatform = biometricAuthProvider.getCurrentPlatform()
             val transports = allowedCredentialTransports?.get(actualCredentialId) ?: emptyList()
-            
-            println("DesktopPasskeyService: CredentialId: $actualCredentialId, Platform: $currentPlatform, Transports: $transports")
-            
-            println("DesktopPasskeyService: Using browser WebAuthn for all passkey authentication")
+
+            logger.debug(LogCategory.PASSKEY, "Authentication details", mapOf(
+                "platform" to currentPlatform,
+                "transports" to transports.toString()
+            ))
+
+            logger.debug(LogCategory.PASSKEY, "Using browser WebAuthn for all passkey authentication")
 
             // Always use browser WebAuthn for passkey authentication - this is the correct approach
             // The browser handles the choice between Touch ID, security keys, or cross-device flow
@@ -140,13 +149,13 @@ class DesktopPasskeyService : PasskeyService {
                 "rpId=${URLEncoder.encode(rpId, "UTF-8")}"
 
             // Open WebAuthn authentication page in embedded Fluck browser
-            println("DesktopPasskeyService: Opening WebAuthn authentication in embedded browser: $authUrl")
+            logger.debug(LogCategory.PASSKEY, "Opening WebAuthn authentication in embedded browser")
 
             // Try to use embedded Fluck browser first, fallback to system browser if needed
             val browserResult = browserManager.openInFluckBrowser(authUrl, crossDeviceSessionId)
             if (browserResult.isFailure) {
                 // Fallback to system browser and QR code flow if Fluck is not available
-                println("DesktopPasskeyService: Fluck browser not available, using system browser fallback")
+                logger.debug(LogCategory.PASSKEY, "Fluck browser not available, using system browser fallback")
                 val systemBrowserResult = browserManager.openInSystemBrowser(authUrl)
                 if (systemBrowserResult.isFailure) {
                     // If system browser also fails, show QR code
@@ -167,7 +176,7 @@ class DesktopPasskeyService : PasskeyService {
             } else {
                 // Set state to show embedded browser in UI
                 _passkeyState.value = PasskeyState.ShowEmbeddedBrowser(authUrl, crossDeviceSessionId)
-                println("DesktopPasskeyService: Embedded browser ready for WebAuthn authentication")
+                logger.debug(LogCategory.PASSKEY, "Embedded browser ready for WebAuthn authentication")
 
                 // Throw exception to trigger polling flow while embedded browser is shown
                 // Set browserAlreadyOpened=true to prevent system browser from opening
@@ -182,10 +191,10 @@ class DesktopPasskeyService : PasskeyService {
 
         } catch (e: CrossDeviceAuthenticationRequired) {
             // Return as Result.failure to trigger polling flow in PasskeyAuthService
-            println("DesktopPasskeyService: Cross-device authentication required, propagating as Result.failure")
+            logger.debug(LogCategory.PASSKEY, "Cross-device authentication required, propagating as Result.failure")
             Result.failure(e)
         } catch (e: Exception) {
-            println("DesktopPasskeyService: Biometric authentication error: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Biometric authentication error", error = e)
             val errorCode = dataMapper.mapPlatformError(e)
             _passkeyState.value = PasskeyState.Error(e.message ?: "Authentication failed", errorCode)
             Result.failure(e)
@@ -202,7 +211,7 @@ class DesktopPasskeyService : PasskeyService {
      */
     override fun resetState() {
         _passkeyState.value = PasskeyState.Idle
-        println("DesktopPasskeyService: State reset to Idle")
+        logger.debug(LogCategory.PASSKEY, "State reset to Idle")
     }
 
 }

@@ -2,6 +2,8 @@
 
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.model.Panel.Companion.right
@@ -116,7 +118,8 @@ open class RpaRecorderComponent(
     ctx: ComponentContext,
     override val panelInfo: PanelInfo
 ) : PanelComponentWithUI, ComponentContext by ctx {
-    
+    private val logger = BossLogger.forComponent("RpaRecorder")
+
     private val _recordedActions = MutableStateFlow<List<RecordedAction>>(emptyList())
     val recordedActions: StateFlow<List<RecordedAction>> = _recordedActions
     
@@ -1030,7 +1033,7 @@ open class RpaRecorderComponent(
         // Auto-select first tab if no tab is selected and tabs are available
         if (_selectedTab.value == null && tabs.isNotEmpty()) {
             _selectedTab.value = tabs.first()
-            println("RPA Recorder: Auto-selected tab: ${tabs.first().id}")
+            logger.debug(LogCategory.SYSTEM, "Auto-selected tab", mapOf("tabId" to tabs.first().id))
         }
     }
     
@@ -1051,15 +1054,14 @@ open class RpaRecorderComponent(
     private fun startRecording() {
         val selectedTab = _selectedTab.value
         if (selectedTab == null) {
-            println("RPA Recorder: No tab selected for recording")
+            logger.warn(LogCategory.SYSTEM, "No tab selected for recording")
             return
         }
-        
-        println("RPA Recorder: Starting recording for tab: ${selectedTab.title}")
-        println("RPA Recorder: Browser connection available: ${browserConnection != null}")
-        
+
+        logger.debug(LogCategory.SYSTEM, "Starting recording", mapOf("tab" to selectedTab.title, "hasConnection" to (browserConnection != null)))
+
         // Don't capture URL here - it will be done after browser connection is established
-        
+
         _isRecording.value = true
         injectEventListeners()
     }
@@ -1210,8 +1212,7 @@ open class RpaRecorderComponent(
      */
     protected open fun saveAndOpenConfiguration(filename: String, content: String) {
         // This will be implemented in platform-specific code
-        println("RPA Configuration would be saved as: $filename")
-        println(content)
+        logger.debug(LogCategory.SYSTEM, "RPA configuration export", mapOf("filename" to filename))
     }
     
     /**
@@ -1305,8 +1306,8 @@ open class RpaRecorderComponent(
         kotlinx.coroutines.GlobalScope.launch {
             try {
                 val currentUrl = browserConnection?.getCurrentUrl()
-                println("RPA Recorder: Capturing initial URL: $currentUrl")
-                
+                logger.debug(LogCategory.SYSTEM, "Capturing initial URL", mapOf("url" to (currentUrl ?: "null")))
+
                 if (!currentUrl.isNullOrEmpty() && currentUrl != "about:blank") {
                     val navigationAction = RecordedAction(
                         type = "navigate",
@@ -1319,12 +1320,12 @@ open class RpaRecorderComponent(
                         elementText = null
                     )
                     _recordedActions.value = listOf(navigationAction) + _recordedActions.value
-                    println("RPA Recorder: Added initial navigation action")
+                    logger.debug(LogCategory.SYSTEM, "Added initial navigation action")
                 } else {
-                    println("RPA Recorder: No valid URL to capture")
+                    logger.debug(LogCategory.SYSTEM, "No valid URL to capture")
                 }
             } catch (e: Exception) {
-                println("RPA Recorder: Error capturing initial URL: ${e.message}")
+                logger.warn(LogCategory.SYSTEM, "Error capturing initial URL", error = e)
             }
         }
     }

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.supabase.SecretService
 import ai.rever.boss.services.supabase.models.CreateSecretRequest
@@ -42,6 +44,7 @@ import kotlinx.coroutines.CancellationException
  * - Call dispose() when the ViewModel is no longer needed to cancel all coroutines
  */
 class SecretManagerViewModel {
+    private val logger = BossLogger.forComponent("SecretManager")
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -90,14 +93,17 @@ class SecretManagerViewModel {
                     currentOffset = secrets.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${secrets.size} secrets successfully (hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.AUTH, "Loaded secrets successfully", mapOf(
+                    "count" to secrets.size,
+                    "hasMore" to paginatedResult.hasMore
+                ))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoading = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load secrets: $error")
+                logger.error(LogCategory.AUTH, "Failed to load secrets", error = exception)
             }
         }
     }
@@ -110,23 +116,23 @@ class SecretManagerViewModel {
     fun loadMoreSecrets() {
         // Enhanced guards to prevent race condition
         if (state.isLoadingMore) {
-            println("⏸️  Pagination blocked: Already loading more")
+            logger.trace(LogCategory.AUTH, "Pagination blocked: Already loading more")
             return
         }
         if (!state.hasMore) {
-            println("⏸️  Pagination blocked: No more data")
+            logger.trace(LogCategory.AUTH, "Pagination blocked: No more data")
             return
         }
         if (state.isLoading) {
-            println("⏸️  Pagination blocked: Initial load in progress")
+            logger.trace(LogCategory.AUTH, "Pagination blocked: Initial load in progress")
             return
         }
         if (state.searchQuery.isNotBlank()) {
-            println("⏸️  Pagination blocked: Search mode active")
+            logger.trace(LogCategory.AUTH, "Pagination blocked: Search mode active")
             return
         }
         if (searchJob?.isActive == true) {
-            println("⏸️  Pagination blocked: Search job still running")
+            logger.trace(LogCategory.AUTH, "Pagination blocked: Search job still running")
             return
         }
 
@@ -149,11 +155,15 @@ class SecretManagerViewModel {
                     currentOffset = state.currentOffset + newSecrets.size,
                     hasMore = paginatedResult.hasMore
                 )
-                println("✅ Loaded ${newSecrets.size} more secrets (total: ${state.secrets.size}, hasMore: ${paginatedResult.hasMore})")
+                logger.debug(LogCategory.AUTH, "Loaded more secrets", mapOf(
+                    "newCount" to newSecrets.size,
+                    "total" to state.secrets.size,
+                    "hasMore" to paginatedResult.hasMore
+                ))
             }.onFailure { exception ->
                 // Silently ignore cancellation - it's expected behavior
                 if (exception is CancellationException) {
-                    println("⏸️  Pagination cancelled (search started)")
+                    logger.trace(LogCategory.AUTH, "Pagination cancelled (search started)")
                     return@onFailure
                 }
 
@@ -163,7 +173,7 @@ class SecretManagerViewModel {
                     isLoadingMore = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load more secrets: $error")
+                logger.error(LogCategory.AUTH, "Failed to load more secrets", error = exception)
             }
         }
     }
@@ -213,11 +223,11 @@ class SecretManagerViewModel {
                     currentOffset = 0,  // Reset offset for search results
                     hasMore = false  // No pagination for search results
                 )
-                println("✅ Found ${secrets.size} secrets matching '$query'")
+                logger.debug(LogCategory.AUTH, "Search completed", mapOf("resultCount" to secrets.size))
             }.onFailure { exception ->
                 // Silently ignore cancellation - it's expected behavior
                 if (exception is CancellationException) {
-                    println("⏸️  Search cancelled (typing in progress)")
+                    logger.trace(LogCategory.AUTH, "Search cancelled (typing in progress)")
                     return@onFailure
                 }
 
@@ -228,7 +238,7 @@ class SecretManagerViewModel {
                     isLoadingMore = false,
                     errorMessage = error
                 )
-                println("❌ Failed to search secrets: $error")
+                logger.error(LogCategory.AUTH, "Failed to search secrets", error = exception)
             }
         }
     }
@@ -300,7 +310,10 @@ class SecretManagerViewModel {
             val result = SecretService.createSecret(request)
 
             result.onSuccess {
-                println("✅ Successfully created secret: ${request.website}:${request.username}")
+                logger.info(LogCategory.AUTH, "Successfully created secret", mapOf(
+                    "website" to request.website,
+                    "username" to request.username
+                ))
                 state = state.copy(isOperationInProgress = false)
                 hideCreateDialog()
                 // Reload secrets to show the new one
@@ -313,7 +326,7 @@ class SecretManagerViewModel {
                     isOperationInProgress = false,
                     errorMessage = error
                 )
-                println("❌ Failed to create secret: $error")
+                logger.error(LogCategory.AUTH, "Failed to create secret", error = exception)
             }
         }
     }
@@ -328,7 +341,7 @@ class SecretManagerViewModel {
             val result = SecretService.updateSecret(request)
 
             result.onSuccess {
-                println("✅ Successfully updated secret: ${request.secretId}")
+                logger.info(LogCategory.AUTH, "Successfully updated secret")
                 state = state.copy(isOperationInProgress = false)
                 hideEditDialog()
                 // Reload secrets to show the updated one
@@ -341,7 +354,7 @@ class SecretManagerViewModel {
                     isOperationInProgress = false,
                     errorMessage = error
                 )
-                println("❌ Failed to update secret: $error")
+                logger.error(LogCategory.AUTH, "Failed to update secret", error = exception)
             }
         }
     }
@@ -356,7 +369,7 @@ class SecretManagerViewModel {
             val result = SecretService.deleteSecret(secretId)
 
             result.onSuccess {
-                println("✅ Successfully deleted secret: $secretId")
+                logger.info(LogCategory.AUTH, "Successfully deleted secret")
                 state = state.copy(isOperationInProgress = false)
                 hideDeleteDialog()
                 // Remove from local state
@@ -371,7 +384,7 @@ class SecretManagerViewModel {
                     isOperationInProgress = false,
                     errorMessage = error
                 )
-                println("❌ Failed to delete secret: $error")
+                logger.error(LogCategory.AUTH, "Failed to delete secret", error = exception)
             }
         }
     }
@@ -447,14 +460,14 @@ class SecretManagerViewModel {
                     secretShares = shares,
                     isLoadingShares = false
                 )
-                println("✅ Loaded ${shares.size} shares for secret $secretId")
+                logger.debug(LogCategory.AUTH, "Loaded secret shares", mapOf("count" to shares.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingShares = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load secret shares: $error")
+                logger.error(LogCategory.AUTH, "Failed to load secret shares", error = exception)
             }
         }
     }
@@ -469,7 +482,7 @@ class SecretManagerViewModel {
             val result = SecretService.shareSecret(request)
 
             result.onSuccess {
-                println("✅ Successfully shared secret ${request.secretId}")
+                logger.info(LogCategory.AUTH, "Successfully shared secret")
                 state = state.copy(isOperationInProgress = false)
                 // Reload shares to show the new share
                 loadSecretShares(request.secretId)
@@ -479,7 +492,7 @@ class SecretManagerViewModel {
                     isOperationInProgress = false,
                     errorMessage = error
                 )
-                println("❌ Failed to share secret: $error")
+                logger.error(LogCategory.AUTH, "Failed to share secret", error = exception)
             }
         }
     }
@@ -500,7 +513,7 @@ class SecretManagerViewModel {
             val result = SecretService.unshareSecret(request)
 
             result.onSuccess {
-                println("✅ Successfully revoked access to secret $secretId")
+                logger.info(LogCategory.AUTH, "Successfully revoked secret access")
                 state = state.copy(isOperationInProgress = false)
                 // Reload shares to reflect the change
                 loadSecretShares(secretId)
@@ -510,7 +523,7 @@ class SecretManagerViewModel {
                     isOperationInProgress = false,
                     errorMessage = error
                 )
-                println("❌ Failed to revoke secret access: $error")
+                logger.error(LogCategory.AUTH, "Failed to revoke secret access", error = exception)
             }
         }
     }
@@ -529,14 +542,14 @@ class SecretManagerViewModel {
                     availableUsers = paginatedResult.data,
                     isLoadingUsers = false
                 )
-                println("✅ Loaded ${paginatedResult.data.size} available users for sharing")
+                logger.debug(LogCategory.AUTH, "Loaded available users for sharing", mapOf("count" to paginatedResult.data.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingUsers = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load available users: $error")
+                logger.error(LogCategory.AUTH, "Failed to load available users", error = exception)
             }
         }
     }
@@ -559,14 +572,14 @@ class SecretManagerViewModel {
                     availableUsers = paginatedResult.data,
                     isLoadingUsers = false
                 )
-                println("✅ Search completed: ${paginatedResult.data.size} users found for '$query'")
+                logger.debug(LogCategory.AUTH, "User search completed", mapOf("resultCount" to paginatedResult.data.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingUsers = false,
                     errorMessage = error
                 )
-                println("❌ User search failed: $error")
+                logger.error(LogCategory.AUTH, "User search failed", error = exception)
             }
         }
     }
@@ -585,14 +598,14 @@ class SecretManagerViewModel {
                     availableRoles = roles,
                     isLoadingRoles = false
                 )
-                println("✅ Loaded ${roles.size} available roles for sharing")
+                logger.debug(LogCategory.AUTH, "Loaded available roles for sharing", mapOf("count" to roles.size))
             }.onFailure { exception ->
                 val error = exception.message ?: "Unknown error"
                 state = state.copy(
                     isLoadingRoles = false,
                     errorMessage = error
                 )
-                println("❌ Failed to load available roles: $error")
+                logger.error(LogCategory.AUTH, "Failed to load available roles", error = exception)
             }
         }
     }

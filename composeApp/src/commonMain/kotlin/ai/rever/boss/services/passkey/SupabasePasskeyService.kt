@@ -1,20 +1,25 @@
 package ai.rever.boss.services.passkey
 
 import ai.rever.boss.services.passkey.supabase.*
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 import io.ktor.client.statement.bodyAsText
 
 /**
  * Server-side passkey service that handles backend operations via Supabase
  * Works in conjunction with platform-specific PasskeyService implementations
- * 
+ *
  * This service coordinates various specialized handlers for different passkey operations:
  * - Registration flows via PasskeyRegistrationHandler
- * - Authentication flows via PasskeyAuthenticationHandler  
+ * - Authentication flows via PasskeyAuthenticationHandler
  * - Cross-device URL generation via CrossDeviceUrlGenerator
  * - Data transformation via PasskeyDataMapper
  * - HTTP communication via SupabaseApiClient
  */
 object SupabasePasskeyService {
+
+    private val logger = BossLogger.forComponent("SupabasePasskeyService")
 
     suspend fun requestRegistrationChallenge(
         userId: String,
@@ -107,9 +112,9 @@ object SupabasePasskeyService {
             if (userId.isBlank()) {
                 return Result.failure(IllegalArgumentException("User ID cannot be blank"))
             }
-            
-            println("Fetching passkeys for user: $userId")
-            
+
+            logger.debug(LogCategory.PASSKEY, "Fetching passkeys for user", mapOf("userId" to LogSanitizer.maskUserId(userId)))
+
             val requestData = PasskeyDataMapper.createManagementRequest(
                 action = "list",
                 userId = userId
@@ -117,19 +122,19 @@ object SupabasePasskeyService {
 
             // Call Edge Function for passkey management
             val response = SupabaseApiClient.listPasskeys(requestData)
-            
+
             val responseText = response.bodyAsText()
             val managementResponse = PasskeyDataMapper.parseManagementResponse(responseText)
 
             if (managementResponse.success) {
                 val passkeys = managementResponse.passkeyList()
-                println("Found ${passkeys.size} passkeys for user: $userId")
-                passkeys.forEach {
-                    println("  Passkey: id=${it.id}, credential_id=${it.credential_id}, display_name=${it.display_name}")
-                }
+                logger.info(LogCategory.PASSKEY, "Fetched user passkeys", mapOf(
+                    "userId" to LogSanitizer.maskUserId(userId),
+                    "count" to passkeys.size
+                ))
                 Result.success(passkeys)
             } else {
-                println("Failed to fetch user passkeys: ${managementResponse.error}")
+                logger.warn(LogCategory.PASSKEY, "Failed to fetch user passkeys", mapOf("error" to managementResponse.error))
                 Result.failure(Exception(managementResponse.error ?: "Failed to fetch passkeys"))
             }
         } catch (e: Exception) {
@@ -137,7 +142,7 @@ object SupabasePasskeyService {
             if (e is java.util.concurrent.CancellationException) {
                 return Result.failure(e)
             }
-            println("Failed to fetch user passkeys: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to fetch user passkeys", error = e)
             Result.failure(e)
         }
     }
@@ -153,9 +158,12 @@ object SupabasePasskeyService {
             if (userId.isBlank() || credentialId.isBlank()) {
                 return Result.failure(IllegalArgumentException("User ID and credential ID cannot be blank"))
             }
-            
-            println("Deleting passkey for user: $userId, credential: $credentialId")
-            
+
+            logger.debug(LogCategory.PASSKEY, "Deleting passkey", mapOf(
+                "userId" to LogSanitizer.maskUserId(userId),
+                "credentialId" to LogSanitizer.maskCredentialId(credentialId)
+            ))
+
             val requestData = PasskeyDataMapper.createManagementRequest(
                 action = "delete",
                 userId = userId,
@@ -166,18 +174,20 @@ object SupabasePasskeyService {
             val response = SupabaseApiClient.deletePasskey(requestData)
 
             val responseText = response.bodyAsText()
-            println("Delete passkey response: $responseText")
+            logger.debug(LogCategory.PASSKEY, "Delete passkey response received")
             val managementResponse = PasskeyDataMapper.parseManagementResponse(responseText)
-            
+
             if (managementResponse.success) {
-                println("Passkey deleted successfully for user: $userId, credential: $credentialId")
+                logger.info(LogCategory.PASSKEY, "Passkey deleted successfully", mapOf(
+                    "userId" to LogSanitizer.maskUserId(userId)
+                ))
                 Result.success(Unit)
             } else {
-                println("Failed to delete passkey: ${managementResponse.error}")
+                logger.warn(LogCategory.PASSKEY, "Failed to delete passkey", mapOf("error" to managementResponse.error))
                 Result.failure(Exception(managementResponse.error ?: "Failed to delete passkey"))
             }
         } catch (e: Exception) {
-            println("Failed to delete passkey: ${e.message}")
+            logger.error(LogCategory.PASSKEY, "Failed to delete passkey", error = e)
             Result.failure(e)
         }
     }

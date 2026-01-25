@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
@@ -57,6 +59,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private val topOfMindLogger = BossLogger.forComponent("TopOfMind")
 
 // Data class for active tabs (all types)
 data class ActiveTab(
@@ -255,20 +259,24 @@ object TabTreeBuilder {
                 val layoutPanelIds = extractPanelIds(layout)
                 val runtimePanelIds = tabs.map { it.panelId }.distinct()
 
-                println("🔍 [TopOfMind] Panel ID mapping for workspace '$workspaceName':")
-                println("  Layout panel IDs: $layoutPanelIds")
-                println("  Runtime panel IDs: $runtimePanelIds")
+                topOfMindLogger.debug(LogCategory.UI, "Panel ID mapping for workspace", mapOf(
+                    "workspace" to workspaceName,
+                    "layoutPanelIds" to layoutPanelIds.toString(),
+                    "runtimePanelIds" to runtimePanelIds.toString()
+                ))
 
                 // Validate panel count matches
                 if (layoutPanelIds.size != runtimePanelIds.size) {
-                    println("⚠️ [TopOfMind] Panel count mismatch! Layout: ${layoutPanelIds.size}, Runtime: ${runtimePanelIds.size}")
-                    println("  This may indicate workspace layout has changed. Falling back to flat layout.")
+                    topOfMindLogger.warn(LogCategory.UI, "Panel count mismatch - falling back to flat layout", mapOf(
+                        "layoutCount" to layoutPanelIds.size,
+                        "runtimeCount" to runtimePanelIds.size
+                    ))
                     // Fallback: return empty map to trigger flat layout rendering
                     emptyMap()
                 } else {
                     // Map layout panel IDs to runtime panel IDs by position
                     val mapping = layoutPanelIds.zip(runtimePanelIds).toMap()
-                    println("  Mapping: $mapping")
+                    topOfMindLogger.debug(LogCategory.UI, "Panel mapping created", mapOf("mapping" to mapping.toString()))
                     mapping
                 }
             } else {

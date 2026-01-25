@@ -1,5 +1,7 @@
 package ai.rever.boss.psi
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea
 import java.awt.Color
 import java.awt.Cursor
@@ -17,6 +19,7 @@ import javax.swing.text.Highlighter
  * @property textArea The RSyntaxTextArea to provide highlighting for
  */
 class NavigationHighlighter(private val textArea: RSyntaxTextArea) {
+    private val logger = BossLogger.forComponent("NavigationHighlighter")
 
     /**
      * Current highlight tag (for removal).
@@ -50,11 +53,15 @@ class NavigationHighlighter(private val textArea: RSyntaxTextArea) {
      * @param endOffset End of the range (exclusive)
      */
     fun highlightRange(startOffset: Int, endOffset: Int) {
-        println("[NavigationHighlighter] highlightRange called: $startOffset-$endOffset (docLen=${textArea.document.length})")
+        logger.debug(LogCategory.EDITOR, "highlightRange called", mapOf(
+            "startOffset" to startOffset,
+            "endOffset" to endOffset,
+            "docLen" to textArea.document.length
+        ))
 
         // Validate range
         if (startOffset < 0 || endOffset > textArea.document.length || startOffset >= endOffset) {
-            println("[NavigationHighlighter] Invalid range, skipping")
+            logger.debug(LogCategory.EDITOR, "Invalid range, skipping")
             return
         }
 
@@ -68,14 +75,14 @@ class NavigationHighlighter(private val textArea: RSyntaxTextArea) {
                 endOffset,
                 highlightPainter
             )
-            println("[NavigationHighlighter] Highlight added successfully, tag=$currentHighlightTag")
+            logger.debug(LogCategory.EDITOR, "Highlight added successfully", mapOf("tag" to currentHighlightTag.toString()))
 
             // Change cursor to hand
             textArea.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             isHighlightActive = true
 
         } catch (e: Exception) {
-            println("[NavigationHighlighter] Error adding highlight: ${e.message}")
+            logger.warn(LogCategory.EDITOR, "Error adding highlight", error = e)
         }
     }
 

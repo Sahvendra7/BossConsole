@@ -3,6 +3,8 @@ package ai.rever.boss.updater
 import ai.rever.boss.config.GitHubConfig
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -24,6 +26,8 @@ import java.io.FileOutputStream
 import java.util.*
 
 actual class UpdateService {
+
+    private val logger = BossLogger.forComponent("UpdateService")
     
     // HTTP client for GitHub API calls - fast timeouts
     private val apiClient = HttpClient(CIO) {
@@ -90,8 +94,7 @@ actual class UpdateService {
 
             // If 401 error with token, fall back to unauthenticated
             if (authenticatedResponse.status.value == 401) {
-                println("⚠️ Authenticated request failed (token expired/invalid)")
-                println("   Retrying without authentication (public repo access)...")
+                logger.warn(LogCategory.NETWORK, "Authenticated request failed - retrying without auth")
                 // Fall through to unauthenticated request
             } else {
                 // Other error, return it
@@ -113,22 +116,21 @@ actual class UpdateService {
             // Single token retrieval with validation
             val authContext = GitHubConfig.getAuthContext()
 
-            // Accurate status message
+            // Log API status
             when {
                 authContext.isAuthenticated -> {
-                    println("✅ Using authenticated GitHub API (${authContext.rateLimit} requests/hour)")
-                    println("   Token source: ${authContext.source}")
-                    println("   Note: Public repo - will fallback to unauthenticated if token fails")
+                    logger.debug(LogCategory.NETWORK, "Using authenticated GitHub API", mapOf(
+                        "rateLimit" to authContext.rateLimit,
+                        "source" to authContext.source
+                    ))
                 }
                 authContext.token != null && !authContext.isValid -> {
-                    println("⚠️ GitHub token found but format is invalid")
-                    println("   Using unauthenticated API (60 requests/hour)")
-                    println("   Token source: ${authContext.source}")
+                    logger.warn(LogCategory.NETWORK, "GitHub token found but format is invalid", mapOf(
+                        "source" to authContext.source
+                    ))
                 }
                 else -> {
-                    println("ℹ️ Using unauthenticated GitHub API (60 requests/hour)")
-                    println("   Public repo access - no authentication needed")
-                    println("   Optional: Add GITHUB_TOKEN for higher rate limits (5,000/hour)")
+                    logger.debug(LogCategory.NETWORK, "Using unauthenticated GitHub API (60 req/hr)")
                 }
             }
 
@@ -145,7 +147,7 @@ actual class UpdateService {
                         "GitHub API rate limit exceeded. Please try again later."
                     else -> "Unable to check for updates (HTTP ${response.status.value})"
                 }
-                println("Update check failed: $errorMessage")
+                logger.warn(LogCategory.NETWORK, "Update check failed", mapOf("error" to errorMessage))
                 return UpdateInfo(
                     available = false,
                     currentVersion = Version.CURRENT,
@@ -189,8 +191,11 @@ actual class UpdateService {
             // Find the appropriate asset for the current platform
             val platform = getCurrentPlatform()
             val expectedAssetName = getExpectedAssetName(latestVersion)
-            println("Looking for asset: $expectedAssetName (platform: $platform)")
-            println("Available assets: ${latestRelease.assets.map { it.name }}")
+            logger.debug(LogCategory.SYSTEM, "Looking for update asset", mapOf(
+                "expected" to expectedAssetName,
+                "platform" to platform,
+                "available" to latestRelease.assets.map { it.name }.joinToString()
+            ))
 
             var asset = latestRelease.assets.find {
                 it.name.equals(expectedAssetName, ignoreCase = true)
@@ -199,16 +204,16 @@ actual class UpdateService {
             // Fallback: If platform-specific package (.deb/.rpm) not found, try JAR
             if (asset == null && (platform == "Linux-deb" || platform == "Linux-rpm")) {
                 val jarAssetName = "BOSS-${latestVersion}-${getLinuxArchSuffix()}.jar"
-                println("Platform package not found, trying JAR fallback: $jarAssetName")
+                logger.debug(LogCategory.SYSTEM, "Platform package not found, trying JAR fallback", mapOf("jarAsset" to jarAssetName))
                 asset = latestRelease.assets.find {
                     it.name.equals(jarAssetName, ignoreCase = true)
                 }
             }
 
             if (asset == null) {
-                println("Warning: Expected asset '$expectedAssetName' not found in release")
+                logger.warn(LogCategory.SYSTEM, "Expected asset not found in release", mapOf("expected" to expectedAssetName))
             } else {
-                println("Found asset: ${asset.name} with download URL: ${asset.browser_download_url}")
+                logger.debug(LogCategory.SYSTEM, "Found update asset", mapOf("name" to asset.name))
             }
             
             UpdateInfo(
@@ -232,7 +237,7 @@ actual class UpdateService {
                     "Error parsing update information. Please try again later."
                 else -> "Unable to check for updates: ${e.message?.take(100) ?: "Unknown error"}"
             }
-            println("Error checking for updates: $errorMessage")
+            logger.error(LogCategory.NETWORK, "Error checking for updates", mapOf("error" to errorMessage))
 
             UpdateInfo(
                 available = false,
@@ -250,17 +255,21 @@ actual class UpdateService {
         return try {
             val downloadUrl = updateInfo.downloadUrl
             if (downloadUrl == null) {
-                println("Error: No download URL available for asset: ${updateInfo.assetName}")
+                logger.error(LogCategory.NETWORK, "No download URL available", mapOf("asset" to updateInfo.assetName))
                 return null
             }
-            
-            println("Starting download from: $downloadUrl")
-            println("Expected asset: ${updateInfo.assetName} (${updateInfo.assetSize} bytes)")
-            println("Download timeout configuration: request=15min, connect=30s, socket=60s")
+
+            logger.info(LogCategory.SYSTEM, "Starting update download", mapOf(
+                "asset" to updateInfo.assetName,
+                "size" to updateInfo.assetSize
+            ))
 
             val response = downloadClient.get(downloadUrl)
             if (response.status.value !in 200..299) {
-                println("Download failed with HTTP status: ${response.status.value} ${response.status.description}")
+                logger.error(LogCategory.NETWORK, "Download failed", mapOf(
+                    "status" to response.status.value,
+                    "description" to response.status.description
+                ))
                 return null
             }
             
@@ -273,8 +282,8 @@ actual class UpdateService {
             if (downloadFile.exists()) {
                 downloadFile.delete()
             }
-            
-            println("Download info: totalSize=$totalSize, expectedSize=${updateInfo.assetSize}")
+
+            logger.trace(LogCategory.SYSTEM, "Download info", mapOf("totalSize" to totalSize, "expectedSize" to updateInfo.assetSize))
             
             withContext(Dispatchers.IO) {
                 val channel = response.bodyAsChannel()
@@ -307,18 +316,19 @@ actual class UpdateService {
                         if (shouldUpdateProgress) {
                             val progress = if (totalSize > 0) {
                                 val currentProgress = (downloadedBytes.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
-                                // Log only major progress milestones for performance
-                                if (currentProgress * 100 % 10 < 5) {
-                                    println("Progress: ${(currentProgress * 100).toInt()}% (${downloadedBytes / 1024}KB / ${totalSize / 1024}KB)")
+                                // Log only major progress milestones (every 25%)
+                                val progressPct = (currentProgress * 100).toInt()
+                                if (progressPct % 25 == 0 && progressPct > 0) {
+                                    logger.trace(LogCategory.SYSTEM, "Download progress", mapOf(
+                                        "percent" to progressPct,
+                                        "downloadedKB" to (downloadedBytes / 1024),
+                                        "totalKB" to (totalSize / 1024)
+                                    ))
                                 }
                                 currentProgress
                             } else {
                                 // Indeterminate progress - cycle between 0.1 and 0.9
                                 val cyclicProgress = 0.1f + (downloadedBytes / 1048576f % 0.8f)
-                                // Log every MB for indeterminate progress
-                                if (downloadedBytes / 1048576 != lastProgressUpdate / 1048576) {
-                                    println("Progress: ${downloadedBytes / 1024}KB downloaded (indeterminate)")
-                                }
                                 cyclicProgress
                             }
                             
@@ -343,21 +353,21 @@ actual class UpdateService {
             }
             
             if (downloadFile.exists() && downloadFile.length() > 0) {
-                println("Update downloaded successfully: ${downloadFile.absolutePath}")
+                logger.info(LogCategory.SYSTEM, "Update downloaded successfully", mapOf("path" to downloadFile.absolutePath))
                 downloadFile.absolutePath
             } else {
-                println("Download failed: file is empty or doesn't exist")
+                logger.error(LogCategory.SYSTEM, "Download failed - file is empty or doesn't exist")
                 null
             }
-            
+
         } catch (e: Exception) {
             val errorMessage = when (e) {
-                is HttpRequestTimeoutException -> "Download timeout: File too large or connection too slow. Please try again with a faster connection."
-                is ConnectTimeoutException -> "Connection timeout: Unable to reach download server. Check your internet connection."
-                is SocketTimeoutException -> "Network timeout: Download interrupted. Check your network stability."
+                is HttpRequestTimeoutException -> "Download timeout: File too large or connection too slow"
+                is ConnectTimeoutException -> "Connection timeout: Unable to reach download server"
+                is SocketTimeoutException -> "Network timeout: Download interrupted"
                 else -> e.message ?: "Unknown error"
             }
-            println("Error downloading update: $errorMessage")
+            logger.error(LogCategory.NETWORK, "Error downloading update", mapOf("error" to errorMessage))
             null
         }
     }
@@ -368,12 +378,11 @@ actual class UpdateService {
 
         return when (result) {
             is InstallResult.Success -> {
-                println("✅ ${result.message}")
+                logger.info(LogCategory.SYSTEM, "Update installed successfully", mapOf("message" to result.message))
                 true
             }
             is InstallResult.RequiresRestart -> {
-                println("🔄 ${result.message}")
-                println("   Helper script is waiting for app to quit...")
+                logger.info(LogCategory.SYSTEM, "Update requires restart", mapOf("message" to result.message))
 
                 // The helper script is now running and waiting for this process to exit
                 // We need to quit the app so the script can proceed with installation
@@ -389,7 +398,7 @@ actual class UpdateService {
                 true
             }
             is InstallResult.Error -> {
-                println("❌ ${result.message}")
+                logger.error(LogCategory.SYSTEM, "Update installation failed", mapOf("error" to result.message))
                 false
             }
         }
@@ -437,7 +446,7 @@ actual class UpdateService {
                 val response = makeGitHubRequest(url, authContext)
 
                 if (response.status.value !in 200..299) {
-                    println("Failed to fetch releases page $page: HTTP ${response.status.value}")
+                    logger.warn(LogCategory.NETWORK, "Failed to fetch releases page", mapOf("page" to page, "status" to response.status.value))
                     break
                 }
 
@@ -472,12 +481,12 @@ actual class UpdateService {
                         )
                     } else null
                 } catch (e: Exception) {
-                    println("Failed to parse release ${release.tag_name}: ${e.message}")
+                    logger.warn(LogCategory.NETWORK, "Failed to parse release", mapOf("tag" to release.tag_name), error = e)
                     null
                 }
             }
         } catch (e: Exception) {
-            println("Error fetching all releases: ${e.message}")
+            logger.error(LogCategory.NETWORK, "Error fetching all releases", error = e)
             emptyList()
         }
     }
@@ -492,7 +501,7 @@ actual class UpdateService {
             val response = makeGitHubRequest("$RELEASES_ENDPOINT/tags/$tagName", authContext)
 
             if (response.status.value !in 200..299) {
-                println("Failed to fetch version $version: HTTP ${response.status.value}")
+                logger.warn(LogCategory.NETWORK, "Failed to fetch version details", mapOf("version" to version.toString(), "status" to response.status.value))
                 return@withContext null
             }
 
@@ -512,7 +521,7 @@ actual class UpdateService {
                 assetName = asset?.name ?: ""
             )
         } catch (e: Exception) {
-            println("Error fetching version $version details: ${e.message}")
+            logger.error(LogCategory.NETWORK, "Error fetching version details", mapOf("version" to version.toString()), error = e)
             null
         }
     }

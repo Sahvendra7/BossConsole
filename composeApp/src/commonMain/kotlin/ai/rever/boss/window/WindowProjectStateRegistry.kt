@@ -1,9 +1,13 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.panels.left_top.Project
 import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
+
+private val windowProjectStateLogger = BossLogger.forComponent("WindowProjectStateRegistry")
 
 /**
  * Helper function to select a project using window-specific state.
@@ -16,7 +20,7 @@ fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Proj
     if (windowProjectState != null) {
         windowProjectState.selectProject(project)
     } else {
-        println("Warning: selectProjectInWindow called without window state - project selection ignored")
+        windowProjectStateLogger.warn(LogCategory.UI, "selectProjectInWindow called without window state - project selection ignored")
     }
 }
 
@@ -47,7 +51,7 @@ object WindowProjectStateRegistry {
     fun register(windowId: String): WindowProjectState {
         val state = WindowProjectState(windowId)
         _states[windowId] = state
-        println("WindowProjectStateRegistry: Registered state for window: $windowId")
+        windowProjectStateLogger.debug(LogCategory.UI, "Registered state for window", mapOf("windowId" to windowId))
         return state
     }
 
@@ -61,7 +65,7 @@ object WindowProjectStateRegistry {
      */
     fun getOrCreate(windowId: String): WindowProjectState =
         _states.getOrPut(windowId) {
-            println("WindowProjectStateRegistry: Creating new state for window: $windowId")
+            windowProjectStateLogger.debug(LogCategory.UI, "Creating new state for window", mapOf("windowId" to windowId))
             WindowProjectState(windowId)
         }
 
@@ -70,7 +74,7 @@ object WindowProjectStateRegistry {
      */
     fun unregister(windowId: String) {
         _states.remove(windowId)
-        println("WindowProjectStateRegistry: Unregistered state for window: $windowId")
+        windowProjectStateLogger.debug(LogCategory.UI, "Unregistered state for window", mapOf("windowId" to windowId))
     }
 
     /**

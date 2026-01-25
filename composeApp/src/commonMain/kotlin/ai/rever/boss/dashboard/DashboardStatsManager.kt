@@ -1,5 +1,7 @@
 package ai.rever.boss.dashboard
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,6 +18,8 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+
+private val dashboardStatsLogger = BossLogger.forComponent("DashboardStatsManager")
 
 /**
  * Data class for daily activity tracking.
@@ -84,10 +88,10 @@ object DashboardStatsManager {
                 val content = settingsFile.readText()
                 val data = json.decodeFromString<DashboardStats>(content)
                 _stats.value = data
-                println("[DashboardStatsManager] Loaded stats")
+                dashboardStatsLogger.debug(LogCategory.SYSTEM, "Loaded stats")
             }
         } catch (e: Exception) {
-            println("[DashboardStatsManager] Error loading: ${e.message}")
+            dashboardStatsLogger.warn(LogCategory.SYSTEM, "Error loading stats", error = e)
         }
     }
 
@@ -112,7 +116,7 @@ object DashboardStatsManager {
             val content = json.encodeToString(DashboardStats.serializer(), _stats.value)
             settingsFile.writeText(content)
         } catch (e: Exception) {
-            println("[DashboardStatsManager] Error saving: ${e.message}")
+            dashboardStatsLogger.warn(LogCategory.SYSTEM, "Error saving stats", error = e)
         }
     }
 

@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -17,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private val adminPanelLogger = BossLogger.forComponent("AdminRoleManagementPanel")
 
 /**
  * Panel info for Admin Role Management
@@ -92,7 +96,7 @@ class AdminRoleManagementComponent(
  * - Guarantees exactly one register/unregister per status change
  */
 fun DefaultPlugin.registerAdminRoleManagement() {
-    println("🔧 [AdminPanel] Initializing admin panel registration")
+    adminPanelLogger.debug(LogCategory.UI, "Initializing admin panel registration")
 
     // Observe auth state and dynamically register/unregister panel
     // Use pluginScope instead of GlobalScope to tie the lifecycle to the plugin
@@ -102,17 +106,17 @@ fun DefaultPlugin.registerAdminRoleManagement() {
             .distinctUntilChanged()  // Only emit when admin status actually changes
             .collect { isAdmin ->
                 val user = AuthStateManager.currentUser.value
-                println("🔧 [AdminPanel] Admin status changed: isAdmin=$isAdmin, user=${user?.email}")
+                adminPanelLogger.debug(LogCategory.UI, "Admin status changed", mapOf("isAdmin" to isAdmin, "user" to (user?.email ?: "null")))
 
                 if (isAdmin) {
                     // User is admin - register panel
-                    println("✅ [AdminPanel] Registering admin panel for ${user?.email}")
+                    adminPanelLogger.info(LogCategory.UI, "Registering admin panel", mapOf("user" to (user?.email ?: "unknown")))
                     panelRegistry.registerPanel(AdminRoleManagementInfo) { ctx, panelInfo ->
                         AdminRoleManagementComponent(ctx, panelInfo)
                     }
                 } else {
                     // User is not admin - unregister panel
-                    println("❌ [AdminPanel] Unregistering admin panel")
+                    adminPanelLogger.info(LogCategory.UI, "Unregistering admin panel")
                     panelRegistry.unregisterPanel(AdminRoleManagementInfo.id)
                 }
             }

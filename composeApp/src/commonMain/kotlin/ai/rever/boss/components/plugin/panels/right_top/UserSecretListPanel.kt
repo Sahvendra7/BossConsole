@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.model.Panel.Companion.bottom
 import ai.rever.boss.components.model.Panel.Companion.right
 import ai.rever.boss.components.model.Panel.Companion.top
@@ -17,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private val userSecretListLogger = BossLogger.forComponent("UserSecretListPanel")
 
 /**
  * Panel info for User Secret List (Read-Only)
@@ -89,7 +93,7 @@ class UserSecretListComponent(
  * - Guarantees exactly one register/unregister per status change
  */
 fun DefaultPlugin.registerUserSecretList() {
-    println("🔧 [UserSecretListPanel] Initializing user secret list panel registration")
+    userSecretListLogger.debug(LogCategory.UI, "Initializing user secret list panel registration")
 
     // Observe auth state and dynamically register/unregister panel
     // Use pluginScope instead of GlobalScope to tie the lifecycle to the plugin
@@ -104,17 +108,17 @@ fun DefaultPlugin.registerUserSecretList() {
             .distinctUntilChanged()  // Only emit when auth status actually changes
             .collect { hasAccess ->
                 val user = AuthStateManager.currentUser.value
-                println("🔧 [UserSecretListPanel] Auth status changed: hasAccess=$hasAccess, user=${user?.email}")
+                userSecretListLogger.debug(LogCategory.UI, "Auth status changed", mapOf("hasAccess" to hasAccess, "user" to (user?.email ?: "null")))
 
                 if (hasAccess) {
                     // User is authenticated - register panel
-                    println("✅ [UserSecretListPanel] Registering user secret list panel for ${user?.email}")
+                    userSecretListLogger.info(LogCategory.UI, "Registering user secret list panel", mapOf("user" to (user?.email ?: "unknown")))
                     panelRegistry.registerPanel(UserSecretListInfo) { ctx, panelInfo ->
                         UserSecretListComponent(ctx, panelInfo)
                     }
                 } else {
                     // User is not authenticated - unregister panel
-                    println("❌ [UserSecretListPanel] Unregistering user secret list panel")
+                    userSecretListLogger.info(LogCategory.UI, "Unregistering user secret list panel")
                     panelRegistry.unregisterPanel(UserSecretListInfo.id)
                 }
             }

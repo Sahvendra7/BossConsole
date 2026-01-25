@@ -1,5 +1,7 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +15,7 @@ import java.io.File
  * Manages run configurations with JSON persistence in ~/.boss/run-configurations.json
  */
 actual object RunConfigurationManager {
+    private val logger = BossLogger.forComponent("RunConfigurationManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/run-configurations.json")
     private val json = Json {
         prettyPrint = true
@@ -60,18 +63,18 @@ actual object RunConfigurationManager {
                 val cleanedSettings = settings.copy(configurations = withUniqueNames)
                 _currentSettings.value = cleanedSettings
 
-                println("[Run] Loaded ${cleanedSettings.configurations.size} configurations from ${settingsFile.absolutePath}")
+                logger.debug(LogCategory.SYSTEM, "Loaded run configurations", mapOf("count" to cleanedSettings.configurations.size, "path" to settingsFile.absolutePath))
 
                 // Save cleaned settings if we deduplicated anything
                 if (deduplicated.size != settings.configurations.size) {
                     settingsFile.writeText(json.encodeToString(RunConfigurationSettings.serializer(), cleanedSettings))
-                    println("[Run] Cleaned up ${settings.configurations.size - deduplicated.size} duplicate configurations")
+                    logger.debug(LogCategory.SYSTEM, "Cleaned up duplicate run configurations", mapOf("removed" to (settings.configurations.size - deduplicated.size)))
                 }
             } else {
-                println("[Run] No settings file found, starting with empty configurations")
+                logger.debug(LogCategory.SYSTEM, "No settings file found, starting with empty configurations")
             }
         } catch (e: Exception) {
-            println("[Run] Failed to load settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to load run settings", error = e)
             _currentSettings.value = RunConfigurationSettings()
         }
     }
@@ -112,15 +115,15 @@ actual object RunConfigurationManager {
         // Clear previous detections to prevent memory leak on project switches
         _detectedConfigurations.value = emptyList()
         try {
-            println("[Run] Scanning project: $projectPath")
+            logger.debug(LogCategory.SYSTEM, "Scanning project for run configurations", mapOf("path" to projectPath))
             val detected = detector.scanProject(projectPath)
             val detectedWithUniqueNames = makeNamesUnique(detected, projectPath)
             _detectedConfigurations.value = detectedWithUniqueNames
-            println("[Run] Found ${detectedWithUniqueNames.size} runnable configurations")
+            logger.debug(LogCategory.SYSTEM, "Found runnable configurations", mapOf("count" to detectedWithUniqueNames.size))
             // Don't auto-select - user must choose from dropdown
         } catch (e: Exception) {
             val errorMsg = "Failed to scan project: ${e.message}"
-            println("[Run] $errorMsg")
+            logger.warn(LogCategory.SYSTEM, "Failed to scan project", error = e)
             _lastError.value = errorMsg
         } finally {
             _isScanning.value = false
@@ -176,7 +179,7 @@ actual object RunConfigurationManager {
         // Check if configuration with same filePath already exists
         val existingByPath = current.configurations.find { it.filePath == config.filePath }
         if (existingByPath != null) {
-            println("[Run] Configuration for '${config.filePath}' already exists, skipping")
+            logger.debug(LogCategory.SYSTEM, "Configuration already exists, skipping", mapOf("filePath" to config.filePath))
             return
         }
 
@@ -193,7 +196,7 @@ actual object RunConfigurationManager {
         )
         _currentSettings.value = updated
         saveSettings()
-        println("[Run] Added configuration: ${configWithUniqueName.name}")
+        logger.debug(LogCategory.SYSTEM, "Added run configuration", mapOf("name" to configWithUniqueName.name))
     }
 
     /**
@@ -257,9 +260,9 @@ actual object RunConfigurationManager {
         try {
             val content = json.encodeToString(RunConfigurationSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[Run] Settings saved to ${settingsFile.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Run settings saved", mapOf("path" to settingsFile.absolutePath))
         } catch (e: Exception) {
-            println("[Run] Failed to save settings: ${e.message}")
+            logger.warn(LogCategory.SYSTEM, "Failed to save run settings", error = e)
         }
     }
 }

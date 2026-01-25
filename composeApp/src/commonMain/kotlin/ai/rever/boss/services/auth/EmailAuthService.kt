@@ -4,32 +4,37 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.auth.OtpType
 import ai.rever.boss.services.supabase.SupabaseConfig
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.utils.logging.LogSanitizer
 
 /**
  * Handles email-based authentication operations
  */
 internal object EmailAuthService {
 
+    private val logger = BossLogger.forComponent("EmailAuthService")
+
     /**
      * Mark email as verified - called when deep link indicates successful verification
      */
     suspend fun verifyEmail(token: String, type: String = "magiclink"): Result<Unit> {
         return try {
-            println("Email verification confirmed via deep link with token: $token, type: $type")
+            logger.info(LogCategory.AUTH, "Email verification confirmed via deep link", mapOf("type" to type))
             
             // Use our magic link verification method with the correct type
             verifyMagicLinkToken(token, type = type).fold(
-                onSuccess = { 
-                    println("Magic link verification successful")
+                onSuccess = {
+                    logger.info(LogCategory.AUTH, "Magic link verification successful")
                     Result.success(Unit)
                 },
                 onFailure = { error ->
-                    println("Magic link verification failed: ${error.message}")
+                    logger.warn(LogCategory.AUTH, "Magic link verification failed", error = error)
                     Result.failure(error)
                 }
             )
         } catch (e: Exception) {
-            println("Email verification processing failed: ${e.message}")
+            logger.error(LogCategory.AUTH, "Email verification processing failed", error = e)
             Result.failure(Exception("Failed to process email verification: ${e.message}"))
         }
     }
@@ -41,9 +46,9 @@ internal object EmailAuthService {
      */
     suspend fun sendMagicLink(email: String): Result<Unit> {
         return try {
-            println("Sending magic link to email: $email")
-            println("Supabase URL: ${SupabaseConfig.client.supabaseUrl}")
-            
+            logger.info(LogCategory.AUTH, "Sending magic link", mapOf("email" to LogSanitizer.maskEmail(email)))
+            logger.debug(LogCategory.AUTH, "Using Supabase endpoint", mapOf("url" to SupabaseConfig.client.supabaseUrl))
+
             // signInWith(OTP) handles multiple cases:
             // 1. New user - creates unconfirmed user and sends signup link
             // 2. Existing confirmed user - sends login link
@@ -54,12 +59,11 @@ internal object EmailAuthService {
                 // - If user doesn't exist, create them (signup)
                 // - If user exists (confirmed or not), just send the link
             }
-            
-            println("Magic link sent successfully!")
+
+            logger.info(LogCategory.AUTH, "Magic link sent successfully")
             Result.success(Unit)
         } catch (e: Exception) {
-            println("Magic link sending failed with exception: ${e.javaClass.simpleName}")
-            println("Error message: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Magic link sending failed", mapOf("exceptionType" to e.javaClass.simpleName), error = e)
             
             val errorMessage = when {
                 e.message?.contains("User not found") == true -> 
@@ -80,12 +84,12 @@ internal object EmailAuthService {
      */
     suspend fun verifyMagicLinkToken(token: String, email: String? = null, type: String = "magiclink"): Result<Boolean> {
         return try {
-            println("========== MAGIC LINK VERIFICATION DEBUG ==========")
-            println("Token: $token")
-            println("Token length: ${token.length}")
-            println("Email provided: ${email ?: "None"}")
-            println("Type: $type")
-            
+            logger.debug(LogCategory.AUTH, "Starting magic link verification", mapOf(
+                "type" to type,
+                "hasEmail" to (email != null),
+                "tokenLength" to token.length
+            ))
+
             // Try using the SDK's verifyEmailOtp with tokenHash
             // Magic links use token_hash verification
             val otpType = when(type) {
@@ -95,13 +99,13 @@ internal object EmailAuthService {
                 "invite" -> OtpType.Email.INVITE
                 else -> OtpType.Email.EMAIL
             }
-            
-            println("Mapped to OtpType: $otpType")
-            
+
+            logger.debug(LogCategory.AUTH, "Mapped OTP type", mapOf("otpType" to otpType.toString()))
+
             // The SDK should handle the session properly
             // For magic links, we need the email address
             if (email != null) {
-                println("Using verifyEmailOtp with email='$email' and token")
+                logger.debug(LogCategory.AUTH, "Verifying with email", mapOf("email" to LogSanitizer.maskEmail(email)))
                 // Use the version with email and token
                 SupabaseConfig.client.auth.verifyEmailOtp(
                     type = otpType,
@@ -109,34 +113,33 @@ internal object EmailAuthService {
                     token = token
                 )
             } else {
-                println("Using verifyEmailOtp with tokenHash (no email provided)")
+                logger.debug(LogCategory.AUTH, "Verifying with tokenHash (no email)")
                 // Fallback to tokenHash version if no email provided
                 SupabaseConfig.client.auth.verifyEmailOtp(
                     type = otpType,
                     tokenHash = token
                 )
             }
-            
-            println("SDK verifyEmailOtp completed successfully")
-            
+
+            logger.info(LogCategory.AUTH, "SDK verifyEmailOtp completed successfully")
+
             // Check if we have a session now
             val currentSession = SupabaseConfig.client.auth.currentSessionOrNull()
-            println("Current session after verification: ${if (currentSession != null) "EXISTS" else "NULL"}")
-            if (currentSession != null) {
-                println("Session user: ${currentSession.user?.email}")
-                println("Session access token: ${currentSession.accessToken.take(20)}...")
-            }
-            
+            val hasSession = currentSession != null
+            logger.debug(LogCategory.AUTH, "Session state after verification", mapOf(
+                "hasSession" to hasSession,
+                "userEmail" to (currentSession?.user?.email?.let { LogSanitizer.maskEmail(it) } ?: "none")
+            ))
+
             // Mark that user authenticated via magic link
             AuthStateManager.setAuthenticatedViaMagicLink(true)
-            println("Marked user as authenticated via magic link")
-            println("========== VERIFICATION COMPLETE ==========")
+            logger.info(LogCategory.AUTH, "Magic link verification complete")
             
             Result.success(true)
         } catch (e: Exception) {
-            println("========== VERIFICATION FAILED ==========")
-            println("Exception type: ${e::class.simpleName}")
-            println("Error message: ${e.message}")
+            logger.warn(LogCategory.AUTH, "Magic link verification failed", mapOf(
+                "exceptionType" to (e::class.simpleName ?: "unknown")
+            ), error = e)
             
             val errorMessage = when {
                 e.message?.contains("Invalid token") == true -> 

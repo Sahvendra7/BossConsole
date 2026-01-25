@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent as AwtKeyEvent
@@ -45,6 +47,7 @@ import javax.swing.KeyStroke
  * - F3/Shift+F3: Find Next/Previous
  */
 object RSyntaxKeyboardBridge {
+    private val logger = BossLogger.forComponent("RSyntaxKeyboardBridge")
 
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
 
@@ -285,7 +288,7 @@ object RSyntaxKeyboardBridge {
      * Debug utility: Lists all current key bindings in the text area.
      */
     fun debugPrintKeyBindings(textArea: RSyntaxTextArea) {
-        println("=== RSyntaxTextArea Key Bindings ===")
+        logger.debug(LogCategory.UI, "=== RSyntaxTextArea Key Bindings ===")
 
         val inputMap = textArea.getInputMap(JComponent.WHEN_FOCUSED)
         val actionMap = textArea.actionMap
@@ -293,10 +296,14 @@ object RSyntaxKeyboardBridge {
         inputMap.allKeys()?.forEach { keyStroke ->
             val actionKey = inputMap.get(keyStroke)
             val action = actionMap.get(actionKey)
-            println("  $keyStroke -> $actionKey (${action?.javaClass?.simpleName ?: "null"})")
+            logger.debug(LogCategory.UI, "Key binding", mapOf(
+                "keyStroke" to keyStroke.toString(),
+                "actionKey" to actionKey.toString(),
+                "action" to (action?.javaClass?.simpleName ?: "null")
+            ))
         }
 
-        println("====================================")
+        logger.debug(LogCategory.UI, "====================================")
     }
 }
 

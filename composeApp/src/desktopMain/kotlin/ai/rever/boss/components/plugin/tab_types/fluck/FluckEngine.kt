@@ -1,6 +1,8 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.platform.FileNameSanitizer
 import ai.rever.boss.platform.MacOSScreenCapture
 import ai.rever.boss.platform.FileSystemUtils
@@ -40,6 +42,7 @@ sealed class EngineInitError {
 
 // Singleton engine for all browser tabs
 object FluckEngine {
+    private val logger = BossLogger.forComponent("FluckEngine")
     private var _engine: Engine? = null
     private var initializationError: Throwable? = null
     private var attemptCount = 0
@@ -866,7 +869,7 @@ object FluckEngine {
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_N,
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_T,
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_W -> {
-                                println("FluckEngine: No window focused, cannot dispatch $modifierName+${keyCode.name} shortcut")
+                                logger.debug(LogCategory.BROWSER, "No window focused, cannot dispatch shortcut", mapOf("shortcut" to "$modifierName+${keyCode.name}"))
                             }
                             else -> { /* Not a handled shortcut, no logging needed */ }
                         }
@@ -896,7 +899,7 @@ object FluckEngine {
                         when (keyCode) {
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F,
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_S -> {
-                                println("FluckEngine: No window focused, cannot dispatch $modifierName+Shift+${keyCode.name} shortcut")
+                                logger.debug(LogCategory.BROWSER, "No window focused, cannot dispatch shortcut", mapOf("shortcut" to "$modifierName+Shift+${keyCode.name}"))
                             }
                             else -> { /* Not a handled shortcut, no logging needed */ }
                         }

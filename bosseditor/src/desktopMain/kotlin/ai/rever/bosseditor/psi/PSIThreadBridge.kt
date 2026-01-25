@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.psi
 
+import ai.rever.bosseditor.lsp.logging.LogCategory
+import ai.rever.bosseditor.lsp.logging.LspLogger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -29,6 +31,7 @@ import kotlin.concurrent.write
  * ```
  */
 object PSIThreadBridge {
+    private val logger = LspLogger.forComponent("PSIThreadBridge")
 
     /**
      * Dedicated thread pool for PSI operations.
@@ -118,7 +121,7 @@ object PSIThreadBridge {
         try {
             psiExecutor.close()
         } catch (e: Exception) {
-            println("[PSI] Error shutting down thread pool: ${e.message}")
+            logger.warn(LogCategory.GENERAL, "Error shutting down thread pool", error = e)
         }
     }
 }

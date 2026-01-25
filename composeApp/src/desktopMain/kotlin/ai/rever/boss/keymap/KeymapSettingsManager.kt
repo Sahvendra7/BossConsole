@@ -1,5 +1,7 @@
 package ai.rever.boss.keymap
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.keymap.model.KeymapSettings
 import ai.rever.boss.keymap.presets.KeymapPresets
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,7 @@ import java.io.File
  * - Graceful error handling with fallback to defaults
  */
 actual object KeymapSettingsManager {
+    private val logger = BossLogger.forComponent("KeymapSettingsManager")
     private val settingsFile = File(System.getProperty("user.home"), ".boss/keymap-settings.json")
     private val json = Json {
         prettyPrint = true
@@ -47,7 +50,7 @@ actual object KeymapSettingsManager {
             if (settingsFile.exists()) {
                 val content = settingsFile.readText()
                 val loaded = json.decodeFromString<KeymapSettings>(content)
-                println("[Keymap] Loaded settings from ${settingsFile.absolutePath}")
+                logger.debug(LogCategory.SYSTEM, "Loaded keymap settings", mapOf("path" to settingsFile.absolutePath))
 
                 // Apply migration to add any new actions from preset
                 val migrated = migrateSettings(loaded)
@@ -57,16 +60,16 @@ actual object KeymapSettingsManager {
                     try {
                         val migratedContent = json.encodeToString(KeymapSettings.serializer(), migrated)
                         settingsFile.writeText(migratedContent)
-                        println("[Keymap] Migrated settings saved to ${settingsFile.absolutePath}")
+                        logger.debug(LogCategory.SYSTEM, "Migrated keymap settings saved")
                     } catch (e: Exception) {
-                        println("[Keymap] Warning: Could not save migrated settings: ${e.message}")
+                        logger.warn(LogCategory.SYSTEM, "Could not save migrated keymap settings", error = e)
                     }
                 }
 
                 _currentSettings.value = migrated
             } else {
                 // First run - create default keymap file
-                println("[Keymap] No settings file found, creating default keymap")
+                logger.debug(LogCategory.SYSTEM, "No keymap settings file found, creating default")
                 val defaultSettings = KeymapPresets.getBOSSDefault()
                 _currentSettings.value = defaultSettings
 
@@ -74,14 +77,13 @@ actual object KeymapSettingsManager {
                 try {
                     val content = json.encodeToString(KeymapSettings.serializer(), defaultSettings)
                     settingsFile.writeText(content)
-                    println("[Keymap] Created default settings file at ${settingsFile.absolutePath}")
+                    logger.debug(LogCategory.SYSTEM, "Created default keymap settings file", mapOf("path" to settingsFile.absolutePath))
                 } catch (e: Exception) {
-                    println("[Keymap] Warning: Could not write default settings file: ${e.message}")
+                    logger.warn(LogCategory.SYSTEM, "Could not write default keymap settings file", error = e)
                 }
             }
         } catch (e: Exception) {
-            println("[Keymap] Failed to load settings: ${e.message}")
-            println("[Keymap] Falling back to default keymap")
+            logger.error(LogCategory.SYSTEM, "Failed to load keymap settings, using defaults", error = e)
             _currentSettings.value = KeymapPresets.getBOSSDefault()
         }
     }
@@ -112,7 +114,10 @@ actual object KeymapSettingsManager {
             return loaded // No migration needed
         }
 
-        println("[Keymap] Migrating settings: adding ${missingActions.size} new action(s): ${missingActions.keys.joinToString()}")
+        logger.info(LogCategory.SYSTEM, "Migrating keymap settings", mapOf(
+            "newActions" to missingActions.size,
+            "actionIds" to missingActions.keys.joinToString()
+        ))
 
         // Merge: user settings + missing actions from preset
         val mergedShortcuts = loaded.shortcuts + missingActions
@@ -127,9 +132,9 @@ actual object KeymapSettingsManager {
         try {
             val content = json.encodeToString(KeymapSettings.serializer(), _currentSettings.value)
             settingsFile.writeText(content)
-            println("[Keymap] Settings saved to ${settingsFile.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Keymap settings saved")
         } catch (e: Exception) {
-            println("[Keymap] Failed to save settings: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to save keymap settings", error = e)
         }
     }
 
@@ -151,7 +156,7 @@ actual object KeymapSettingsManager {
             "IntelliJ IDEA" -> KeymapPresets.getIntelliJPreset()
             "Emacs" -> KeymapPresets.getEmacsPreset()
             else -> {
-                println("[Keymap] Unknown preset: $presetName, using BOSS Default")
+                logger.warn(LogCategory.SYSTEM, "Unknown keymap preset, using BOSS Default", mapOf("presetName" to presetName))
                 KeymapPresets.getBOSSDefault()
             }
         }
@@ -175,7 +180,7 @@ actual object KeymapSettingsManager {
             updateSettings(settings)
             settings
         } catch (e: Exception) {
-            println("[Keymap] Failed to import settings: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to import keymap settings", error = e)
             null
         }
     }
@@ -196,7 +201,7 @@ actual object KeymapSettingsManager {
             val content = file.readText()
             importFromJson(content)
         } catch (e: Exception) {
-            println("[Keymap] Failed to import from file: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to import keymap from file", error = e)
             null
         }
     }
@@ -207,9 +212,9 @@ actual object KeymapSettingsManager {
     suspend fun exportToFile(file: File) = withContext(Dispatchers.IO) {
         try {
             file.writeText(exportToJson())
-            println("[Keymap] Exported settings to ${file.absolutePath}")
+            logger.debug(LogCategory.SYSTEM, "Exported keymap settings", mapOf("path" to file.absolutePath))
         } catch (e: Exception) {
-            println("[Keymap] Failed to export to file: ${e.message}")
+            logger.error(LogCategory.SYSTEM, "Failed to export keymap to file", error = e)
         }
     }
 }

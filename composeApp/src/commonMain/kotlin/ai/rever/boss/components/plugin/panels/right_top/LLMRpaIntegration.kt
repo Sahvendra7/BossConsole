@@ -1,9 +1,13 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private val llmRpaLogger = BossLogger.forComponent("LLMRpaIntegration")
 
 /**
  * Enhanced LLM RPA Component with browser integration
@@ -41,7 +45,7 @@ fun LLMRpaContent(
                     component.updateAvailableTabs(tabs)
                 } catch (e: Exception) {
                     // Handle any errors during tab collection
-                    println("Error collecting tabs: ${e.message}")
+                    llmRpaLogger.debug(LogCategory.UI, "Error collecting tabs", mapOf("error" to (e.message ?: "unknown")))
                 }
                 
                 delay(1000) // Update every second
@@ -58,13 +62,13 @@ fun LLMRpaContent(
         val browser = browserConnection
         val tab = selectedTab
         if (browser != null && tab != null) {
-            println("LLM RPA Integration: Browser connection established for tab: ${tab.id}")
+            llmRpaLogger.debug(LogCategory.UI, "Browser connection established for tab", mapOf("tabId" to tab.id))
             component.browserConnection = browser
             // Create RPA executor for this browser
             component.rpaExecutor = createRpaExecutor(browser)
-            println("LLM RPA Integration: RPA executor created")
+            llmRpaLogger.debug(LogCategory.UI, "RPA executor created")
         } else {
-            println("LLM RPA Integration: No browser connection - browserConnection: $browser, selectedTab: $tab")
+            llmRpaLogger.debug(LogCategory.UI, "No browser connection", mapOf("hasBrowser" to (browser != null), "hasTab" to (tab != null)))
             component.browserConnection = null
             component.rpaExecutor = null
         }
