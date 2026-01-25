@@ -7,6 +7,8 @@ import BossDarkContentBackground
 import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import ai.rever.boss.components.overlays.ContextMenu
+import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.plugin.panels.right_top.*
 import ai.rever.boss.components.settings.shared.DropdownSelector
 import ai.rever.boss.components.settings.shared.SettingsSection
@@ -27,6 +29,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -102,6 +106,7 @@ fun LLMProvidersSettings() {
 
                         // Provider dropdown with status indicator
                         var providerDropdownExpanded by remember { mutableStateOf(false) }
+                        var providerButtonHeight by remember { mutableStateOf(0) }
                         Box {
                             Row(
                                 modifier = Modifier
@@ -109,7 +114,10 @@ fun LLMProvidersSettings() {
                                     .background(BossDarkBackground)
                                     .border(1.dp, BossDarkBorder, RoundedCornerShape(6.dp))
                                     .clickable { providerDropdownExpanded = true }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .onGloballyPositioned { coordinates ->
+                                        providerButtonHeight = coordinates.size.height
+                                    },
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -145,54 +153,33 @@ fun LLMProvidersSettings() {
                                 )
                             }
 
-                            DropdownMenu(
-                                expanded = providerDropdownExpanded,
-                                onDismissRequest = { providerDropdownExpanded = false },
-                                modifier = Modifier.background(BossDarkBackground)
-                            ) {
-                                LLMProvider.values().forEach { provider ->
-                                    DropdownMenuItem(
-                                        onClick = {
-                                            selectedProvider = provider
-                                            // Update selected model to first available for this provider
-                                            val providerModels = availableModels[provider.name] ?: LLMModelFetcher.getModelsForProvider(provider)
-                                            if (providerModels.isNotEmpty()) {
-                                                selectedModelId = providerModels.first().id
+                            if (providerDropdownExpanded) {
+                                ContextMenu(
+                                    items = LLMProvider.values().map { provider ->
+                                        ContextMenuItem(
+                                            text = provider.displayName,
+                                            icon = when (provider) {
+                                                LLMProvider.ANTHROPIC -> Icons.Outlined.AutoAwesome
+                                                LLMProvider.OPENAI -> Icons.Outlined.Psychology
+                                                LLMProvider.TOGETHER -> Icons.Outlined.Groups
+                                                LLMProvider.CUSTOM -> Icons.Outlined.Settings
+                                            },
+                                            trailingIcon = if (apiKeys[provider]?.isNotBlank() == true)
+                                                Icons.Outlined.CheckCircle else null,
+                                            trailingIconColor = Color(0xFF4CAF50),
+                                            onClick = {
+                                                selectedProvider = provider
+                                                // Update selected model to first available for this provider
+                                                val providerModels = availableModels[provider.name] ?: LLMModelFetcher.getModelsForProvider(provider)
+                                                if (providerModels.isNotEmpty()) {
+                                                    selectedModelId = providerModels.first().id
+                                                }
                                             }
-                                            providerDropdownExpanded = false
-                                        }
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                when (provider) {
-                                                    LLMProvider.ANTHROPIC -> Icons.Outlined.AutoAwesome
-                                                    LLMProvider.OPENAI -> Icons.Outlined.Psychology
-                                                    LLMProvider.TOGETHER -> Icons.Outlined.Groups
-                                                    LLMProvider.CUSTOM -> Icons.Outlined.Settings
-                                                },
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp),
-                                                tint = if (provider == selectedProvider) BossDarkAccent else BossDarkTextSecondary
-                                            )
-                                            Text(
-                                                text = provider.displayName,
-                                                fontSize = 13.sp,
-                                                color = if (provider == selectedProvider) BossDarkAccent else BossDarkTextPrimary
-                                            )
-                                            if (apiKeys[provider]?.isNotBlank() == true) {
-                                                Icon(
-                                                    Icons.Outlined.CheckCircle,
-                                                    contentDescription = "API Key Set",
-                                                    modifier = Modifier.size(14.dp),
-                                                    tint = Color(0xFF4CAF50)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                                        )
+                                    },
+                                    offset = IntOffset(0, providerButtonHeight),
+                                    onDismissRequest = { providerDropdownExpanded = false }
+                                )
                             }
                         }
                     }

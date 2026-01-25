@@ -1,8 +1,11 @@
 package ai.rever.boss.components.overlays
 
-import BossDarkBorder
+import ContextMenuBackground
+import ContextMenuBorder
+import ContextMenuHover
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -98,7 +101,12 @@ private fun ContextMenuContent(
     Column(
         modifier = modifier
             .background(
-                color = BossDarkBorder,
+                color = ContextMenuBackground,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = ContextMenuBorder,
                 shape = RoundedCornerShape(4.dp)
             )
             .padding(vertical = 4.dp)
@@ -108,7 +116,7 @@ private fun ContextMenuContent(
             if (item.isDivider) {
                 Divider(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    color = Color(0xFF444444),
+                    color = ContextMenuBorder,
                     thickness = 1.dp
                 )
             } else {
@@ -144,9 +152,9 @@ private fun ContextMenuContent(
                                 }
                             )
                             .background(
-                                if (isHighlighted) Color(0xFF3A3D40) else Color.Transparent
+                                if (isHighlighted) ContextMenuHover else Color.Transparent
                             )
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
                             .fillMaxWidth()
                             .onGloballyPositioned { coordinates ->
                                 rowWidth = coordinates.size.width
@@ -165,7 +173,7 @@ private fun ContextMenuContent(
                         Text(
                             text = item.text,
                             color = Color.White,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
                                 .padding(bottom = 4.dp)
                         )
@@ -254,7 +262,12 @@ private fun ContextMenuContent(
                                     .hoverable(subMenuInteractionSource)
                                     .heightIn(max = 400.dp)
                                     .background(
-                                        color = BossDarkBorder,
+                                        color = ContextMenuBackground,
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = ContextMenuBorder,
                                         shape = RoundedCornerShape(4.dp)
                                     )
                             ) {
@@ -301,7 +314,7 @@ private fun SubMenuContent(
         if (subItem.isDivider) {
             Divider(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                color = Color(0xFF444444),
+                color = ContextMenuBorder,
                 thickness = 1.dp
             )
         } else {
@@ -336,9 +349,9 @@ private fun SubMenuContent(
                             }
                         )
                         .background(
-                            if (isHighlighted) Color(0xFF3A3D40) else Color.Transparent
+                            if (isHighlighted) ContextMenuHover else Color.Transparent
                         )
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                         .fillMaxWidth()
                         .onGloballyPositioned { coordinates ->
                             rowWidth = coordinates.size.width
@@ -357,7 +370,7 @@ private fun SubMenuContent(
                     Text(
                         text = subItem.text,
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
 
@@ -385,7 +398,12 @@ private fun SubMenuContent(
                             modifier = Modifier
                                 .heightIn(max = 400.dp)
                                 .background(
-                                    color = BossDarkBorder,
+                                    color = ContextMenuBackground,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = ContextMenuBorder,
                                     shape = RoundedCornerShape(4.dp)
                                 )
                         ) {

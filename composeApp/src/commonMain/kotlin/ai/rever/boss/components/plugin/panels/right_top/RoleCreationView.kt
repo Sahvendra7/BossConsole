@@ -2,6 +2,8 @@ package ai.rever.boss.components.plugin.panels.right_top
 
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
+import ai.rever.boss.components.overlays.ContextMenu
+import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.services.supabase.models.RoleInfo
 import ai.rever.boss.services.supabase.models.PermissionInfo
 import androidx.compose.foundation.background
@@ -17,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -280,6 +284,7 @@ private fun RoleDropdownSelector(
     onDeleteRole: (RoleInfo) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var buttonHeight by remember { mutableStateOf(0) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -307,7 +312,11 @@ private fun RoleDropdownSelector(
         Box(modifier = Modifier.weight(1f)) {
             OutlinedButton(
                 onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coordinates ->
+                        buttonHeight = coordinates.size.height
+                    },
                 colors = ButtonDefaults.outlinedButtonColors(
                     backgroundColor = if (selectedRole != null)
                         MaterialTheme.colors.primary.copy(alpha = 0.1f)
@@ -344,87 +353,26 @@ private fun RoleDropdownSelector(
                 }
             }
 
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                roles.forEach { role ->
-                    DropdownMenuItem(
-                        onClick = {
-                            onRoleSelected(role)
-                            expanded = false
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Role name with system badge
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = role.name,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (role == selectedRole) FontWeight.Bold else FontWeight.Normal
-                                )
-
-                                // System badge for protected roles
-                                if (role.isSystem) {
-                                    Surface(
-                                        color = MaterialTheme.colors.primary.copy(alpha = 0.1f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
-                                        Text(
-                                            text = "SYSTEM",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colors.primary,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Icons row
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Delete button (only for non-system roles)
-                                if (!role.isSystem) {
-                                    IconButton(
-                                        onClick = {
-                                            expanded = false
-                                            onDeleteRole(role)
-                                        },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = FeatherIcons.Trash2,
-                                            contentDescription = "Delete role",
-                                            tint = MaterialTheme.colors.error,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-
-                                // Selected checkmark
-                                if (role == selectedRole) {
-                                    Icon(
-                                        imageVector = FeatherIcons.CheckCircle,
-                                        contentDescription = "Selected",
-                                        tint = MaterialTheme.colors.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+            if (expanded) {
+                ContextMenu(
+                    items = roles.map { role ->
+                        ContextMenuItem(
+                            text = role.name + if (role.isSystem) " [SYSTEM]" else "",
+                            trailingIcon = if (role == selectedRole)
+                                FeatherIcons.CheckCircle else null,
+                            trailingIconColor = MaterialTheme.colors.primary,
+                            secondaryTrailingIcon = if (!role.isSystem)
+                                FeatherIcons.Trash2 else null,
+                            secondaryTrailingIconColor = MaterialTheme.colors.error,
+                            onSecondaryTrailingClick = if (!role.isSystem) {
+                                { onDeleteRole(role) }
+                            } else null,
+                            onClick = { onRoleSelected(role) }
+                        )
+                    },
+                    offset = IntOffset(0, buttonHeight),
+                    onDismissRequest = { expanded = false }
+                )
             }
         }
     }

@@ -16,6 +16,11 @@ val BossDarkSecondary = Color(0xFF43A047)   // Secondary color - green
 val BossDarkError = Color(0xFFE53935)       // Error color - red
 val BossDarkSuccess = Color(0xFF4CAF50)     // Success color - green
 
+// Context Menu Colors (matching SwingContextMenu/BossTerm)
+val ContextMenuBackground = Color(0xFF2B2B2B)
+val ContextMenuBorder = Color(0xFF3C3F41)
+val ContextMenuHover = Color(0xFF3A3D40)
+
 /**
  * BOSS application theme
  * 

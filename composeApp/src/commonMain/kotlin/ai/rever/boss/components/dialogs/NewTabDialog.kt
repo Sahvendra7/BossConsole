@@ -1,12 +1,16 @@
 package ai.rever.boss.components.dialogs
 
+import ContextMenuBackground
+import ContextMenuBorder
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.extractFileName
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -27,8 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -40,6 +44,8 @@ import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import ai.rever.boss.platform.rememberFilePicker
 import ai.rever.boss.platform.rememberDirectoryPicker
+import ai.rever.boss.components.overlays.ContextMenu
+import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.plugin.panels.left_top.FileNode
 import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
@@ -51,6 +57,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
@@ -184,29 +192,48 @@ fun NewTabDialog(
         }
     }
 
-    Dialog(
+    // Full-screen overlay with scrim
+    Popup(
+        alignment = Alignment.Center,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
+        properties = PopupProperties(focusable = true)
     ) {
-        Card(
+        Box(
             modifier = Modifier
-                .width(500.dp)
-                .onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                        onDismiss()
-                        true
-                    } else {
-                        false
-                    }
-                },
-            shape = RoundedCornerShape(8.dp),
-            backgroundColor = Color(0xFF2B2D30),
-            elevation = 8.dp
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
         ) {
+            // Dialog content with ContextMenu styling
+            Box(
+                modifier = Modifier
+                    .width(500.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { /* Consume click to prevent dismissing */ }
+                    .background(
+                        color = ContextMenuBackground,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = ContextMenuBorder,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .onKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                            onDismiss()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+            ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
@@ -343,6 +370,7 @@ fun NewTabDialog(
                             }
                         }
                         var showFolderDropdown by remember { mutableStateOf(false) }
+                        var buttonHeight by remember { mutableStateOf(0) }
 
                         // File tree state
                         var fileTree by remember { mutableStateOf<FileNode?>(null) }
@@ -414,7 +442,11 @@ fun NewTabDialog(
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton(
                                     onClick = { showFolderDropdown = true },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onGloballyPositioned { coordinates ->
+                                            buttonHeight = coordinates.size.height
+                                        },
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         backgroundColor = Color(0xFF1E1F22),
                                         contentColor = Color.White
@@ -443,81 +475,54 @@ fun NewTabDialog(
                                     )
                                 }
 
-                                DropdownMenu(
-                                    expanded = showFolderDropdown,
-                                    onDismissRequest = { showFolderDropdown = false },
-                                    modifier = Modifier
-                                        .width(450.dp)
-                                        .background(Color(0xFF2B2D30))
-                                ) {
-                                    // Recent projects
-                                    if (recentProjects.isNotEmpty()) {
-                                        recentProjects.forEach { project ->
-                                            DropdownMenuItem(
-                                                onClick = {
-                                                    // Update local state to switch to selected project in this dialog
-                                                    selectedProject = project
-                                                    expandedPaths = emptySet()
-                                                    showFolderDropdown = false
-                                                }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Folder,
-                                                    contentDescription = null,
-                                                    tint = Color(0xFF6B9EFF),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Column {
-                                                    Text(
-                                                        text = project.name,
-                                                        color = Color.White,
-                                                        fontSize = 14.sp
-                                                    )
-                                                    Text(
-                                                        text = project.path,
-                                                        color = Color(0xFF999999),
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
+                                if (showFolderDropdown) {
+                                    ContextMenu(
+                                        items = buildList {
+                                            // Recent projects
+                                            recentProjects.forEach { project ->
+                                                add(ContextMenuItem(
+                                                    text = project.name,
+                                                    icon = Icons.Outlined.Folder,
+                                                    onClick = {
+                                                        selectedProject = project
+                                                        expandedPaths = emptySet()
+                                                    }
+                                                ))
                                             }
-                                        }
-                                        Divider(color = Color(0xFF555555))
-                                    }
-
-                                    // Browse option
-                                    DropdownMenuItem(
-                                        onClick = {
-                                            showFolderDropdown = false
-                                            directoryPicker.pickDirectory()
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.FolderOpen,
-                                            contentDescription = null,
-                                            tint = Color(0xFF999999),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Browse...",
-                                            color = Color.White,
-                                            fontSize = 14.sp
-                                        )
-                                    }
+                                            // Divider if there are recent projects
+                                            if (recentProjects.isNotEmpty()) {
+                                                add(ContextMenuItem(isDivider = true))
+                                            }
+                                            // Browse option
+                                            add(ContextMenuItem(
+                                                text = "Browse...",
+                                                icon = Icons.Default.FolderOpen,
+                                                onClick = { directoryPicker.pickDirectory() }
+                                            ))
+                                        },
+                                        offset = IntOffset(0, buttonHeight),
+                                        modifier = Modifier.widthIn(min = 200.dp),
+                                        onDismissRequest = { showFolderDropdown = false }
+                                    )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
                         // File tree browser
-                        Card(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(200.dp),
-                            backgroundColor = Color(0xFF1E1F22),
-                            shape = RoundedCornerShape(4.dp),
-                            elevation = 0.dp
+                                .height(200.dp)
+                                .background(
+                                    color = Color(0xFF1E1F22),
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = ContextMenuBorder,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
                         ) {
                             if (isLoadingTree) {
                                 Box(
@@ -776,13 +781,19 @@ fun NewTabDialog(
                         
                         // URL suggestions dropdown
                         if (showUrlDropdown) {
-                            Card(
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 200.dp),
-                                backgroundColor = Color(0xFF2B2D30),
-                                elevation = 4.dp,
-                                shape = RoundedCornerShape(0.dp, 0.dp, 4.dp, 4.dp)
+                                    .heightIn(max = 200.dp)
+                                    .background(
+                                        color = ContextMenuBackground,
+                                        shape = RoundedCornerShape(0.dp, 0.dp, 4.dp, 4.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = ContextMenuBorder,
+                                        shape = RoundedCornerShape(0.dp, 0.dp, 4.dp, 4.dp)
+                                    )
                             ) {
                                 LazyColumn(state = listState) {
                                     itemsIndexed(urlSuggestions) { index, suggestion ->
@@ -896,6 +907,7 @@ fun NewTabDialog(
                 }
             }
         }
+        }
     }
 }
 
@@ -907,13 +919,19 @@ private fun TabTypeOption(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    Box(
         modifier = modifier
             .height(80.dp)
-            .clickable { onClick() },
-        backgroundColor = if (isSelected) Color(0xFF4A9EFF).copy(alpha = 0.2f) else Color(0xFF3C3F41),
-        shape = RoundedCornerShape(4.dp),
-        elevation = if (isSelected) 2.dp else 0.dp
+            .background(
+                color = if (isSelected) Color(0xFF4A9EFF).copy(alpha = 0.2f) else ContextMenuBorder,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = if (isSelected) Color(0xFF4A9EFF) else ContextMenuBorder,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .clickable { onClick() }
     ) {
         Column(
             modifier = Modifier
@@ -931,7 +949,7 @@ private fun TabTypeOption(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = if (isSelected) Color.White else Color(0xFF999999)
             )
         }
