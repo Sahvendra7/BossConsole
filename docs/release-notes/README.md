@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.9](v8.16.9.md) | 2026-01-25 | Keyboard shortcuts for split tab operations, Google search integration in context menus, and unified context menu styling |
 | [v8.16.8](v8.16.8.md) | 2026-01-25 | Structured logging framework with sensitive data sanitization, macOS trackpad scroll fix, editor optimization, and discrete password fill mode |
 | [v8.16.7](v8.16.7.md) | 2026-01-24 | Scrollbar settings fix ensuring visibility preferences properly apply to all panels |
 | [v8.16.6](v8.16.6.md) | 2026-01-24 | UI polish improvements with panel scrollbars, keyboard input fixes, and bottom bar refinements for cleaner, more functional interface |
