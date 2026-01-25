@@ -87,6 +87,8 @@ import kotlinx.coroutines.withContext
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private val jxBrowserComposeLogger = BossLogger.forComponent("JxBrowserCompose")
 
@@ -1084,6 +1086,38 @@ fun JxBrowserCompose(
                                 clipboard.setContents(StringSelection(selectedText), null)
                             } catch (e: Exception) {
                                 // Issue #255: Copy operation failed
+                            }
+                        }
+                    }
+                ))
+
+                // Search selected text in new tab (Issue #286)
+                // Uses Google as default search provider for consistency with processUrlInput()
+                add(ContextMenuItem(
+                    text = "Search with Google",
+                    icon = Icons.Default.Search,
+                    onClick = {
+                        if (isBrowserEnvironmentValid()) {
+                            coroutineScope.launch(Dispatchers.Main) {
+                                selectedText?.let { text ->
+                                    try {
+                                        val encodedQuery = URLEncoder.encode(text, StandardCharsets.UTF_8)
+                                        val searchUrl = "https://www.google.com/search?q=$encodedQuery"
+                                        jxBrowserComposeLogger.info(
+                                            LogCategory.BROWSER,
+                                            "Opening Google search for selected text",
+                                            mapOf("query_length" to text.length)
+                                        )
+                                        onOpenInNewTab(searchUrl)
+                                    } catch (e: Exception) {
+                                        // Issue #286: Search operation failed
+                                        jxBrowserComposeLogger.error(
+                                            LogCategory.BROWSER,
+                                            "Failed to open Google search",
+                                            error = e
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
