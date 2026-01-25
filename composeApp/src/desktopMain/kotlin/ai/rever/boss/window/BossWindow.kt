@@ -351,6 +351,7 @@ fun ApplicationScope.BossWindow(
 
                 Item(
                     "Split Vertically",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_SPLIT_VERTICAL),
                     onClick = {
                         MenuActionsHandler.triggerSplitVertically(windowState.id)
                     },
@@ -358,6 +359,7 @@ fun ApplicationScope.BossWindow(
                 )
                 Item(
                     "Split Horizontally",
+                    shortcut = shortcutBridge.getKeyShortcut(KeymapActions.PANEL_SPLIT_HORIZONTAL),
                     onClick = {
                         MenuActionsHandler.triggerSplitHorizontally(windowState.id)
                     },

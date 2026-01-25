@@ -34,7 +34,7 @@ The application features a comprehensive keyboard shortcuts system (Issue #201) 
 - `ShortcutContext.kt` - Enum defining where shortcuts are active
 - `KeyBinding.kt` - Individual shortcut with key, modifiers, context, category, description
 - `KeymapSettings.kt` - Container for all shortcuts with preset tracking
-- `KeymapActions.kt` - Registry of 18 action IDs across 8 categories
+- `KeymapActions.kt` - Registry of 20 action IDs across 8 categories
 
 **Handler System** (`composeApp/src/commonMain/kotlin/ai/rever/boss/keymap/handler/`):
 - `KeymapMatcher.kt` - Matches keyboard events to configured bindings
@@ -56,7 +56,7 @@ The application features a comprehensive keyboard shortcuts system (Issue #201) 
 - `KeymapSettingsManager.kt` - Expect/actual pattern for platform-specific persistence
 - Desktop implementation saves to `~/.boss/keymap-settings.json`
 
-## Available Actions (18 total)
+## Available Actions (20 total)
 
 ### Window Management (2)
 - `window.new` - Create new window
@@ -72,11 +72,13 @@ The application features a comprehensive keyboard shortcuts system (Issue #201) 
 - `browser.zoom_in` - Increase zoom (BROWSER context only)
 - `browser.zoom_out` - Decrease zoom (BROWSER context only)
 
-### Navigation (5)
+### Navigation (7)
 - `panel.navigate_left` - Switch to left panel
 - `panel.navigate_right` - Switch to right panel
 - `panel.navigate_up` - Switch to previous panel
 - `panel.navigate_down` - Switch to next panel
+- `panel.split_vertical` - Split current tab vertically
+- `panel.split_horizontal` - Split current tab horizontally
 - `quick_switcher.open` - Open Top of Mind quick switcher
 
 ### Workspace (1)
@@ -113,6 +115,8 @@ Browser Controls (in browser tabs only):
 
 Navigation:
   Cmd+Arrow Keys      - Navigate between panels
+  Cmd+Shift+|         - Split current tab vertically
+  Cmd+Shift+-         - Split current tab horizontally
   Ctrl+Space          - Quick switcher (Top of Mind)
 
 Workspace:
@@ -135,6 +139,8 @@ Visual Studio Code inspired shortcuts:
 - Cmd+P: Quick switcher
 - Cmd+Shift+E: CodeBase
 - Cmd+Alt+Arrow: Panel navigation
+- Cmd+Shift+|: Split vertically
+- Cmd+Shift+-: Split horizontally
 
 ### IntelliJ IDEA Preset
 
@@ -142,6 +148,8 @@ JetBrains IDE inspired shortcuts:
 - Cmd+E: Quick switcher
 - Cmd+1: CodeBase
 - Cmd+Alt+Arrow: Panel navigation
+- Cmd+Shift+|: Split vertically
+- Cmd+Shift+-: Split horizontally
 
 ### Emacs Preset
 
@@ -149,6 +157,8 @@ Ctrl-based shortcuts:
 - Alt+X: Quick switcher
 - Ctrl+B: CodeBase
 - Ctrl+Arrow: Panel navigation
+- Ctrl+Shift+|: Split vertically
+- Ctrl+Shift+-: Split horizontally
 
 ## Integration with Focus Mode
 

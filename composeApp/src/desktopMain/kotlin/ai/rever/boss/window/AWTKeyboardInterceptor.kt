@@ -332,6 +332,16 @@ object AWTKeyboardInterceptor {
                 true
             }
 
+            // Split Panel
+            KeymapActions.PANEL_SPLIT_VERTICAL -> {
+                MenuActionsHandler.triggerSplitVertically(windowId)
+                true
+            }
+            KeymapActions.PANEL_SPLIT_HORIZONTAL -> {
+                MenuActionsHandler.triggerSplitHorizontally(windowId)
+                true
+            }
+
             // Browser Controls
             KeymapActions.BROWSER_RELOAD -> {
                 MenuActionsHandler.triggerReloadBrowser(windowId)

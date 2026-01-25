@@ -114,6 +114,23 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.NAVIGATION,
                 description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
             ),
+            // Emacs: C-x 2 (split vertically), C-x 3 (split horizontally) - simplified
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_VERTICAL,
+                key = "Backslash",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_VERTICAL)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_HORIZONTAL,
+                key = "Minus",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_HORIZONTAL)
+            ),
             // Emacs: M-x (execute command) - use Alt+X for quick switcher
             KeyBinding(
                 actionId = KeymapActions.QUICK_SWITCHER_OPEN,

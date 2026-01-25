@@ -116,6 +116,22 @@ object KeymapPresets {
                 description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
             ),
             KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_VERTICAL,
+                key = "Backslash",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_VERTICAL)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_HORIZONTAL,
+                key = "Minus",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_HORIZONTAL)
+            ),
+            KeyBinding(
                 actionId = KeymapActions.QUICK_SWITCHER_OPEN,
                 key = "Spacebar",
                 modifiers = listOf("Ctrl"),
@@ -335,6 +351,23 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.NAVIGATION,
                 description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
+            ),
+            // Split panel shortcuts
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_VERTICAL,
+                key = "Backslash",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_VERTICAL)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_HORIZONTAL,
+                key = "Minus",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_HORIZONTAL)
             ),
             // VS Code uses Cmd+P for quick open (quick switcher)
             KeyBinding(
@@ -562,6 +595,23 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.NAVIGATION,
                 description = KeymapActions.getDescription(KeymapActions.PANEL_NAVIGATE_DOWN)
+            ),
+            // Split panel shortcuts
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_VERTICAL,
+                key = "Backslash",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_VERTICAL)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.PANEL_SPLIT_HORIZONTAL,
+                key = "Minus",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.NAVIGATION,
+                description = KeymapActions.getDescription(KeymapActions.PANEL_SPLIT_HORIZONTAL)
             ),
             // IntelliJ uses Cmd+E for Recent Files (like quick switcher)
             KeyBinding(

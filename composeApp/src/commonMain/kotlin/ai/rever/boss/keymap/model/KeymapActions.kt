@@ -26,6 +26,8 @@ object KeymapActions {
     const val PANEL_NAVIGATE_RIGHT = "panel.navigate_right"
     const val PANEL_NAVIGATE_UP = "panel.navigate_up"
     const val PANEL_NAVIGATE_DOWN = "panel.navigate_down"
+    const val PANEL_SPLIT_VERTICAL = "panel.split_vertical"
+    const val PANEL_SPLIT_HORIZONTAL = "panel.split_horizontal"
     const val QUICK_SWITCHER_OPEN = "quick_switcher.open"
 
     // Workspace Actions
@@ -85,6 +87,8 @@ object KeymapActions {
         PANEL_NAVIGATE_RIGHT to "Switch to the right/next panel",
         PANEL_NAVIGATE_UP to "Switch to the previous panel (upward)",
         PANEL_NAVIGATE_DOWN to "Switch to the next panel (downward)",
+        PANEL_SPLIT_VERTICAL to "Split current tab vertically",
+        PANEL_SPLIT_HORIZONTAL to "Split current tab horizontally",
         QUICK_SWITCHER_OPEN to "Open quick switcher (Top of Mind)",
         WORKSPACE_SAVE to "Save the current workspace layout",
         EDITOR_SAVE to "Save the current file",
@@ -117,6 +121,8 @@ object KeymapActions {
         PANEL_NAVIGATE_RIGHT to Categories.NAVIGATION,
         PANEL_NAVIGATE_UP to Categories.NAVIGATION,
         PANEL_NAVIGATE_DOWN to Categories.NAVIGATION,
+        PANEL_SPLIT_VERTICAL to Categories.NAVIGATION,
+        PANEL_SPLIT_HORIZONTAL to Categories.NAVIGATION,
         QUICK_SWITCHER_OPEN to Categories.NAVIGATION,
         WORKSPACE_SAVE to Categories.WORKSPACE,
         EDITOR_SAVE to Categories.EDITOR,
@@ -149,6 +155,8 @@ object KeymapActions {
         PANEL_NAVIGATE_RIGHT to ShortcutContext.GLOBAL,
         PANEL_NAVIGATE_UP to ShortcutContext.GLOBAL,
         PANEL_NAVIGATE_DOWN to ShortcutContext.GLOBAL,
+        PANEL_SPLIT_VERTICAL to ShortcutContext.GLOBAL,
+        PANEL_SPLIT_HORIZONTAL to ShortcutContext.GLOBAL,
         QUICK_SWITCHER_OPEN to ShortcutContext.GLOBAL,
         WORKSPACE_SAVE to ShortcutContext.WORKSPACE,
         EDITOR_SAVE to ShortcutContext.EDITOR,
@@ -172,7 +180,8 @@ object KeymapActions {
         WINDOW_NEW, WINDOW_CLOSE,
         TAB_NEW, TAB_CLOSE,
         BROWSER_RELOAD, BROWSER_ZOOM_RESET, BROWSER_ZOOM_IN, BROWSER_ZOOM_OUT,
-        PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN, QUICK_SWITCHER_OPEN,
+        PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN,
+        PANEL_SPLIT_VERTICAL, PANEL_SPLIT_HORIZONTAL, QUICK_SWITCHER_OPEN,
         WORKSPACE_SAVE,
         EDITOR_SAVE, EDITOR_SAVE_ALL, EDITOR_FIND, EDITOR_REPLACE, EDITOR_FIND_NEXT, EDITOR_FIND_PREVIOUS, EDITOR_GO_TO_LINE,
         CODEBASE_OPEN,
