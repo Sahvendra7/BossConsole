@@ -85,12 +85,32 @@ fun ApplicationScope.BossWindow(
     var isMaximized by remember { mutableStateOf(false) }
     val isFullScreen = composeWindowState.placement == WindowPlacement.Fullscreen
 
+    // Test crash state - when true, simulates a main window crash (Issue #543)
+    var shouldTriggerTestCrash by remember { mutableStateOf(false) }
+
     Window(
         onCloseRequest = onCloseRequest,
         title = windowState.title,
         state = composeWindowState,
         icon = painterResource(Res.drawable.boss_icon)
     ) {
+        // Test crash handler (Issue #543) - must be inside Window block to access `window`
+        if (shouldTriggerTestCrash) {
+            shouldTriggerTestCrash = false
+            val testException = RuntimeException("Test crash - main window crash simulation (Issue #543)")
+            val currentWindow = window
+            javax.swing.SwingUtilities.invokeLater {
+                // First trigger crash handler - this shows dialog in separate window
+                // The dialog must be shown BEFORE we dispose the main window,
+                // otherwise the app may exit before the dialog appears
+                Thread.getDefaultUncaughtExceptionHandler()?.uncaughtException(
+                    Thread.currentThread(),
+                    testException
+                )
+                // Main window will be closed by terminateAfterCrash() after user dismisses dialog
+            }
+        }
+
         // Set window appearance - using native OS title bar
         window.background = Color(BossDarkSurface.value.toInt())
 
@@ -588,6 +608,16 @@ fun ApplicationScope.BossWindow(
                     "Reset Terminal...",
                     onClick = {
                         showResetTerminalDialog = true
+                    }
+                )
+
+                // Debug: Test crash reporter (Issue #543)
+                // This crashes during Compose composition to properly test the separate window crash dialog
+                Separator()
+                Item(
+                    "Trigger Test Crash...",
+                    onClick = {
+                        shouldTriggerTestCrash = true
                     }
                 )
             }

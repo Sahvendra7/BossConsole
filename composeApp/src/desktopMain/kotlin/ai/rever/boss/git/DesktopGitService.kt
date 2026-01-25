@@ -1212,7 +1212,7 @@ actual object GitService {
                             "Repository cloned successfully",
                             mapOf("target" to targetDirectory)
                         )
-                        return@withContext GitOperationResult.Success()
+                        GitOperationResult.Success()
                     } else {
                         val errorMessage = when {
                             repositoryUrl.contains("@") && exitCode == 128 ->
@@ -1229,7 +1229,7 @@ actual object GitService {
                             "Clone failed",
                             mapOf("exitCode" to exitCode, "message" to errorMessage)
                         )
-                        return@withContext GitOperationResult.Error(errorMessage)
+                        GitOperationResult.Error(errorMessage)
                     }
                 } finally {
                     // Ensure process is destroyed if still running

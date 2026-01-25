@@ -244,4 +244,63 @@ object LogSanitizer {
             }
         }
     }
+
+    // Regex patterns for sanitization (compiled once for performance)
+    private val filePathPattern = Regex("""(?:/[^\s:]+)+|(?:[A-Za-z]:\\[^\s:]+)+""")
+    private val urlPattern = Regex("""https?://[^\s]+""")
+    private val emailPattern = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""")
+
+    /**
+     * Sanitize an exception message by removing potentially sensitive data.
+     *
+     * Removes:
+     * - File paths (Unix and Windows)
+     * - URLs
+     * - Email addresses
+     *
+     * @param message The exception message to sanitize
+     * @return The sanitized message
+     */
+    fun sanitizeExceptionMessage(message: String?): String {
+        if (message.isNullOrBlank()) return "[no message]"
+
+        return try {
+            message
+                .replace(filePathPattern, "[PATH]")
+                .replace(urlPattern, "[URL]")
+                .replace(emailPattern, "[EMAIL]")
+        } catch (e: Exception) {
+            "[sanitization-error]"
+        }
+    }
+
+    /**
+     * Sanitize a log message by removing potentially sensitive data.
+     * Uses the same rules as sanitizeExceptionMessage.
+     *
+     * @param message The log message to sanitize
+     * @return The sanitized message
+     */
+    fun sanitizeLogMessage(message: String?): String {
+        return sanitizeExceptionMessage(message)
+    }
+
+    /**
+     * Sanitize a stack trace by removing file paths and other sensitive data.
+     *
+     * @param stackTrace The stack trace string to sanitize
+     * @return The sanitized stack trace
+     */
+    fun sanitizeStackTrace(stackTrace: String?): String {
+        if (stackTrace.isNullOrBlank()) return "[no stack trace]"
+
+        return try {
+            stackTrace
+                .replace(filePathPattern, "[PATH]")
+                .replace(urlPattern, "[URL]")
+                .replace(emailPattern, "[EMAIL]")
+        } catch (e: Exception) {
+            "[sanitization-error]"
+        }
+    }
 }

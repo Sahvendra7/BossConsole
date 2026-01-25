@@ -57,6 +57,10 @@ fun main(args: Array<String>) {
     // Initialize logging framework early
     BossLogger.configureFromEnvironment()
     BossLogger.initialize()  // Register shutdown hook for log flushing
+
+    // Install crash handler after logger is ready
+    ai.rever.boss.crash.CrashHandler.install()
+
     logger.info(LogCategory.SYSTEM, "BOSS starting up")
 
     // Single-instance check: ensure only one BOSS instance runs
