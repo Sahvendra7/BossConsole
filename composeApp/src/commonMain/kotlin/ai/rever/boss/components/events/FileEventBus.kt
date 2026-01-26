@@ -1,6 +1,7 @@
 @file:Suppress("UNUSED")
 package ai.rever.boss.components.events
 
+import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentFilesManager
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -32,9 +33,10 @@ object FileEventBus {
     private val delegate = ai.rever.boss.plugin.events.FileEventBus
 
     init {
-        // Register callback for recent files tracking
+        // Register callback for recent files tracking and dashboard stats
         delegate.setFileOpenCallback { filePath, projectPath ->
             RecentFilesManager.recordFileOpen(filePath, projectPath)
+            DashboardStatsManager.recordFileOpen()
         }
     }
 

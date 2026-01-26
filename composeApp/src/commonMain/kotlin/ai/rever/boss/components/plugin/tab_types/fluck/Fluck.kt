@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
+import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
@@ -163,6 +164,7 @@ class FluckTabInfo(
 
         // Track page visit
         RecentBrowserPagesManager.recordPageVisit(url, title, faviconCacheKey)
+        DashboardStatsManager.recordPageVisit()
 
         // Return NEW instance with updated values (no mutation!)
         // Note: We DON'T update _title here because onTitleUpdate handles that separately
@@ -205,6 +207,7 @@ class FluckTabInfo(
 
         // Track page visit in dashboard
         RecentBrowserPagesManager.recordPageVisit(url, title, faviconCacheKey)
+        DashboardStatsManager.recordPageVisit()
     }
 
     @Synchronized

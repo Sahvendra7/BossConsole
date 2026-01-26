@@ -137,6 +137,7 @@ import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
 import ai.rever.boss.plugin.panel.terminal.TerminalInfo as TerminalPanelInfo
+import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.TemplatePanelConfig
 import ai.rever.boss.dashboard.SplitTemplatesManager
 import ai.rever.boss.platform.rememberDirectoryPicker
@@ -1168,6 +1169,7 @@ fun ComponentContext.BossApp(
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
                 splitViewState.openTerminalInActivePanel(event.command)
+                DashboardStatsManager.recordTerminalSession()
             }
             .launchIn(this)
 
