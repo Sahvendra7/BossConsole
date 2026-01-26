@@ -2,7 +2,7 @@ package ai.rever.boss.components.dialogs
 
 import BossDarkBackground
 import BossDarkTextSecondary
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*

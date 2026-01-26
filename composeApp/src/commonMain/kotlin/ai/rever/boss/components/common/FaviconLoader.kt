@@ -3,8 +3,8 @@ package ai.rever.boss.components.common
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabInfo
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,13 +21,13 @@ private val faviconLogger = BossLogger.forComponent("FaviconLoader")
  * - Efficient caching with remember
  */
 @Composable
-fun rememberFaviconLoader(tabInfo: TabInfo): TabIcon.Image? {
+fun rememberFaviconLoader(tabInfo: TabInfo): ai.rever.boss.plugin.api.TabIcon.Image? {
     // Extract faviconCacheKey if this is a Fluck browser tab
     val faviconCacheKey = (tabInfo as? FluckTabInfo)?.faviconCacheKey
 
     // State to hold the loaded favicon
     var loadedFavicon by remember(faviconCacheKey) {
-        mutableStateOf<TabIcon.Image?>(null)
+        mutableStateOf<ai.rever.boss.plugin.api.TabIcon.Image?>(null)
     }
 
     // Load favicon asynchronously on IO thread

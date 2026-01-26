@@ -1,0 +1,103 @@
+package ai.rever.boss.plugin.panel.usersecretlist
+
+import ai.rever.boss.plugin.api.SecretEntryWithSharingData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * Scrollable list view for user secrets with pagination
+ */
+@Composable
+fun UserSecretList(
+    secrets: List<SecretEntryWithSharingData>,
+    expandedSecretIds: Set<String>,
+    onToggleMetadata: (String) -> Unit,
+    onLoadMore: () -> Unit,
+    isLoadingMore: Boolean,
+    hasMore: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+
+    // Trigger load more when scrolled to bottom
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastVisibleIndex ->
+                if (lastVisibleIndex != null &&
+                    lastVisibleIndex >= secrets.size - 3 &&
+                    hasMore &&
+                    !isLoadingMore
+                ) {
+                    onLoadMore()
+                }
+            }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier
+            .fillMaxWidth()
+            .lazyListScrollbar(
+                listState = listState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
+        items(
+            items = secrets,
+            key = { it.id }
+        ) { secret ->
+            UserSecretCard(
+                secret = secret,
+                isMetadataExpanded = expandedSecretIds.contains(secret.id),
+                onToggleMetadata = { onToggleMetadata(secret.id) }
+            )
+        }
+
+        // Loading more indicator
+        if (isLoadingMore) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = Color(0xFF4CAF50),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // End of list indicator
+        if (!hasMore && secrets.isNotEmpty()) {
+            item {
+                Text(
+                    "- End of list -",
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                )
+            }
+        }
+    }
+}

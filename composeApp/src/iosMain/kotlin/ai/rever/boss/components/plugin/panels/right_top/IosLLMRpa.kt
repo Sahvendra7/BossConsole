@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.registery.PanelInfo
+import ai.rever.boss.plugin.api.PanelInfo
 import com.arkivanov.decompose.ComponentContext
 
 /**

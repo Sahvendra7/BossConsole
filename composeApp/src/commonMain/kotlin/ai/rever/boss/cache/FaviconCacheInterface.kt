@@ -1,12 +1,12 @@
 package ai.rever.boss.cache
 
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 
 /**
  * Platform-specific favicon cache interface.
  * Desktop implementation uses file-based cache, other platforms return null.
  */
-expect fun loadFaviconFromCache(cacheKey: String?): TabIcon.Image?
+expect fun loadFaviconFromCache(cacheKey: String?): ai.rever.boss.plugin.api.TabIcon.Image?
 
 /**
  * Load high-quality favicon for dashboard display.
@@ -16,4 +16,4 @@ expect fun loadFaviconFromCache(cacheKey: String?): TabIcon.Image?
  * @param url The page URL to get favicon for
  * @param standardCacheKey The cache key from standard favicon cache (fallback)
  */
-expect suspend fun loadHighQualityFavicon(url: String, standardCacheKey: String?): TabIcon.Image?
+expect suspend fun loadHighQualityFavicon(url: String, standardCacheKey: String?): ai.rever.boss.plugin.api.TabIcon.Image?

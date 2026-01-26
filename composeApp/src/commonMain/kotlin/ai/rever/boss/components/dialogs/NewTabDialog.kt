@@ -47,12 +47,13 @@ import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.components.plugin.panels.left_top.FileNode
-import ai.rever.boss.components.plugin.panels.left_top.NodeLoadingState
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+import ai.rever.boss.plugin.panel.codebase.FileTreeUtils
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
 import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth
-import ai.rever.boss.components.plugin.panels.left_top.FileTreeUtils
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
@@ -361,7 +362,7 @@ fun NewTabDialog(
                         val recentProjects by ProjectState.recentProjects.collectAsState()
                         var selectedProject by remember {
                             mutableStateOf(recentProjects.firstOrNull()
-                                ?: ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L))
+                                ?: Project("No Project", "", 0L))
                         }
                         // Update selectedProject when recentProjects changes
                         LaunchedEffect(recentProjects) {
@@ -400,7 +401,7 @@ fun NewTabDialog(
                         val directoryPicker = rememberDirectoryPicker { path ->
                             path?.let {
                                 val projectName = it.extractFileName().ifEmpty { "Unknown" }
-                                val newProject = ai.rever.boss.components.plugin.panels.left_top.Project(
+                                val newProject = Project(
                                     name = projectName,
                                     path = it
                                 )

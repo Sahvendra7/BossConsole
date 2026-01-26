@@ -1,5 +1,6 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import androidx.compose.foundation.layout.Box
@@ -104,7 +105,7 @@ fun WorkspaceButton(
                 onOpenWorkspace(LayoutWorkspace(
                     name = "Default",
                     description = "Default layout",
-                    layout = SplitConfig.SinglePanel(
+                    layout = SinglePanel(
                         PanelConfig(
                             id = "main",
                             tabs = emptyList()

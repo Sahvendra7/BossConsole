@@ -1,27 +1,10 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.components.registery
 
-import androidx.compose.runtime.mutableStateMapOf
-import com.arkivanov.decompose.ComponentContext
+/**
+ * Re-exports from plugin-api module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.api
+ */
 
-class TabRegistry {
-    // Map of tab type handlers
-    private val tabHandlers = mutableStateMapOf<TabTypeId, TabTypeInfo>()
-
-    // Map of tab component factories by tab type
-    private val tabFactories = mutableStateMapOf<TabTypeId, (TabInfo, ComponentContext) -> TabComponentWithUI>()
-
-    // Register a tab type from a plugin
-    fun registerTabType(
-        content: TabTypeInfo,
-        factory: (TabInfo, ComponentContext) -> TabComponentWithUI
-    ) {
-        tabHandlers[content.typeId] = content
-        tabFactories[content.typeId] = factory
-    }
-
-    // Create a component for a tab configuration
-    fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
-        return tabFactories[config.typeId]?.invoke(config, componentContext)
-    }
-
-}
+// Re-export TabRegistry from plugin-api
+typealias TabRegistry = ai.rever.boss.plugin.api.TabRegistry

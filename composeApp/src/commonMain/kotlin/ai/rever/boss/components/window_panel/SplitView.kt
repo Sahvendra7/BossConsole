@@ -3,16 +3,16 @@ package ai.rever.boss.components.window_panel
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import BossDarkAccent
-import ai.rever.boss.components.model.Panel
+import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.components.model.PanelDropZones
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
-import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.plugin.panel.topofmind.ActiveTab
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.icons.FileIcons
-import ai.rever.boss.components.registery.TabRegistry
+import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossMainPanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
@@ -38,9 +38,9 @@ import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
-import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
-import ai.rever.boss.components.registery.TabTypeId
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.window.WindowProjectStateRegistry
 
 // Sealed class representing the split tree structure
@@ -228,7 +228,7 @@ class SplitViewState(
             typeId = ai.rever.boss.components.registery.TabTypeId("editor"),
             title = fileName,
             icon = fileIconInfo.icon,
-            tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+            tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
             filePath = filePath
         )
         activeComponent.addTab(editorTab).takeIf { it >= 0 }?.let {
@@ -611,7 +611,7 @@ class SplitViewState(
     private fun findPanelWithFile(filePath: String): Pair<String, BossTabsComponent>? {
         getAllPanels().forEach { panel ->
             if (panel.tabsComponent.tabsState.value.tabs.any { tab ->
-                tab is ai.rever.boss.components.plugin.tab_types.EditorTabInfo && tab.filePath == filePath
+                tab is EditorTabInfo && tab.filePath == filePath
             }) {
                 return panel.id to panel.tabsComponent
             }

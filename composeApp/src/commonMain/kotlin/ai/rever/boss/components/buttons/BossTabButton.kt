@@ -5,8 +5,8 @@ import BossDarkBorder
 import BossDarkTextPrimary
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.ContextMenu
 import androidx.compose.ui.input.pointer.pointerInput
@@ -286,7 +286,7 @@ fun BossTabButton(
                 // Render icon based on type
                 when {
                     // For bitmap images (favicons), use Image to preserve colors
-                    tabIcon is TabIcon.Image && painter != null -> {
+                    tabIcon is ai.rever.boss.plugin.api.TabIcon.Image && painter != null -> {
                         Image(
                             painter = painter,
                             contentDescription = fileName,
@@ -294,12 +294,13 @@ fun BossTabButton(
                         )
                     }
                     // For vector icons with custom tint (file type icons)
-                    tabIcon is TabIcon.Vector && tabIcon.tint != null && painter != null -> {
+                    tabIcon is ai.rever.boss.plugin.api.TabIcon.Vector && tabIcon.tint != null && painter != null -> {
+                        val tintColor = tabIcon.tint // Local copy for smart cast
                         Icon(
                             painter = painter,
                             contentDescription = fileName,
                             modifier = Modifier.size(14.dp),
-                            tint = tabIcon.tint
+                            tint = tintColor!!
                         )
                     }
                     // For vector icons without tint, use default

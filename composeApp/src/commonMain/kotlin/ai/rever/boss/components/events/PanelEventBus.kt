@@ -1,6 +1,6 @@
 package ai.rever.boss.components.events
 
-import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.plugin.api.PanelId
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow

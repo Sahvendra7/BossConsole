@@ -1,6 +1,6 @@
 package ai.rever.boss.cache
 
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import io.ktor.client.*
@@ -73,9 +73,9 @@ object HighQualityFaviconService {
      *
      * @param url The page URL to get favicon for
      * @param standardCacheKey The cache key from the standard favicon cache (fallback)
-     * @return TabIcon.Image if found, null otherwise
+     * @return ai.rever.boss.plugin.api.TabIcon.Image if found, null otherwise
      */
-    suspend fun getHighQualityFavicon(url: String, standardCacheKey: String?): TabIcon.Image? {
+    suspend fun getHighQualityFavicon(url: String, standardCacheKey: String?): ai.rever.boss.plugin.api.TabIcon.Image? {
         return withContext(Dispatchers.IO) {
             try {
                 val domain = extractDomain(url) ?: return@withContext loadStandardFavicon(standardCacheKey)
@@ -128,7 +128,7 @@ object HighQualityFaviconService {
      * Load favicon from HQ cache.
      * Updates file access time for LRU tracking.
      */
-    private fun loadFromCache(cacheKey: String): TabIcon.Image? {
+    private fun loadFromCache(cacheKey: String): ai.rever.boss.plugin.api.TabIcon.Image? {
         val cacheFile = File(cacheDir, "$cacheKey.png")
         if (!cacheFile.exists()) return null
 
@@ -138,7 +138,7 @@ object HighQualityFaviconService {
 
             val bufferedImage = ImageIO.read(cacheFile) ?: return null
             val imageBitmap = bufferedImage.toComposeImageBitmap()
-            TabIcon.Image(BitmapPainter(imageBitmap))
+            ai.rever.boss.plugin.api.TabIcon.Image(BitmapPainter(imageBitmap))
         } catch (e: Exception) {
             null
         }
@@ -148,7 +148,7 @@ object HighQualityFaviconService {
      * Fetch high-quality favicon from Google's service using async Ktor client.
      * URL format: https://www.google.com/s2/favicons?domain=example.com&sz=128
      */
-    private suspend fun fetchFromGoogle(domain: String, cacheKey: String): TabIcon.Image? {
+    private suspend fun fetchFromGoogle(domain: String, cacheKey: String): ai.rever.boss.plugin.api.TabIcon.Image? {
         val googleUrl = "https://www.google.com/s2/favicons?domain=$domain&sz=$ICON_SIZE"
 
         return try {
@@ -171,7 +171,7 @@ object HighQualityFaviconService {
                     ImageIO.write(bufferedImage, "PNG", cacheFile)
 
                     val imageBitmap = bufferedImage.toComposeImageBitmap()
-                    TabIcon.Image(BitmapPainter(imageBitmap))
+                    ai.rever.boss.plugin.api.TabIcon.Image(BitmapPainter(imageBitmap))
                 } else {
                     // Image too small, skip caching
                     null
@@ -212,7 +212,7 @@ object HighQualityFaviconService {
     /**
      * Load from standard favicon cache as fallback.
      */
-    private fun loadStandardFavicon(cacheKey: String?): TabIcon.Image? {
+    private fun loadStandardFavicon(cacheKey: String?): ai.rever.boss.plugin.api.TabIcon.Image? {
         if (cacheKey == null) return null
         return FaviconCache.loadFavicon(cacheKey)
     }

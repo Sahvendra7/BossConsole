@@ -2,8 +2,8 @@ package ai.rever.boss.window
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.api.TabInfo
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition

@@ -1,6 +1,6 @@
 package ai.rever.boss.project
 
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import ai.rever.boss.platform.FileSystemUtils
 import ai.rever.boss.project.templates.ProjectTemplate
 import ai.rever.boss.project.templates.TemplateFile

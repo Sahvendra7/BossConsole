@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector

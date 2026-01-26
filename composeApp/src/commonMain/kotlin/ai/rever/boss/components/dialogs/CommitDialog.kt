@@ -8,6 +8,8 @@ import BossDarkTextSecondary
 import ai.rever.boss.git.GitFileStatus
 import ai.rever.boss.git.GitFileStatusType
 import ai.rever.boss.git.GitOperationResult
+import ai.rever.boss.plugin.git.GitOperationResult.Success as GitSuccess
+import ai.rever.boss.plugin.git.GitOperationResult.Error as GitError
 import ai.rever.boss.git.GitService
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowGitState
@@ -320,11 +322,11 @@ fun CommitDialog(
 
                                 val result = GitService.commit(finalMessage, amend = amendCommit, windowId = windowId)
                                 when (result) {
-                                    is GitOperationResult.Success -> {
+                                    is GitSuccess -> {
                                         onCommitSuccess(commitMessage)
                                         onDismiss()
                                     }
-                                    is GitOperationResult.Error -> {
+                                    is GitError -> {
                                         errorMessage = result.message
                                     }
                                 }

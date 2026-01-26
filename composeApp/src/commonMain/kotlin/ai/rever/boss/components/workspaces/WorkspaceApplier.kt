@@ -1,16 +1,19 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
+import ai.rever.boss.plugin.workspace.SplitConfig.VerticalSplit
+import ai.rever.boss.plugin.workspace.SplitConfig.HorizontalSplit
 import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
-import ai.rever.boss.components.plugin.tab_types.CodeEditor
-import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
-import ai.rever.boss.components.plugin.tab_types.TerminalTab
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.window.Project
+import ai.rever.boss.window.WindowProjectState
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.components.window_panel.SplitViewState
@@ -74,7 +77,7 @@ private suspend fun applyWorkspaceNode(
     projectPath: String
 ) {
     when (node) {
-        is SplitConfig.SinglePanel -> {
+        is SinglePanel -> {
             // Add tabs to current panel
             val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
             node.panel.tabs.forEach { tabConfig ->
@@ -83,10 +86,10 @@ private suspend fun applyWorkspaceNode(
             }
         }
 
-        is SplitConfig.VerticalSplit -> {
+        is VerticalSplit -> {
             // First process left side in current panel
             when (val leftNode = node.left) {
-                is SplitConfig.SinglePanel -> {
+                is SinglePanel -> {
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     leftNode.panel.tabs.forEach { tabConfig ->
@@ -111,7 +114,7 @@ private suspend fun applyWorkspaceNode(
 
                 // Add remaining tabs or process splits for right side
                 when (val rightNode = node.right) {
-                    is SplitConfig.SinglePanel -> {
+                    is SinglePanel -> {
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(rightPanelId)
                         rightNode.panel.tabs.drop(1).forEach { tabConfig ->
@@ -127,10 +130,10 @@ private suspend fun applyWorkspaceNode(
             }
         }
 
-        is SplitConfig.HorizontalSplit -> {
+        is HorizontalSplit -> {
             // First process top side in current panel
             when (val topNode = node.top) {
-                is SplitConfig.SinglePanel -> {
+                is SinglePanel -> {
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     topNode.panel.tabs.forEach { tabConfig ->
@@ -155,7 +158,7 @@ private suspend fun applyWorkspaceNode(
 
                 // Add remaining tabs or process splits for bottom side
                 when (val bottomNode = node.bottom) {
-                    is SplitConfig.SinglePanel -> {
+                    is SinglePanel -> {
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(bottomPanelId)
                         bottomNode.panel.tabs.drop(1).forEach { tabConfig ->
@@ -175,9 +178,9 @@ private suspend fun applyWorkspaceNode(
 
 private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
     return when (workspaceConfig) {
-        is SplitConfig.SinglePanel -> workspaceConfig.panel.tabs.firstOrNull()
-        is SplitConfig.VerticalSplit -> getFirstTab(workspaceConfig.left)
-        is SplitConfig.HorizontalSplit -> getFirstTab(workspaceConfig.top)
+        is SinglePanel -> workspaceConfig.panel.tabs.firstOrNull()
+        is VerticalSplit -> getFirstTab(workspaceConfig.left)
+        is HorizontalSplit -> getFirstTab(workspaceConfig.top)
     }
 }
 
@@ -199,7 +202,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
 
             FluckTabInfo(
                 id = "browser-${Random.nextLong()}",
-                typeId = Fluck.typeId,
+                typeId = FluckTabType.typeId,
                 _title = tabConfig.title,
                 _tabIcon = cachedFavicon,
                 url = processedUrl,
@@ -219,7 +222,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
 
             TerminalTabInfo(
                 id = "terminal-${Random.nextLong()}",
-                typeId = TerminalTab.typeId,
+                typeId = TerminalTabType.typeId,
                 title = tabConfig.title,
                 workingDirectory = workingDir,
                 initialCommand = initialCmd
@@ -234,10 +237,10 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
 
             EditorTabInfo(
                 id = "editor-${Random.nextLong()}",
-                typeId = CodeEditor.typeId,
+                typeId = CodeEditorTabType.typeId,
                 title = tabConfig.title,
                 icon = fileIconInfo.icon,
-                tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+                tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                 filePath = filePath
             )
         }

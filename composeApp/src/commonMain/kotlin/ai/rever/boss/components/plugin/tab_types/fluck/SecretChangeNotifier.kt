@@ -83,4 +83,14 @@ object SecretChangeNotifier {
         logger.debug(LogCategory.GENERAL, "Notifying refresh")
         _secretChangeEvents.emit(SecretChangeEvent.Refresh)
     }
+
+    /**
+     * Non-suspending version of notifyRefresh using tryEmit.
+     * Use this when you need to notify from a non-coroutine context.
+     * Returns true if the event was emitted, false if the buffer was full.
+     */
+    fun notifyRefreshSync(): Boolean {
+        logger.debug(LogCategory.GENERAL, "Notifying refresh (sync)")
+        return _secretChangeEvents.tryEmit(SecretChangeEvent.Refresh)
+    }
 }

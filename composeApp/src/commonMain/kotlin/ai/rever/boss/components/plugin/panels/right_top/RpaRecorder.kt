@@ -6,12 +6,10 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.registery.PanelComponentWithUI
-import ai.rever.boss.components.registery.PanelInfo
-import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.plugin.api.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.panel.rparecorder.RpaRecorderInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,16 +52,6 @@ import kotlinx.coroutines.delay
 import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-
-/**
- * RPA Recorder Panel - Records browser interactions and generates RPA configurations
- */
-object RpaRecorderInfo : PanelInfo {
-    override val id = PanelId(panelId = "rpa_recorder", defaultOrder = 19)
-    override val displayName = "RPA Recorder"
-    override val icon = Icons.Default.PlayCircle // Better represents play/record for RPA
-    override val defaultSlotPosition = right.top.top
-}
 
 /**
  * Data class for Fluck tab information

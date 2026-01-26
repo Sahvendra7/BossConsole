@@ -1,5 +1,8 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+
 // For iOS, return mock data as file system access is restricted
 actual fun scanDirectory(path: String): FileNode? {
     // iOS has restricted file system access

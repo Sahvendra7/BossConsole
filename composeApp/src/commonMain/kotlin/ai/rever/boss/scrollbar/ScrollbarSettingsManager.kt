@@ -1,29 +1,17 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.scrollbar
 
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Expect declaration for scrollbar settings manager.
- * Platform-specific implementations handle persistence and default values.
+ * Re-exports from plugin-scrollbar module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.scrollbar
  */
+
+// Note: We can't typealias an object, so we delegate to it
 expect object ScrollbarSettingsManager {
-    /**
-     * Current settings state flow
-     */
     val currentSettings: StateFlow<ScrollbarSettings>
-
-    /**
-     * Update scrollbar settings and save to disk asynchronously.
-     */
     suspend fun updateSettings(settings: ScrollbarSettings)
-
-    /**
-     * Reset settings to defaults
-     */
     suspend fun resetToDefault()
-
-    /**
-     * Get default settings
-     */
     fun getDefaultSettings(): ScrollbarSettings
 }

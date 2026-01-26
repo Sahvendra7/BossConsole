@@ -8,10 +8,10 @@ import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel.Companion.bottom
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.right
+import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.overlays.DraggingItemOverlay
@@ -19,9 +19,9 @@ import ai.rever.boss.components.overlays.TabDraggingOverlay
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
-import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
-import ai.rever.boss.components.plugin.tab_types.CodeEditor
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.TabType
@@ -51,7 +51,7 @@ import ai.rever.boss.window.WindowGitStateRegistry
 import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.MenuActionsHandler
 import ai.rever.boss.window.WindowOperations
-import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
+import ai.rever.boss.window.WindowProjectState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -77,7 +77,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.take
 import ai.rever.boss.components.events.FileEventBus
-import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.plugin.events.FileValidationResult
 import ai.rever.boss.components.events.ParsedFileReference
 import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix
@@ -100,8 +100,8 @@ import ai.rever.boss.run.RunnerSettingsManager
 import ai.rever.boss.run.RunnerTerminalService
 import ai.rever.boss.run.RunnerTerminalTarget
 import ai.rever.boss.startup.StartupSettingsManager
-import ai.rever.boss.components.plugin.tab_types.TerminalTab
-import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabType
+import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -136,7 +136,7 @@ import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo as TerminalPanelInfo
+import ai.rever.boss.plugin.panel.terminal.TerminalInfo as TerminalPanelInfo
 import ai.rever.boss.dashboard.TemplatePanelConfig
 import ai.rever.boss.dashboard.SplitTemplatesManager
 import ai.rever.boss.platform.rememberDirectoryPicker
@@ -148,8 +148,15 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
+import ai.rever.boss.components.plugin.providers.SplitViewOperationsImpl
+import ai.rever.boss.components.plugin.providers.WorkspaceDataProviderImpl
+import ai.rever.boss.plugin.api.LocalSplitViewOperations
+import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
+import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
+import ai.rever.boss.plugin.api.LocalProjectPath
+import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
-import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TabTreeState
+import ai.rever.boss.plugin.panel.topofmind.TabTreeState
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import ai.rever.boss.components.windows.SettingsWindow
 import androidx.compose.runtime.CompositionLocalProvider
@@ -183,9 +190,9 @@ import ai.rever.boss.performance.BrowserTabInfo
 import ai.rever.boss.performance.TerminalInfo
 import ai.rever.boss.performance.EditorTabResourceInfo
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
+import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -328,7 +335,7 @@ private fun createEditorTab(filePath: String): EditorTabInfo {
         typeId = TabTypeId("editor"),
         title = fileName,
         icon = fileIconInfo.icon,
-        tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+        tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
         filePath = cleanPath
     )
 }
@@ -543,6 +550,19 @@ fun ComponentContext.BossApp(
         windowId = windowId,
         initialTabsComponent = tabsComponent
     )
+
+    // Create split view operations wrapper for plugins
+    val splitViewOperations = remember(splitViewState) {
+        SplitViewOperationsImpl(splitViewState)
+    }
+
+    // Create workspace data provider wrapper for plugins
+    val workspaceDataProvider = remember(workspaceManager) {
+        WorkspaceDataProviderImpl(workspaceManager)
+    }
+
+    // Create bookmark data provider wrapper for plugins
+    val bookmarkDataProvider = remember { BookmarkDataProviderImpl() }
 
     // Register this window's state in the global registry for multi-window features
     LaunchedEffect(splitViewState, windowId) {
@@ -905,7 +925,7 @@ fun ComponentContext.BossApp(
     var showProjectDialog by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showCloneProjectDialog by remember { mutableStateOf(false) }
-    var projectToOpen by remember { mutableStateOf<ai.rever.boss.components.plugin.panels.left_top.Project?>(null) }
+    var projectToOpen by remember { mutableStateOf<Project?>(null) }
 
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
@@ -942,8 +962,8 @@ fun ComponentContext.BossApp(
         }
     }
 
-    DisposableEffect(panelRegistry, tabRegistry, windowProjectState, windowGitState) {
-        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState, windowGitState)
+    DisposableEffect(panelRegistry, tabRegistry, windowProjectState, windowGitState, windowId) {
+        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState, windowGitState, windowId)
         draggablePanelComponent.update()
 
         onDispose {
@@ -1299,8 +1319,9 @@ fun ComponentContext.BossApp(
         RunEventBus.stopEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                if (event.configId != null) {
-                    RunExecutionService.stop(event.configId)
+                val configIdToStop = event.configId
+                if (configIdToStop != null) {
+                    RunExecutionService.stop(configIdToStop)
                 } else {
                     RunExecutionService.stopAll()
                 }
@@ -1435,9 +1456,9 @@ fun ComponentContext.BossApp(
                 val projectPath = windowProjectState.selectedProject.value.path
                 val terminalTab = TerminalTabInfo(
                     id = "terminal-$timestamp",
-                    typeId = TerminalTab.typeId,
+                    typeId = TerminalTabType.typeId,
                     title = "Terminal",
-                    icon = TerminalTab.icon,
+                    icon = TerminalTabType.icon,
                     workingDirectory = projectPath.ifEmpty { null }
                 )
                 splitViewState.getActiveTabsComponent()?.addTab(terminalTab)
@@ -1875,7 +1896,7 @@ fun ComponentContext.BossApp(
                         val projectPath = windowProjectState.selectedProject.value.path
                         val terminalTab = TerminalTabInfo(
                             id = "terminal-${Random.nextLong()}",
-                            typeId = TerminalTab.typeId,
+                            typeId = TerminalTabType.typeId,
                             title = "Terminal",
                             workingDirectory = projectPath.ifEmpty { null }
                         )
@@ -2085,14 +2106,34 @@ fun ComponentContext.BossApp(
 
     with(draggablePanelComponent) {
         BossTheme {
+            // Create window provider implementations for plugins
+            val windowIdProvider = ai.rever.boss.components.plugin.providers.WindowIdProviderImpl(windowId)
+            val windowProjectStateProvider = ai.rever.boss.components.plugin.providers.WindowProjectStateProviderImpl(windowProjectState)
+
             CompositionLocalProvider(
                 LocalWindowId provides windowId,
                 LocalSplitViewState provides splitViewState,
+                LocalSplitViewOperations provides splitViewOperations,
                 LocalWorkspaceManager provides workspaceManager,
+                LocalWorkspaceDataProvider provides workspaceDataProvider,
+                LocalBookmarkDataProvider provides bookmarkDataProvider,
+                LocalProjectPath provides selectedProject.path,
                 LocalWindowProjectState provides windowProjectState,
                 LocalWindowRunnerState provides windowRunnerState,
-                LocalWindowGitState provides windowGitState
+                LocalWindowGitState provides windowGitState,
+                ai.rever.boss.plugin.api.LocalWindowIdProvider provides windowIdProvider,
+                ai.rever.boss.plugin.api.LocalWindowProjectStateProvider provides windowProjectStateProvider
             ) {
+                // Initialize TopOfMind data provider for this window
+                DisposableEffect(splitViewState, workspaceManager, windowId) {
+                    ai.rever.boss.components.plugin.providers.TopOfMindDataProvider.initialize(
+                        splitViewState, workspaceManager, windowId
+                    )
+                    onDispose {
+                        ai.rever.boss.components.plugin.providers.TopOfMindDataProvider.clear()
+                    }
+                }
+
                 Box(modifier = Modifier
                     .fillMaxSize()
                     .focusRequester(focusRequester)
@@ -2374,7 +2415,7 @@ fun ComponentContext.BossApp(
                                     typeId = TabTypeId("editor"),
                                     title = fileName,
                                     icon = fileIconInfo.icon,
-                                    tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+                                    tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                                     filePath = path
                                 )
                                 targetComponent.addTab(tab)
@@ -2384,7 +2425,7 @@ fun ComponentContext.BossApp(
                                 val projectPath = windowProjectState.selectedProject.value.path
                                 val tab = TerminalTabInfo(
                                     id = "terminal-${Random.nextLong()}",
-                                    typeId = TerminalTab.typeId,
+                                    typeId = TerminalTabType.typeId,
                                     title = "Terminal",
                                     workingDirectory = projectPath.ifEmpty { null }
                                 )
@@ -2550,7 +2591,7 @@ fun ComponentContext.BossApp(
                     },
                     onProjectCloned = { projectPath ->
                         val projectName = projectPath.substringAfterLast(java.io.File.separator)
-                        val project = ai.rever.boss.components.plugin.panels.left_top.Project(
+                        val project = Project(
                             name = projectName,
                             path = projectPath
                         )
@@ -2633,9 +2674,9 @@ private fun createTabFromTemplateConfig(
             }
             TerminalTabInfo(
                 id = "terminal-$timestamp",
-                typeId = TerminalTab.typeId,
+                typeId = TerminalTabType.typeId,
                 title = command?.substringBefore(" ")?.extractFileName() ?: "Terminal",
-                icon = TerminalTab.icon,
+                icon = TerminalTabType.icon,
                 workingDirectory = projectPath,
                 initialCommand = command
             )
@@ -2644,7 +2685,7 @@ private fun createTabFromTemplateConfig(
             val url = panelConfig.content.url ?: ""
             FluckTabInfo(
                 id = "fluck-$timestamp",
-                typeId = Fluck.typeId,
+                typeId = FluckTabType.typeId,
                 _title = "Loading...",
                 url = url
             )
@@ -2655,9 +2696,9 @@ private fun createTabFromTemplateConfig(
             } ?: return null
             EditorTabInfo(
                 id = "editor-$timestamp",
-                typeId = CodeEditor.typeId,
+                typeId = CodeEditorTabType.typeId,
                 title = filePath.extractFileName(),
-                icon = CodeEditor.icon,
+                icon = CodeEditorTabType.icon,
                 filePath = filePath
             )
         }

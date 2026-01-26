@@ -3,7 +3,7 @@ package ai.rever.boss.components.window_panel.components.side_panel
 import BossDarkBackground
 import BossDarkBorder
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel
+import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.components.registery.PanelComponentStore
 import ai.rever.boss.components.window_panel.components.BossPanelTopBar
 import androidx.compose.foundation.background

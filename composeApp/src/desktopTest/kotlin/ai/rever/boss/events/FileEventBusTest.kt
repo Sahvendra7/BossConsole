@@ -1,6 +1,6 @@
 package ai.rever.boss.events
 
-import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.plugin.events.FileValidationResult
 import ai.rever.boss.components.events.ParsedFileReference
 import ai.rever.boss.components.events.parseFileReference
 import ai.rever.boss.components.events.stripFilePrefix

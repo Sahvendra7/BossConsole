@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*

@@ -6,7 +6,7 @@ import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadHighQualityFavicon
 import ai.rever.boss.components.common.rememberFaviconLoader
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -229,7 +229,7 @@ private fun SourceListItem(
     val faviconCacheKey = (source.tabInfo as? FluckTabInfo)?.faviconCacheKey
 
     // Load immediate favicons first (synchronous or fast cache)
-    val inMemoryFavicon = (source.tabInfo?.tabIcon as? TabIcon.Image)
+    val inMemoryFavicon = (source.tabInfo?.tabIcon as? ai.rever.boss.plugin.api.TabIcon.Image)
     val cachedFavicon = source.tabInfo?.let { rememberFaviconLoader(it) }
     val immediateFavicon = inMemoryFavicon ?: cachedFavicon
 
@@ -337,9 +337,9 @@ private fun DialogFooter(
 private fun rememberHighQualityFavicon(
     url: String?,
     standardCacheKey: String?,
-    fallback: TabIcon.Image?
-): TabIcon.Image? {
-    var hqFavicon by remember(url, standardCacheKey) { mutableStateOf<TabIcon.Image?>(null) }
+    fallback: ai.rever.boss.plugin.api.TabIcon.Image?
+): ai.rever.boss.plugin.api.TabIcon.Image? {
+    var hqFavicon by remember(url, standardCacheKey) { mutableStateOf<ai.rever.boss.plugin.api.TabIcon.Image?>(null) }
 
     LaunchedEffect(url, standardCacheKey) {
         if (url != null) {

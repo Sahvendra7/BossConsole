@@ -1,17 +1,18 @@
 package ai.rever.boss.components.model
 
-import ai.rever.boss.components.model.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.right
+import ai.rever.boss.plugin.api.Panel.Companion.top
+import ai.rever.boss.plugin.api.PanelId
+import ai.rever.boss.plugin.api.PanelRegistry
+import ai.rever.boss.plugin.api.SidebarItem
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
-import ai.rever.boss.components.registery.PanelId
-import ai.rever.boss.components.registery.PanelRegistry
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
 
@@ -19,16 +20,6 @@ data class PanelData(
     val sidebarItem: SidebarItem? = null,
     val visibility: Boolean,
 )
-
-// Represents a single draggable item in the sidebar
-data class SidebarItem(
-    val pluginContentId: PanelId, // Unique identifier for the item
-    val icon: ImageVector,
-    val label: String,
-    val onClick: (() -> Unit)? = null,
-) {
-    val id: String get() = pluginContentId.panelId
-}
 
 
 // Holds the state and logic for the draggable sidebar system

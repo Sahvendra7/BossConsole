@@ -1,51 +1,21 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.components.registery
 
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import com.arkivanov.decompose.ComponentContext
+import ai.rever.boss.plugin.api.TabIcon as PluginTabIcon
 
-data class TabTypeId(
-    val typeId: String,
-    val pluginId: String = "ai.rever.boss"
-)
+/**
+ * Re-exports from plugin-api module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.api
+ */
 
-// Wrapper for tab icons that can be either vector or bitmap
-sealed class TabIcon {
-    data class Vector(
-        val imageVector: ImageVector,
-        val tint: Color? = null  // Optional tint color for file type icons
-    ) : TabIcon()
-    data class Image(val painter: Painter) : TabIcon()
+// Re-export all types from plugin-api
+typealias TabTypeId = ai.rever.boss.plugin.api.TabTypeId
+typealias TabIcon = PluginTabIcon
+typealias TabInfo = ai.rever.boss.plugin.api.TabInfo
+typealias TabTypeInfo = ai.rever.boss.plugin.api.TabTypeInfo
+typealias TabComponentWithUI = ai.rever.boss.plugin.api.TabComponentWithUI
 
-    @Composable
-    fun asPainter(): Painter = when (this) {
-        is Vector -> rememberVectorPainter(imageVector)
-        is Image -> painter
-    }
-}
-
-interface TabInfo {
-    val id: String
-    val typeId: TabTypeId
-    val title: String
-    val icon: ImageVector // Keep for backward compatibility
-    val tabIcon: TabIcon? // New flexible icon
-        get() = null // Default implementation
-}
-
-interface TabTypeInfo {
-    val typeId: TabTypeId
-    val displayName: String
-    val icon: ImageVector
-}
-
-interface TabComponentWithUI: ComponentContext {
-    val tabTypeInfo: TabTypeInfo
-    val config: TabInfo
-
-    @Composable
-    fun Content()
-}
+// Re-export nested types of TabIcon for import compatibility
+// e.g., import ai.rever.boss.components.registery.Vector
+typealias Vector = PluginTabIcon.Vector
+typealias Image = PluginTabIcon.Image

@@ -1,7 +1,7 @@
 package ai.rever.boss
 
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import ai.rever.boss.utils.logging.BossLogger

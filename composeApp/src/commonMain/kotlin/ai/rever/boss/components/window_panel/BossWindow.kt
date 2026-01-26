@@ -1,14 +1,14 @@
 package ai.rever.boss.components.window_panel
 
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.model.Panel.Companion.bottom
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.right
+import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.right
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.registery.PanelComponentStore
-import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.components.window_panel.components.BossResizablePanel
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.components.window_panel.components.side_panel.SidePanel

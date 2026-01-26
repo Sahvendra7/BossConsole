@@ -6,14 +6,12 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.registery.PanelComponentWithUI
-import ai.rever.boss.components.registery.PanelInfo
-import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.plugin.api.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.panel.rpaengine.RpaEngineInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import ai.rever.boss.components.window_panel.SplitViewState
 import androidx.compose.foundation.background
@@ -46,16 +44,6 @@ import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 
 private val rpaEngineLogger = BossLogger.forComponent("RpaEngine")
-
-/**
- * RPA Engine Panel - Executes RPA configurations in browser
- */
-object RpaEngineInfo : PanelInfo {
-    override val id = PanelId(panelId = "rpa_engine", defaultOrder = 20)
-    override val displayName = "RPA Engine"
-    override val icon = FeatherIcons.Cpu // CPU icon for automation engine
-    override val defaultSlotPosition = right.top.top
-}
 
 /**
  * Execution status for RPA actions
@@ -776,7 +764,7 @@ open class RpaEngineComponent(
                 
                 val rpaTab = FluckTabInfo(
                     id = "rpa-$timestamp",
-                    typeId = Fluck.typeId,
+                    typeId = FluckTabType.typeId,
                     _title = "RPA: ${config.name}",
                     _icon = Icons.Outlined.Language,
                     url = firstNavUrl

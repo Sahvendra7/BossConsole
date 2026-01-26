@@ -3,7 +3,7 @@ package ai.rever.boss.components.dashboard.cards
 import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadHighQualityFavicon
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.dashboard.RecentBrowserPage
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
 import androidx.compose.animation.core.animateFloatAsState
@@ -70,7 +70,7 @@ fun BrowserPageCard(
     val cardShape = RoundedCornerShape(12.dp)
 
     // Load high-quality favicon (Google's service provides up to 128px icons)
-    var favicon by remember(page.url) { mutableStateOf<TabIcon.Image?>(null) }
+    var favicon by remember(page.url) { mutableStateOf<ai.rever.boss.plugin.api.TabIcon.Image?>(null) }
     LaunchedEffect(page.url, page.faviconCacheKey) {
         favicon = try {
             loadHighQualityFavicon(page.url, page.faviconCacheKey)

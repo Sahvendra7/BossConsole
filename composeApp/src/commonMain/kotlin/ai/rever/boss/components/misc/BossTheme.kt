@@ -1,55 +1,31 @@
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.darkColors
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-
-// JetBrains Dark Theme Colors
-val BossDarkBackground = Color(0xFF2B2B2B) // JetBrains dark background
-val BossDarkSurface = Color(0xFF3C3F41)    // JetBrains secondary background
-val BossDarkContentBackground = Color(0xFF1E1E1E) // Darker content background (for settings)
-val BossDarkBorder = Color(0xFF4D4D4D)     // JetBrains border color
-val BossDarkTextPrimary = Color(0xFFF2F2F2) // JetBrains text color - brightened
-val BossDarkTextSecondary = Color(0xFFAAAAAA) // JetBrains secondary text - brightened
-val BossDarkTextMuted = Color(0xFF707070)  // Muted text color
-val BossDarkAccent = Color(0xFF3592C4)      // JetBrains blue accent
-val BossDarkSecondary = Color(0xFF43A047)   // Secondary color - green
-val BossDarkError = Color(0xFFE53935)       // Error color - red
-val BossDarkSuccess = Color(0xFF4CAF50)     // Success color - green
-
-// Context Menu Colors (matching SwingContextMenu/BossTerm)
-val ContextMenuBackground = Color(0xFF2B2B2B)
-val ContextMenuBorder = Color(0xFF3C3F41)
-val ContextMenuHover = Color(0xFF3A3D40)
+@file:Suppress("UNUSED")
 
 /**
- * BOSS application theme
- * 
- * This theme only supports dark mode and ignores system theme settings.
- * The dark theme is mandatory for all screens and components in the app.
- * 
- * @param content The content to be styled with this theme
+ * Re-exports from plugin-ui-core module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.ui
  */
+
+// Re-export BossTheme composable
+import ai.rever.boss.plugin.ui.BossTheme as PluginBossTheme
+import androidx.compose.runtime.Composable
+
 @Composable
-fun BossTheme(content: @Composable () -> Unit) {
-    // Always use dark colors, regardless of system settings
-    val darkColorPalette = darkColors(
-        primary = BossDarkAccent,
-        primaryVariant = BossDarkAccent.copy(alpha = 0.8f),
-        secondary = BossDarkSecondary,
-        secondaryVariant = BossDarkSecondary.copy(alpha = 0.8f),
-        background = BossDarkBackground,
-        surface = BossDarkSurface,
-        error = BossDarkError,
-        onPrimary = BossDarkTextPrimary,
-        onSecondary = BossDarkTextPrimary,
-        onBackground = BossDarkTextPrimary,
-        onSurface = BossDarkTextPrimary,
-        onError = BossDarkTextPrimary
-    )
-    
-    MaterialTheme(
-        colors = darkColorPalette
-    ) {
-        content()
-    }
-}
+fun BossTheme(content: @Composable () -> Unit) = PluginBossTheme(content)
+
+// Re-export color values for backward compatibility
+// These are imported as top-level so existing code using "import BossDarkAccent" still works
+val BossDarkBackground = ai.rever.boss.plugin.ui.BossDarkBackground
+val BossDarkSurface = ai.rever.boss.plugin.ui.BossDarkSurface
+val BossDarkContentBackground = ai.rever.boss.plugin.ui.BossDarkContentBackground
+val BossDarkBorder = ai.rever.boss.plugin.ui.BossDarkBorder
+val BossDarkTextPrimary = ai.rever.boss.plugin.ui.BossDarkTextPrimary
+val BossDarkTextSecondary = ai.rever.boss.plugin.ui.BossDarkTextSecondary
+val BossDarkTextMuted = ai.rever.boss.plugin.ui.BossDarkTextMuted
+val BossDarkAccent = ai.rever.boss.plugin.ui.BossDarkAccent
+val BossDarkSecondary = ai.rever.boss.plugin.ui.BossDarkSecondary
+val BossDarkError = ai.rever.boss.plugin.ui.BossDarkError
+val BossDarkSuccess = ai.rever.boss.plugin.ui.BossDarkSuccess
+val BossDarkWarning = ai.rever.boss.plugin.ui.BossDarkWarning
+val ContextMenuBackground = ai.rever.boss.plugin.ui.ContextMenuBackground
+val ContextMenuBorder = ai.rever.boss.plugin.ui.ContextMenuBorder
+val ContextMenuHover = ai.rever.boss.plugin.ui.ContextMenuHover

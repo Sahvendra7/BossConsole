@@ -8,10 +8,9 @@ import ai.rever.boss.performance.PerformanceHealth
 import ai.rever.boss.performance.PerformanceSnapshot
 import ai.rever.boss.utils.FormatUtils
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 
-// Warning color (yellow/orange)
-val BossDarkWarning = Color(0xFFFFA726)
+// Re-export BossDarkWarning from plugin-ui-core for backward compatibility
+val BossDarkWarning = ai.rever.boss.plugin.ui.BossDarkWarning
 
 /**
  * Compact performance indicator for the status bar.

@@ -7,6 +7,8 @@ import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.git.GitOperationResult
+import ai.rever.boss.plugin.git.GitOperationResult.Success as GitSuccess
+import ai.rever.boss.plugin.git.GitOperationResult.Error as GitError
 import ai.rever.boss.git.GitService
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -462,11 +464,11 @@ private fun CloningStep(
             )
 
             when (result) {
-                is GitOperationResult.Success -> {
+                is GitSuccess -> {
                     logger.info(LogCategory.GENERAL, "Clone completed successfully")
                     onSuccess(targetDirectory)
                 }
-                is GitOperationResult.Error -> {
+                is GitError -> {
                     logger.error(LogCategory.GENERAL, "Clone failed: ${result.message}")
                     onError(result.message)
                 }

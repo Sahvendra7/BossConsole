@@ -71,6 +71,10 @@ This repository contains the source code for BOSS. For building from source and 
 /composeApp     # Main Compose Multiplatform UI application
   /commonMain   # Cross-platform shared code
   /desktopMain  # Desktop-specific code (JVM)
+/plugins        # Modular plugin system
+  /plugin-api   # Core plugin interfaces
+  /plugin-panel-*  # Panel plugins (git, console, performance, etc.)
+  /plugin-tab-*    # Tab type plugins (browser, editor, terminal)
 /bosseditor     # Standalone code editor with LSP and PSI support
 /server         # Minimal Ktor server component
 /shared         # Shared business logic
@@ -172,6 +176,7 @@ boss --help                    # Show help
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference
 - [Threading Best Practices](docs/THREADING.md) - Threading patterns and pitfalls
 - [RBAC Guide](docs/RBAC_GUIDE.md) - Role-based access control
+- [Plugin System](plugins/README.md) - Modular plugin architecture
 
 ---
 

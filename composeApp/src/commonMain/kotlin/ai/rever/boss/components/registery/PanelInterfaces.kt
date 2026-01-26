@@ -1,37 +1,14 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.components.registery
 
-import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.model.SidebarItem
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.vector.ImageVector
-import com.arkivanov.decompose.ComponentContext
+/**
+ * Re-exports from plugin-api module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.api
+ */
 
-data class PanelId(
-    val panelId: String,
-    val defaultOrder: Int,
-    val pluginId: String = "ai.rever.boss"
-)
-
-interface PanelInfo {
-    val id: PanelId
-    val displayName: String
-    val icon: ImageVector
-    val defaultSlotPosition: Panel
-
-    val sidebarItem get() = SidebarItem(id, icon, displayName)
-}
-
-interface PanelComponentWithUI: ComponentContext, PanelLifecycle {
-    val panelInfo: PanelInfo
-
-    @Composable
-    fun Content()
-
-    /**
-     * Default implementation of resetPanelId from PanelLifecycle.
-     * Returns the panel's ID from panelInfo for component reset operations.
-     */
-    override val resetPanelId: PanelId
-        get() = panelInfo.id
-}
+// Re-export all types from plugin-api
+typealias PanelId = ai.rever.boss.plugin.api.PanelId
+typealias PanelInfo = ai.rever.boss.plugin.api.PanelInfo
+typealias PanelComponentWithUI = ai.rever.boss.plugin.api.PanelComponentWithUI
+typealias SidebarItem = ai.rever.boss.plugin.api.SidebarItem
 

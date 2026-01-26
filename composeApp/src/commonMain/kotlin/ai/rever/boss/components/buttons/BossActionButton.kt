@@ -3,11 +3,11 @@ package ai.rever.boss.components.buttons
 import BossDarkAccent
 import BossDarkBorder
 import BossDarkTextPrimary
-import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.model.Panel.Companion.bottom
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.right
+import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import androidx.compose.foundation.hoverable

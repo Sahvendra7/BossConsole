@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.plugin.panel.codebase.FileNode
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -14,7 +15,7 @@ class FileIndexCache(
     private val cache = mutableMapOf<String, CachedNode>()
     private val accessOrder = mutableListOf<String>()
     private val mutex = Mutex()
-    
+
     data class CachedNode(
         val node: FileNode,
         var lastAccessed: Long = Clock.System.now().epochSeconds,
@@ -71,5 +72,5 @@ class FileIndexCache(
 }
 
 
-// Platform-specific implementation with depth control
+// Platform-specific implementation with depth control - uses plugin types
 expect suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode?

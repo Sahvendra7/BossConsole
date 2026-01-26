@@ -1,5 +1,7 @@
 package ai.rever.boss.git
 
+import ai.rever.boss.plugin.git.GitOperationResult.Success as GitSuccess
+import ai.rever.boss.plugin.git.GitOperationResult.Error as GitError
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.logging.LogSanitizer
@@ -119,7 +121,7 @@ actual object GitService {
 
     actual suspend fun checkout(branchName: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -136,11 +138,11 @@ actual object GitService {
                 // Refresh state after checkout
                 refresh(projectPath)
                 refreshWindowState(windowId)
-                GitOperationResult.Success("Switched to branch '$localName'")
+                GitSuccess("Switched to branch '$localName'")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -150,7 +152,7 @@ actual object GitService {
     actual suspend fun createBranch(branchName: String, checkout: Boolean, windowId: String?): GitOperationResult =
         withContext(Dispatchers.IO) {
             val projectPath = currentProjectPath
-                ?: return@withContext GitOperationResult.Error("No project selected")
+                ?: return@withContext GitError("No project selected")
 
             _isLoading.value = true
             try {
@@ -165,11 +167,11 @@ actual object GitService {
                     // Refresh state after creation
                     refresh(projectPath)
                     refreshWindowState(windowId)
-                    GitOperationResult.Success("Created branch '$branchName'")
+                    GitSuccess("Created branch '$branchName'")
                 } else {
                     val errorMsg = result.error.ifEmpty { result.output }.trim()
                     _lastError.value = errorMsg
-                    GitOperationResult.Error(errorMsg, result.exitCode)
+                    GitError(errorMsg, result.exitCode)
                 }
             } finally {
                 _isLoading.value = false
@@ -178,7 +180,7 @@ actual object GitService {
 
     actual suspend fun pull(): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -187,11 +189,11 @@ actual object GitService {
                 // Refresh state after pull
                 refresh(projectPath)
                 val message = result.output.trim().ifEmpty { "Pull completed successfully" }
-                GitOperationResult.Success(message)
+                GitSuccess(message)
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -200,7 +202,7 @@ actual object GitService {
 
     actual suspend fun push(): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -210,11 +212,11 @@ actual object GitService {
                 val message = result.output.trim().ifEmpty {
                     result.error.trim().ifEmpty { "Push completed successfully" }
                 }
-                GitOperationResult.Success(message)
+                GitSuccess(message)
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -257,7 +259,7 @@ actual object GitService {
 
     actual suspend fun merge(branchName: String): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -266,11 +268,11 @@ actual object GitService {
                 // Refresh state after merge
                 refresh(projectPath)
                 val message = result.output.trim().ifEmpty { "Merged '$branchName' successfully" }
-                GitOperationResult.Success(message)
+                GitSuccess(message)
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -279,7 +281,7 @@ actual object GitService {
 
     actual suspend fun rebase(branchName: String): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -288,11 +290,11 @@ actual object GitService {
                 // Refresh state after rebase
                 refresh(projectPath)
                 val message = result.output.trim().ifEmpty { "Rebased onto '$branchName' successfully" }
-                GitOperationResult.Success(message)
+                GitSuccess(message)
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -395,76 +397,76 @@ actual object GitService {
 
     actual suspend fun stage(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         val result = runGitCommand(projectPath, "add", "--", filePath)
         if (result.exitCode == 0) {
             getStatus() // Refresh global status
             refreshWindowState(windowId) // Refresh window-specific status
-            GitOperationResult.Success("Staged '$filePath'")
+            GitSuccess("Staged '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
-            GitOperationResult.Error(errorMsg, result.exitCode)
+            GitError(errorMsg, result.exitCode)
         }
     }
 
     actual suspend fun stageAll(windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         val result = runGitCommand(projectPath, "add", "-A")
         if (result.exitCode == 0) {
             getStatus() // Refresh global status
             refreshWindowState(windowId) // Refresh window-specific status
-            GitOperationResult.Success("Staged all changes")
+            GitSuccess("Staged all changes")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
-            GitOperationResult.Error(errorMsg, result.exitCode)
+            GitError(errorMsg, result.exitCode)
         }
     }
 
     actual suspend fun unstage(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--staged", "--", filePath)
         if (result.exitCode == 0) {
             getStatus() // Refresh global status
             refreshWindowState(windowId) // Refresh window-specific status
-            GitOperationResult.Success("Unstaged '$filePath'")
+            GitSuccess("Unstaged '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
-            GitOperationResult.Error(errorMsg, result.exitCode)
+            GitError(errorMsg, result.exitCode)
         }
     }
 
     actual suspend fun unstageAll(windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--staged", ".")
         if (result.exitCode == 0) {
             getStatus() // Refresh global status
             refreshWindowState(windowId) // Refresh window-specific status
-            GitOperationResult.Success("Unstaged all changes")
+            GitSuccess("Unstaged all changes")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
-            GitOperationResult.Error(errorMsg, result.exitCode)
+            GitError(errorMsg, result.exitCode)
         }
     }
 
     actual suspend fun discardChanges(filePath: String, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         val result = runGitCommand(projectPath, "restore", "--", filePath)
         if (result.exitCode == 0) {
             getStatus() // Refresh global status
             refreshWindowState(windowId) // Refresh window-specific status
-            GitOperationResult.Success("Discarded changes to '$filePath'")
+            GitSuccess("Discarded changes to '$filePath'")
         } else {
             val errorMsg = result.error.ifEmpty { result.output }.trim()
-            GitOperationResult.Error(errorMsg, result.exitCode)
+            GitError(errorMsg, result.exitCode)
         }
     }
 
@@ -472,7 +474,7 @@ actual object GitService {
 
     actual suspend fun commit(message: String, amend: Boolean, windowId: String?): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -488,11 +490,11 @@ actual object GitService {
                 getLog() // Refresh global log
                 refreshWindowState(windowId) // Refresh window-specific status and log
                 val action = if (amend) "Amended commit" else "Created commit"
-                GitOperationResult.Success(action)
+                GitSuccess(action)
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -563,18 +565,18 @@ actual object GitService {
 
     actual suspend fun cherryPick(commitHash: String): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
             val result = runGitCommand(projectPath, "cherry-pick", commitHash)
             if (result.exitCode == 0) {
                 refresh(projectPath)
-                GitOperationResult.Success("Cherry-picked $commitHash")
+                GitSuccess("Cherry-picked $commitHash")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -583,18 +585,18 @@ actual object GitService {
 
     actual suspend fun revert(commitHash: String): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
             val result = runGitCommand(projectPath, "revert", "--no-edit", commitHash)
             if (result.exitCode == 0) {
                 refresh(projectPath)
-                GitOperationResult.Success("Reverted $commitHash")
+                GitSuccess("Reverted $commitHash")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -606,7 +608,7 @@ actual object GitService {
     actual suspend fun stash(message: String?, includeUntracked: Boolean): GitOperationResult =
         withContext(Dispatchers.IO) {
             val projectPath = currentProjectPath
-                ?: return@withContext GitOperationResult.Error("No project selected")
+                ?: return@withContext GitError("No project selected")
 
             _isLoading.value = true
             try {
@@ -623,11 +625,11 @@ actual object GitService {
                 if (result.exitCode == 0) {
                     getStatus()
                     refreshStashList()
-                    GitOperationResult.Success(result.output.trim().ifEmpty { "Stashed changes" })
+                    GitSuccess(result.output.trim().ifEmpty { "Stashed changes" })
                 } else {
                     val errorMsg = result.error.ifEmpty { result.output }.trim()
                     _lastError.value = errorMsg
-                    GitOperationResult.Error(errorMsg, result.exitCode)
+                    GitError(errorMsg, result.exitCode)
                 }
             } finally {
                 _isLoading.value = false
@@ -636,7 +638,7 @@ actual object GitService {
 
     actual suspend fun stashPop(index: Int): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
@@ -644,11 +646,11 @@ actual object GitService {
             if (result.exitCode == 0) {
                 getStatus()
                 refreshStashList()
-                GitOperationResult.Success("Popped stash@{$index}")
+                GitSuccess("Popped stash@{$index}")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -657,18 +659,18 @@ actual object GitService {
 
     actual suspend fun stashApply(index: Int): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
             val result = runGitCommand(projectPath, "stash", "apply", "stash@{$index}")
             if (result.exitCode == 0) {
                 getStatus()
-                GitOperationResult.Success("Applied stash@{$index}")
+                GitSuccess("Applied stash@{$index}")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -677,18 +679,18 @@ actual object GitService {
 
     actual suspend fun stashDrop(index: Int): GitOperationResult = withContext(Dispatchers.IO) {
         val projectPath = currentProjectPath
-            ?: return@withContext GitOperationResult.Error("No project selected")
+            ?: return@withContext GitError("No project selected")
 
         _isLoading.value = true
         try {
             val result = runGitCommand(projectPath, "stash", "drop", "stash@{$index}")
             if (result.exitCode == 0) {
                 refreshStashList()
-                GitOperationResult.Success("Dropped stash@{$index}")
+                GitSuccess("Dropped stash@{$index}")
             } else {
                 val errorMsg = result.error.ifEmpty { result.output }.trim()
                 _lastError.value = errorMsg
-                GitOperationResult.Error(errorMsg, result.exitCode)
+                GitError(errorMsg, result.exitCode)
             }
         } finally {
             _isLoading.value = false
@@ -1121,7 +1123,7 @@ actual object GitService {
             if (!checkGitAvailable()) {
                 val error = "Git is not installed. Please install git to clone repositories."
                 logger.error(LogCategory.SYSTEM, error)
-                return@withContext GitOperationResult.Error(error)
+                return@withContext GitError(error)
             }
 
             // Validate target directory
@@ -1132,26 +1134,26 @@ actual object GitService {
             if (parentDir == null || !parentDir.exists()) {
                 val error = "Parent directory does not exist: ${parentDir?.absolutePath ?: "unknown"}"
                 logger.error(LogCategory.GENERAL, error)
-                return@withContext GitOperationResult.Error(error)
+                return@withContext GitError(error)
             }
 
             if (!parentDir.isDirectory) {
                 val error = "Parent path is not a directory: ${parentDir.absolutePath}"
                 logger.error(LogCategory.GENERAL, error)
-                return@withContext GitOperationResult.Error(error)
+                return@withContext GitError(error)
             }
 
             if (!parentDir.canWrite()) {
                 val error = "Parent directory is not writable: ${parentDir.absolutePath}"
                 logger.error(LogCategory.GENERAL, error)
-                return@withContext GitOperationResult.Error(error)
+                return@withContext GitError(error)
             }
 
             // Check if target directory already exists (git clone will fail if it does)
             if (targetDir.exists()) {
                 val error = "Directory already exists: $targetDirectory"
                 logger.error(LogCategory.GENERAL, error)
-                return@withContext GitOperationResult.Error(error)
+                return@withContext GitError(error)
             }
 
             // Execute git clone with progress, wrapped in timeout (10 minutes for large repos)
@@ -1212,7 +1214,7 @@ actual object GitService {
                             "Repository cloned successfully",
                             mapOf("target" to targetDirectory)
                         )
-                        GitOperationResult.Success()
+                        GitSuccess()
                     } else {
                         val errorMessage = when {
                             repositoryUrl.contains("@") && exitCode == 128 ->
@@ -1229,7 +1231,7 @@ actual object GitService {
                             "Clone failed",
                             mapOf("exitCode" to exitCode, "message" to errorMessage)
                         )
-                        GitOperationResult.Error(errorMessage)
+                        GitError(errorMessage)
                     }
                 } finally {
                     // Ensure process is destroyed if still running
@@ -1247,7 +1249,7 @@ actual object GitService {
             } catch (cleanupError: Exception) {
                 logger.warn(LogCategory.GENERAL, "Failed to clean up after timeout", error = cleanupError)
             }
-            GitOperationResult.Error(errorMessage)
+            GitError(errorMessage)
         } catch (e: IOException) {
             val errorMessage = when {
                 e.message?.contains("Connection refused") == true ->
@@ -1262,11 +1264,11 @@ actual object GitService {
                     "I/O error during clone: ${e.message}. Check your network connection and disk space."
             }
             logger.error(LogCategory.GENERAL, errorMessage, error = e)
-            GitOperationResult.Error(errorMessage)
+            GitError(errorMessage)
         } catch (e: SecurityException) {
             val errorMessage = "Security permission denied. Check file system permissions for '${File(targetDirectory).parentFile?.absolutePath}'."
             logger.error(LogCategory.GENERAL, errorMessage, error = e)
-            GitOperationResult.Error(errorMessage)
+            GitError(errorMessage)
         } catch (e: InterruptedException) {
             val errorMessage = "Clone operation was interrupted. Please try again."
             logger.error(LogCategory.GENERAL, errorMessage, error = e)
@@ -1276,11 +1278,11 @@ actual object GitService {
             } catch (cleanupError: Exception) {
                 logger.warn(LogCategory.GENERAL, "Failed to clean up after interruption", error = cleanupError)
             }
-            GitOperationResult.Error(errorMessage)
+            GitError(errorMessage)
         } catch (e: Exception) {
             val errorMessage = "Unexpected error during clone: ${e.message ?: e.javaClass.simpleName}. Please check logs for details."
             logger.error(LogCategory.GENERAL, errorMessage, error = e)
-            GitOperationResult.Error(errorMessage)
+            GitError(errorMessage)
         }
     }
 }

@@ -4,9 +4,9 @@ import ai.rever.boss.components.dividers.SDivider
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.misc.DraggableSidebarSection
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel.Companion.bottom
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.model.Panel.Companion.top
+import ai.rever.boss.plugin.api.Panel.Companion.bottom
+import ai.rever.boss.plugin.api.Panel.Companion.left
+import ai.rever.boss.plugin.api.Panel.Companion.top
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize

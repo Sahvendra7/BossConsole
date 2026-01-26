@@ -1,40 +1,16 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.plugin.run.RunnerTerminalOpenEvent
+import ai.rever.boss.plugin.run.RunnerTerminalStopEvent
+import ai.rever.boss.plugin.run.RunnerTerminalCloseEvent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
-/**
- * Event for opening a runner terminal.
- */
-data class RunnerTerminalOpenEvent(
-    val terminalId: String,
-    val command: String,
-    val configId: String,
-    val configName: String,
-    val workingDirectory: String?,
-    val isRerun: Boolean,
-    val sourceWindowId: String  // Window that initiated the run (Issue #498)
-)
-
-/**
- * Event for stopping a runner terminal (Ctrl+C request).
- * @property sourceWindowId Window that initiated the stop (required for multi-window support)
- */
-data class RunnerTerminalStopEvent(
-    val terminalId: String,
-    val configId: String,
-    val sourceWindowId: String
-)
-
-/**
- * Event for closing a runner terminal tab.
- * @property sourceWindowId Window that initiated the close (required for multi-window support)
- */
-data class RunnerTerminalCloseEvent(
-    val terminalId: String,
-    val sourceWindowId: String
-)
+// Re-export event types via typealiases for backward compatibility
+typealias RunnerTerminalOpenEvent = ai.rever.boss.plugin.run.RunnerTerminalOpenEvent
+typealias RunnerTerminalStopEvent = ai.rever.boss.plugin.run.RunnerTerminalStopEvent
+typealias RunnerTerminalCloseEvent = ai.rever.boss.plugin.run.RunnerTerminalCloseEvent
 
 /**
  * Event bus for runner terminal operations.

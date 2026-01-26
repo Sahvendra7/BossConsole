@@ -4,7 +4,7 @@ import BossDarkBackground
 import BossDarkBorder
 import BossDarkSurface
 import BossDarkTextSecondary
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import ai.rever.boss.platform.rememberDirectoryPicker
 import ai.rever.boss.project.ProjectCreationService
 import ai.rever.boss.project.ValidationResult

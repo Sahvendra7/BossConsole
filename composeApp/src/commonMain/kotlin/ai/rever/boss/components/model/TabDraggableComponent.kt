@@ -1,7 +1,7 @@
 package ai.rever.boss.components.model
 
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabInfo
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.components.window_panel.SplitOrientation
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue

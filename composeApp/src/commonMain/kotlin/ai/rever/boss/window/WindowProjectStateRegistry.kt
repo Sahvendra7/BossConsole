@@ -1,40 +1,30 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.window
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
-import androidx.compose.runtime.compositionLocalOf
+import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import androidx.compose.runtime.mutableStateMapOf
 
+/**
+ * Re-exports from plugin-window module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.window
+ */
+
+// Re-export types from plugin-window
+typealias Project = ai.rever.boss.plugin.window.Project
+typealias WindowProjectState = ai.rever.boss.plugin.window.WindowProjectState
+typealias ProjectSelectionCallback = ai.rever.boss.plugin.window.ProjectSelectionCallback
+
+// Re-export composition locals
+val LocalWindowId = ai.rever.boss.plugin.window.LocalWindowId
+val LocalWindowProjectState = ai.rever.boss.plugin.window.LocalWindowProjectState
+
+// Re-export helper function
+fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Project) =
+    ai.rever.boss.plugin.window.selectProjectInWindow(windowProjectState, project)
+
 private val windowProjectStateLogger = BossLogger.forComponent("WindowProjectStateRegistry")
-
-/**
- * Helper function to select a project using window-specific state.
- * Window state is required for multi-window support.
- *
- * @param windowProjectState The window project state (should not be null in normal operation)
- * @param project The project to select
- */
-fun selectProjectInWindow(windowProjectState: WindowProjectState?, project: Project) {
-    if (windowProjectState != null) {
-        windowProjectState.selectProject(project)
-    } else {
-        windowProjectStateLogger.warn(LogCategory.UI, "selectProjectInWindow called without window state - project selection ignored")
-    }
-}
-
-/**
- * CompositionLocal to provide the window ID to descendant composables.
- * This allows components to identify which window they are in (e.g., for filtering events).
- */
-val LocalWindowId = compositionLocalOf<String?> { null }
-
-/**
- * CompositionLocal to provide WindowProjectState to descendant composables.
- * This allows components like BossTopBar to access the window-specific project state.
- */
-val LocalWindowProjectState = compositionLocalOf<WindowProjectState?> { null }
 
 /**
  * Registry for per-window project states.
@@ -47,9 +37,14 @@ object WindowProjectStateRegistry {
 
     /**
      * Register a new window project state.
+     * Sets up callback to update recent projects when project is selected.
      */
     fun register(windowId: String): WindowProjectState {
         val state = WindowProjectState(windowId)
+        // Register callback to update recent projects list
+        state.setProjectSelectionCallback { project ->
+            ProjectState.updateRecentProjects(project)
+        }
         _states[windowId] = state
         windowProjectStateLogger.debug(LogCategory.UI, "Registered state for window", mapOf("windowId" to windowId))
         return state
@@ -66,7 +61,12 @@ object WindowProjectStateRegistry {
     fun getOrCreate(windowId: String): WindowProjectState =
         _states.getOrPut(windowId) {
             windowProjectStateLogger.debug(LogCategory.UI, "Creating new state for window", mapOf("windowId" to windowId))
-            WindowProjectState(windowId)
+            val state = WindowProjectState(windowId)
+            // Register callback to update recent projects list
+            state.setProjectSelectionCallback { project ->
+                ProjectState.updateRecentProjects(project)
+            }
+            state
         }
 
     /**

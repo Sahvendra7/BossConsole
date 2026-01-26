@@ -1,11 +1,11 @@
 package ai.rever.boss.utils
 
 import ai.rever.boss.services.URLHandlerService
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
+import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
 import ai.rever.boss.components.events.PanelEventBus
-import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory

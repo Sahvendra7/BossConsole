@@ -6,7 +6,7 @@ import BossDarkBorder
 import BossDarkSurface
 import BossDarkTextPrimary
 import ai.rever.boss.components.model.TabDraggableComponent
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -72,7 +72,7 @@ fun TabDraggableComponent.TabDraggingOverlay() {
         ) {
             // Tab icon
             when (val icon = dragging.icon) {
-                is TabIcon.Vector -> {
+                is ai.rever.boss.plugin.api.TabIcon.Vector -> {
                     Icon(
                         imageVector = icon.imageVector,
                         contentDescription = null,
@@ -80,7 +80,7 @@ fun TabDraggableComponent.TabDraggingOverlay() {
                         tint = BossDarkTextPrimary
                     )
                 }
-                is TabIcon.Image -> {
+                is ai.rever.boss.plugin.api.TabIcon.Image -> {
                     Icon(
                         painter = icon.painter,
                         contentDescription = null,

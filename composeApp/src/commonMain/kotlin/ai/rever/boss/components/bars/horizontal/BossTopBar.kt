@@ -6,7 +6,9 @@ import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.git.GitOperationResult.Success as GitSuccess
+import ai.rever.boss.plugin.git.GitOperationResult.Error as GitError
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.LocalWindowGitState
@@ -49,8 +51,8 @@ import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
+import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
+import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.TextButton
@@ -490,8 +492,8 @@ fun BossDraggableComponent.BossTopLeftBar(
                     scope.launch {
                         val result = GitService.checkout(branchName, windowId = windowId)
                         when (result) {
-                            is GitOperationResult.Success -> gitSuccessMessage = "Switched to '$branchName'"
-                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                            is GitSuccess -> gitSuccessMessage = "Switched to '$branchName'"
+                            is GitError -> gitErrorMessage = result.message
                         }
                     }
                 },
@@ -521,8 +523,8 @@ fun BossDraggableComponent.BossTopLeftBar(
                     scope.launch {
                         val result = GitService.stash()
                         when (result) {
-                            is GitOperationResult.Success -> gitSuccessMessage = result.message
-                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                            is GitSuccess -> gitSuccessMessage = result.message
+                            is GitError -> gitErrorMessage = result.message
                         }
                     }
                 },
@@ -530,8 +532,8 @@ fun BossDraggableComponent.BossTopLeftBar(
                     scope.launch {
                         val result = GitService.stashPop(index)
                         when (result) {
-                            is GitOperationResult.Success -> gitSuccessMessage = result.message
-                            is GitOperationResult.Error -> gitErrorMessage = result.message
+                            is GitSuccess -> gitSuccessMessage = result.message
+                            is GitError -> gitErrorMessage = result.message
                         }
                     }
                 },
@@ -582,7 +584,7 @@ fun BossDraggableComponent.BossTopLeftBar(
             onCreate = { branchName ->
                 scope.launch {
                     val result = GitService.createBranch(branchName, checkout = true, windowId = windowId)
-                    if (result is GitOperationResult.Error) {
+                    if (result is GitError) {
                         gitErrorMessage = result.message
                     }
                 }

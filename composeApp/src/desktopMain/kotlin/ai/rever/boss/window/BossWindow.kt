@@ -11,7 +11,7 @@ import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.menu.MenuShortcutBridge
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.focusmode.FocusModeSettingsManager
-import ai.rever.boss.components.registery.PanelRegistry
+import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine

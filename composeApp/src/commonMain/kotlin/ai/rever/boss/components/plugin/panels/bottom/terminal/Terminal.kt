@@ -1,88 +1,9 @@
 package ai.rever.boss.components.plugin.panels.bottom.terminal
 
-import ai.rever.boss.components.model.Panel.Companion.bottom
-import ai.rever.boss.components.model.Panel.Companion.left
-import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.registery.PanelComponentWithUI
-import ai.rever.boss.components.registery.PanelId
-import ai.rever.boss.components.registery.PanelInfo
-import ai.rever.boss.components.events.PanelEventBus
-import ai.rever.boss.window.LocalWindowId
-import ai.rever.boss.window.LocalWindowProjectState
-import ai.rever.boss.window.MenuActionsHandler
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.Composable
-import com.arkivanov.decompose.ComponentContext
-import com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
-object TerminalInfo : PanelInfo {
-    override val id = PanelId("terminal", 13)
-    override val displayName = "Terminal"
-    override val icon = Icons.Outlined.Terminal
-    override val defaultSlotPosition = left.bottom
-}
-
-/**
- * Terminal panel component using BossTerm's TabbedTerminal for full-featured terminal.
- *
- * Features:
- * - Multiple tabs within the panel
- * - Split panes (horizontal/vertical)
- * - Tab management keyboard shortcuts
- * - Settings integration
- */
-class TerminalComponent(
-    ctx: ComponentContext,
-    override val panelInfo: PanelInfo
-) : PanelComponentWithUI, ComponentContext by ctx {
-
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
-    init {
-        lifecycle.subscribe(
-            callbacks = object : Callbacks {
-                override fun onDestroy() {
-                    coroutineScope.cancel()
-                }
-            }
-        )
-    }
-
-    /**
-     * Called when user clicks Reset in the panel's more menu.
-     * Resets all terminal states to fix persistent issues.
-     */
-    override fun onBeforeReset() {
-        resetTerminals()
-    }
-
-    @Composable
-    override fun Content() {
-        val windowId = LocalWindowId.current
-        val windowProjectState = LocalWindowProjectState.current
-        // Per-window project state (required for multi-window support)
-        val projectPath = windowProjectState?.selectedProject?.value?.path ?: ""
-        TabbedTerminalContent(
-            workingDirectory = projectPath.ifEmpty { null },
-            onExit = {
-                windowId?.let { wid ->
-                    coroutineScope.launch {
-                        PanelEventBus.closePanel(panelInfo.id, sourceWindowId = wid)
-                    }
-                }
-            },
-            onShowSettings = {
-                windowId?.let { MenuActionsHandler.triggerOpenSettings(it, "TERMINAL") }
-            }
-        )
-    }
-}
+// Note: TerminalComponent has been moved to plugin-panel-terminal module.
+// This file only contains the expect/actual platform-specific composables.
 
 /**
  * Platform-specific tabbed terminal content composable.
@@ -154,7 +75,3 @@ expect fun PersistentTabbedTerminalContent(
  * Called when user triggers reset from panel's more menu.
  */
 expect fun resetTerminals()
-
-fun DefaultPlugin.registerTerminal() = panelRegistry.registerPanel(TerminalInfo) {
-    ctx, panelInfo -> TerminalComponent(ctx, panelInfo)
-}

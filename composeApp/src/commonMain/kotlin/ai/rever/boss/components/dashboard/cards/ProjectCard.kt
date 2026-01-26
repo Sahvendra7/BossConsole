@@ -3,7 +3,7 @@ package ai.rever.boss.components.dashboard.cards
 import BossDarkAccent
 import BossDarkSurface
 import BossDarkTextSecondary
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring

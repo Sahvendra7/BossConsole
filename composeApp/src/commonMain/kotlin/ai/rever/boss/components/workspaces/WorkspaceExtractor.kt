@@ -1,10 +1,13 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.plugin.workspace.SplitConfig.SinglePanel
+import ai.rever.boss.plugin.workspace.SplitConfig.VerticalSplit
+import ai.rever.boss.plugin.workspace.SplitConfig.HorizontalSplit
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
-import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import kotlin.time.Clock
 
 /**
@@ -60,7 +63,7 @@ private fun extractSplitConfig(node: SplitNode): SplitConfig {
                     )
                 }
             }
-            SplitConfig.SinglePanel(
+            SinglePanel(
                 PanelConfig(
                     id = node.id,
                     tabs = tabs
@@ -68,13 +71,13 @@ private fun extractSplitConfig(node: SplitNode): SplitConfig {
             )
         }
         is SplitNode.VerticalSplit -> {
-            SplitConfig.VerticalSplit(
+            VerticalSplit(
                 left = extractSplitConfig(node.left),
                 right = extractSplitConfig(node.right)
             )
         }
         is SplitNode.HorizontalSplit -> {
-            SplitConfig.HorizontalSplit(
+            HorizontalSplit(
                 top = extractSplitConfig(node.top),
                 bottom = extractSplitConfig(node.bottom)
             )

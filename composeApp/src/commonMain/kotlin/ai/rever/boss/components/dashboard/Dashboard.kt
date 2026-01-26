@@ -13,12 +13,12 @@ import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.URLEventBus
-import ai.rever.boss.components.plugin.panels.left_bottom.RunConfigurationsInfo
-import ai.rever.boss.components.plugin.panels.left_top.BookmarksInfo
-import ai.rever.boss.components.plugin.panels.left_top.CodeBaseInfo
-import ai.rever.boss.components.plugin.panels.left_top.DownloadInfo
-import ai.rever.boss.components.plugin.panels.left_top.Project
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TerminalInfo
+import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
+import ai.rever.boss.plugin.panel.bookmarks.BookmarksInfo
+import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
+import ai.rever.boss.plugin.panel.downloads.DownloadsInfo
+import ai.rever.boss.window.Project
+import ai.rever.boss.plugin.panel.terminal.TerminalInfo
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
@@ -423,7 +423,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(DownloadInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(DownloadsInfo.id, sourceWindowId = wid)
                                     }
                                 }
                             }

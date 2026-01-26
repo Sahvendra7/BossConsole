@@ -1,7 +1,7 @@
 package ai.rever.boss.fluck
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.registery.TabTypeId
+import ai.rever.boss.plugin.api.TabTypeId
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors

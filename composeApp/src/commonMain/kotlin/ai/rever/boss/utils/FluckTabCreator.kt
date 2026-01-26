@@ -1,7 +1,7 @@
 package ai.rever.boss.utils
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.registery.TabTypeId
+import ai.rever.boss.plugin.api.TabTypeId
 import kotlin.random.Random
 
 /**

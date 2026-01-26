@@ -1,9 +1,9 @@
 package ai.rever.boss.components.buttons
 
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel
-import ai.rever.boss.components.model.Panel.Companion.opposite
-import ai.rever.boss.components.model.SidebarItem
+import ai.rever.boss.plugin.api.Panel
+import ai.rever.boss.plugin.api.Panel.Companion.opposite
+import ai.rever.boss.plugin.api.SidebarItem
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable

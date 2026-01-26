@@ -1,5 +1,8 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+
 // For WebAssembly, return mock data as file system access is not available
 actual fun scanDirectory(path: String): FileNode? {
     // Browser doesn't have direct file system access

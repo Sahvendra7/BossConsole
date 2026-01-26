@@ -5,11 +5,12 @@ import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.components.plugin.DefaultPlugin
-import ai.rever.boss.components.registery.TabComponentWithUI
-import ai.rever.boss.components.registery.TabInfo
-import ai.rever.boss.components.registery.TabTypeInfo
-import ai.rever.boss.components.registery.TabTypeId
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabComponentWithUI
+import ai.rever.boss.plugin.api.TabInfo
+import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.run.DetectedMainFunction
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
@@ -391,11 +392,6 @@ class SyntaxHighlightTransformation(
     }
 }
 
-object CodeEditor: TabTypeInfo {
-    override val typeId = TabTypeId("editor")
-    override val displayName = "Code Editor"
-    override val icon = Icons.Outlined.Code
-}
 
 // Platform-specific file reading
 expect fun readFileContent(filePath: String): String?
@@ -452,23 +448,6 @@ expect fun PlatformCodeEditorUI(
     onSaveRequested: suspend () -> Boolean
 )
 
-// EditorTabInfo to store file path and modification state
-data class EditorTabInfo(
-    override val id: String,
-    override val typeId: TabTypeId,
-    override val title: String,
-    override val icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.Code,
-    override val tabIcon: TabIcon? = null,
-    val filePath: String = "",
-    val isModified: Boolean = false
-) : TabInfo {
-    /**
-     * Returns the display title with a modification indicator (*) if modified.
-     */
-    val displayTitle: String
-        get() = if (isModified) "$title *" else title
-}
-
 class CodeEditorTabComponent(
     override val config: TabInfo,
     componentContext: ComponentContext
@@ -480,7 +459,7 @@ class CodeEditorTabComponent(
     private val _language = MutableStateFlow("kotlin")
     val language: StateFlow<String> = _language
 
-    override val tabTypeInfo = CodeEditor
+    override val tabTypeInfo = CodeEditorTabType
     
     init {
         // Load file content if path is provided
@@ -545,6 +524,6 @@ class CodeEditorTabComponent(
 
 }
 
-fun DefaultPlugin.registerCodeEditor() = tabRegistry.registerTabType(CodeEditor) {
+fun DefaultPlugin.registerCodeEditor() = tabRegistry.registerTabType(CodeEditorTabType) {
     tabInfo, ctx -> CodeEditorTabComponent(tabInfo, ctx)
 }

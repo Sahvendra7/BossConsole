@@ -4,6 +4,7 @@ import ai.rever.boss.utils.extractFileName
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.components.events.FileEventBus
@@ -387,7 +388,7 @@ class CLICommandHandler private constructor() {
             val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
             val windowProjectState = focusedWindowId?.let { ai.rever.boss.window.WindowProjectStateRegistry.get(it) }
 
-            val project = ai.rever.boss.components.plugin.panels.left_top.Project(
+            val project = Project(
                 name = folder.name.extractFileName(),
                 path = folder.absolutePath,
                 lastOpened = System.currentTimeMillis()

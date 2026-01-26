@@ -1,5 +1,7 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
 import java.io.File
 
 actual fun scanDirectory(path: String): FileNode? {

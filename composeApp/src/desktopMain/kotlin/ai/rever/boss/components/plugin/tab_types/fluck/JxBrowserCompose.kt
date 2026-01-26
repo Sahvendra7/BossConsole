@@ -17,13 +17,14 @@ import ai.rever.boss.components.events.KeyboardEvent as BossKeyboardEvent
 import ai.rever.boss.keymap.model.ShortcutContext
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.utils.MacOSGestureHandler
@@ -718,7 +719,7 @@ fun JxBrowserCompose(
                         }
 
                         // Create TabIcon and update
-                        val tabIcon = TabIcon.Image(BitmapPainter(imageBitmap))
+                        val tabIcon = ai.rever.boss.plugin.api.TabIcon.Image(BitmapPainter(imageBitmap))
                         onTabIconUpdate(tabIcon)
                     }
                 } catch (e: Exception) {
@@ -726,7 +727,7 @@ fun JxBrowserCompose(
                     if (e.message?.contains("closed object") != true) {
                         jxBrowserComposeLogger.warn(LogCategory.BROWSER, "Error converting favicon", error = e)
                         // Set default Language icon on error
-                        onTabIconUpdate(TabIcon.Vector(Icons.Outlined.Language))
+                        onTabIconUpdate(ai.rever.boss.plugin.api.TabIcon.Vector(Icons.Outlined.Language))
                     }
                 }
             }
@@ -1581,7 +1582,7 @@ fun JxBrowserCompose(
             val windowProjectState = LocalWindowProjectState.current
             // Per-window project state (required for multi-window support)
             val selectedProject by windowProjectState?.selectedProject?.collectAsState()
-                ?: remember { mutableStateOf(ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L)) }
+                ?: remember { mutableStateOf(Project("No Project", "", 0L)) }
 
             Dashboard(
                 onOpenFile = { path ->
@@ -1839,7 +1840,7 @@ fun JxBrowserCompose(
         if (secretViewModel.state.showQuickCreateDialog && secretViewModel.state.quickCreateWebsitePrefill != null) {
             var isCreating by remember { mutableStateOf(false) }
 
-            ai.rever.boss.components.plugin.panels.right_top.QuickCreateSecretDialog(
+            QuickCreateSecretDialog(
                 websitePrefill = secretViewModel.state.quickCreateWebsitePrefill ?: "",
                 onConfirm = { request ->
                     isCreating = true

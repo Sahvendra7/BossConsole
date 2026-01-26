@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import java.io.File
 import java.security.MessageDigest
 import javax.imageio.ImageIO
@@ -78,9 +78,9 @@ object FaviconCache {
     /**
      * Loads a favicon from the cache.
      * @param cacheKey The cache key generated from the URL
-     * @return TabIcon.Image if found, null if not found or on error
+     * @return ai.rever.boss.plugin.api.TabIcon.Image if found, null if not found or on error
      */
-    fun loadFavicon(cacheKey: String): TabIcon.Image? {
+    fun loadFavicon(cacheKey: String): ai.rever.boss.plugin.api.TabIcon.Image? {
         try {
             val cacheFile = File(cacheDir, "$cacheKey.png")
 
@@ -98,7 +98,7 @@ object FaviconCache {
             // Convert to Compose ImageBitmap
             val imageBitmap = bufferedImage.toComposeImageBitmap()
             val painter = BitmapPainter(imageBitmap)
-            return TabIcon.Image(painter)
+            return ai.rever.boss.plugin.api.TabIcon.Image(painter)
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Error loading favicon", mapOf("cacheKey" to cacheKey), error = e)
             return null

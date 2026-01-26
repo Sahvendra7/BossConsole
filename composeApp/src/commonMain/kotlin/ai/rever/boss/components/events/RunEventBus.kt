@@ -1,44 +1,17 @@
 package ai.rever.boss.components.events
 
-import ai.rever.boss.run.RunConfiguration
+import ai.rever.boss.plugin.run.RunConfiguration
+import ai.rever.boss.plugin.run.RunExecuteEvent
+import ai.rever.boss.plugin.run.RunStopEvent
+import ai.rever.boss.plugin.run.RunScanEvent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
-/**
- * Event emitted when a run configuration should be executed.
- *
- * @property configuration The run configuration to execute
- * @property debug Whether to run in debug mode (future feature)
- * @property sourceWindowId The window that initiated the run (required for multi-window support)
- */
-data class RunExecuteEvent(
-    val configuration: RunConfiguration,
-    val debug: Boolean = false,
-    val sourceWindowId: String
-)
-
-/**
- * Event emitted when running processes should be stopped.
- *
- * @property configId Optional config ID to stop, null means stop all
- * @property sourceWindowId The window that initiated the stop (required for multi-window support)
- */
-data class RunStopEvent(
-    val configId: String? = null,
-    val sourceWindowId: String
-)
-
-/**
- * Event emitted when a project should be scanned for run configurations.
- *
- * @property projectPath The path to the project to scan
- * @property sourceWindowId The window that initiated the scan (required for multi-window support)
- */
-data class RunScanEvent(
-    val projectPath: String,
-    val sourceWindowId: String
-)
+// Re-export event types via typealiases for backward compatibility
+typealias RunExecuteEvent = ai.rever.boss.plugin.run.RunExecuteEvent
+typealias RunStopEvent = ai.rever.boss.plugin.run.RunStopEvent
+typealias RunScanEvent = ai.rever.boss.plugin.run.RunScanEvent
 
 /**
  * Event bus for handling run-related events across all windows.

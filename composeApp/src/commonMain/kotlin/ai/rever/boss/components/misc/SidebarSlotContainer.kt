@@ -2,7 +2,7 @@ package ai.rever.boss.components.misc
 
 import ai.rever.boss.components.buttons.DraggableActionButton
 import ai.rever.boss.components.model.BossDraggableComponent
-import ai.rever.boss.components.model.Panel
+import ai.rever.boss.plugin.api.Panel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*

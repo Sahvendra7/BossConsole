@@ -1,7 +1,7 @@
 package ai.rever.boss.performance
 
 import ai.rever.boss.components.events.PanelEventBus
-import ai.rever.boss.components.registery.PanelId
+import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.utils.WindowFocusManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory

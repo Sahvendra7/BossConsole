@@ -4,13 +4,11 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.getPanelScrollbarConfig
 import ai.rever.boss.components.bars.lazyListScrollbar
-import ai.rever.boss.components.model.Panel.Companion.right
-import ai.rever.boss.components.model.Panel.Companion.top
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
-import ai.rever.boss.components.registery.PanelComponentWithUI
-import ai.rever.boss.components.registery.PanelId
-import ai.rever.boss.components.registery.PanelInfo
+import ai.rever.boss.plugin.api.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.panel.llmrpa.LLMRpaInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,13 +39,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 import kotlinx.serialization.Serializable
-
-object LLMRpaInfo : PanelInfo {
-    override val id = PanelId("llm_rpa", 18)
-    override val displayName = "LLM RPA"
-    override val icon = Icons.Outlined.AutoAwesome // Sparkles icon for AI-powered RPA
-    override val defaultSlotPosition = right.top.top
-}
 
 /**
  * Data classes for LLM RPA

@@ -3,6 +3,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.tabfullscreen.TabFullscreenStateManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -40,11 +41,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
-object Fluck: TabTypeInfo {
-    override val typeId = TabTypeId("fluck")
-    override val displayName = "FLUCK"
-    override val icon = Icons.Outlined.Language
-}
 
 // Tab info for dynamic title and icon updates
 // Thread Safety: Navigation methods (_currentUrl mutations) use @Synchronized for thread-safe access.
@@ -66,7 +62,7 @@ class FluckTabInfo(
 ) : TabInfo {
     override val title: String get() = _title
     override val icon: ImageVector get() = _icon
-    override val tabIcon: TabIcon? get() = _tabIcon ?: TabIcon.Vector(_icon)
+    override val tabIcon: TabIcon? get() = _tabIcon ?: ai.rever.boss.plugin.api.TabIcon.Vector(_icon)
     val currentUrl: String @Synchronized get() = _currentUrl
     val currentZoomLevel: Double get() = _currentZoomLevel
 
@@ -132,7 +128,7 @@ class FluckTabInfo(
     }
 
     fun updateIcon(newIcon: ImageVector): FluckTabInfo {
-        return copy(_icon = newIcon, _tabIcon = TabIcon.Vector(newIcon))
+        return copy(_icon = newIcon, _tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(newIcon))
     }
 
     fun updateTabIcon(newTabIcon: TabIcon): FluckTabInfo {
@@ -428,7 +424,7 @@ open class FluckTabComponent(
         // Platform-specific implementations will override this
     }
 
-    override val tabTypeInfo = Fluck
+    override val tabTypeInfo = FluckTabType
 
     @Composable
     override fun Content() {
@@ -1149,7 +1145,7 @@ fun BrowserRecoveryView(url: String) {
     }
 }
 
-fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(Fluck) { tabInfo, ctx ->
+fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(FluckTabType) { tabInfo, ctx ->
     // Find the parent component
     val parentComponent = ctx as? ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
     

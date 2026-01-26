@@ -1,8 +1,8 @@
 package ai.rever.boss.components.dialogs
 
-import ai.rever.boss.components.plugin.panels.left_top.Project
+import ai.rever.boss.window.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.components.plugin.panels.left_top.WindowProjectState
+import ai.rever.boss.window.WindowProjectState
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.selectProjectInWindow
 import androidx.compose.foundation.clickable

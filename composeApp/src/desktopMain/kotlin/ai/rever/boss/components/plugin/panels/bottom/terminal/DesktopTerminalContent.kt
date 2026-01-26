@@ -2,7 +2,7 @@ package ai.rever.boss.components.plugin.panels.bottom.terminal
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.events.FileValidationResult
+import ai.rever.boss.plugin.events.FileValidationResult
 import ai.rever.boss.components.events.KeyboardShortcutInterceptor
 import ai.rever.boss.components.events.KeyEventSource
 import ai.rever.boss.components.events.parseFileReference

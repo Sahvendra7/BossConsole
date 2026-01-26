@@ -462,10 +462,11 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
      * Build the fully qualified class name from detected function info.
      */
     private fun buildClassName(detected: DetectedMainFunction): String {
+        val pkg = detected.packageName
+        val cls = detected.className
         return when {
-            detected.packageName != null && detected.className != null ->
-                "${detected.packageName}.${detected.className}"
-            detected.className != null -> detected.className
+            pkg != null && cls != null -> "$pkg.$cls"
+            cls != null -> cls
             else -> "Main"
         }
     }

@@ -4,10 +4,10 @@ import ai.rever.boss.components.common.rememberFaviconLoader
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.workspaces.WorkspaceManager
-import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.ActiveTab
-import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.TopOfMindState
+import ai.rever.boss.plugin.panel.topofmind.ActiveTab
+import ai.rever.boss.plugin.panel.topofmind.TopOfMindStateHolder
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.registery.TabIcon
+import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.utils.WindowFocusManager
@@ -47,7 +47,7 @@ fun TopOfMindDialog(
     onTabSelect: (ActiveTab) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val activeTabs by TopOfMindState.activeTabs.collectAsState()
+    val activeTabs by TopOfMindStateHolder.activeTabs.collectAsState()
     var selectedIndex by remember { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -77,16 +77,16 @@ fun TopOfMindDialog(
 
         // Immediate update when dialog opens
         val tabs = collectTabsFromAllWindows()
-        TopOfMindState.updateActiveTabs(tabs)
+        TopOfMindStateHolder.updateActiveTabs(tabs)
 
         // Periodic refresh to ensure dialog has latest data
         while (true) {
             delay(1000) // Check every second while dialog is open
             val currentTabs = collectTabsFromAllWindows()
-            val existingTabs = TopOfMindState.activeTabs.value
+            val existingTabs = TopOfMindStateHolder.activeTabs.value
 
             if (currentTabs != existingTabs) {
-                TopOfMindState.updateActiveTabs(currentTabs)
+                TopOfMindStateHolder.updateActiveTabs(currentTabs)
             }
         }
     }
@@ -96,9 +96,10 @@ fun TopOfMindDialog(
         activeTabs
     } else {
         activeTabs.filter { tab ->
-            tab.tabInfo.title.contains(searchQuery, ignoreCase = true) ||
+            val tabInfo = tab.tabInfo
+            tabInfo.title.contains(searchQuery, ignoreCase = true) ||
             // Only check URL for Fluck tabs that have URL property
-            (tab.tabInfo is FluckTabInfo && tab.tabInfo.url.contains(searchQuery, ignoreCase = true)) ||
+            ((tabInfo as? FluckTabInfo)?.url?.contains(searchQuery, ignoreCase = true) == true) ||
             tab.workspaceName.contains(searchQuery, ignoreCase = true)
         }
     }

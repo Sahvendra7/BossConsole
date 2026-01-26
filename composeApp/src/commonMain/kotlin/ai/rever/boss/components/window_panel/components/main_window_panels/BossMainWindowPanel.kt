@@ -16,10 +16,10 @@ import ai.rever.boss.components.model.ScrollDirection
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
-import ai.rever.boss.components.registery.TabComponentWithUI
-import ai.rever.boss.components.registery.TabInfo
-import ai.rever.boss.components.registery.TabIcon
-import ai.rever.boss.components.registery.TabRegistry
+import ai.rever.boss.plugin.api.TabComponentWithUI
+import ai.rever.boss.plugin.api.TabInfo
+import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
@@ -31,12 +31,12 @@ import ai.rever.boss.components.dialogs.TabType
 import ai.rever.boss.components.dividers.VDivider
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
-import ai.rever.boss.components.plugin.tab_types.CodeEditor
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.icons.FileIcons
 import ai.rever.boss.utils.extractFileName
-import ai.rever.boss.components.plugin.tab_types.EditorTabInfo
-import ai.rever.boss.components.plugin.tab_types.TerminalTabInfo
-import ai.rever.boss.components.plugin.tab_types.fluck.Fluck
+import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
+import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
@@ -45,6 +45,7 @@ import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.window.LocalWindowProjectState
+import ai.rever.boss.window.Project
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.dashboard.SplitTemplate
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -546,7 +547,7 @@ fun BossTabsComponent.BossMainTabBar(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
                             id = "fluck-$timestamp",
-                            typeId = Fluck.typeId,
+                            typeId = FluckTabType.typeId,
                             _title = "Loading...",
                             url = path
                         )
@@ -559,12 +560,12 @@ fun BossTabsComponent.BossMainTabBar(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fileName = path.extractFileName().ifEmpty { "untitled.txt" }
                         val fileIconInfo = FileIcons.forFile(fileName)
-                        val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+                        val editorTab = EditorTabInfo(
                             id = "editor-$timestamp",
                             title = fileName,
-                            typeId = CodeEditor.typeId,
+                            typeId = CodeEditorTabType.typeId,
                             icon = fileIconInfo.icon,
-                            tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+                            tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                             filePath = path
                         )
                         val tabIndex = addTab(editorTab)
@@ -576,11 +577,11 @@ fun BossTabsComponent.BossMainTabBar(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         // Get current project path for terminal working directory (per-window)
                         val projectPath = windowProjectState?.selectedProject?.value?.path ?: ""
-                        val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                        val terminalTab = TerminalTabInfo(
                             id = "terminal-$timestamp",
-                            typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                            typeId = ai.rever.boss.plugin.tab.terminal.TerminalTabType.typeId,
                             title = "Terminal",
-                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                            icon = ai.rever.boss.plugin.tab.terminal.TerminalTabType.icon,
                             initialCommand = path.ifBlank { null },
                             workingDirectory = projectPath.ifEmpty { null }
                         )
@@ -737,7 +738,7 @@ fun BossTabsComponent.BossMainPanelContent(
     // Per-window project state for Dashboard (required for multi-window support)
     val windowProjectState = LocalWindowProjectState.current
     val selectedProject by windowProjectState?.selectedProject?.collectAsState()
-        ?: remember { mutableStateOf(ai.rever.boss.components.plugin.panels.left_top.Project("No Project", "", 0L)) }
+        ?: remember { mutableStateOf(Project("No Project", "", 0L)) }
 
     Box(modifier = modifier) {
         val activeTab = tabsState.value.activeTab
@@ -776,9 +777,9 @@ fun BossTabsComponent.BossMainPanelContent(
                     val projectPath = selectedProject.path
                     val terminalTab = TerminalTabInfo(
                         id = "terminal-$timestamp",
-                        typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                        typeId = ai.rever.boss.plugin.tab.terminal.TerminalTabType.typeId,
                         title = "Terminal",
-                        icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                        icon = ai.rever.boss.plugin.tab.terminal.TerminalTabType.icon,
                         workingDirectory = projectPath.ifEmpty { null }
                     )
                     val tabIndex = addTab(terminalTab)
@@ -839,7 +840,7 @@ fun BossTabsComponent.BossMainPanelContent(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
                             id = "fluck-$timestamp",
-                            typeId = Fluck.typeId,
+                            typeId = FluckTabType.typeId,
                             _title = "Loading...",
                             url = path
                         )
@@ -852,12 +853,12 @@ fun BossTabsComponent.BossMainPanelContent(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         val fileName = path.extractFileName().ifEmpty { "untitled.txt" }
                         val fileIconInfo = FileIcons.forFile(fileName)
-                        val editorTab = ai.rever.boss.components.plugin.tab_types.EditorTabInfo(
+                        val editorTab = EditorTabInfo(
                             id = "editor-$timestamp",
                             title = fileName,
-                            typeId = CodeEditor.typeId,
+                            typeId = CodeEditorTabType.typeId,
                             icon = fileIconInfo.icon,
-                            tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+                            tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                             filePath = path
                         )
                         val tabIndex = addTab(editorTab)
@@ -869,11 +870,11 @@ fun BossTabsComponent.BossMainPanelContent(
                         val timestamp = Clock.System.now().toEpochMilliseconds()
                         // Get current project path for terminal working directory (per-window)
                         val projectPath = selectedProject.path
-                        val terminalTab = ai.rever.boss.components.plugin.tab_types.TerminalTabInfo(
+                        val terminalTab = TerminalTabInfo(
                             id = "terminal-$timestamp",
-                            typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                            typeId = ai.rever.boss.plugin.tab.terminal.TerminalTabType.typeId,
                             title = "Terminal",
-                            icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                            icon = ai.rever.boss.plugin.tab.terminal.TerminalTabType.icon,
                             initialCommand = path.ifBlank { null },
                             workingDirectory = projectPath.ifEmpty { null }
                         )
@@ -960,9 +961,9 @@ private fun createTabFromConfig(
             }
             TerminalTabInfo(
                 id = "terminal-$timestamp",
-                typeId = ai.rever.boss.components.plugin.tab_types.TerminalTab.typeId,
+                typeId = ai.rever.boss.plugin.tab.terminal.TerminalTabType.typeId,
                 title = "Terminal",
-                icon = ai.rever.boss.components.plugin.tab_types.TerminalTab.icon,
+                icon = ai.rever.boss.plugin.tab.terminal.TerminalTabType.icon,
                 initialCommand = command,
                 workingDirectory = projectPath
             )
@@ -973,7 +974,7 @@ private fun createTabFromConfig(
             } ?: "https://google.com"
             FluckTabInfo(
                 id = "fluck-$timestamp",
-                typeId = Fluck.typeId,
+                typeId = FluckTabType.typeId,
                 _title = "Loading...",
                 url = url
             )
@@ -988,9 +989,9 @@ private fun createTabFromConfig(
                 EditorTabInfo(
                     id = "editor-$timestamp",
                     title = fileName,
-                    typeId = CodeEditor.typeId,
+                    typeId = CodeEditorTabType.typeId,
                     icon = fileIconInfo.icon,
-                    tabIcon = TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
+                    tabIcon = ai.rever.boss.plugin.api.TabIcon.Vector(fileIconInfo.icon, fileIconInfo.color),
                     filePath = filePath
                 )
             } else null

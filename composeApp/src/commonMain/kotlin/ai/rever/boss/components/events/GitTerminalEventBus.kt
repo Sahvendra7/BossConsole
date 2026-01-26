@@ -1,3 +1,4 @@
+@file:Suppress("UNUSED")
 package ai.rever.boss.components.events
 
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -5,19 +6,10 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * Event for opening a git command in the terminal.
- *
- * @param command The full git command to execute (including 'git' prefix)
- * @param workingDirectory The working directory for the command
- * @param operationName Human-readable name for the operation (e.g., "Pull", "Push")
- * @param sourceWindowId The window ID that initiated the event (for per-window filtering, Issue #498)
+ * Re-export from plugin-git-types module for backward compatibility.
+ * New code should import directly from ai.rever.boss.plugin.git
  */
-data class GitTerminalOpenEvent(
-    val command: String,
-    val workingDirectory: String,
-    val operationName: String,
-    val sourceWindowId: String
-)
+typealias GitTerminalOpenEvent = ai.rever.boss.plugin.git.GitTerminalOpenEvent
 
 /**
  * Event bus for running Git commands in the terminal.
