@@ -33,11 +33,11 @@ kotlin {
                 implementation(projects.plugins.pluginLogging)
 
                 // Compose dependencies
-                implementation(compose.runtime)
-                implementation(compose.ui)
-                implementation(compose.foundation)
-                implementation(compose.material)
-                implementation(compose.materialIconsExtended)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.ui)
+                implementation(libs.compose.mp.foundation)
+                implementation(libs.compose.mp.material)
+                implementation(compose.materialIconsExtended)  // No base KMP artifact
 
                 // Decompose for ComponentContext
                 implementation(libs.decompose)

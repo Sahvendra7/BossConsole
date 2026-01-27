@@ -32,9 +32,9 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Compose dependencies
-                implementation(compose.runtime)
-                implementation(compose.ui)
-                implementation(compose.foundation)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.ui)
+                implementation(libs.compose.mp.foundation)
 
                 // Decompose for ComponentContext
                 implementation(libs.decompose)

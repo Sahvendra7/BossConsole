@@ -15,11 +15,11 @@ kotlin {
                 implementation(projects.plugins.pluginScrollbar)
                 implementation(projects.plugins.pluginSearch)
 
-                implementation(compose.runtime)
-                implementation(compose.foundation)
-                implementation(compose.material)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.ui)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.foundation)
+                implementation(libs.compose.mp.material)
+                implementation(compose.materialIconsExtended)  // No base KMP artifact
+                implementation(libs.compose.mp.ui)
 
                 implementation(libs.decompose)
                 implementation(libs.decompose.extensions.compose)

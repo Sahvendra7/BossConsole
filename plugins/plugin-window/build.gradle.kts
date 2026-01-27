@@ -27,7 +27,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(project(":plugins:plugin-logging"))
-                implementation(compose.runtime)
+                implementation(libs.compose.mp.runtime)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
             }

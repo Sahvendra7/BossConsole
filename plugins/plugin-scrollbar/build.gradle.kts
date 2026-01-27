@@ -27,9 +27,9 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(project(":plugins:plugin-ui-core"))
-                implementation(compose.runtime)
-                implementation(compose.ui)
-                implementation(compose.foundation)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.ui)
+                implementation(libs.compose.mp.foundation)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
             }

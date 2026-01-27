@@ -30,11 +30,11 @@ kotlin {
             dependencies {
                 implementation(projects.plugins.pluginApi)
                 implementation(projects.plugins.pluginLogging)
-                implementation(compose.runtime)
-                implementation(compose.ui)
-                implementation(compose.foundation)
-                implementation(compose.material)
-                implementation(compose.materialIconsExtended)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.ui)
+                implementation(libs.compose.mp.foundation)
+                implementation(libs.compose.mp.material)
+                implementation(compose.materialIconsExtended)  // No base KMP artifact
                 
                 // Feather Icons for CPU icon
                 implementation(libs.compose.icons.feather)

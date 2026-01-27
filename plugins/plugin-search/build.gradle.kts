@@ -25,11 +25,11 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                implementation(compose.runtime)
-                implementation(compose.ui)
-                implementation(compose.foundation)
-                implementation(compose.material)
-                implementation(compose.materialIconsExtended)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.ui)
+                implementation(libs.compose.mp.foundation)
+                implementation(libs.compose.mp.material)
+                implementation(compose.materialIconsExtended)  // No base KMP artifact
             }
         }
         val desktopMain by getting {

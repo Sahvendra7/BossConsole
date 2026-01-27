@@ -32,10 +32,10 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Compose dependencies
-                implementation(compose.runtime)
-                implementation(compose.foundation)
+                implementation(libs.compose.mp.runtime)
+                implementation(libs.compose.mp.foundation)
                 implementation(compose.material3)
-                implementation(compose.ui)
+                implementation(libs.compose.mp.ui)
 
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
@@ -55,7 +55,7 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
-                implementation(compose.material)
+                implementation(libs.compose.mp.material)
                 implementation(compose.materialIconsExtended)
                 implementation(libs.kotlinx.coroutines.swing)
                 // Kotlin compiler for PSI parsing (code navigation, semantic highlighting)

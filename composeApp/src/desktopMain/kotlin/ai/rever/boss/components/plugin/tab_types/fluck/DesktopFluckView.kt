@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.plugin.api.TabIcon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.teamdev.jxbrowser.browser.Browser
@@ -32,10 +33,11 @@ actual fun FluckView(
 
     if (jxBrowser != null && jxBrowserViewState != null && !jxBrowser.isClosed) {
         // Create lock if not provided (for standalone panels like FluckPanel)
-        val lock = jxBrowserLock ?: ReentrantReadWriteLock()
-        
+        val lock = remember(jxBrowserLock) { jxBrowserLock ?: ReentrantReadWriteLock() }
+
         // Create thread-safe wrapper that handles locking internally
-        val lockedBrowser = LockedBrowser(jxBrowser, lock)
+        // Use remember to avoid creating new instance on every recomposition (fixes LaunchedEffect restarts)
+        val lockedBrowser = remember(jxBrowser, lock) { LockedBrowser(jxBrowser, lock) }
 
         JxBrowserCompose(
             modifier = Modifier,

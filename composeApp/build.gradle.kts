@@ -282,13 +282,13 @@ kotlin {
         }
         */
         commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material)
+            implementation(libs.compose.mp.runtime)
+            implementation(libs.compose.mp.foundation)
+            implementation(libs.compose.mp.material)
             implementation(compose.materialIconsExtended)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation(compose.components.uiToolingPreview)
+            implementation(libs.compose.mp.ui)
+            implementation(libs.compose.mp.components.resources)
+            implementation(libs.compose.mp.components.ui.tooling.preview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
@@ -359,7 +359,7 @@ kotlin {
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
-            implementation(compose.components.resources)
+            implementation(libs.compose.mp.components.resources)
 
             // BossTerm - Terminal emulation library
             implementation(libs.bossterm.compose)
@@ -460,12 +460,12 @@ compose.desktop {
 
             // macOS ARM64: Delay C2 JIT to avoid crash during JxBrowser native library loading
             // The C2 compiler conflicts with Rust allocator in libipc.dylib at startup (issue #476).
-            // Instead of disabling C2 entirely (causes lag), we delay C2 compilation until after
-            // startup by increasing thresholds. C2 kicks in after ~15000 invocations instead of ~1500.
+            // Use minimal delay - just enough to let JxBrowser initialize before C2 kicks in.
+            // Defaults are ~1500/1500/40000 - we use slightly higher to avoid startup crash.
             if (isMacosArm64) {
-                add("-XX:Tier4CompileThreshold=15000")      // Delay C2 compilation
-                add("-XX:Tier4InvocationThreshold=10000")   // Higher invocation threshold for C2
-                add("-XX:Tier4BackEdgeThreshold=50000")     // Higher loop threshold for C2
+                add("-XX:Tier4CompileThreshold=2000")       // Slight delay (default ~1500)
+                add("-XX:Tier4InvocationThreshold=2000")    // Slight delay (default ~1500)
+                add("-XX:Tier4BackEdgeThreshold=10000")     // Reduced from 50000 (default ~40000)
             }
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
