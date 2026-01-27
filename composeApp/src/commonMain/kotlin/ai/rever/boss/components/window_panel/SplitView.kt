@@ -333,12 +333,14 @@ class SplitViewState(
      * If no active panel exists (app just started), uses the first available panel.
      *
      * @param command Optional initial command to run in the terminal
+     * @param workingDirectory Optional working directory for the terminal (overrides project path)
      */
-    fun openTerminalInActivePanel(command: String? = null) {
+    fun openTerminalInActivePanel(command: String? = null, workingDirectory: String? = null) {
         val activeComponent = getActiveTabsComponent()
 
-        // Get current project path for terminal working directory (per-window)
+        // Use provided working directory, or fall back to project path
         val projectPath = WindowProjectStateRegistry.get(windowId)?.selectedProject?.value?.path ?: ""
+        val terminalWorkingDir = workingDirectory ?: projectPath.ifEmpty { null }
 
         // If no active component, this is likely the first terminal on app startup
         // Find any available panel to add the tab to
@@ -358,7 +360,7 @@ class SplitViewState(
                 typeId = TabTypeId("terminal"),
                 title = if (command != null) "Terminal: $command" else "Terminal",
                 initialCommand = command,
-                workingDirectory = projectPath.ifEmpty { null }
+                workingDirectory = terminalWorkingDir
             )
 
             val tabIndex = component.addTab(terminalTab)
@@ -378,7 +380,7 @@ class SplitViewState(
             typeId = TabTypeId("terminal"),
             title = if (command != null) "Terminal: $command" else "Terminal",
             initialCommand = command,
-            workingDirectory = projectPath.ifEmpty { null }
+            workingDirectory = terminalWorkingDir
         )
 
         val tabIndex = activeComponent.addTab(terminalTab)

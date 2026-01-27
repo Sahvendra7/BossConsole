@@ -1,8 +1,11 @@
 package ai.rever.boss.plugin.panel.adminrolemanagement
 
 import ai.rever.boss.plugin.api.UserWithRolesData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import ai.rever.boss.plugin.search.BossSearchBar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -189,6 +192,11 @@ fun UserList(
     LazyColumn(
         state = listState,
         modifier = modifier
+            .lazyListScrollbar(
+                listState = listState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            )
     ) {
         items(users) { user ->
             UserCard(

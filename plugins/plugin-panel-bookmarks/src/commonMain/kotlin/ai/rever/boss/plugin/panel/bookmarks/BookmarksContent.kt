@@ -10,6 +10,7 @@ import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import ai.rever.boss.plugin.ui.BossDarkAccent
 import ai.rever.boss.plugin.ui.BossDarkBackground
 import ai.rever.boss.plugin.ui.BossDarkTextSecondary
+import ai.rever.boss.plugin.ui.ContextMenuItemData
 import ai.rever.boss.plugin.workspace.LayoutWorkspace
 import ai.rever.boss.plugin.workspace.SplitConfig
 import ai.rever.boss.plugin.workspace.TabConfig
@@ -399,16 +400,6 @@ fun BookmarksContent(
         }
     }
 }
-
-/**
- * Context menu item data class
- */
-data class ContextMenuItemData(
-    val label: String,
-    val icon: ImageVector?,
-    val isDivider: Boolean = false,
-    val onClick: () -> Unit = {}
-)
 
 /**
  * Collapsible section header

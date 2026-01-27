@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.Plugin
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.ui.ContextMenuItemData
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext

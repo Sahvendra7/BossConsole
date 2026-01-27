@@ -1168,7 +1168,7 @@ fun ComponentContext.BossApp(
         TerminalEventBus.terminalOpenEvents
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
-                splitViewState.openTerminalInActivePanel(event.command)
+                splitViewState.openTerminalInActivePanel(event.command, event.workingDirectory)
                 DashboardStatsManager.recordTerminalSession()
             }
             .launchIn(this)

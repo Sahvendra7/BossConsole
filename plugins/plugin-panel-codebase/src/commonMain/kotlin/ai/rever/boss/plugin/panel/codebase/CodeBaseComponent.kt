@@ -4,7 +4,9 @@ import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
+import ai.rever.boss.plugin.ui.ContextMenuItemData
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +33,9 @@ class CodeBaseComponent(
     private val getWindowId: () -> String?,
     private val getSelectedProject: () -> ProjectData?,
     private val onSelectProject: (ProjectData) -> Unit,
-    private val directoryPickerProvider: DirectoryPickerProvider
+    private val directoryPickerProvider: DirectoryPickerProvider,
+    val contextMenuProvider: @Composable (Modifier, List<ContextMenuItemData>) -> Modifier,
+    private val openTerminalTab: (workingDirectory: String) -> Unit
 ) : PanelComponentWithUI, ComponentContext by ctx {
     private val logger = BossLogger.forComponent("CodeBaseComponent")
 
@@ -309,6 +313,201 @@ class CodeBaseComponent(
                     path = it
                 ))
             }
+        }
+    }
+
+    /**
+     * Create a new file in the specified directory.
+     *
+     * @param parentPath The parent directory path
+     * @param fileName The name of the file to create
+     * @param onResult Callback with the result (success path or error message)
+     */
+    fun createFile(parentPath: String, fileName: String, onResult: (Result<String>) -> Unit) {
+        scope.launch {
+            val result = fileSystemProvider.createFile(parentPath, fileName)
+            onResult(result)
+            if (result.isSuccess) {
+                refreshNode(parentPath)
+            }
+        }
+    }
+
+    /**
+     * Create a new folder in the specified directory.
+     *
+     * @param parentPath The parent directory path
+     * @param folderName The name of the folder to create
+     * @param onResult Callback with the result (success path or error message)
+     */
+    fun createFolder(parentPath: String, folderName: String, onResult: (Result<String>) -> Unit) {
+        scope.launch {
+            val result = fileSystemProvider.createFolder(parentPath, folderName)
+            onResult(result)
+            if (result.isSuccess) {
+                refreshNode(parentPath)
+            }
+        }
+    }
+
+    /**
+     * Refresh a specific node in the tree after creation/deletion.
+     */
+    fun refreshNode(path: String) {
+        scope.launch {
+            // Mark as CHECKING state - check node validity inside the lock to prevent race conditions
+            treeUpdateMutex.lock()
+            try {
+                val treeForUpdate = _fileTree.value ?: return@launch
+                val node = FileTreeUtils.findNodeByPath(treeForUpdate, path)
+                if (node?.isDirectory != true) return@launch
+
+                _fileTree.value = FileTreeUtils.updateNodeAtPath(treeForUpdate, path) { existingNode ->
+                    existingNode.copy(loadingState = NodeLoadingState.CHECKING)
+                }
+            } finally {
+                treeUpdateMutex.unlock()
+            }
+
+            // Reload children on IO dispatcher
+            val loadedChildren = try {
+                kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    val scannedNode = fileSystemProvider.scanDirectoryWithDepth(path, maxDepth = 1, startDepth = 0)
+                    scannedNode?.children?.map { child ->
+                        if (child.isDirectory) {
+                            val hasKids = try {
+                                fileSystemProvider.directoryHasChildren(child.path)
+                            } catch (e: Exception) {
+                                false
+                            }
+                            child.copy(hasChildren = hasKids)
+                        } else {
+                            child
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.warn(LogCategory.FILE, "Error refreshing node", mapOf("path" to path), error = e)
+                null
+            }
+
+            // Update tree with refreshed children
+            treeUpdateMutex.lock()
+            try {
+                val latestTree = _fileTree.value ?: return@launch
+
+                if (loadedChildren != null) {
+                    _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, path) { existingNode ->
+                        existingNode.copy(
+                            children = loadedChildren,
+                            hasChildren = loadedChildren.isNotEmpty(),
+                            loadingState = NodeLoadingState.LOADED,
+                            loadDepth = 1
+                        )
+                    }
+                } else {
+                    _fileTree.value = FileTreeUtils.updateNodeAtPath(latestTree, path) { existingNode ->
+                        existingNode.copy(
+                            children = emptyList(),
+                            hasChildren = false,
+                            loadingState = NodeLoadingState.LOADED
+                        )
+                    }
+                }
+            } finally {
+                treeUpdateMutex.unlock()
+            }
+
+            // Make sure the node is expanded
+            val expanded = _expandedPaths.value.toMutableSet()
+            if (!expanded.contains(path)) {
+                expanded.add(path)
+                _expandedPaths.value = expanded
+            }
+        }
+    }
+
+    /**
+     * Delete a file or folder.
+     *
+     * @param path The path to delete
+     * @param onResult Callback with the result
+     */
+    fun deleteItem(path: String, onResult: (Result<Unit>) -> Unit) {
+        scope.launch {
+            val result = fileSystemProvider.delete(path)
+            onResult(result)
+            if (result.isSuccess) {
+                // Refresh parent directory
+                val parentPath = path.substringBeforeLast('/')
+                if (parentPath.isNotEmpty()) {
+                    refreshNode(parentPath)
+                }
+            }
+        }
+    }
+
+    /**
+     * Rename a file or folder.
+     *
+     * @param path The current path
+     * @param newName The new name
+     * @param onResult Callback with the result (new path or error)
+     */
+    fun renameItem(path: String, newName: String, onResult: (Result<String>) -> Unit) {
+        scope.launch {
+            val result = fileSystemProvider.rename(path, newName)
+            onResult(result)
+            if (result.isSuccess) {
+                // Refresh parent directory
+                val parentPath = path.substringBeforeLast('/')
+                if (parentPath.isNotEmpty()) {
+                    refreshNode(parentPath)
+                }
+            }
+        }
+    }
+
+    /**
+     * Reveal file or folder in system file manager.
+     */
+    fun revealInFileManager(path: String) {
+        fileSystemProvider.revealInFileManager(path).onFailure { error ->
+            logger.warn(LogCategory.FILE, "Failed to reveal in file manager", mapOf("path" to path), error = error)
+        }
+    }
+
+    /**
+     * Open terminal at directory.
+     */
+    fun openInTerminal(path: String) {
+        // Get the directory path (if file, use parent directory)
+        val file = java.io.File(path)
+        val directory = if (file.isDirectory) file.absolutePath else file.parent ?: return
+        openTerminalTab(directory)
+    }
+
+    /**
+     * Copy absolute path to clipboard.
+     */
+    fun copyPath(path: String) {
+        fileSystemProvider.copyToClipboard(path).onFailure { error ->
+            logger.warn(LogCategory.FILE, "Failed to copy path to clipboard", mapOf("path" to path), error = error)
+        }
+    }
+
+    /**
+     * Copy relative path (from project root) to clipboard.
+     */
+    fun copyRelativePath(path: String) {
+        val projectPath = getSelectedProject()?.path ?: ""
+        val relativePath = if (projectPath.isNotEmpty() && path.startsWith(projectPath)) {
+            path.removePrefix(projectPath).removePrefix("/")
+        } else {
+            path
+        }
+        fileSystemProvider.copyToClipboard(relativePath).onFailure { error ->
+            logger.warn(LogCategory.FILE, "Failed to copy relative path to clipboard", mapOf("path" to relativePath), error = error)
         }
     }
 

@@ -13,6 +13,7 @@ import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.bookmark.Bookmark
 import ai.rever.boss.plugin.bookmark.BookmarkCollection
 import ai.rever.boss.plugin.bookmark.WorkspacePanelTarget
+import ai.rever.boss.plugin.ui.ContextMenuItemData
 import ai.rever.boss.plugin.workspace.LayoutWorkspace
 import ai.rever.boss.plugin.workspace.TabConfig
 import androidx.compose.runtime.*

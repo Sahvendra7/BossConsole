@@ -3,11 +3,15 @@ package ai.rever.boss.plugin.panel.rolecreation
 import ai.rever.boss.plugin.api.PermissionInfoData
 import ai.rever.boss.plugin.api.RoleInfoData
 import ai.rever.boss.plugin.api.RoleWithPermissionsData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -438,7 +442,16 @@ private fun AllPermissionsSection(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val listState = rememberLazyListState()
             LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .lazyListScrollbar(
+                        listState = listState,
+                        direction = Orientation.Vertical,
+                        config = getPanelScrollbarConfig()
+                    ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(permissions) { permission ->
@@ -618,7 +631,16 @@ private fun SelectedRolePermissionsSection(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             } else {
+                val permListState = rememberLazyListState()
                 LazyColumn(
+                    state = permListState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .lazyListScrollbar(
+                            listState = permListState,
+                            direction = Orientation.Vertical,
+                            config = getPanelScrollbarConfig()
+                        ),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(rolePermissions!!.permissions) { permission ->

@@ -30,10 +30,11 @@ import ai.rever.boss.components.plugin.providers.PanelEventProviderImpl
 import ai.rever.boss.components.plugin.providers.SettingsProviderImpl
 import ai.rever.boss.components.plugin.providers.TopOfMindDataProvider
 import ai.rever.boss.cache.loadFaviconFromCache
+import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.BookmarksDialogProviderImpl
-import ai.rever.boss.plugin.panel.bookmarks.ContextMenuItemData
+import ai.rever.boss.plugin.ui.ContextMenuItemData
 import ai.rever.boss.components.plugin.panels.left_top.createDownloadDataProvider
 import ai.rever.boss.components.plugin.providers.DirectoryPickerProviderImpl
 import ai.rever.boss.components.plugin.providers.FileSystemDataProviderImpl
@@ -138,7 +139,29 @@ class DefaultPlugin(
                     )
                 )
             },
-            directoryPickerProvider = directoryPickerProvider
+            directoryPickerProvider = directoryPickerProvider,
+            contextMenuProvider = { modifier, items ->
+                modifier.contextMenu(
+                    items = items.map { item ->
+                        ContextMenuItem(
+                            text = item.label,
+                            icon = item.icon,
+                            onClick = item.onClick
+                        )
+                    }
+                )
+            },
+            openTerminalTab = { workingDirectory ->
+                windowId?.let { wid ->
+                    pluginScope.launch {
+                        TerminalEventBus.openTerminal(
+                            command = null,
+                            sourceWindowId = wid,
+                            workingDirectory = workingDirectory
+                        )
+                    }
+                }
+            }
         )
 
         // Terminal panel - uses registerWithProviders for clean plugin architecture

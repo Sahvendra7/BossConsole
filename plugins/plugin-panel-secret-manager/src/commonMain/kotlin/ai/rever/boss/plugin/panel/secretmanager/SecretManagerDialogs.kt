@@ -7,15 +7,19 @@ import ai.rever.boss.plugin.api.SecretShareData
 import ai.rever.boss.plugin.api.ShareSecretRequestData
 import ai.rever.boss.plugin.api.UpdateSecretRequestData
 import ai.rever.boss.plugin.api.UserWithRolesData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import ai.rever.boss.plugin.ui.BossDarkBackground
 import ai.rever.boss.plugin.ui.BossDarkBorder
 import ai.rever.boss.plugin.ui.BossDarkTextSecondary
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
@@ -480,7 +484,17 @@ fun ShareSecretDialog(
                             )
                         }
                     } else {
-                        LazyColumn(modifier = Modifier.height(150.dp)) {
+                        val usersListState = rememberLazyListState()
+                        LazyColumn(
+                            state = usersListState,
+                            modifier = Modifier
+                                .height(150.dp)
+                                .lazyListScrollbar(
+                                    listState = usersListState,
+                                    direction = Orientation.Vertical,
+                                    config = getPanelScrollbarConfig()
+                                )
+                        ) {
                             items(availableUsers) { user ->
                                 Row(
                                     modifier = Modifier
@@ -512,7 +526,17 @@ fun ShareSecretDialog(
                     }
                 } else {
                     // Roles list
-                    LazyColumn(modifier = Modifier.height(150.dp)) {
+                    val rolesListState = rememberLazyListState()
+                    LazyColumn(
+                        state = rolesListState,
+                        modifier = Modifier
+                            .height(150.dp)
+                            .lazyListScrollbar(
+                                listState = rolesListState,
+                                direction = Orientation.Vertical,
+                                config = getPanelScrollbarConfig()
+                            )
+                    ) {
                         items(availableRoles) { role ->
                             Row(
                                 modifier = Modifier

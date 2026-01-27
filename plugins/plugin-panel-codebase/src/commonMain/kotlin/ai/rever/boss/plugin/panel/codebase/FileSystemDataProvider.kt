@@ -43,6 +43,57 @@ interface FileSystemDataProvider {
      * @param windowId The window ID to open the file in
      */
     fun openFile(path: String, windowId: String)
+
+    /**
+     * Create a new file.
+     *
+     * @param parentPath The parent directory path
+     * @param fileName The name of the file to create
+     * @return Result containing the absolute path of the created file, or failure
+     */
+    suspend fun createFile(parentPath: String, fileName: String): Result<String>
+
+    /**
+     * Create a new folder.
+     *
+     * @param parentPath The parent directory path
+     * @param folderName The name of the folder to create
+     * @return Result containing the absolute path of the created folder, or failure
+     */
+    suspend fun createFolder(parentPath: String, folderName: String): Result<String>
+
+    /**
+     * Delete a file or folder.
+     *
+     * @param path The path to delete
+     * @return Result indicating success or failure
+     */
+    suspend fun delete(path: String): Result<Unit>
+
+    /**
+     * Rename a file or folder.
+     *
+     * @param path The current path
+     * @param newName The new name (not full path, just the name)
+     * @return Result containing the new absolute path, or failure
+     */
+    suspend fun rename(path: String, newName: String): Result<String>
+
+    /**
+     * Reveal a file or folder in the system file manager.
+     *
+     * @param path The path to reveal
+     * @return Result indicating success or failure
+     */
+    fun revealInFileManager(path: String): Result<Unit>
+
+    /**
+     * Copy text to system clipboard.
+     *
+     * @param text The text to copy
+     * @return Result indicating success or failure
+     */
+    fun copyToClipboard(text: String): Result<Unit>
 }
 
 /**

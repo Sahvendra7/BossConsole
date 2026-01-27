@@ -2,11 +2,15 @@ package ai.rever.boss.plugin.panel.rolecreation
 
 import ai.rever.boss.plugin.api.PermissionInfoData
 import ai.rever.boss.plugin.api.RoleInfoData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -354,10 +358,17 @@ fun AssignPermissionDialog(
                         )
                     }
                 } else {
+                    val listState = rememberLazyListState()
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .weight(1f)
+                            .lazyListScrollbar(
+                                listState = listState,
+                                direction = Orientation.Vertical,
+                                config = getPanelScrollbarConfig()
+                            ),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(filteredPermissions) { permission ->

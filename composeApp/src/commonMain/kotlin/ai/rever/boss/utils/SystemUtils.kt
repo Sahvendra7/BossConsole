@@ -10,4 +10,14 @@ expect object SystemUtils {
      * Used for platform-aware keyboard shortcut handling.
      */
     val isMacOS: Boolean
+
+    /**
+     * Returns true if the current platform is Windows.
+     */
+    val isWindows: Boolean
+
+    /**
+     * Returns true if the current platform is Linux.
+     */
+    val isLinux: Boolean
 }

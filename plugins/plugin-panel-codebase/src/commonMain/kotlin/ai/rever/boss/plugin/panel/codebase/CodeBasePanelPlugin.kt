@@ -4,6 +4,9 @@ import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.Plugin
 import ai.rever.boss.plugin.api.PluginContext
+import ai.rever.boss.plugin.ui.ContextMenuItemData
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import com.arkivanov.decompose.ComponentContext
 
 /**
@@ -54,6 +57,8 @@ object CodeBasePanelPlugin : Plugin {
      * @param getSelectedProject Function to get selected project for a window
      * @param onSelectProject Callback when a project is selected
      * @param directoryPickerProvider Provider for directory picker functionality
+     * @param contextMenuProvider Provider for context menu functionality
+     * @param openTerminalTab Callback to open a terminal tab at the specified directory
      */
     fun registerWithProviders(
         context: PluginContext,
@@ -62,7 +67,9 @@ object CodeBasePanelPlugin : Plugin {
         getWindowId: () -> String?,
         getSelectedProject: () -> ProjectData?,
         onSelectProject: (ProjectData) -> Unit,
-        directoryPickerProvider: DirectoryPickerProvider
+        directoryPickerProvider: DirectoryPickerProvider,
+        contextMenuProvider: @Composable (Modifier, List<ContextMenuItemData>) -> Modifier,
+        openTerminalTab: (workingDirectory: String) -> Unit
     ) {
         context.panelRegistry.registerPanel(CodeBaseInfo) { ctx, panelInfo ->
             CodeBaseComponent(
@@ -73,7 +80,9 @@ object CodeBasePanelPlugin : Plugin {
                 getWindowId = getWindowId,
                 getSelectedProject = getSelectedProject,
                 onSelectProject = onSelectProject,
-                directoryPickerProvider = directoryPickerProvider
+                directoryPickerProvider = directoryPickerProvider,
+                contextMenuProvider = contextMenuProvider,
+                openTerminalTab = openTerminalTab
             )
         }
     }

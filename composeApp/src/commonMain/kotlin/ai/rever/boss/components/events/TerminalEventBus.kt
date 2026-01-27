@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.asSharedFlow
  *
  * @property command Optional initial command to run in the terminal
  * @property sourceWindowId The window that initiated this event (required for multi-window support)
+ * @property workingDirectory Optional working directory for the terminal
  */
 data class TerminalOpenEvent(
     val command: String?,
-    val sourceWindowId: String
+    val sourceWindowId: String,
+    val workingDirectory: String? = null
 )
 
 /**
@@ -38,8 +40,9 @@ object TerminalEventBus {
      *
      * @param command Optional command to run in the terminal
      * @param sourceWindowId The window that initiated this event (required for multi-window support)
+     * @param workingDirectory Optional working directory for the terminal
      */
-    suspend fun openTerminal(command: String? = null, sourceWindowId: String) {
-        _terminalOpenEvents.emit(TerminalOpenEvent(command, sourceWindowId))
+    suspend fun openTerminal(command: String? = null, sourceWindowId: String, workingDirectory: String? = null) {
+        _terminalOpenEvents.emit(TerminalOpenEvent(command, sourceWindowId, workingDirectory))
     }
 }

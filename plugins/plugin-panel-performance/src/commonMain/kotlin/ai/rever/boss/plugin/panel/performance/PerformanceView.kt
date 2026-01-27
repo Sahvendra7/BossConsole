@@ -9,6 +9,8 @@ import ai.rever.boss.plugin.api.PerformanceSettingsData
 import ai.rever.boss.plugin.api.PerformanceSnapshotData
 import ai.rever.boss.plugin.api.TerminalData
 import ai.rever.boss.plugin.api.ThreadData
+import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
+import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import ai.rever.boss.plugin.ui.BossDarkAccent
 import ai.rever.boss.plugin.ui.BossDarkBackground
 import ai.rever.boss.plugin.ui.BossDarkBorder
@@ -24,10 +26,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -158,7 +162,18 @@ private fun OverviewTab(
         HealthStatusLevel.GOOD
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val overviewListState = rememberLazyListState()
+    LazyColumn(
+        state = overviewListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .lazyListScrollbar(
+                listState = overviewListState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             // Health summary card
             Card(
@@ -283,7 +298,18 @@ private fun MemoryTab(snapshot: PerformanceSnapshotData?) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val memoryListState = rememberLazyListState()
+    LazyColumn(
+        state = memoryListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .lazyListScrollbar(
+                listState = memoryListState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -375,7 +401,18 @@ private fun CpuTab(snapshot: PerformanceSnapshotData?) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val cpuListState = rememberLazyListState()
+    LazyColumn(
+        state = cpuListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .lazyListScrollbar(
+                listState = cpuListState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -489,7 +526,18 @@ private fun TimingsTab(snapshot: PerformanceSnapshotData?) {
 
     val currentTime = System.currentTimeMillis()
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val timingsListState = rememberLazyListState()
+    LazyColumn(
+        state = timingsListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .lazyListScrollbar(
+                listState = timingsListState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -550,7 +598,18 @@ private fun ResourcesTab(snapshot: PerformanceSnapshotData?) {
 
     val totalResources = snapshot.browserTabCount + snapshot.terminalCount + snapshot.editorTabCount + snapshot.panelCount + snapshot.windowCount
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val resourcesListState = rememberLazyListState()
+    LazyColumn(
+        state = resourcesListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .lazyListScrollbar(
+                listState = resourcesListState,
+                direction = Orientation.Vertical,
+                config = getPanelScrollbarConfig()
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),

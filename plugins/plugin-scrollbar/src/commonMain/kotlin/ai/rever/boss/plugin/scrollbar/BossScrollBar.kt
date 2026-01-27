@@ -147,10 +147,13 @@ fun getPanelScrollbarConfig(): ScrollbarConfig {
             indicatorColor = BossDarkTextSecondary,
             indicatorCornerRadius = settings.panelThicknessDp / 2,
             alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
-            alphaAnimationSpec = tween(
-                delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
-                durationMillis = settings.fadeDurationMs
-            )
+            // Only override animation spec when always showing - otherwise let the
+            // scrollbar modifier handle the animation with proper scroll-aware timing
+            alphaAnimationSpec = if (settings.alwaysShowScrollbars) {
+                tween(delayMillis = 0, durationMillis = settings.fadeDurationMs)
+            } else {
+                null // Use default scroll-aware animation
+            }
         )
     }
 }
@@ -169,10 +172,13 @@ fun getBarScrollbarConfig(): ScrollbarConfig {
             indicatorCornerRadius = 4.dp,
             horizontalScrollbarAtTop = true,
             alpha = if (settings.alwaysShowScrollbars) 0.8f else null,
-            alphaAnimationSpec = tween(
-                delayMillis = if (settings.alwaysShowScrollbars) 0 else settings.fadeDelayMs,
-                durationMillis = settings.fadeDurationMs
-            )
+            // Only override animation spec when always showing - otherwise let the
+            // scrollbar modifier handle the animation with proper scroll-aware timing
+            alphaAnimationSpec = if (settings.alwaysShowScrollbars) {
+                tween(delayMillis = 0, durationMillis = settings.fadeDurationMs)
+            } else {
+                null // Use default scroll-aware animation
+            }
         )
     }
 }
