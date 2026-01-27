@@ -587,10 +587,8 @@ fun JxBrowserCompose(
                                             if (event.metaKey || event.ctrlKey) {
                                                 event.preventDefault();
                                                 event.stopPropagation();
-                                                // Store the URL to open in new tab
-                                                window._newTabUrl = link.href;
-                                                // Trigger custom event
-                                                window.dispatchEvent(new CustomEvent('openInNewTab', { detail: link.href }));
+                                                // Use window.open to trigger OpenPopupCallback
+                                                window.open(link.href, '_blank');
                                                 return false;
                                             }
                                         }
@@ -611,24 +609,6 @@ fun JxBrowserCompose(
                                     window.rightClickHandlerAdded = true;
                                 }
                             """)
-
-                            // Set up listener for the custom event
-                            frame.executeJavaScript<String?>("""
-                                (function() {
-                                    if (window._newTabUrl) {
-                                        const url = window._newTabUrl;
-                                        window._newTabUrl = null;
-                                        return url;
-                                    }
-                                    return null;
-                                })();
-                            """)?.let { newTabUrl ->
-                                if (newTabUrl.isNotEmpty()) {
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        onOpenInNewTab(newTabUrl)
-                                    }
-                                }
-                            }
                         } catch (e: Exception) {
                             // JavaScript execution failed - browser might be closing
                             // Issue #255: Gracefully handle frame access exceptions
@@ -768,43 +748,6 @@ fun JxBrowserCompose(
                     subscription.unsubscribe()
                 } catch (e: Exception) {
                     // Ignore errors during cleanup (browser might already be closed)
-                }
-            }
-        }
-    }
-
-    // Set up polling for new tab requests
-    LaunchedEffect(browser) {
-        // Exit immediately if browser environment is not valid
-        if (!isBrowserEnvironmentValid()) return@LaunchedEffect
-
-        coroutineScope.launch {
-            while (isBrowserEnvironmentValid()) {
-                delay(100) // Check every 100ms
-
-                // Double-check environment validity after delay
-                if (!isBrowserEnvironmentValid()) break
-
-                try {
-                    browser.mainFrame().ifPresent { frame ->
-                        frame.executeJavaScript<String?>("""
-                            (function() {
-                                if (window._newTabUrl) {
-                                    const url = window._newTabUrl;
-                                    window._newTabUrl = null;
-                                    return url;
-                                }
-                                return null;
-                            })();
-                        """)?.let { newTabUrl ->
-                            if (newTabUrl.isNotEmpty() && isBrowserEnvironmentValid()) {
-                                onOpenInNewTab(newTabUrl)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Browser might be closed or disposed, exit the loop
-                    break
                 }
             }
         }

@@ -469,7 +469,7 @@ compose.desktop {
             }
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
-        
+
         nativeDistributions {
             targetFormats(
                 TargetFormat.Dmg,           // macOS
@@ -626,6 +626,14 @@ tasks.register("runProduction") {
     group = "application"
     description = "Run desktop application with production Supabase configuration (api.risaboss.com)"
     dependsOn("run")
+}
+
+// Configure all JavaExec tasks with boss.log.level from gradle.properties
+tasks.withType<JavaExec>().configureEach {
+    val bossLogLevel = project.findProperty("boss.log.level") as? String
+    if (bossLogLevel != null) {
+        systemProperty("boss.log.level", bossLogLevel)
+    }
 }
 
 // Configure run task based on which wrapper task will execute

@@ -171,7 +171,25 @@ class SplitViewState(
         _panelBounds.remove(panelId)
     }
 
+    // Debounce active panel changes to prevent rapid oscillation from spurious focus events.
+    // 50ms chosen based on observed oscillation intervals (~8ms) - provides enough filtering
+    // while remaining responsive to genuine user interactions.
+    private val lastActivePanelChangeTime = java.util.concurrent.atomic.AtomicLong(0L)
+    private val activePanelDebounceMs = 50L
+
     fun setActivePanel(panelId: String) {
+        // Skip if already active
+        if (panelId == _activePanelId.value) return
+
+        // Debounce: ignore rapid changes (likely spurious focus events from Compose recomposition)
+        // Uses AtomicLong for thread-safe timestamp comparison (see docs/THREADING.md)
+        val now = System.currentTimeMillis()
+        val lastChange = lastActivePanelChangeTime.get()
+        if (now - lastChange < activePanelDebounceMs) return
+
+        // Atomic update to prevent race conditions if called from multiple threads
+        if (!lastActivePanelChangeTime.compareAndSet(lastChange, now)) return
+
         _activePanelId.value = panelId
         // Record in activation history for MOST_RECENT_ACTIVE mode
         recordPanelActivation(panelId)
