@@ -13,8 +13,8 @@ on:
     branches: [main]
 
 jobs:
-  # Skip job for push events - this workflow only does real work on release events
-  # This job exists to satisfy required status checks on push
+  # Skip job for push events - workflow only syncs on release publish
+  # Exists to satisfy required status checks on push
   skip-on-push:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
