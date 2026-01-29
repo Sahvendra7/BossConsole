@@ -1361,13 +1361,13 @@ jobs:
           if (Test-Path $GENERATED_FILE) {
             Write-Host "Checking generated VersionConstants.kt..."
             $content = Get-Content $GENERATED_FILE -Raw
-            # Use anchored patterns to avoid matching comments
-            $MAJOR = if ($content -match '^\s*const val MAJOR\s*=\s*(\d+)') { $matches[1] } else { '' }
-            $MINOR = if ($content -match '^\s*const val MINOR\s*=\s*(\d+)') { $matches[1] } else { '' }
-            $PATCH = if ($content -match '^\s*const val PATCH\s*=\s*(\d+)') { $matches[1] } else { '' }
+            # Use multiline mode (?m) so ^ matches start of each line
+            $MAJOR = if ($content -match '(?m)^\s*const val MAJOR\s*=\s*(\d+)') { $matches[1] } else { '' }
+            $MINOR = if ($content -match '(?m)^\s*const val MINOR\s*=\s*(\d+)') { $matches[1] } else { '' }
+            $PATCH = if ($content -match '(?m)^\s*const val PATCH\s*=\s*(\d+)') { $matches[1] } else { '' }
             # Extract prerelease - handles both null and quoted string like "beta.1"
             $PRERELEASE = ''
-            if ($content -match '^\s*(const\s+)?val\s+PRERELEASE.*=\s*"([^"]+)"') {
+            if ($content -match '(?m)^\s*(const\s+)?val\s+PRERELEASE[^=]*=\s*"([^"]+)"') {
               $PRERELEASE = $matches[2]
             }
             if ($PRERELEASE) {
