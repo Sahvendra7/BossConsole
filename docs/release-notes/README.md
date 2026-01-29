@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.18](v8.16.18.md) | 2026-01-29 | CI/CD improvements and security hardening for release workflow with global search and file operations context menu |
 | [v8.16.15](v8.16.15.md) | 2026-01-27 | Critical browser focus fix eliminating interruptions from 100ms polling in split view |
 | [v8.16.14](v8.16.14.md) | 2026-01-27 | Dependency maintenance release modernizing build configuration with direct Maven coordinates |
 | [v8.16.13](v8.16.13.md) | 2026-01-27 | Documentation maintenance release with comprehensive release notes for v8.16.12 |
