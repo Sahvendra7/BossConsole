@@ -23,28 +23,44 @@ jobs:
     
     - name: Download release assets
       id: download
+      env:
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+        EVENT_RELEASE_NAME: ${{ github.event.release.name }}
+        EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        EVENT_RELEASE_BODY: ${{ github.event.release.body }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        set -e  # Exit on error
-        
+        set -euo pipefail
+
         # Get release information (handle both release event and manual dispatch)
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          RELEASE_TAG="${{ github.event.inputs.release_tag }}"
+        if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+          RELEASE_TAG="$INPUT_RELEASE_TAG"
+
+          # Validate release tag format
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "❌ Invalid release tag format: $RELEASE_TAG"
+            echo "   Expected format: v8.16.10 or v8.16.10-beta.1"
+            exit 1
+          fi
+
           # Get release info from GitHub API for manual dispatch
-          RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/${RELEASE_TAG})
+          RELEASE_INFO=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")
           RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
           RELEASE_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.prerelease')
         else
-          RELEASE_TAG="${{ github.event.release.tag_name }}"
-          RELEASE_NAME="${{ github.event.release.name }}"
-          RELEASE_PRERELEASE="${{ github.event.release.prerelease }}"
+          RELEASE_TAG="$EVENT_RELEASE_TAG"
+          RELEASE_NAME="$EVENT_RELEASE_NAME"
+          RELEASE_PRERELEASE="$EVENT_RELEASE_PRERELEASE"
         fi
         
         # Validate required variables
-        if [ -z "${RELEASE_TAG}" ]; then
+        if [[ -z "${RELEASE_TAG}" ]]; then
           echo "Error: RELEASE_TAG is empty"
           exit 1
         fi
-        
+
         echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
         echo "RELEASE_NAME=${RELEASE_NAME}" >> $GITHUB_OUTPUT
         echo "RELEASE_PRERELEASE=${RELEASE_PRERELEASE}" >> $GITHUB_OUTPUT
@@ -59,17 +75,17 @@ jobs:
         ASSETS_FOUND=false
         EXPECTED_ASSETS=5  # DMG, DEB, JAR, MSI, RPM
         
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
           echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Checking for assets..."
-          
+
           # Check if release has assets
-          ASSET_COUNT=$(gh api repos/${{ github.repository }}/releases/tags/${RELEASE_TAG} --jq '.assets | length')
-          
-          if [ "$ASSET_COUNT" -ge "$EXPECTED_ASSETS" ]; then
+          ASSET_COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.assets | length')
+
+          if [[ "$ASSET_COUNT" -ge "$EXPECTED_ASSETS" ]]; then
             echo "✅ Found $ASSET_COUNT/$EXPECTED_ASSETS assets, proceeding with download..."
             ASSETS_FOUND=true
             break
-          elif [ "$ASSET_COUNT" -gt 0 ]; then
+          elif [[ "$ASSET_COUNT" -gt 0 ]]; then
             echo "⏳ Found $ASSET_COUNT/$EXPECTED_ASSETS assets, waiting for more (45 seconds)..."
             sleep 45
             RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -79,27 +95,25 @@ jobs:
             RETRY_COUNT=$((RETRY_COUNT + 1))
           fi
         done
-        
-        if [ "$ASSETS_FOUND" = false ]; then
+
+        if [[ "$ASSETS_FOUND" == "false" ]]; then
           echo "⚠️  No assets found after $MAX_RETRIES attempts"
           echo "This might be normal for releases without binary assets"
         fi
         
         # Download all release assets using GitHub CLI (if any exist)
-        if [ "$ASSETS_FOUND" = true ]; then
+        if [[ "$ASSETS_FOUND" == "true" ]]; then
           echo "📥 Downloading release assets..."
-          gh release download "${RELEASE_TAG}" --dir release-assets --repo ${{ github.repository }}
+          gh release download "${RELEASE_TAG}" --dir release-assets --repo "${GITHUB_REPOSITORY}"
         else
           echo "📝 No assets to download, proceeding with release creation only"
         fi
-        
+
         # Save release body to file safely
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
           echo "$RELEASE_INFO" | jq -r '.body' > release-assets/release-body-raw.txt
         else
-          cat << 'EOF' > release-assets/release-body-raw.txt
-        ${{ github.event.release.body }}
-        EOF
+          printf '%s\n' "$EVENT_RELEASE_BODY" > release-assets/release-body-raw.txt
         fi
 
         # Fix download URLs: replace private repo with public repo
@@ -116,118 +130,121 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
     - name: Create public release
+      env:
+        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        RELEASE_TAG: ${{ steps.download.outputs.RELEASE_TAG }}
+        RELEASE_NAME: ${{ steps.download.outputs.RELEASE_NAME }}
+        RELEASE_PRERELEASE: ${{ steps.download.outputs.RELEASE_PRERELEASE }}
+        PUBLIC_REPO: risa-labs-inc/BossConsole-Releases
       run: |
-        set -e  # Exit on error
-        
-        RELEASE_TAG="${{ steps.download.outputs.RELEASE_TAG }}"
-        RELEASE_NAME="${{ steps.download.outputs.RELEASE_NAME }}"
-        RELEASE_PRERELEASE="${{ steps.download.outputs.RELEASE_PRERELEASE }}"
-        
+        set -euo pipefail
+
         # Validate required variables
-        if [ -z "${RELEASE_TAG}" ]; then
+        if [[ -z "${RELEASE_TAG}" ]]; then
           echo "Error: RELEASE_TAG is empty"
           exit 1
         fi
-        
+
         # Set prerelease flag
         PRERELEASE_FLAG=""
-        if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+        if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
           PRERELEASE_FLAG="--prerelease"
         fi
-        
+
         # Prepare assets for upload
         ASSET_FILES=""
         if ls release-assets/* 1> /dev/null 2>&1; then
           for file in release-assets/*; do
-            if [ -f "$file" ] && [ "$(basename "$file")" != "release-body.txt" ]; then
+            if [[ -f "$file" ]] && [[ "$(basename "$file")" != "release-body.txt" ]]; then
               ASSET_FILES="$ASSET_FILES $file"
             fi
           done
         fi
-        
+
         # Check if release already exists
-        if gh release view "${RELEASE_TAG}" --repo risa-labs-inc/BossConsole-Releases >/dev/null 2>&1; then
+        if gh release view "${RELEASE_TAG}" --repo "${PUBLIC_REPO}" >/dev/null 2>&1; then
           echo "📋 Release ${RELEASE_TAG} already exists, uploading missing assets..."
-          
+
           # Get existing assets
-          EXISTING_ASSETS=$(gh release view "${RELEASE_TAG}" --repo risa-labs-inc/BossConsole-Releases --json assets --jq '.assets[].name')
-          
+          EXISTING_ASSETS=$(gh release view "${RELEASE_TAG}" --repo "${PUBLIC_REPO}" --json assets --jq '.assets[].name')
+
           # Upload only missing assets
-          if [ -n "$ASSET_FILES" ]; then
+          if [[ -n "$ASSET_FILES" ]]; then
             for file in $ASSET_FILES; do
               FILENAME=$(basename "$file")
               if echo "$EXISTING_ASSETS" | grep -q "^${FILENAME}$"; then
                 echo "⏭️  Skipping $FILENAME (already exists)"
               else
                 echo "📤 Uploading missing asset: $FILENAME"
-                gh release upload "${RELEASE_TAG}" "$file" --repo risa-labs-inc/BossConsole-Releases
+                gh release upload "${RELEASE_TAG}" "$file" --repo "${PUBLIC_REPO}"
               fi
             done
           fi
-          
+
           echo "✅ Assets synchronized for existing release ${RELEASE_TAG}"
         else
           # Create release in public repository
-          if [ -n "$ASSET_FILES" ]; then
+          if [[ -n "$ASSET_FILES" ]]; then
             gh release create "${RELEASE_TAG}" \
-              --repo risa-labs-inc/BossConsole-Releases \
+              --repo "${PUBLIC_REPO}" \
               --title "${RELEASE_NAME}" \
               --notes-file release-assets/release-body.txt \
               ${PRERELEASE_FLAG} \
               $ASSET_FILES
           else
             gh release create "${RELEASE_TAG}" \
-              --repo risa-labs-inc/BossConsole-Releases \
+              --repo "${PUBLIC_REPO}" \
               --title "${RELEASE_NAME}" \
               --notes-file release-assets/release-body.txt \
               ${PRERELEASE_FLAG}
           fi
-          
+
           echo "✅ Release ${RELEASE_TAG} created in public repository"
         fi
-      env:
-        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
     
     - name: Update public repository README
+      env:
+        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        RELEASE_TAG: ${{ steps.download.outputs.RELEASE_TAG }}
+        PUBLIC_REPO: risa-labs-inc/BossConsole-Releases
       run: |
-        set -e  # Exit on error
-        
-        RELEASE_TAG="${{ steps.download.outputs.RELEASE_TAG }}"
+        set -euo pipefail
+
         CURRENT_DATE=$(date +"%Y-%m-%d")
-        
+
         # Validate variables
-        if [ -z "${RELEASE_TAG}" ]; then
+        if [[ -z "${RELEASE_TAG}" ]]; then
           echo "Error: RELEASE_TAG is empty"
           exit 1
         fi
-        
+
         # Setup Git credentials securely
         git config --global credential.helper store
-        echo "https://token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com" > ~/.git-credentials
-        
+        echo "https://token:${GH_TOKEN}@github.com" > ~/.git-credentials
+
         # Clone public repository
-        git clone https://github.com/risa-labs-inc/BossConsole-Releases.git public-repo
+        git clone "https://github.com/${PUBLIC_REPO}.git" public-repo
         cd public-repo
-        
+
         # Configure git
         git config user.name "BOSS Release Bot"
         git config user.email "noreply@risa-labs.com"
-        
+
         # Create backup of README
         cp README.md README.md.backup
-        
+
         # Update version and date in README.md with safer patterns
         # Update the downloads table with new version and date
         sed -i "/| \*\*v[0-9]/s/v[0-9]\+\.[0-9]\+\.[0-9]\+[^|]*/v${RELEASE_TAG##v}/g" README.md
         sed -i "/| \*\*v[0-9]/s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/${CURRENT_DATE}/g" README.md
-        
+
         # Update badge version
         sed -i "s/BOSS-v[0-9]\+\.[0-9]\+\.[0-9]\+/BOSS-v${RELEASE_TAG##v}/g" README.md
-        
+
         # Update release notes section
         sed -i "/### \*\*v[0-9]/s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v${RELEASE_TAG##v}/g" README.md
         sed -i "/### \*\*v[0-9]/,/^$/{s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/${CURRENT_DATE}/g}" README.md
-        
+
         # Check if any changes were made
         if ! diff README.md.backup README.md > /dev/null 2>&1; then
           echo "📝 Changes detected in README.md"
@@ -237,23 +254,24 @@ jobs:
           - Updated version to ${RELEASE_TAG}
           - Updated release date to ${CURRENT_DATE}
           - Updated download links and badges
-          
+
           🤖 Automated update via release sync workflow"
-          
+
           git push origin main
           echo "✅ Public repository README updated successfully"
         else
           echo "ℹ️  No changes needed in README.md"
         fi
-        
+
         # Cleanup
         rm -f ~/.git-credentials
-      env:
-        GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-    
+
     - name: Notify completion
+      env:
+        RELEASE_TAG: ${{ steps.download.outputs.RELEASE_TAG }}
+        PUBLIC_REPO: risa-labs-inc/BossConsole-Releases
       run: |
         echo "🎉 Release sync completed successfully!"
-        echo "📦 Release: ${{ steps.download.outputs.RELEASE_TAG }}"
-        echo "🌐 Public Repository: https://github.com/risa-labs-inc/BossConsole-Releases"
-        echo "📥 Download: https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest"
+        echo "📦 Release: ${RELEASE_TAG}"
+        echo "🌐 Public Repository: https://github.com/${PUBLIC_REPO}"
+        echo "📥 Download: https://github.com/${PUBLIC_REPO}/releases/latest"
