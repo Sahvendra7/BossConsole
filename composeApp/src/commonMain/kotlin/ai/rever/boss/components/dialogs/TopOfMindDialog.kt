@@ -9,7 +9,6 @@ import ai.rever.boss.plugin.panel.topofmind.TopOfMindStateHolder
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.components.window_panel.SplitViewState
-import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.utils.WindowFocusManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -62,27 +61,13 @@ fun TopOfMindDialog(
     // Update active tabs when dialog opens and refresh periodically
     // Collects tabs from ALL open windows using the global registry
     LaunchedEffect(Unit) {
-        // Helper function to collect tabs from all windows
-        fun collectTabsFromAllWindows(): List<ActiveTab> {
-            val allWindowStates = SplitViewStateRegistry.getAllStates()
-            val allTabs = mutableListOf<ActiveTab>()
-
-            allWindowStates.forEach { (windowId, state) ->
-                val windowTabs = state.collectAllActiveTabs(workspaceManager, windowId)
-                allTabs.addAll(windowTabs)
-            }
-
-            return allTabs
-        }
-
         // Immediate update when dialog opens
-        val tabs = collectTabsFromAllWindows()
-        TopOfMindStateHolder.updateActiveTabs(tabs)
+        TabCollector.refreshGlobalState(workspaceManager)
 
         // Periodic refresh to ensure dialog has latest data
         while (true) {
             delay(1000) // Check every second while dialog is open
-            val currentTabs = collectTabsFromAllWindows()
+            val currentTabs = TabCollector.collectAllTabs(workspaceManager)
             val existingTabs = TopOfMindStateHolder.activeTabs.value
 
             if (currentTabs != existingTabs) {

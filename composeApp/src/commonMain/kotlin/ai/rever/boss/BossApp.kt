@@ -102,6 +102,7 @@ import ai.rever.boss.run.RunnerTerminalTarget
 import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.plugin.panel.topofmind.ActiveTab
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -156,8 +157,10 @@ import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
+import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.plugin.panel.topofmind.TabTreeState
+import ai.rever.boss.components.dialogs.GlobalSearchDialog
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import ai.rever.boss.components.windows.SettingsWindow
 import androidx.compose.runtime.CompositionLocalProvider
@@ -923,6 +926,7 @@ fun ComponentContext.BossApp(
     // Uses atomic flag to ensure handler marking happens exactly once
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
+    var showGlobalSearchDialog by remember { mutableStateOf(false) }
     var showProjectDialog by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showCloneProjectDialog by remember { mutableStateOf(false) }
@@ -2075,6 +2079,17 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Handle Open Global Search menu events (Issue #92)
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.openGlobalSearchEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    showGlobalSearchDialog = true
+                }
+            }
+            .launchIn(this)
+    }
+
     // Handle Panel Navigation menu events (consolidated)
     LaunchedEffect(windowId) {
         val navigationFlows = mapOf(
@@ -2217,6 +2232,9 @@ fun ComponentContext.BossApp(
                                 },
                                 onShowSettings = {
                                     showSettingsDialog = true
+                                },
+                                onShowSearch = {
+                                    showGlobalSearchDialog = true
                                 },
                                 onNewProject = {
                                     showNewProjectDialog = true
@@ -2475,6 +2493,101 @@ fun ComponentContext.BossApp(
                             }
                         }
 
+                        focusRequester.requestFocus()
+                    }
+                )
+            }
+
+            // Global search dialog (Issue #92)
+            if (showGlobalSearchDialog) {
+                GlobalSearchDialog(
+                    projectPath = selectedProject.path,
+                    workspaceManager = workspaceManager,
+                    onDismiss = {
+                        showGlobalSearchDialog = false
+                        focusRequester.requestFocus()
+                    },
+                    onFileSelect = { filePath ->
+                        showGlobalSearchDialog = false
+                        coroutineScope.launch {
+                            FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
+                        }
+                        focusRequester.requestFocus()
+                    },
+                    onTabSelect = { targetWindowId, panelId, tabId ->
+                        showGlobalSearchDialog = false
+                        // Only handle tabs in this window
+                        if (targetWindowId == windowId) {
+                            coroutineScope.launch {
+                                delay(100)
+                                splitViewState.selectTabInPanel(tabId, panelId)
+                            }
+                        }
+                        focusRequester.requestFocus()
+                    },
+                    onBookmarkSelect = { bookmarkId, collectionId ->
+                        showGlobalSearchDialog = false
+                        // Find the bookmark and open it
+                        val collection = bookmarkManager.collections.value.find { it.id == collectionId }
+                        val bookmark = collection?.bookmarks?.find { it.id == bookmarkId }
+                        if (bookmark != null) {
+                            coroutineScope.launch {
+                                // Open the bookmark as a new tab using the tab config
+                                when (bookmark.tabConfig.type) {
+                                    "browser" -> bookmark.tabConfig.url?.let { url ->
+                                        splitViewState.openUrlInActivePanel(url, bookmark.tabConfig.title)
+                                    }
+                                    "editor" -> bookmark.tabConfig.filePath?.let { filePath ->
+                                        FileEventBus.openFile(filePath, sourceWindowId = windowId, projectPath = selectedProject.path)
+                                    }
+                                    else -> {} // Other tab types can be added later
+                                }
+                            }
+                        }
+                        focusRequester.requestFocus()
+                    },
+                    onRunConfigSelect = { configId ->
+                        showGlobalSearchDialog = false
+                        // Find and run the configuration
+                        coroutineScope.launch {
+                            val config = RunConfigurationManager.currentSettings.value.configurations
+                                .find { it.id == configId }
+                                ?: RunConfigurationManager.detectedConfigurations.value
+                                    .find { it.id == configId }
+                            if (config != null) {
+                                // Execute the configuration
+                                RunExecutionService.execute(config, debug = false, windowId)
+                            }
+                        }
+                        focusRequester.requestFocus()
+                    },
+                    onCommandSelect = { actionId ->
+                        showGlobalSearchDialog = false
+                        // Execute the command via MenuActionsHandler
+                        when (actionId) {
+                            KeymapActions.WINDOW_NEW -> WindowOperations.createNewWindow()
+                            KeymapActions.WINDOW_CLOSE -> WindowOperations.closeWindow(windowId)
+                            KeymapActions.TAB_NEW -> MenuActionsHandler.triggerNewTab(windowId)
+                            KeymapActions.TAB_CLOSE -> MenuActionsHandler.triggerCloseTab(windowId)
+                            KeymapActions.BROWSER_RELOAD -> MenuActionsHandler.triggerReloadBrowser(windowId)
+                            KeymapActions.BROWSER_ZOOM_RESET -> MenuActionsHandler.triggerActualSize(windowId)
+                            KeymapActions.BROWSER_ZOOM_IN -> MenuActionsHandler.triggerZoomIn(windowId)
+                            KeymapActions.BROWSER_ZOOM_OUT -> MenuActionsHandler.triggerZoomOut(windowId)
+                            KeymapActions.PANEL_NAVIGATE_LEFT -> MenuActionsHandler.triggerNavigatePanelLeft(windowId)
+                            KeymapActions.PANEL_NAVIGATE_RIGHT -> MenuActionsHandler.triggerNavigatePanelRight(windowId)
+                            KeymapActions.PANEL_NAVIGATE_UP -> MenuActionsHandler.triggerNavigatePanelUp(windowId)
+                            KeymapActions.PANEL_NAVIGATE_DOWN -> MenuActionsHandler.triggerNavigatePanelDown(windowId)
+                            KeymapActions.PANEL_SPLIT_VERTICAL -> MenuActionsHandler.triggerSplitVertically(windowId)
+                            KeymapActions.PANEL_SPLIT_HORIZONTAL -> MenuActionsHandler.triggerSplitHorizontally(windowId)
+                            KeymapActions.QUICK_SWITCHER_OPEN -> { showTopOfMindDialog = true }
+                            KeymapActions.WORKSPACE_SAVE -> MenuActionsHandler.triggerSaveWorkspace(windowId)
+                            KeymapActions.CODEBASE_OPEN -> MenuActionsHandler.triggerOpenCodebase(windowId)
+                            KeymapActions.GLOBAL_SEARCH_OPEN -> { showGlobalSearchDialog = true }
+                            KeymapActions.FOCUS_MODE_TOGGLE -> MenuActionsHandler.triggerToggleFocusMode(windowId)
+                            KeymapActions.SETTINGS_OPEN -> MenuActionsHandler.triggerOpenSettings(windowId)
+                            KeymapActions.HELP_SHORTCUTS -> MenuActionsHandler.triggerShowShortcutHelp(windowId)
+                            else -> {} // Unknown command
+                        }
                         focusRequester.requestFocus()
                     }
                 )

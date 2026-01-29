@@ -66,6 +66,7 @@ fun BossDraggableComponent.BossTopBar(
     getCurrentWorkspace: (() -> LayoutWorkspace)? = null,
     onShowTopOfMind: (() -> Unit)? = null,
     onShowSettings: (() -> Unit)? = null,
+    onShowSearch: (() -> Unit)? = null,
     onNewProject: (() -> Unit)? = null,
     onCloneProject: (() -> Unit)? = null
 ) {
@@ -92,7 +93,7 @@ fun BossDraggableComponent.BossTopBar(
             // Run/debug controls (Issue #91 / #321)
             BossTopRunBar()
             Spacer(modifier = Modifier.weight(0.1f))
-            BossTopRightBar(onShowSettings = onShowSettings)
+            BossTopRightBar(onShowSettings = onShowSettings, onShowSearch = onShowSearch)
         }
     }
     Divider(color = BossDarkBorder)
@@ -730,7 +731,8 @@ fun BossDraggableComponent.BossTopLeftBar(
 
 @Composable
 fun BossTopRightBar(
-    onShowSettings: (() -> Unit)? = null
+    onShowSettings: (() -> Unit)? = null,
+    onShowSearch: (() -> Unit)? = null
 ) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     val currentUser by AuthService.currentUser.collectAsState()
@@ -753,13 +755,14 @@ fun BossTopRightBar(
         showLogoutDialog = true
     }
     
-    // TODO: #92 - Implement global search functionality
-    // See https://github.com/risa-labs-inc/BOSS-Kotlin/issues/92
-    // BossActionButton(
-    //     imageVector = Icons.Outlined.Search,
-    //     text = "Search",
-    //     hintText = "Search for files, commands, or actions"
-    // ) {}
+    // Global search button (Issue #92)
+    BossActionButton(
+        imageVector = Icons.Outlined.Search,
+        text = "Search",
+        hintText = "Search files, tabs, bookmarks (⇧⇧)"
+    ) {
+        onShowSearch?.invoke()
+    }
 
     BossActionButton(
         imageVector = Icons.Outlined.Settings,

@@ -45,6 +45,9 @@ object KeymapActions {
     // Panel/Tool Actions
     const val CODEBASE_OPEN = "codebase.open"
 
+    // Search Actions
+    const val GLOBAL_SEARCH_OPEN = "search.open"
+
     // View/UI Actions
     const val FOCUS_MODE_TOGGLE = "view.focus_mode_toggle"
     const val SETTINGS_OPEN = "view.settings_open"
@@ -66,6 +69,7 @@ object KeymapActions {
         const val WORKSPACE = "Workspace"
         const val EDITOR = "Editor"
         const val TOOLS = "Tools"
+        const val SEARCH = "Search"
         const val VIEW = "View/UI"
         const val HELP = "Help"
         const val DEBUG = "Debug"
@@ -99,6 +103,7 @@ object KeymapActions {
         EDITOR_FIND_PREVIOUS to "Find previous occurrence",
         EDITOR_GO_TO_LINE to "Go to specific line number",
         CODEBASE_OPEN to "Open CodeBase panel",
+        GLOBAL_SEARCH_OPEN to "Open global search (Double-Shift)",
         FOCUS_MODE_TOGGLE to "Toggle Focus Mode (hide/show UI bars)",
         SETTINGS_OPEN to "Open application settings",
         HELP_SHORTCUTS to "Show keyboard shortcuts help dialog",
@@ -133,6 +138,7 @@ object KeymapActions {
         EDITOR_FIND_PREVIOUS to Categories.EDITOR,
         EDITOR_GO_TO_LINE to Categories.EDITOR,
         CODEBASE_OPEN to Categories.TOOLS,
+        GLOBAL_SEARCH_OPEN to Categories.SEARCH,
         FOCUS_MODE_TOGGLE to Categories.VIEW,
         SETTINGS_OPEN to Categories.VIEW,
         HELP_SHORTCUTS to Categories.HELP,
@@ -167,6 +173,7 @@ object KeymapActions {
         EDITOR_FIND_PREVIOUS to ShortcutContext.EDITOR,
         EDITOR_GO_TO_LINE to ShortcutContext.EDITOR,
         CODEBASE_OPEN to ShortcutContext.GLOBAL,
+        GLOBAL_SEARCH_OPEN to ShortcutContext.GLOBAL,
         FOCUS_MODE_TOGGLE to ShortcutContext.GLOBAL,
         SETTINGS_OPEN to ShortcutContext.GLOBAL,
         HELP_SHORTCUTS to ShortcutContext.GLOBAL,
@@ -185,6 +192,7 @@ object KeymapActions {
         WORKSPACE_SAVE,
         EDITOR_SAVE, EDITOR_SAVE_ALL, EDITOR_FIND, EDITOR_REPLACE, EDITOR_FIND_NEXT, EDITOR_FIND_PREVIOUS, EDITOR_GO_TO_LINE,
         CODEBASE_OPEN,
+        GLOBAL_SEARCH_OPEN,
         FOCUS_MODE_TOGGLE,
         SETTINGS_OPEN,
         HELP_SHORTCUTS,

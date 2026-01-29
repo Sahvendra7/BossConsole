@@ -69,6 +69,9 @@ object MenuActionsHandler {
     private val _openCodebaseEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val openCodebaseEvents: SharedFlow<String> = _openCodebaseEvents.asSharedFlow()
 
+    private val _openGlobalSearchEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val openGlobalSearchEvents: SharedFlow<String> = _openGlobalSearchEvents.asSharedFlow()
+
     private val _navigatePanelLeftEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val navigatePanelLeftEvents: SharedFlow<String> = _navigatePanelLeftEvents.asSharedFlow()
 
@@ -304,6 +307,15 @@ object MenuActionsHandler {
      */
     fun triggerOpenCodebase(windowId: String) {
         _openCodebaseEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger an "Open Global Search" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerOpenGlobalSearch(windowId: String) {
+        _openGlobalSearchEvents.tryEmit(windowId)
     }
 
     /**

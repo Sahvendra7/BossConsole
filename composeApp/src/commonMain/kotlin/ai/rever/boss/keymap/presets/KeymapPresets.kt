@@ -206,6 +206,15 @@ object KeymapPresets {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // Search
+            KeyBinding(
+                actionId = KeymapActions.GLOBAL_SEARCH_OPEN,
+                key = "P",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.SEARCH,
+                description = KeymapActions.getDescription(KeymapActions.GLOBAL_SEARCH_OPEN)
+            ),
             // View/UI
             KeyBinding(
                 actionId = KeymapActions.FOCUS_MODE_TOGGLE,
@@ -450,6 +459,15 @@ object KeymapPresets {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // Search - VS Code uses Cmd+Shift+P for Command Palette, we use for global search
+            KeyBinding(
+                actionId = KeymapActions.GLOBAL_SEARCH_OPEN,
+                key = "P",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.SEARCH,
+                description = KeymapActions.getDescription(KeymapActions.GLOBAL_SEARCH_OPEN)
+            ),
             // View/UI - VS Code doesn't have built-in zen mode toggle, use same as BOSS
             KeyBinding(
                 actionId = KeymapActions.FOCUS_MODE_TOGGLE,
@@ -693,6 +711,15 @@ object KeymapPresets {
                 context = ShortcutContext.GLOBAL,
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
+            ),
+            // Search - IntelliJ uses Cmd+Shift+N for "Go to File", we use Cmd+Shift+P for consistency
+            KeyBinding(
+                actionId = KeymapActions.GLOBAL_SEARCH_OPEN,
+                key = "P",
+                modifiers = listOf("Cmd", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.SEARCH,
+                description = KeymapActions.getDescription(KeymapActions.GLOBAL_SEARCH_OPEN)
             ),
             // View/UI - IntelliJ uses Cmd+Shift+F12 for hide all tool windows, we'll use Cmd+Shift+F
             KeyBinding(

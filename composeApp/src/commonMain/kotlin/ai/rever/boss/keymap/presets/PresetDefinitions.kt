@@ -158,6 +158,15 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.TOOLS,
                 description = KeymapActions.getDescription(KeymapActions.CODEBASE_OPEN)
             ),
+            // Search - Emacs: C-x C-f (find file), use Ctrl+Shift+P for consistency
+            KeyBinding(
+                actionId = KeymapActions.GLOBAL_SEARCH_OPEN,
+                key = "P",
+                modifiers = listOf("Ctrl", "Shift"),
+                context = ShortcutContext.GLOBAL,
+                category = KeymapActions.Categories.SEARCH,
+                description = KeymapActions.getDescription(KeymapActions.GLOBAL_SEARCH_OPEN)
+            ),
             // View/UI - Emacs-style with Ctrl modifier
             KeyBinding(
                 actionId = KeymapActions.FOCUS_MODE_TOGGLE,

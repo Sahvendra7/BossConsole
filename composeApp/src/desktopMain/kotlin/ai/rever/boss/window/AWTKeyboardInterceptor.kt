@@ -34,6 +34,15 @@ object AWTKeyboardInterceptor {
      */
     private val windowIdMap = ConcurrentHashMap<Window, String>()
 
+    // Double-shift detection for global search (like IntelliJ's Search Everywhere)
+    private var lastShiftPressTime: Long = 0
+    private var lastShiftReleaseTime: Long = 0
+    private var shiftPressCount: Int = 0
+    // 500ms threshold follows accessibility guidelines for double-tap gestures (typically 500-800ms)
+    private const val DOUBLE_SHIFT_THRESHOLD_MS = 500
+    // Minimum time shift must be released to count as a clean release (prevents false positives from held shift)
+    private const val MIN_SHIFT_RELEASE_MS = 50
+
     /**
      * Register an AWT window with its BOSS window ID.
      * Call this from BossWindow's DisposableEffect when window is created.
@@ -58,7 +67,62 @@ object AWTKeyboardInterceptor {
         if (isInstalled) return
 
         dispatcher = KeyEventDispatcher { event ->
-            // Only intercept KEY_PRESSED events (not KEY_RELEASED or KEY_TYPED)
+            // Handle double-shift detection for global search
+            if (event.keyCode == KeyEvent.VK_SHIFT) {
+                val currentTime = System.currentTimeMillis()
+
+                when (event.id) {
+                    KeyEvent.KEY_PRESSED -> {
+                        // Check if this is a quick second press after a clean release
+                        val timeSinceRelease = currentTime - lastShiftReleaseTime
+                        if (timeSinceRelease < DOUBLE_SHIFT_THRESHOLD_MS &&
+                            timeSinceRelease >= MIN_SHIFT_RELEASE_MS && // Ensure clean release (not held)
+                            shiftPressCount == 1) {
+                            // Double-shift detected!
+                            shiftPressCount = 0
+                            lastShiftPressTime = 0
+                            lastShiftReleaseTime = 0
+
+                            // Get the focused window's BOSS window ID
+                            val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                            val windowId = findWindowId(focusedWindow)
+                            if (windowId != null) {
+                                try {
+                                    MenuActionsHandler.triggerOpenGlobalSearch(windowId)
+                                    event.consume()
+                                    return@KeyEventDispatcher true
+                                } catch (e: Exception) {
+                                    // Log but don't crash the event dispatcher
+                                    System.err.println("Error triggering global search: ${e.message}")
+                                }
+                            }
+                        } else {
+                            // First shift press or timeout - start counting
+                            shiftPressCount = 1
+                            lastShiftPressTime = currentTime
+                        }
+                    }
+                    KeyEvent.KEY_RELEASED -> {
+                        // Record release time for detecting second press
+                        if (shiftPressCount == 1 && currentTime - lastShiftPressTime < DOUBLE_SHIFT_THRESHOLD_MS) {
+                            lastShiftReleaseTime = currentTime
+                        } else {
+                            // Too slow or wrong sequence - reset
+                            shiftPressCount = 0
+                        }
+                    }
+                }
+                return@KeyEventDispatcher false // Let shift events propagate
+            }
+
+            // Reset double-shift state if any other key is pressed
+            if (event.id == KeyEvent.KEY_PRESSED && !isModifierOnlyKey(event.keyCode)) {
+                shiftPressCount = 0
+                lastShiftPressTime = 0
+                lastShiftReleaseTime = 0
+            }
+
+            // Only intercept KEY_PRESSED events for other shortcuts
             if (event.id != KeyEvent.KEY_PRESSED) {
                 return@KeyEventDispatcher false
             }
@@ -351,6 +415,12 @@ object AWTKeyboardInterceptor {
             // Codebase
             KeymapActions.CODEBASE_OPEN -> {
                 MenuActionsHandler.triggerOpenCodebase(windowId)
+                true
+            }
+
+            // Global Search
+            KeymapActions.GLOBAL_SEARCH_OPEN -> {
+                MenuActionsHandler.triggerOpenGlobalSearch(windowId)
                 true
             }
 
