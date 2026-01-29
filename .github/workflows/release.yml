@@ -1594,7 +1594,14 @@ jobs:
           echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
 
       - name: 🎉 Create GitHub Release
-        if: (inputs.create_release != false && inputs.create_release != 'false') && (github.event.inputs.create_release != 'false')
+        # Handle different trigger types:
+        # - push (tag): always create release
+        # - workflow_call: check inputs.create_release (boolean)
+        # - workflow_dispatch: check github.event.inputs.create_release (string)
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_call' && inputs.create_release != false) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'false')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare-version.outputs.version }}
