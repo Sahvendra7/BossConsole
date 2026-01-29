@@ -12,11 +12,54 @@ on:
           - patch
           - minor
           - major
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - alpha
+          - beta
+          - rc
+      prerelease_number:
+        description: 'Prerelease number (for alpha/beta/rc)'
+        required: false
+        default: '1'
       create_release:
         description: 'Create GitHub release'
         required: true
         default: true
         type: boolean
+  # Allow this workflow to be called from other workflows (e.g., promote-release)
+  workflow_call:
+    inputs:
+      version_increment:
+        description: 'Version increment type'
+        required: true
+        default: 'patch'
+        type: string
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'stable'
+        type: string
+      prerelease_number:
+        description: 'Prerelease number (for alpha/beta/rc)'
+        required: false
+        default: '1'
+        type: string
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: true
+        type: boolean
+      skip_version_increment:
+        description: 'Skip version increment (for promotion)'
+        required: false
+        default: false
+        type: boolean
+    secrets: inherit
   push:
     tags:
       - 'v*.*.*'
@@ -34,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.version }}
+      is-prerelease: ${{ steps.get-version.outputs.is-prerelease }}
       should-build: ${{ steps.check-changes.outputs.should-build }}
       updated-sha: ${{ steps.commit-version.outputs.updated-sha }}
       should-create-tag: ${{ steps.commit-version.outputs.should-create-tag }}
@@ -44,37 +88,91 @@ jobs:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
       - name: 🔄 Increment Version (Manual Trigger)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
+        env:
+          # Pass inputs via environment variables to prevent script injection
+          INPUT_VERSION_INCREMENT: ${{ inputs.version_increment || github.event.inputs.version_increment }}
+          INPUT_RELEASE_TYPE: ${{ inputs.release_type || github.event.inputs.release_type }}
+          INPUT_PRERELEASE_NUM: ${{ inputs.prerelease_number || github.event.inputs.prerelease_number }}
+          INPUT_SKIP_INCREMENT: ${{ inputs.skip_version_increment }}
         run: |
-          # Increment version based on input
-          case "${{ github.event.inputs.version_increment }}" in
-            "patch")
-              ./gradlew incrementVersion
-              ;;
-            "minor")
-              ./gradlew incrementMinor
-              ;;
-            "major")
-              ./gradlew incrementMajor
-              ;;
+          set -euo pipefail
+
+          # Source shared version utilities
+          source .github/scripts/version-utils.sh
+
+          # Validate version_increment is one of the allowed values
+          case "$INPUT_VERSION_INCREMENT" in
+            patch|minor|major) VERSION_INCREMENT="$INPUT_VERSION_INCREMENT" ;;
+            *) echo "❌ Invalid version_increment: $INPUT_VERSION_INCREMENT"; exit 1 ;;
           esac
-          
+
+          # Validate release_type using shared function
+          if ! validate_release_type "$INPUT_RELEASE_TYPE"; then
+            echo "❌ Invalid release_type: $INPUT_RELEASE_TYPE"
+            exit 1
+          fi
+          RELEASE_TYPE="$INPUT_RELEASE_TYPE"
+
+          # Validate prerelease_number using shared function
+          PRERELEASE_NUM="${INPUT_PRERELEASE_NUM:-1}"
+          if ! validate_prerelease_number "$PRERELEASE_NUM"; then
+            echo "❌ Invalid prerelease_number: '$PRERELEASE_NUM'"
+            echo "   Must be a positive integer (e.g., 1, 2, 3)"
+            exit 1
+          fi
+
+          SKIP_INCREMENT="${INPUT_SKIP_INCREMENT:-false}"
+
+          # Skip version increment if requested (for promotion scenarios)
+          if [[ "$SKIP_INCREMENT" != "true" ]]; then
+            # Increment version based on input
+            # Note: -PskipGitCheck=true because CI controls git state
+            case "$VERSION_INCREMENT" in
+              "patch")
+                ./gradlew incrementVersion -PskipGitCheck=true
+                ;;
+              "minor")
+                ./gradlew incrementMinor -PskipGitCheck=true
+                ;;
+              "major")
+                ./gradlew incrementMajor -PskipGitCheck=true
+                ;;
+            esac
+          else
+            echo "Skipping version increment (promotion mode)"
+          fi
+
+          # Set prerelease suffix if not stable
+          # Note: -PskipGitCheck=true because CI controls git state
+          if [[ "$RELEASE_TYPE" != "stable" ]] && [[ -n "$RELEASE_TYPE" ]]; then
+            echo "Setting prerelease suffix: ${RELEASE_TYPE}.${PRERELEASE_NUM}"
+            ./gradlew setPrereleaseSuffix -Psuffix="${RELEASE_TYPE}.${PRERELEASE_NUM}" -PskipGitCheck=true
+          else
+            # Ensure we clear any existing prerelease suffix for stable releases
+            ./gradlew clearPrereleaseSuffix -PskipGitCheck=true
+          fi
+
           # Get the new version
           NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
           echo "New version: $NEW_VERSION"
 
       - name: 📝 Commit Version Changes
         id: commit-version
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
+
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           # Check if there are changes to commit
           if git diff --quiet version.properties; then
             echo "No version changes to commit"
-            echo "updated-sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "updated-sha=$GITHUB_SHA" >> $GITHUB_OUTPUT
           else
             # Commit version changes
             NEW_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
@@ -83,9 +181,24 @@ jobs:
                        -m "Auto-increment version for release build" \
                        -m "🤖 Automated by release workflow"
 
-            # Pull any remote changes and rebase, then push
-            git pull --rebase origin main || true
-            git push
+            # Handle race condition: pull --rebase and retry push up to 3 times
+            MAX_RETRIES=3
+            RETRY_COUNT=0
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if git push; then
+                echo "✅ Successfully pushed version changes"
+                break
+              else
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                  echo "⚠️ Push failed, attempting rebase and retry ($RETRY_COUNT/$MAX_RETRIES)..."
+                  git pull --rebase origin main
+                else
+                  echo "❌ Failed to push after $MAX_RETRIES attempts"
+                  exit 1
+                fi
+              fi
+            done
 
             # DO NOT create tag here - will be created after successful builds
             # Get the new commit SHA
@@ -97,30 +210,62 @@ jobs:
 
       - name: 📋 Get Version
         id: get-version
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          INPUT_RELEASE_TYPE: ${{ inputs.release_type || github.event.inputs.release_type }}
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+          set -euo pipefail
+
+          # Source shared version utilities
+          source .github/scripts/version-utils.sh
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
             # Extract version from tag (e.g., refs/tags/v8.11.2 -> 8.11.2)
-            TAG_VERSION="${{ github.ref }}"
-            TAG_VERSION="${TAG_VERSION#refs/tags/v}"
+            TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+
+            # Validate tag version format using shared function
+            if ! validate_version "$TAG_VERSION"; then
+              echo "❌ Invalid tag version format: $TAG_VERSION"
+              exit 1
+            fi
+
             echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
             echo "📦 Building version from tag: $TAG_VERSION"
-            
+
+            # Detect prerelease from tag version string using shared function
+            if is_prerelease_version "$TAG_VERSION"; then
+              echo "is-prerelease=true" >> $GITHUB_OUTPUT
+              echo "🧪 Detected prerelease version"
+            else
+              echo "is-prerelease=false" >> $GITHUB_OUTPUT
+            fi
+
             # Verify tag version matches version.properties
             PROPS_VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
             if [[ "$TAG_VERSION" != "$PROPS_VERSION" ]]; then
               echo "⚠️ Warning: Tag version ($TAG_VERSION) differs from version.properties ($PROPS_VERSION)"
               echo "Updating version.properties to match tag version for build consistency"
-              
-              # Parse tag version
-              IFS='.' read -r TAG_MAJOR TAG_MINOR TAG_PATCH <<< "$TAG_VERSION"
-              
+
+              # Parse tag version using shared functions
+              BASE_VERSION=$(get_base_version "$TAG_VERSION")
+              IFS='.' read -r TAG_MAJOR TAG_MINOR TAG_PATCH <<< "$BASE_VERSION"
+              PRERELEASE_SUFFIX=$(get_prerelease_suffix "$TAG_VERSION")
+
+              # Validate parsed components
+              if ! [[ "$TAG_MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$TAG_MINOR" =~ ^[0-9]+$ ]] || ! [[ "$TAG_PATCH" =~ ^[0-9]+$ ]]; then
+                echo "❌ Failed to parse version components from: $TAG_VERSION"
+                exit 1
+              fi
+
               # Update version.properties to match tag
               sed -i "s/^app.version.major=.*/app.version.major=$TAG_MAJOR/" version.properties
               sed -i "s/^app.version.minor=.*/app.version.minor=$TAG_MINOR/" version.properties
               sed -i "s/^app.version.patch=.*/app.version.patch=$TAG_PATCH/" version.properties
               sed -i "s/^app.version=.*/app.version=$TAG_VERSION/" version.properties
               sed -i "s/^app.bundle.version=.*/app.bundle.version=$TAG_VERSION/" version.properties
-              
+              sed -i "s/^app.prerelease.suffix=.*/app.prerelease.suffix=$PRERELEASE_SUFFIX/" version.properties
+
               echo "✅ Updated version.properties to match tag: $TAG_VERSION"
             fi
           else
@@ -128,16 +273,30 @@ jobs:
             VERSION=$(grep "^app.version=" version.properties | cut -d'=' -f2)
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "📦 Building version from properties: $VERSION"
+
+            # Detect prerelease from version string or release_type input
+            RELEASE_TYPE="${INPUT_RELEASE_TYPE:-stable}"
+            if is_prerelease_version "$VERSION" || [[ "$RELEASE_TYPE" != "stable" && "$RELEASE_TYPE" != "" ]]; then
+              echo "is-prerelease=true" >> $GITHUB_OUTPUT
+              echo "🧪 This is a prerelease version"
+            else
+              echo "is-prerelease=false" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: 🔍 Check for Changes
         id: check-changes
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
         run: |
+          set -euo pipefail
+
           # Build on both manual trigger and tag pushes
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] || [[ "$GITHUB_EVENT_NAME" == "workflow_call" ]]; then
             echo "should-build=true" >> $GITHUB_OUTPUT
             echo "trigger=manual" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
             echo "should-build=true" >> $GITHUB_OUTPUT
             echo "trigger=tag" >> $GITHUB_OUTPUT
           else
@@ -334,10 +493,12 @@ jobs:
           echo "✅ macOS DMG build completed successfully"
 
       - name: 🔍 Verify Built Version (macOS)
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
-          echo "🔍 Verifying version inside built artifacts..."
+          set -euo pipefail
 
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "🔍 Verifying version inside built artifacts..."
           echo "Expected version: $EXPECTED_VERSION"
 
           # Check generated VersionConstants.kt
@@ -345,11 +506,21 @@ jobs:
           if [[ -f "$GENERATED_FILE" ]]; then
             echo "Checking generated VersionConstants.kt..."
 
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Use anchored patterns to avoid matching comments or other lines
+            MAJOR=$(grep -E "^\s*const val MAJOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep -E "^\s*const val MINOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep -E "^\s*const val PATCH\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Extract prerelease - handles both "null" and quoted string like "beta.1"
+            PRERELEASE=$(grep -E "^\s*(const\s+)?val\s+PRERELEASE" "$GENERATED_FILE" | sed 's/.*= //;s/"//g;s/ .*//')
+            if [[ "$PRERELEASE" == "null" ]]; then
+              PRERELEASE=""
+            fi
 
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            if [[ -n "$PRERELEASE" ]]; then
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}-${PRERELEASE}"
+            else
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            fi
             echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
 
             if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
@@ -539,10 +710,12 @@ jobs:
           echo "✅ Executable JAR created successfully"
 
       - name: 🔍 Verify Built Version (Linux AMD64)
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
-          echo "🔍 Verifying version inside built artifacts..."
+          set -euo pipefail
 
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "🔍 Verifying version inside built artifacts..."
           echo "Expected version: $EXPECTED_VERSION"
 
           # Check generated VersionConstants.kt
@@ -550,11 +723,21 @@ jobs:
           if [[ -f "$GENERATED_FILE" ]]; then
             echo "Checking generated VersionConstants.kt..."
 
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Use anchored patterns to avoid matching comments or other lines
+            MAJOR=$(grep -E "^\s*const val MAJOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep -E "^\s*const val MINOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep -E "^\s*const val PATCH\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Extract prerelease - handles both "null" and quoted string like "beta.1"
+            PRERELEASE=$(grep -E "^\s*(const\s+)?val\s+PRERELEASE" "$GENERATED_FILE" | sed 's/.*= //;s/"//g;s/ .*//')
+            if [[ "$PRERELEASE" == "null" ]]; then
+              PRERELEASE=""
+            fi
 
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            if [[ -n "$PRERELEASE" ]]; then
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}-${PRERELEASE}"
+            else
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            fi
             echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
 
             if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
@@ -713,10 +896,12 @@ jobs:
           echo "✅ Executable JAR created successfully"
 
       - name: 🔍 Verify Built Version (Linux ARM64)
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
-          echo "🔍 Verifying version inside built artifacts..."
+          set -euo pipefail
 
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "🔍 Verifying version inside built artifacts..."
           echo "Expected version: $EXPECTED_VERSION"
 
           # Check generated VersionConstants.kt
@@ -724,11 +909,21 @@ jobs:
           if [[ -f "$GENERATED_FILE" ]]; then
             echo "Checking generated VersionConstants.kt..."
 
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Use anchored patterns to avoid matching comments or other lines
+            MAJOR=$(grep -E "^\s*const val MAJOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep -E "^\s*const val MINOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep -E "^\s*const val PATCH\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Extract prerelease - handles both "null" and quoted string like "beta.1"
+            PRERELEASE=$(grep -E "^\s*(const\s+)?val\s+PRERELEASE" "$GENERATED_FILE" | sed 's/.*= //;s/"//g;s/ .*//')
+            if [[ "$PRERELEASE" == "null" ]]; then
+              PRERELEASE=""
+            fi
 
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            if [[ -n "$PRERELEASE" ]]; then
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}-${PRERELEASE}"
+            else
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            fi
             echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
 
             if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
@@ -878,25 +1073,37 @@ jobs:
           echo "✅ Windows MSI build completed successfully"
 
       - name: 🔍 Verify Built Version (Windows)
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
-          echo "🔍 Verifying version inside built artifacts..."
+          set -euo pipefail
 
-          EXPECTED_VERSION="${{ needs.prepare-version.outputs.version }}"
+          echo "🔍 Verifying version inside built artifacts..."
           echo "Expected version: $EXPECTED_VERSION"
 
           # Check generated VersionConstants.kt
           GENERATED_FILE="composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt"
-          if [ -f "$GENERATED_FILE" ]; then
+          if [[ -f "$GENERATED_FILE" ]]; then
             echo "Checking generated VersionConstants.kt..."
 
-            MAJOR=$(grep "const val MAJOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            MINOR=$(grep "const val MINOR =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
-            PATCH=$(grep "const val PATCH =" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Use anchored patterns to avoid matching comments or other lines
+            MAJOR=$(grep -E "^\s*const val MAJOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            MINOR=$(grep -E "^\s*const val MINOR\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            PATCH=$(grep -E "^\s*const val PATCH\s*=" "$GENERATED_FILE" | sed 's/.*= //;s/ .*//')
+            # Extract prerelease - handles both "null" and quoted string like "beta.1"
+            PRERELEASE=$(grep -E "^\s*(const\s+)?val\s+PRERELEASE" "$GENERATED_FILE" | sed 's/.*= //;s/"//g;s/ .*//')
+            if [[ "$PRERELEASE" == "null" ]]; then
+              PRERELEASE=""
+            fi
 
-            BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            if [[ -n "$PRERELEASE" ]]; then
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}-${PRERELEASE}"
+            else
+              BUILT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            fi
             echo "Built version (from VersionConstants.kt): $BUILT_VERSION"
 
-            if [ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]; then
+            if [[ "$BUILT_VERSION" != "$EXPECTED_VERSION" ]]; then
               echo "❌ VERSION MISMATCH DETECTED!"
               echo "   Expected: $EXPECTED_VERSION"
               echo "   Built: $BUILT_VERSION"
@@ -1144,22 +1351,35 @@ jobs:
 
       - name: 🔍 Verify Built Version (Windows ARM64)
         shell: powershell
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
+          $ErrorActionPreference = "Stop"
+
           Write-Host "Verifying version inside built artifacts..."
-          $EXPECTED_VERSION = "${{ needs.prepare-version.outputs.version }}"
-          Write-Host "Expected version: $EXPECTED_VERSION"
+          Write-Host "Expected version: $env:EXPECTED_VERSION"
           $GENERATED_FILE = 'composeApp/build/generated/source/version/ai/rever/boss/utils/VersionConstants.kt'
           if (Test-Path $GENERATED_FILE) {
             Write-Host "Checking generated VersionConstants.kt..."
             $content = Get-Content $GENERATED_FILE -Raw
-            $MAJOR = if ($content -match 'const val MAJOR = (\d+)') { $matches[1] } else { '' }
-            $MINOR = if ($content -match 'const val MINOR = (\d+)') { $matches[1] } else { '' }
-            $PATCH = if ($content -match 'const val PATCH = (\d+)') { $matches[1] } else { '' }
-            $BUILT_VERSION = "$MAJOR.$MINOR.$PATCH"
+            # Use anchored patterns to avoid matching comments
+            $MAJOR = if ($content -match '^\s*const val MAJOR\s*=\s*(\d+)') { $matches[1] } else { '' }
+            $MINOR = if ($content -match '^\s*const val MINOR\s*=\s*(\d+)') { $matches[1] } else { '' }
+            $PATCH = if ($content -match '^\s*const val PATCH\s*=\s*(\d+)') { $matches[1] } else { '' }
+            # Extract prerelease - handles both null and quoted string like "beta.1"
+            $PRERELEASE = ''
+            if ($content -match '^\s*(const\s+)?val\s+PRERELEASE.*=\s*"([^"]+)"') {
+              $PRERELEASE = $matches[2]
+            }
+            if ($PRERELEASE) {
+              $BUILT_VERSION = "$MAJOR.$MINOR.$PATCH-$PRERELEASE"
+            } else {
+              $BUILT_VERSION = "$MAJOR.$MINOR.$PATCH"
+            }
             Write-Host "Built version (from VersionConstants.kt): $BUILT_VERSION"
-            if ($BUILT_VERSION -ne $EXPECTED_VERSION) {
+            if ($BUILT_VERSION -ne $env:EXPECTED_VERSION) {
               Write-Host "VERSION MISMATCH DETECTED!"
-              Write-Host "Expected: $EXPECTED_VERSION"
+              Write-Host "Expected: $env:EXPECTED_VERSION"
               Write-Host "Built: $BUILT_VERSION"
               exit 1
             } else {
@@ -1220,12 +1440,15 @@ jobs:
           path: ./artifacts
 
       - name: 📋 Prepare Release Assets
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
         run: |
+          set -euo pipefail
+
           echo "📋 Preparing release assets..."
           mkdir -p ./release-assets
 
           # Copy and rename artifacts with consistent naming
-          VERSION="${{ needs.prepare-version.outputs.version }}"
 
           # macOS Universal (ARM64, works on Intel via Rosetta 2)
           find ./artifacts -name "*.dmg" -path "*macos-arm64*" -exec cp {} ./release-assets/BOSS-${VERSION}-Universal.dmg \; 2>/dev/null || true
@@ -1252,12 +1475,28 @@ jobs:
 
       - name: 📝 Generate Release Notes
         id: release-notes
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+          IS_PRERELEASE: ${{ needs.prepare-version.outputs.is-prerelease }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          VERSION="${{ needs.prepare-version.outputs.version }}"
+          set -euo pipefail
 
-          # Generate release notes
+          # Generate release notes with prerelease indicator
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            RELEASE_TITLE="🧪 BOSS $VERSION (Pre-release)"
+            PRERELEASE_WARNING="
+          > ⚠️ **This is a pre-release version.** It may contain bugs or incomplete features.
+          > Pre-releases are intended for testing and feedback. For production use, please use the latest stable release.
+          "
+          else
+            RELEASE_TITLE="🚀 BOSS $VERSION"
+            PRERELEASE_WARNING=""
+          fi
+
           cat > release-notes.md << EOF
-          # 🚀 BOSS $VERSION
+          # $RELEASE_TITLE
+          $PRERELEASE_WARNING
 
           ## 📦 Downloads
 
@@ -1309,20 +1548,20 @@ jobs:
 
           **Ubuntu/Debian:**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.deb
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.deb
           sudo dpkg -i BOSS-${VERSION}-amd64.deb
           sudo apt-get install -f  # Fix any missing dependencies
           \`\`\`
 
           **RHEL/Fedora/openSUSE:**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.rpm
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.rpm
           sudo rpm -i BOSS-${VERSION}-amd64.rpm
           \`\`\`
 
           **JAR (requires Java 17+):**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.jar
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-amd64.jar
           java -jar BOSS-${VERSION}-amd64.jar
           \`\`\`
 
@@ -1330,20 +1569,20 @@ jobs:
 
           **Ubuntu/Debian:**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.deb
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.deb
           sudo dpkg -i BOSS-${VERSION}-arm64.deb
           sudo apt-get install -f  # Fix any missing dependencies
           \`\`\`
 
           **RHEL/Fedora/openSUSE:**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.rpm
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.rpm
           sudo rpm -i BOSS-${VERSION}-arm64.rpm
           \`\`\`
 
           **JAR (requires Java 17+):**
           \`\`\`bash
-          wget https://github.com/${{ github.repository }}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.jar
+          wget https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/BOSS-${VERSION}-arm64.jar
           java -jar BOSS-${VERSION}-arm64.jar
           \`\`\`
 
@@ -1356,27 +1595,33 @@ jobs:
           echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
 
       - name: 🎉 Create GitHub Release
-        if: github.event.inputs.create_release != 'false'
+        if: (inputs.create_release != false && inputs.create_release != 'false') && (github.event.inputs.create_release != 'false')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare-version.outputs.version }}
-          name: 🚀 BOSS ${{ needs.prepare-version.outputs.version }}
+          name: ${{ needs.prepare-version.outputs.is-prerelease == 'true' && '🧪 Pre-release' || '🚀 Release' }} BOSS ${{ needs.prepare-version.outputs.version }}
           body_path: ${{ steps.release-notes.outputs.notes-file }}
           files: ./release-assets/*
           draft: false
-          prerelease: false
-          make_latest: true
+          prerelease: ${{ needs.prepare-version.outputs.is-prerelease == 'true' }}
+          make_latest: ${{ needs.prepare-version.outputs.is-prerelease != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
       - name: 📢 Release Summary
+        env:
+          VERSION: ${{ needs.prepare-version.outputs.version }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          set -euo pipefail
+
           echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Version**: ${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Version**: ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Trigger**: ${GITHUB_EVENT_NAME}" >> $GITHUB_STEP_SUMMARY
           echo "✅ **Platforms Built**: macOS, Linux (AMD64 + ARM64), Windows (x64 + ARM64)" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Release Created**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.prepare-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Release Created**: https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- 🍎 macOS DMG (Universal - Apple Silicon & Intel)" >> $GITHUB_STEP_SUMMARY

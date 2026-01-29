@@ -26,6 +26,12 @@ actual object UpdateSettings {
      * Default: 6 hours
      */
     actual var checkIntervalHours: Long = 6
+
+    /**
+     * Whether to include pre-release versions in update checks
+     * Default: false (stable users won't see prereleases unless they opt in)
+     */
+    actual var includePreReleases: Boolean = false
 }
 
 /**
@@ -34,7 +40,8 @@ actual object UpdateSettings {
 @Serializable
 data class UpdateSettingsData(
     val autoCheckEnabled: Boolean = true,
-    val checkIntervalHours: Long = 6
+    val checkIntervalHours: Long = 6,
+    val includePreReleases: Boolean = false
 )
 
 /**
@@ -72,8 +79,12 @@ actual object UpdateSettingsManager {
                 // Apply loaded settings
                 UpdateSettings.autoCheckEnabled = settings.autoCheckEnabled
                 UpdateSettings.checkIntervalHours = settings.checkIntervalHours
+                UpdateSettings.includePreReleases = settings.includePreReleases
 
-                logger.debug(LogCategory.SYSTEM, "Loaded update settings", mapOf("autoCheck" to settings.autoCheckEnabled))
+                logger.debug(LogCategory.SYSTEM, "Loaded update settings", mapOf(
+                    "autoCheck" to settings.autoCheckEnabled,
+                    "includePreReleases" to settings.includePreReleases
+                ))
             } else {
                 logger.debug(LogCategory.SYSTEM, "No saved update settings found, using defaults")
             }
@@ -91,7 +102,8 @@ actual object UpdateSettingsManager {
         try {
             val settings = UpdateSettingsData(
                 autoCheckEnabled = UpdateSettings.autoCheckEnabled,
-                checkIntervalHours = UpdateSettings.checkIntervalHours
+                checkIntervalHours = UpdateSettings.checkIntervalHours,
+                includePreReleases = UpdateSettings.includePreReleases
             )
 
             val content = json.encodeToString(UpdateSettingsData.serializer(), settings)

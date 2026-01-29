@@ -444,6 +444,44 @@ fun UpdateSettingsSection(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Include Pre-release Versions Toggle
+                var includePreReleases by remember { mutableStateOf(UpdateSettings.includePreReleases) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Include Pre-release Versions",
+                            fontSize = 14.sp,
+                            color = BossDarkTextPrimary
+                        )
+                        Text(
+                            "Receive alpha, beta, and RC updates",
+                            fontSize = 12.sp,
+                            color = BossDarkTextSecondary
+                        )
+                    }
+                    Switch(
+                        checked = includePreReleases,
+                        onCheckedChange = { enabled ->
+                            includePreReleases = enabled
+                            UpdateSettings.includePreReleases = enabled
+                            coroutineScope.launch {
+                                UpdateSettingsManager.saveSettings()
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = BossDarkAccent,
+                            checkedTrackColor = BossDarkAccent.copy(alpha = 0.5f)
+                        )
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Update action buttons

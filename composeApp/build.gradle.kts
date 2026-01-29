@@ -72,6 +72,8 @@ val versionPropsProvider = providers.of(VersionPropertiesValueSource::class.java
 }
 val appVersion = versionPropsProvider.map { it.getProperty("app.version", "8.8.0") }.get()
 val bundleVersion = versionPropsProvider.map { it.getProperty("app.bundle.version", "8.8.0") }.get()
+// Base version (without prerelease suffix) for native package formats that don't support semver prereleases
+val baseVersion = appVersion.substringBefore("-")
 
 println("📦 Building BOSS Version: $appVersion")
 
@@ -96,6 +98,7 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
     val majorProvider = propsProvider.map { it.getProperty("app.version.major", "8") }
     val minorProvider = propsProvider.map { it.getProperty("app.version.minor", "8") }
     val patchProvider = propsProvider.map { it.getProperty("app.version.patch", "0") }
+    val prereleaseProvider = propsProvider.map { it.getProperty("app.prerelease.suffix", "") }
     val jxVersionProvider = jxBrowserVersionProvider
 
     // Track libs.versions.toml as an input for JxBrowser version
@@ -112,7 +115,11 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
         val major = majorProvider.get()
         val minor = minorProvider.get()
         val patch = patchProvider.get()
+        val prerelease = prereleaseProvider.get().takeIf { it.isNotBlank() }
         val jxVersion = jxVersionProvider.get()
+
+        // Generate PRERELEASE constant as nullable String
+        val prereleaseConstant = if (prerelease != null) "\"$prerelease\"" else "null"
 
         outputFile.get().asFile.apply {
             parentFile.mkdirs()
@@ -127,6 +134,9 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
                 |    const val MAJOR = $major
                 |    const val MINOR = $minor
                 |    const val PATCH = $patch
+                |
+                |    /** Prerelease suffix (e.g., "beta.1", "rc.2") or null for stable releases */
+                |    val PRERELEASE: String? = $prereleaseConstant
                 |
                 |    /** JxBrowser version from gradle/libs.versions.toml */
                 |    const val JXBROWSER_VERSION = "$jxVersion"
@@ -480,7 +490,9 @@ compose.desktop {
                 // JAR distribution handled separately via createExecutableJar task
             )
             packageName = "BOSS"
-            packageVersion = appVersion
+            // Use base version (without prerelease suffix) for native packages
+            // DMG and MSI don't support semver prerelease suffixes like "-beta.1"
+            packageVersion = baseVersion
             description = "Business Operating System Service - Intelligent service automation platform"
             copyright = "© 2024 Risa Labs Inc. All rights reserved."
             vendor = "Risa Labs Inc."
@@ -530,7 +542,8 @@ compose.desktop {
                 bundleID = "ai.rever.boss"
                 iconFile.set(project.file("src/desktopMain/resources/boss_icon.icns"))
                 packageName = "BOSS"
-                dmgPackageVersion = appVersion
+                // Use base version (without prerelease suffix) for DMG - doesn't support semver prereleases
+                dmgPackageVersion = baseVersion
                 dmgPackageBuildVersion = "1"
                 
                 

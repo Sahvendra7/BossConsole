@@ -157,11 +157,19 @@ actual class UpdateService {
             }
 
             val releases = response.body<List<GitHubRelease>>()
-            
-            // Get the latest non-draft, non-prerelease version
+
+            // Determine whether to include pre-releases:
+            // 1. If user explicitly enabled prerelease updates, include them
+            // 2. If current version is a prerelease, always include prereleases (so beta users get beta updates)
+            val includePreReleases = UpdateSettings.includePreReleases ||
+                Version.CURRENT.preRelease != null
+
+            // Get the latest version based on prerelease preference
             val latestRelease = releases
-                .filter { !it.draft && !it.prerelease }
-                .mapNotNull { release -> 
+                .filter { release ->
+                    !release.draft && (includePreReleases || !release.prerelease)
+                }
+                .mapNotNull { release ->
                     Version.parse(release.tag_name)?.let { version -> release to version }
                 }
                 .maxByOrNull { it.second }

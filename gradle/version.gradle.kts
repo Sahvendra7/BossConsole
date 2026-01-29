@@ -12,6 +12,23 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ============================================================================
+// Version Pattern Constants - Shared regex patterns for validation
+// ============================================================================
+
+/**
+ * Pattern for validating prerelease suffix format (e.g., "beta.1", "rc.2")
+ * Does not capture groups - use for validation only
+ */
+val PRERELEASE_SUFFIX_VALIDATION_PATTERN = Regex("^(alpha|beta|rc)\\.[1-9]\\d*$")
+
+/**
+ * Pattern for parsing prerelease suffix with capture groups
+ * Group 1: prerelease type (alpha, beta, rc)
+ * Group 2: prerelease number
+ */
+val PRERELEASE_SUFFIX_PARSE_PATTERN = Regex("^(alpha|beta|rc)\\.([1-9]\\d*)$")
+
+// ============================================================================
 // Extension Properties - Available to all build files
 // ============================================================================
 
@@ -29,9 +46,14 @@ if (versionPropsFileObject.exists()) {
 val versionMajor = versionProps["app.version.major"].toString().toInt()
 val versionMinor = versionProps["app.version.minor"].toString().toInt()
 val versionPatch = versionProps["app.version.patch"].toString().toInt()
+val prereleaseSuffix = versionProps["app.prerelease.suffix"]?.toString()?.takeIf { it.isNotBlank() }
 
 // Construct version strings
-val appVersion = "$versionMajor.$versionMinor.$versionPatch"
+val appVersion = if (prereleaseSuffix != null) {
+    "$versionMajor.$versionMinor.$versionPatch-$prereleaseSuffix"
+} else {
+    "$versionMajor.$versionMinor.$versionPatch"
+}
 val bundleVersion = versionProps["app.bundle.version"].toString()
 val buildNumber = versionProps["app.build.number"].toString()
 
@@ -47,6 +69,7 @@ project.extra.apply {
     set("versionMajor", versionMajor)
     set("versionMinor", versionMinor)
     set("versionPatch", versionPatch)
+    set("prereleaseSuffix", prereleaseSuffix)
     set("appVersion", appVersion)
     set("bundleVersion", bundleVersion)
     set("buildNumber", buildNumber)
@@ -82,6 +105,7 @@ abstract class VersionPropertyReadTask : DefaultTask() {
 
 /**
  * Base class for version property modification tasks
+ * Includes validation for clean git state to prevent transaction safety issues
  */
 abstract class VersionPropertyWriteTask : DefaultTask() {
     @get:InputFile
@@ -89,6 +113,10 @@ abstract class VersionPropertyWriteTask : DefaultTask() {
 
     @get:OutputFile
     abstract val outputFile: RegularFileProperty
+
+    @get:org.gradle.api.tasks.Input
+    @get:org.gradle.api.tasks.Optional
+    abstract val skipGitCheck: org.gradle.api.provider.Property<Boolean>
 
     protected fun loadProperties(): Properties {
         val props = Properties()
@@ -99,6 +127,51 @@ abstract class VersionPropertyWriteTask : DefaultTask() {
     protected fun saveProperties(props: Properties, comment: String) {
         outputFile.get().asFile.outputStream().use {
             props.store(it, comment)
+        }
+    }
+
+    /**
+     * Validates that version.properties has no uncommitted changes.
+     * This prevents accidental overwrites during concurrent operations.
+     * @throws GradleException if version.properties has uncommitted changes
+     */
+    protected fun validateGitState() {
+        // Skip check if explicitly disabled (e.g., in CI where git state is controlled)
+        if (skipGitCheck.getOrElse(false)) {
+            return
+        }
+
+        try {
+            val process = ProcessBuilder("git", "diff", "--quiet", "version.properties")
+                .directory(project.rootDir)
+                .start()
+            val exitCode = process.waitFor()
+
+            if (exitCode != 0) {
+                // Check if there are staged changes too
+                val stagedProcess = ProcessBuilder("git", "diff", "--cached", "--quiet", "version.properties")
+                    .directory(project.rootDir)
+                    .start()
+                val stagedExitCode = stagedProcess.waitFor()
+
+                val message = buildString {
+                    append("⚠️ version.properties has uncommitted changes.\n")
+                    append("   This could indicate a concurrent modification or unsaved work.\n")
+                    append("   Options:\n")
+                    append("   1. Commit or stash your changes first\n")
+                    append("   2. Run with -PskipGitCheck=true to bypass this check (CI only)\n")
+                    append("   3. Discard changes with: git checkout version.properties")
+                }
+                throw GradleException(message)
+            }
+        } catch (e: Exception) {
+            when (e) {
+                is GradleException -> throw e
+                else -> {
+                    // Git not available or not a git repo - skip check
+                    logger.warn("⚠️ Could not verify git state: ${e.message}")
+                }
+            }
         }
     }
 }
@@ -114,25 +187,31 @@ abstract class ShowVersionTask : VersionPropertyReadTask() {
         val major = props["app.version.major"]
         val minor = props["app.version.minor"]
         val patch = props["app.version.patch"]
-        val av = "$major.$minor.$patch"
+        val prerelease = props["app.prerelease.suffix"]?.toString()?.takeIf { it.isNotBlank() }
+        val baseVersion = "$major.$minor.$patch"
+        val av = if (prerelease != null) "$baseVersion-$prerelease" else baseVersion
         val bv = props["app.bundle.version"]
         val bn = props["app.build.number"]
+        val channel = props["app.release.channel"] ?: "stable"
         val jn = "BOSS-$av-all.jar"
         val dn = "BOSS-$av.dmg"
         val mn = "BOSS-$av.msi"
 
         val nextBuildNumber = bn.toString().toInt() + 1
+        val prereleaseInfo = if (prerelease != null) """
+║ Prerelease Suffix:   $prerelease
+║ Release Channel:     $channel""" else ""
 
         println("""
 ╔════════════════════════════════════════╗
 ║           BOSS Version Info            ║
 ╠════════════════════════════════════════╣
-║ Application Version: $av           ║
-║ Bundle Version:      $bv           ║
-║ Build Number:        $bn             ║
-║ JAR Name:            $jn    ║
-║ DMG Name:            $dn         ║
-║ MSI Name:            $mn         ║
+║ Application Version: $av
+║ Bundle Version:      $bv
+║ Build Number:        $bn             $prereleaseInfo
+║ JAR Name:            $jn
+║ DMG Name:            $dn
+║ MSI Name:            $mn
 ╚════════════════════════════════════════╝
 
 💡 Version Management Commands:
@@ -140,6 +219,11 @@ abstract class ShowVersionTask : VersionPropertyReadTask() {
    ./gradlew incrementVersion      - Increment patch version and reset build number
    ./gradlew incrementMinor        - Increment minor version and reset build number
    ./gradlew incrementMajor        - Increment major version and reset build number
+
+🧪 Prerelease Commands:
+   ./gradlew setPrereleaseSuffix -Psuffix=beta.1  - Set prerelease suffix
+   ./gradlew incrementPrerelease                   - Increment prerelease number
+   ./gradlew clearPrereleaseSuffix                 - Clear suffix (promote to stable)
         """.trimIndent())
     }
 }
@@ -150,6 +234,7 @@ abstract class ShowVersionTask : VersionPropertyReadTask() {
 abstract class IncrementVersionTask : VersionPropertyWriteTask() {
     @TaskAction
     fun increment() {
+        validateGitState()
         val props = loadProperties()
 
         val currentPatch = props["app.version.patch"].toString().toInt()
@@ -175,6 +260,7 @@ abstract class IncrementVersionTask : VersionPropertyWriteTask() {
 abstract class IncrementMinorTask : VersionPropertyWriteTask() {
     @TaskAction
     fun increment() {
+        validateGitState()
         val props = loadProperties()
 
         val currentMinor = props["app.version.minor"].toString().toInt()
@@ -201,6 +287,7 @@ abstract class IncrementMinorTask : VersionPropertyWriteTask() {
 abstract class IncrementMajorTask : VersionPropertyWriteTask() {
     @TaskAction
     fun increment() {
+        validateGitState()
         val props = loadProperties()
 
         val currentMajor = props["app.version.major"].toString().toInt()
@@ -228,6 +315,7 @@ abstract class IncrementMajorTask : VersionPropertyWriteTask() {
 abstract class IncrementBuildNumberTask : VersionPropertyWriteTask() {
     @TaskAction
     fun increment() {
+        validateGitState()
         val props = loadProperties()
 
         val currentBuildNumber = props["app.build.number"].toString().toInt()
@@ -249,6 +337,7 @@ abstract class IncrementBuildNumberTask : VersionPropertyWriteTask() {
 abstract class AutoIncrementBuildNumberTask : VersionPropertyWriteTask() {
     @TaskAction
     fun increment() {
+        validateGitState()
         val props = loadProperties()
 
         val currentBuildNumber = props["app.build.number"].toString().toInt()
@@ -261,6 +350,136 @@ abstract class AutoIncrementBuildNumberTask : VersionPropertyWriteTask() {
         saveProperties(props, "Auto-incremented build number for package build")
 
         println("🔢 Build number auto-incremented: $currentBuildNumber → $newBuildNumber")
+    }
+}
+
+/**
+ * Set prerelease suffix (e.g., alpha.1, beta.2, rc.1)
+ * Updates app.version, app.bundle.version, and app.release.channel accordingly
+ */
+abstract class SetPrereleaseSuffixTask : VersionPropertyWriteTask() {
+    @get:org.gradle.api.tasks.Input
+    @get:org.gradle.api.tasks.Optional
+    abstract val suffix: org.gradle.api.provider.Property<String>
+
+    @TaskAction
+    fun setSuffix() {
+        validateGitState()
+
+        val suffixValue = suffix.orNull
+            ?: throw GradleException("Please provide a suffix using -Psuffix=<value> (e.g., -Psuffix=beta.1)")
+
+        // Validate suffix format: alpha.N, beta.N, or rc.N where N is a positive integer
+        if (!PRERELEASE_SUFFIX_VALIDATION_PATTERN.matches(suffixValue)) {
+            throw GradleException(
+                "Invalid prerelease suffix format: '$suffixValue'\n" +
+                "Expected format: alpha.N, beta.N, or rc.N where N is a positive integer\n" +
+                "Examples: alpha.1, beta.2, rc.1"
+            )
+        }
+
+        val props = loadProperties()
+
+        val major = props["app.version.major"]
+        val minor = props["app.version.minor"]
+        val patch = props["app.version.patch"]
+        val baseVersion = "$major.$minor.$patch"
+        val fullVersion = "$baseVersion-$suffixValue"
+
+        // Determine release channel from suffix type
+        val channel = suffixValue.substringBefore(".")
+
+        // Update properties
+        props["app.prerelease.suffix"] = suffixValue
+        props["app.version"] = fullVersion
+        props["app.bundle.version"] = fullVersion
+        props["app.release.channel"] = channel
+        props["app.build.date"] = SimpleDateFormat("yyyy-MM-dd").format(Date())
+
+        saveProperties(props, "Set prerelease suffix to $suffixValue")
+
+        println("🧪 Prerelease suffix set: $suffixValue")
+        println("📦 Version is now: $fullVersion")
+        println("📢 Release channel: $channel")
+    }
+}
+
+/**
+ * Clear prerelease suffix (promotes to stable release)
+ * Resets app.version, app.bundle.version, and app.release.channel to stable
+ */
+abstract class ClearPrereleaseSuffixTask : VersionPropertyWriteTask() {
+    @TaskAction
+    fun clearSuffix() {
+        validateGitState()
+        val props = loadProperties()
+
+        val currentSuffix = props["app.prerelease.suffix"]?.toString()?.takeIf { it.isNotBlank() }
+        if (currentSuffix == null) {
+            println("ℹ️ No prerelease suffix to clear - already a stable version")
+            return
+        }
+
+        val major = props["app.version.major"]
+        val minor = props["app.version.minor"]
+        val patch = props["app.version.patch"]
+        val stableVersion = "$major.$minor.$patch"
+
+        // Update properties
+        props["app.prerelease.suffix"] = ""
+        props["app.version"] = stableVersion
+        props["app.bundle.version"] = stableVersion
+        props["app.release.channel"] = "stable"
+        props["app.build.date"] = SimpleDateFormat("yyyy-MM-dd").format(Date())
+
+        saveProperties(props, "Cleared prerelease suffix - promoted to stable")
+
+        println("🎉 Promoted to stable release!")
+        println("📦 Version is now: $stableVersion")
+        println("📢 Release channel: stable")
+    }
+}
+
+/**
+ * Increment prerelease number (e.g., beta.1 → beta.2)
+ */
+abstract class IncrementPrereleaseTask : VersionPropertyWriteTask() {
+    @TaskAction
+    fun incrementPrerelease() {
+        validateGitState()
+        val props = loadProperties()
+
+        val currentSuffix = props["app.prerelease.suffix"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: throw GradleException(
+                "No prerelease suffix to increment.\n" +
+                "First set a prerelease suffix using: ./gradlew setPrereleaseSuffix -Psuffix=beta.1"
+            )
+
+        // Parse current suffix using shared pattern
+        val match = PRERELEASE_SUFFIX_PARSE_PATTERN.matchEntire(currentSuffix)
+            ?: throw GradleException("Invalid existing prerelease suffix format: '$currentSuffix'")
+
+        val type = match.groupValues[1]
+        val currentNumber = match.groupValues[2].toInt()
+        val newNumber = currentNumber + 1
+        val newSuffix = "$type.$newNumber"
+
+        val major = props["app.version.major"]
+        val minor = props["app.version.minor"]
+        val patch = props["app.version.patch"]
+        val baseVersion = "$major.$minor.$patch"
+        val fullVersion = "$baseVersion-$newSuffix"
+
+        // Update properties
+        props["app.prerelease.suffix"] = newSuffix
+        props["app.version"] = fullVersion
+        props["app.bundle.version"] = fullVersion
+        props["app.build.date"] = SimpleDateFormat("yyyy-MM-dd").format(Date())
+
+        saveProperties(props, "Incremented prerelease number")
+
+        println("🔢 Prerelease incremented: $currentSuffix → $newSuffix")
+        println("📦 Version is now: $fullVersion")
     }
 }
 
@@ -281,6 +500,7 @@ tasks.register<IncrementVersionTask>("incrementVersion") {
     description = "Increment patch version and reset build number"
     inputFile.set(versionPropsFile)
     outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
 }
 
 tasks.register<IncrementMinorTask>("incrementMinor") {
@@ -288,6 +508,7 @@ tasks.register<IncrementMinorTask>("incrementMinor") {
     description = "Increment minor version and reset patch and build number"
     inputFile.set(versionPropsFile)
     outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
 }
 
 tasks.register<IncrementMajorTask>("incrementMajor") {
@@ -295,6 +516,7 @@ tasks.register<IncrementMajorTask>("incrementMajor") {
     description = "Increment major version and reset minor/patch and build number"
     inputFile.set(versionPropsFile)
     outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
 }
 
 tasks.register<IncrementBuildNumberTask>("incrementBuildNumber") {
@@ -302,6 +524,7 @@ tasks.register<IncrementBuildNumberTask>("incrementBuildNumber") {
     description = "Increment build number only"
     inputFile.set(versionPropsFile)
     outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
 }
 
 tasks.register<AutoIncrementBuildNumberTask>("autoIncrementBuildNumber") {
@@ -309,4 +532,30 @@ tasks.register<AutoIncrementBuildNumberTask>("autoIncrementBuildNumber") {
     description = "Auto-increment build number for package builds"
     inputFile.set(versionPropsFile)
     outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
+}
+
+tasks.register<SetPrereleaseSuffixTask>("setPrereleaseSuffix") {
+    group = "versioning"
+    description = "Set prerelease suffix (e.g., -Psuffix=beta.1)"
+    inputFile.set(versionPropsFile)
+    outputFile.set(versionPropsFile)
+    suffix.set(providers.gradleProperty("suffix"))
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
+}
+
+tasks.register<ClearPrereleaseSuffixTask>("clearPrereleaseSuffix") {
+    group = "versioning"
+    description = "Clear prerelease suffix (promote to stable)"
+    inputFile.set(versionPropsFile)
+    outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
+}
+
+tasks.register<IncrementPrereleaseTask>("incrementPrerelease") {
+    group = "versioning"
+    description = "Increment prerelease number (e.g., beta.1 → beta.2)"
+    inputFile.set(versionPropsFile)
+    outputFile.set(versionPropsFile)
+    skipGitCheck.set(providers.gradleProperty("skipGitCheck").map { it.toBoolean() }.orElse(false))
 }

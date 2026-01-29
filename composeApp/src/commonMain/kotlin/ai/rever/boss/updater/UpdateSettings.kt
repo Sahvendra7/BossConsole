@@ -16,6 +16,13 @@ expect object UpdateSettings {
      * Interval between automatic update checks in hours
      */
     var checkIntervalHours: Long
+
+    /**
+     * Whether to include pre-release versions (alpha, beta, RC) in update checks.
+     * When false (default), only stable releases are shown.
+     * When true, or when the current version is a pre-release, pre-releases are included.
+     */
+    var includePreReleases: Boolean
 }
 
 /**

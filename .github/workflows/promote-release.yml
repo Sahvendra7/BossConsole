@@ -1,0 +1,287 @@
+name: 🎉 Promote Pre-release to Stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease_tag:
+        description: 'Pre-release tag to promote (e.g., v8.16.16-beta.1)'
+        required: true
+        type: string
+      rebuild_artifacts:
+        description: 'Rebuild artifacts (recommended for production releases)'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
+
+jobs:
+  validate-and-prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease-version: ${{ steps.validate.outputs.prerelease-version }}
+      stable-version: ${{ steps.validate.outputs.stable-version }}
+      base-version: ${{ steps.validate.outputs.base-version }}
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔍 Validate Pre-release Tag
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          # Pass user input via environment variable to prevent script injection
+          INPUT_PRERELEASE_TAG: ${{ github.event.inputs.prerelease_tag }}
+        run: |
+          set -euo pipefail
+
+          # Source shared version utilities
+          source .github/scripts/version-utils.sh
+
+          # Sanitize and validate input using shared function
+          PRERELEASE_TAG="${INPUT_PRERELEASE_TAG}"
+          if ! validate_prerelease_tag "$PRERELEASE_TAG"; then
+            echo "❌ Invalid prerelease tag format: input contains invalid characters or format"
+            echo "   Expected format: v8.16.16-beta.1 or v8.16.16-rc.2"
+            exit 1
+          fi
+
+          # Remove 'v' prefix if present for version parsing
+          PRERELEASE_VERSION="${PRERELEASE_TAG#v}"
+
+          # Extract base version using shared function
+          BASE_VERSION=$(get_base_version "$PRERELEASE_VERSION")
+          STABLE_VERSION="$BASE_VERSION"
+
+          echo "📋 Pre-release version: $PRERELEASE_VERSION"
+          echo "📋 Stable version will be: $STABLE_VERSION"
+
+          # Check if the prerelease tag exists
+          if ! git rev-parse "v$PRERELEASE_VERSION" >/dev/null 2>&1; then
+            # Also check without v prefix
+            if ! git rev-parse "$PRERELEASE_VERSION" >/dev/null 2>&1; then
+              echo "❌ Tag not found: $PRERELEASE_TAG"
+              exit 1
+            fi
+          fi
+
+          # Verify it's actually a prerelease on GitHub
+          RELEASE_INFO=$(gh release view "v$PRERELEASE_VERSION" --json isPrerelease,tagName 2>/dev/null || gh release view "$PRERELEASE_VERSION" --json isPrerelease,tagName 2>/dev/null || echo "")
+
+          if [[ -z "$RELEASE_INFO" ]]; then
+            echo "❌ Release not found on GitHub: $PRERELEASE_TAG"
+            exit 1
+          fi
+
+          IS_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.isPrerelease')
+          if [[ "$IS_PRERELEASE" != "true" ]]; then
+            echo "❌ The specified release is not a pre-release: $PRERELEASE_TAG"
+            exit 1
+          fi
+
+          # Check if stable version already exists
+          if gh release view "v$STABLE_VERSION" >/dev/null 2>&1; then
+            echo "❌ Stable version v$STABLE_VERSION already exists!"
+            echo "   Cannot promote to an existing version."
+            exit 1
+          fi
+
+          echo "✅ Validation passed"
+          echo "prerelease-version=$PRERELEASE_VERSION" >> $GITHUB_OUTPUT
+          echo "stable-version=$STABLE_VERSION" >> $GITHUB_OUTPUT
+          echo "base-version=$BASE_VERSION" >> $GITHUB_OUTPUT
+
+  promote-with-rebuild:
+    needs: validate-and-prepare
+    if: github.event.inputs.rebuild_artifacts == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      version_increment: 'patch'
+      release_type: 'stable'
+      prerelease_number: '1'
+      create_release: true
+      skip_version_increment: true
+    secrets: inherit
+
+  promote-without-rebuild:
+    needs: validate-and-prepare
+    if: github.event.inputs.rebuild_artifacts == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      - name: 📥 Download Pre-release Assets
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          # Pass validated outputs via environment variables
+          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
+          STABLE_VERSION: ${{ needs.validate-and-prepare.outputs.stable-version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ./release-assets ./downloaded-assets
+
+          echo "📥 Downloading assets from pre-release v$PRERELEASE_VERSION..."
+
+          # Download all assets from the prerelease
+          gh release download "v$PRERELEASE_VERSION" --dir ./downloaded-assets
+
+          # Rename assets to stable version - only replace version in BOSS- prefixed filenames
+          # This prevents accidental replacements in other parts of the filename
+          for file in ./downloaded-assets/*; do
+            if [[ -f "$file" ]]; then
+              FILENAME=$(basename "$file")
+              # Only replace the version string when it appears after "BOSS-" prefix
+              # This is safer than global replacement
+              if [[ "$FILENAME" == BOSS-* ]]; then
+                # Use sed with word boundaries for precise replacement
+                NEW_FILENAME=$(echo "$FILENAME" | sed "s/BOSS-${PRERELEASE_VERSION}/BOSS-${STABLE_VERSION}/g")
+              else
+                NEW_FILENAME="$FILENAME"
+              fi
+              cp "$file" "./release-assets/$NEW_FILENAME"
+              echo "  Renamed: $FILENAME -> $NEW_FILENAME"
+            fi
+          done
+
+          echo "✅ Assets prepared for stable release"
+          ls -la ./release-assets/
+
+      - name: 🔄 Update version.properties
+        env:
+          STABLE_VERSION: ${{ needs.validate-and-prepare.outputs.stable-version }}
+          BASE_VERSION: ${{ needs.validate-and-prepare.outputs.base-version }}
+        run: |
+          set -euo pipefail
+
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+
+          # Validate parsed components are integers
+          if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "❌ Invalid version components parsed from: $BASE_VERSION"
+            exit 1
+          fi
+
+          # Update version.properties
+          sed -i "s/^app.version.major=.*/app.version.major=$MAJOR/" version.properties
+          sed -i "s/^app.version.minor=.*/app.version.minor=$MINOR/" version.properties
+          sed -i "s/^app.version.patch=.*/app.version.patch=$PATCH/" version.properties
+          sed -i "s/^app.version=.*/app.version=$STABLE_VERSION/" version.properties
+          sed -i "s/^app.bundle.version=.*/app.bundle.version=$STABLE_VERSION/" version.properties
+          sed -i "s/^app.prerelease.suffix=.*/app.prerelease.suffix=/" version.properties
+          sed -i "s/^app.release.channel=.*/app.release.channel=stable/" version.properties
+
+          echo "✅ Updated version.properties to $STABLE_VERSION"
+          cat version.properties
+
+      - name: 📝 Commit Version Changes
+        env:
+          STABLE_VERSION: ${{ needs.validate-and-prepare.outputs.stable-version }}
+          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add version.properties
+          git commit -m "🎉 Promote v$PRERELEASE_VERSION to stable v$STABLE_VERSION" \
+                     -m "Promoted from pre-release to stable without rebuild" \
+                     -m "🤖 Automated by promote-release workflow"
+
+          # Handle race condition: pull --rebase and retry push up to 3 times
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if git push; then
+              echo "✅ Successfully pushed version changes"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️ Push failed, attempting rebase and retry ($RETRY_COUNT/$MAX_RETRIES)..."
+                git pull --rebase origin main
+              else
+                echo "❌ Failed to push after $MAX_RETRIES attempts"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: 📝 Generate Release Notes
+        id: release-notes
+        env:
+          STABLE_VERSION: ${{ needs.validate-and-prepare.outputs.stable-version }}
+          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          cat > release-notes.md << EOF
+          # 🚀 BOSS $STABLE_VERSION
+
+          This release has been promoted from pre-release **v$PRERELEASE_VERSION** to stable.
+
+          ## 📦 Downloads
+
+          | Platform | Architecture | Package |
+          |----------|--------------|---------|
+          | **macOS** | Universal (Apple Silicon + Intel via Rosetta) | \`BOSS-${STABLE_VERSION}-Universal.dmg\` |
+          | **Windows** | x64 | \`BOSS-${STABLE_VERSION}.msi\` |
+          | **Windows** | ARM64 | \`BOSS-${STABLE_VERSION}-arm64.msi\` |
+          | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${STABLE_VERSION}-amd64.deb\` |
+          | **Linux DEB** | ARM64 (aarch64) | \`BOSS-${STABLE_VERSION}-arm64.deb\` |
+          | **Linux RPM** | AMD64 (x86_64) | \`BOSS-${STABLE_VERSION}-amd64.rpm\` |
+          | **Linux RPM** | ARM64 (aarch64) | \`BOSS-${STABLE_VERSION}-arm64.rpm\` |
+          | **Linux JAR** | AMD64 (x86_64) | \`BOSS-${STABLE_VERSION}-amd64.jar\` |
+          | **Linux JAR** | ARM64 (aarch64) | \`BOSS-${STABLE_VERSION}-arm64.jar\` |
+
+          ## ✨ What's New
+
+          This stable release includes all changes from the **v$PRERELEASE_VERSION** pre-release.
+          Please refer to the [pre-release notes](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${PRERELEASE_VERSION}) for detailed changes.
+
+          ---
+
+          🤖 *This release was automatically promoted by GitHub Actions*
+          EOF
+
+          echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
+
+      - name: 🎉 Create Stable GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.validate-and-prepare.outputs.stable-version }}
+          name: 🚀 BOSS ${{ needs.validate-and-prepare.outputs.stable-version }}
+          body_path: release-notes.md
+          files: ./release-assets/*
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      - name: 📢 Promotion Summary
+        env:
+          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
+          STABLE_VERSION: ${{ needs.validate-and-prepare.outputs.stable-version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "## 🎉 Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **From**: v${PRERELEASE_VERSION} (pre-release)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **To**: v${STABLE_VERSION} (stable)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Method**: Asset rename (no rebuild)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Release URL" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${STABLE_VERSION}" >> $GITHUB_STEP_SUMMARY
