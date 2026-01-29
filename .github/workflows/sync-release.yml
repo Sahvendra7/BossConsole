@@ -9,9 +9,20 @@ on:
         description: 'Release tag to sync (e.g., v8.9.0)'
         required: true
         type: string
+  push:
+    branches: [main]
 
 jobs:
+  # Skip job for push events - this workflow only does real work on release events
+  # This job exists to satisfy required status checks on push
+  skip-on-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Skipping sync-release on push event (only runs on release publish)"
+
   sync-release:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     
     steps:
