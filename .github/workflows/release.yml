@@ -1,5 +1,4 @@
 name: 🚀 Release Build
-run-name: "🚀 Release: ${{ inputs.version_increment || 'tag' }} ${{ inputs.release_type || 'stable' }}${{ inputs.release_type != 'stable' && inputs.release_type != '' && format('.{0}', inputs.prerelease_number) || '' }}"
 
 on:
   workflow_dispatch:
