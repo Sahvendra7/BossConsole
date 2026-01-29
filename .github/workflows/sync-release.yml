@@ -48,7 +48,8 @@ jobs:
 
         # Get release information (handle both release event and manual dispatch)
         if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-          RELEASE_TAG="$INPUT_RELEASE_TAG"
+          # Trim whitespace from input
+          RELEASE_TAG="$(echo "$INPUT_RELEASE_TAG" | xargs)"
 
           # Validate release tag format
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
@@ -62,7 +63,8 @@ jobs:
           RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
           RELEASE_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.prerelease')
         else
-          RELEASE_TAG="$EVENT_RELEASE_TAG"
+          # Trim whitespace from event values
+          RELEASE_TAG="$(echo "$EVENT_RELEASE_TAG" | xargs)"
           RELEASE_NAME="$EVENT_RELEASE_NAME"
           RELEASE_PRERELEASE="$EVENT_RELEASE_PRERELEASE"
         fi
