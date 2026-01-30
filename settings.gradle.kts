@@ -47,6 +47,8 @@ include(":plugins:plugin-git-types")
 include(":plugins:plugin-run-types")
 include(":plugins:plugin-workspace-types")
 include(":plugins:plugin-bookmark-types")
+include(":plugins:plugin-icons")
+include(":plugins:plugin-path-utils")
 
 // Panel plugin modules
 include(":plugins:plugin-panel-console")

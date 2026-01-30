@@ -314,6 +314,8 @@ kotlin {
             implementation(projects.plugins.pluginRunTypes)
             implementation(projects.plugins.pluginWorkspaceTypes)
             implementation(projects.plugins.pluginBookmarkTypes)
+            implementation(projects.plugins.pluginIcons)
+            implementation(projects.plugins.pluginPathUtils)
 
             // Panel plugins
             implementation(projects.plugins.pluginPanelConsole)

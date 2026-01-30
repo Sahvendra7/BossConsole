@@ -31,6 +31,9 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                // Path utilities (shared with composeApp and plugins)
+                implementation(projects.plugins.pluginPathUtils)
+
                 // Compose dependencies
                 implementation(libs.compose.mp.runtime)
                 implementation(libs.compose.mp.foundation)

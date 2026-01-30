@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-group = "ai.rever.boss.plugin.panel"
+group = "ai.rever.boss.plugin"
 
 kotlin {
     compilerOptions {
@@ -28,27 +28,21 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
-                // Plugin API
-                implementation(projects.plugins.pluginApi)
+                // Path utilities (shared with bosseditor)
+                implementation(projects.plugins.pluginPathUtils)
+
+                // UI core for colors (BossDarkTextSecondary)
                 implementation(projects.plugins.pluginUiCore)
-                implementation(projects.plugins.pluginLogging)
-                implementation(projects.plugins.pluginScrollbar)
-                implementation(projects.plugins.pluginEvents)
-                implementation(projects.plugins.pluginIcons)
 
                 // Compose dependencies
                 implementation(libs.compose.mp.runtime)
                 implementation(libs.compose.mp.ui)
                 implementation(libs.compose.mp.foundation)
                 implementation(libs.compose.mp.material)
-                implementation(compose.materialIconsExtended)  // No base KMP artifact
+                implementation(compose.materialIconsExtended)
 
-                // Decompose for ComponentContext
-                implementation(libs.decompose)
-                implementation(libs.essenty.lifecycle)
-
-                // Coroutines
-                implementation(libs.kotlinx.coroutines.core)
+                // Simple Icons for brand icons (Kotlin, Python, etc.)
+                implementation(libs.compose.icons.simpleicons)
             }
         }
 
@@ -57,5 +51,18 @@ kotlin {
                 implementation(compose.desktop.currentOs)
             }
         }
+
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test-junit5"))
+                implementation("org.junit.jupiter:junit-jupiter:5.10.2")
+            }
+        }
     }
 }
+
+// Configure Test tasks
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+

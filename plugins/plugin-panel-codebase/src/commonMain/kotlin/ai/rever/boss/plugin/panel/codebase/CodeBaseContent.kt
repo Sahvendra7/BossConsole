@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.panel.codebase
 
+import ai.rever.boss.plugin.icons.FileIcons
 import ai.rever.boss.plugin.scrollbar.getPanelScrollbarConfig
 import ai.rever.boss.plugin.scrollbar.lazyListScrollbar
 import ai.rever.boss.plugin.ui.BossDarkBackground
@@ -464,12 +465,9 @@ fun FileTreeItem(
 
             // File/folder icon
             val iconInfo = if (node.isDirectory) {
-                FileIconInfo(
-                    if (isExpanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder,
-                    Color(0xFF90A4AE)  // Match main branch folder color (gray-blue)
-                )
+                FileIcons.forFolder(isExpanded)
             } else {
-                getFileIcon(node.name)
+                FileIcons.forFile(node.name)
             }
 
             Icon(
@@ -558,14 +556,6 @@ fun FileTreeItem(
 }
 
 /**
- * File icon information.
- */
-data class FileIconInfo(
-    val icon: ImageVector,
-    val color: Color
-)
-
-/**
  * Get platform-appropriate label for revealing files in the system file manager.
  */
 private fun getRevealInFileManagerLabel(): String {
@@ -574,29 +564,6 @@ private fun getRevealInFileManagerLabel(): String {
         osName.contains("mac") -> "Reveal in Finder"
         osName.contains("windows") -> "Show in Explorer"
         else -> "Show in File Manager"
-    }
-}
-
-/**
- * Get file icon based on file extension.
- */
-private fun getFileIcon(fileName: String): FileIconInfo {
-    val extension = fileName.substringAfterLast('.', "").lowercase()
-    return when (extension) {
-        "kt", "kts" -> FileIconInfo(Icons.Outlined.Code, Color(0xFF7F52FF))
-        "java" -> FileIconInfo(Icons.Outlined.Code, Color(0xFFE76F00))
-        "xml" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFFE37933))
-        "json" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFFCBCB41))
-        "md" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFF519ABA))
-        "gradle" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFF02303A))
-        "properties" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFF9E9E9E))
-        "yaml", "yml" -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFFCB171E))
-        "js", "ts" -> FileIconInfo(Icons.Outlined.Code, Color(0xFFF7DF1E))
-        "py" -> FileIconInfo(Icons.Outlined.Code, Color(0xFF3776AB))
-        "rs" -> FileIconInfo(Icons.Outlined.Code, Color(0xFFDEA584))
-        "go" -> FileIconInfo(Icons.Outlined.Code, Color(0xFF00ADD8))
-        "swift" -> FileIconInfo(Icons.Outlined.Code, Color(0xFFFA7343))
-        else -> FileIconInfo(Icons.AutoMirrored.Outlined.InsertDriveFile, Color(0xFF9E9E9E))
     }
 }
 
