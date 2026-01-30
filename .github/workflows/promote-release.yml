@@ -3,20 +3,12 @@ name: 🎉 Promote Release
 on:
   workflow_dispatch:
     inputs:
-      refresh_options:
-        description: 'Step 1: Refresh available pre-releases (check this first!)'
-        required: true
-        type: boolean
-        default: true
       prerelease_tag:
-        description: 'Step 2: Select pre-release to promote'
+        description: 'Pre-release tag to promote (e.g., v8.16.19-alpha.1)'
         required: true
-        type: choice
-        options:
-          - 'run-with-refresh-checked-first'
-        # OPTIONS_MARKER - Do not remove, used for auto-update
+        type: string
       promotion_target:
-        description: 'Step 3: Promote to which stage?'
+        description: 'Promote to which stage?'
         required: true
         type: choice
         options:
@@ -34,110 +26,7 @@ env:
   GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
 
 jobs:
-  # Job 1: Refresh pre-release options
-  refresh-options:
-    if: github.event.inputs.refresh_options == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
-
-      - name: 📋 Fetch Pre-releases and Update Workflow
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          echo "📋 Fetching available pre-releases..."
-
-          # Get all pre-releases sorted by date (newest first)
-          PRERELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
-            --json tagName,isPrerelease,publishedAt \
-            --jq '[.[] | select(.isPrerelease == true)] | sort_by(.publishedAt) | reverse | .[].tagName' 2>/dev/null || echo "")
-
-          if [[ -z "$PRERELEASES" ]]; then
-            echo "❌ No pre-releases found to promote."
-            echo "Create a pre-release first using the Release workflow."
-            exit 1
-          fi
-
-          echo "Found pre-releases:"
-          echo "$PRERELEASES"
-          echo ""
-
-          # Build options YAML
-          OPTIONS=""
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] && OPTIONS="${OPTIONS}          - '${tag}'\n"
-          done <<< "$PRERELEASES"
-
-          # Update the workflow file using sed
-          # Find the prerelease_tag options section and replace it
-          WORKFLOW_FILE=".github/workflows/promote-release.yml"
-
-          # Create a temp file with the new content
-          awk -v opts="$OPTIONS" '
-          /prerelease_tag:/ { in_prerelease=1 }
-          in_prerelease && /options:/ {
-            print
-            # Print new options
-            printf "%s", opts
-            # Skip old options until we hit the marker or next input
-            while ((getline line) > 0) {
-              if (line ~ /OPTIONS_MARKER/ || line ~ /^      [a-z_]+:/) {
-                print line
-                in_prerelease=0
-                break
-              }
-            }
-            next
-          }
-          { print }
-          ' "$WORKFLOW_FILE" > "${WORKFLOW_FILE}.tmp"
-
-          mv "${WORKFLOW_FILE}.tmp" "$WORKFLOW_FILE"
-
-          # Also set default to false for next run
-          sed -i "s/default: true  # refresh/default: false  # refresh/" "$WORKFLOW_FILE" || true
-
-          echo "✅ Updated workflow with $(echo "$PRERELEASES" | wc -l | xargs) pre-release options"
-
-      - name: 📝 Commit and Push
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet .github/workflows/promote-release.yml; then
-            echo "ℹ️ No changes needed"
-          else
-            git add .github/workflows/promote-release.yml
-            git commit -m "chore: Update pre-release options for promotion workflow"
-            git push
-            echo "✅ Options updated"
-          fi
-
-      - name: 📢 Next Steps
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-        run: |
-          echo "## ✅ Pre-release Options Updated" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next:** Run this workflow again with:" >> $GITHUB_STEP_SUMMARY
-          echo "1. ❌ **Uncheck** 'Refresh available pre-releases'" >> $GITHUB_STEP_SUMMARY
-          echo "2. ✅ **Select** your pre-release from dropdown" >> $GITHUB_STEP_SUMMARY
-          echo "3. ✅ **Select** promotion target" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "👉 [Run Again](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/promote-release.yml)" >> $GITHUB_STEP_SUMMARY
-
-  # Job 2: Validate and prepare promotion
   validate-and-prepare:
-    if: github.event.inputs.refresh_options == 'false'
     runs-on: ubuntu-latest
     outputs:
       prerelease-version: ${{ steps.validate.outputs.prerelease-version }}
@@ -164,19 +53,52 @@ jobs:
 
           source .github/scripts/version-utils.sh
 
+          # Function to list available pre-releases
+          list_available_prereleases() {
+            echo ""
+            echo "📋 Available pre-releases to promote:"
+            echo "────────────────────────────────────────────────────────────"
+
+            PRERELEASES=$(gh release list --limit 20 \
+              --json tagName,isPrerelease,publishedAt \
+              --jq '.[] | select(.isPrerelease == true) | "\(.tagName)\t\(.publishedAt)"' 2>/dev/null || echo "")
+
+            if [[ -z "$PRERELEASES" ]]; then
+              echo "   No pre-releases found."
+            else
+              echo ""
+              printf "   %-28s %-12s %s\n" "TAG" "PUBLISHED" "CAN PROMOTE TO"
+              echo "   ─────────────────────────── ──────────── ─────────────────"
+              echo "$PRERELEASES" | while IFS=$'\t' read -r tag date; do
+                FORMATTED_DATE=$(echo "$date" | cut -d'T' -f1)
+                # Determine promotion options based on tag type
+                if [[ "$tag" == *"-alpha"* ]]; then
+                  TARGETS="beta.1, rc.1, stable"
+                elif [[ "$tag" == *"-beta"* ]]; then
+                  TARGETS="rc.1, stable"
+                elif [[ "$tag" == *"-rc"* ]]; then
+                  TARGETS="stable"
+                else
+                  TARGETS="unknown"
+                fi
+                printf "   %-28s %-12s %s\n" "$tag" "$FORMATTED_DATE" "$TARGETS"
+              done
+              echo ""
+              echo "💡 Copy a tag from above and run this workflow again."
+            fi
+            echo "────────────────────────────────────────────────────────────"
+          }
+
           PRERELEASE_TAG="${INPUT_PRERELEASE_TAG}"
           PROMOTION_TARGET="${INPUT_PROMOTION_TARGET}"
-          PRERELEASE_TAG="$(echo "$PRERELEASE_TAG" | xargs)"
 
-          # Check for placeholder value
-          if [[ "$PRERELEASE_TAG" == "run-with-refresh-checked-first" ]]; then
-            echo "❌ Please run this workflow first with 'Refresh available pre-releases' checked"
-            echo "   to populate the dropdown with available options."
-            exit 1
-          fi
+          # Trim whitespace
+          PRERELEASE_TAG="$(echo "$PRERELEASE_TAG" | xargs)"
 
           if ! validate_prerelease_tag "$PRERELEASE_TAG"; then
             echo "❌ Invalid prerelease tag format: $PRERELEASE_TAG"
+            echo "   Expected format: v8.16.16-alpha.1, v8.16.16-beta.2, or v8.16.16-rc.1"
+            list_available_prereleases
             exit 1
           fi
 
@@ -196,11 +118,17 @@ jobs:
               ;;
             beta)
               [[ "$PROMOTION_TARGET" =~ ^(rc\.1|stable)$ ]] && VALID_PROMOTION=true
-              [[ "$PROMOTION_TARGET" == "beta.1" ]] && echo "❌ Cannot promote beta to beta" && exit 1
+              if [[ "$PROMOTION_TARGET" == "beta.1" ]]; then
+                echo "❌ Cannot promote beta to beta. Use 'rc.1' or 'stable'."
+                exit 1
+              fi
               ;;
             rc)
               [[ "$PROMOTION_TARGET" == "stable" ]] && VALID_PROMOTION=true
-              [[ "$PROMOTION_TARGET" =~ ^(beta\.1|rc\.1)$ ]] && echo "❌ RC can only promote to stable" && exit 1
+              if [[ "$PROMOTION_TARGET" =~ ^(beta\.1|rc\.1)$ ]]; then
+                echo "❌ RC can only be promoted to 'stable'."
+                exit 1
+              fi
               ;;
           esac
 
@@ -218,15 +146,43 @@ jobs:
             TARGET_CHANNEL=$(echo "$PROMOTION_TARGET" | cut -d'.' -f1)
           fi
 
-          # Verify release exists and is a prerelease
-          RELEASE_INFO=$(gh release view "v$PRERELEASE_VERSION" --json isPrerelease 2>/dev/null || echo "")
-          [[ -z "$RELEASE_INFO" ]] && echo "❌ Release not found: v$PRERELEASE_VERSION" && exit 1
-          [[ $(echo "$RELEASE_INFO" | jq -r '.isPrerelease') != "true" ]] && echo "❌ Not a pre-release" && exit 1
+          # Verify tag exists in git
+          if ! git rev-parse "v$PRERELEASE_VERSION" >/dev/null 2>&1; then
+            if ! git rev-parse "$PRERELEASE_VERSION" >/dev/null 2>&1; then
+              echo "❌ Tag not found: $PRERELEASE_TAG"
+              list_available_prereleases
+              exit 1
+            fi
+          fi
 
-          # Check target doesn't exist
-          gh release view "v$TARGET_VERSION" >/dev/null 2>&1 && echo "❌ Target v$TARGET_VERSION already exists" && exit 1
+          # Verify release exists and is a prerelease on GitHub
+          RELEASE_INFO=$(gh release view "v$PRERELEASE_VERSION" --json isPrerelease 2>/dev/null || \
+                         gh release view "$PRERELEASE_VERSION" --json isPrerelease 2>/dev/null || echo "")
 
-          echo "✅ Promotion: $CURRENT_STAGE → $PROMOTION_TARGET"
+          if [[ -z "$RELEASE_INFO" ]]; then
+            echo "❌ Release not found on GitHub: $PRERELEASE_TAG"
+            list_available_prereleases
+            exit 1
+          fi
+
+          if [[ $(echo "$RELEASE_INFO" | jq -r '.isPrerelease') != "true" ]]; then
+            echo "❌ The specified release is not a pre-release: $PRERELEASE_TAG"
+            echo "   Only pre-releases can be promoted."
+            list_available_prereleases
+            exit 1
+          fi
+
+          # Check target doesn't already exist
+          if gh release view "v$TARGET_VERSION" >/dev/null 2>&1; then
+            echo "❌ Target version v$TARGET_VERSION already exists!"
+            echo "   Cannot promote to an existing version."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Validation passed: $CURRENT_STAGE → $PROMOTION_TARGET"
+          echo "📦 Will promote: v$PRERELEASE_VERSION → v$TARGET_VERSION"
+
           echo "prerelease-version=$PRERELEASE_VERSION" >> $GITHUB_OUTPUT
           echo "target-version=$TARGET_VERSION" >> $GITHUB_OUTPUT
           echo "base-version=$BASE_VERSION" >> $GITHUB_OUTPUT
@@ -234,10 +190,9 @@ jobs:
           echo "target-suffix=$TARGET_SUFFIX" >> $GITHUB_OUTPUT
           echo "target-channel=$TARGET_CHANNEL" >> $GITHUB_OUTPUT
 
-  # Job 3: Promote with rebuild
   promote-with-rebuild:
     needs: validate-and-prepare
-    if: github.event.inputs.refresh_options == 'false' && github.event.inputs.rebuild_artifacts == 'true'
+    if: github.event.inputs.rebuild_artifacts == 'true'
     uses: ./.github/workflows/release.yml
     with:
       version_increment: 'patch'
@@ -247,10 +202,9 @@ jobs:
       skip_version_increment: true
     secrets: inherit
 
-  # Job 4: Promote without rebuild (reuse existing artifacts)
   promote-without-rebuild:
     needs: validate-and-prepare
-    if: github.event.inputs.refresh_options == 'false' && github.event.inputs.rebuild_artifacts == 'false'
+    if: github.event.inputs.rebuild_artifacts == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout Repository
