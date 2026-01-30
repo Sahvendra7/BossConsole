@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       prerelease_tag:
-        description: 'Pre-release tag to promote (e.g., v8.16.16-alpha.1)'
+        description: 'Pre-release tag to promote (enter any value to see available options)'
         required: true
         type: string
       promotion_target:
@@ -54,6 +54,33 @@ jobs:
           # Source shared version utilities
           source .github/scripts/version-utils.sh
 
+          # Function to list available pre-releases
+          list_available_prereleases() {
+            echo ""
+            echo "📋 Available pre-releases to promote:"
+            echo "────────────────────────────────────────"
+
+            # Get pre-releases from GitHub, sorted by date (newest first)
+            PRERELEASES=$(gh release list --limit 20 --json tagName,isPrerelease,publishedAt \
+              --jq '.[] | select(.isPrerelease == true) | "\(.tagName)\t\(.publishedAt)"' 2>/dev/null || echo "")
+
+            if [[ -z "$PRERELEASES" ]]; then
+              echo "   No pre-releases found."
+            else
+              echo ""
+              echo "   TAG                      PUBLISHED"
+              echo "   ───────────────────────  ──────────────────"
+              echo "$PRERELEASES" | while IFS=$'\t' read -r tag date; do
+                # Format date for readability
+                FORMATTED_DATE=$(echo "$date" | cut -d'T' -f1)
+                printf "   %-24s %s\n" "$tag" "$FORMATTED_DATE"
+              done
+              echo ""
+              echo "💡 Copy one of the tags above and run this workflow again."
+            fi
+            echo "────────────────────────────────────────"
+          }
+
           # Sanitize and validate input
           PRERELEASE_TAG="${INPUT_PRERELEASE_TAG}"
           PROMOTION_TARGET="${INPUT_PROMOTION_TARGET}"
@@ -64,6 +91,7 @@ jobs:
           if ! validate_prerelease_tag "$PRERELEASE_TAG"; then
             echo "❌ Invalid prerelease tag format: $PRERELEASE_TAG"
             echo "   Expected format: v8.16.16-alpha.1, v8.16.16-beta.2, or v8.16.16-rc.1"
+            list_available_prereleases
             exit 1
           fi
 
@@ -141,6 +169,7 @@ jobs:
           if ! git rev-parse "v$PRERELEASE_VERSION" >/dev/null 2>&1; then
             if ! git rev-parse "$PRERELEASE_VERSION" >/dev/null 2>&1; then
               echo "❌ Tag not found: $PRERELEASE_TAG"
+              list_available_prereleases
               exit 1
             fi
           fi
@@ -150,12 +179,15 @@ jobs:
 
           if [[ -z "$RELEASE_INFO" ]]; then
             echo "❌ Release not found on GitHub: $PRERELEASE_TAG"
+            list_available_prereleases
             exit 1
           fi
 
           IS_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.isPrerelease')
           if [[ "$IS_PRERELEASE" != "true" ]]; then
             echo "❌ The specified release is not a pre-release: $PRERELEASE_TAG"
+            echo "   Only pre-releases can be promoted."
+            list_available_prereleases
             exit 1
           fi
 
