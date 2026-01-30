@@ -1,0 +1,134 @@
+name: 📋 List Pre-releases
+
+on:
+  workflow_dispatch:
+
+jobs:
+  list-prereleases:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📋 List Available Pre-releases
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "## 📋 Available Pre-releases for Promotion" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get all pre-releases
+          PRERELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 \
+            --json tagName,isPrerelease,publishedAt,name \
+            --jq '.[] | select(.isPrerelease == true)' 2>/dev/null || echo "")
+
+          if [[ -z "$PRERELEASES" || "$PRERELEASES" == "[]" ]]; then
+            echo "No pre-releases found." >> $GITHUB_STEP_SUMMARY
+            echo ""
+            echo "ℹ️ No pre-releases available for promotion."
+            exit 0
+          fi
+
+          # Parse and categorize pre-releases
+          ALPHA_RELEASES=""
+          BETA_RELEASES=""
+          RC_RELEASES=""
+
+          while IFS= read -r release; do
+            TAG=$(echo "$release" | jq -r '.tagName')
+            DATE=$(echo "$release" | jq -r '.publishedAt' | cut -d'T' -f1)
+            NAME=$(echo "$release" | jq -r '.name')
+
+            # Determine stage
+            if [[ "$TAG" == *"-alpha"* ]]; then
+              ALPHA_RELEASES="${ALPHA_RELEASES}| \`${TAG}\` | ${DATE} | beta.1, rc.1, stable |\n"
+            elif [[ "$TAG" == *"-beta"* ]]; then
+              BETA_RELEASES="${BETA_RELEASES}| \`${TAG}\` | ${DATE} | rc.1, stable |\n"
+            elif [[ "$TAG" == *"-rc"* ]]; then
+              RC_RELEASES="${RC_RELEASES}| \`${TAG}\` | ${DATE} | stable |\n"
+            fi
+          done < <(echo "$PRERELEASES" | jq -c '.')
+
+          # Output to console
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  📋 AVAILABLE PRE-RELEASES FOR PROMOTION"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Alpha releases
+          if [[ -n "$ALPHA_RELEASES" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔬 Alpha Releases" >> $GITHUB_STEP_SUMMARY
+            echo "| Tag | Published | Can Promote To |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|-----------|----------------|" >> $GITHUB_STEP_SUMMARY
+            echo -e "$ALPHA_RELEASES" >> $GITHUB_STEP_SUMMARY
+
+            echo ""
+            echo "🔬 ALPHA RELEASES (can promote to: beta, rc, stable)"
+            echo "───────────────────────────────────────────────────"
+            echo -e "$ALPHA_RELEASES" | while IFS='|' read -r _ tag date targets _; do
+              if [[ -n "$tag" ]]; then
+                tag=$(echo "$tag" | xargs | tr -d '`')
+                date=$(echo "$date" | xargs)
+                echo "   $tag  ($date)"
+              fi
+            done
+          fi
+
+          # Beta releases
+          if [[ -n "$BETA_RELEASES" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🧪 Beta Releases" >> $GITHUB_STEP_SUMMARY
+            echo "| Tag | Published | Can Promote To |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|-----------|----------------|" >> $GITHUB_STEP_SUMMARY
+            echo -e "$BETA_RELEASES" >> $GITHUB_STEP_SUMMARY
+
+            echo ""
+            echo "🧪 BETA RELEASES (can promote to: rc, stable)"
+            echo "───────────────────────────────────────────────────"
+            echo -e "$BETA_RELEASES" | while IFS='|' read -r _ tag date targets _; do
+              if [[ -n "$tag" ]]; then
+                tag=$(echo "$tag" | xargs | tr -d '`')
+                date=$(echo "$date" | xargs)
+                echo "   $tag  ($date)"
+              fi
+            done
+          fi
+
+          # RC releases
+          if [[ -n "$RC_RELEASES" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 Release Candidates" >> $GITHUB_STEP_SUMMARY
+            echo "| Tag | Published | Can Promote To |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|-----------|----------------|" >> $GITHUB_STEP_SUMMARY
+            echo -e "$RC_RELEASES" >> $GITHUB_STEP_SUMMARY
+
+            echo ""
+            echo "🚀 RELEASE CANDIDATES (can promote to: stable)"
+            echo "───────────────────────────────────────────────────"
+            echo -e "$RC_RELEASES" | while IFS='|' read -r _ tag date targets _; do
+              if [[ -n "$tag" ]]; then
+                tag=$(echo "$tag" | xargs | tr -d '`')
+                date=$(echo "$date" | xargs)
+                echo "   $tag  ($date)"
+              fi
+            done
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "💡 To promote a release, run the 'Promote Release' workflow"
+          echo "   and enter one of the tags listed above."
+          echo ""
+
+          # Add instructions to summary
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💡 How to Promote" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Copy a tag from the tables above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Go to **Actions** → **🎉 Promote Release**" >> $GITHUB_STEP_SUMMARY
+          echo "3. Click **Run workflow**" >> $GITHUB_STEP_SUMMARY
+          echo "4. Paste the tag and select target stage" >> $GITHUB_STEP_SUMMARY
