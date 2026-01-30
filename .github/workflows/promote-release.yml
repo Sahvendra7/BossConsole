@@ -3,12 +3,20 @@ name: 🎉 Promote Release
 on:
   workflow_dispatch:
     inputs:
-      prerelease_tag:
-        description: 'Pre-release tag to promote (e.g., v8.16.16-alpha.1)'
+      refresh_options:
+        description: 'Step 1: Refresh available pre-releases (check this first!)'
         required: true
-        type: string
+        type: boolean
+        default: true
+      prerelease_tag:
+        description: 'Step 2: Select pre-release to promote'
+        required: true
+        type: choice
+        options:
+          - 'run-with-refresh-checked-first'
+        # OPTIONS_MARKER - Do not remove, used for auto-update
       promotion_target:
-        description: 'Promote to which stage?'
+        description: 'Step 3: Promote to which stage?'
         required: true
         type: choice
         options:
@@ -17,7 +25,7 @@ on:
           - stable
         default: 'stable'
       rebuild_artifacts:
-        description: 'Rebuild artifacts (recommended for production releases)'
+        description: 'Rebuild artifacts? (recommended for production)'
         required: true
         default: true
         type: boolean
@@ -26,7 +34,110 @@ env:
   GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true'
 
 jobs:
+  # Job 1: Refresh pre-release options
+  refresh-options:
+    if: github.event.inputs.refresh_options == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PUBLIC_REPO_TOKEN }}
+
+      - name: 📋 Fetch Pre-releases and Update Workflow
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "📋 Fetching available pre-releases..."
+
+          # Get all pre-releases sorted by date (newest first)
+          PRERELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+            --json tagName,isPrerelease,publishedAt \
+            --jq '[.[] | select(.isPrerelease == true)] | sort_by(.publishedAt) | reverse | .[].tagName' 2>/dev/null || echo "")
+
+          if [[ -z "$PRERELEASES" ]]; then
+            echo "❌ No pre-releases found to promote."
+            echo "Create a pre-release first using the Release workflow."
+            exit 1
+          fi
+
+          echo "Found pre-releases:"
+          echo "$PRERELEASES"
+          echo ""
+
+          # Build options YAML
+          OPTIONS=""
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && OPTIONS="${OPTIONS}          - '${tag}'\n"
+          done <<< "$PRERELEASES"
+
+          # Update the workflow file using sed
+          # Find the prerelease_tag options section and replace it
+          WORKFLOW_FILE=".github/workflows/promote-release.yml"
+
+          # Create a temp file with the new content
+          awk -v opts="$OPTIONS" '
+          /prerelease_tag:/ { in_prerelease=1 }
+          in_prerelease && /options:/ {
+            print
+            # Print new options
+            printf "%s", opts
+            # Skip old options until we hit the marker or next input
+            while ((getline line) > 0) {
+              if (line ~ /OPTIONS_MARKER/ || line ~ /^      [a-z_]+:/) {
+                print line
+                in_prerelease=0
+                break
+              }
+            }
+            next
+          }
+          { print }
+          ' "$WORKFLOW_FILE" > "${WORKFLOW_FILE}.tmp"
+
+          mv "${WORKFLOW_FILE}.tmp" "$WORKFLOW_FILE"
+
+          # Also set default to false for next run
+          sed -i "s/default: true  # refresh/default: false  # refresh/" "$WORKFLOW_FILE" || true
+
+          echo "✅ Updated workflow with $(echo "$PRERELEASES" | wc -l | xargs) pre-release options"
+
+      - name: 📝 Commit and Push
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet .github/workflows/promote-release.yml; then
+            echo "ℹ️ No changes needed"
+          else
+            git add .github/workflows/promote-release.yml
+            git commit -m "chore: Update pre-release options for promotion workflow"
+            git push
+            echo "✅ Options updated"
+          fi
+
+      - name: 📢 Next Steps
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          echo "## ✅ Pre-release Options Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next:** Run this workflow again with:" >> $GITHUB_STEP_SUMMARY
+          echo "1. ❌ **Uncheck** 'Refresh available pre-releases'" >> $GITHUB_STEP_SUMMARY
+          echo "2. ✅ **Select** your pre-release from dropdown" >> $GITHUB_STEP_SUMMARY
+          echo "3. ✅ **Select** promotion target" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "👉 [Run Again](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/promote-release.yml)" >> $GITHUB_STEP_SUMMARY
+
+  # Job 2: Validate and prepare promotion
   validate-and-prepare:
+    if: github.event.inputs.refresh_options == 'false'
     runs-on: ubuntu-latest
     outputs:
       prerelease-version: ${{ steps.validate.outputs.prerelease-version }}
@@ -51,77 +162,50 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Source shared version utilities
           source .github/scripts/version-utils.sh
 
-          # Sanitize and validate input
           PRERELEASE_TAG="${INPUT_PRERELEASE_TAG}"
           PROMOTION_TARGET="${INPUT_PROMOTION_TARGET}"
-
-          # Trim whitespace
           PRERELEASE_TAG="$(echo "$PRERELEASE_TAG" | xargs)"
 
-          if ! validate_prerelease_tag "$PRERELEASE_TAG"; then
-            echo "❌ Invalid prerelease tag format: $PRERELEASE_TAG"
-            echo "   Expected format: v8.16.16-alpha.1, v8.16.16-beta.2, or v8.16.16-rc.1"
+          # Check for placeholder value
+          if [[ "$PRERELEASE_TAG" == "run-with-refresh-checked-first" ]]; then
+            echo "❌ Please run this workflow first with 'Refresh available pre-releases' checked"
+            echo "   to populate the dropdown with available options."
             exit 1
           fi
 
-          # Remove 'v' prefix if present
-          PRERELEASE_VERSION="${PRERELEASE_TAG#v}"
+          if ! validate_prerelease_tag "$PRERELEASE_TAG"; then
+            echo "❌ Invalid prerelease tag format: $PRERELEASE_TAG"
+            exit 1
+          fi
 
-          # Extract base version and current stage
+          PRERELEASE_VERSION="${PRERELEASE_TAG#v}"
           BASE_VERSION=$(get_base_version "$PRERELEASE_VERSION")
           CURRENT_SUFFIX=$(get_prerelease_suffix "$PRERELEASE_VERSION")
           CURRENT_STAGE=$(echo "$CURRENT_SUFFIX" | cut -d'.' -f1)
 
-          echo "📋 Pre-release version: $PRERELEASE_VERSION"
-          echo "📋 Base version: $BASE_VERSION"
-          echo "📋 Current stage: $CURRENT_STAGE"
-          echo "📋 Promotion target: $PROMOTION_TARGET"
+          echo "📋 Pre-release: $PRERELEASE_VERSION ($CURRENT_STAGE)"
+          echo "📋 Target: $PROMOTION_TARGET"
 
           # Validate promotion path
-          # alpha can go to: beta, rc, stable
-          # beta can go to: rc, stable
-          # rc can go to: stable only
           VALID_PROMOTION=false
-
           case "$CURRENT_STAGE" in
             alpha)
-              if [[ "$PROMOTION_TARGET" == "beta.1" || "$PROMOTION_TARGET" == "rc.1" || "$PROMOTION_TARGET" == "stable" ]]; then
-                VALID_PROMOTION=true
-              fi
+              [[ "$PROMOTION_TARGET" =~ ^(beta\.1|rc\.1|stable)$ ]] && VALID_PROMOTION=true
               ;;
             beta)
-              if [[ "$PROMOTION_TARGET" == "rc.1" || "$PROMOTION_TARGET" == "stable" ]]; then
-                VALID_PROMOTION=true
-              fi
-              if [[ "$PROMOTION_TARGET" == "beta.1" ]]; then
-                echo "❌ Cannot promote beta to beta. Use 'rc.1' or 'stable'."
-                exit 1
-              fi
+              [[ "$PROMOTION_TARGET" =~ ^(rc\.1|stable)$ ]] && VALID_PROMOTION=true
+              [[ "$PROMOTION_TARGET" == "beta.1" ]] && echo "❌ Cannot promote beta to beta" && exit 1
               ;;
             rc)
-              if [[ "$PROMOTION_TARGET" == "stable" ]]; then
-                VALID_PROMOTION=true
-              fi
-              if [[ "$PROMOTION_TARGET" == "beta.1" || "$PROMOTION_TARGET" == "rc.1" ]]; then
-                echo "❌ Cannot promote rc to $PROMOTION_TARGET. RC can only be promoted to 'stable'."
-                exit 1
-              fi
-              ;;
-            *)
-              echo "❌ Unknown current stage: $CURRENT_STAGE"
-              exit 1
+              [[ "$PROMOTION_TARGET" == "stable" ]] && VALID_PROMOTION=true
+              [[ "$PROMOTION_TARGET" =~ ^(beta\.1|rc\.1)$ ]] && echo "❌ RC can only promote to stable" && exit 1
               ;;
           esac
 
-          if [[ "$VALID_PROMOTION" != "true" ]]; then
-            echo "❌ Invalid promotion path: $CURRENT_STAGE → $PROMOTION_TARGET"
-            exit 1
-          fi
+          [[ "$VALID_PROMOTION" != "true" ]] && echo "❌ Invalid promotion path" && exit 1
 
-          # Determine target version and metadata
           if [[ "$PROMOTION_TARGET" == "stable" ]]; then
             TARGET_VERSION="$BASE_VERSION"
             TARGET_IS_PRERELEASE="false"
@@ -134,44 +218,15 @@ jobs:
             TARGET_CHANNEL=$(echo "$PROMOTION_TARGET" | cut -d'.' -f1)
           fi
 
-          echo "📋 Target version: $TARGET_VERSION"
-          echo "📋 Target is prerelease: $TARGET_IS_PRERELEASE"
+          # Verify release exists and is a prerelease
+          RELEASE_INFO=$(gh release view "v$PRERELEASE_VERSION" --json isPrerelease 2>/dev/null || echo "")
+          [[ -z "$RELEASE_INFO" ]] && echo "❌ Release not found: v$PRERELEASE_VERSION" && exit 1
+          [[ $(echo "$RELEASE_INFO" | jq -r '.isPrerelease') != "true" ]] && echo "❌ Not a pre-release" && exit 1
 
-          # Check if the prerelease tag exists
-          if ! git rev-parse "v$PRERELEASE_VERSION" >/dev/null 2>&1; then
-            if ! git rev-parse "$PRERELEASE_VERSION" >/dev/null 2>&1; then
-              echo "❌ Tag not found: $PRERELEASE_TAG"
-              exit 1
-            fi
-          fi
+          # Check target doesn't exist
+          gh release view "v$TARGET_VERSION" >/dev/null 2>&1 && echo "❌ Target v$TARGET_VERSION already exists" && exit 1
 
-          # Verify it's actually a prerelease on GitHub
-          RELEASE_INFO=$(gh release view "v$PRERELEASE_VERSION" --json isPrerelease,tagName 2>/dev/null || gh release view "$PRERELEASE_VERSION" --json isPrerelease,tagName 2>/dev/null || echo "")
-
-          if [[ -z "$RELEASE_INFO" ]]; then
-            echo "❌ Release not found on GitHub: $PRERELEASE_TAG"
-            exit 1
-          fi
-
-          IS_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.isPrerelease')
-          if [[ "$IS_PRERELEASE" != "true" ]]; then
-            echo "❌ The specified release is not a pre-release: $PRERELEASE_TAG"
-            exit 1
-          fi
-
-          # Check if target version already exists
-          if gh release view "v$TARGET_VERSION" >/dev/null 2>&1; then
-            echo "❌ Target version v$TARGET_VERSION already exists!"
-            echo "   Cannot promote to an existing version."
-            exit 1
-          fi
-
-          echo "✅ Validation passed: $CURRENT_STAGE → $PROMOTION_TARGET"
-          echo ""
-          echo "📦 Promotion Summary:"
-          echo "   From: v$PRERELEASE_VERSION ($CURRENT_STAGE)"
-          echo "   To:   v$TARGET_VERSION ($PROMOTION_TARGET)"
-
+          echo "✅ Promotion: $CURRENT_STAGE → $PROMOTION_TARGET"
           echo "prerelease-version=$PRERELEASE_VERSION" >> $GITHUB_OUTPUT
           echo "target-version=$TARGET_VERSION" >> $GITHUB_OUTPUT
           echo "base-version=$BASE_VERSION" >> $GITHUB_OUTPUT
@@ -179,9 +234,10 @@ jobs:
           echo "target-suffix=$TARGET_SUFFIX" >> $GITHUB_OUTPUT
           echo "target-channel=$TARGET_CHANNEL" >> $GITHUB_OUTPUT
 
+  # Job 3: Promote with rebuild
   promote-with-rebuild:
     needs: validate-and-prepare
-    if: github.event.inputs.rebuild_artifacts == 'true'
+    if: github.event.inputs.refresh_options == 'false' && github.event.inputs.rebuild_artifacts == 'true'
     uses: ./.github/workflows/release.yml
     with:
       version_increment: 'patch'
@@ -191,9 +247,10 @@ jobs:
       skip_version_increment: true
     secrets: inherit
 
+  # Job 4: Promote without rebuild (reuse existing artifacts)
   promote-without-rebuild:
     needs: validate-and-prepare
-    if: github.event.inputs.rebuild_artifacts == 'false'
+    if: github.event.inputs.refresh_options == 'false' && github.event.inputs.rebuild_artifacts == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout Repository
@@ -201,37 +258,24 @@ jobs:
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
-      - name: 📥 Download Pre-release Assets
+      - name: 📥 Download and Rename Assets
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
           TARGET_VERSION: ${{ needs.validate-and-prepare.outputs.target-version }}
         run: |
           set -euo pipefail
-
           mkdir -p ./release-assets ./downloaded-assets
-
-          echo "📥 Downloading assets from pre-release v$PRERELEASE_VERSION..."
-
-          # Download all assets from the prerelease
+          echo "📥 Downloading assets from v$PRERELEASE_VERSION..."
           gh release download "v$PRERELEASE_VERSION" --dir ./downloaded-assets
 
-          # Rename assets to target version
           for file in ./downloaded-assets/*; do
-            if [[ -f "$file" ]]; then
-              FILENAME=$(basename "$file")
-              if [[ "$FILENAME" == BOSS-* ]]; then
-                NEW_FILENAME=$(echo "$FILENAME" | sed "s/BOSS-${PRERELEASE_VERSION}/BOSS-${TARGET_VERSION}/g")
-              else
-                NEW_FILENAME="$FILENAME"
-              fi
-              cp "$file" "./release-assets/$NEW_FILENAME"
-              echo "  Renamed: $FILENAME -> $NEW_FILENAME"
-            fi
+            [[ -f "$file" ]] || continue
+            FILENAME=$(basename "$file")
+            NEW_FILENAME=$(echo "$FILENAME" | sed "s/${PRERELEASE_VERSION}/${TARGET_VERSION}/g")
+            cp "$file" "./release-assets/$NEW_FILENAME"
+            echo "  $FILENAME → $NEW_FILENAME"
           done
-
-          echo "✅ Assets prepared for release"
-          ls -la ./release-assets/
 
       - name: 🔄 Update version.properties
         env:
@@ -241,17 +285,7 @@ jobs:
           TARGET_CHANNEL: ${{ needs.validate-and-prepare.outputs.target-channel }}
         run: |
           set -euo pipefail
-
-          # Parse version components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-
-          # Validate parsed components are integers
-          if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
-            echo "❌ Invalid version components parsed from: $BASE_VERSION"
-            exit 1
-          fi
-
-          # Update version.properties
           sed -i "s/^app.version.major=.*/app.version.major=$MAJOR/" version.properties
           sed -i "s/^app.version.minor=.*/app.version.minor=$MINOR/" version.properties
           sed -i "s/^app.version.patch=.*/app.version.patch=$PATCH/" version.properties
@@ -259,138 +293,49 @@ jobs:
           sed -i "s/^app.bundle.version=.*/app.bundle.version=$TARGET_VERSION/" version.properties
           sed -i "s/^app.prerelease.suffix=.*/app.prerelease.suffix=$TARGET_SUFFIX/" version.properties
           sed -i "s/^app.release.channel=.*/app.release.channel=$TARGET_CHANNEL/" version.properties
+          echo "✅ Updated version.properties"
 
-          echo "✅ Updated version.properties to $TARGET_VERSION"
-          cat version.properties
-
-      - name: 📝 Commit Version Changes
+      - name: 📝 Commit and Push
         env:
           TARGET_VERSION: ${{ needs.validate-and-prepare.outputs.target-version }}
           PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
           TARGET_CHANNEL: ${{ needs.validate-and-prepare.outputs.target-channel }}
         run: |
           set -euo pipefail
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add version.properties
-
           if [[ "$TARGET_CHANNEL" == "stable" ]]; then
-            COMMIT_MSG="🎉 Promote v$PRERELEASE_VERSION to stable v$TARGET_VERSION"
+            git commit -m "🎉 Promote v$PRERELEASE_VERSION to stable v$TARGET_VERSION"
           else
-            COMMIT_MSG="🔄 Promote v$PRERELEASE_VERSION to $TARGET_CHANNEL v$TARGET_VERSION"
+            git commit -m "🔄 Promote v$PRERELEASE_VERSION to $TARGET_CHANNEL v$TARGET_VERSION"
           fi
-
-          git commit -m "$COMMIT_MSG" \
-                     -m "Promoted without rebuild" \
-                     -m "🤖 Automated by promote-release workflow"
-
-          # Handle race condition: pull --rebase and retry push up to 3 times
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-          while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-            if git push; then
-              echo "✅ Successfully pushed version changes"
-              break
-            else
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              if [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; then
-                echo "⚠️ Push failed, attempting rebase and retry ($RETRY_COUNT/$MAX_RETRIES)..."
-                git pull --rebase origin main
-              else
-                echo "❌ Failed to push after $MAX_RETRIES attempts"
-                exit 1
-              fi
-            fi
-          done
-
-      - name: 📝 Generate Release Notes
-        id: release-notes
-        env:
-          TARGET_VERSION: ${{ needs.validate-and-prepare.outputs.target-version }}
-          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
-          TARGET_IS_PRERELEASE: ${{ needs.validate-and-prepare.outputs.target-is-prerelease }}
-          TARGET_CHANNEL: ${{ needs.validate-and-prepare.outputs.target-channel }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          if [[ "$TARGET_IS_PRERELEASE" == "true" ]]; then
-            TITLE="🧪 BOSS $TARGET_VERSION (Pre-release)"
-            PRERELEASE_WARNING="> ⚠️ **This is a pre-release version.** It may contain bugs or incomplete features."
-          else
-            TITLE="🚀 BOSS $TARGET_VERSION"
-            PRERELEASE_WARNING=""
-          fi
-
-          cat > release-notes.md << EOF
-          # $TITLE
-          $PRERELEASE_WARNING
-
-          This release has been promoted from **v$PRERELEASE_VERSION**.
-
-          ## 📦 Downloads
-
-          | Platform | Architecture | Package |
-          |----------|--------------|---------|
-          | **macOS** | Universal (Apple Silicon + Intel via Rosetta) | \`BOSS-${TARGET_VERSION}-Universal.dmg\` |
-          | **Windows** | x64 | \`BOSS-${TARGET_VERSION}.msi\` |
-          | **Windows** | ARM64 | \`BOSS-${TARGET_VERSION}-arm64.msi\` |
-          | **Linux DEB** | AMD64 (x86_64) | \`BOSS-${TARGET_VERSION}-amd64.deb\` |
-          | **Linux DEB** | ARM64 (aarch64) | \`BOSS-${TARGET_VERSION}-arm64.deb\` |
-          | **Linux RPM** | AMD64 (x86_64) | \`BOSS-${TARGET_VERSION}-amd64.rpm\` |
-          | **Linux RPM** | ARM64 (aarch64) | \`BOSS-${TARGET_VERSION}-arm64.rpm\` |
-          | **Linux JAR** | AMD64 (x86_64) | \`BOSS-${TARGET_VERSION}-amd64.jar\` |
-          | **Linux JAR** | ARM64 (aarch64) | \`BOSS-${TARGET_VERSION}-arm64.jar\` |
-
-          ## ✨ What's New
-
-          This release includes all changes from **v$PRERELEASE_VERSION**.
-          Please refer to the [previous release notes](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${PRERELEASE_VERSION}) for detailed changes.
-
-          ---
-
-          🤖 *This release was automatically promoted by GitHub Actions*
-          EOF
-
-          echo "notes-file=release-notes.md" >> $GITHUB_OUTPUT
+          git push
 
       - name: 🎉 Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.validate-and-prepare.outputs.target-version }}
-          name: ${{ needs.validate-and-prepare.outputs.target-is-prerelease == 'true' && '🧪 Pre-release' || '🚀 Release' }} BOSS ${{ needs.validate-and-prepare.outputs.target-version }}
-          body_path: release-notes.md
+          name: ${{ needs.validate-and-prepare.outputs.target-is-prerelease == 'true' && '🧪' || '🚀' }} BOSS ${{ needs.validate-and-prepare.outputs.target-version }}
+          body: |
+            Promoted from **v${{ needs.validate-and-prepare.outputs.prerelease-version }}**
+
+            🤖 *Automated promotion by GitHub Actions*
           files: ./release-assets/*
-          draft: false
           prerelease: ${{ needs.validate-and-prepare.outputs.target-is-prerelease == 'true' }}
           make_latest: ${{ needs.validate-and-prepare.outputs.target-is-prerelease != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
-      - name: 📢 Promotion Summary
+      - name: 📢 Summary
         env:
-          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
           TARGET_VERSION: ${{ needs.validate-and-prepare.outputs.target-version }}
+          PRERELEASE_VERSION: ${{ needs.validate-and-prepare.outputs.prerelease-version }}
           TARGET_CHANNEL: ${{ needs.validate-and-prepare.outputs.target-channel }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          set -euo pipefail
-
-          if [[ "$TARGET_CHANNEL" == "stable" ]]; then
-            EMOJI="🎉"
-            TYPE="stable"
-          else
-            EMOJI="🔄"
-            TYPE="$TARGET_CHANNEL pre-release"
-          fi
-
-          echo "## $EMOJI Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 Promotion Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **From**: v${PRERELEASE_VERSION}" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **To**: v${TARGET_VERSION} ($TYPE)" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Method**: Asset rename (no rebuild)" >> $GITHUB_STEP_SUMMARY
+          echo "**v$PRERELEASE_VERSION** → **v$TARGET_VERSION** ($TARGET_CHANNEL)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Release URL" >> $GITHUB_STEP_SUMMARY
-          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${TARGET_VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [View Release](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$TARGET_VERSION)" >> $GITHUB_STEP_SUMMARY
