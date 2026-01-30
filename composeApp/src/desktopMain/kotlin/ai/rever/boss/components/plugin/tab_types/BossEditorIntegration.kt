@@ -29,7 +29,22 @@ import ai.rever.bosseditor.features.UsagesPopup
 import ai.rever.bosseditor.features.UsagesPopupState
 import ai.rever.bosseditor.psi.DefinitionInfo
 import ai.rever.bosseditor.psi.ReferenceLocation
+import ai.rever.bosseditor.psi.NavigationService as BossEditorNavigationService
+import ai.rever.bosseditor.psi.NavigationTargetKind as BossEditorNavigationTargetKind
 import ai.rever.bosseditor.core.EditorPosition
+import ai.rever.bosseditor.refactoring.RefactorContext
+import ai.rever.bosseditor.refactoring.RefactorResult
+import ai.rever.bosseditor.refactoring.SymbolKind
+import ai.rever.bosseditor.refactoring.WorkspaceEditApplier
+import ai.rever.bosseditor.refactoring.psi.RenameRefactoring
+import ai.rever.bosseditor.refactoring.psi.ExtractVariableRefactoring
+import ai.rever.bosseditor.refactoring.psi.ExtractMethodRefactoring
+import ai.rever.bosseditor.refactoring.psi.InlineRefactoring
+import ai.rever.bosseditor.refactoring.ExtractVariableParams
+import ai.rever.bosseditor.refactoring.ExtractMethodParams
+import ai.rever.bosseditor.ui.RenameDialog
+import ai.rever.bosseditor.ui.ExtractVariableDialog
+import ai.rever.bosseditor.ui.ExtractMethodDialog
 import ai.rever.bosseditor.core.EditorRange
 import ai.rever.bosseditor.core.EditorState
 import ai.rever.bosseditor.highlight.Token
@@ -170,6 +185,38 @@ fun BossEditorIntegration(
 
     // State for navigation feedback popup
     var navigationFeedbackState: NavigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
+
+    // State for rename dialog
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameSymbolName by remember { mutableStateOf("") }
+    var renameSymbolKind by remember { mutableStateOf<SymbolKind?>(null) }
+    var renamePosition by remember { mutableStateOf(EditorPosition(0, 0)) }
+    var renameDialogOffset by remember { mutableStateOf(IntOffset.Zero) }
+
+    // Create bosseditor navigation service for refactoring (separate from composeApp's)
+    val bossEditorNavigationService = remember { BossEditorNavigationService() }
+    val renameRefactoring = remember(bossEditorNavigationService) { RenameRefactoring(bossEditorNavigationService) }
+
+    // State for extract variable dialog
+    var showExtractVariableDialog by remember { mutableStateOf(false) }
+    var extractVariableSuggestedName by remember { mutableStateOf("") }
+    var extractVariableExpression by remember { mutableStateOf("") }
+    var extractVariableSelection by remember { mutableStateOf<EditorRange?>(null) }
+
+    // Create extract variable refactoring instance
+    val extractVariableRefactoring = remember { ExtractVariableRefactoring() }
+
+    // State for extract method dialog
+    var showExtractMethodDialog by remember { mutableStateOf(false) }
+    var extractMethodSuggestedName by remember { mutableStateOf("") }
+    var extractMethodCode by remember { mutableStateOf("") }
+    var extractMethodSelection by remember { mutableStateOf<EditorRange?>(null) }
+
+    // Create extract method refactoring instance
+    val extractMethodRefactoring = remember { ExtractMethodRefactoring() }
+
+    // Create inline refactoring instance
+    val inlineRefactoring = remember { InlineRefactoring() }
 
     // Create lexer based on language
     val lexer = remember(language) {
@@ -432,6 +479,205 @@ fun BossEditorIntegration(
                     reason = reason,
                     anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
                 )
+            },
+            // Refactoring callbacks - show refactoring options in context menu
+            onRename = {
+                logger.info(LogCategory.EDITOR, "onRename callback triggered", mapOf("filePath" to filePath))
+
+                // Get current position and symbol info for rename
+                val position = editorState.caretPosition.value
+                val content = editorState.document.getText()
+                renamePosition = position
+
+                // Launch coroutine to get symbol info and show dialog
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val offset = editorState.document.positionToOffset(position.line, position.column)
+
+                            val definitionInfo = PSIThreadBridge.readAction {
+                                val ktFile = PSIBootstrap.parseKotlinFile(filePath, content)
+                                bossEditorNavigationService.getDefinitionInfo(ktFile, offset, filePath)
+                            }
+
+                            withContext(Dispatchers.Main) {
+                                if (definitionInfo != null) {
+                                    renameSymbolName = definitionInfo.name
+                                    renameSymbolKind = when (definitionInfo.kind) {
+                                        BossEditorNavigationTargetKind.CLASS -> SymbolKind.CLASS
+                                        BossEditorNavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
+                                        BossEditorNavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
+                                        BossEditorNavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
+                                        BossEditorNavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
+                                        else -> null
+                                    }
+                                    // Calculate dialog position near the caret
+                                    val viewport = editorState.visibleViewport.value
+                                    val lineHeight = viewport.lineHeight.takeIf { it > 0 } ?: 20f
+                                    val charWidth = viewport.charWidth.takeIf { it > 0 } ?: 8f
+                                    val firstVisibleLine = viewport.firstVisibleLine
+                                    val gutterWidth = 60 // Approximate gutter width
+                                    val visualY = ((position.line - firstVisibleLine) * lineHeight).toInt()
+                                    val visualX = (position.column * charWidth).toInt() + gutterWidth
+                                    renameDialogOffset = IntOffset(visualX, visualY)
+                                    logger.info(LogCategory.EDITOR, "Showing rename dialog", mapOf("symbolName" to renameSymbolName))
+                                    showRenameDialog = true
+                                } else {
+                                    logger.info(LogCategory.EDITOR, "No symbol found at cursor position for rename")
+                                }
+                            }
+                        } else {
+                            logger.info(LogCategory.EDITOR, "Rename only supported for Kotlin files currently", mapOf("filePath" to filePath))
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing rename", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onExtractVariable = {
+                // Get current selection for extract variable
+                val selection = editorState.selection.value
+                if (selection == null || selection.isEmpty) {
+                    logger.debug(LogCategory.EDITOR, "No selection for extract variable")
+                    return@BossEditor
+                }
+
+                val content = editorState.document.getText()
+                val selectedText = editorState.document.getText(
+                    editorState.document.positionToOffset(selection.start.line, selection.start.column),
+                    editorState.document.positionToOffset(selection.end.line, selection.end.column)
+                )
+
+                extractVariableSelection = selection
+                extractVariableExpression = selectedText
+
+                // Launch coroutine to get suggested name
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+                            val suggestedName = extractVariableRefactoring.suggestVariableName(context)
+
+                            withContext(Dispatchers.Main) {
+                                extractVariableSuggestedName = suggestedName
+                                showExtractVariableDialog = true
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Extract variable only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing extract variable", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onExtractMethod = {
+                logger.debug(LogCategory.EDITOR, "Extract method refactoring requested")
+                // Check for selection and execute extract method
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val selection = editorState.selection.value
+                        if (selection == null || selection.isEmpty) {
+                            logger.debug(LogCategory.EDITOR, "No selection for extract method")
+                            return@launch
+                        }
+
+                        // Store the selection and selected code
+                        extractMethodSelection = selection
+
+                        // Get the selected text from the document
+                        val document = editorState.document
+                        val startOffset = document.positionToOffset(selection.start)
+                        val endOffset = document.positionToOffset(selection.end)
+                        val selectedText = document.getText(startOffset, endOffset)
+                        extractMethodCode = selectedText
+
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+                            val suggestedName = extractMethodRefactoring.suggestMethodName(context)
+
+                            withContext(Dispatchers.Main) {
+                                extractMethodSuggestedName = suggestedName
+                                showExtractMethodDialog = true
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Extract method only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing extract method", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onInline = {
+                logger.debug(LogCategory.EDITOR, "Inline refactoring requested")
+                // Execute inline refactoring at current position
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val position = editorState.caretPosition.value
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = position,
+                                selection = null
+                            )
+
+                            val result = inlineRefactoring.execute(context)
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Inline refactoring completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Inline refactoring failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Inline refactoring cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Inline refactoring requires confirmation: ${result.message}")
+                                }
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Inline refactoring only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error executing inline refactoring", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
             }
         )
 
@@ -462,6 +708,261 @@ fun BossEditorIntegration(
                     navigationFeedbackState = NavigationFeedbackState.Hidden
                 },
                 theme = editorTheme
+            )
+        }
+
+        // Render rename dialog if visible
+        if (showRenameDialog && renameSymbolName.isNotEmpty()) {
+            RenameDialog(
+                currentName = renameSymbolName,
+                symbolKind = renameSymbolKind,
+                anchorOffset = renameDialogOffset,
+                onRename = { newName ->
+                    showRenameDialog = false
+                    // Execute the rename refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = renamePosition,
+                                selection = null,
+                                symbolName = renameSymbolName,
+                                symbolKind = renameSymbolKind
+                            )
+
+                            val result = renameRefactoring.execute(context, newName)
+
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            // Refresh file if needed - use coroutine scope for Main dispatcher
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Rename completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Rename failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Rename cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    // For now, just log - could show a confirmation dialog
+                                    logger.info(LogCategory.EDITOR, "Rename requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing rename", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showRenameDialog = false
+                },
+                onValidate = { newName ->
+                    val context = RefactorContext(
+                        fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                        filePath = filePath,
+                        position = renamePosition,
+                        selection = null,
+                        symbolName = renameSymbolName,
+                        symbolKind = renameSymbolKind
+                    )
+                    renameRefactoring.validateNewName(newName, context)
+                }
+            )
+        }
+
+        // Render extract variable dialog if visible
+        if (showExtractVariableDialog && extractVariableExpression.isNotEmpty()) {
+            ExtractVariableDialog(
+                suggestedName = extractVariableSuggestedName,
+                selectedExpression = extractVariableExpression,
+                onExtract = { variableName, replaceAll, isVal ->
+                    showExtractVariableDialog = false
+                    // Execute the extract variable refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val selection = extractVariableSelection
+                            if (selection == null) {
+                                logger.error(LogCategory.EDITOR, "No selection stored for extract variable")
+                                return@launch
+                            }
+
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+
+                            val params = ExtractVariableParams(
+                                variableName = variableName,
+                                replaceAll = replaceAll,
+                                isVal = isVal
+                            )
+
+                            val result = extractVariableRefactoring.execute(context, params)
+
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Extract variable completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Extract variable failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Extract variable cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Extract variable requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing extract variable", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showExtractVariableDialog = false
+                },
+                onValidate = { variableName ->
+                    // Simple validation - check for valid identifier
+                    when {
+                        variableName.isBlank() -> "Variable name cannot be empty"
+                        !variableName.first().isLetter() && variableName.first() != '_' -> "Variable name must start with a letter or underscore"
+                        !variableName.all { it.isLetterOrDigit() || it == '_' } -> "Variable name contains invalid characters"
+                        else -> null
+                    }
+                }
+            )
+        }
+
+        // Render extract method dialog if visible
+        if (showExtractMethodDialog && extractMethodCode.isNotEmpty()) {
+            ExtractMethodDialog(
+                suggestedName = extractMethodSuggestedName,
+                selectedCode = extractMethodCode,
+                onExtract = { methodName, visibility, makeStatic ->
+                    showExtractMethodDialog = false
+                    // Execute the extract method refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val selection = extractMethodSelection
+                            if (selection == null) {
+                                logger.error(LogCategory.EDITOR, "No selection stored for extract method")
+                                return@launch
+                            }
+
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+
+                            val params = ExtractMethodParams(
+                                methodName = methodName,
+                                visibility = visibility,
+                                makeStatic = makeStatic
+                            )
+
+                            val result = extractMethodRefactoring.execute(context, params)
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Extract method completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Extract method failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Extract method cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Extract method requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing extract method", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showExtractMethodDialog = false
+                },
+                onValidate = { methodName ->
+                    // Simple validation - check for valid identifier
+                    when {
+                        methodName.isBlank() -> "Method name cannot be empty"
+                        !methodName.first().isLetter() && methodName.first() != '_' -> "Method name must start with a letter or underscore"
+                        !methodName.all { it.isLetterOrDigit() || it == '_' } -> "Method name contains invalid characters"
+                        else -> null
+                    }
+                }
             )
         }
     }
@@ -505,6 +1006,38 @@ private fun BossEditorIntegrationInternal(
 
     // State for navigation feedback popup
     var navigationFeedbackState: NavigationFeedbackState by remember { mutableStateOf(NavigationFeedbackState.Hidden) }
+
+    // State for rename dialog
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameSymbolName by remember { mutableStateOf("") }
+    var renameSymbolKind by remember { mutableStateOf<SymbolKind?>(null) }
+    var renamePosition by remember { mutableStateOf(EditorPosition(0, 0)) }
+    var renameDialogOffset by remember { mutableStateOf(IntOffset.Zero) }
+
+    // Create bosseditor navigation service for refactoring (separate from composeApp's)
+    val bossEditorNavigationService = remember { BossEditorNavigationService() }
+    val renameRefactoring = remember(bossEditorNavigationService) { RenameRefactoring(bossEditorNavigationService) }
+
+    // State for extract variable dialog
+    var showExtractVariableDialog by remember { mutableStateOf(false) }
+    var extractVariableSuggestedName by remember { mutableStateOf("") }
+    var extractVariableExpression by remember { mutableStateOf("") }
+    var extractVariableSelection by remember { mutableStateOf<EditorRange?>(null) }
+
+    // Create extract variable refactoring instance
+    val extractVariableRefactoring = remember { ExtractVariableRefactoring() }
+
+    // State for extract method dialog
+    var showExtractMethodDialog by remember { mutableStateOf(false) }
+    var extractMethodSuggestedName by remember { mutableStateOf("") }
+    var extractMethodCode by remember { mutableStateOf("") }
+    var extractMethodSelection by remember { mutableStateOf<EditorRange?>(null) }
+
+    // Create extract method refactoring instance
+    val extractMethodRefactoring = remember { ExtractMethodRefactoring() }
+
+    // Create inline refactoring instance
+    val inlineRefactoring = remember { InlineRefactoring() }
 
     // Create lexer based on language
     val lexer = remember(language) {
@@ -742,6 +1275,205 @@ private fun BossEditorIntegrationInternal(
                     reason = reason,
                     anchorOffset = IntOffset(clickPosition.x.toInt(), clickPosition.y.toInt())
                 )
+            },
+            // Refactoring callbacks - show refactoring options in context menu
+            onRename = {
+                logger.info(LogCategory.EDITOR, "onRename callback triggered", mapOf("filePath" to filePath))
+
+                // Get current position and symbol info for rename
+                val position = editorState.caretPosition.value
+                val content = editorState.document.getText()
+                renamePosition = position
+
+                // Launch coroutine to get symbol info and show dialog
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val offset = editorState.document.positionToOffset(position.line, position.column)
+
+                            val definitionInfo = PSIThreadBridge.readAction {
+                                val ktFile = PSIBootstrap.parseKotlinFile(filePath, content)
+                                bossEditorNavigationService.getDefinitionInfo(ktFile, offset, filePath)
+                            }
+
+                            withContext(Dispatchers.Main) {
+                                if (definitionInfo != null) {
+                                    renameSymbolName = definitionInfo.name
+                                    renameSymbolKind = when (definitionInfo.kind) {
+                                        BossEditorNavigationTargetKind.CLASS -> SymbolKind.CLASS
+                                        BossEditorNavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
+                                        BossEditorNavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
+                                        BossEditorNavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
+                                        BossEditorNavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
+                                        else -> null
+                                    }
+                                    // Calculate dialog position near the caret
+                                    val viewport = editorState.visibleViewport.value
+                                    val lineHeight = viewport.lineHeight.takeIf { it > 0 } ?: 20f
+                                    val charWidth = viewport.charWidth.takeIf { it > 0 } ?: 8f
+                                    val firstVisibleLine = viewport.firstVisibleLine
+                                    val gutterWidth = 60 // Approximate gutter width
+                                    val visualY = ((position.line - firstVisibleLine) * lineHeight).toInt()
+                                    val visualX = (position.column * charWidth).toInt() + gutterWidth
+                                    renameDialogOffset = IntOffset(visualX, visualY)
+                                    logger.info(LogCategory.EDITOR, "Showing rename dialog", mapOf("symbolName" to renameSymbolName))
+                                    showRenameDialog = true
+                                } else {
+                                    logger.info(LogCategory.EDITOR, "No symbol found at cursor position for rename")
+                                }
+                            }
+                        } else {
+                            logger.info(LogCategory.EDITOR, "Rename only supported for Kotlin files currently", mapOf("filePath" to filePath))
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing rename", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onExtractVariable = {
+                // Get current selection for extract variable
+                val selection = editorState.selection.value
+                if (selection == null || selection.isEmpty) {
+                    logger.debug(LogCategory.EDITOR, "No selection for extract variable")
+                    return@BossEditor
+                }
+
+                val content = editorState.document.getText()
+                val selectedText = editorState.document.getText(
+                    editorState.document.positionToOffset(selection.start.line, selection.start.column),
+                    editorState.document.positionToOffset(selection.end.line, selection.end.column)
+                )
+
+                extractVariableSelection = selection
+                extractVariableExpression = selectedText
+
+                // Launch coroutine to get suggested name
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+                            val suggestedName = extractVariableRefactoring.suggestVariableName(context)
+
+                            withContext(Dispatchers.Main) {
+                                extractVariableSuggestedName = suggestedName
+                                showExtractVariableDialog = true
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Extract variable only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing extract variable", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onExtractMethod = {
+                logger.debug(LogCategory.EDITOR, "Extract method refactoring requested")
+                // Check for selection and execute extract method
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val selection = editorState.selection.value
+                        if (selection == null || selection.isEmpty) {
+                            logger.debug(LogCategory.EDITOR, "No selection for extract method")
+                            return@launch
+                        }
+
+                        // Store the selection and selected code
+                        extractMethodSelection = selection
+
+                        // Get the selected text from the document
+                        val document = editorState.document
+                        val startOffset = document.positionToOffset(selection.start)
+                        val endOffset = document.positionToOffset(selection.end)
+                        val selectedText = document.getText(startOffset, endOffset)
+                        extractMethodCode = selectedText
+
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+                            val suggestedName = extractMethodRefactoring.suggestMethodName(context)
+
+                            withContext(Dispatchers.Main) {
+                                extractMethodSuggestedName = suggestedName
+                                showExtractMethodDialog = true
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Extract method only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error preparing extract method", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
+            },
+            onInline = {
+                logger.debug(LogCategory.EDITOR, "Inline refactoring requested")
+                // Execute inline refactoring at current position
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        // Only support Kotlin files for now
+                        if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) {
+                            val position = editorState.caretPosition.value
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = position,
+                                selection = null
+                            )
+
+                            val result = inlineRefactoring.execute(context)
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Inline refactoring completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Inline refactoring failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Inline refactoring cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Inline refactoring requires confirmation: ${result.message}")
+                                }
+                            }
+                        } else {
+                            logger.debug(LogCategory.EDITOR, "Inline refactoring only supported for Kotlin files currently")
+                        }
+                    } catch (e: Exception) {
+                        logger.error(LogCategory.EDITOR, "Error executing inline refactoring", mapOf("error" to e.message.orEmpty()), e)
+                    }
+                }
             }
         )
 
@@ -771,6 +1503,261 @@ private fun BossEditorIntegrationInternal(
                     navigationFeedbackState = NavigationFeedbackState.Hidden
                 },
                 theme = editorTheme
+            )
+        }
+
+        // Render rename dialog if visible
+        if (showRenameDialog && renameSymbolName.isNotEmpty()) {
+            RenameDialog(
+                currentName = renameSymbolName,
+                symbolKind = renameSymbolKind,
+                anchorOffset = renameDialogOffset,
+                onRename = { newName ->
+                    showRenameDialog = false
+                    // Execute the rename refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = renamePosition,
+                                selection = null,
+                                symbolName = renameSymbolName,
+                                symbolKind = renameSymbolKind
+                            )
+
+                            val result = renameRefactoring.execute(context, newName)
+
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            // Refresh file if needed - use coroutine scope for Main dispatcher
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Rename completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Rename failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Rename cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    // For now, just log - could show a confirmation dialog
+                                    logger.info(LogCategory.EDITOR, "Rename requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing rename", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showRenameDialog = false
+                },
+                onValidate = { newName ->
+                    val context = RefactorContext(
+                        fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                        filePath = filePath,
+                        position = renamePosition,
+                        selection = null,
+                        symbolName = renameSymbolName,
+                        symbolKind = renameSymbolKind
+                    )
+                    renameRefactoring.validateNewName(newName, context)
+                }
+            )
+        }
+
+        // Render extract variable dialog if visible
+        if (showExtractVariableDialog && extractVariableExpression.isNotEmpty()) {
+            ExtractVariableDialog(
+                suggestedName = extractVariableSuggestedName,
+                selectedExpression = extractVariableExpression,
+                onExtract = { variableName, replaceAll, isVal ->
+                    showExtractVariableDialog = false
+                    // Execute the extract variable refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val selection = extractVariableSelection
+                            if (selection == null) {
+                                logger.error(LogCategory.EDITOR, "No selection stored for extract variable")
+                                return@launch
+                            }
+
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+
+                            val params = ExtractVariableParams(
+                                variableName = variableName,
+                                replaceAll = replaceAll,
+                                isVal = isVal
+                            )
+
+                            val result = extractVariableRefactoring.execute(context, params)
+
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Extract variable completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Extract variable failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Extract variable cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Extract variable requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing extract variable", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showExtractVariableDialog = false
+                },
+                onValidate = { variableName ->
+                    // Simple validation - check for valid identifier
+                    when {
+                        variableName.isBlank() -> "Variable name cannot be empty"
+                        !variableName.first().isLetter() && variableName.first() != '_' -> "Variable name must start with a letter or underscore"
+                        !variableName.all { it.isLetterOrDigit() || it == '_' } -> "Variable name contains invalid characters"
+                        else -> null
+                    }
+                }
+            )
+        }
+
+        // Render extract method dialog if visible
+        if (showExtractMethodDialog && extractMethodCode.isNotEmpty()) {
+            ExtractMethodDialog(
+                suggestedName = extractMethodSuggestedName,
+                selectedCode = extractMethodCode,
+                onExtract = { methodName, visibility, makeStatic ->
+                    showExtractMethodDialog = false
+                    // Execute the extract method refactoring
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val selection = extractMethodSelection
+                            if (selection == null) {
+                                logger.error(LogCategory.EDITOR, "No selection stored for extract method")
+                                return@launch
+                            }
+
+                            val context = RefactorContext(
+                                fileUri = WorkspaceEditApplier.filePathToUri(filePath),
+                                filePath = filePath,
+                                position = selection.start,
+                                selection = selection
+                            )
+
+                            val params = ExtractMethodParams(
+                                methodName = methodName,
+                                visibility = visibility,
+                                makeStatic = makeStatic
+                            )
+
+                            val result = extractMethodRefactoring.execute(context, params)
+                            when (result) {
+                                is RefactorResult.Success -> {
+                                    // Apply the workspace edit
+                                    val applier = WorkspaceEditApplier(
+                                        documentProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.document else null
+                                        },
+                                        undoManagerProvider = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) editorState.undoManager else null
+                                        },
+                                        onFileModified = { uri ->
+                                            val targetPath = WorkspaceEditApplier.uriToFilePath(uri)
+                                            if (targetPath == filePath) {
+                                                val newContent = editorState.document.getText()
+                                                coroutineScope.launch(Dispatchers.Main) {
+                                                    onContentChange(newContent)
+                                                    onModifiedStateChange(newContent != originalContent)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    applier.apply(result.edit)
+                                    logger.info(LogCategory.EDITOR, "Extract method completed: ${result.description}")
+                                }
+                                is RefactorResult.Error -> {
+                                    logger.error(LogCategory.EDITOR, "Extract method failed: ${result.message}")
+                                }
+                                is RefactorResult.Cancelled -> {
+                                    logger.debug(LogCategory.EDITOR, "Extract method cancelled")
+                                }
+                                is RefactorResult.ConfirmationRequired -> {
+                                    logger.info(LogCategory.EDITOR, "Extract method requires confirmation: ${result.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.EDITOR, "Error executing extract method", mapOf("error" to e.message.orEmpty()), e)
+                        }
+                    }
+                },
+                onCancel = {
+                    showExtractMethodDialog = false
+                },
+                onValidate = { methodName ->
+                    // Simple validation - check for valid identifier
+                    when {
+                        methodName.isBlank() -> "Method name cannot be empty"
+                        !methodName.first().isLetter() && methodName.first() != '_' -> "Method name must start with a letter or underscore"
+                        !methodName.all { it.isLetterOrDigit() || it == '_' } -> "Method name contains invalid characters"
+                        else -> null
+                    }
+                }
             )
         }
     }

@@ -357,6 +357,61 @@ fun ApplicationScope.BossWindow(
                 )
             }
 
+            // Refactor Menu
+            Menu("Refactor") {
+                Item(
+                    "Rename Symbol",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorRename(windowState.id)
+                    }
+                )
+                
+                Separator()
+                
+                Item(
+                    "Extract Variable",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorExtractVariable(windowState.id)
+                    }
+                )
+                Item(
+                    "Extract Method",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorExtractMethod(windowState.id)
+                    }
+                )
+                Item(
+                    "Extract Constant",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorExtractConstant(windowState.id)
+                    }
+                )
+                
+                Separator()
+                
+                Item(
+                    "Inline",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorInline(windowState.id)
+                    }
+                )
+                
+                Separator()
+                
+                Item(
+                    "Change Signature",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorChangeSignature(windowState.id)
+                    }
+                )
+                Item(
+                    "Safe Delete",
+                    onClick = {
+                        MenuActionsHandler.triggerRefactorSafeDelete(windowState.id)
+                    }
+                )
+            }
+
             // View Menu
             Menu("View") {
                 Item(

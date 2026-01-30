@@ -367,28 +367,67 @@ data class EditorCommand(
  * Default editor commands.
  */
 object EditorCommands {
-    val GO_TO_LINE = EditorCommand("goToLine", "Go to Line", "Ctrl+G")
-    val FIND = EditorCommand("find", "Find", "Ctrl+F")
-    val REPLACE = EditorCommand("replace", "Replace", "Ctrl+H")
-    val FIND_NEXT = EditorCommand("findNext", "Find Next", "F3")
-    val FIND_PREVIOUS = EditorCommand("findPrevious", "Find Previous", "Shift+F3")
-    val SELECT_ALL = EditorCommand("selectAll", "Select All", "Ctrl+A")
-    val DUPLICATE_LINE = EditorCommand("duplicateLine", "Duplicate Line", "Ctrl+D")
-    val DELETE_LINE = EditorCommand("deleteLine", "Delete Line", "Ctrl+Shift+K")
-    val MOVE_LINE_UP = EditorCommand("moveLineUp", "Move Line Up", "Alt+Up")
-    val MOVE_LINE_DOWN = EditorCommand("moveLineDown", "Move Line Down", "Alt+Down")
-    val TOGGLE_COMMENT = EditorCommand("toggleComment", "Toggle Comment", "Ctrl+/")
-    val INDENT = EditorCommand("indent", "Indent", "Tab")
-    val OUTDENT = EditorCommand("outdent", "Outdent", "Shift+Tab")
-    val FOLD = EditorCommand("fold", "Fold", "Ctrl+Shift+[")
-    val UNFOLD = EditorCommand("unfold", "Unfold", "Ctrl+Shift+]")
-    val FOLD_ALL = EditorCommand("foldAll", "Fold All", "Ctrl+K Ctrl+0")
-    val UNFOLD_ALL = EditorCommand("unfoldAll", "Unfold All", "Ctrl+K Ctrl+J")
+    // Navigation
+    val GO_TO_LINE = EditorCommand("goToLine", "Go to Line", "Ctrl+G", "Navigation")
+
+    // Search
+    val FIND = EditorCommand("find", "Find", "Ctrl+F", "Search")
+    val REPLACE = EditorCommand("replace", "Replace", "Ctrl+H", "Search")
+    val FIND_NEXT = EditorCommand("findNext", "Find Next", "F3", "Search")
+    val FIND_PREVIOUS = EditorCommand("findPrevious", "Find Previous", "Shift+F3", "Search")
+
+    // Selection
+    val SELECT_ALL = EditorCommand("selectAll", "Select All", "Ctrl+A", "Selection")
+
+    // Editing
+    val DUPLICATE_LINE = EditorCommand("duplicateLine", "Duplicate Line", "Ctrl+D", "Editing")
+    val DELETE_LINE = EditorCommand("deleteLine", "Delete Line", "Ctrl+Shift+K", "Editing")
+    val MOVE_LINE_UP = EditorCommand("moveLineUp", "Move Line Up", "Alt+Up", "Editing")
+    val MOVE_LINE_DOWN = EditorCommand("moveLineDown", "Move Line Down", "Alt+Down", "Editing")
+    val TOGGLE_COMMENT = EditorCommand("toggleComment", "Toggle Comment", "Ctrl+/", "Editing")
+    val INDENT = EditorCommand("indent", "Indent", "Tab", "Editing")
+    val OUTDENT = EditorCommand("outdent", "Outdent", "Shift+Tab", "Editing")
+
+    // Folding
+    val FOLD = EditorCommand("fold", "Fold", "Ctrl+Shift+[", "Folding")
+    val UNFOLD = EditorCommand("unfold", "Unfold", "Ctrl+Shift+]", "Folding")
+    val FOLD_ALL = EditorCommand("foldAll", "Fold All", "Ctrl+K Ctrl+0", "Folding")
+    val UNFOLD_ALL = EditorCommand("unfoldAll", "Unfold All", "Ctrl+K Ctrl+J", "Folding")
+
+    // Refactoring
+    val RENAME = EditorCommand("rename", "Rename Symbol", "Shift+F6", "Refactoring")
+    val REFACTOR_MENU = EditorCommand("refactorMenu", "Refactor This...", "Ctrl+Shift+R", "Refactoring")
+    val EXTRACT_VARIABLE = EditorCommand("extractVariable", "Extract Variable", "Ctrl+Alt+V", "Refactoring")
+    val EXTRACT_METHOD = EditorCommand("extractMethod", "Extract Method", "Ctrl+Alt+M", "Refactoring")
+    val EXTRACT_CONSTANT = EditorCommand("extractConstant", "Extract Constant", "Ctrl+Alt+C", "Refactoring")
+    val INLINE = EditorCommand("inline", "Inline", "Ctrl+Alt+N", "Refactoring")
+    val SAFE_DELETE = EditorCommand("safeDelete", "Safe Delete", "Alt+Delete", "Refactoring")
+    val CHANGE_SIGNATURE = EditorCommand("changeSignature", "Change Signature", "Ctrl+F6", "Refactoring")
+    val INTRODUCE_PARAMETER = EditorCommand("introduceParameter", "Introduce Parameter", "Ctrl+Alt+P", "Refactoring")
 
     val ALL = listOf(
-        GO_TO_LINE, FIND, REPLACE, FIND_NEXT, FIND_PREVIOUS,
-        SELECT_ALL, DUPLICATE_LINE, DELETE_LINE,
+        // Navigation
+        GO_TO_LINE,
+        // Search
+        FIND, REPLACE, FIND_NEXT, FIND_PREVIOUS,
+        // Selection
+        SELECT_ALL,
+        // Editing
+        DUPLICATE_LINE, DELETE_LINE,
         MOVE_LINE_UP, MOVE_LINE_DOWN, TOGGLE_COMMENT,
-        INDENT, OUTDENT, FOLD, UNFOLD, FOLD_ALL, UNFOLD_ALL
+        INDENT, OUTDENT,
+        // Folding
+        FOLD, UNFOLD, FOLD_ALL, UNFOLD_ALL,
+        // Refactoring
+        RENAME, REFACTOR_MENU, EXTRACT_VARIABLE, EXTRACT_METHOD,
+        EXTRACT_CONSTANT, INLINE, SAFE_DELETE, CHANGE_SIGNATURE, INTRODUCE_PARAMETER
+    )
+
+    /**
+     * Get all refactoring commands.
+     */
+    val REFACTORING_COMMANDS = listOf(
+        RENAME, EXTRACT_VARIABLE, EXTRACT_METHOD, EXTRACT_CONSTANT,
+        INLINE, SAFE_DELETE, CHANGE_SIGNATURE, INTRODUCE_PARAMETER
     )
 }

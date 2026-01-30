@@ -168,35 +168,90 @@ class NavigationService {
      */
     fun getDefinitionInfo(file: KtFile, offset: Int, filePath: String): DefinitionInfo? {
         val element = file.findElementAt(offset) ?: return null
-        val parent = element.parent
 
-        // Get the named declaration
-        val declaration = when (parent) {
-            is KtClass,
-            is KtObjectDeclaration,
-            is KtNamedFunction,
-            is KtTypeAlias -> parent as KtNamedDeclaration
-            is KtProperty -> {
-                // Only top-level or class member properties
-                if (parent.parent is KtFile || parent.parent is KtClassBody) parent
-                else null
+        // Try to find a named declaration by traversing up the tree
+        var current: PsiElement? = element
+        var declaration: KtNamedDeclaration? = null
+
+        // First, check if we're on a reference (e.g., usage of a variable/function)
+        // If so, try to resolve it to get the target declaration's name
+        val referenceExpression = element.parent as? KtNameReferenceExpression
+        if (referenceExpression != null) {
+            // We're on a reference - get the name being referenced
+            val referencedName = referenceExpression.getReferencedName()
+            if (referencedName.isNotEmpty()) {
+                // For rename purposes, we need to find if this references a local declaration
+                // Traverse up to find the containing declaration scope
+                var scope: PsiElement? = referenceExpression.parent
+                while (scope != null && scope !is KtFile) {
+                    when (scope) {
+                        is KtNamedFunction, is KtPropertyAccessor, is KtClassBody, is KtBlockExpression -> {
+                            // Search for local variable/parameter declarations with this name
+                            val localDecl = findLocalDeclaration(scope, referencedName) as? KtNamedDeclaration
+                            if (localDecl != null) {
+                                declaration = localDecl
+                                break
+                            }
+                        }
+                    }
+                    scope = scope.parent
+                }
+
+                // If not found locally, it might be a top-level or class member reference
+                // In that case, return info based on the reference name
+                if (declaration == null) {
+                    return DefinitionInfo(
+                        name = referencedName,
+                        kind = NavigationTargetKind.UNKNOWN,
+                        filePath = filePath,
+                        offset = referenceExpression.textOffset,
+                        line = calculateLine(file.text, referenceExpression.textOffset),
+                        column = calculateColumn(file.text, referenceExpression.textOffset)
+                    )
+                }
             }
-            is KtParameter -> {
-                // Only val/var parameters
-                if (parent.hasValOrVar()) parent
-                else null
+        }
+
+        // Traverse up the tree to find the nearest named declaration
+        if (declaration == null) {
+            while (current != null && current !is KtFile) {
+                when (current) {
+                    is KtClass,
+                    is KtObjectDeclaration,
+                    is KtNamedFunction,
+                    is KtTypeAlias -> {
+                        declaration = current as KtNamedDeclaration
+                        break
+                    }
+                    is KtProperty -> {
+                        // Accept properties at any level (including local variables)
+                        declaration = current
+                        break
+                    }
+                    is KtParameter -> {
+                        // Accept all parameters (not just val/var)
+                        declaration = current
+                        break
+                    }
+                    is KtDestructuringDeclarationEntry -> {
+                        // Destructuring declaration entries (val (a, b) = pair)
+                        declaration = current
+                        break
+                    }
+                }
+                current = current.parent
             }
-            else -> null
-        } ?: return null
+        }
+
+        if (declaration == null) return null
 
         val name = declaration.name ?: return null
         val declOffset = declaration.nameIdentifier?.textOffset ?: declaration.textOffset
 
         // Calculate line and column
         val text = file.text
-        val line = text.substring(0, declOffset.coerceAtMost(text.length)).count { it == '\n' } + 1
-        val lastNewline = text.lastIndexOf('\n', declOffset - 1)
-        val column = if (lastNewline < 0) declOffset + 1 else declOffset - lastNewline
+        val line = calculateLine(text, declOffset)
+        val column = calculateColumn(text, declOffset)
 
         // Determine kind
         val kind = when (declaration) {
@@ -206,6 +261,7 @@ class NavigationService {
             is KtProperty -> NavigationTargetKind.PROPERTY
             is KtParameter -> NavigationTargetKind.PARAMETER
             is KtTypeAlias -> NavigationTargetKind.TYPE_ALIAS
+            is KtDestructuringDeclarationEntry -> NavigationTargetKind.VARIABLE
             else -> NavigationTargetKind.UNKNOWN
         }
 
@@ -217,6 +273,15 @@ class NavigationService {
             line = line,
             column = column
         )
+    }
+
+    private fun calculateLine(text: String, offset: Int): Int {
+        return text.substring(0, offset.coerceAtMost(text.length)).count { it == '\n' } + 1
+    }
+
+    private fun calculateColumn(text: String, offset: Int): Int {
+        val lastNewline = text.lastIndexOf('\n', offset - 1)
+        return if (lastNewline < 0) offset + 1 else offset - lastNewline
     }
 
     /**

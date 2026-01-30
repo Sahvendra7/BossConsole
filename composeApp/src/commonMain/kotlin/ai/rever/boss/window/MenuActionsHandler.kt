@@ -365,4 +365,76 @@ object MenuActionsHandler {
     fun triggerShowShortcutHelp(windowId: String) {
         _showShortcutHelpEvents.tryEmit(windowId)
     }
+    
+    // ========== Refactoring Events ==========
+    
+    private val _refactorRenameEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorRenameEvents: SharedFlow<String> = _refactorRenameEvents.asSharedFlow()
+    
+    private val _refactorExtractVariableEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorExtractVariableEvents: SharedFlow<String> = _refactorExtractVariableEvents.asSharedFlow()
+    
+    private val _refactorExtractMethodEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorExtractMethodEvents: SharedFlow<String> = _refactorExtractMethodEvents.asSharedFlow()
+    
+    private val _refactorExtractConstantEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorExtractConstantEvents: SharedFlow<String> = _refactorExtractConstantEvents.asSharedFlow()
+    
+    private val _refactorInlineEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorInlineEvents: SharedFlow<String> = _refactorInlineEvents.asSharedFlow()
+    
+    private val _refactorChangeSignatureEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorChangeSignatureEvents: SharedFlow<String> = _refactorChangeSignatureEvents.asSharedFlow()
+    
+    private val _refactorSafeDeleteEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val refactorSafeDeleteEvents: SharedFlow<String> = _refactorSafeDeleteEvents.asSharedFlow()
+    
+    /**
+     * Trigger a "Rename" refactoring action for the specified window.
+     */
+    fun triggerRefactorRename(windowId: String) {
+        _refactorRenameEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger an "Extract Variable" refactoring action for the specified window.
+     */
+    fun triggerRefactorExtractVariable(windowId: String) {
+        _refactorExtractVariableEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger an "Extract Method" refactoring action for the specified window.
+     */
+    fun triggerRefactorExtractMethod(windowId: String) {
+        _refactorExtractMethodEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger an "Extract Constant" refactoring action for the specified window.
+     */
+    fun triggerRefactorExtractConstant(windowId: String) {
+        _refactorExtractConstantEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger an "Inline" refactoring action for the specified window.
+     */
+    fun triggerRefactorInline(windowId: String) {
+        _refactorInlineEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger a "Change Signature" refactoring action for the specified window.
+     */
+    fun triggerRefactorChangeSignature(windowId: String) {
+        _refactorChangeSignatureEvents.tryEmit(windowId)
+    }
+    
+    /**
+     * Trigger a "Safe Delete" refactoring action for the specified window.
+     */
+    fun triggerRefactorSafeDelete(windowId: String) {
+        _refactorSafeDeleteEvents.tryEmit(windowId)
+    }
 }

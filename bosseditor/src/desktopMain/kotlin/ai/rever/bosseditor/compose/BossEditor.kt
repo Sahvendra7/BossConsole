@@ -18,7 +18,11 @@ import ai.rever.bosseditor.highlight.lexers.KotlinLexer
 import ai.rever.bosseditor.highlight.LexerState
 import ai.rever.bosseditor.highlight.TokenProvider
 import ai.rever.bosseditor.input.EditorInputHandler
+import ai.rever.bosseditor.input.RefactoringCallbacks
+import ai.rever.bosseditor.refactoring.RefactorAvailability
+import ai.rever.bosseditor.refactoring.RefactorKind
 import ai.rever.bosseditor.rendering.EditorCanvas
+import ai.rever.bosseditor.ui.EditorContextMenu
 import ai.rever.bosseditor.rendering.EditorToken
 import ai.rever.bosseditor.scrollbar.EditorScrollbar
 import ai.rever.bosseditor.scrollbar.HorizontalEditorScrollbar
@@ -137,13 +141,31 @@ fun BossEditor(
     navigationResolver: (suspend (content: String, filePath: String, offset: Int) -> NavigationResolveResult)? = null,
     onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null,
     onShowUsages: ((references: List<ReferenceLocation>, definition: DefinitionInfo, clickPosition: Offset) -> Unit)? = null,
-    onNavigationFailed: ((reason: NavigationFailureReason, clickPosition: Offset) -> Unit)? = null
+    onNavigationFailed: ((reason: NavigationFailureReason, clickPosition: Offset) -> Unit)? = null,
+    // Refactoring callbacks
+    onRename: (() -> Unit)? = null,
+    onRefactorMenu: (() -> Unit)? = null,
+    onExtractVariable: (() -> Unit)? = null,
+    onExtractMethod: (() -> Unit)? = null,
+    onInline: (() -> Unit)? = null
 ) {
+    // Create refactoring callbacks
+    val refactoringCallbacks = remember(onRename, onRefactorMenu, onExtractVariable, onExtractMethod, onInline) {
+        RefactoringCallbacks(
+            onRename = onRename,
+            onRefactorMenu = onRefactorMenu,
+            onExtractVariable = onExtractVariable,
+            onExtractMethod = onExtractMethod,
+            onInline = onInline
+        )
+    }
+
     // Create input handler
-    val inputHandler = remember(state) {
+    val inputHandler = remember(state, refactoringCallbacks) {
         EditorInputHandler(
             state = state,
-            onTextChanged = onTextChanged
+            onTextChanged = onTextChanged,
+            refactoringCallbacks = refactoringCallbacks
         )
     }
 
@@ -261,6 +283,43 @@ fun BossEditor(
     LaunchedEffect(scrollOffset.x) {
         horizontalScrollTrigger++
     }
+    
+    // Context menu state
+    var showContextMenu by remember { mutableStateOf(false) }
+    var contextMenuPosition by remember { mutableStateOf(Offset.Zero) }
+    var contextMenuEditorPosition by remember { mutableStateOf(EditorPosition(0, 0)) }
+    var isOnDefinition by remember { mutableStateOf(false) }
+    
+    // Handle context menu request (right-click)
+    val handleContextMenuRequest: (EditorPosition, Offset) -> Unit = remember(state, navigationManager, coroutineScope) {
+        { editorPosition, screenPosition ->
+            // Position caret at right-click location
+            state.moveCaret(editorPosition)
+            contextMenuEditorPosition = editorPosition
+            contextMenuPosition = screenPosition
+            showContextMenu = true
+            
+            // Check asynchronously if we're on a definition
+            coroutineScope.launch {
+                val result = navigationManager.resolveNavigation(editorPosition)
+                isOnDefinition = result is NavigationOutcome.ShowUsages
+            }
+        }
+    }
+    
+    // Handle find usages request from context menu
+    val handleFindUsages: () -> Unit = remember(navigationManager, onShowUsages, coroutineScope) {
+        {
+            if (onShowUsages != null) {
+                coroutineScope.launch {
+                    val result = navigationManager.resolveNavigation(contextMenuEditorPosition)
+                    if (result is NavigationOutcome.ShowUsages) {
+                        onShowUsages.invoke(result.references, result.definition, contextMenuPosition)
+                    }
+                }
+            }
+        }
+    }
 
     // Get horizontal viewport info
     val actualViewportWidth = visibleViewport.viewportWidth.takeIf { it > 0 } ?: 0f
@@ -299,6 +358,29 @@ fun BossEditor(
 
     // Convert selection to OffsetRange for minimap
     val selectionValue by state.selection.collectAsState()
+    
+    // Context menu selection state
+    val currentSelection = selectionValue
+    val contextMenuHasSelection = currentSelection != null && !currentSelection.isEmpty
+    
+    // Build available refactorings list for context menu
+    val availableRefactorings = remember(onRename, onExtractVariable, onExtractMethod, onInline, contextMenuHasSelection) {
+        buildList {
+            if (onRename != null) {
+                add(RefactorAvailability(RefactorKind.RENAME, available = true))
+            }
+            if (onExtractVariable != null) {
+                add(RefactorAvailability(RefactorKind.EXTRACT_VARIABLE, available = contextMenuHasSelection, reason = if (!contextMenuHasSelection) "Select code to extract" else null))
+            }
+            if (onExtractMethod != null) {
+                add(RefactorAvailability(RefactorKind.EXTRACT_METHOD, available = contextMenuHasSelection, reason = if (!contextMenuHasSelection) "Select code to extract" else null))
+            }
+            if (onInline != null) {
+                add(RefactorAvailability(RefactorKind.INLINE, available = true))
+            }
+        }
+    }
+    
     val minimapSelection = remember(selectionValue) {
         selectionValue?.let { selection ->
             val startOffset = state.document.positionToOffset(selection.start)
@@ -403,8 +485,56 @@ fun BossEditor(
                     onCaretPositionChanged = onCaretPositionChanged,
                     onSelectionChanged = onSelectionChanged,
                     onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
-                    onFoldToggle = if (foldingEnabled) handleFoldToggle else null
+                    onFoldToggle = if (foldingEnabled) handleFoldToggle else null,
+                    onContextMenuRequest = handleContextMenuRequest
                 )
+                
+                // Context menu popup
+                if (showContextMenu) {
+                    EditorContextMenu(
+                        position = contextMenuPosition,
+                        onDismiss = { showContextMenu = false },
+                        hasSelection = contextMenuHasSelection,
+                        canPaste = true, // TODO: Check clipboard
+                        isOnDefinition = isOnDefinition,
+                        refactorings = availableRefactorings,
+                        onCut = if (contextMenuHasSelection) {{ 
+                            copyToClipboard(state)
+                            state.deleteSelection()
+                            showContextMenu = false
+                        }} else null,
+                        onCopy = if (contextMenuHasSelection) {{
+                            copyToClipboard(state)
+                            showContextMenu = false
+                        }} else null,
+                        onPaste = {{
+                            pasteFromClipboard(state)
+                            showContextMenu = false
+                        }},
+                        onSelectAll = {{
+                            state.selectAll()
+                            showContextMenu = false
+                        }},
+                        onGoToDefinition = if (onNavigate != null) {{
+                            handleNavigationRequest(contextMenuEditorPosition, contextMenuPosition)
+                            showContextMenu = false
+                        }} else null,
+                        onFindUsages = if (onShowUsages != null) {{
+                            handleFindUsages()
+                            showContextMenu = false
+                        }} else null,
+                        onRefactoring = { kind ->
+                            showContextMenu = false
+                            when (kind) {
+                                RefactorKind.RENAME -> onRename?.invoke()
+                                RefactorKind.EXTRACT_VARIABLE -> onExtractVariable?.invoke()
+                                RefactorKind.EXTRACT_METHOD -> onExtractMethod?.invoke()
+                                RefactorKind.INLINE -> onInline?.invoke()
+                                else -> {} // Other refactorings not yet implemented
+                            }
+                        }
+                    )
+                }
 
                 // Vertical Scrollbar (right edge of editor canvas)
                 if (showScrollbar) {
@@ -592,6 +722,22 @@ private fun copyToClipboard(state: EditorState) {
         } catch (e: Exception) {
             // Ignore clipboard errors
         }
+    }
+}
+
+/**
+ * Pastes text from clipboard at the current caret position.
+ */
+private fun pasteFromClipboard(state: EditorState) {
+    try {
+        val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+        val transferable = clipboard.getContents(null)
+        if (transferable?.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor) == true) {
+            val text = transferable.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor) as String
+            state.insertText(text)
+        }
+    } catch (e: Exception) {
+        // Ignore clipboard errors
     }
 }
 

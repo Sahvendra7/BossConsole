@@ -41,6 +41,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -83,7 +84,8 @@ fun EditorCanvas(
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {},
     onNavigationRequest: ((EditorPosition, Offset) -> Unit)? = null,
-    onFoldToggle: ((Int) -> Unit)? = null // Document line number
+    onFoldToggle: ((Int) -> Unit)? = null, // Document line number
+    onContextMenuRequest: ((EditorPosition, Offset) -> Unit)? = null // Right-click context menu
 ) {
     val theme = LocalEditorTheme.current
     val density = LocalDensity.current
@@ -333,7 +335,7 @@ fun EditorCanvas(
                 }
                 false // Don't consume the event
             }
-            .pointerInput(Unit) {
+            .pointerInput(onContextMenuRequest) {
                 awaitEachGesture {
                     // Use awaitPointerEvent first to get access to keyboard modifiers
                     val downEvent = awaitPointerEvent()
@@ -341,6 +343,16 @@ fun EditorCanvas(
                     if (!down.pressed) return@awaitEachGesture
 
                     focusRequester.requestFocus()
+                    
+                    // Check for right-click (secondary button)
+                    val isRightClick = downEvent.buttons.isSecondaryPressed
+                    if (isRightClick && onContextMenuRequest != null) {
+                        val position = down.position
+                        val editorPosition = offsetToEditorPosition(position)
+                        onContextMenuRequest.invoke(editorPosition, position)
+                        down.consume()
+                        return@awaitEachGesture
+                    }
 
                     val currentTime = System.currentTimeMillis()
                     val position = down.position

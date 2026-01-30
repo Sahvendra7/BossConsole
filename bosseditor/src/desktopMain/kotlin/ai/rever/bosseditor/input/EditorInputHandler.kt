@@ -23,10 +23,27 @@ import java.awt.datatransfer.StringSelection
  *
  * Platform-aware: Uses Cmd on macOS, Ctrl on Windows/Linux.
  */
+/**
+ * Callbacks for refactoring operations.
+ */
+data class RefactoringCallbacks(
+    /** Called when Shift+F6 is pressed to trigger rename */
+    val onRename: (() -> Unit)? = null,
+    /** Called when Ctrl/Cmd+Shift+R is pressed to show refactor menu */
+    val onRefactorMenu: (() -> Unit)? = null,
+    /** Called when Ctrl/Cmd+Alt+V is pressed to extract variable */
+    val onExtractVariable: (() -> Unit)? = null,
+    /** Called when Ctrl/Cmd+Alt+M is pressed to extract method */
+    val onExtractMethod: (() -> Unit)? = null,
+    /** Called when Ctrl/Cmd+Alt+N is pressed to inline */
+    val onInline: (() -> Unit)? = null
+)
+
 class EditorInputHandler(
     private val state: EditorState,
     private val onTextChanged: () -> Unit = {},
-    private val onScrollRequest: (deltaLines: Int) -> Unit = {}
+    private val onScrollRequest: (deltaLines: Int) -> Unit = {},
+    private val refactoringCallbacks: RefactoringCallbacks = RefactoringCallbacks()
 ) {
     /**
      * Number of visible lines for page up/down.
@@ -50,6 +67,9 @@ class EditorInputHandler(
         val isCmdOrCtrl = isMeta || isCtrl
 
         return when {
+            // Refactoring shortcuts (check first, before navigation)
+            handleRefactoring(event, isCmdOrCtrl, isShift, isAlt) -> true
+
             // Navigation
             handleNavigation(event, isShift, isCmdOrCtrl, isAlt) -> true
 
@@ -112,6 +132,48 @@ class EditorInputHandler(
         if (isCmdOrCtrl && isShift && event.key == Key.L) {
             state.multiCaretOperations.selectAllOccurrences()
             return true
+        }
+
+        return false
+    }
+
+    /**
+     * Handles refactoring keyboard shortcuts.
+     */
+    private fun handleRefactoring(
+        event: KeyEvent,
+        isCmdOrCtrl: Boolean,
+        isShift: Boolean,
+        isAlt: Boolean
+    ): Boolean {
+        // Shift+F6: Rename (standard IDE shortcut)
+        if (isShift && !isCmdOrCtrl && !isAlt && event.key == Key.F6) {
+            refactoringCallbacks.onRename?.invoke()
+            return refactoringCallbacks.onRename != null
+        }
+
+        // Ctrl/Cmd+Shift+R: Refactor menu
+        if (isCmdOrCtrl && isShift && !isAlt && event.key == Key.R) {
+            refactoringCallbacks.onRefactorMenu?.invoke()
+            return refactoringCallbacks.onRefactorMenu != null
+        }
+
+        // Ctrl/Cmd+Alt+V: Extract Variable
+        if (isCmdOrCtrl && isAlt && !isShift && event.key == Key.V) {
+            refactoringCallbacks.onExtractVariable?.invoke()
+            return refactoringCallbacks.onExtractVariable != null
+        }
+
+        // Ctrl/Cmd+Alt+M: Extract Method
+        if (isCmdOrCtrl && isAlt && !isShift && event.key == Key.M) {
+            refactoringCallbacks.onExtractMethod?.invoke()
+            return refactoringCallbacks.onExtractMethod != null
+        }
+
+        // Ctrl/Cmd+Alt+N: Inline
+        if (isCmdOrCtrl && isAlt && !isShift && event.key == Key.N) {
+            refactoringCallbacks.onInline?.invoke()
+            return refactoringCallbacks.onInline != null
         }
 
         return false
