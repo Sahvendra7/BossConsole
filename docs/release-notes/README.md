@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.22](v8.16.22.md) | 2026-01-31 | Maintenance release adding plugin sandbox for improved stability and crash isolation |
 | [v8.16.21](v8.16.21.md) | 2026-01-30 | Maintenance release adding refactoring capabilities to BossEditor with Rename support |
 | [v8.16.20](v8.16.20.md) | 2026-01-30 | Stable release featuring critical CodeBase panel fixes and enhanced CI/CD workflow capabilities |
 | [v8.16.19-alpha.1](v8.16.19-alpha.1.md) | 2026-01-30 | Alpha release focused on Gradle 9 compatibility and CI/CD workflow improvements for enhanced build reliability |
