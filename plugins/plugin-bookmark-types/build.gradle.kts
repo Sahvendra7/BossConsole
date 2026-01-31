@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "ai.rever.boss.plugin"
-version = "1.0.2"
+version = "1.0.3"
 
 kotlin {
     jvmToolchain(17)
