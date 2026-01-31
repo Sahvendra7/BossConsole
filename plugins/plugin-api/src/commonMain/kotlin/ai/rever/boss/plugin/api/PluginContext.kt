@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.api
 
+import ai.rever.boss.plugin.browser.BrowserService
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -64,6 +65,26 @@ interface PluginContext {
      * Plugins can use this to record heartbeats and errors for health monitoring.
      */
     val sandbox: PluginSandboxRef?
+        get() = null
+
+    /**
+     * Optional browser service for plugins that need embedded browser capabilities.
+     *
+     * Returns null if browser service is not available (e.g., JxBrowser not licensed
+     * or browser engine failed to initialize).
+     *
+     * Plugins can use this to create browser instances for displaying web content.
+     */
+    val browserService: BrowserService?
+        get() = null
+
+    /**
+     * The plugin's manifest, providing access to configuration declared in plugin.json.
+     *
+     * Returns null for built-in plugins that don't have a manifest file.
+     * External plugins will always have their manifest available here.
+     */
+    val manifest: PluginManifest?
         get() = null
 }
 

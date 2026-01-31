@@ -15,6 +15,22 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
+ * Callback interface for plugin cleanup operations.
+ *
+ * Components can register cleanup callbacks to be notified when
+ * a plugin is being fully unloaded. This allows them to release
+ * any references or cached data associated with the plugin.
+ */
+fun interface PluginCleanupCallback {
+    /**
+     * Called when a plugin is being fully unloaded.
+     *
+     * @param pluginId The ID of the plugin being unloaded
+     */
+    suspend fun onPluginUnloading(pluginId: String)
+}
+
+/**
  * Interface for managing plugin sandboxes.
  */
 interface PluginSandboxManager {
@@ -43,6 +59,37 @@ interface PluginSandboxManager {
      * @param pluginId Plugin identifier
      */
     suspend fun removeSandbox(pluginId: String)
+
+    /**
+     * Fully unload a plugin, running all cleanup callbacks.
+     *
+     * This is a comprehensive cleanup method that:
+     * 1. Notifies all registered cleanup callbacks
+     * 2. Stops the watchdog
+     * 3. Stops the sandbox
+     * 4. Removes all references
+     * 5. Unregisters from health monitor
+     *
+     * Use this for dynamic plugin unloading to ensure complete cleanup.
+     *
+     * @param pluginId Plugin identifier
+     * @return Result indicating success or failure
+     */
+    suspend fun fullyUnloadPlugin(pluginId: String): Result<Unit>
+
+    /**
+     * Register a cleanup callback to be called when plugins are unloaded.
+     *
+     * @param callback The callback to register
+     */
+    fun registerCleanupCallback(callback: PluginCleanupCallback)
+
+    /**
+     * Unregister a cleanup callback.
+     *
+     * @param callback The callback to unregister
+     */
+    fun unregisterCleanupCallback(callback: PluginCleanupCallback)
 
     /**
      * Restart a plugin's sandbox.
@@ -135,6 +182,9 @@ class PluginSandboxManagerImpl(
 
     // Weak references to prevent memory leaks from listeners that aren't removed
     private val listeners = CopyOnWriteArrayList<WeakReference<PluginSandboxListener>>()
+
+    // Cleanup callbacks for dynamic plugin unloading
+    private val cleanupCallbacks = CopyOnWriteArrayList<PluginCleanupCallback>()
 
     private val healthMonitor = PluginHealthMonitor(managerScope)
     override val healthSummary: StateFlow<PluginHealthSummary> = healthMonitor.healthSummary
@@ -229,6 +279,52 @@ class PluginSandboxManagerImpl(
 
         // Unregister from health monitor
         healthMonitor.unregisterSandbox(pluginId)
+    }
+
+    override suspend fun fullyUnloadPlugin(pluginId: String): Result<Unit> {
+        return runCatching {
+            logger.info(LogCategory.SYSTEM, "Fully unloading plugin", mapOf(
+                "pluginId" to pluginId
+            ))
+
+            // 1. Notify all cleanup callbacks
+            for (callback in cleanupCallbacks) {
+                try {
+                    callback.onPluginUnloading(pluginId)
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.SYSTEM, "Cleanup callback failed", mapOf(
+                        "pluginId" to pluginId,
+                        "error" to (e.message ?: "unknown")
+                    ))
+                }
+            }
+
+            // 2. Stop watchdog
+            watchdogs[pluginId]?.stop()
+            watchdogs.remove(pluginId)
+
+            // 3. Stop sandbox
+            sandboxes[pluginId]?.stop()
+            sandboxes.remove(pluginId)
+
+            // 4. Remove from disabled set if present
+            disabledPlugins.remove(pluginId)
+
+            // 5. Unregister from health monitor
+            healthMonitor.unregisterSandbox(pluginId)
+
+            logger.info(LogCategory.SYSTEM, "Plugin fully unloaded", mapOf(
+                "pluginId" to pluginId
+            ))
+        }
+    }
+
+    override fun registerCleanupCallback(callback: PluginCleanupCallback) {
+        cleanupCallbacks.add(callback)
+    }
+
+    override fun unregisterCleanupCallback(callback: PluginCleanupCallback) {
+        cleanupCallbacks.remove(callback)
     }
 
     override suspend fun restartPlugin(pluginId: String): Result<Unit> {

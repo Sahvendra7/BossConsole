@@ -5,9 +5,11 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
+    `maven-publish`
 }
 
 group = "ai.rever.boss.plugin"
+version = "1.0.0"
 
 kotlin {
     // Suppress expect/actual classes beta warning (KT-61573)
@@ -49,12 +51,28 @@ kotlin {
                 // Type modules for provider interfaces
                 api(projects.plugins.pluginBookmarkTypes)
                 api(projects.plugins.pluginWorkspaceTypes)
+
+                // Browser service API for plugins needing browser capabilities
+                api(projects.plugins.pluginApiBrowser)
             }
         }
 
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+            }
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/risa-labs-inc/BossConsole")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String? ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.token") as String? ?: ""
             }
         }
     }

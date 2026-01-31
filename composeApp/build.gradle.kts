@@ -318,6 +318,13 @@ kotlin {
             implementation(projects.plugins.pluginPathUtils)
             implementation(projects.plugins.pluginSandbox)
 
+            // Plugin management infrastructure
+            implementation(projects.plugins.pluginLoader)
+            implementation(projects.plugins.pluginRepository)
+            implementation(projects.plugins.pluginUpdater)
+            implementation(projects.plugins.pluginDependency)
+            implementation(projects.plugins.pluginPanelManager)
+
             // Panel plugins
             implementation(projects.plugins.pluginPanelConsole)
             implementation(projects.plugins.pluginPanelPerformance)

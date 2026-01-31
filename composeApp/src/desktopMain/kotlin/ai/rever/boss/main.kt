@@ -22,6 +22,7 @@ import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
 import ai.rever.boss.plugin.panel.console.GlobalLogCapture
 import ai.rever.boss.plugin.panel.performance.PerformancePanelPlugin
+import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.performance.PerformanceDataProviderImpl
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -166,6 +167,12 @@ fun main(args: Array<String>) {
             System.err.println("Error uninstalling keyboard interceptor: ${e.message}")
         }
         try {
+            // Shutdown plugin store
+            PluginStoreSetup.shutdown()
+        } catch (e: Exception) {
+            System.err.println("Error shutting down plugin store: ${e.message}")
+        }
+        try {
             // Shutdown BossLogger
             BossLogger.shutdown()
         } catch (e: Exception) {
@@ -218,6 +225,9 @@ fun main(args: Array<String>) {
     
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()
+
+    // Initialize plugin store (remote repository, download cache, update manager)
+    PluginStoreSetup.initialize()
 
     // Initialize PSI for Kotlin code navigation (must be before any editor opens)
     try {

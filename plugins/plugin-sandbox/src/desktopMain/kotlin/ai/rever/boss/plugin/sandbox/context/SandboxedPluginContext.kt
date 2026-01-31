@@ -2,8 +2,10 @@ package ai.rever.boss.plugin.sandbox.context
 
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginContext
+import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.sandbox.PluginSandbox
 import kotlinx.coroutines.CoroutineScope
 
@@ -38,6 +40,20 @@ class SandboxedPluginContext(
      */
     override val sandbox: PluginSandboxRef
         get() = _sandbox
+
+    /**
+     * Browser service for plugins needing embedded browser capabilities.
+     * Delegates to the underlying context's browserService.
+     */
+    override val browserService: BrowserService?
+        get() = delegate.browserService
+
+    /**
+     * The plugin's manifest, providing access to configuration declared in plugin.json.
+     * Delegates to the underlying context's manifest.
+     */
+    override val manifest: PluginManifest?
+        get() = delegate.manifest
 
     /**
      * Get the underlying sandbox for this context.

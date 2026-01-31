@@ -19,6 +19,7 @@ import ai.rever.boss.plugin.panel.rolecreation.RoleCreationInfo
 import ai.rever.boss.plugin.panel.rolecreation.RoleCreationPanelPlugin
 import ai.rever.boss.plugin.panel.terminal.TerminalPanelPlugin
 import ai.rever.boss.plugin.panel.topofmind.TopOfMindPanelPlugin
+import ai.rever.boss.plugin.panel.manager.PluginManagerPanelPlugin
 import ai.rever.boss.plugin.panel.bookmarks.BookmarksPanelPlugin
 import ai.rever.boss.plugin.panel.codebase.CodeBasePanelPlugin
 import ai.rever.boss.plugin.panel.fluck.FluckPanelPlugin
@@ -63,6 +64,7 @@ import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.panel.secretmanager.SecretManagerInfo
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
 import ai.rever.boss.plugin.sandbox.PluginSandboxManagerImpl
@@ -85,6 +87,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 
 class DefaultPlugin(
     override val panelRegistry: PanelRegistry,
@@ -114,6 +117,7 @@ class DefaultPlugin(
         private const val PLUGIN_ID_ROLE_CREATION = "panel-role-creation"
         private const val PLUGIN_ID_SECRET_MANAGER = "panel-secret-manager"
         private const val PLUGIN_ID_USER_SECRET_LIST = "panel-user-secret-list"
+        private const val PLUGIN_ID_PLUGIN_MANAGER = "panel-plugin-manager"
 
         // Tab plugin IDs
         private const val PLUGIN_ID_TAB_FLUCK = "tab-fluck"
@@ -134,6 +138,21 @@ class DefaultPlugin(
      * Use this to monitor plugin health from the UI.
      */
     val pluginHealthSummary: StateFlow<PluginHealthSummary> = sandboxManager.healthSummary
+
+    /**
+     * Manager for dynamic plugin loading and unloading at runtime.
+     * Use this to install, uninstall, enable, or disable plugins dynamically.
+     */
+    val dynamicPluginManager: DynamicPluginManager by lazy {
+        DynamicPluginManager(
+            panelRegistry = panelRegistry,
+            tabRegistry = tabRegistry,
+            sandboxManager = sandboxManager,
+            createSandboxedContext = { pluginId, config ->
+                createSandboxedContext(pluginId, config)
+            }
+        )
+    }
 
     /**
      * Toast state for plugin notifications.
@@ -162,6 +181,9 @@ class DefaultPlugin(
 
     // No sandbox for the default context (backward compatibility)
     override val sandbox: PluginSandboxRef? = null
+
+    // Browser service for plugins needing embedded browser capabilities
+    override val browserService: BrowserService? = getBrowserServiceInstance()
 
     /**
      * Create a sandboxed plugin context for a specific plugin.
@@ -370,12 +392,12 @@ class DefaultPlugin(
             override fun getProjectPath(): String = windowProjectState?.selectedProject?.value?.path ?: ""
         })
 
-        // Fluck (ChatGPT) panel - uses registerWithProviders for clean plugin architecture
-        val fluckPanelContext = createSandboxedContext(PLUGIN_ID_FLUCK)
-        FluckPanelPlugin.registerWithProviders(
-            context = fluckPanelContext,
-            contentProviderFactory = { FluckPanelContentProviderImpl() }
-        )
+        // Fluck (ChatGPT) panel - DISABLED: Now loaded from external plugin
+        // val fluckPanelContext = createSandboxedContext(PLUGIN_ID_FLUCK)
+        // FluckPanelPlugin.registerWithProviders(
+        //     context = fluckPanelContext,
+        //     contentProviderFactory = { FluckPanelContentProviderImpl() }
+        // )
 
         // LLM RPA panel
         val llmRpaContext = createSandboxedContext(PLUGIN_ID_LLM_RPA)
@@ -394,6 +416,10 @@ class DefaultPlugin(
         RpaEnginePanelPlugin.register(rpaEngineContext) { ctx, panelInfo ->
             RpaEngineFactory().createComponent(ctx, panelInfo)
         }
+
+        // Plugin Manager panel - for browsing and managing plugins
+        val pluginManagerContext = createSandboxedContext(PLUGIN_ID_PLUGIN_MANAGER)
+        PluginManagerSetup.registerPluginManagerPanel(pluginManagerContext)
 
         // ============================================================
         // DYNAMIC PANEL PLUGINS (registered based on auth/state)
@@ -421,6 +447,11 @@ class DefaultPlugin(
         registerCodeEditor()
         registerTerminalTab()
 
+        // ============================================================
+        // EXTERNAL PLUGINS (loaded from ~/.boss/plugins/)
+        // ============================================================
+        loadExternalPlugins()
+
         logger.info(LogCategory.SYSTEM, "DefaultPlugin initialization complete", mapOf(
             "sandboxedPlugins" to sandboxManager.getAllSandboxes().size
         ))
@@ -431,11 +462,75 @@ class DefaultPlugin(
      * Should be called when the plugin is no longer needed
      */
     fun dispose() {
-        // Dispose sandbox manager (stops all sandboxes and watchdogs)
+        // Dispose dynamic plugin manager and sandbox manager
         runBlocking {
+            dynamicPluginManager.dispose()
             sandboxManager.dispose()
         }
         pluginScope.cancel()
+    }
+
+    /**
+     * Load external plugins from the local plugins directory (~/.boss/plugins/).
+     *
+     * This scans for JAR files and installs them via DynamicPluginManager.
+     */
+    private fun loadExternalPlugins() {
+        val pluginDir = File(System.getProperty("user.home"), ".boss/plugins")
+
+        if (!pluginDir.exists() || !pluginDir.isDirectory) {
+            logger.debug(LogCategory.SYSTEM, "External plugins directory not found", mapOf(
+                "path" to pluginDir.absolutePath
+            ))
+            return
+        }
+
+        val jarFiles = pluginDir.listFiles { file ->
+            file.isFile && file.extension == "jar"
+        } ?: emptyArray()
+
+        if (jarFiles.isEmpty()) {
+            logger.debug(LogCategory.SYSTEM, "No external plugins found", mapOf(
+                "path" to pluginDir.absolutePath
+            ))
+            return
+        }
+
+        logger.info(LogCategory.SYSTEM, "Loading external plugins", mapOf(
+            "count" to jarFiles.size,
+            "path" to pluginDir.absolutePath
+        ))
+
+        // Load each plugin asynchronously
+        pluginScope.launch {
+            for (jarFile in jarFiles) {
+                try {
+                    logger.info(LogCategory.SYSTEM, "Installing external plugin", mapOf(
+                        "file" to jarFile.name
+                    ))
+
+                    val result = dynamicPluginManager.installPlugin(jarFile.absolutePath)
+
+                    if (result.isSuccess) {
+                        val info = result.getOrThrow()
+                        logger.info(LogCategory.SYSTEM, "External plugin loaded successfully", mapOf(
+                            "pluginId" to info.manifest.pluginId,
+                            "version" to info.manifest.version,
+                            "displayName" to info.manifest.displayName
+                        ))
+                    } else {
+                        logger.error(LogCategory.SYSTEM, "Failed to load external plugin", mapOf(
+                            "file" to jarFile.name,
+                            "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                        ))
+                    }
+                } catch (e: Exception) {
+                    logger.error(LogCategory.SYSTEM, "Exception loading external plugin", mapOf(
+                        "file" to jarFile.name
+                    ), e)
+                }
+            }
+        }
     }
 
     /**

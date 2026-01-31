@@ -50,6 +50,12 @@ include(":plugins:plugin-bookmark-types")
 include(":plugins:plugin-icons")
 include(":plugins:plugin-path-utils")
 include(":plugins:plugin-sandbox")
+include(":plugins:plugin-api-browser")
+include(":plugins:plugin-loader")
+include(":plugins:plugin-repository")
+include(":plugins:plugin-dependency")
+include(":plugins:plugin-updater")
+include(":plugins:plugin-panel-manager")
 
 // Panel plugin modules
 include(":plugins:plugin-panel-console")
