@@ -27,6 +27,7 @@ uiAndroid = "1.8.2"
 zxing = "3.5.4"
 jxbrowser = "8.16.1"
 jxbrowser-gradle-plugin = "2.0.0"
+maven-publish = "0.30.0"
 jna = "5.18.1"
 rsyntaxtextarea = "3.6.1"
 rstaui = "3.3.2"
@@ -111,3 +112,4 @@ kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", versio
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 jxbrowser = { id = "com.teamdev.jxbrowser", version.ref = "jxbrowser-gradle-plugin" }
+mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
