@@ -213,6 +213,6 @@ class PluginClassLoader(
     }
 
     override fun toString(): String {
-        return "PluginClassLoader(pluginId=$pluginId, state=$state, urls=${urls.size})"
+        return "PluginClassLoader(pluginId=$pluginId, state=$state, urls=${getURLs().size})"
     }
 }
