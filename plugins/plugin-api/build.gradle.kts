@@ -8,8 +8,8 @@ plugins {
     `maven-publish`
 }
 
-group = "ai.rever.boss.plugin"
-version = "1.0.4"
+group = "ai.rever.boss.api"
+version = "1.0.0"
 
 kotlin {
     // Suppress expect/actual classes beta warning (KT-61573)

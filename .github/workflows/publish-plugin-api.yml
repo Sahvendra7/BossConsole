@@ -60,12 +60,12 @@ jobs:
         run: |
           echo "## Published Packages" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The following packages have been published to GitHub Packages:" >> $GITHUB_STEP_SUMMARY
+          echo "The following packages have been published to GitHub Packages (BossConsole-Releases):" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ai.rever.boss.plugin:plugin-workspace-types:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ai.rever.boss.plugin:plugin-bookmark-types:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ai.rever.boss.plugin:plugin-api-browser:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ai.rever.boss.plugin:plugin-api:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ai.rever.boss.api:plugin-workspace-types:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ai.rever.boss.api:plugin-bookmark-types:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ai.rever.boss.api:plugin-api-browser:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ai.rever.boss.api:plugin-api:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Usage in external plugins" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -81,6 +81,6 @@ jobs:
           echo "}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "dependencies {" >> $GITHUB_STEP_SUMMARY
-          echo "    compileOnly(\"ai.rever.boss.plugin:plugin-api:${{ github.event.inputs.version }}\")" >> $GITHUB_STEP_SUMMARY
+          echo "    compileOnly(\"ai.rever.boss.api:plugin-api:${{ github.event.inputs.version }}\")" >> $GITHUB_STEP_SUMMARY
           echo "}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
