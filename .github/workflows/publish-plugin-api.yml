@@ -72,7 +72,7 @@ jobs:
           echo "\`\`\`kotlin" >> $GITHUB_STEP_SUMMARY
           echo "repositories {" >> $GITHUB_STEP_SUMMARY
           echo "    maven {" >> $GITHUB_STEP_SUMMARY
-          echo "        url = uri(\"https://maven.pkg.github.com/risa-labs-inc/BossConsole\")" >> $GITHUB_STEP_SUMMARY
+          echo "        url = uri(\"https://maven.pkg.github.com/risa-labs-inc/BossConsole-Releases\")" >> $GITHUB_STEP_SUMMARY
           echo "        credentials {" >> $GITHUB_STEP_SUMMARY
           echo "            username = project.findProperty(\"gpr.user\") ?: System.getenv(\"GITHUB_ACTOR\")" >> $GITHUB_STEP_SUMMARY
           echo "            password = project.findProperty(\"gpr.token\") ?: System.getenv(\"GITHUB_TOKEN\")" >> $GITHUB_STEP_SUMMARY
