@@ -129,7 +129,7 @@ export async function getPlugin(
 export async function getPluginById(
   supabase: SupabaseClient,
   id: string
-): Promise<{ id: string, plugin_id: string, author_id: string | null } | null> {
+): Promise<{ id: string, pluginId: string, authorId: string | null } | null> {
   const { data, error } = await supabase
     .from('plugins')
     .select('id, plugin_id, author_id')
@@ -142,7 +142,11 @@ export async function getPluginById(
     throw new Error(`Failed to get plugin: ${error.message}`)
   }
 
-  return data
+  return data ? {
+    id: data.id,
+    pluginId: data.plugin_id,
+    authorId: data.author_id
+  } : null
 }
 
 /**

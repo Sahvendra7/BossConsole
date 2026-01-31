@@ -358,7 +358,7 @@ publish.openapi(finalizeVersionRoute, async (ctx) => {
     }
 
     // Verify ownership
-    if (plugin.author_id !== user.userId) {
+    if (plugin.authorId !== user.userId) {
       return ctx.json({ success: false, error: 'Not authorized' }, 403)
     }
 

@@ -35,12 +35,12 @@ package ai.rever.boss.plugin.api
  *     }
  *
  *     override fun onInitialized() {
- *         println("Panel initialized")
+ *         logger.info("Panel initialized")
  *         viewModel.loadData()
  *     }
  *
  *     override fun onBeforeReset() {
- *         println("Preparing to reset")
+ *         logger.info("Preparing to reset")
  *         viewModel.clearData()
  *     }
  *
