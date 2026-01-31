@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "ai.rever.boss.plugin"
-version = "1.0.3"
+version = "1.0.4"
 
 kotlin {
     // Suppress expect/actual classes beta warning (KT-61573)
