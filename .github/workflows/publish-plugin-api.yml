@@ -35,25 +35,25 @@ jobs:
       - name: Publish plugin-workspace-types
         run: ./gradlew :plugins:plugin-workspace-types:publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
       - name: Publish plugin-bookmark-types
         run: ./gradlew :plugins:plugin-bookmark-types:publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
       - name: Publish plugin-api-browser
         run: ./gradlew :plugins:plugin-api-browser:publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
       - name: Publish plugin-api
         run: ./gradlew :plugins:plugin-api:publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
       - name: Summary
