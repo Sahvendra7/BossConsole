@@ -49,6 +49,7 @@ include(":plugins:plugin-workspace-types")
 include(":plugins:plugin-bookmark-types")
 include(":plugins:plugin-icons")
 include(":plugins:plugin-path-utils")
+include(":plugins:plugin-sandbox")
 
 // Panel plugin modules
 include(":plugins:plugin-panel-console")

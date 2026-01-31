@@ -3,7 +3,7 @@ package ai.rever.boss.plugin.api
 import androidx.compose.runtime.mutableStateMapOf
 import com.arkivanov.decompose.ComponentContext
 
-class TabRegistry {
+open class TabRegistry {
     // Map of tab type handlers
     private val tabHandlers = mutableStateMapOf<TabTypeId, TabTypeInfo>()
 
@@ -11,7 +11,7 @@ class TabRegistry {
     private val tabFactories = mutableStateMapOf<TabTypeId, (TabInfo, ComponentContext) -> TabComponentWithUI>()
 
     // Register a tab type from a plugin
-    fun registerTabType(
+    open fun registerTabType(
         content: TabTypeInfo,
         factory: (TabInfo, ComponentContext) -> TabComponentWithUI
     ) {
@@ -20,8 +20,7 @@ class TabRegistry {
     }
 
     // Create a component for a tab configuration
-    fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
+    open fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
         return tabFactories[config.typeId]?.invoke(config, componentContext)
     }
-
 }

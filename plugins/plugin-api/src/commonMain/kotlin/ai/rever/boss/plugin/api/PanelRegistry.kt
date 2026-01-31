@@ -7,14 +7,14 @@ import ai.rever.boss.plugin.api.Panel.Companion.top
 import androidx.compose.runtime.mutableStateMapOf
 import com.arkivanov.decompose.ComponentContext
 
-class PanelRegistry {
+open class PanelRegistry {
     private val contentProviders = mutableStateMapOf<PanelId, (ComponentContext, PanelInfo) -> PanelComponentWithUI>()
     private val availablePanelInfo = mutableStateMapOf<PanelId, PanelInfo>()
 
     // Callbacks to notify when panels are registered/unregistered
     private val changeListeners = mutableListOf<() -> Unit>()
 
-    fun registerPanel(
+    open fun registerPanel(
         content: PanelInfo,
         factory: (ComponentContext, PanelInfo) -> PanelComponentWithUI
     ) {
@@ -23,17 +23,17 @@ class PanelRegistry {
         notifyChange()
     }
 
-    fun unregisterPanel(id: PanelId) {
+    open fun unregisterPanel(id: PanelId) {
         contentProviders.remove(id)
         availablePanelInfo.remove(id)
         notifyChange()
     }
 
-    fun addChangeListener(listener: () -> Unit) {
+    open fun addChangeListener(listener: () -> Unit) {
         changeListeners.add(listener)
     }
 
-    fun removeChangeListener(listener: () -> Unit) {
+    open fun removeChangeListener(listener: () -> Unit) {
         changeListeners.remove(listener)
     }
 
@@ -41,17 +41,17 @@ class PanelRegistry {
         changeListeners.forEach { it() }
     }
 
-    fun createComponent(id: PanelId, componentContext: ComponentContext): PanelComponentWithUI? {
+    open fun createComponent(id: PanelId, componentContext: ComponentContext): PanelComponentWithUI? {
         return getPanelContent(id)?.let { contentProviders[id]?.invoke(componentContext, it) }
     }
 
-    fun getPanelContent(id: PanelId): PanelInfo? {
+    open fun getPanelContent(id: PanelId): PanelInfo? {
         return availablePanelInfo[id]
     }
 
-    fun getAllPanels(): List<PanelInfo> = availablePanelInfo.values.sortedBy { it.id.defaultOrder }
+    open fun getAllPanels(): List<PanelInfo> = availablePanelInfo.values.sortedBy { it.id.defaultOrder }
 
-    fun getDefaultSidebarMap(): Map<Panel, List<SidebarItem>> =
+    open fun getDefaultSidebarMap(): Map<Panel, List<SidebarItem>> =
         mapOf<Panel, MutableList<SidebarItem>>(
             left.top.top to mutableListOf<SidebarItem>(),
             left.top.bottom to mutableListOf<SidebarItem>(),
@@ -63,5 +63,4 @@ class PanelRegistry {
                 get(it.defaultSlotPosition)?.add(it.sidebarItem)
             }
         }
-
 }

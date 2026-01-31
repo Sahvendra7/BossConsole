@@ -3,6 +3,36 @@ package ai.rever.boss.plugin.api
 import kotlinx.coroutines.CoroutineScope
 
 /**
+ * Marker interface for plugin sandbox.
+ *
+ * This interface is defined here to avoid circular dependencies.
+ * The actual implementation is in the plugin-sandbox module.
+ *
+ * Plugins can use this to record errors, heartbeats, and check health status.
+ */
+interface PluginSandboxRef {
+    /**
+     * Unique identifier of the plugin running in this sandbox.
+     */
+    val pluginId: String
+
+    /**
+     * Record that the plugin is alive and responsive.
+     */
+    fun recordHeartbeat()
+
+    /**
+     * Record that a successful operation completed.
+     */
+    fun recordSuccess()
+
+    /**
+     * Record an error that occurred in the plugin.
+     */
+    fun recordError(error: Throwable)
+}
+
+/**
  * Context provided to plugins for registration and runtime access.
  *
  * This interface abstracts the host application's services that plugins need.
@@ -26,6 +56,15 @@ interface PluginContext {
      * Use this for long-running operations that should be cancelled when the plugin is disposed.
      */
     val pluginScope: CoroutineScope
+
+    /**
+     * Optional reference to the plugin's sandbox for health reporting.
+     *
+     * Returns null if sandboxing is not enabled for this context.
+     * Plugins can use this to record heartbeats and errors for health monitoring.
+     */
+    val sandbox: PluginSandboxRef?
+        get() = null
 }
 
 /**

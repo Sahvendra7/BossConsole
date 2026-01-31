@@ -316,6 +316,7 @@ kotlin {
             implementation(projects.plugins.pluginBookmarkTypes)
             implementation(projects.plugins.pluginIcons)
             implementation(projects.plugins.pluginPathUtils)
+            implementation(projects.plugins.pluginSandbox)
 
             // Panel plugins
             implementation(projects.plugins.pluginPanelConsole)

@@ -61,17 +61,30 @@ import ai.rever.boss.utils.logging.LogSanitizer
 import ai.rever.boss.window.WindowProjectState
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginContext
+import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.panel.secretmanager.SecretManagerInfo
+import ai.rever.boss.plugin.sandbox.PluginSandboxManager
+import ai.rever.boss.plugin.sandbox.PluginSandboxManagerImpl
+import ai.rever.boss.plugin.sandbox.SandboxConfig
+import ai.rever.boss.plugin.sandbox.context.SandboxedPanelRegistry
+import ai.rever.boss.plugin.sandbox.context.SandboxedPluginContext
+import ai.rever.boss.plugin.sandbox.context.SandboxedTabRegistry
+import ai.rever.boss.plugin.sandbox.health.PluginHealthSummary
+import ai.rever.boss.plugin.sandbox.notification.BossPluginNotificationService
+import ai.rever.boss.plugin.sandbox.notification.PluginSandboxNotificationListener
+import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.window.WindowGitState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class DefaultPlugin(
     override val panelRegistry: PanelRegistry,
@@ -80,16 +93,168 @@ class DefaultPlugin(
     val windowGitState: WindowGitState? = null,
     val windowId: String? = null
 ) : PluginContext {
+
+    companion object {
+        // Plugin IDs for sandboxing - using consistent naming
+        private const val PLUGIN_ID_BOOKMARKS = "panel-bookmarks"
+        private const val PLUGIN_ID_DOWNLOADS = "panel-downloads"
+        private const val PLUGIN_ID_CODEBASE = "panel-codebase"
+        private const val PLUGIN_ID_TERMINAL = "panel-terminal"
+        private const val PLUGIN_ID_CONSOLE = "panel-console"
+        private const val PLUGIN_ID_PERFORMANCE = "panel-performance"
+        private const val PLUGIN_ID_GIT_STATUS = "panel-git-status"
+        private const val PLUGIN_ID_GIT_LOG = "panel-git-log"
+        private const val PLUGIN_ID_TOP_OF_MIND = "panel-top-of-mind"
+        private const val PLUGIN_ID_RUN_CONFIGS = "panel-run-configurations"
+        private const val PLUGIN_ID_FLUCK = "panel-fluck"
+        private const val PLUGIN_ID_LLM_RPA = "panel-llm-rpa"
+        private const val PLUGIN_ID_RPA_RECORDER = "panel-rpa-recorder"
+        private const val PLUGIN_ID_RPA_ENGINE = "panel-rpa-engine"
+        private const val PLUGIN_ID_ADMIN_ROLE_MGMT = "panel-admin-role-management"
+        private const val PLUGIN_ID_ROLE_CREATION = "panel-role-creation"
+        private const val PLUGIN_ID_SECRET_MANAGER = "panel-secret-manager"
+        private const val PLUGIN_ID_USER_SECRET_LIST = "panel-user-secret-list"
+
+        // Tab plugin IDs
+        private const val PLUGIN_ID_TAB_FLUCK = "tab-fluck"
+        private const val PLUGIN_ID_TAB_CODE_EDITOR = "tab-code-editor"
+        private const val PLUGIN_ID_TAB_TERMINAL = "tab-terminal"
+    }
+
+    private val logger = BossLogger.forComponent("DefaultPlugin")
     // Lifecycle-aware scope for long-running operations like dynamic panel registration
     // This scope should be cancelled when the plugin is disposed
     override val pluginScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Sandbox manager for plugin crash isolation
+    private val sandboxManager: PluginSandboxManager = PluginSandboxManagerImpl()
+
+    /**
+     * Health summary across all sandboxed plugins.
+     * Use this to monitor plugin health from the UI.
+     */
+    val pluginHealthSummary: StateFlow<PluginHealthSummary> = sandboxManager.healthSummary
+
+    /**
+     * Toast state for plugin notifications.
+     * Use this with PluginToastHost in your UI to display plugin status notifications.
+     */
+    val pluginToastState: PluginToastState = PluginToastState(pluginScope)
+
+    // Notification service and listener for plugin events
+    private val notificationService = BossPluginNotificationService(
+        toastController = pluginToastState,
+        onDisablePlugin = { pluginId ->
+            pluginScope.launch {
+                sandboxManager.disablePlugin(pluginId)
+            }
+        },
+        onEnablePlugin = { pluginId ->
+            pluginScope.launch {
+                sandboxManager.enablePlugin(pluginId)
+            }
+        }
+    )
+
+    private val notificationListener = PluginSandboxNotificationListener(notificationService).also {
+        (sandboxManager as? PluginSandboxManagerImpl)?.addListener(it)
+    }
+
+    // No sandbox for the default context (backward compatibility)
+    override val sandbox: PluginSandboxRef? = null
+
+    /**
+     * Create a sandboxed plugin context for a specific plugin.
+     *
+     * The sandboxed context provides:
+     * - Isolated coroutine scope (errors don't propagate)
+     * - Health monitoring and automatic restart
+     * - Error boundary integration for UI components
+     *
+     * @param pluginId Unique identifier for the plugin
+     * @param config Optional sandbox configuration
+     * @return A sandboxed PluginContext for the plugin
+     */
+    fun createSandboxedContext(
+        pluginId: String,
+        config: SandboxConfig = SandboxConfig()
+    ): PluginContext {
+        val sandbox = sandboxManager.createSandbox(pluginId, config)
+
+        // Start the sandbox asynchronously to avoid blocking UI thread
+        pluginScope.launch {
+            sandbox.start().onFailure { error ->
+                logger.error(LogCategory.SYSTEM, "Failed to start sandbox", mapOf(
+                    "pluginId" to pluginId
+                ), error)
+            }
+        }
+
+        // Create wrapped registries that record errors to the sandbox
+        val sandboxedPanelRegistry = SandboxedPanelRegistry(sandbox, panelRegistry)
+        val sandboxedTabRegistry = SandboxedTabRegistry(sandbox, tabRegistry)
+
+        return SandboxedPluginContext(
+            _sandbox = sandbox,
+            delegate = this,
+            sandboxedPanelRegistry = sandboxedPanelRegistry,
+            sandboxedTabRegistry = sandboxedTabRegistry
+        )
+    }
+
+    /**
+     * Get the sandbox for a specific plugin.
+     *
+     * @param pluginId Plugin identifier
+     * @return The sandbox, or null if not found
+     */
+    fun getPluginSandbox(pluginId: String) = sandboxManager.getSandbox(pluginId)
+
+    /**
+     * Restart a sandboxed plugin.
+     *
+     * @param pluginId Plugin identifier
+     * @return Result indicating success or failure
+     */
+    suspend fun restartPlugin(pluginId: String) = sandboxManager.restartPlugin(pluginId)
+
+    /**
+     * Disable a sandboxed plugin.
+     * Disabled plugins will not auto-restart and show a disabled fallback UI.
+     *
+     * @param pluginId Plugin identifier
+     * @return Result indicating success or failure
+     */
+    suspend fun disablePlugin(pluginId: String) = sandboxManager.disablePlugin(pluginId)
+
+    /**
+     * Enable a previously disabled plugin.
+     *
+     * @param pluginId Plugin identifier
+     * @return Result indicating success or failure
+     */
+    suspend fun enablePlugin(pluginId: String) = sandboxManager.enablePlugin(pluginId)
+
+    /**
+     * Check if a plugin is disabled.
+     *
+     * @param pluginId Plugin identifier
+     * @return True if the plugin is disabled
+     */
+    fun isPluginDisabled(pluginId: String) = sandboxManager.isPluginDisabled(pluginId)
+
     init {
-        // Panels - using plugin system with component factories
+        logger.info(LogCategory.SYSTEM, "Initializing DefaultPlugin with sandboxed contexts")
+
+        // ============================================================
+        // SANDBOXED PANEL PLUGINS
+        // Each plugin gets its own sandbox for crash isolation
+        // ============================================================
 
         // Bookmarks panel - Priority 1 - First position
-        // Uses registerWithProviders for clean plugin architecture with dialog provider
+        val bookmarksContext = createSandboxedContext(PLUGIN_ID_BOOKMARKS)
         BookmarksPanelPlugin.registerWithProviders(
-            context = this,
+            context = bookmarksContext,
             faviconLoaderProvider = { cacheKey -> loadFaviconFromCache(cacheKey) },
             contextMenuProvider = { modifier, items ->
                 modifier.contextMenu(
@@ -107,16 +272,18 @@ class DefaultPlugin(
         )
 
         // Downloads panel - Priority 2 - Below bookmarks
+        val downloadsContext = createSandboxedContext(PLUGIN_ID_DOWNLOADS)
         val downloadDataProvider = createDownloadDataProvider()
-        DownloadsPanelPlugin.register(this, downloadDataProvider)
+        DownloadsPanelPlugin.register(downloadsContext, downloadDataProvider)
 
         // CodeBase panel - uses registerWithProviders for clean plugin architecture
+        val codebaseContext = createSandboxedContext(PLUGIN_ID_CODEBASE)
         val fileSystemProvider = FileSystemDataProviderImpl()
         val projectDataProvider = ProjectDataProviderImpl()
         val directoryPickerProvider = DirectoryPickerProviderImpl()
 
         CodeBasePanelPlugin.registerWithProviders(
-            context = this,
+            context = codebaseContext,
             fileSystemProvider = fileSystemProvider,
             projectDataProvider = projectDataProvider,
             getWindowId = { windowId },
@@ -165,22 +332,29 @@ class DefaultPlugin(
         )
 
         // Terminal panel - uses registerWithProviders for clean plugin architecture
+        val terminalPanelContext = createSandboxedContext(PLUGIN_ID_TERMINAL)
         TerminalPanelPlugin.registerWithProviders(
-            context = this,
+            context = terminalPanelContext,
             terminalContentProvider = TerminalContentProviderImpl(),
             panelEventProvider = PanelEventProviderImpl(),
             settingsProvider = SettingsProviderImpl()
         )
 
-        ConsolePanelPlugin.register(this)
-        PerformancePanelPlugin.register(this)
+        // Console panel
+        val consoleContext = createSandboxedContext(PLUGIN_ID_CONSOLE)
+        ConsolePanelPlugin.register(consoleContext)
+
+        // Performance panel
+        val performanceContext = createSandboxedContext(PLUGIN_ID_PERFORMANCE)
+        PerformancePanelPlugin.register(performanceContext)
 
         // Git panels - dynamically registered based on project and git repository status
         registerGitPanels()
 
         // Top of Mind panel - uses registerWithProviders for clean plugin architecture
+        val topOfMindContext = createSandboxedContext(PLUGIN_ID_TOP_OF_MIND)
         TopOfMindPanelPlugin.registerWithProviders(
-            context = this,
+            context = topOfMindContext,
             collectAllActiveTabs = { TopOfMindDataProvider.collectAllActiveTabs() },
             getAllPanelStates = { TopOfMindDataProvider.getAllPanelStates() },
             faviconLoader = { cacheKey -> TopOfMindDataProvider.loadFavicon(cacheKey) },
@@ -190,31 +364,41 @@ class DefaultPlugin(
         )
 
         // Run Configurations plugin - requires window context
-        RunConfigurationsPanelPlugin.register(this, object : WindowContextProviderForPlugin {
+        val runConfigsContext = createSandboxedContext(PLUGIN_ID_RUN_CONFIGS)
+        RunConfigurationsPanelPlugin.register(runConfigsContext, object : WindowContextProviderForPlugin {
             override fun getWindowId(): String? = windowId
             override fun getProjectPath(): String = windowProjectState?.selectedProject?.value?.path ?: ""
         })
 
         // Fluck (ChatGPT) panel - uses registerWithProviders for clean plugin architecture
+        val fluckPanelContext = createSandboxedContext(PLUGIN_ID_FLUCK)
         FluckPanelPlugin.registerWithProviders(
-            context = this,
+            context = fluckPanelContext,
             contentProviderFactory = { FluckPanelContentProviderImpl() }
         )
 
         // LLM RPA panel
-        LLMRpaPanelPlugin.register(this) { ctx, panelInfo ->
+        val llmRpaContext = createSandboxedContext(PLUGIN_ID_LLM_RPA)
+        LLMRpaPanelPlugin.register(llmRpaContext) { ctx, panelInfo ->
             LLMRpaFactory().createComponent(ctx, panelInfo)
         }
 
         // RPA Recorder panel
-        RpaRecorderPanelPlugin.register(this) { ctx, panelInfo ->
+        val rpaRecorderContext = createSandboxedContext(PLUGIN_ID_RPA_RECORDER)
+        RpaRecorderPanelPlugin.register(rpaRecorderContext) { ctx, panelInfo ->
             RpaRecorderFactory().createComponent(ctx, panelInfo)
         }
 
         // RPA Engine panel
-        RpaEnginePanelPlugin.register(this) { ctx, panelInfo ->
+        val rpaEngineContext = createSandboxedContext(PLUGIN_ID_RPA_ENGINE)
+        RpaEnginePanelPlugin.register(rpaEngineContext) { ctx, panelInfo ->
             RpaEngineFactory().createComponent(ctx, panelInfo)
         }
+
+        // ============================================================
+        // DYNAMIC PANEL PLUGINS (registered based on auth/state)
+        // These use their own sandboxed contexts created in their register methods
+        // ============================================================
 
         // Admin Role Management panel - uses new plugin with dynamic registration based on admin status
         registerAdminRoleManagementPlugin()
@@ -227,10 +411,19 @@ class DefaultPlugin(
         // User Secret List panel - uses new plugin with dynamic registration based on auth state
         registerUserSecretListPlugin()
 
+        // ============================================================
+        // TAB TYPE PLUGINS
+        // ============================================================
+
         // Tab Types - using extension functions (they handle complex callback wiring)
+        // Note: Tab types currently use the main context; sandbox integration is future work
         registerFluck()
         registerCodeEditor()
         registerTerminalTab()
+
+        logger.info(LogCategory.SYSTEM, "DefaultPlugin initialization complete", mapOf(
+            "sandboxedPlugins" to sandboxManager.getAllSandboxes().size
+        ))
     }
 
     /**
@@ -238,6 +431,10 @@ class DefaultPlugin(
      * Should be called when the plugin is no longer needed
      */
     fun dispose() {
+        // Dispose sandbox manager (stops all sandboxes and watchdogs)
+        runBlocking {
+            sandboxManager.dispose()
+        }
         pluginScope.cancel()
     }
 
@@ -253,6 +450,9 @@ class DefaultPlugin(
         val userManagementProvider = UserManagementProviderImpl()
 
         logger.debug(LogCategory.AUTH, "Initializing secret manager panel registration")
+
+        // Create sandboxed context (reused across registrations)
+        var secretManagerContext: PluginContext? = null
 
         // Observe auth state and dynamically register/unregister panel
         pluginScope.launch(Dispatchers.Main) {
@@ -272,12 +472,18 @@ class DefaultPlugin(
                     ))
 
                     if (hasPermission) {
-                        // User has permission - register panel using the plugin
+                        // User has permission - register panel with sandboxed context
                         logger.info(LogCategory.AUTH, "Registering secret manager panel", mapOf(
                             "user" to LogSanitizer.maskEmail(user?.email ?: "")
                         ))
+
+                        // Create sandboxed context if not already created
+                        val ctx = secretManagerContext ?: createSandboxedContext(PLUGIN_ID_SECRET_MANAGER).also {
+                            secretManagerContext = it
+                        }
+
                         SecretManagerPanelPlugin.register(
-                            context = this@DefaultPlugin,
+                            context = ctx,
                             secretDataProvider = secretDataProvider,
                             userManagementProvider = userManagementProvider,
                             onSecretChanged = { SecretChangeNotifier.notifyRefreshSync() }
@@ -303,6 +509,9 @@ class DefaultPlugin(
 
         logger.debug(LogCategory.UI, "Initializing user secret list panel registration")
 
+        // Create sandboxed context (reused across registrations)
+        var userSecretListContext: PluginContext? = null
+
         // Observe auth state and dynamically register/unregister panel
         pluginScope.launch(Dispatchers.Main) {
             AuthStateManager.currentUser
@@ -316,12 +525,18 @@ class DefaultPlugin(
                     ))
 
                     if (isAuthenticated) {
-                        // User is authenticated - register panel using the plugin
+                        // User is authenticated - register panel with sandboxed context
                         logger.info(LogCategory.UI, "Registering user secret list panel", mapOf(
                             "user" to LogSanitizer.maskEmail(user?.email ?: "")
                         ))
+
+                        // Create sandboxed context if not already created
+                        val ctx = userSecretListContext ?: createSandboxedContext(PLUGIN_ID_USER_SECRET_LIST).also {
+                            userSecretListContext = it
+                        }
+
                         UserSecretListPanelPlugin.register(
-                            context = this@DefaultPlugin,
+                            context = ctx,
                             secretDataProvider = secretDataProvider,
                             secretChangeEvents = SecretChangeNotifier.secretChangeEvents
                         )
@@ -347,6 +562,9 @@ class DefaultPlugin(
 
         logger.debug(LogCategory.UI, "Initializing admin role management panel registration")
 
+        // Create sandboxed context (reused across registrations)
+        var adminRoleMgmtContext: PluginContext? = null
+
         // Observe auth state and dynamically register/unregister panel
         pluginScope.launch(Dispatchers.Main) {
             AuthStateManager.currentUser
@@ -360,12 +578,18 @@ class DefaultPlugin(
                     ))
 
                     if (isAdmin) {
-                        // User is admin - register panel using the plugin
+                        // User is admin - register panel with sandboxed context
                         logger.info(LogCategory.UI, "Registering admin role management panel", mapOf(
                             "user" to LogSanitizer.maskEmail(user?.email ?: "")
                         ))
+
+                        // Create sandboxed context if not already created
+                        val ctx = adminRoleMgmtContext ?: createSandboxedContext(PLUGIN_ID_ADMIN_ROLE_MGMT).also {
+                            adminRoleMgmtContext = it
+                        }
+
                         AdminRoleManagementPanelPlugin.register(
-                            context = this@DefaultPlugin,
+                            context = ctx,
                             userManagementProvider = userManagementProvider,
                             authDataProvider = authDataProvider
                         )
@@ -390,6 +614,9 @@ class DefaultPlugin(
 
         logger.debug(LogCategory.UI, "Initializing role creation panel registration")
 
+        // Create sandboxed context (reused across registrations)
+        var roleCreationContext: PluginContext? = null
+
         // Observe auth state and dynamically register/unregister panel
         pluginScope.launch(Dispatchers.Main) {
             AuthStateManager.currentUser
@@ -403,12 +630,18 @@ class DefaultPlugin(
                     ))
 
                     if (isAdmin) {
-                        // User is admin - register panel using the plugin
+                        // User is admin - register panel with sandboxed context
                         logger.info(LogCategory.UI, "Registering role creation panel", mapOf(
                             "user" to LogSanitizer.maskEmail(user?.email ?: "")
                         ))
+
+                        // Create sandboxed context if not already created
+                        val ctx = roleCreationContext ?: createSandboxedContext(PLUGIN_ID_ROLE_CREATION).also {
+                            roleCreationContext = it
+                        }
+
                         RoleCreationPanelPlugin.register(
-                            context = this@DefaultPlugin,
+                            context = ctx,
                             roleManagementProvider = roleManagementProvider
                         )
                     } else {
@@ -440,6 +673,10 @@ class DefaultPlugin(
 
         logger.debug(LogCategory.UI, "Initializing git panels dynamic registration")
 
+        // Create sandboxed contexts for git panels (reused across registrations)
+        var gitStatusContext: PluginContext? = null
+        var gitLogContext: PluginContext? = null
+
         // Observe both project state and git repository status
         pluginScope.launch(Dispatchers.Main) {
             combine(
@@ -456,10 +693,19 @@ class DefaultPlugin(
                     ))
 
                     if (shouldShow) {
-                        // Project is a git repository - register panels
+                        // Project is a git repository - register panels with sandboxed contexts
                         logger.info(LogCategory.UI, "Registering git panels")
-                        GitStatusPanelPlugin.register(this@DefaultPlugin, gitDataProvider) { windowId }
-                        GitLogPanelPlugin.register(this@DefaultPlugin, gitDataProvider)
+
+                        // Create sandboxed contexts if not already created
+                        val statusCtx = gitStatusContext ?: createSandboxedContext(PLUGIN_ID_GIT_STATUS).also {
+                            gitStatusContext = it
+                        }
+                        val logCtx = gitLogContext ?: createSandboxedContext(PLUGIN_ID_GIT_LOG).also {
+                            gitLogContext = it
+                        }
+
+                        GitStatusPanelPlugin.register(statusCtx, gitDataProvider) { windowId }
+                        GitLogPanelPlugin.register(logCtx, gitDataProvider)
                     } else {
                         // Not a git repository or no project - unregister panels
                         logger.info(LogCategory.UI, "Unregistering git panels")
