@@ -86,6 +86,145 @@ interface PluginContext {
      */
     val manifest: PluginManifest?
         get() = null
+
+    // ============================================================
+    // SERVICE PROVIDERS FOR DYNAMIC PLUGINS
+    // These allow dynamic plugins to access host services without
+    // requiring explicit injection at registration time.
+    // ============================================================
+
+    /**
+     * Optional performance data provider for plugins that display performance metrics.
+     *
+     * Returns null if performance monitoring is not available.
+     * Dynamic plugins can use this instead of static property injection.
+     */
+    val performanceDataProvider: PerformanceDataProvider?
+        get() = null
+
+    /**
+     * Optional download data provider for plugins that display download status.
+     *
+     * Returns null if download management is not available.
+     * Dynamic plugins can use this instead of explicit parameter injection.
+     */
+    val downloadDataProvider: DownloadDataProvider?
+        get() = null
+
+    /**
+     * Optional bookmark data provider for plugins that manage bookmarks.
+     *
+     * Returns null if bookmark management is not available.
+     * Dynamic plugins can use this instead of CompositionLocal access.
+     */
+    val bookmarkDataProvider: BookmarkDataProvider?
+        get() = null
+
+    /**
+     * Optional workspace data provider for plugins that access workspace information.
+     *
+     * Returns null if workspace management is not available.
+     */
+    val workspaceDataProvider: WorkspaceDataProvider?
+        get() = null
+
+    /**
+     * Optional split view operations for plugins that need to open tabs/workspaces.
+     *
+     * Returns null if split view operations are not available.
+     */
+    val splitViewOperations: SplitViewOperations?
+        get() = null
+
+    /**
+     * Optional Git data provider for plugins that display git information.
+     *
+     * Returns null if git operations are not available.
+     * Dynamic plugins can use this to access commit log, file status, etc.
+     */
+    val gitDataProvider: GitDataProvider?
+        get() = null
+
+    /**
+     * Optional file system data provider for plugins that browse files.
+     *
+     * Returns null if file system operations are not available.
+     * Dynamic plugins can use this for the codebase panel.
+     */
+    val fileSystemDataProvider: FileSystemDataProvider?
+        get() = null
+
+    /**
+     * Optional secret data provider for plugins that manage secrets.
+     *
+     * Returns null if secret management is not available.
+     * Dynamic plugins can use this for secret-manager and user-secret-list panels.
+     */
+    val secretDataProvider: SecretDataProvider?
+        get() = null
+
+    /**
+     * Optional run configuration data provider for plugins that execute code.
+     *
+     * Returns null if run configuration is not available.
+     * Dynamic plugins can use this for the run-configurations panel.
+     */
+    val runConfigurationDataProvider: RunConfigurationDataProvider?
+        get() = null
+
+    /**
+     * Optional active tabs provider for plugins that display tab overview.
+     *
+     * Returns null if active tabs data is not available.
+     * Dynamic plugins can use this for the topofmind panel.
+     */
+    val activeTabsProvider: ActiveTabsProvider?
+        get() = null
+
+    /**
+     * Get the current window ID.
+     *
+     * Returns null if window ID is not available.
+     * Dynamic plugins need this for window-scoped operations.
+     */
+    val windowId: String?
+        get() = null
+
+    /**
+     * Get the currently selected project path.
+     *
+     * Returns null if no project is selected.
+     * Dynamic plugins need this for project-specific operations.
+     */
+    val projectPath: String?
+        get() = null
+
+    /**
+     * Optional authentication data provider for plugins that need auth state.
+     *
+     * Returns null if authentication services are not available.
+     * Dynamic plugins can use this to check user roles and permissions.
+     */
+    val authDataProvider: AuthDataProvider?
+        get() = null
+
+    /**
+     * Optional user management provider for admin plugins.
+     *
+     * Returns null if user management is not available or user is not admin.
+     * Dynamic plugins can use this for the admin-role-management panel.
+     */
+    val userManagementProvider: UserManagementProvider?
+        get() = null
+
+    /**
+     * Optional role management provider for admin plugins.
+     *
+     * Returns null if role management is not available or user is not admin.
+     * Dynamic plugins can use this for the role-creation panel.
+     */
+    val roleManagementProvider: RoleManagementProvider?
+        get() = null
 }
 
 /**

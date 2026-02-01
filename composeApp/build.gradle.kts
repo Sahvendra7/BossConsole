@@ -340,7 +340,7 @@ kotlin {
             implementation(projects.plugins.pluginPanelTopofmind)
             implementation(projects.plugins.pluginPanelCodebase)
             implementation(projects.plugins.pluginPanelTerminal)
-            implementation(projects.plugins.pluginPanelFluck)
+            implementation(projects.plugins.pluginPanelChatgptFluck)
             implementation(projects.plugins.pluginPanelLlmrpa)
             implementation(projects.plugins.pluginPanelRparecorder)
             implementation(projects.plugins.pluginPanelRpaengine)
@@ -348,7 +348,7 @@ kotlin {
             // Tab type plugins
             implementation(projects.plugins.pluginTabCodeEditor)
             implementation(projects.plugins.pluginTabTerminal)
-            implementation(projects.plugins.pluginTabFluck)
+            implementation(projects.plugins.pluginTabChatgptFluck)
 
             implementation(libs.precompose)
 //            implementation(libs.precompose.molecule)

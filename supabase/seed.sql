@@ -18,6 +18,17 @@ VALUES
     ('admin', 'Administrator role with full system access', true)
 ON CONFLICT (name) DO NOTHING;
 
+-- ----------------------------------------------------------------------------
+-- Storage Buckets
+-- ----------------------------------------------------------------------------
+-- Create storage buckets required for the application.
+-- - 'plugin-jars': Stores uploaded plugin JAR files for the plugin store
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES
+    ('plugin-jars', 'plugin-jars', false, 52428800, ARRAY['application/java-archive', 'application/x-java-archive', 'application/octet-stream'])
+ON CONFLICT (id) DO NOTHING;
+
 -- ============================================================================
 -- Manual Admin Assignment Instructions
 -- ============================================================================

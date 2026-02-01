@@ -1,7 +1,18 @@
 package ai.rever.boss.plugin.panel.manager
 
-import androidx.compose.material.icons.filled.Extension
 import ai.rever.boss.plugin.repository.PluginInfo
+import ai.rever.boss.plugin.ui.BossBadge
+import ai.rever.boss.plugin.ui.BossCard
+import ai.rever.boss.plugin.ui.BossEmptyState
+import ai.rever.boss.plugin.ui.BossPrimaryButton
+import ai.rever.boss.plugin.ui.BossSearchBar
+import ai.rever.boss.plugin.ui.BossSecondaryButton
+import ai.rever.boss.plugin.ui.BossSection
+import ai.rever.boss.plugin.ui.BossTextArea
+import ai.rever.boss.plugin.ui.BossTextField
+import ai.rever.boss.plugin.ui.BossTheme
+import ai.rever.boss.plugin.ui.BossThemeColors
+import ai.rever.boss.plugin.ui.BossToggle
 import ai.rever.boss.plugin.updater.UpdateInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,101 +30,121 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.Icon
+import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
- * Main content for the Plugin Manager panel.
+ * Main content for the Plugin Manager panel with Boss theme styling.
  */
 @Composable
 fun PluginManagerContent(component: PluginManagerComponent) {
     val state by component.state.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-    ) {
-        // Header with tabs
-        PluginManagerHeader(
-            currentTab = state.currentTab,
-            updateCount = state.updates.size,
-            onTabSelected = { component.selectTab(it) },
-            onRefresh = { component.refresh() },
-            onInstall = { component.installFromFilePicker() },
-            isLoading = state.isLoading
-        )
-
-        // Search bar
-        SearchBar(
-            query = state.searchQuery,
-            onQueryChange = { component.setSearchQuery(it) }
-        )
-
-        // Error message
-        if (state.error != null) {
-            ErrorBanner(
-                message = state.error!!,
-                onDismiss = { component.clearError() }
-            )
-        }
-
-        // Content based on selected tab
-        Box(
-            modifier = Modifier.weight(1f).fillMaxWidth()
+    BossTheme {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BossThemeColors.BackgroundColor)
         ) {
-            when (state.currentTab) {
-                PluginManagerTab.INSTALLED -> InstalledPluginsTab(
-                    plugins = filterPlugins(state.installedPlugins, state.searchQuery),
-                    onToggleEnabled = { id, enabled -> component.togglePluginEnabled(id, enabled) },
-                    onUninstall = { id -> component.uninstallPlugin(id) },
-                    isLoading = state.isLoading
+            // Header with tabs and search
+            PluginManagerHeader(
+                currentTab = state.currentTab,
+                updateCount = state.updates.size,
+                searchQuery = state.searchQuery,
+                onSearchQueryChange = { component.setSearchQuery(it) },
+                onTabSelected = { component.selectTab(it) },
+                onRefresh = { component.refresh() },
+                isLoading = state.isLoading
+            )
+
+            // Error message
+            if (state.error != null) {
+                ErrorBanner(
+                    message = state.error!!,
+                    onDismiss = { component.clearError() }
                 )
-                PluginManagerTab.AVAILABLE -> AvailablePluginsTab(
-                    plugins = filterAvailablePlugins(state.availablePlugins, state.searchQuery),
-                    installedIds = state.installedPlugins.map { it.pluginId }.toSet(),
-                    onInstall = { pluginId -> component.installFromRemote(pluginId) },
-                    isLoading = state.isLoading
-                )
-                PluginManagerTab.UPDATES -> UpdatesTab(
-                    updates = state.updates,
-                    onUpdate = { id -> component.updatePlugin(id) },
-                    onUpdateAll = { component.updateAllPlugins() },
-                    isLoading = state.isLoading
-                )
+            }
+
+            // Content based on selected tab
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            ) {
+                when (state.currentTab) {
+                    PluginManagerTab.INSTALLED -> InstalledPluginsTab(
+                        plugins = filterPlugins(state.installedPlugins, state.searchQuery),
+                        onToggleEnabled = { id, enabled -> component.togglePluginEnabled(id, enabled) },
+                        onUninstall = { id -> component.uninstallPlugin(id) },
+                        onInstallFromFile = { component.installFromFilePicker() },
+                        onInstallFromGitHub = { url -> component.installFromGitHub(url) },
+                        isLoading = state.isLoading
+                    )
+                    PluginManagerTab.AVAILABLE -> AvailablePluginsTab(
+                        plugins = filterAvailablePlugins(state.availablePlugins, state.searchQuery),
+                        installedIds = state.installedPlugins.map { it.pluginId }.toSet(),
+                        onInstall = { pluginId -> component.installFromRemote(pluginId) },
+                        isLoading = state.isLoading
+                    )
+                    PluginManagerTab.UPDATES -> UpdatesTab(
+                        updates = state.updates,
+                        onUpdate = { id -> component.updatePlugin(id) },
+                        onUpdateAll = { component.updateAllPlugins() },
+                        isLoading = state.isLoading
+                    )
+                    PluginManagerTab.PUBLISH -> PublishTab(
+                        onFetchFromGitHub = { url, onProgress, onStatus, onSuccess, onError ->
+                            component.fetchFromGitHubForPublish(url, onProgress, onStatus, onSuccess, onError)
+                        },
+                        onBrowseJar = { onResult -> component.browseForPluginJar(onResult) },
+                        onExtractManifest = { jarPath, onResult -> component.extractManifest(jarPath, onResult) },
+                        onPublish = { jarPath, pluginId, displayName, version, homepageUrl, authorName, description, changelog, tags, iconUrl, pluginType, apiVersion, minBossVersion, onProgress, onSuccess, onError ->
+                            component.publishPlugin(
+                                jarPath = jarPath,
+                                pluginId = pluginId,
+                                displayName = displayName,
+                                version = version,
+                                homepageUrl = homepageUrl,
+                                authorName = authorName,
+                                description = description,
+                                changelog = changelog,
+                                tags = tags,
+                                iconUrl = iconUrl,
+                                pluginType = pluginType,
+                                apiVersion = apiVersion,
+                                minBossVersion = minBossVersion,
+                                onProgress = onProgress,
+                                onSuccess = onSuccess,
+                                onError = onError
+                            )
+                        },
+                        isLoading = state.isLoading
+                    )
+                }
             }
         }
     }
@@ -123,100 +154,107 @@ fun PluginManagerContent(component: PluginManagerComponent) {
 private fun PluginManagerHeader(
     currentTab: PluginManagerTab,
     updateCount: Int,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onTabSelected: (PluginManagerTab) -> Unit,
     onRefresh: () -> Unit,
-    onInstall: () -> Unit,
     isLoading: Boolean
 ) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Plugins",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(BossThemeColors.SurfaceColor)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TabButton(
+            text = "Installed",
+            selected = currentTab == PluginManagerTab.INSTALLED,
+            onClick = { onTabSelected(PluginManagerTab.INSTALLED) }
+        )
+        TabButton(
+            text = "Store",
+            selected = currentTab == PluginManagerTab.AVAILABLE,
+            onClick = { onTabSelected(PluginManagerTab.AVAILABLE) }
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TabButton(
+                text = "Updates",
+                selected = currentTab == PluginManagerTab.UPDATES,
+                onClick = { onTabSelected(PluginManagerTab.UPDATES) }
             )
-
-            Row {
-                IconButton(onClick = onRefresh, enabled = !isLoading) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(Icons.Default.Refresh, "Refresh")
-                    }
-                }
-                IconButton(onClick = onInstall) {
-                    Icon(Icons.Default.Add, "Install Plugin")
-                }
+            if (updateCount > 0) {
+                Spacer(Modifier.width(2.dp))
+                BossBadge(count = updateCount)
             }
         }
+        TabButton(
+            text = "Publish",
+            selected = currentTab == PluginManagerTab.PUBLISH,
+            onClick = { onTabSelected(PluginManagerTab.PUBLISH) }
+        )
 
-        TabRow(
-            selectedTabIndex = currentTab.ordinal
+        Spacer(Modifier.width(8.dp))
+
+        // Search bar
+        BossSearchBar(
+            query = searchQuery,
+            onQueryChange = onSearchQueryChange,
+            placeholder = "Search...",
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(Modifier.width(4.dp))
+
+        // Refresh button
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .clickable(enabled = !isLoading) { onRefresh() }
+                .padding(4.dp)
         ) {
-            Tab(
-                selected = currentTab == PluginManagerTab.INSTALLED,
-                onClick = { onTabSelected(PluginManagerTab.INSTALLED) },
-                text = { Text("Installed") }
-            )
-            Tab(
-                selected = currentTab == PluginManagerTab.AVAILABLE,
-                onClick = { onTabSelected(PluginManagerTab.AVAILABLE) },
-                text = { Text("Available") }
-            )
-            Tab(
-                selected = currentTab == PluginManagerTab.UPDATES,
-                onClick = { onTabSelected(PluginManagerTab.UPDATES) },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Updates")
-                        if (updateCount > 0) {
-                            Spacer(Modifier.width(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = updateCount.toString(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            }
-                        }
-                    }
-                }
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    color = BossThemeColors.AccentColor,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                    tint = BossThemeColors.TextSecondary,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit
+private fun TabButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        placeholder = { Text("Search plugins...") },
-        leadingIcon = { Icon(Icons.Default.Search, null) },
-        singleLine = true,
-        shape = RoundedCornerShape(8.dp)
-    )
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (selected) BossThemeColors.AccentColor.copy(alpha = 0.15f)
+                else BossThemeColors.BackgroundColor
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = text,
+            color = if (selected) BossThemeColors.AccentColor else BossThemeColors.TextSecondary,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+        )
+    }
 }
 
 @Composable
@@ -227,25 +265,40 @@ private fun ErrorBanner(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.errorContainer)
+            .background(BossThemeColors.ErrorColor.copy(alpha = 0.15f))
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
             Icon(
                 Icons.Default.Warning,
-                null,
-                tint = MaterialTheme.colorScheme.error
+                contentDescription = null,
+                tint = BossThemeColors.ErrorColor,
+                modifier = Modifier.size(16.dp)
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = message,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                color = BossThemeColors.ErrorColor,
+                fontSize = 13.sp
             )
         }
-        IconButton(onClick = onDismiss) {
-            Icon(Icons.Default.Close, "Dismiss")
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .clickable { onDismiss() }
+                .padding(4.dp)
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Dismiss",
+                tint = BossThemeColors.ErrorColor,
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }
@@ -255,25 +308,104 @@ private fun InstalledPluginsTab(
     plugins: List<InstalledPluginState>,
     onToggleEnabled: (String, Boolean) -> Unit,
     onUninstall: (String) -> Unit,
+    onInstallFromFile: () -> Unit,
+    onInstallFromGitHub: (String) -> Unit,
     isLoading: Boolean
 ) {
-    if (plugins.isEmpty()) {
-        EmptyState(
-            message = "No plugins installed",
-            description = "Click the + button to install a plugin"
-        )
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+    var showGitHubDialog by remember { mutableStateOf(false) }
+    var gitHubUrl by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+    ) {
+        // Install section
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(plugins, key = { it.pluginId }) { plugin ->
-                InstalledPluginCard(
-                    plugin = plugin,
-                    onToggleEnabled = { onToggleEnabled(plugin.pluginId, it) },
-                    onUninstall = { onUninstall(plugin.pluginId) },
-                    isLoading = isLoading
+            BossSecondaryButton(
+                text = "From File",
+                onClick = onInstallFromFile,
+                enabled = !isLoading,
+                icon = Icons.Default.Download,
+                modifier = Modifier.weight(1f)
+            )
+            BossPrimaryButton(
+                text = "From GitHub",
+                onClick = { showGitHubDialog = true },
+                enabled = !isLoading,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // GitHub URL input
+        if (showGitHubDialog) {
+            Spacer(Modifier.height(8.dp))
+            BossCard {
+                BossTextField(
+                    value = gitHubUrl,
+                    onValueChange = { gitHubUrl = it },
+                    label = "GitHub URL",
+                    placeholder = "https://github.com/owner/repo",
+                    modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    BossSecondaryButton(
+                        text = "Cancel",
+                        onClick = {
+                            showGitHubDialog = false
+                            gitHubUrl = ""
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BossPrimaryButton(
+                        text = "Install",
+                        onClick = {
+                            if (gitHubUrl.isNotBlank()) {
+                                onInstallFromGitHub(gitHubUrl)
+                                showGitHubDialog = false
+                                gitHubUrl = ""
+                            }
+                        },
+                        enabled = gitHubUrl.isNotBlank()
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Installed plugins list
+        if (plugins.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                BossEmptyState(
+                    icon = Icons.Default.Extension,
+                    message = "No plugins installed",
+                    description = "Install from file or GitHub"
+                )
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(plugins, key = { it.pluginId }) { plugin ->
+                    InstalledPluginCard(
+                        plugin = plugin,
+                        onToggleEnabled = { onToggleEnabled(plugin.pluginId, it) },
+                        onUninstall = { onUninstall(plugin.pluginId) },
+                        isLoading = isLoading
+                    )
+                }
             }
         }
     }
@@ -286,19 +418,9 @@ private fun InstalledPluginCard(
     onUninstall: () -> Unit,
     isLoading: Boolean
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (plugin.enabled)
-                MaterialTheme.colorScheme.surfaceVariant
-            else
-                MaterialTheme.colorScheme.surface
-        )
-    ) {
+    BossCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -306,30 +428,32 @@ private fun InstalledPluginCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = plugin.displayName,
-                        style = MaterialTheme.typography.titleMedium,
+                        color = BossThemeColors.TextPrimary,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "v${plugin.version}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = BossThemeColors.TextMuted,
+                        fontSize = 11.sp
                     )
                     if (!plugin.healthy) {
                         Spacer(Modifier.width(8.dp))
                         Icon(
                             Icons.Default.Warning,
-                            "Plugin unhealthy",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error
+                            contentDescription = "Plugin unhealthy",
+                            modifier = Modifier.size(14.dp),
+                            tint = BossThemeColors.WarningColor
                         )
                     }
                 }
                 if (plugin.description.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = plugin.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = BossThemeColors.TextSecondary,
+                        fontSize = 12.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -337,23 +461,28 @@ private fun InstalledPluginCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(
+                BossToggle(
+                    label = "",
                     checked = plugin.enabled,
-                    onCheckedChange = { onToggleEnabled(it) },
-                    enabled = !isLoading
+                    onCheckedChange = onToggleEnabled,
+                    enabled = !isLoading,
+                    modifier = Modifier.width(60.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = onUninstall,
-                    enabled = !isLoading && plugin.canUnload
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(enabled = !isLoading && plugin.canUnload) { onUninstall() }
+                        .padding(8.dp)
                 ) {
                     Icon(
                         Icons.Default.Delete,
-                        "Uninstall",
+                        contentDescription = "Uninstall",
+                        modifier = Modifier.size(16.dp),
                         tint = if (plugin.canUnload)
-                            MaterialTheme.colorScheme.error
+                            BossThemeColors.ErrorColor
                         else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            BossThemeColors.TextMuted.copy(alpha = 0.3f)
                     )
                 }
             }
@@ -369,14 +498,21 @@ private fun AvailablePluginsTab(
     isLoading: Boolean
 ) {
     if (plugins.isEmpty()) {
-        EmptyState(
-            message = "No plugins available",
-            description = "Check back later for new plugins"
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            BossEmptyState(
+                icon = Icons.Default.Extension,
+                message = "No plugins available",
+                description = "Check back later"
+            )
+        }
     } else {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxSize()
         ) {
             items(plugins, key = { it.pluginId }) { plugin ->
                 AvailablePluginCard(
@@ -397,13 +533,9 @@ private fun AvailablePluginCard(
     onInstall: () -> Unit,
     isLoading: Boolean
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    BossCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -411,39 +543,42 @@ private fun AvailablePluginCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = plugin.displayName,
-                        style = MaterialTheme.typography.titleMedium,
+                        color = BossThemeColors.TextPrimary,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "v${plugin.version}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = BossThemeColors.TextMuted,
+                        fontSize = 11.sp
                     )
                     if (plugin.verified) {
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(6.dp))
                         Icon(
                             Icons.Default.Check,
-                            "Verified",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            contentDescription = "Verified",
+                            modifier = Modifier.size(14.dp),
+                            tint = BossThemeColors.SuccessColor
                         )
                     }
                 }
                 if (plugin.description.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = plugin.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = BossThemeColors.TextSecondary,
+                        fontSize = 12.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (plugin.author.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = "by ${plugin.author}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = BossThemeColors.TextMuted,
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -451,19 +586,17 @@ private fun AvailablePluginCard(
             if (isInstalled) {
                 Text(
                     text = "Installed",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    color = BossThemeColors.SuccessColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
                 )
             } else {
-                Button(
+                BossPrimaryButton(
+                    text = "Install",
                     onClick = onInstall,
                     enabled = !isLoading,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Install")
-                }
+                    icon = Icons.Default.Download
+                )
             }
         }
     }
@@ -476,31 +609,45 @@ private fun UpdatesTab(
     onUpdateAll: () -> Unit,
     isLoading: Boolean
 ) {
-    if (updates.isEmpty()) {
-        EmptyState(
-            message = "All plugins are up to date",
-            description = "No updates available"
-        )
-    } else {
-        Column {
-            // Update All button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        if (updates.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Button(
-                    onClick = onUpdateAll,
-                    enabled = !isLoading
+                BossEmptyState(
+                    icon = Icons.Default.Check,
+                    message = "All plugins are up to date",
+                    description = "No updates available"
+                )
+            }
+        } else {
+            // Update All section
+            BossSection(
+                title = "Available Updates",
+                description = "${updates.size} update${if (updates.size != 1) "s" else ""} available"
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Text("Update All (${updates.size})")
+                    BossPrimaryButton(
+                        text = "Update All (${updates.size})",
+                        onClick = onUpdateAll,
+                        enabled = !isLoading
+                    )
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
             ) {
                 items(updates, key = { it.pluginId }) { update ->
                     UpdateCard(
@@ -520,19 +667,9 @@ private fun UpdateCard(
     onUpdate: () -> Unit,
     isLoading: Boolean
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (update.critical)
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
+    BossCard {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -540,79 +677,633 @@ private fun UpdateCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = update.displayName,
-                        style = MaterialTheme.typography.titleMedium,
+                        color = BossThemeColors.TextPrimary,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
                     if (update.critical) {
                         Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "Critical",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
+                        Box(
                             modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.errorContainer,
-                                    RoundedCornerShape(4.dp)
-                                )
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(BossThemeColors.ErrorColor.copy(alpha = 0.15f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        ) {
+                            Text(
+                                text = "Critical",
+                                color = BossThemeColors.ErrorColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = "${update.currentVersion} → ${update.newVersion}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = BossThemeColors.AccentColor,
+                    fontSize = 12.sp
                 )
                 if (update.changelog.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = update.changelog,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = BossThemeColors.TextSecondary,
+                        fontSize = 12.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Button(
+            BossPrimaryButton(
+                text = "Update",
                 onClick = onUpdate,
-                enabled = !isLoading,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text("Update")
-            }
+                enabled = !isLoading
+            )
         }
     }
 }
 
+/**
+ * Plugin type options matching the Supabase schema.
+ */
+private enum class PluginType(val value: String, val displayText: String) {
+    PANEL("panel", "Panel (Sidebar)"),
+    TAB("tab", "Tab (Main Area)"),
+    HYBRID("hybrid", "Hybrid (Both)")
+}
+
+/**
+ * Source selection for plugin JAR.
+ */
+private enum class JarSource {
+    GITHUB,
+    LOCAL_FILE
+}
+
 @Composable
-private fun EmptyState(
-    message: String,
-    description: String
+private fun PublishTab(
+    onFetchFromGitHub: (
+        url: String,
+        onProgress: (Float) -> Unit,
+        onStatus: (String) -> Unit,
+        onSuccess: (jarPath: String, manifest: ExtractedManifest) -> Unit,
+        onError: (String) -> Unit
+    ) -> Unit,
+    onBrowseJar: ((String?) -> Unit) -> Unit,
+    onExtractManifest: (String, (ExtractedManifest?) -> Unit) -> Unit,
+    onPublish: (
+        jarPath: String,
+        pluginId: String,
+        displayName: String,
+        version: String,
+        homepageUrl: String,
+        authorName: String,
+        description: String?,
+        changelog: String?,
+        tags: List<String>,
+        iconUrl: String?,
+        pluginType: String,
+        apiVersion: String,
+        minBossVersion: String,
+        onProgress: (Float) -> Unit,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) -> Unit,
+    isLoading: Boolean
 ) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+    var jarSource by remember { mutableStateOf(JarSource.GITHUB) }
+    var gitHubUrl by remember { mutableStateOf("") }
+    var fetchProgress by remember { mutableStateOf(0f) }
+    var fetchStatus by remember { mutableStateOf<String?>(null) }
+    var isFetching by remember { mutableStateOf(false) }
+
+    var jarPath by remember { mutableStateOf("") }
+    var pluginId by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    var version by remember { mutableStateOf("") }
+    var homepageUrl by remember { mutableStateOf("") }
+    var authorName by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var changelog by remember { mutableStateOf("") }
+    var tags by remember { mutableStateOf("") }
+    var iconUrl by remember { mutableStateOf("") }
+    var pluginType by remember { mutableStateOf(PluginType.PANEL) }
+    var apiVersion by remember { mutableStateOf("1.0") }
+    var minBossVersion by remember { mutableStateOf("1.0.0") }
+    var publishProgress by remember { mutableStateOf(0f) }
+    var publishStatus by remember { mutableStateOf<String?>(null) }
+    var isPublishing by remember { mutableStateOf(false) }
+    var showTypeDropdown by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.Extension,
-                null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-            )
+        BossSection(
+            title = "Publish Plugin",
+            description = "Upload your plugin to the BOSS Plugin Store"
+        ) {
+            // Source selection tabs
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (jarSource == JarSource.GITHUB) BossThemeColors.AccentColor.copy(alpha = 0.15f)
+                            else BossThemeColors.SurfaceColor
+                        )
+                        .clickable(enabled = !isLoading && !isPublishing && !isFetching) { jarSource = JarSource.GITHUB }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "From GitHub",
+                        color = if (jarSource == JarSource.GITHUB) BossThemeColors.AccentColor else BossThemeColors.TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = if (jarSource == JarSource.GITHUB) FontWeight.Medium else FontWeight.Normal
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (jarSource == JarSource.LOCAL_FILE) BossThemeColors.AccentColor.copy(alpha = 0.15f)
+                            else BossThemeColors.SurfaceColor
+                        )
+                        .clickable(enabled = !isLoading && !isPublishing && !isFetching) { jarSource = JarSource.LOCAL_FILE }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "From Local File",
+                        color = if (jarSource == JarSource.LOCAL_FILE) BossThemeColors.AccentColor else BossThemeColors.TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = if (jarSource == JarSource.LOCAL_FILE) FontWeight.Medium else FontWeight.Normal
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // JAR source selection
+            BossCard {
+                when (jarSource) {
+                    JarSource.GITHUB -> {
+                        Column {
+                            Text(
+                                text = "GitHub Repository",
+                                color = BossThemeColors.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            BossTextField(
+                                value = gitHubUrl,
+                                onValueChange = { gitHubUrl = it },
+                                label = "",
+                                placeholder = "https://github.com/owner/repo",
+                                enabled = !isLoading && !isPublishing && !isFetching,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+
+                            // Fetch progress
+                            if (isFetching) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    CircularProgressIndicator(
+                                        progress = fetchProgress,
+                                        color = BossThemeColors.AccentColor,
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    if (fetchStatus != null) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = fetchStatus!!,
+                                            color = BossThemeColors.TextSecondary,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (jarPath.isNotEmpty()) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = BossThemeColors.SuccessColor
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                text = jarPath.substringAfterLast("/"),
+                                                color = BossThemeColors.TextPrimary,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                    BossPrimaryButton(
+                                        text = "Fetch",
+                                        onClick = {
+                                            if (gitHubUrl.isNotBlank()) {
+                                                isFetching = true
+                                                fetchStatus = null
+                                                fetchProgress = 0f
+                                                onFetchFromGitHub(
+                                                    gitHubUrl,
+                                                    { progress -> fetchProgress = progress },
+                                                    { status -> fetchStatus = status },
+                                                    { path, manifest ->
+                                                        isFetching = false
+                                                        jarPath = path
+                                                        pluginId = manifest.pluginId
+                                                        displayName = manifest.displayName
+                                                        version = manifest.version
+                                                        description = manifest.description
+                                                        authorName = manifest.author ?: ""
+                                                        homepageUrl = manifest.url ?: gitHubUrl
+                                                        fetchStatus = null
+                                                    },
+                                                    { error ->
+                                                        isFetching = false
+                                                        fetchStatus = "Error: $error"
+                                                    }
+                                                )
+                                            }
+                                        },
+                                        enabled = !isLoading && !isPublishing && !isFetching && gitHubUrl.isNotBlank(),
+                                        icon = Icons.Default.Download
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    JarSource.LOCAL_FILE -> {
+                        Column {
+                            Text(
+                                text = "Plugin JAR File",
+                                color = BossThemeColors.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (jarPath.isNotEmpty()) jarPath.substringAfterLast("/") else "No file selected",
+                                    color = if (jarPath.isNotEmpty()) BossThemeColors.TextPrimary else BossThemeColors.TextMuted,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                BossSecondaryButton(
+                                    text = "Browse",
+                                    onClick = {
+                                        onBrowseJar { selectedPath ->
+                                            if (selectedPath != null) {
+                                                jarPath = selectedPath
+                                                // Auto-extract manifest
+                                                onExtractManifest(selectedPath) { manifest ->
+                                                    if (manifest != null) {
+                                                        pluginId = manifest.pluginId
+                                                        displayName = manifest.displayName
+                                                        version = manifest.version
+                                                        description = manifest.description
+                                                        authorName = manifest.author ?: ""
+                                                        homepageUrl = manifest.url ?: ""
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = !isLoading && !isPublishing
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+
+            // Plugin details form
+            BossTextField(
+                value = pluginId,
+                onValueChange = { pluginId = it },
+                label = "Plugin ID",
+                placeholder = "ai.rever.boss.plugin.example",
+                enabled = !isLoading && !isPublishing,
+                required = true,
+                modifier = Modifier.fillMaxWidth()
             )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextField(
+                value = displayName,
+                onValueChange = { displayName = it },
+                label = "Display Name",
+                placeholder = "My Awesome Plugin",
+                enabled = !isLoading && !isPublishing,
+                required = true,
+                modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                BossTextField(
+                    value = version,
+                    onValueChange = { version = it },
+                    label = "Version",
+                    placeholder = "1.0.0",
+                    enabled = !isLoading && !isPublishing,
+                    required = true,
+                    modifier = Modifier.weight(1f)
+                )
+                BossTextField(
+                    value = authorName,
+                    onValueChange = { authorName = it },
+                    label = "Author",
+                    placeholder = "Your Name",
+                    enabled = !isLoading && !isPublishing,
+                    required = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Plugin Type dropdown
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Plugin Type",
+                    color = BossThemeColors.TextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(4.dp))
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(BossThemeColors.SurfaceColor)
+                            .clickable(enabled = !isLoading && !isPublishing) { showTypeDropdown = !showTypeDropdown }
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = pluginType.displayText,
+                                color = BossThemeColors.TextPrimary,
+                                fontSize = 13.sp
+                            )
+                            Icon(
+                                if (showTypeDropdown) Icons.Default.Close else Icons.Default.Extension,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = BossThemeColors.TextSecondary
+                            )
+                        }
+                    }
+                    if (showTypeDropdown) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 44.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(BossThemeColors.SurfaceColor)
+                        ) {
+                            PluginType.entries.forEach { type ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            pluginType = type
+                                            showTypeDropdown = false
+                                        }
+                                        .background(
+                                            if (type == pluginType) BossThemeColors.AccentColor.copy(alpha = 0.1f)
+                                            else BossThemeColors.SurfaceColor
+                                        )
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = type.displayText,
+                                        color = if (type == pluginType) BossThemeColors.AccentColor else BossThemeColors.TextPrimary,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                BossTextField(
+                    value = apiVersion,
+                    onValueChange = { apiVersion = it },
+                    label = "API Version",
+                    placeholder = "1.0",
+                    enabled = !isLoading && !isPublishing,
+                    modifier = Modifier.weight(1f)
+                )
+                BossTextField(
+                    value = minBossVersion,
+                    onValueChange = { minBossVersion = it },
+                    label = "Min BOSS Version",
+                    placeholder = "1.0.0",
+                    enabled = !isLoading && !isPublishing,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextField(
+                value = homepageUrl,
+                onValueChange = { homepageUrl = it },
+                label = "Homepage URL",
+                placeholder = "https://github.com/your/repo",
+                enabled = !isLoading && !isPublishing,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextField(
+                value = iconUrl,
+                onValueChange = { iconUrl = it },
+                label = "Icon URL",
+                placeholder = "https://example.com/icon.png",
+                enabled = !isLoading && !isPublishing,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextArea(
+                value = description,
+                onValueChange = { description = it },
+                label = "Description",
+                placeholder = "Describe what your plugin does...",
+                enabled = !isLoading && !isPublishing,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextArea(
+                value = changelog,
+                onValueChange = { changelog = it },
+                label = "Changelog",
+                placeholder = "What's new in this version...",
+                enabled = !isLoading && !isPublishing,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            BossTextField(
+                value = tags,
+                onValueChange = { tags = it },
+                label = "Tags",
+                placeholder = "ui, productivity, tools (comma-separated)",
+                enabled = !isLoading && !isPublishing,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // Progress indicator
+            if (isPublishing) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(
+                        progress = publishProgress,
+                        color = BossThemeColors.AccentColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Publishing... ${(publishProgress * 100).toInt()}%",
+                        color = BossThemeColors.TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            // Status message
+            if (publishStatus != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = publishStatus!!,
+                    color = if (publishStatus!!.startsWith("Success")) BossThemeColors.SuccessColor else BossThemeColors.ErrorColor,
+                    fontSize = 13.sp
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Publish button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                BossPrimaryButton(
+                    text = "Publish",
+                    onClick = {
+                        if (jarPath.isNotBlank() && pluginId.isNotBlank() && displayName.isNotBlank() && version.isNotBlank() && authorName.isNotBlank()) {
+                            isPublishing = true
+                            publishStatus = null
+                            onPublish(
+                                jarPath,
+                                pluginId,
+                                displayName,
+                                version,
+                                homepageUrl,
+                                authorName,
+                                description.ifBlank { null },
+                                changelog.ifBlank { null },
+                                tags.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                                iconUrl.ifBlank { null },
+                                pluginType.value,
+                                apiVersion.ifBlank { "1.0" },
+                                minBossVersion.ifBlank { "1.0.0" },
+                                { progress -> publishProgress = progress },
+                                { result ->
+                                    isPublishing = false
+                                    publishStatus = "Success! Plugin published with ID: $result"
+                                    // Clear form
+                                    jarPath = ""
+                                    pluginId = ""
+                                    displayName = ""
+                                    version = ""
+                                    homepageUrl = ""
+                                    authorName = ""
+                                    description = ""
+                                    changelog = ""
+                                    tags = ""
+                                    iconUrl = ""
+                                    pluginType = PluginType.PANEL
+                                    apiVersion = "1.0"
+                                    minBossVersion = "1.0.0"
+                                },
+                                { error ->
+                                    isPublishing = false
+                                    publishStatus = "Error: $error"
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isLoading && !isPublishing && jarPath.isNotBlank() && pluginId.isNotBlank() && displayName.isNotBlank() && version.isNotBlank() && authorName.isNotBlank(),
+                    icon = Icons.Default.Upload
+                )
+            }
         }
     }
 }

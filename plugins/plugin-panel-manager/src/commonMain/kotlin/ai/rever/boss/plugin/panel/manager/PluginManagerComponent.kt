@@ -16,6 +16,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
+ * Data extracted from a plugin's manifest.
+ * Used when extracting manifest from JAR or fetching from GitHub.
+ */
+data class ExtractedManifest(
+    val pluginId: String,
+    val displayName: String,
+    val version: String,
+    val description: String,
+    val author: String?,
+    val url: String?
+)
+
+/**
  * State for an installed plugin in the UI.
  */
 data class InstalledPluginState(
@@ -26,7 +39,8 @@ data class InstalledPluginState(
     val enabled: Boolean,
     val healthy: Boolean,
     val canUnload: Boolean,
-    val jarPath: String
+    val jarPath: String,
+    val url: String? = null
 )
 
 /**
@@ -98,6 +112,86 @@ interface PluginManagerOperations {
      * @param version Optional specific version (latest if null)
      */
     suspend fun installFromRemote(pluginId: String, version: String? = null): Result<Unit>
+
+    /**
+     * Extract manifest information from a JAR file.
+     *
+     * @param jarPath Path to the JAR file
+     * @return ExtractedManifest if successful, null otherwise
+     */
+    suspend fun extractManifestFromJar(jarPath: String): ExtractedManifest?
+
+    /**
+     * Fetch and optionally build a plugin from GitHub.
+     *
+     * @param githubUrl URL to the GitHub repository
+     * @param buildIfNoRelease Whether to build from source if no release is found
+     * @param onProgress Progress callback (0.0 to 1.0)
+     * @param onStatus Status message callback
+     * @return Result containing the JAR path and extracted manifest
+     */
+    suspend fun fetchFromGitHub(
+        githubUrl: String,
+        buildIfNoRelease: Boolean,
+        onProgress: (Float) -> Unit,
+        onStatus: (String) -> Unit
+    ): Result<Pair<String, ExtractedManifest>>
+
+    /**
+     * Publish a plugin to the plugin store.
+     *
+     * @param jarPath Path to the JAR file
+     * @param pluginId Plugin identifier
+     * @param displayName Display name for the plugin
+     * @param version Version string
+     * @param homepageUrl URL to the plugin's homepage
+     * @param authorName Author name (required)
+     * @param description Optional description
+     * @param changelog Optional changelog/release notes
+     * @param tags List of tags for categorization
+     * @param iconUrl Optional URL to the plugin icon
+     * @param pluginType Plugin type (panel, tab, or hybrid)
+     * @param apiVersion Required BOSS Plugin API version
+     * @param minBossVersion Minimum BOSS application version required
+     * @param onProgress Progress callback (0.0 to 1.0)
+     * @return Result containing the published plugin ID
+     */
+    suspend fun publishPlugin(
+        jarPath: String,
+        pluginId: String,
+        displayName: String,
+        version: String,
+        homepageUrl: String,
+        authorName: String,
+        description: String?,
+        changelog: String?,
+        tags: List<String>,
+        iconUrl: String?,
+        pluginType: String,
+        apiVersion: String,
+        minBossVersion: String,
+        onProgress: (Float) -> Unit
+    ): Result<String>
+
+    /**
+     * Check if the current user has admin privileges.
+     */
+    suspend fun isCurrentUserAdmin(): Boolean
+
+    /**
+     * Admin: Delete a plugin from the store.
+     */
+    suspend fun adminDeletePlugin(pluginId: String): Result<Unit>
+
+    /**
+     * Admin: Set a plugin's published status.
+     */
+    suspend fun adminSetPluginPublished(pluginId: String, published: Boolean): Result<Unit>
+
+    /**
+     * Admin: Set a plugin's verified status.
+     */
+    suspend fun adminSetPluginVerified(pluginId: String, verified: Boolean): Result<Unit>
 }
 
 /**
@@ -176,6 +270,45 @@ class PluginManagerComponent(
     }
 
     /**
+     * Install a plugin from a GitHub repository URL.
+     */
+    fun installFromGitHub(githubUrl: String) {
+        scope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null)
+            try {
+                val result = operations.fetchFromGitHub(
+                    githubUrl = githubUrl,
+                    buildIfNoRelease = true,
+                    onProgress = { /* TODO: could add progress indicator */ },
+                    onStatus = { /* TODO: could show status */ }
+                )
+                if (result.isFailure) {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message ?: "GitHub install failed"
+                    )
+                } else {
+                    val (jarPath, _) = result.getOrThrow()
+                    val installResult = operations.installPlugin(jarPath)
+                    if (installResult.isFailure) {
+                        _state.value = _state.value.copy(
+                            isLoading = false,
+                            error = installResult.exceptionOrNull()?.message ?: "Install failed"
+                        )
+                    } else {
+                        refresh()
+                    }
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "GitHub install failed"
+                )
+            }
+        }
+    }
+
+    /**
      * Uninstall a plugin with confirmation.
      */
     fun uninstallPlugin(pluginId: String) {
@@ -248,6 +381,116 @@ class PluginManagerComponent(
                 )
             } else {
                 refresh()
+            }
+        }
+    }
+
+    /**
+     * Publish a plugin to the store.
+     */
+    fun publishPlugin(
+        jarPath: String,
+        pluginId: String,
+        displayName: String,
+        version: String,
+        homepageUrl: String,
+        authorName: String,
+        description: String?,
+        changelog: String?,
+        tags: List<String>,
+        iconUrl: String?,
+        pluginType: String,
+        apiVersion: String,
+        minBossVersion: String,
+        onProgress: (Float) -> Unit = {},
+        onSuccess: (String) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        scope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null)
+            try {
+                val result = operations.publishPlugin(
+                    jarPath = jarPath,
+                    pluginId = pluginId,
+                    displayName = displayName,
+                    version = version,
+                    homepageUrl = homepageUrl,
+                    authorName = authorName,
+                    description = description,
+                    changelog = changelog,
+                    tags = tags,
+                    iconUrl = iconUrl,
+                    pluginType = pluginType,
+                    apiVersion = apiVersion,
+                    minBossVersion = minBossVersion,
+                    onProgress = onProgress
+                )
+                _state.value = _state.value.copy(isLoading = false)
+                if (result.isSuccess) {
+                    onSuccess(result.getOrThrow())
+                    refresh()
+                } else {
+                    val errorMsg = result.exceptionOrNull()?.message ?: "Publish failed"
+                    _state.value = _state.value.copy(error = errorMsg)
+                    onError(errorMsg)
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "Publish failed"
+                )
+                onError(e.message ?: "Publish failed")
+            }
+        }
+    }
+
+    /**
+     * Browse for a plugin JAR file.
+     */
+    fun browseForPluginJar(onResult: (String?) -> Unit) {
+        scope.launch {
+            val jarPath = operations.browseForPlugin()
+            onResult(jarPath)
+        }
+    }
+
+    /**
+     * Extract manifest from a JAR file.
+     */
+    fun extractManifest(jarPath: String, onResult: (ExtractedManifest?) -> Unit) {
+        scope.launch {
+            val manifest = operations.extractManifestFromJar(jarPath)
+            onResult(manifest)
+        }
+    }
+
+    /**
+     * Fetch a plugin from GitHub for publishing.
+     * Returns the JAR path and extracted manifest on success.
+     */
+    fun fetchFromGitHubForPublish(
+        githubUrl: String,
+        onProgress: (Float) -> Unit,
+        onStatus: (String) -> Unit,
+        onSuccess: (jarPath: String, manifest: ExtractedManifest) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        scope.launch {
+            try {
+                val result = operations.fetchFromGitHub(
+                    githubUrl = githubUrl,
+                    buildIfNoRelease = true,
+                    onProgress = onProgress,
+                    onStatus = onStatus
+                )
+                if (result.isSuccess) {
+                    val (jarPath, manifest) = result.getOrThrow()
+                    onSuccess(jarPath, manifest)
+                } else {
+                    onError(result.exceptionOrNull()?.message ?: "Failed to fetch from GitHub")
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to fetch from GitHub")
             }
         }
     }

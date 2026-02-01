@@ -1,7 +1,6 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.plugin.api.PluginContext
-import ai.rever.boss.plugin.panel.manager.PluginManagerPanelPlugin
 
 /**
  * Expect declaration for Plugin Manager panel registration.
@@ -14,6 +13,7 @@ expect object PluginManagerSetup {
      * Register the Plugin Manager panel with platform-specific operations.
      *
      * @param context Plugin context for registration
+     * @param dynamicPluginManager The dynamic plugin manager for plugin operations
      */
-    fun registerPluginManagerPanel(context: PluginContext)
+    fun registerPluginManagerPanel(context: PluginContext, dynamicPluginManager: DynamicPluginManager)
 }

@@ -6,6 +6,7 @@ import ai.rever.boss.plugin.repository.LocalPluginRepository
 import ai.rever.boss.plugin.repository.PluginRepositoryManager
 import ai.rever.boss.plugin.repository.remote.PluginDownloadCache
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
+import ai.rever.boss.plugin.repository.remote.PluginStoreRealtimeService
 import ai.rever.boss.plugin.repository.remote.RemotePluginRepository
 import ai.rever.boss.plugin.updater.PluginUpdateManager
 import ai.rever.boss.plugin.updater.UpdateCheckerConfig
@@ -54,6 +55,7 @@ object PluginStoreSetup {
     private var _remoteRepository: RemotePluginRepository? = null
     private var _repositoryManager: PluginRepositoryManager? = null
     private var _updateManager: PluginUpdateManager? = null
+    private var _realtimeService: PluginStoreRealtimeService? = null
 
     /**
      * Download cache for plugin JARs.
@@ -84,6 +86,12 @@ object PluginStoreSetup {
      */
     val updateManager: PluginUpdateManager?
         get() = _updateManager
+
+    /**
+     * Realtime service for live plugin store updates.
+     */
+    val realtimeService: PluginStoreRealtimeService?
+        get() = _realtimeService
 
     /**
      * Initialize the plugin store infrastructure.
@@ -120,6 +128,9 @@ object PluginStoreSetup {
                     checkIntervalMs = 3600000L // Check every hour
                 )
             )
+
+            // Create and start realtime service for live updates
+            _realtimeService = PluginStoreRealtimeService()
 
             initialized = true
             logger.info(LogCategory.SYSTEM, "Plugin store initialization complete", mapOf(
@@ -180,6 +191,9 @@ object PluginStoreSetup {
                 ))
             }
 
+            // Start realtime service for live updates
+            _realtimeService?.start()
+
             logger.info(LogCategory.NETWORK, "Remote plugin repository initialized")
 
         } catch (e: Exception) {
@@ -238,6 +252,7 @@ object PluginStoreSetup {
      */
     fun shutdown() {
         logger.info(LogCategory.SYSTEM, "Shutting down plugin store")
+        _realtimeService?.dispose()
         _updateManager?.dispose()
         PluginStoreConfig.clear()
         _downloadCache = null
@@ -245,6 +260,47 @@ object PluginStoreSetup {
         _remoteRepository = null
         _repositoryManager = null
         _updateManager = null
+        _realtimeService = null
         initialized = false
+    }
+
+    /**
+     * Set the callback to be invoked when plugins change in realtime.
+     * This should be called by the PluginManagerComponent to refresh its state.
+     */
+    fun setOnPluginsChangedCallback(callback: suspend () -> Unit) {
+        _realtimeService?.onRefreshRequested = callback
+    }
+
+    /**
+     * Load persisted plugins using the provided DynamicPluginManager.
+     * This should be called during application startup after the DynamicPluginManager is initialized.
+     *
+     * @param dynamicPluginManager The plugin manager to use for loading
+     * @return Map of plugin IDs to their load results
+     */
+    suspend fun loadPersistedPlugins(
+        dynamicPluginManager: ai.rever.boss.components.plugin.DynamicPluginManager
+    ): Map<String, Result<ai.rever.boss.components.plugin.DynamicPluginInfo>> {
+        val persistedPlugins = PluginPersistence.getInstalledPlugins()
+
+        if (persistedPlugins.isEmpty()) {
+            logger.info(LogCategory.SYSTEM, "No persisted plugins to load")
+            return emptyMap()
+        }
+
+        logger.info(LogCategory.SYSTEM, "Loading persisted plugins", mapOf(
+            "count" to persistedPlugins.size
+        ))
+
+        val entries = persistedPlugins.map { entry ->
+            ai.rever.boss.components.plugin.PersistedPluginEntry(
+                pluginId = entry.pluginId,
+                jarPath = entry.jarPath,
+                enabled = entry.enabled
+            )
+        }
+
+        return dynamicPluginManager.loadPersistedPlugins(entries)
     }
 }

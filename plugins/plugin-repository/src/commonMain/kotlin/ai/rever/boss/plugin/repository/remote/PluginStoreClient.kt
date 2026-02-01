@@ -18,7 +18,7 @@ import kotlinx.serialization.json.Json
  *
  * Handles all communication with the /plugin-store endpoints.
  */
-internal object PluginStoreClient {
+object PluginStoreClient {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -213,6 +213,192 @@ internal object PluginStoreClient {
         PluginSortOrder.NEWEST -> "newest"
         PluginSortOrder.UPDATED -> "updated"
     }
+
+    // ============================================================================
+    // Publish Endpoints
+    // ============================================================================
+
+    /**
+     * POST /plugin-store/publish - Create a new plugin entry (first-time publish)
+     */
+    suspend fun publishPlugin(request: PublishPluginRequest): PublishPluginResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required to publish plugins")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/publish") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(PublishPluginRequest.serializer(), request))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<PublishPluginResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to publish plugin: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * POST /plugin-store/:pluginId/version - Create a new version and get upload URL
+     */
+    suspend fun publishVersion(pluginId: String, request: PublishVersionRequest): PublishVersionResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required to publish versions")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/$pluginId/version") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(PublishVersionRequest.serializer(), request))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<PublishVersionResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to publish version: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * PUT {uploadUrl} - Upload JAR file to the signed URL
+     */
+    suspend fun uploadJar(uploadUrl: String, jarBytes: ByteArray): Boolean {
+        val response = httpClient.put(uploadUrl) {
+            contentType(ContentType.Application.OctetStream)
+            setBody(jarBytes)
+        }
+
+        if (!response.status.isSuccess()) {
+            throw PluginStoreException("Failed to upload JAR: ${response.status}")
+        }
+
+        return true
+    }
+
+    /**
+     * POST /plugin-store/version/finalize - Finalize version after JAR upload
+     */
+    suspend fun finalizeVersion(request: FinalizeVersionRequest): FinalizeVersionResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required to finalize versions")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/version/finalize") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(FinalizeVersionRequest.serializer(), request))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<FinalizeVersionResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to finalize version: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * Check if a plugin with the given ID exists
+     */
+    suspend fun pluginExists(pluginId: String): Boolean {
+        return getPlugin(pluginId) != null
+    }
+
+
+    // ============================================================================
+    // Admin API Methods
+    // ============================================================================
+
+    /**
+     * POST /plugin-store/admin/:pluginId/publish - Enable/disable a plugin (admin only)
+     */
+    suspend fun setPluginPublished(pluginId: String, published: Boolean): AdminActionResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required for admin actions")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/admin/$pluginId/publish") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(SetPublishedRequest.serializer(), SetPublishedRequest(published)))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<AdminActionResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to update plugin status: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * DELETE /plugin-store/admin/:pluginId - Delete a plugin (admin only)
+     */
+    suspend fun deletePlugin(pluginId: String): AdminActionResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required for admin actions")
+
+        val response = httpClient.delete("${PluginStoreConfig.pluginStoreUrl}/admin/$pluginId") {
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<AdminActionResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to delete plugin: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * POST /plugin-store/admin/:pluginId/verify - Verify/unverify a plugin (admin only)
+     */
+    suspend fun setPluginVerified(pluginId: String, verified: Boolean): AdminActionResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("Authentication required for admin actions")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/admin/$pluginId/verify") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(SetVerifiedRequest.serializer(), SetVerifiedRequest(verified)))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<AdminActionResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to update verification status: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
 }
 
 /**
@@ -261,6 +447,7 @@ data class PluginListItem(
     val apiVersion: String,
     val verified: Boolean,
     val iconUrl: String = "",
+    val url: String = "",
     val version: String? = null,
     val rating: Float = 0f,
     val ratingCount: Int = 0,
@@ -274,6 +461,7 @@ data class PluginListItem(
         version = version ?: "0.0.0",
         description = description,
         author = author,
+        url = url,
         type = parsePluginType(type),
         apiVersion = apiVersion,
         iconUrl = iconUrl,
@@ -401,6 +589,85 @@ data class PopularTagsResponse(
 data class TagCount(
     val tag: String,
     val count: Int
+)
+
+
+// ============================================================================
+// Publish API Request/Response Models
+// ============================================================================
+
+@Serializable
+data class PublishPluginRequest(
+    val pluginId: String,
+    val displayName: String,
+    val description: String = "",
+    val authorName: String? = null,
+    val homepageUrl: String = "",
+    val iconUrl: String = "",
+    val type: String = "panel",
+    val apiVersion: String = "1.0",
+    val tags: List<String> = emptyList()
+)
+
+@Serializable
+data class PublishPluginResponse(
+    val success: Boolean,
+    val id: String? = null,
+    val pluginId: String? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class PublishVersionRequest(
+    val version: String,
+    val changelog: String = "",
+    val minBossVersion: String = "1.0.0",
+    val dependencies: List<DependencyInfo> = emptyList()
+)
+
+@Serializable
+data class PublishVersionResponse(
+    val success: Boolean,
+    val versionId: String? = null,
+    val uploadUrl: String? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class FinalizeVersionRequest(
+    val versionId: String,
+    val sha256: String,
+    val jarSize: Long
+)
+
+@Serializable
+data class FinalizeVersionResponse(
+    val success: Boolean,
+    val error: String? = null
+)
+
+
+// ============================================================================
+// Admin API Request/Response Models
+// ============================================================================
+
+@Serializable
+internal data class SetPublishedRequest(
+    val published: Boolean
+)
+
+@Serializable
+internal data class SetVerifiedRequest(
+    val verified: Boolean
+)
+
+@Serializable
+data class AdminActionResponse(
+    val success: Boolean,
+    val pluginId: String? = null,
+    val published: Boolean? = null,
+    val verified: Boolean? = null,
+    val error: String? = null
 )
 
 // Platform-specific HTTP client creation

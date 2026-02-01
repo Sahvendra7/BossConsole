@@ -65,6 +65,7 @@ export interface PluginListItem {
   apiVersion: string
   verified: boolean
   iconUrl: string
+  url: string
   version: string | null
   rating: number
   ratingCount: number

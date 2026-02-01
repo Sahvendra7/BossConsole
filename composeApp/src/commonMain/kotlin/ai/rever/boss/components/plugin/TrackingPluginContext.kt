@@ -1,17 +1,30 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.api.ActiveTabsProvider
+import ai.rever.boss.plugin.api.AuthDataProvider
+import ai.rever.boss.plugin.api.BookmarkDataProvider
+import ai.rever.boss.plugin.api.DownloadDataProvider
+import ai.rever.boss.plugin.api.FileSystemDataProvider
+import ai.rever.boss.plugin.api.GitDataProvider
+import ai.rever.boss.plugin.api.RoleManagementProvider
+import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.PanelRegistry
+import ai.rever.boss.plugin.api.PerformanceDataProvider
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.plugin.api.PluginSandboxRef
+import ai.rever.boss.plugin.api.RunConfigurationDataProvider
+import ai.rever.boss.plugin.api.SecretDataProvider
+import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabComponentWithUI
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.plugin.api.TabTypeInfo
+import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
@@ -202,6 +215,23 @@ class TrackingPluginContext(
     override val sandbox: PluginSandboxRef? get() = delegate.sandbox
     override val browserService: BrowserService? get() = delegate.browserService
     override val manifest: PluginManifest? get() = pluginManifest ?: delegate.manifest
+
+    // Service providers - delegate to underlying context
+    override val performanceDataProvider: PerformanceDataProvider? get() = delegate.performanceDataProvider
+    override val downloadDataProvider: DownloadDataProvider? get() = delegate.downloadDataProvider
+    override val bookmarkDataProvider: BookmarkDataProvider? get() = delegate.bookmarkDataProvider
+    override val workspaceDataProvider: WorkspaceDataProvider? get() = delegate.workspaceDataProvider
+    override val splitViewOperations: SplitViewOperations? get() = delegate.splitViewOperations
+    override val gitDataProvider: GitDataProvider? get() = delegate.gitDataProvider
+    override val fileSystemDataProvider: FileSystemDataProvider? get() = delegate.fileSystemDataProvider
+    override val secretDataProvider: SecretDataProvider? get() = delegate.secretDataProvider
+    override val runConfigurationDataProvider: RunConfigurationDataProvider? get() = delegate.runConfigurationDataProvider
+    override val activeTabsProvider: ActiveTabsProvider? get() = delegate.activeTabsProvider
+    override val windowId: String? get() = delegate.windowId
+    override val projectPath: String? get() = delegate.projectPath
+    override val authDataProvider: AuthDataProvider? get() = delegate.authDataProvider
+    override val userManagementProvider: UserManagementProvider? get() = delegate.userManagementProvider
+    override val roleManagementProvider: RoleManagementProvider? get() = delegate.roleManagementProvider
 
     /**
      * Get the panels registered by this plugin.

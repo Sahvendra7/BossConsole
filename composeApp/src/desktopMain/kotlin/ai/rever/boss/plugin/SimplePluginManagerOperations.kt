@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin
 
+import ai.rever.boss.plugin.panel.manager.ExtractedManifest
 import ai.rever.boss.plugin.panel.manager.InstalledPluginState
 import ai.rever.boss.plugin.panel.manager.PluginManagerComponent
 import ai.rever.boss.plugin.panel.manager.PluginManagerOperations
@@ -30,6 +31,38 @@ class SimplePluginManagerOperations(
 
     private val component: PluginManagerComponent?
         get() = binding.component
+
+    init {
+        // Set up realtime callback to refresh available plugins when changes occur
+        PluginStoreSetup.setOnPluginsChangedCallback {
+            logger.debug(LogCategory.NETWORK, "Realtime plugin change detected, refreshing")
+            refreshAvailablePlugins()
+        }
+    }
+
+    /**
+     * Refresh only the available plugins from remote repository.
+     * This is called by the realtime service when plugins change.
+     */
+    private suspend fun refreshAvailablePlugins() {
+        try {
+            PluginStoreSetup.repositoryManager?.let { repoManager ->
+                val remoteRepo = repoManager.getRepository("supabase-store")
+                if (remoteRepo != null && remoteRepo.isAvailable) {
+                    val listResult = remoteRepo.listPlugins()
+                    if (listResult.isSuccess) {
+                        val plugins = listResult.getOrThrow()
+                        component?.updateAvailablePlugins(plugins)
+                        logger.debug(LogCategory.NETWORK, "Available plugins refreshed via realtime", mapOf(
+                            "count" to plugins.size
+                        ))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.error(LogCategory.NETWORK, "Error refreshing plugins from realtime", error = e)
+        }
+    }
 
     override suspend fun installPlugin(jarPath: String): Result<Unit> {
         // TODO: Integrate with global DynamicPluginManager when available
@@ -200,6 +233,27 @@ class SimplePluginManagerOperations(
         }
     }
 
+    override suspend fun extractManifestFromJar(jarPath: String): ExtractedManifest? {
+        // Not implemented in simplified version
+        logger.debug(LogCategory.SYSTEM, "extractManifestFromJar not implemented", mapOf(
+            "jarPath" to jarPath
+        ))
+        return null
+    }
+
+    override suspend fun fetchFromGitHub(
+        githubUrl: String,
+        buildIfNoRelease: Boolean,
+        onProgress: (Float) -> Unit,
+        onStatus: (String) -> Unit
+    ): Result<Pair<String, ExtractedManifest>> {
+        // Not implemented in simplified version
+        logger.info(LogCategory.SYSTEM, "fetchFromGitHub not implemented", mapOf(
+            "githubUrl" to githubUrl
+        ))
+        return Result.failure(Exception("GitHub fetch requires full plugin manager integration"))
+    }
+
     override suspend fun installFromRemote(pluginId: String, version: String?): Result<Unit> {
         return try {
             logger.info(LogCategory.SYSTEM, "Installing plugin from remote", mapOf(
@@ -236,5 +290,63 @@ class SimplePluginManagerOperations(
             logger.error(LogCategory.SYSTEM, "Exception installing plugin from remote", error = e)
             Result.failure(e)
         }
+    }
+
+    override suspend fun publishPlugin(
+        jarPath: String,
+        pluginId: String,
+        displayName: String,
+        version: String,
+        homepageUrl: String,
+        authorName: String,
+        description: String?,
+        changelog: String?,
+        tags: List<String>,
+        iconUrl: String?,
+        pluginType: String,
+        apiVersion: String,
+        minBossVersion: String,
+        onProgress: (Float) -> Unit
+    ): Result<String> {
+        // Delegate to PluginManagerOperationsImpl when DynamicPluginManager is available
+        // For now, return not implemented
+        logger.info(LogCategory.SYSTEM, "Publish plugin requested", mapOf(
+            "pluginId" to pluginId,
+            "version" to version,
+            "type" to pluginType
+        ))
+        return Result.failure(Exception("Plugin publishing requires DynamicPluginManager integration"))
+    }
+
+    // ============================================================================
+    // Admin Operations
+    // ============================================================================
+
+    override suspend fun isCurrentUserAdmin(): Boolean {
+        // Not implemented in simplified version - return false
+        return false
+    }
+
+    override suspend fun adminDeletePlugin(pluginId: String): Result<Unit> {
+        logger.info(LogCategory.SYSTEM, "Admin delete plugin not implemented in simple mode", mapOf(
+            "pluginId" to pluginId
+        ))
+        return Result.failure(Exception("Admin operations require full plugin manager integration"))
+    }
+
+    override suspend fun adminSetPluginPublished(pluginId: String, published: Boolean): Result<Unit> {
+        logger.info(LogCategory.SYSTEM, "Admin set published not implemented in simple mode", mapOf(
+            "pluginId" to pluginId,
+            "published" to published
+        ))
+        return Result.failure(Exception("Admin operations require full plugin manager integration"))
+    }
+
+    override suspend fun adminSetPluginVerified(pluginId: String, verified: Boolean): Result<Unit> {
+        logger.info(LogCategory.SYSTEM, "Admin set verified not implemented in simple mode", mapOf(
+            "pluginId" to pluginId,
+            "verified" to verified
+        ))
+        return Result.failure(Exception("Admin operations require full plugin manager integration"))
     }
 }

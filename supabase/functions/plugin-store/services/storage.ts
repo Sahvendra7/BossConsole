@@ -3,6 +3,23 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 const BUCKET_NAME = 'plugin-jars'
 
 /**
+ * Normalize storage URLs to be accessible from outside Docker network.
+ * Replaces internal Docker hostnames (kong:8000) with the public Supabase URL.
+ */
+function normalizeStorageUrl(url: string): string {
+  // Get the public host port from environment (set by local Supabase)
+  const hostPort = Deno.env.get("SUPABASE_INTERNAL_HOST_PORT") || "54321"
+  const publicUrl = `http://127.0.0.1:${hostPort}`
+
+  // Replace internal Docker hostnames with public URL
+  // kong:8000 is the internal API gateway in local Supabase
+  // For production, these patterns won't match and the URL stays unchanged
+  return url
+    .replace(/http:\/\/kong:8000/g, publicUrl)
+    .replace(/http:\/\/supabase_kong_[^\/]+:8000/g, publicUrl)
+}
+
+/**
  * Generate a signed URL for downloading a plugin JAR
  */
 export async function getSignedDownloadUrl(
@@ -24,7 +41,7 @@ export async function getSignedDownloadUrl(
     throw new Error('Failed to create download URL: no URL returned')
   }
 
-  return data.signedUrl
+  return normalizeStorageUrl(data.signedUrl)
 }
 
 /**
@@ -49,7 +66,7 @@ export async function getSignedUploadUrl(
     throw new Error('Failed to create upload URL: no URL returned')
   }
 
-  return data.signedUrl
+  return normalizeStorageUrl(data.signedUrl)
 }
 
 /**

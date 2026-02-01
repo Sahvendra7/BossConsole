@@ -20,6 +20,11 @@
  * - GET  /plugin-store/health          - Health check
  * - GET  /plugin-store/doc             - Swagger UI documentation
  * - GET  /plugin-store/openapi         - OpenAPI specification (JSON)
+ *
+ * Admin Routes (requires is_admin=true in JWT):
+ * - POST   /plugin-store/admin/:pluginId/publish - Enable/disable a plugin
+ * - DELETE /plugin-store/admin/:pluginId         - Delete a plugin
+ * - POST   /plugin-store/admin/:pluginId/verify  - Verify/unverify a plugin
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi"
@@ -30,6 +35,7 @@ import browse from "./routes/browse.ts"
 import download from "./routes/download.ts"
 import rating from "./routes/rating.ts"
 import publish from "./routes/publish.ts"
+import admin from "./routes/admin.ts"
 import type { PluginStoreContext } from "./types/context.ts"
 
 const app = new OpenAPIHono<{ Variables: PluginStoreContext }>().basePath("/plugin-store")
@@ -55,23 +61,23 @@ app.use("*", async (ctx, next) => {
   await next()
 })
 
-// Mount routes
-// Note: Order matters - more specific routes first
-app.route("/tags", browse)    // /tags/popular
-app.route("/version", publish) // /version/finalize
-app.route("/", publish)       // /publish, /:pluginId/version
-app.route("/", download)      // /:pluginId/download, /:pluginId/download/:version
-app.route("/", rating)        // /:pluginId/rate, /:pluginId/rating, /:pluginId/ratings
-app.route("/", browse)        // /list, /search, /:pluginId
-
-// Health check endpoint
+// Health check endpoint - must be before other routes
 app.get("/health", (ctx) => {
-  return ctx.json({ 
-    status: "healthy", 
+  return ctx.json({
+    status: "healthy",
     service: "plugin-store",
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString()
   }, 200)
 })
+
+// Mount routes
+// Note: Order matters - more specific routes first, wildcard routes last
+app.route("/", admin)          // /admin/:pluginId/publish, /admin/:pluginId, /admin/:pluginId/verify
+app.route("/version", publish) // /version/finalize
+app.route("/", publish)        // /publish, /:pluginId/version
+app.route("/", download)       // /:pluginId/download, /:pluginId/download/:version
+app.route("/", rating)         // /:pluginId/rate, /:pluginId/rating, /:pluginId/ratings
+app.route("/", browse)         // /list, /search, /tags/popular, /:pluginId (wildcard last)
 
 // OpenAPI documentation
 app.doc("/openapi", {
@@ -107,6 +113,10 @@ app.doc("/openapi", {
     {
       name: "Publish",
       description: "Publish plugins and versions (requires authentication)"
+    },
+    {
+      name: "Admin",
+      description: "Admin-only plugin management (requires admin role)"
     }
   ]
 })

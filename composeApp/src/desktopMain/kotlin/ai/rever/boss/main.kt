@@ -229,6 +229,11 @@ fun main(args: Array<String>) {
     // Initialize plugin store (remote repository, download cache, update manager)
     PluginStoreSetup.initialize()
 
+    // Set up the persisted plugins loader for DefaultPlugin
+    ai.rever.boss.components.plugin.DefaultPlugin.Companion.loadPersistedPluginsInternal = { manager ->
+        PluginStoreSetup.loadPersistedPlugins(manager)
+    }
+
     // Initialize PSI for Kotlin code navigation (must be before any editor opens)
     try {
         PSIBootstrap.initialize()

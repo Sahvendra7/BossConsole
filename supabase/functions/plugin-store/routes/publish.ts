@@ -90,8 +90,8 @@ publish.openapi(publishPluginRoute, async (ctx) => {
       return ctx.json({ success: false, error: 'Plugin ID already exists' }, 400)
     }
 
-    // Get author display name
-    const authorName = await getUserDisplayName(supabase, user.userId)
+    // Get author display name - use custom name if provided, otherwise derive from email
+    const authorName = body.authorName || await getUserDisplayName(supabase, user.userId)
 
     // Create plugin
     const result = await createPlugin(

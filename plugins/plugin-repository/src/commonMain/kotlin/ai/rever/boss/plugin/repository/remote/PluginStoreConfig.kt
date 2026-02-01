@@ -10,6 +10,7 @@ object PluginStoreConfig {
     private var _functionUrl: String? = null
     private var _anonKey: String? = null
     private var _accessToken: String? = null
+    private var _isAdmin: Boolean = false
 
     /**
      * Supabase Functions base URL (e.g., "https://api.risaboss.com/functions/v1")
@@ -30,13 +31,34 @@ object PluginStoreConfig {
      */
     var accessToken: String?
         get() = _accessToken
-        set(value) { _accessToken = value }
+        set(value) {
+            _accessToken = value
+            _isAdmin = decodeIsAdmin(value)
+        }
+
+    /**
+     * Whether the current user has admin privileges (decoded from JWT)
+     */
+    val isAdmin: Boolean
+        get() = _isAdmin
 
     /**
      * Plugin store endpoint URL (functionUrl + /plugin-store)
      */
     val pluginStoreUrl: String
         get() = "$functionUrl/plugin-store"
+
+    /**
+     * Supabase base URL for Realtime (derived from functionUrl)
+     * e.g., "https://api.risaboss.com/functions/v1" -> "https://api.risaboss.com"
+     */
+    val supabaseUrl: String
+        get() {
+            val url = functionUrl
+            // Remove /functions/v1 suffix to get base URL
+            return url.replace("/functions/v1", "")
+                .replace("/functions", "")
+        }
 
     /**
      * Whether the configuration has been initialized
@@ -55,6 +77,7 @@ object PluginStoreConfig {
         _functionUrl = functionUrl.removeSuffix("/")
         _anonKey = anonKey
         _accessToken = accessToken
+        _isAdmin = decodeIsAdmin(accessToken)
     }
 
     /**
@@ -64,5 +87,27 @@ object PluginStoreConfig {
         _functionUrl = null
         _anonKey = null
         _accessToken = null
+        _isAdmin = false
+    }
+
+    /**
+     * Decode is_admin claim from JWT token
+     */
+    private fun decodeIsAdmin(token: String?): Boolean {
+        if (token == null) return false
+        return try {
+            val parts = token.split(".")
+            if (parts.size != 3) return false
+            // Base64 decode the payload (middle part)
+            val payload = parts[1]
+                .replace("-", "+")
+                .replace("_", "/")
+            val decodedBytes = java.util.Base64.getDecoder().decode(payload)
+            val payloadJson = String(decodedBytes, Charsets.UTF_8)
+            // Simple check for is_admin:true in the JSON
+            payloadJson.contains("\"is_admin\":true") || payloadJson.contains("\"is_admin\": true")
+        } catch (_: Exception) {
+            false
+        }
     }
 }

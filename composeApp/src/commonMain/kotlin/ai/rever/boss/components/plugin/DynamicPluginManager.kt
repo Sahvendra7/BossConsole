@@ -32,6 +32,15 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
+ * Entry for a persisted plugin to be loaded on startup.
+ */
+data class PersistedPluginEntry(
+    val pluginId: String,
+    val jarPath: String,
+    val enabled: Boolean
+)
+
+/**
  * Information about a dynamically managed plugin.
  */
 data class DynamicPluginInfo(
@@ -458,6 +467,65 @@ class DynamicPluginManager(
      * Get the registration tracker.
      */
     fun getRegistrationTracker(): PluginRegistrationTracker = registrationTracker
+
+    /**
+     * Load plugins from persisted state.
+     * This should be called during application startup to restore previously installed plugins.
+     *
+     * @param plugins List of plugin entries with JAR paths and enabled states
+     * @return Map of plugin IDs to their load results
+     */
+    suspend fun loadPersistedPlugins(
+        plugins: List<PersistedPluginEntry>
+    ): Map<String, Result<DynamicPluginInfo>> {
+        val results = mutableMapOf<String, Result<DynamicPluginInfo>>()
+
+        logger.info(LogCategory.SYSTEM, "Loading persisted plugins", mapOf(
+            "count" to plugins.size
+        ))
+
+        for (entry in plugins) {
+            try {
+                val jarFile = java.io.File(entry.jarPath)
+                if (!jarFile.exists()) {
+                    logger.warn(LogCategory.SYSTEM, "Persisted plugin JAR not found", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "jarPath" to entry.jarPath
+                    ))
+                    results[entry.pluginId] = Result.failure(Exception("JAR file not found: ${entry.jarPath}"))
+                    continue
+                }
+
+                val result = installPlugin(entry.jarPath, enabled = entry.enabled)
+                results[entry.pluginId] = result
+
+                if (result.isSuccess) {
+                    logger.info(LogCategory.SYSTEM, "Loaded persisted plugin", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "enabled" to entry.enabled
+                    ))
+                } else {
+                    logger.error(LogCategory.SYSTEM, "Failed to load persisted plugin", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                    ))
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.SYSTEM, "Exception loading persisted plugin", mapOf(
+                    "pluginId" to entry.pluginId
+                ), e)
+                results[entry.pluginId] = Result.failure(e)
+            }
+        }
+
+        logger.info(LogCategory.SYSTEM, "Finished loading persisted plugins", mapOf(
+            "total" to plugins.size,
+            "successful" to results.count { it.value.isSuccess },
+            "failed" to results.count { it.value.isFailure }
+        ))
+
+        return results
+    }
 
     /**
      * Dispose the manager and all plugins.

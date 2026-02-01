@@ -60,10 +60,14 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.logging.LogSanitizer
 import ai.rever.boss.window.WindowProjectState
+import ai.rever.boss.plugin.api.AuthDataProvider
+import ai.rever.boss.plugin.api.GitDataProvider
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginSandboxRef
+import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.panel.secretmanager.SecretManagerInfo
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
@@ -94,7 +98,7 @@ class DefaultPlugin(
     override val tabRegistry: TabRegistry,
     val windowProjectState: WindowProjectState?,
     val windowGitState: WindowGitState? = null,
-    val windowId: String? = null
+    private val _windowId: String? = null
 ) : PluginContext {
 
     companion object {
@@ -123,6 +127,18 @@ class DefaultPlugin(
         private const val PLUGIN_ID_TAB_FLUCK = "tab-fluck"
         private const val PLUGIN_ID_TAB_CODE_EDITOR = "tab-code-editor"
         private const val PLUGIN_ID_TAB_TERMINAL = "tab-terminal"
+
+        // Persisted plugins loading state
+        @Volatile
+        private var persistedPluginsLoaded = false
+
+        /**
+         * Load persisted plugins. This is called automatically when DynamicPluginManager is first accessed.
+         * Platform-specific implementation should set this callback.
+         */
+        var loadPersistedPluginsInternal: suspend (DynamicPluginManager) -> Unit = { _ ->
+            // Default no-op - platform-specific code should set this
+        }
     }
 
     private val logger = BossLogger.forComponent("DefaultPlugin")
@@ -144,7 +160,7 @@ class DefaultPlugin(
      * Use this to install, uninstall, enable, or disable plugins dynamically.
      */
     val dynamicPluginManager: DynamicPluginManager by lazy {
-        DynamicPluginManager(
+        val manager = DynamicPluginManager(
             panelRegistry = panelRegistry,
             tabRegistry = tabRegistry,
             sandboxManager = sandboxManager,
@@ -152,6 +168,16 @@ class DefaultPlugin(
                 createSandboxedContext(pluginId, config)
             }
         )
+
+        // Load persisted plugins on first access (only once globally)
+        if (!persistedPluginsLoaded) {
+            persistedPluginsLoaded = true
+            pluginScope.launch {
+                loadPersistedPluginsInternal(manager)
+            }
+        }
+
+        manager
     }
 
     /**
@@ -184,6 +210,42 @@ class DefaultPlugin(
 
     // Browser service for plugins needing embedded browser capabilities
     override val browserService: BrowserService? = getBrowserServiceInstance()
+
+    // Git data provider for plugins that display git information
+    override val gitDataProvider: GitDataProvider? by lazy {
+        if (windowGitState != null) {
+            GitDataProviderImpl(windowGitState) { _windowId }
+        } else {
+            null
+        }
+    }
+
+    // Window ID for window-scoped operations
+    override val windowId: String?
+        get() = _windowId
+
+    // Project path for project-specific operations
+    override val projectPath: String?
+        get() = windowProjectState?.selectedProject?.value?.path
+
+    // Auth data provider for plugins that need authentication state
+    override val authDataProvider: AuthDataProvider by lazy {
+        AuthDataProviderImpl()
+    }
+
+    // User management provider for admin plugins
+    override val userManagementProvider: UserManagementProvider by lazy {
+        UserManagementProviderImpl()
+    }
+
+    // Role management provider for admin plugins
+    override val roleManagementProvider: RoleManagementProvider by lazy {
+        RoleManagementProviderImpl()
+    }
+
+    // Note: fileSystemDataProvider, secretDataProvider, runConfigurationDataProvider, and activeTabsProvider
+    // are implemented on SandboxedPluginContext which has access to window-scoped services
+    // through the DynamicPluginManager createSandboxedContext mechanism
 
     /**
      * Create a sandboxed plugin context for a specific plugin.
@@ -271,171 +333,84 @@ class DefaultPlugin(
         // ============================================================
         // SANDBOXED PANEL PLUGINS
         // Each plugin gets its own sandbox for crash isolation
+        // NOTE: Most panel plugins are now loaded dynamically from JARs.
+        // Only Plugin Manager remains bundled.
         // ============================================================
 
-        // Bookmarks panel - Priority 1 - First position
-        val bookmarksContext = createSandboxedContext(PLUGIN_ID_BOOKMARKS)
-        BookmarksPanelPlugin.registerWithProviders(
-            context = bookmarksContext,
-            faviconLoaderProvider = { cacheKey -> loadFaviconFromCache(cacheKey) },
-            contextMenuProvider = { modifier, items ->
-                modifier.contextMenu(
-                    items = items.map { item ->
-                        ContextMenuItem(
-                            text = item.label,
-                            icon = item.icon,
-                            isDivider = item.isDivider,
-                            onClick = item.onClick
-                        )
-                    }
-                )
-            },
-            dialogProvider = BookmarksDialogProviderImpl
-        )
+        // DYNAMIC: Bookmarks panel - loaded from boss-plugin-bookmarks JAR
+        // val bookmarksContext = createSandboxedContext(PLUGIN_ID_BOOKMARKS)
+        // BookmarksPanelPlugin.registerWithProviders(...)
 
-        // Downloads panel - Priority 2 - Below bookmarks
-        val downloadsContext = createSandboxedContext(PLUGIN_ID_DOWNLOADS)
-        val downloadDataProvider = createDownloadDataProvider()
-        DownloadsPanelPlugin.register(downloadsContext, downloadDataProvider)
+        // DYNAMIC: Downloads panel - loaded from boss-plugin-downloads JAR
+        // val downloadsContext = createSandboxedContext(PLUGIN_ID_DOWNLOADS)
+        // DownloadsPanelPlugin.register(...)
 
-        // CodeBase panel - uses registerWithProviders for clean plugin architecture
-        val codebaseContext = createSandboxedContext(PLUGIN_ID_CODEBASE)
-        val fileSystemProvider = FileSystemDataProviderImpl()
-        val projectDataProvider = ProjectDataProviderImpl()
-        val directoryPickerProvider = DirectoryPickerProviderImpl()
+        // DYNAMIC: CodeBase panel - loaded from boss-plugin-codebase JAR
+        // val codebaseContext = createSandboxedContext(PLUGIN_ID_CODEBASE)
+        // CodeBasePanelPlugin.registerWithProviders(...)
 
-        CodeBasePanelPlugin.registerWithProviders(
-            context = codebaseContext,
-            fileSystemProvider = fileSystemProvider,
-            projectDataProvider = projectDataProvider,
-            getWindowId = { windowId },
-            getSelectedProject = {
-                windowProjectState?.selectedProject?.value?.let { project ->
-                    ProjectData(
-                        name = project.name,
-                        path = project.path,
-                        lastOpened = project.lastOpened
-                    )
-                }
-            },
-            onSelectProject = { projectData ->
-                selectProjectInWindow(
-                    windowProjectState,
-                    Project(
-                        name = projectData.name,
-                        path = projectData.path,
-                        lastOpened = projectData.lastOpened
-                    )
-                )
-            },
-            directoryPickerProvider = directoryPickerProvider,
-            contextMenuProvider = { modifier, items ->
-                modifier.contextMenu(
-                    items = items.map { item ->
-                        ContextMenuItem(
-                            text = item.label,
-                            icon = item.icon,
-                            onClick = item.onClick
-                        )
-                    }
-                )
-            },
-            openTerminalTab = { workingDirectory ->
-                windowId?.let { wid ->
-                    pluginScope.launch {
-                        TerminalEventBus.openTerminal(
-                            command = null,
-                            sourceWindowId = wid,
-                            workingDirectory = workingDirectory
-                        )
-                    }
-                }
-            }
-        )
+        // DYNAMIC: Terminal panel - loaded from boss-plugin-terminal JAR
+        // val terminalPanelContext = createSandboxedContext(PLUGIN_ID_TERMINAL)
+        // TerminalPanelPlugin.registerWithProviders(...)
 
-        // Terminal panel - uses registerWithProviders for clean plugin architecture
-        val terminalPanelContext = createSandboxedContext(PLUGIN_ID_TERMINAL)
-        TerminalPanelPlugin.registerWithProviders(
-            context = terminalPanelContext,
-            terminalContentProvider = TerminalContentProviderImpl(),
-            panelEventProvider = PanelEventProviderImpl(),
-            settingsProvider = SettingsProviderImpl()
-        )
+        // DYNAMIC: Console panel - loaded from boss-plugin-console JAR
+        // val consoleContext = createSandboxedContext(PLUGIN_ID_CONSOLE)
+        // ConsolePanelPlugin.register(consoleContext)
 
-        // Console panel
-        val consoleContext = createSandboxedContext(PLUGIN_ID_CONSOLE)
-        ConsolePanelPlugin.register(consoleContext)
+        // DYNAMIC: Performance panel - loaded from boss-plugin-performance JAR
+        // val performanceContext = createSandboxedContext(PLUGIN_ID_PERFORMANCE)
+        // PerformancePanelPlugin.register(performanceContext)
 
-        // Performance panel
-        val performanceContext = createSandboxedContext(PLUGIN_ID_PERFORMANCE)
-        PerformancePanelPlugin.register(performanceContext)
+        // DYNAMIC: Git panels - loaded from boss-plugin-git-log and boss-plugin-git-status JARs
+        // registerGitPanels()
 
-        // Git panels - dynamically registered based on project and git repository status
-        registerGitPanels()
+        // DYNAMIC: Top of Mind panel - loaded from boss-plugin-topofmind JAR
+        // val topOfMindContext = createSandboxedContext(PLUGIN_ID_TOP_OF_MIND)
+        // TopOfMindPanelPlugin.registerWithProviders(...)
 
-        // Top of Mind panel - uses registerWithProviders for clean plugin architecture
-        val topOfMindContext = createSandboxedContext(PLUGIN_ID_TOP_OF_MIND)
-        TopOfMindPanelPlugin.registerWithProviders(
-            context = topOfMindContext,
-            collectAllActiveTabs = { TopOfMindDataProvider.collectAllActiveTabs() },
-            getAllPanelStates = { TopOfMindDataProvider.getAllPanelStates() },
-            faviconLoader = { cacheKey -> TopOfMindDataProvider.loadFavicon(cacheKey) },
-            getTabUrl = { activeTab -> TopOfMindDataProvider.getTabUrl(activeTab) },
-            getFaviconCacheKey = { activeTab -> TopOfMindDataProvider.getFaviconCacheKey(activeTab) },
-            getFallbackIcon = { activeTab -> TopOfMindDataProvider.getFallbackIcon(activeTab) }
-        )
+        // DYNAMIC: Run Configurations plugin - loaded from boss-plugin-run-configurations JAR
+        // val runConfigsContext = createSandboxedContext(PLUGIN_ID_RUN_CONFIGS)
+        // RunConfigurationsPanelPlugin.register(...)
 
-        // Run Configurations plugin - requires window context
-        val runConfigsContext = createSandboxedContext(PLUGIN_ID_RUN_CONFIGS)
-        RunConfigurationsPanelPlugin.register(runConfigsContext, object : WindowContextProviderForPlugin {
-            override fun getWindowId(): String? = windowId
-            override fun getProjectPath(): String = windowProjectState?.selectedProject?.value?.path ?: ""
-        })
-
-        // Fluck (ChatGPT) panel - DISABLED: Now loaded from external plugin
+        // DYNAMIC: Fluck (ChatGPT) panel - loaded from boss-plugin-fluck JAR
         // val fluckPanelContext = createSandboxedContext(PLUGIN_ID_FLUCK)
-        // FluckPanelPlugin.registerWithProviders(
-        //     context = fluckPanelContext,
-        //     contentProviderFactory = { FluckPanelContentProviderImpl() }
-        // )
+        // FluckPanelPlugin.registerWithProviders(...)
 
-        // LLM RPA panel
-        val llmRpaContext = createSandboxedContext(PLUGIN_ID_LLM_RPA)
-        LLMRpaPanelPlugin.register(llmRpaContext) { ctx, panelInfo ->
-            LLMRpaFactory().createComponent(ctx, panelInfo)
-        }
+        // DYNAMIC: LLM RPA panel - loaded from boss-plugin-llmrpa JAR
+        // val llmRpaContext = createSandboxedContext(PLUGIN_ID_LLM_RPA)
+        // LLMRpaPanelPlugin.register(...)
 
-        // RPA Recorder panel
-        val rpaRecorderContext = createSandboxedContext(PLUGIN_ID_RPA_RECORDER)
-        RpaRecorderPanelPlugin.register(rpaRecorderContext) { ctx, panelInfo ->
-            RpaRecorderFactory().createComponent(ctx, panelInfo)
-        }
+        // DYNAMIC: RPA Recorder panel - loaded from boss-plugin-rparecorder JAR
+        // val rpaRecorderContext = createSandboxedContext(PLUGIN_ID_RPA_RECORDER)
+        // RpaRecorderPanelPlugin.register(...)
 
-        // RPA Engine panel
-        val rpaEngineContext = createSandboxedContext(PLUGIN_ID_RPA_ENGINE)
-        RpaEnginePanelPlugin.register(rpaEngineContext) { ctx, panelInfo ->
-            RpaEngineFactory().createComponent(ctx, panelInfo)
-        }
+        // DYNAMIC: RPA Engine panel - loaded from boss-plugin-rpaengine JAR
+        // val rpaEngineContext = createSandboxedContext(PLUGIN_ID_RPA_ENGINE)
+        // RpaEnginePanelPlugin.register(...)
 
-        // Plugin Manager panel - for browsing and managing plugins
+        // ============================================================
+        // BUNDLED PLUGIN: Plugin Manager
+        // This is the ONLY bundled panel plugin - used for managing dynamic plugins
+        // ============================================================
         val pluginManagerContext = createSandboxedContext(PLUGIN_ID_PLUGIN_MANAGER)
-        PluginManagerSetup.registerPluginManagerPanel(pluginManagerContext)
+        PluginManagerSetup.registerPluginManagerPanel(pluginManagerContext, dynamicPluginManager)
 
         // ============================================================
-        // DYNAMIC PANEL PLUGINS (registered based on auth/state)
-        // These use their own sandboxed contexts created in their register methods
+        // DYNAMIC PANEL PLUGINS (loaded from JARs)
+        // Previously registered based on auth/state, now loaded dynamically
         // ============================================================
 
-        // Admin Role Management panel - uses new plugin with dynamic registration based on admin status
-        registerAdminRoleManagementPlugin()
-        // Role Creation panel - uses new plugin with dynamic registration based on admin status
-        registerRoleCreationPlugin()
+        // DYNAMIC: Admin Role Management panel - loaded from boss-plugin-admin-role-management JAR
+        // registerAdminRoleManagementPlugin()
 
-        // Secret Manager panel - uses new plugin with dynamic registration based on auth state
-        registerSecretManagerPlugin()
+        // DYNAMIC: Role Creation panel - loaded from boss-plugin-role-creation JAR
+        // registerRoleCreationPlugin()
 
-        // User Secret List panel - uses new plugin with dynamic registration based on auth state
-        registerUserSecretListPlugin()
+        // DYNAMIC: Secret Manager panel - loaded from boss-plugin-secret-manager JAR
+        // registerSecretManagerPlugin()
+
+        // DYNAMIC: User Secret List panel - loaded from boss-plugin-user-secret-list JAR
+        // registerUserSecretListPlugin()
 
         // ============================================================
         // TAB TYPE PLUGINS
@@ -756,7 +731,7 @@ class DefaultPlugin(
      */
     private fun registerGitPanels() {
         val logger = BossLogger.forComponent("GitPanelsRegistration")
-        val gitDataProvider = GitDataProviderImpl(windowGitState) { windowId }
+        val gitDataProvider = GitDataProviderImpl(windowGitState) { _windowId }
 
         val gitState = windowGitState
         val projectState = windowProjectState
@@ -799,7 +774,7 @@ class DefaultPlugin(
                             gitLogContext = it
                         }
 
-                        GitStatusPanelPlugin.register(statusCtx, gitDataProvider) { windowId }
+                        GitStatusPanelPlugin.register(statusCtx, gitDataProvider) { _windowId }
                         GitLogPanelPlugin.register(logCtx, gitDataProvider)
                     } else {
                         // Not a git repository or no project - unregister panels

@@ -544,6 +544,7 @@ BEGIN
                 'apiVersion', p.api_version,
                 'verified', p.verified,
                 'iconUrl', p.icon_url,
+                'url', p.homepage_url,
                 'version', (
                     SELECT pv.version 
                     FROM plugin_versions pv 

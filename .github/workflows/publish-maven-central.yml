@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version to publish (e.g., 1.0.0)'
         required: true
-        default: '1.0.0'
+        default: '1.0.4'
 
 env:
   JAVA_VERSION: '17'
@@ -63,6 +63,30 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
 
+      - name: Publish plugin-logging to Maven Central
+        run: ./gradlew :plugins:plugin-logging:publishAndReleaseToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+
+      - name: Publish plugin-ui-core to Maven Central
+        run: ./gradlew :plugins:plugin-ui-core:publishAndReleaseToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+
+      - name: Publish plugin-scrollbar to Maven Central
+        run: ./gradlew :plugins:plugin-scrollbar:publishAndReleaseToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+
       - name: Summary
         run: |
           echo "## Published Packages to Maven Central" >> $GITHUB_STEP_SUMMARY
@@ -73,6 +97,9 @@ jobs:
           echo "- \`com.risaboss:plugin-bookmark-types:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`com.risaboss:plugin-api-browser:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`com.risaboss:plugin-api:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`com.risaboss:plugin-logging:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`com.risaboss:plugin-ui-core:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`com.risaboss:plugin-scrollbar:${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Usage in external plugins" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -43,5 +43,10 @@ enum class PluginManagerTab {
     /**
      * Available updates.
      */
-    UPDATES
+    UPDATES,
+
+    /**
+     * Publish a plugin to the store.
+     */
+    PUBLISH
 }
