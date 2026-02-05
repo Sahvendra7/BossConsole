@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.providers
 
-import ai.rever.boss.plugin.panel.codebase.DirectoryPickerProvider
+import ai.rever.boss.plugin.api.DirectoryPickerProvider
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File

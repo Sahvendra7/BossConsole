@@ -1043,7 +1043,7 @@ object FluckEngine {
                         val focusedWindowId = WindowFocusManager.focusedWindowFlow.value
                         if (focusedWindowId != null) {
                             ai.rever.boss.components.events.PanelEventBus.openPanel(
-                                ai.rever.boss.plugin.panel.downloads.DownloadsInfo.id,
+                                ai.rever.boss.components.plugin.PanelIds.DOWNLOADS,
                                 sourceWindowId = focusedWindowId
                             )
                         } else {

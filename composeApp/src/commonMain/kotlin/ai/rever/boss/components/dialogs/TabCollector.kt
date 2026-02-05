@@ -2,8 +2,8 @@ package ai.rever.boss.components.dialogs
 
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.workspaces.WorkspaceManager
-import ai.rever.boss.plugin.panel.topofmind.ActiveTab
-import ai.rever.boss.plugin.panel.topofmind.TopOfMindStateHolder
+import ai.rever.boss.topofmind.ActiveTab
+import ai.rever.boss.topofmind.TopOfMindStateHolder
 
 /**
  * Utility for collecting tabs from all windows.

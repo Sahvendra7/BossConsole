@@ -325,25 +325,6 @@ kotlin {
             implementation(projects.plugins.pluginDependency)
             implementation(projects.plugins.pluginPanelManager)
 
-            // Panel plugins
-            implementation(projects.plugins.pluginPanelConsole)
-            implementation(projects.plugins.pluginPanelPerformance)
-            implementation(projects.plugins.pluginPanelRunConfigurations)
-            implementation(projects.plugins.pluginPanelGitStatus)
-            implementation(projects.plugins.pluginPanelGitLog)
-            implementation(projects.plugins.pluginPanelDownloads)
-            implementation(projects.plugins.pluginPanelSecretManager)
-            implementation(projects.plugins.pluginPanelUserSecretList)
-            implementation(projects.plugins.pluginPanelAdminRoleManagement)
-            implementation(projects.plugins.pluginPanelRoleCreation)
-            implementation(projects.plugins.pluginPanelBookmarks)
-            implementation(projects.plugins.pluginPanelTopofmind)
-            implementation(projects.plugins.pluginPanelCodebase)
-            implementation(projects.plugins.pluginPanelTerminal)
-            implementation(projects.plugins.pluginPanelChatgptFluck)
-            implementation(projects.plugins.pluginPanelLlmrpa)
-            implementation(projects.plugins.pluginPanelRparecorder)
-            implementation(projects.plugins.pluginPanelRpaengine)
 
             // Tab type plugins
             implementation(projects.plugins.pluginTabCodeEditor)

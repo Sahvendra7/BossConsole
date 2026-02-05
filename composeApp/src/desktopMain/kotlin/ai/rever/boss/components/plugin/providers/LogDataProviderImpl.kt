@@ -4,10 +4,9 @@ import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.LogEntryData
 import ai.rever.boss.plugin.api.LogFilterData
 import ai.rever.boss.plugin.api.LogSourceData
-import ai.rever.boss.plugin.panel.console.GlobalLogCapture
-import ai.rever.boss.plugin.panel.console.LogEntry
-import ai.rever.boss.plugin.panel.console.LogFilter
-import ai.rever.boss.plugin.panel.console.LogSource
+import ai.rever.boss.logging.GlobalLogCapture
+import ai.rever.boss.logging.LogEntry
+import ai.rever.boss.logging.LogSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

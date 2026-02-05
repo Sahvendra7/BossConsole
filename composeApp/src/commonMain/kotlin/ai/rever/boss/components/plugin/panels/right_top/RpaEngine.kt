@@ -9,7 +9,6 @@ import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
-import ai.rever.boss.plugin.panel.rpaengine.RpaEngineInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.tab.fluck.FluckTabType
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
@@ -853,9 +852,4 @@ expect class RpaEngineFactory() {
     fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): RpaEngineComponent
 }
 
-/**
- * Registration function for RPA Engine panel
- */
-fun DefaultPlugin.registerRpaEngine() = panelRegistry.registerPanel(RpaEngineInfo) {
-    ctx, panelInfo -> RpaEngineFactory().createComponent(ctx, panelInfo)
-}
+

@@ -5,7 +5,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.plugin.api.TabIcon
-import ai.rever.boss.plugin.panel.topofmind.ActiveTab
+import ai.rever.boss.topofmind.ActiveTab
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.runtime.Composable

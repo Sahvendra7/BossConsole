@@ -3,7 +3,7 @@ package ai.rever.boss.components.plugin.providers
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckView
 import ai.rever.boss.components.plugin.tab_types.fluck.createBrowser
 import ai.rever.boss.components.plugin.tab_types.fluck.createBrowserViewState
-import ai.rever.boss.plugin.panel.fluck.FluckPanelContentProvider
+import ai.rever.boss.plugin.api.FluckPanelContentProvider
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.foundation.background

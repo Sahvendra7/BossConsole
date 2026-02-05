@@ -10,7 +10,7 @@ import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
 import ai.rever.boss.components.dialogs.RenameDialog
 import ai.rever.boss.components.dialogs.WorkspaceSelectionDialog
 import ai.rever.boss.plugin.bookmark.BookmarkCollection
-import ai.rever.boss.plugin.panel.bookmarks.BookmarksDialogProvider
+import ai.rever.boss.plugin.api.BookmarksDialogProvider
 import ai.rever.boss.plugin.workspace.LayoutWorkspace
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete

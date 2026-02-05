@@ -1,10 +1,10 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
-import ai.rever.boss.plugin.panel.codebase.FileNode
-import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.NodeLoadingStateData
 import java.io.File
 
-actual fun scanDirectory(path: String): FileNode? {
+actual fun scanDirectory(path: String): FileNodeData? {
     val file = File(path)
     if (!file.exists()) return null
 
@@ -12,7 +12,7 @@ actual fun scanDirectory(path: String): FileNode? {
     return scanFileRecursively(file, maxDepth = 1)
 }
 
-actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode? {
+actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
     val file = File(path)
     if (!file.exists()) return null
 
@@ -38,11 +38,11 @@ actual fun directoryHasChildren(path: String): Boolean {
     }
 }
 
-private fun scanFileRecursively(file: File, currentDepth: Int = 0, maxDepth: Int = 5): FileNode {
+private fun scanFileRecursively(file: File, currentDepth: Int = 0, maxDepth: Int = 5): FileNodeData {
     val isDirectory = file.isDirectory
     val shouldLoadChildren = isDirectory && currentDepth < maxDepth
 
-    val children: List<FileNode> = if (shouldLoadChildren) {
+    val children: List<FileNodeData> = if (shouldLoadChildren) {
         file.listFiles()
             ?.filter { !it.name.startsWith(".") && it.name != "build" && it.name != "node_modules" }
             ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
@@ -51,13 +51,13 @@ private fun scanFileRecursively(file: File, currentDepth: Int = 0, maxDepth: Int
                 if (childFile.isDirectory && currentDepth + 1 >= maxDepth) {
                     // Quick check if this directory has children (isAlwaysShowPlus pattern)
                     val hasKids = directoryHasChildren(childFile.absolutePath)
-                    FileNode(
+                    FileNodeData(
                         name = childFile.name,
                         path = childFile.absolutePath,
                         isDirectory = true,
                         children = emptyList(),
                         hasChildren = hasKids,
-                        loadingState = NodeLoadingState.UNKNOWN,
+                        loadingState = NodeLoadingStateData.UNKNOWN,
                         loadDepth = currentDepth + 1
                     )
                 } else {
@@ -71,12 +71,12 @@ private fun scanFileRecursively(file: File, currentDepth: Int = 0, maxDepth: Int
 
     // Determine loading state
     val loadingState = when {
-        !isDirectory -> NodeLoadingState.LOADED
-        currentDepth >= maxDepth - 1 -> NodeLoadingState.UNKNOWN
-        else -> NodeLoadingState.LOADED
+        !isDirectory -> NodeLoadingStateData.LOADED
+        currentDepth >= maxDepth - 1 -> NodeLoadingStateData.UNKNOWN
+        else -> NodeLoadingStateData.LOADED
     }
 
-    return FileNode(
+    return FileNodeData(
         name = file.name,
         path = file.absolutePath,
         isDirectory = isDirectory,

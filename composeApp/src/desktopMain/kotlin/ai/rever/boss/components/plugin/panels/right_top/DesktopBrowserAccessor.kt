@@ -186,8 +186,8 @@ actual fun storeSplitViewState(splitViewState: Any) {
  * Desktop implementation to create FluckTabInfo from ActiveTab
  */
 actual fun createFluckTabInfo(activeTab: Any): FluckTabInfo? {
-    // ActiveTab is from plugin-panel-topofmind module
-    val activeTabTyped = activeTab as? ai.rever.boss.plugin.panel.topofmind.ActiveTab
+    // ActiveTab is from composeApp's topofmind package
+    val activeTabTyped = activeTab as? ai.rever.boss.topofmind.ActiveTab
         ?: return null
     
     val tabInfo = activeTabTyped.tabInfo

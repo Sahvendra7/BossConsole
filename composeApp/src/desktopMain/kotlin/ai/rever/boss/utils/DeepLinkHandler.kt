@@ -3,7 +3,7 @@ package ai.rever.boss.utils
 import ai.rever.boss.services.URLHandlerService
 import ai.rever.boss.window.Project
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
+import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.utils.extractFileName
@@ -235,7 +235,7 @@ actual object DeepLinkHandler {
                 logger.warn(LogCategory.UI, "No window focused, cannot open codebase panel")
                 return@launch
             }
-            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = focusedWindowId)
+            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = focusedWindowId)
             logger.debug(LogCategory.UI, "Emitted codebase panel open event", mapOf("windowId" to focusedWindowId))
         }
     }

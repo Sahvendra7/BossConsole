@@ -57,25 +57,7 @@ include(":plugins:plugin-dependency")
 include(":plugins:plugin-updater")
 include(":plugins:plugin-panel-manager")
 
-// Panel plugin modules
-include(":plugins:plugin-panel-console")
-include(":plugins:plugin-panel-performance")
-include(":plugins:plugin-panel-run-configurations")
-include(":plugins:plugin-panel-git-status")
-include(":plugins:plugin-panel-git-log")
-include(":plugins:plugin-panel-downloads")
-include(":plugins:plugin-panel-secret-manager")
-include(":plugins:plugin-panel-user-secret-list")
-include(":plugins:plugin-panel-admin-role-management")
-include(":plugins:plugin-panel-role-creation")
-include(":plugins:plugin-panel-bookmarks")
-include(":plugins:plugin-panel-topofmind")
-include(":plugins:plugin-panel-codebase")
-include(":plugins:plugin-panel-terminal")
-include(":plugins:plugin-panel-chatgpt-fluck")
-include(":plugins:plugin-panel-llmrpa")
-include(":plugins:plugin-panel-rparecorder")
-include(":plugins:plugin-panel-rpaengine")
+
 
 // Tab type plugin modules
 include(":plugins:plugin-tab-code-editor")

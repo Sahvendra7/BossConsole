@@ -1,35 +1,10 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.git.GitDataProviderImpl
-import ai.rever.boss.plugin.panel.console.ConsolePanelPlugin
-import ai.rever.boss.plugin.panel.downloads.DownloadsPanelPlugin
-import ai.rever.boss.plugin.panel.gitlog.GitLogInfo
-import ai.rever.boss.plugin.panel.gitlog.GitLogPanelPlugin
-import ai.rever.boss.plugin.panel.gitstatus.GitStatusInfo
-import ai.rever.boss.plugin.panel.gitstatus.GitStatusPanelPlugin
-import ai.rever.boss.plugin.panel.performance.PerformancePanelPlugin
-import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsPanelPlugin
-import ai.rever.boss.plugin.panel.runconfigurations.WindowContextProviderForPlugin
-import ai.rever.boss.plugin.panel.secretmanager.SecretManagerPanelPlugin
-import ai.rever.boss.plugin.panel.usersecretlist.UserSecretListInfo
-import ai.rever.boss.plugin.panel.usersecretlist.UserSecretListPanelPlugin
-import ai.rever.boss.plugin.panel.adminrolemanagement.AdminRoleManagementInfo
-import ai.rever.boss.plugin.panel.adminrolemanagement.AdminRoleManagementPanelPlugin
-import ai.rever.boss.plugin.panel.rolecreation.RoleCreationInfo
-import ai.rever.boss.plugin.panel.rolecreation.RoleCreationPanelPlugin
-import ai.rever.boss.plugin.panel.terminal.TerminalPanelPlugin
-import ai.rever.boss.plugin.panel.topofmind.TopOfMindPanelPlugin
 import ai.rever.boss.plugin.panel.manager.PluginManagerPanelPlugin
-import ai.rever.boss.plugin.panel.bookmarks.BookmarksPanelPlugin
-import ai.rever.boss.plugin.panel.codebase.CodeBasePanelPlugin
-import ai.rever.boss.plugin.panel.fluck.FluckPanelPlugin
-import ai.rever.boss.plugin.panel.llmrpa.LLMRpaPanelPlugin
-import ai.rever.boss.plugin.panel.rparecorder.RpaRecorderPanelPlugin
-import ai.rever.boss.plugin.panel.rpaengine.RpaEnginePanelPlugin
 import ai.rever.boss.components.plugin.providers.TerminalContentProviderImpl
 import ai.rever.boss.components.plugin.providers.PanelEventProviderImpl
 import ai.rever.boss.components.plugin.providers.SettingsProviderImpl
-import ai.rever.boss.components.plugin.providers.TopOfMindDataProvider
 import ai.rever.boss.cache.loadFaviconFromCache
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.overlays.ContextMenuItem
@@ -37,21 +12,16 @@ import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.BookmarksDialogProviderImpl
 import ai.rever.boss.components.plugin.panels.left_top.createDownloadDataProvider
 import ai.rever.boss.plugin.ui.ContextMenuItemData
-import ai.rever.boss.components.plugin.panels.left_top.createDownloadDataProvider
 import ai.rever.boss.components.plugin.providers.DirectoryPickerProviderImpl
 import ai.rever.boss.components.plugin.providers.FileSystemDataProviderImpl
 import ai.rever.boss.components.plugin.providers.ProjectDataProviderImpl
-import ai.rever.boss.plugin.panel.codebase.ProjectData
+import ai.rever.boss.plugin.api.ProjectData
 import ai.rever.boss.window.Project
 import ai.rever.boss.window.selectProjectInWindow
-import ai.rever.boss.components.plugin.providers.FluckPanelContentProviderImpl
 import ai.rever.boss.components.plugin.providers.SplitViewOperationsImpl
 import ai.rever.boss.components.plugin.providers.WorkspaceDataProviderImpl
 import ai.rever.boss.components.plugin.providers.createLogDataProvider
 import ai.rever.boss.components.plugin.providers.createPerformanceDataProvider
-import ai.rever.boss.components.plugin.panels.right_top.LLMRpaFactory
-import ai.rever.boss.components.plugin.panels.right_top.RpaRecorderFactory
-import ai.rever.boss.components.plugin.panels.right_top.RpaEngineFactory
 import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
 import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
 import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
@@ -95,7 +65,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.Terminal
 import ai.rever.boss.plugin.browser.BrowserService
-import ai.rever.boss.plugin.panel.secretmanager.SecretManagerInfo
+
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
 import ai.rever.boss.plugin.sandbox.PluginSandboxManagerImpl
 import ai.rever.boss.plugin.sandbox.SandboxConfig
@@ -275,7 +245,7 @@ class DefaultPlugin(
 
     // File system data provider for codebase plugin
     override val fileSystemDataProvider: FileSystemDataProvider by lazy {
-        ApiFileSystemDataProviderAdapter()
+        FileSystemDataProviderImpl()
     }
 
     // Workspace data provider for plugins that manage workspaces
@@ -625,366 +595,19 @@ class DefaultPlugin(
         }
     }
 
-    /**
-     * Register the Secret Manager panel plugin with dynamic auth-based registration.
-     *
-     * Panel is only shown to users with admin role (or secrets.write permission once implemented).
-     * Uses pluginScope to tie lifecycle to the plugin.
-     */
-    private fun registerSecretManagerPlugin() {
-        val logger = BossLogger.forComponent("SecretManagerRegistration")
-        val secretDataProvider = SecretDataProviderImpl()
-        val userManagementProvider = UserManagementProviderImpl()
-
-        logger.debug(LogCategory.AUTH, "Initializing secret manager panel registration")
-
-        // Create sandboxed context (reused across registrations)
-        var secretManagerContext: PluginContext? = null
-
-        // Observe auth state and dynamically register/unregister panel
-        pluginScope.launch(Dispatchers.Main) {
-            AuthStateManager.currentUser
-                .map { user ->
-                    // Allow access if user is admin
-                    // Note: Add secrets.write permission check when RBAC permission system is ready
-                    // See docs/RBAC_GUIDE.md for permission system documentation
-                    user?.isAdmin == true
-                }
-                .distinctUntilChanged()
-                .collect { hasPermission ->
-                    val user = AuthStateManager.currentUser.value
-                    logger.debug(LogCategory.AUTH, "Permission status changed", mapOf(
-                        "hasPermission" to hasPermission,
-                        "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                    ))
-
-                    if (hasPermission) {
-                        // User has permission - register panel with sandboxed context
-                        logger.info(LogCategory.AUTH, "Registering secret manager panel", mapOf(
-                            "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                        ))
-
-                        // Create sandboxed context if not already created
-                        val ctx = secretManagerContext ?: createSandboxedContext(PLUGIN_ID_SECRET_MANAGER).also {
-                            secretManagerContext = it
-                        }
-
-                        SecretManagerPanelPlugin.register(
-                            context = ctx,
-                            secretDataProvider = secretDataProvider,
-                            userManagementProvider = userManagementProvider,
-                            onSecretChanged = { SecretChangeNotifier.notifyRefreshSync() }
-                        )
-                    } else {
-                        // User does not have permission - unregister panel
-                        logger.info(LogCategory.AUTH, "Unregistering secret manager panel")
-                        panelRegistry.unregisterPanel(SecretManagerInfo.id)
-                    }
-                }
-        }
-    }
-
-    /**
-     * Register the User Secret List panel plugin with dynamic auth-based registration.
-     *
-     * Panel is shown to all authenticated users.
-     * Uses pluginScope to tie lifecycle to the plugin.
-     */
-    private fun registerUserSecretListPlugin() {
-        val logger = BossLogger.forComponent("UserSecretListRegistration")
-        val secretDataProvider = SecretDataProviderImpl()
-
-        logger.debug(LogCategory.UI, "Initializing user secret list panel registration")
-
-        // Create sandboxed context (reused across registrations)
-        var userSecretListContext: PluginContext? = null
-
-        // Observe auth state and dynamically register/unregister panel
-        pluginScope.launch(Dispatchers.Main) {
-            AuthStateManager.currentUser
-                .map { user -> user != null }
-                .distinctUntilChanged()
-                .collect { isAuthenticated ->
-                    val user = AuthStateManager.currentUser.value
-                    logger.debug(LogCategory.UI, "Auth status changed for user secret list", mapOf(
-                        "isAuthenticated" to isAuthenticated,
-                        "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                    ))
-
-                    if (isAuthenticated) {
-                        // User is authenticated - register panel with sandboxed context
-                        logger.info(LogCategory.UI, "Registering user secret list panel", mapOf(
-                            "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                        ))
-
-                        // Create sandboxed context if not already created
-                        val ctx = userSecretListContext ?: createSandboxedContext(PLUGIN_ID_USER_SECRET_LIST).also {
-                            userSecretListContext = it
-                        }
-
-                        UserSecretListPanelPlugin.register(
-                            context = ctx,
-                            secretDataProvider = secretDataProvider,
-                            secretChangeEvents = SecretChangeNotifier.secretChangeEvents
-                        )
-                    } else {
-                        // User is not authenticated - unregister panel
-                        logger.info(LogCategory.UI, "Unregistering user secret list panel")
-                        panelRegistry.unregisterPanel(UserSecretListInfo.id)
-                    }
-                }
-        }
-    }
-
-    /**
-     * Register the Admin Role Management panel plugin with dynamic admin-based registration.
-     *
-     * Panel is only shown to admin users.
-     * Uses pluginScope to tie lifecycle to the plugin.
-     */
-    private fun registerAdminRoleManagementPlugin() {
-        val logger = BossLogger.forComponent("AdminRoleManagementRegistration")
-        val userManagementProvider = UserManagementProviderImpl()
-        val authDataProvider = AuthDataProviderImpl()
-
-        logger.debug(LogCategory.UI, "Initializing admin role management panel registration")
-
-        // Create sandboxed context (reused across registrations)
-        var adminRoleMgmtContext: PluginContext? = null
-
-        // Observe auth state and dynamically register/unregister panel
-        pluginScope.launch(Dispatchers.Main) {
-            AuthStateManager.currentUser
-                .map { user -> user?.isAdmin == true }
-                .distinctUntilChanged()
-                .collect { isAdmin ->
-                    val user = AuthStateManager.currentUser.value
-                    logger.debug(LogCategory.UI, "Admin status changed for role management", mapOf(
-                        "isAdmin" to isAdmin,
-                        "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                    ))
-
-                    if (isAdmin) {
-                        // User is admin - register panel with sandboxed context
-                        logger.info(LogCategory.UI, "Registering admin role management panel", mapOf(
-                            "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                        ))
-
-                        // Create sandboxed context if not already created
-                        val ctx = adminRoleMgmtContext ?: createSandboxedContext(PLUGIN_ID_ADMIN_ROLE_MGMT).also {
-                            adminRoleMgmtContext = it
-                        }
-
-                        AdminRoleManagementPanelPlugin.register(
-                            context = ctx,
-                            userManagementProvider = userManagementProvider,
-                            authDataProvider = authDataProvider
-                        )
-                    } else {
-                        // User is not admin - unregister panel
-                        logger.info(LogCategory.UI, "Unregistering admin role management panel")
-                        panelRegistry.unregisterPanel(AdminRoleManagementInfo.id)
-                    }
-                }
-        }
-    }
-
-    /**
-     * Register the Role Creation panel plugin with dynamic admin-based registration.
-     *
-     * Panel is only shown to admin users.
-     * Uses pluginScope to tie lifecycle to the plugin.
-     */
-    private fun registerRoleCreationPlugin() {
-        val logger = BossLogger.forComponent("RoleCreationRegistration")
-        val roleManagementProvider = RoleManagementProviderImpl()
-
-        logger.debug(LogCategory.UI, "Initializing role creation panel registration")
-
-        // Create sandboxed context (reused across registrations)
-        var roleCreationContext: PluginContext? = null
-
-        // Observe auth state and dynamically register/unregister panel
-        pluginScope.launch(Dispatchers.Main) {
-            AuthStateManager.currentUser
-                .map { user -> user?.isAdmin == true }
-                .distinctUntilChanged()
-                .collect { isAdmin ->
-                    val user = AuthStateManager.currentUser.value
-                    logger.debug(LogCategory.UI, "Admin status changed for role creation", mapOf(
-                        "isAdmin" to isAdmin,
-                        "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                    ))
-
-                    if (isAdmin) {
-                        // User is admin - register panel with sandboxed context
-                        logger.info(LogCategory.UI, "Registering role creation panel", mapOf(
-                            "user" to LogSanitizer.maskEmail(user?.email ?: "")
-                        ))
-
-                        // Create sandboxed context if not already created
-                        val ctx = roleCreationContext ?: createSandboxedContext(PLUGIN_ID_ROLE_CREATION).also {
-                            roleCreationContext = it
-                        }
-
-                        RoleCreationPanelPlugin.register(
-                            context = ctx,
-                            roleManagementProvider = roleManagementProvider
-                        )
-                    } else {
-                        // User is not admin - unregister panel
-                        logger.info(LogCategory.UI, "Unregistering role creation panel")
-                        panelRegistry.unregisterPanel(RoleCreationInfo.id)
-                    }
-                }
-        }
-    }
-
-    /**
-     * Register the Git panels with dynamic registration based on project and git repository status.
-     *
-     * Panels are only shown when a project is selected AND it's a git repository.
-     * Uses pluginScope to tie lifecycle to the plugin.
-     */
-    private fun registerGitPanels() {
-        val logger = BossLogger.forComponent("GitPanelsRegistration")
-        val gitDataProvider = GitDataProviderImpl(windowGitState) { _windowId }
-
-        val gitState = windowGitState
-        val projectState = windowProjectState
-
-        if (gitState == null || projectState == null) {
-            logger.debug(LogCategory.UI, "Git panels require window context, skipping registration")
-            return
-        }
-
-        logger.debug(LogCategory.UI, "Initializing git panels dynamic registration")
-
-        // Create sandboxed contexts for git panels (reused across registrations)
-        var gitStatusContext: PluginContext? = null
-        var gitLogContext: PluginContext? = null
-
-        // Observe both project state and git repository status
-        pluginScope.launch(Dispatchers.Main) {
-            combine(
-                projectState.selectedProject,
-                gitState.isGitRepository
-            ) { project, isGitRepo ->
-                // Show git panels when project has a path and is a git repository
-                project.path.isNotEmpty() && isGitRepo
-            }
-                .distinctUntilChanged()
-                .collect { shouldShow ->
-                    logger.debug(LogCategory.UI, "Git panels visibility changed", mapOf(
-                        "shouldShow" to shouldShow
-                    ))
-
-                    if (shouldShow) {
-                        // Project is a git repository - register panels with sandboxed contexts
-                        logger.info(LogCategory.UI, "Registering git panels")
-
-                        // Create sandboxed contexts if not already created
-                        val statusCtx = gitStatusContext ?: createSandboxedContext(PLUGIN_ID_GIT_STATUS).also {
-                            gitStatusContext = it
-                        }
-                        val logCtx = gitLogContext ?: createSandboxedContext(PLUGIN_ID_GIT_LOG).also {
-                            gitLogContext = it
-                        }
-
-                        GitStatusPanelPlugin.register(statusCtx, gitDataProvider) { _windowId }
-                        GitLogPanelPlugin.register(logCtx, gitDataProvider)
-                    } else {
-                        // Not a git repository or no project - unregister panels
-                        logger.info(LogCategory.UI, "Unregistering git panels")
-                        panelRegistry.unregisterPanel(GitStatusInfo.id)
-                        panelRegistry.unregisterPanel(GitLogInfo.id)
-                    }
-                }
-        }
-    }
+    // ============================================================
+    // REMOVED BUNDLED PLUGINS
+    // The following registration methods have been removed as these
+    // panels are now loaded dynamically from JARs:
+    // - registerSecretManagerPlugin()
+    // - registerUserSecretListPlugin()
+    // - registerAdminRoleManagementPlugin()
+    // - registerRoleCreationPlugin()
+    // - registerGitPanels()
+    // ============================================================
 }
 
-/**
- * Adapter that implements the plugin-api FileSystemDataProvider interface
- * by wrapping the platform-specific file scanning infrastructure.
- */
-private class ApiFileSystemDataProviderAdapter : FileSystemDataProvider {
-    private val delegate = FileSystemDataProviderImpl()
 
-    override suspend fun scanDirectory(path: String): FileNodeData? {
-        val node = delegate.scanDirectory(path) ?: return null
-        return convertToFileNodeData(node)
-    }
-
-    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
-        val node = delegate.scanDirectoryWithDepth(path, maxDepth, startDepth) ?: return null
-        return convertToFileNodeData(node)
-    }
-
-    override fun directoryHasChildren(path: String): Boolean {
-        return delegate.directoryHasChildren(path)
-    }
-
-    override fun openFile(path: String, windowId: String) {
-        delegate.openFile(path, windowId)
-    }
-
-    override suspend fun createFile(parentPath: String, fileName: String): Result<String> {
-        return delegate.createFile(parentPath, fileName)
-    }
-
-    override suspend fun createFolder(parentPath: String, folderName: String): Result<String> {
-        return delegate.createFolder(parentPath, folderName)
-    }
-
-    override suspend fun delete(path: String): Result<Unit> {
-        return delegate.delete(path)
-    }
-
-    override suspend fun rename(path: String, newName: String): Result<String> {
-        return delegate.rename(path, newName)
-    }
-
-    override fun revealInFileManager(path: String): Result<Unit> {
-        return delegate.revealInFileManager(path)
-    }
-
-    override fun copyToClipboard(text: String): Result<Unit> {
-        return delegate.copyToClipboard(text)
-    }
-
-    override suspend fun writeFile(path: String, content: String): Result<Unit> {
-        return delegate.writeFile(path, content)
-    }
-
-    override suspend fun readFile(path: String): Result<String> {
-        return delegate.readFile(path)
-    }
-
-    override fun getDownloadsDirectory(): String {
-        return delegate.getDownloadsDirectory()
-    }
-
-    override fun getHomeDirectory(): String {
-        return delegate.getHomeDirectory()
-    }
-
-    private fun convertToFileNodeData(node: ai.rever.boss.plugin.panel.codebase.FileNode): FileNodeData {
-        return FileNodeData(
-            name = node.name,
-            path = node.path,
-            isDirectory = node.isDirectory,
-            children = node.children.map { convertToFileNodeData(it) },
-            hasChildren = node.hasChildren,
-            loadingState = when (node.loadingState) {
-                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.UNKNOWN -> NodeLoadingStateData.UNKNOWN
-                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.CHECKING -> NodeLoadingStateData.CHECKING
-                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.LOADED -> NodeLoadingStateData.LOADED
-            },
-            loadDepth = node.loadDepth
-        )
-    }
-}
 
 /**
  * Adapter that implements the plugin-api ActiveTabsProvider interface
@@ -1118,7 +741,7 @@ private class ApiActiveTabsProviderAdapter(
         }
     }
 
-    private fun convertToActiveTabData(tab: ai.rever.boss.plugin.panel.topofmind.ActiveTab): ActiveTabData {
+    private fun convertToActiveTabData(tab: ai.rever.boss.topofmind.ActiveTab): ActiveTabData {
         val tabInfo = tab.tabInfo
         val fluckTab = tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
         return ActiveTabData(

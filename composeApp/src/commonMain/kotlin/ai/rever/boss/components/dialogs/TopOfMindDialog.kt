@@ -4,8 +4,8 @@ import ai.rever.boss.components.common.rememberFaviconLoader
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.workspaces.WorkspaceManager
-import ai.rever.boss.plugin.panel.topofmind.ActiveTab
-import ai.rever.boss.plugin.panel.topofmind.TopOfMindStateHolder
+import ai.rever.boss.topofmind.ActiveTab
+import ai.rever.boss.topofmind.TopOfMindStateHolder
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.components.window_panel.SplitViewState

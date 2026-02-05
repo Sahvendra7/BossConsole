@@ -3,7 +3,7 @@ package ai.rever.boss.search
 import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeymapActions
-import ai.rever.boss.plugin.panel.topofmind.TopOfMindStateHolder
+import ai.rever.boss.topofmind.TopOfMindStateHolder
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.logging.BossLogger

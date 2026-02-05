@@ -1,47 +1,47 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
-import ai.rever.boss.plugin.panel.codebase.FileNode
-import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.NodeLoadingStateData
 
 // For iOS, return mock data as file system access is restricted
-actual fun scanDirectory(path: String): FileNode? {
+actual fun scanDirectory(path: String): FileNodeData? {
     // iOS has restricted file system access
     // Return mock data for demonstration
-    return FileNode(
+    return FileNodeData(
         name = path.substringAfterLast('/'),
         path = path,
         isDirectory = true,
         children = listOf(
-            FileNode(
+            FileNodeData(
                 name = "README.md",
                 path = "$path/README.md",
                 isDirectory = false,
                 hasChildren = false,
-                loadingState = NodeLoadingState.LOADED
+                loadingState = NodeLoadingStateData.LOADED
             ),
-            FileNode(
+            FileNodeData(
                 name = "src",
                 path = "$path/src",
                 isDirectory = true,
                 children = listOf(
-                    FileNode(
+                    FileNodeData(
                         name = "main.kt",
                         path = "$path/src/main.kt",
                         isDirectory = false,
                         hasChildren = false,
-                        loadingState = NodeLoadingState.LOADED
+                        loadingState = NodeLoadingStateData.LOADED
                     )
                 ),
                 hasChildren = true,
-                loadingState = NodeLoadingState.LOADED
+                loadingState = NodeLoadingStateData.LOADED
             )
         ),
         hasChildren = true,
-        loadingState = NodeLoadingState.LOADED
+        loadingState = NodeLoadingStateData.LOADED
     )
 }
 
-actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode? {
+actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
     // iOS has restricted file system access
     // Return the same mock data
     return scanDirectory(path)

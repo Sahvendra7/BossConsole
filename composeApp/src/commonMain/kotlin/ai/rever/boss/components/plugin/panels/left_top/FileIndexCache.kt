@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
-import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.api.FileNodeData
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -17,13 +17,13 @@ class FileIndexCache(
     private val mutex = Mutex()
 
     data class CachedNode(
-        val node: FileNode,
+        val node: FileNodeData,
         var lastAccessed: Long = Clock.System.now().epochSeconds,
         var isFullyLoaded: Boolean = false,
         var loadDepth: Int = 0
     )
     
-    suspend fun getNode(path: String, forceReload: Boolean = false): FileNode? = mutex.withLock {
+    suspend fun getNode(path: String, forceReload: Boolean = false): FileNodeData? = mutex.withLock {
         if (!forceReload) {
             cache[path]?.let { cached ->
                 // Update access order
@@ -44,7 +44,7 @@ class FileIndexCache(
         return node
     }
 
-    private fun addToCache(path: String, node: FileNode, depth: Int) {
+    private fun addToCache(path: String, node: FileNodeData, depth: Int) {
         // Evict old entries if needed
         while (cache.size >= maxSize && accessOrder.isNotEmpty()) {
             val oldestPath = accessOrder.removeLast()
@@ -73,4 +73,4 @@ class FileIndexCache(
 
 
 // Platform-specific implementation with depth control - uses plugin types
-expect suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode?
+expect suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData?

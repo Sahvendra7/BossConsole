@@ -20,8 +20,7 @@ import ai.rever.boss.services.passkey.PasskeyPlatformInit
 import ai.rever.boss.window.AWTKeyboardInterceptor
 import ai.rever.boss.window.WindowManager
 import ai.rever.boss.window.BossWindow
-import ai.rever.boss.plugin.panel.console.GlobalLogCapture
-import ai.rever.boss.plugin.panel.performance.PerformancePanelPlugin
+import ai.rever.boss.logging.GlobalLogCapture
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.performance.PerformanceDataProviderImpl
 import androidx.compose.runtime.key
@@ -268,16 +267,6 @@ fun main(args: Array<String>) {
     // Start performance monitoring from app startup
     ai.rever.boss.performance.PerformanceMonitor.start()
 
-    // Initialize performance panel plugin with data provider
-    PerformancePanelPlugin.dataProvider = PerformanceDataProviderImpl()
-    PerformancePanelPlugin.fileOpenCallback = ai.rever.boss.plugin.api.FileOpenCallback { filePath ->
-        // Open exported metrics file using the system default application
-        java.awt.Desktop.getDesktop().open(java.io.File(filePath))
-    }
-
-    // Initialize run configurations panel plugin with data provider
-    ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsPanelPlugin.dataProvider =
-        ai.rever.boss.run.RunConfigurationDataProviderImpl()
 
     // Debug: Log environment info
     logger.debug(LogCategory.SYSTEM, "Environment info", mapOf(

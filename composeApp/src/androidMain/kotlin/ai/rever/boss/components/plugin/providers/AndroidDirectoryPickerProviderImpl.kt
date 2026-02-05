@@ -1,6 +1,6 @@
 package ai.rever.boss.components.plugin.providers
 
-import ai.rever.boss.plugin.panel.codebase.DirectoryPickerProvider
+import ai.rever.boss.plugin.api.DirectoryPickerProvider
 
 /**
  * Android implementation of DirectoryPickerProvider.

@@ -102,7 +102,7 @@ import ai.rever.boss.run.RunnerTerminalTarget
 import ai.rever.boss.startup.StartupSettingsManager
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
-import ai.rever.boss.plugin.panel.topofmind.ActiveTab
+import ai.rever.boss.topofmind.ActiveTab
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -137,7 +137,6 @@ import ai.rever.boss.components.workspaces.applyWorkspace
 import ai.rever.boss.components.workspaces.extractCurrentWorkspace
 import ai.rever.boss.components.workspaces.WorkspaceSettingsManager
 import ai.rever.boss.components.workspaces.WorkspaceSerializer
-import ai.rever.boss.plugin.panel.terminal.TerminalInfo as TerminalPanelInfo
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.TemplatePanelConfig
 import ai.rever.boss.dashboard.SplitTemplatesManager
@@ -159,7 +158,7 @@ import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
 import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
-import ai.rever.boss.plugin.panel.topofmind.TabTreeState
+import ai.rever.boss.topofmind.TabTreeState
 import ai.rever.boss.components.dialogs.GlobalSearchDialog
 import ai.rever.boss.components.dialogs.TopOfMindDialog
 import ai.rever.boss.components.windows.SettingsWindow
@@ -195,8 +194,7 @@ import ai.rever.boss.performance.TerminalInfo
 import ai.rever.boss.performance.EditorTabResourceInfo
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.window.Project
-import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
-import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
+import ai.rever.boss.components.plugin.PanelIds
 
 // Platform-specific download tab close callback setup
 expect fun setupDownloadTabCloseCallback(splitViewState: SplitViewState)
@@ -624,8 +622,8 @@ fun ComponentContext.BossApp(
         val pendingProject = consumePendingInitialProject(windowId)
         if (pendingProject != null) {
             windowProjectState.selectProject(pendingProject)
-            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
         }
     }
 
@@ -638,8 +636,8 @@ fun ComponentContext.BossApp(
     LaunchedEffect(windowProjectState) {
         val initialProject = windowProjectState.selectedProject.value
         if (initialProject.path.isNotEmpty()) {
-            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
         }
     }
 
@@ -962,8 +960,8 @@ fun ComponentContext.BossApp(
     // Open CodeBase and RunConfigurations panels when project is selected (reactive architecture)
     LaunchedEffect(selectedProject.path, windowId) {
         if (selectedProject.path.isNotEmpty()) {
-            PanelEventBus.openPanel(CodeBaseInfo.id, sourceWindowId = windowId)
-            PanelEventBus.openPanel(RunConfigurationsInfo.id, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.CODEBASE, sourceWindowId = windowId)
+            PanelEventBus.openPanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = windowId)
         }
     }
 
@@ -1204,7 +1202,7 @@ fun ComponentContext.BossApp(
                 if (usesSidebar) {
                     // Open in sidebar terminal panel
                     // First, ensure the sidebar terminal panel is open
-                    PanelEventBus.openPanel(TerminalPanelInfo.id, sourceWindowId = windowId)
+                    PanelEventBus.openPanel(PanelIds.TERMINAL, sourceWindowId = windowId)
 
                     // Create a new tab in the sidebar terminal with the command (window-scoped)
                     val success = RunnerTerminalService.openInSidebarTerminal(
@@ -1262,7 +1260,7 @@ fun ComponentContext.BossApp(
             .onEach { event ->
 
                 // Open the terminal panel if not already open
-                PanelEventBus.openPanel(TerminalPanelInfo.id, sourceWindowId = windowId)
+                PanelEventBus.openPanel(PanelIds.TERMINAL, sourceWindowId = windowId)
 
                 // Create a new tab in the sidebar terminal with the git command (window-scoped)
                 val success = GitTerminalService.openInSidebarTerminal(

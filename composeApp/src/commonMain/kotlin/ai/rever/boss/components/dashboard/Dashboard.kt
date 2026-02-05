@@ -13,12 +13,8 @@ import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.events.URLEventBus
-import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
-import ai.rever.boss.plugin.panel.bookmarks.BookmarksInfo
-import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
-import ai.rever.boss.plugin.panel.downloads.DownloadsInfo
+import ai.rever.boss.components.plugin.PanelIds
 import ai.rever.boss.window.Project
-import ai.rever.boss.plugin.panel.terminal.TerminalInfo
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
@@ -390,7 +386,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(CodeBaseInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.CODEBASE, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -401,7 +397,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(RunConfigurationsInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -412,7 +408,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(BookmarksInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.BOOKMARKS, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -423,7 +419,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(DownloadsInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.DOWNLOADS, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -467,7 +463,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(TerminalInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.TERMINAL, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -489,7 +485,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(CodeBaseInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.CODEBASE, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -500,7 +496,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(RunConfigurationsInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.RUN_CONFIGURATIONS, sourceWindowId = wid)
                                     }
                                 }
                             }
@@ -511,7 +507,7 @@ fun Dashboard(
                             onClick = {
                                 windowId?.let { wid ->
                                     scope.launch {
-                                        PanelEventBus.togglePanel(BookmarksInfo.id, sourceWindowId = wid)
+                                        PanelEventBus.togglePanel(PanelIds.BOOKMARKS, sourceWindowId = wid)
                                     }
                                 }
                             }

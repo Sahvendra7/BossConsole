@@ -48,9 +48,9 @@ import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.window.Project
-import ai.rever.boss.plugin.panel.codebase.FileNode
-import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
-import ai.rever.boss.plugin.panel.codebase.FileTreeUtils
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.NodeLoadingStateData
+import ai.rever.boss.plugin.api.FileTreeUtils
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectory
 import ai.rever.boss.components.plugin.panels.left_top.directoryHasChildren
 import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth
@@ -374,7 +374,7 @@ fun NewTabDialog(
                         var buttonHeight by remember { mutableStateOf(0) }
 
                         // File tree state
-                        var fileTree by remember { mutableStateOf<FileNode?>(null) }
+                        var fileTree by remember { mutableStateOf<FileNodeData?>(null) }
                         var expandedPaths by remember { mutableStateOf(setOf<String>()) }
                         var isLoadingTree by remember { mutableStateOf(false) }
                         val coroutineScope = rememberCoroutineScope()
@@ -1025,11 +1025,11 @@ private fun processUrlInput(input: String): String {
  */
 @Composable
 private fun DialogFileTreeItem(
-    node: FileNode,
+    node: FileNodeData,
     level: Int,
     expandedPaths: Set<String>,
     onToggleExpanded: (String) -> Unit,
-    onFileClick: (FileNode) -> Unit
+    onFileClick: (FileNodeData) -> Unit
 ) {
     val isExpanded = expandedPaths.contains(node.path)
     val hasChildren = node.isDirectory && (node.hasChildren != false || node.children.isNotEmpty())

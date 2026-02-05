@@ -1,8 +1,8 @@
 package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
-import ai.rever.boss.plugin.panel.codebase.ProjectData
-import ai.rever.boss.plugin.panel.codebase.ProjectDataProvider
+import ai.rever.boss.plugin.api.ProjectData
+import ai.rever.boss.plugin.api.ProjectDataProvider
 import ai.rever.boss.window.Project
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

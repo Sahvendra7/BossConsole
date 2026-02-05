@@ -1,47 +1,47 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
-import ai.rever.boss.plugin.panel.codebase.FileNode
-import ai.rever.boss.plugin.panel.codebase.NodeLoadingState
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.NodeLoadingStateData
 
 // For WebAssembly, return mock data as file system access is not available
-actual fun scanDirectory(path: String): FileNode? {
+actual fun scanDirectory(path: String): FileNodeData? {
     // Browser doesn't have direct file system access
     // Return mock data for demonstration
-    return FileNode(
+    return FileNodeData(
         name = path.substringAfterLast('/'),
         path = path,
         isDirectory = true,
         children = listOf(
-            FileNode(
+            FileNodeData(
                 name = "index.html",
                 path = "$path/index.html",
                 isDirectory = false,
                 hasChildren = false,
-                loadingState = NodeLoadingState.LOADED
+                loadingState = NodeLoadingStateData.LOADED
             ),
-            FileNode(
+            FileNodeData(
                 name = "js",
                 path = "$path/js",
                 isDirectory = true,
                 children = listOf(
-                    FileNode(
+                    FileNodeData(
                         name = "app.js",
                         path = "$path/js/app.js",
                         isDirectory = false,
                         hasChildren = false,
-                        loadingState = NodeLoadingState.LOADED
+                        loadingState = NodeLoadingStateData.LOADED
                     )
                 ),
                 hasChildren = true,
-                loadingState = NodeLoadingState.LOADED
+                loadingState = NodeLoadingStateData.LOADED
             )
         ),
         hasChildren = true,
-        loadingState = NodeLoadingState.LOADED
+        loadingState = NodeLoadingStateData.LOADED
     )
 }
 
-actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode? {
+actual suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
     // Browser doesn't have direct file system access
     // Return the same mock data
     return scanDirectory(path)

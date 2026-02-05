@@ -4,7 +4,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.window.Project
 import ai.rever.boss.utils.extractFileName
-import ai.rever.boss.plugin.panel.codebase.FileNode
+import ai.rever.boss.plugin.api.FileNodeData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -131,7 +131,7 @@ object ProjectState {
 // The legacy component code has been removed - use CodeBasePanelPlugin.registerWithProviders() instead
 
 // Platform-specific file scanning - uses plugin types
-expect fun scanDirectory(path: String): FileNode?
+expect fun scanDirectory(path: String): FileNodeData?
 
 /**
  * IntelliJ's isAlwaysShowPlus() pattern implementation.

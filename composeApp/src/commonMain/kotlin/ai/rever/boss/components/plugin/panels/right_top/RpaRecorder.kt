@@ -9,7 +9,6 @@ import ai.rever.boss.components.bars.lazyListScrollbar
 import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
-import ai.rever.boss.plugin.panel.rparecorder.RpaRecorderInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1363,9 +1362,4 @@ expect class RpaRecorderFactory() {
     fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): RpaRecorderComponent
 }
 
-/**
- * Registration function for RPA Recorder panel
- */
-fun DefaultPlugin.registerRpaRecorder() = panelRegistry.registerPanel(RpaRecorderInfo) {
-    ctx, panelInfo -> RpaRecorderFactory().createComponent(ctx, panelInfo)
-}
+

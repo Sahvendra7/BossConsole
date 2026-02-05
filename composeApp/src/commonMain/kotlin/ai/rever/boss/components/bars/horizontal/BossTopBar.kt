@@ -51,8 +51,6 @@ import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.services.supabase.AuthService
 import ai.rever.boss.components.events.PanelEventBus
 import ai.rever.boss.components.events.TerminalLinkEventBus
-import ai.rever.boss.plugin.panel.codebase.CodeBaseInfo
-import ai.rever.boss.plugin.panel.runconfigurations.RunConfigurationsInfo
 import ai.rever.boss.window.WindowOperations
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.TextButton

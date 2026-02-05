@@ -8,7 +8,6 @@ import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
-import ai.rever.boss.plugin.panel.llmrpa.LLMRpaInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -932,9 +931,4 @@ expect class LLMRpaFactory() {
     fun createComponent(ctx: ComponentContext, panelInfo: PanelInfo): LLMRpaComponent
 }
 
-/**
- * Registration function for LLM RPA panel
- */
-fun DefaultPlugin.registerLLMRpa() = panelRegistry.registerPanel(LLMRpaInfo) {
-    ctx, panelInfo -> LLMRpaFactory().createComponent(ctx, panelInfo)
-}
+

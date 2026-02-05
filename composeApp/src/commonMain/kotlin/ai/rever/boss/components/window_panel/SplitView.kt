@@ -8,7 +8,7 @@ import ai.rever.boss.components.model.PanelDropZones
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
-import ai.rever.boss.plugin.panel.topofmind.ActiveTab
+import ai.rever.boss.topofmind.ActiveTab
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.icons.FileIcons

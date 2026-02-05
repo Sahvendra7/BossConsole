@@ -7,8 +7,8 @@ import ai.rever.boss.components.plugin.panels.left_top.scanDirectoryWithDepth as
 import ai.rever.boss.utils.SystemUtils
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.plugin.panel.codebase.FileNode
-import ai.rever.boss.plugin.panel.codebase.FileSystemDataProvider
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.FileSystemDataProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,11 +26,11 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
     private val logger = BossLogger.forComponent("FileSystemDataProvider")
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
-    override suspend fun scanDirectory(path: String): FileNode? {
+    override suspend fun scanDirectory(path: String): FileNodeData? {
         return ai.rever.boss.components.plugin.panels.left_top.scanDirectory(path)
     }
 
-    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNode? {
+    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
         return platformScanDirectoryWithDepth(path, maxDepth, startDepth)
     }
 
@@ -222,7 +222,7 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         }
     }
 
-    suspend fun writeFile(path: String, content: String): Result<Unit> {
+    override suspend fun writeFile(path: String, content: String): Result<Unit> {
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(path)
@@ -250,7 +250,7 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         }
     }
 
-    suspend fun readFile(path: String): Result<String> {
+    override suspend fun readFile(path: String): Result<String> {
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(path)
@@ -274,13 +274,13 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         }
     }
 
-    fun getDownloadsDirectory(): String {
+    override fun getDownloadsDirectory(): String {
         val homeDir = System.getProperty("user.home")
         val downloadsDir = java.io.File(homeDir, "Downloads")
         return if (downloadsDir.exists()) downloadsDir.absolutePath else homeDir
     }
 
-    fun getHomeDirectory(): String {
+    override fun getHomeDirectory(): String {
         return System.getProperty("user.home")
     }
 }
