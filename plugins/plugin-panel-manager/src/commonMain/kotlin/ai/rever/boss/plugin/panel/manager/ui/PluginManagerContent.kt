@@ -42,8 +42,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Upgrade
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -80,7 +82,8 @@ fun PluginManagerContent(component: PluginManagerComponent) {
                 onSearchQueryChange = { component.setSearchQuery(it) },
                 onTabSelected = { component.selectTab(it) },
                 onRefresh = { component.refresh() },
-                isLoading = state.isLoading
+                isLoading = state.isLoading,
+                isStoreAdmin = state.isStoreAdmin
             )
 
             // Error message
@@ -98,16 +101,24 @@ fun PluginManagerContent(component: PluginManagerComponent) {
                 when (state.currentTab) {
                     PluginManagerTab.INSTALLED -> InstalledPluginsTab(
                         plugins = filterPlugins(state.installedPlugins, state.searchQuery),
+                        updateIds = state.updates.map { it.pluginId }.toSet(),
                         onToggleEnabled = { id, enabled -> component.togglePluginEnabled(id, enabled) },
                         onUninstall = { id -> component.uninstallPlugin(id) },
+                        onUpdate = { id -> component.updatePlugin(id) },
                         onInstallFromFile = { component.installFromFilePicker() },
                         onInstallFromGitHub = { url -> component.installFromGitHub(url) },
+                        onOpenHomepage = { url -> component.openUrl(url) },
                         isLoading = state.isLoading
                     )
                     PluginManagerTab.AVAILABLE -> AvailablePluginsTab(
                         plugins = filterAvailablePlugins(state.availablePlugins, state.searchQuery),
                         installedIds = state.installedPlugins.map { it.pluginId }.toSet(),
+                        updateIds = state.updates.map { it.pluginId }.toSet(),
                         onInstall = { pluginId -> component.installFromRemote(pluginId) },
+                        onUpdate = { pluginId -> component.updatePlugin(pluginId) },
+                        onDeleteFromStore = { pluginId -> component.deleteFromStore(pluginId) },
+                        onOpenHomepage = { url -> component.openUrl(url) },
+                        isStoreAdmin = state.isStoreAdmin,
                         isLoading = state.isLoading
                     )
                     PluginManagerTab.UPDATES -> UpdatesTab(
@@ -158,7 +169,8 @@ private fun PluginManagerHeader(
     onSearchQueryChange: (String) -> Unit,
     onTabSelected: (PluginManagerTab) -> Unit,
     onRefresh: () -> Unit,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isStoreAdmin: Boolean
 ) {
     Row(
         modifier = Modifier
@@ -189,11 +201,14 @@ private fun PluginManagerHeader(
                 BossBadge(count = updateCount)
             }
         }
-        TabButton(
-            text = "Publish",
-            selected = currentTab == PluginManagerTab.PUBLISH,
-            onClick = { onTabSelected(PluginManagerTab.PUBLISH) }
-        )
+        // Only show Publish tab for store admins
+        if (isStoreAdmin) {
+            TabButton(
+                text = "Publish",
+                selected = currentTab == PluginManagerTab.PUBLISH,
+                onClick = { onTabSelected(PluginManagerTab.PUBLISH) }
+            )
+        }
 
         Spacer(Modifier.width(8.dp))
 
@@ -306,10 +321,13 @@ private fun ErrorBanner(
 @Composable
 private fun InstalledPluginsTab(
     plugins: List<InstalledPluginState>,
+    updateIds: Set<String>,
     onToggleEnabled: (String, Boolean) -> Unit,
     onUninstall: (String) -> Unit,
+    onUpdate: (String) -> Unit,
     onInstallFromFile: () -> Unit,
     onInstallFromGitHub: (String) -> Unit,
+    onOpenHomepage: (String) -> Unit,
     isLoading: Boolean
 ) {
     var showGitHubDialog by remember { mutableStateOf(false) }
@@ -367,13 +385,14 @@ private fun InstalledPluginsTab(
                     BossPrimaryButton(
                         text = "Install",
                         onClick = {
-                            if (gitHubUrl.isNotBlank()) {
-                                onInstallFromGitHub(gitHubUrl)
+                            val trimmedUrl = gitHubUrl.trim()
+                            if (trimmedUrl.isNotBlank()) {
+                                onInstallFromGitHub(trimmedUrl)
                                 showGitHubDialog = false
                                 gitHubUrl = ""
                             }
                         },
-                        enabled = gitHubUrl.isNotBlank()
+                        enabled = gitHubUrl.trim().isNotBlank()
                     )
                 }
             }
@@ -401,8 +420,11 @@ private fun InstalledPluginsTab(
                 items(plugins, key = { it.pluginId }) { plugin ->
                     InstalledPluginCard(
                         plugin = plugin,
+                        hasUpdate = plugin.pluginId in updateIds,
                         onToggleEnabled = { onToggleEnabled(plugin.pluginId, it) },
                         onUninstall = { onUninstall(plugin.pluginId) },
+                        onUpdate = { onUpdate(plugin.pluginId) },
+                        onOpenHomepage = { plugin.url?.let { onOpenHomepage(it) } },
                         isLoading = isLoading
                     )
                 }
@@ -414,17 +436,36 @@ private fun InstalledPluginsTab(
 @Composable
 private fun InstalledPluginCard(
     plugin: InstalledPluginState,
+    hasUpdate: Boolean,
     onToggleEnabled: (Boolean) -> Unit,
     onUninstall: () -> Unit,
+    onUpdate: () -> Unit,
+    onOpenHomepage: () -> Unit,
     isLoading: Boolean
 ) {
+    val hasHomepage = !plugin.url.isNullOrBlank()
+
     BossCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            // Left side - clickable to open homepage
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (hasHomepage) {
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { onOpenHomepage() }
+                                .padding(end = 8.dp)
+                        } else {
+                            Modifier
+                        }
+                    )
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = plugin.displayName,
@@ -432,12 +473,30 @@ private fun InstalledPluginCard(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
+                    if (hasHomepage) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.OpenInNew,
+                            contentDescription = "Open homepage",
+                            modifier = Modifier.size(12.dp),
+                            tint = BossThemeColors.AccentColor
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "v${plugin.version}",
                         color = BossThemeColors.TextMuted,
                         fontSize = 11.sp
                     )
+                    if (hasUpdate) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.Upgrade,
+                            contentDescription = "Update available",
+                            modifier = Modifier.size(14.dp),
+                            tint = BossThemeColors.AccentColor
+                        )
+                    }
                     if (!plugin.healthy) {
                         Spacer(Modifier.width(8.dp))
                         Icon(
@@ -461,6 +520,15 @@ private fun InstalledPluginCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hasUpdate) {
+                    BossPrimaryButton(
+                        text = "Update",
+                        onClick = onUpdate,
+                        enabled = !isLoading,
+                        icon = Icons.Default.Upgrade
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 BossToggle(
                     label = "",
                     checked = plugin.enabled,
@@ -494,7 +562,12 @@ private fun InstalledPluginCard(
 private fun AvailablePluginsTab(
     plugins: List<PluginInfo>,
     installedIds: Set<String>,
+    updateIds: Set<String>,
     onInstall: (String) -> Unit,
+    onUpdate: (String) -> Unit,
+    onDeleteFromStore: (String) -> Unit,
+    onOpenHomepage: (String) -> Unit,
+    isStoreAdmin: Boolean,
     isLoading: Boolean
 ) {
     if (plugins.isEmpty()) {
@@ -518,7 +591,12 @@ private fun AvailablePluginsTab(
                 AvailablePluginCard(
                     plugin = plugin,
                     isInstalled = plugin.pluginId in installedIds,
+                    hasUpdate = plugin.pluginId in updateIds,
                     onInstall = { onInstall(plugin.pluginId) },
+                    onUpdate = { onUpdate(plugin.pluginId) },
+                    onDeleteFromStore = { onDeleteFromStore(plugin.pluginId) },
+                    onOpenHomepage = { if (plugin.url.isNotBlank()) onOpenHomepage(plugin.url) },
+                    isStoreAdmin = isStoreAdmin,
                     isLoading = isLoading
                 )
             }
@@ -530,16 +608,37 @@ private fun AvailablePluginsTab(
 private fun AvailablePluginCard(
     plugin: PluginInfo,
     isInstalled: Boolean,
+    hasUpdate: Boolean,
     onInstall: () -> Unit,
+    onUpdate: () -> Unit,
+    onDeleteFromStore: () -> Unit,
+    onOpenHomepage: () -> Unit,
+    isStoreAdmin: Boolean,
     isLoading: Boolean
 ) {
+    val hasHomepage = plugin.url.isNotBlank()
+
     BossCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            // Left side - clickable to open homepage
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .then(
+                        if (hasHomepage) {
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { onOpenHomepage() }
+                                .padding(end = 8.dp)
+                        } else {
+                            Modifier
+                        }
+                    )
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = plugin.displayName,
@@ -547,6 +646,15 @@ private fun AvailablePluginCard(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
+                    if (hasHomepage) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.OpenInNew,
+                            contentDescription = "Open homepage",
+                            modifier = Modifier.size(12.dp),
+                            tint = BossThemeColors.AccentColor
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "v${plugin.version}",
@@ -583,20 +691,51 @@ private fun AvailablePluginCard(
                 }
             }
 
-            if (isInstalled) {
-                Text(
-                    text = "Installed",
-                    color = BossThemeColors.SuccessColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            } else {
-                BossPrimaryButton(
-                    text = "Install",
-                    onClick = onInstall,
-                    enabled = !isLoading,
-                    icon = Icons.Default.Download
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    hasUpdate -> {
+                        BossPrimaryButton(
+                            text = "Update",
+                            onClick = onUpdate,
+                            enabled = !isLoading,
+                            icon = Icons.Default.Upgrade
+                        )
+                    }
+                    isInstalled -> {
+                        Text(
+                            text = "Installed",
+                            color = BossThemeColors.SuccessColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    else -> {
+                        BossPrimaryButton(
+                            text = "Install",
+                            onClick = onInstall,
+                            enabled = !isLoading,
+                            icon = Icons.Default.Download
+                        )
+                    }
+                }
+
+                // Delete button for store admins
+                if (isStoreAdmin) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(enabled = !isLoading) { onDeleteFromStore() }
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete from store",
+                            modifier = Modifier.size(16.dp),
+                            tint = BossThemeColors.ErrorColor
+                        )
+                    }
+                }
             }
         }
     }
@@ -929,12 +1068,13 @@ private fun PublishTab(
                                     BossPrimaryButton(
                                         text = "Fetch",
                                         onClick = {
-                                            if (gitHubUrl.isNotBlank()) {
+                                            val trimmedUrl = gitHubUrl.trim()
+                                            if (trimmedUrl.isNotBlank()) {
                                                 isFetching = true
                                                 fetchStatus = null
                                                 fetchProgress = 0f
                                                 onFetchFromGitHub(
-                                                    gitHubUrl,
+                                                    trimmedUrl,
                                                     { progress -> fetchProgress = progress },
                                                     { status -> fetchStatus = status },
                                                     { path, manifest ->
@@ -945,7 +1085,7 @@ private fun PublishTab(
                                                         version = manifest.version
                                                         description = manifest.description
                                                         authorName = manifest.author ?: ""
-                                                        homepageUrl = manifest.url ?: gitHubUrl
+                                                        homepageUrl = manifest.url ?: trimmedUrl
                                                         fetchStatus = null
                                                     },
                                                     { error ->
@@ -955,7 +1095,7 @@ private fun PublishTab(
                                                 )
                                             }
                                         },
-                                        enabled = !isLoading && !isPublishing && !isFetching && gitHubUrl.isNotBlank(),
+                                        enabled = !isLoading && !isPublishing && !isFetching && gitHubUrl.trim().isNotBlank(),
                                         icon = Icons.Default.Download
                                     )
                                 }

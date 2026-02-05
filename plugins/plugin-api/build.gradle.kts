@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.risaboss"
-version = "1.0.4"
+version = "1.0.9"
 
 kotlin {
     // Suppress expect/actual classes beta warning (KT-61573)
@@ -55,6 +55,9 @@ kotlin {
 
                 // Browser service API for plugins needing browser capabilities
                 api(projects.plugins.pluginApiBrowser)
+
+                // UI core for context menu data types
+                api(projects.plugins.pluginUiCore)
             }
         }
 

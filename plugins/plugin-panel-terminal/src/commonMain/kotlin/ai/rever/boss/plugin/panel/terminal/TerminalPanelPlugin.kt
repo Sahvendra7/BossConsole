@@ -1,9 +1,12 @@
 package ai.rever.boss.plugin.panel.terminal
 
 import ai.rever.boss.plugin.api.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.PanelInfo
 import ai.rever.boss.plugin.api.Plugin
 import ai.rever.boss.plugin.api.PluginContext
+import ai.rever.boss.plugin.api.SettingsProvider
+import ai.rever.boss.plugin.api.TerminalContentProvider
 import com.arkivanov.decompose.ComponentContext
 
 /**
@@ -75,7 +78,23 @@ object TerminalPanelPlugin : Plugin {
     }
 
     override fun register(context: PluginContext) {
-        // No-op: This plugin requires explicit registration with providers
-        // Use registerWithProviders() instead
+        val terminalContentProvider = context.terminalContentProvider
+        val panelEventProvider = context.panelEventProvider
+        val settingsProvider = context.settingsProvider
+
+        if (terminalContentProvider == null || panelEventProvider == null || settingsProvider == null) {
+            // Providers not available - cannot register
+            return
+        }
+
+        context.panelRegistry.registerPanel(TerminalInfo) { ctx, panelInfo ->
+            TerminalComponent(
+                ctx = ctx,
+                panelInfo = panelInfo,
+                terminalContentProvider = terminalContentProvider,
+                panelEventProvider = panelEventProvider,
+                settingsProvider = settingsProvider
+            )
+        }
     }
 }

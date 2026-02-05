@@ -40,7 +40,8 @@ data class InstalledPluginState(
     val healthy: Boolean,
     val canUnload: Boolean,
     val jarPath: String,
-    val url: String? = null
+    val url: String? = null,
+    val requiresAdmin: Boolean = false
 )
 
 /**
@@ -53,7 +54,8 @@ data class PluginManagerState(
     val updates: List<UpdateInfo> = emptyList(),
     val isLoading: Boolean = false,
     val searchQuery: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val isStoreAdmin: Boolean = false
 )
 
 /**
@@ -62,8 +64,12 @@ data class PluginManagerState(
 interface PluginManagerOperations {
     /**
      * Install a plugin from a JAR path.
+     *
+     * @param jarPath Path to the JAR file
+     * @param sourceUrl Optional source URL (e.g., GitHub repo URL) for tracking updates
+     * @param version Optional version string from manifest
      */
-    suspend fun installPlugin(jarPath: String): Result<Unit>
+    suspend fun installPlugin(jarPath: String, sourceUrl: String? = null, version: String? = null): Result<Unit>
 
     /**
      * Uninstall a plugin.
@@ -199,7 +205,8 @@ interface PluginManagerOperations {
  */
 class PluginManagerComponent(
     componentContext: ComponentContext,
-    private val operations: PluginManagerOperations
+    private val operations: PluginManagerOperations,
+    private val onOpenUrl: ((String) -> Unit)? = null
 ) : PanelComponentWithUI, ComponentContext by componentContext {
 
     override val panelInfo: PanelInfo = PluginManagerInfo
@@ -288,8 +295,13 @@ class PluginManagerComponent(
                         error = result.exceptionOrNull()?.message ?: "GitHub install failed"
                     )
                 } else {
-                    val (jarPath, _) = result.getOrThrow()
-                    val installResult = operations.installPlugin(jarPath)
+                    val (jarPath, manifest) = result.getOrThrow()
+                    // Pass GitHub URL and version for update tracking
+                    val installResult = operations.installPlugin(
+                        jarPath = jarPath,
+                        sourceUrl = githubUrl.trim(),
+                        version = manifest.version
+                    )
                     if (installResult.isFailure) {
                         _state.value = _state.value.copy(
                             isLoading = false,
@@ -504,7 +516,13 @@ class PluginManagerComponent(
             try {
                 operations.refresh()
                 operations.checkForUpdates()
-                _state.value = _state.value.copy(isLoading = false)
+                // Check admin status
+                val isAdmin = try {
+                    operations.isCurrentUserAdmin()
+                } catch (e: Exception) {
+                    false
+                }
+                _state.value = _state.value.copy(isLoading = false, isStoreAdmin = isAdmin)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     isLoading = false,
@@ -515,10 +533,38 @@ class PluginManagerComponent(
     }
 
     /**
+     * Delete a plugin from the store (admin only).
+     */
+    fun deleteFromStore(pluginId: String) {
+        scope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null)
+            val result = operations.adminDeletePlugin(pluginId)
+            if (result.isFailure) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    error = result.exceptionOrNull()?.message ?: "Delete failed"
+                )
+            } else {
+                refresh()
+            }
+        }
+    }
+
+    /**
      * Clear error message.
      */
     fun clearError() {
         _state.value = _state.value.copy(error = null)
+    }
+
+    /**
+     * Open a URL in a new browser tab.
+     * Used to open plugin homepage when clicking on a plugin card.
+     */
+    fun openUrl(url: String) {
+        if (url.isNotBlank()) {
+            onOpenUrl?.invoke(url)
+        }
     }
 
     /**

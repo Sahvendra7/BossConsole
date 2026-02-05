@@ -64,10 +64,12 @@ class SimplePluginManagerOperations(
         }
     }
 
-    override suspend fun installPlugin(jarPath: String): Result<Unit> {
+    override suspend fun installPlugin(jarPath: String, sourceUrl: String?, version: String?): Result<Unit> {
         // TODO: Integrate with global DynamicPluginManager when available
         logger.info(LogCategory.SYSTEM, "Install plugin requested", mapOf(
-            "jarPath" to jarPath
+            "jarPath" to jarPath,
+            "sourceUrl" to (sourceUrl ?: "none"),
+            "version" to (version ?: "unknown")
         ))
         return Result.failure(Exception("Plugin installation from JAR not yet implemented"))
     }

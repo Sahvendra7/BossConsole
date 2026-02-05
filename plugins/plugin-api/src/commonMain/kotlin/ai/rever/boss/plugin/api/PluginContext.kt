@@ -225,6 +225,60 @@ interface PluginContext {
      */
     val roleManagementProvider: RoleManagementProvider?
         get() = null
+
+    /**
+     * Optional terminal content provider for the terminal panel plugin.
+     *
+     * Returns null if terminal functionality is not available.
+     * Dynamic plugins can use this for the terminal panel.
+     */
+    val terminalContentProvider: TerminalContentProvider?
+        get() = null
+
+    /**
+     * Optional panel event provider for plugins that need to trigger panel events.
+     *
+     * Returns null if panel event functionality is not available.
+     */
+    val panelEventProvider: PanelEventProvider?
+        get() = null
+
+    /**
+     * Optional settings provider for plugins that need to open settings.
+     *
+     * Returns null if settings functionality is not available.
+     */
+    val settingsProvider: SettingsProvider?
+        get() = null
+
+    /**
+     * Optional context menu provider for plugins that need context menu functionality.
+     *
+     * Returns null if context menu functionality is not available.
+     * Dynamic plugins can use this to display context menus with the host app's styling.
+     */
+    val contextMenuProvider: ContextMenuProvider?
+        get() = null
+
+    /**
+     * Optional log data provider for plugins that display captured logs.
+     *
+     * Returns null if log capture is not available.
+     * Dynamic plugins can use this for the console panel instead of
+     * accessing GlobalLogCapture directly (which doesn't work due to
+     * classloader isolation in dynamic plugins).
+     */
+    val logDataProvider: LogDataProvider?
+        get() = null
+
+    /**
+     * Optional Plugin Store API key provider for plugins that manage API keys.
+     *
+     * Returns null if plugin store API key management is not available.
+     * Dynamic plugins can use this for creating CI/CD publishing keys.
+     */
+    val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider?
+        get() = null
 }
 
 /**

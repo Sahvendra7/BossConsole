@@ -132,3 +132,25 @@ export function getPublicUrl(
 
   return data.publicUrl
 }
+
+/**
+ * Upload a JAR file directly to storage
+ */
+export async function uploadJar(
+  supabase: SupabaseClient,
+  jarPath: string,
+  jarData: ArrayBuffer
+): Promise<void> {
+  const { error } = await supabase
+    .storage
+    .from(BUCKET_NAME)
+    .upload(jarPath, jarData, {
+      contentType: 'application/java-archive',
+      upsert: true // Allow overwriting if file exists
+    })
+
+  if (error) {
+    console.error('Error uploading JAR:', error)
+    throw new Error(`Failed to upload JAR: ${error.message}`)
+  }
+}

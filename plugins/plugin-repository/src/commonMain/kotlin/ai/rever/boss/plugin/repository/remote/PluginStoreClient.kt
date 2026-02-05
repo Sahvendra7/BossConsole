@@ -399,6 +399,84 @@ object PluginStoreClient {
 
         return json.decodeFromString(response.bodyAsText())
     }
+
+    // ============================================================================
+    // API Key Management Endpoints
+    // ============================================================================
+
+    /**
+     * POST /plugin-store/api-keys - Create a new API key
+     */
+    suspend fun createApiKey(request: CreateApiKeyRequest): CreateApiKeyResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("JWT authentication required to create API keys")
+
+        val response = httpClient.post("${PluginStoreConfig.pluginStoreUrl}/api-keys") {
+            contentType(ContentType.Application.Json)
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+            setBody(json.encodeToString(CreateApiKeyRequest.serializer(), request))
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<CreateApiKeyResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to create API key: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * GET /plugin-store/api-keys - List user's API keys
+     */
+    suspend fun listApiKeys(): ListApiKeysResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("JWT authentication required to list API keys")
+
+        val response = httpClient.get("${PluginStoreConfig.pluginStoreUrl}/api-keys") {
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<ListApiKeysResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to list API keys: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
+
+    /**
+     * DELETE /plugin-store/api-keys/:keyId - Revoke an API key
+     */
+    suspend fun revokeApiKey(keyId: String): DeleteApiKeyResponse {
+        val accessToken = PluginStoreConfig.accessToken
+            ?: throw PluginStoreException("JWT authentication required to revoke API keys")
+
+        val response = httpClient.delete("${PluginStoreConfig.pluginStoreUrl}/api-keys/$keyId") {
+            header("apikey", PluginStoreConfig.anonKey)
+            header("Authorization", "Bearer $accessToken")
+        }
+
+        if (!response.status.isSuccess()) {
+            val errorBody = try {
+                json.decodeFromString<DeleteApiKeyResponse>(response.bodyAsText())
+            } catch (_: Exception) {
+                null
+            }
+            throw PluginStoreException(errorBody?.error ?: "Failed to revoke API key: ${response.status}")
+        }
+
+        return json.decodeFromString(response.bodyAsText())
+    }
 }
 
 /**
@@ -667,6 +745,51 @@ data class AdminActionResponse(
     val pluginId: String? = null,
     val published: Boolean? = null,
     val verified: Boolean? = null,
+    val error: String? = null
+)
+
+// ============================================================================
+// API Key Request/Response Models
+// ============================================================================
+
+@Serializable
+data class CreateApiKeyRequest(
+    val name: String,
+    val scopes: List<String> = listOf("publish", "version", "finalize"),
+    val expiresInDays: Int? = null
+)
+
+@Serializable
+data class CreateApiKeyResponse(
+    val success: Boolean,
+    val apiKey: String? = null,
+    val keyInfo: ApiKeyInfoResponse? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class ApiKeyInfoResponse(
+    val id: String,
+    val name: String,
+    val keyPrefix: String,
+    val scopes: List<String>,
+    val createdAt: String,
+    val lastUsedAt: String? = null,
+    val expiresAt: String? = null,
+    val isExpired: Boolean = false
+)
+
+@Serializable
+data class ListApiKeysResponse(
+    val success: Boolean,
+    val keys: List<ApiKeyInfoResponse> = emptyList(),
+    val error: String? = null
+)
+
+@Serializable
+data class DeleteApiKeyResponse(
+    val success: Boolean,
+    val message: String? = null,
     val error: String? = null
 )
 

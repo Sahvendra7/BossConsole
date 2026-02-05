@@ -7,14 +7,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
-/**
- * Persists installed plugin state to disk.
- *
- * Stores a JSON file in ~/.boss/plugins/installed.json that tracks:
- * - Which plugins are installed
- * - Their JAR paths
- * - Whether they are enabled
- */
 object PluginPersistence {
     private val logger = BossLogger.forComponent("PluginPersistence")
 
@@ -32,7 +24,9 @@ object PluginPersistence {
     data class InstalledPluginEntry(
         val pluginId: String,
         val jarPath: String,
-        val enabled: Boolean = true
+        val enabled: Boolean = true,
+        val sourceUrl: String? = null,
+        val installedVersion: String? = null
     )
 
     @Serializable
@@ -42,10 +36,13 @@ object PluginPersistence {
 
     private var config: InstalledPluginsConfig? = null
 
+    // Lock for synchronizing config access to prevent race conditions
+    private val configLock = Any()
+
     /**
-     * Load the installed plugins configuration from disk.
+     * Internal load without synchronization - for use inside synchronized blocks.
      */
-    fun loadConfig(): InstalledPluginsConfig {
+    private fun loadConfigInternal(): InstalledPluginsConfig {
         if (config != null) return config!!
 
         return try {
@@ -69,9 +66,9 @@ object PluginPersistence {
     }
 
     /**
-     * Save the configuration to disk.
+     * Internal save without synchronization - for use inside synchronized blocks.
      */
-    private fun saveConfig() {
+    private fun saveConfigInternal() {
         try {
             val cfg = config ?: return
             configFile.parentFile?.mkdirs()
@@ -85,49 +82,108 @@ object PluginPersistence {
     }
 
     /**
-     * Add an installed plugin to the config.
+     * Load the installed plugins configuration from disk.
      */
-    fun addInstalledPlugin(pluginId: String, jarPath: String, enabled: Boolean = true) {
-        val cfg = loadConfig()
-        // Remove existing entry if present
-        cfg.plugins.removeIf { it.pluginId == pluginId }
-        // Add new entry
-        cfg.plugins.add(InstalledPluginEntry(pluginId, jarPath, enabled))
-        saveConfig()
-        logger.info(LogCategory.SYSTEM, "Added plugin to installed config", mapOf(
-            "pluginId" to pluginId,
-            "jarPath" to jarPath
-        ))
+    fun loadConfig(): InstalledPluginsConfig {
+        synchronized(configLock) {
+            return loadConfigInternal()
+        }
     }
 
     /**
-     * Remove an installed plugin from the config.
+     * Save the configuration to disk.
      */
-    fun removeInstalledPlugin(pluginId: String) {
-        val cfg = loadConfig()
-        val removed = cfg.plugins.removeIf { it.pluginId == pluginId }
-        if (removed) {
-            saveConfig()
-            logger.info(LogCategory.SYSTEM, "Removed plugin from installed config", mapOf(
-                "pluginId" to pluginId
+    private fun saveConfig() {
+        synchronized(configLock) {
+            saveConfigInternal()
+        }
+    }
+
+    /**
+     * Add an installed plugin to the config.
+     * Thread-safe: entire read-modify-write operation is atomic.
+     */
+    fun addInstalledPlugin(
+        pluginId: String,
+        jarPath: String,
+        enabled: Boolean = true,
+        sourceUrl: String? = null,
+        installedVersion: String? = null
+    ) {
+        synchronized(configLock) {
+            val cfg = loadConfigInternal()
+            // Remove existing entry if present
+            cfg.plugins.removeIf { it.pluginId == pluginId }
+            // Add new entry
+            cfg.plugins.add(InstalledPluginEntry(pluginId, jarPath, enabled, sourceUrl, installedVersion))
+            saveConfigInternal()
+            logger.info(LogCategory.SYSTEM, "Added plugin to installed config", mapOf(
+                "pluginId" to pluginId,
+                "jarPath" to jarPath,
+                "sourceUrl" to (sourceUrl ?: "none")
             ))
         }
     }
 
     /**
+     * Get the source URL for an installed plugin.
+     */
+    fun getSourceUrl(pluginId: String): String? {
+        synchronized(configLock) {
+            return loadConfigInternal().plugins.find { it.pluginId == pluginId }?.sourceUrl
+        }
+    }
+
+    /**
+     * Update source URL for an installed plugin.
+     * Thread-safe: entire read-modify-write operation is atomic.
+     */
+    fun updateSourceUrl(pluginId: String, sourceUrl: String) {
+        synchronized(configLock) {
+            val cfg = loadConfigInternal()
+            val entry = cfg.plugins.find { it.pluginId == pluginId }
+            if (entry != null) {
+                val index = cfg.plugins.indexOf(entry)
+                cfg.plugins[index] = entry.copy(sourceUrl = sourceUrl)
+                saveConfigInternal()
+            }
+        }
+    }
+
+    /**
+     * Remove an installed plugin from the config.
+     * Thread-safe: entire read-modify-write operation is atomic.
+     */
+    fun removeInstalledPlugin(pluginId: String) {
+        synchronized(configLock) {
+            val cfg = loadConfigInternal()
+            val removed = cfg.plugins.removeIf { it.pluginId == pluginId }
+            if (removed) {
+                saveConfigInternal()
+                logger.info(LogCategory.SYSTEM, "Removed plugin from installed config", mapOf(
+                    "pluginId" to pluginId
+                ))
+            }
+        }
+    }
+
+    /**
      * Update the enabled state of a plugin.
+     * Thread-safe: entire read-modify-write operation is atomic.
      */
     fun setPluginEnabled(pluginId: String, enabled: Boolean) {
-        val cfg = loadConfig()
-        val entry = cfg.plugins.find { it.pluginId == pluginId }
-        if (entry != null) {
-            val index = cfg.plugins.indexOf(entry)
-            cfg.plugins[index] = entry.copy(enabled = enabled)
-            saveConfig()
-            logger.debug(LogCategory.SYSTEM, "Updated plugin enabled state", mapOf(
-                "pluginId" to pluginId,
-                "enabled" to enabled
-            ))
+        synchronized(configLock) {
+            val cfg = loadConfigInternal()
+            val entry = cfg.plugins.find { it.pluginId == pluginId }
+            if (entry != null) {
+                val index = cfg.plugins.indexOf(entry)
+                cfg.plugins[index] = entry.copy(enabled = enabled)
+                saveConfigInternal()
+                logger.debug(LogCategory.SYSTEM, "Updated plugin enabled state", mapOf(
+                    "pluginId" to pluginId,
+                    "enabled" to enabled
+                ))
+            }
         }
     }
 
@@ -135,21 +191,28 @@ object PluginPersistence {
      * Get all installed plugins.
      */
     fun getInstalledPlugins(): List<InstalledPluginEntry> {
-        return loadConfig().plugins.toList()
+        synchronized(configLock) {
+            return loadConfigInternal().plugins.toList()
+        }
     }
 
     /**
      * Check if a plugin is installed.
      */
     fun isInstalled(pluginId: String): Boolean {
-        return loadConfig().plugins.any { it.pluginId == pluginId }
+        synchronized(configLock) {
+            return loadConfigInternal().plugins.any { it.pluginId == pluginId }
+        }
     }
 
     /**
      * Clear all installed plugins (for testing).
+     * Thread-safe: entire operation is atomic.
      */
     fun clear() {
-        config = InstalledPluginsConfig()
-        saveConfig()
+        synchronized(configLock) {
+            config = InstalledPluginsConfig()
+            saveConfigInternal()
+        }
     }
 }

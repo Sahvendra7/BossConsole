@@ -18,11 +18,24 @@ object UserSecretListPanelPlugin : Plugin {
 
     /**
      * Default registration method required by Plugin interface.
-     * For full functionality, use the overloaded register method with providers.
+     * Gets providers from PluginContext for dynamic plugin support.
      */
     override fun register(context: PluginContext) {
-        // Default registration without providers - panel will show but won't have data
-        // Use the overloaded register method for full functionality
+        val secretProvider = context.secretDataProvider
+
+        if (secretProvider == null) {
+            // Provider not available - cannot register
+            return
+        }
+
+        context.panelRegistry.registerPanel(UserSecretListInfo) { ctx, panelInfo ->
+            UserSecretListComponent(
+                ctx = ctx,
+                panelInfo = panelInfo,
+                secretDataProvider = secretProvider,
+                secretChangeEvents = null
+            )
+        }
     }
 
     /**

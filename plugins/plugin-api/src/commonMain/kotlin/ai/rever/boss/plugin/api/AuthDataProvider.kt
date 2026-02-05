@@ -194,3 +194,69 @@ interface RoleManagementProvider {
      */
     fun validatePermissionName(permissionName: String): String?
 }
+
+/**
+ * Provider interface for Plugin Store API key management.
+ *
+ * This allows plugins to create, list, and revoke API keys for
+ * CI/CD publishing workflows.
+ */
+interface PluginStoreApiKeyProvider {
+    /**
+     * Create a new API key.
+     *
+     * @param name Display name for the key
+     * @param scopes List of scopes (e.g., "publish", "version", "finalize")
+     * @param expiresInDays Optional expiration in days (null = never expires)
+     * @return Result containing the full API key (shown only once) and key info
+     */
+    suspend fun createApiKey(
+        name: String,
+        scopes: List<String> = listOf("publish", "version", "finalize"),
+        expiresInDays: Int? = null
+    ): Result<ApiKeyCreationResult>
+
+    /**
+     * List all API keys for the current user.
+     * Note: Full keys are never returned, only prefixes.
+     */
+    suspend fun listApiKeys(): Result<List<ApiKeyInfo>>
+
+    /**
+     * Revoke an API key.
+     *
+     * @param keyId The UUID of the key to revoke
+     */
+    suspend fun revokeApiKey(keyId: String): Result<Unit>
+
+    /**
+     * Check if the current user can manage API keys.
+     * Returns true if user is admin or has plugin_admin role.
+     */
+    suspend fun canManageApiKeys(): Boolean
+}
+
+/**
+ * Result of creating an API key.
+ */
+data class ApiKeyCreationResult(
+    /** The full API key - only shown once! */
+    val apiKey: String,
+    /** Information about the created key */
+    val keyInfo: ApiKeyInfo
+)
+
+/**
+ * Information about an API key (without the actual key).
+ */
+data class ApiKeyInfo(
+    val id: String,
+    val name: String,
+    /** First part of the key for identification (e.g., "boss_pk_a1B2c3D4") */
+    val keyPrefix: String,
+    val scopes: List<String>,
+    val createdAt: Long,
+    val lastUsedAt: Long?,
+    val expiresAt: Long?,
+    val isRevoked: Boolean
+)

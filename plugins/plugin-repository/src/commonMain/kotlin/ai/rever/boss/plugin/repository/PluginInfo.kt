@@ -139,7 +139,13 @@ data class PluginInfo(
      * Tags for categorization.
      */
     @SerialName("tags")
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+
+    /**
+     * Whether this plugin requires admin privileges.
+     */
+    @SerialName("requiresAdmin")
+    val requiresAdmin: Boolean = false
 )
 
 /**

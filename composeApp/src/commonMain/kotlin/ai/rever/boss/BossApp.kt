@@ -967,8 +967,16 @@ fun ComponentContext.BossApp(
         }
     }
 
-    DisposableEffect(panelRegistry, tabRegistry, windowProjectState, windowGitState, windowId) {
-        val plugin = DefaultPlugin(panelRegistry, tabRegistry, windowProjectState, windowGitState, windowId)
+    DisposableEffect(panelRegistry, tabRegistry, windowProjectState, windowGitState, windowId, workspaceManager, splitViewState) {
+        val plugin = DefaultPlugin(
+            panelRegistry = panelRegistry,
+            tabRegistry = tabRegistry,
+            windowProjectState = windowProjectState,
+            windowGitState = windowGitState,
+            _windowId = windowId,
+            workspaceManager = workspaceManager,
+            splitViewState = splitViewState
+        )
         draggablePanelComponent.update()
 
         onDispose {

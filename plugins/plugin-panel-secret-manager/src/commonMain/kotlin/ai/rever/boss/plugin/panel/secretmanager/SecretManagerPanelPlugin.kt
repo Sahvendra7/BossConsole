@@ -46,9 +46,22 @@ object SecretManagerPanelPlugin : Plugin {
     }
 
     override fun register(context: PluginContext) {
-        throw IllegalStateException(
-            "SecretManagerPanelPlugin requires data providers. " +
-            "Use register(context, secretDataProvider, userManagementProvider) instead."
-        )
+        val secretProvider = context.secretDataProvider
+        val userMgmtProvider = context.userManagementProvider
+
+        if (secretProvider == null || userMgmtProvider == null) {
+            // Providers not available - cannot register
+            return
+        }
+
+        context.panelRegistry.registerPanel(SecretManagerInfo) { ctx, panelInfo ->
+            SecretManagerComponent(
+                ctx = ctx,
+                panelInfo = panelInfo,
+                secretDataProvider = secretProvider,
+                userManagementProvider = userMgmtProvider,
+                onSecretChanged = null
+            )
+        }
     }
 }

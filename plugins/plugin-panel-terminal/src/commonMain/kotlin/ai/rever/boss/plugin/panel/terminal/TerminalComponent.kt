@@ -3,7 +3,10 @@ package ai.rever.boss.plugin.panel.terminal
 import ai.rever.boss.plugin.api.LocalWindowIdProvider
 import ai.rever.boss.plugin.api.LocalWindowProjectStateProvider
 import ai.rever.boss.plugin.api.PanelComponentWithUI
+import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.api.SettingsProvider
+import ai.rever.boss.plugin.api.TerminalContentProvider
 import androidx.compose.runtime.Composable
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.essenty.lifecycle.Lifecycle.Callbacks
@@ -71,44 +74,4 @@ class TerminalComponent(
             }
         )
     }
-}
-
-/**
- * Provider interface for terminal content - platform-specific implementation.
- */
-interface TerminalContentProvider {
-    /**
-     * Display tabbed terminal content.
-     */
-    @Composable
-    fun TabbedTerminalContent(
-        workingDirectory: String? = null,
-        onExit: () -> Unit = {},
-        onShowSettings: () -> Unit = {}
-    )
-
-    /**
-     * Reset all terminal states.
-     */
-    fun resetTerminals()
-}
-
-/**
- * Provider interface for panel events.
- */
-interface PanelEventProvider {
-    /**
-     * Close the panel.
-     */
-    suspend fun closePanel(panelId: ai.rever.boss.plugin.api.PanelId, windowId: String)
-}
-
-/**
- * Provider interface for opening settings.
- */
-interface SettingsProvider {
-    /**
-     * Open settings at specific section.
-     */
-    fun openSettings(windowId: String, section: String)
 }

@@ -21,9 +21,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import ai.rever.boss.services.auth.AuthStateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -114,6 +117,35 @@ class DynamicPluginManager(
     val pluginStates: StateFlow<Map<String, DynamicPluginInfo>> = _pluginStates.asStateFlow()
 
     /**
+     * Current admin status of the user.
+     */
+    private val _isAdmin = MutableStateFlow(false)
+
+    /**
+     * Admin-only plugins that are hidden due to non-admin status.
+     * These plugins are loaded but not registered in the panel registry.
+     */
+    private val hiddenAdminPlugins = ConcurrentHashMap<String, DynamicPluginInfo>()
+
+    init {
+        // Observe admin status changes
+        managerScope.launch(Dispatchers.Main) {
+            AuthStateManager.currentUser
+                .map { user -> user?.isAdmin == true }
+                .distinctUntilChanged()
+                .collect { isAdmin ->
+                    val wasAdmin = _isAdmin.value
+                    _isAdmin.value = isAdmin
+
+                    // Only handle change if it actually changed
+                    if (wasAdmin != isAdmin) {
+                        handleAdminStatusChange(isAdmin)
+                    }
+                }
+        }
+    }
+
+    /**
      * Add a listener for plugin lifecycle events.
      */
     fun addListener(listener: DynamicPluginListener) {
@@ -187,8 +219,12 @@ class DynamicPluginManager(
                 )
                 trackingContexts[manifest.pluginId] = trackingContext
 
-                // Register the plugin
-                if (enabled) {
+                // Check if plugin requires admin and user is not admin
+                val isAdmin = _isAdmin.value
+                val shouldHideAdminPlugin = manifest.requiresAdmin && !isAdmin
+
+                // Register the plugin (unless it's an admin-only plugin and user is not admin)
+                if (enabled && !shouldHideAdminPlugin) {
                     try {
                         loadedPlugin.instance.register(trackingContext)
                     } catch (e: Exception) {
@@ -210,10 +246,18 @@ class DynamicPluginManager(
                 val info = DynamicPluginInfo(
                     manifest = manifest,
                     jarPath = jarPath,
-                    state = if (enabled) PluginState.LOADED else PluginState.DISABLED,
+                    state = if (enabled && !shouldHideAdminPlugin) PluginState.LOADED else PluginState.DISABLED,
                     loadedAt = System.currentTimeMillis(),
                     enabled = enabled
                 )
+
+                // Track hidden admin plugins
+                if (shouldHideAdminPlugin && enabled) {
+                    hiddenAdminPlugins[manifest.pluginId] = info
+                    logger.info(LogCategory.SYSTEM, "Admin-only plugin hidden (user is not admin)", mapOf(
+                        "pluginId" to manifest.pluginId
+                    ))
+                }
 
                 // Update state
                 updatePluginState(manifest.pluginId, info)
@@ -464,6 +508,24 @@ class DynamicPluginManager(
     }
 
     /**
+     * Get installed plugins visible to the current user.
+     * Filters out admin-only plugins if the user is not an admin.
+     */
+    fun getVisibleInstalledPlugins(): List<DynamicPluginInfo> {
+        val isAdmin = _isAdmin.value
+        return _pluginStates.value.values.filter { info ->
+            !info.manifest.requiresAdmin || isAdmin
+        }
+    }
+
+    /**
+     * Get the current admin status.
+     */
+    fun isCurrentUserAdmin(): Boolean {
+        return _isAdmin.value
+    }
+
+    /**
      * Get the registration tracker.
      */
     fun getRegistrationTracker(): PluginRegistrationTracker = registrationTracker
@@ -540,6 +602,63 @@ class DynamicPluginManager(
 
         // Cancel scope
         managerScope.cancel()
+    }
+
+    /**
+     * Handle admin status change - show/hide admin plugins accordingly.
+     */
+    private suspend fun handleAdminStatusChange(isAdmin: Boolean) {
+        mutex.withLock {
+            if (isAdmin) {
+                // User became admin - re-register hidden admin plugins
+                logger.info(LogCategory.SYSTEM, "User gained admin status, re-registering hidden admin plugins", mapOf(
+                    "hiddenCount" to hiddenAdminPlugins.size
+                ))
+
+                for ((pluginId, info) in hiddenAdminPlugins) {
+                    if (info.enabled) {
+                        val trackingContext = trackingContexts[pluginId]
+                        val loadedPlugin = pluginLoader.getPlugin(pluginId)
+
+                        if (trackingContext != null && loadedPlugin != null) {
+                            try {
+                                loadedPlugin.instance.register(trackingContext)
+                                // Update state to reflect active status
+                                updatePluginState(pluginId, info.copy(state = PluginState.LOADED))
+                                logger.info(LogCategory.SYSTEM, "Re-registered admin plugin", mapOf(
+                                    "pluginId" to pluginId
+                                ))
+                            } catch (e: Exception) {
+                                logger.error(LogCategory.SYSTEM, "Failed to re-register admin plugin", mapOf(
+                                    "pluginId" to pluginId
+                                ), e)
+                            }
+                        }
+                    }
+                }
+                hiddenAdminPlugins.clear()
+            } else {
+                // User lost admin status - unregister and hide admin plugins
+                logger.info(LogCategory.SYSTEM, "User lost admin status, hiding admin plugins")
+
+                val adminPlugins = _pluginStates.value.filter { (_, info) ->
+                    info.manifest.requiresAdmin && info.enabled
+                }
+
+                for ((pluginId, info) in adminPlugins) {
+                    val trackingContext = trackingContexts[pluginId]
+                    if (trackingContext != null) {
+                        trackingContext.unregisterAll()
+                        hiddenAdminPlugins[pluginId] = info
+                        // Update state to reflect hidden status
+                        updatePluginState(pluginId, info.copy(state = PluginState.DISABLED))
+                        logger.info(LogCategory.SYSTEM, "Hidden admin plugin", mapOf(
+                            "pluginId" to pluginId
+                        ))
+                    }
+                }
+            }
+        }
     }
 
     private fun updatePluginState(pluginId: String, info: DynamicPluginInfo) {

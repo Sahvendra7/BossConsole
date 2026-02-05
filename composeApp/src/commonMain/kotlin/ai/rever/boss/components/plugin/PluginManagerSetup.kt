@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.PluginContext
 
 /**
@@ -14,6 +15,11 @@ expect object PluginManagerSetup {
      *
      * @param context Plugin context for registration
      * @param dynamicPluginManager The dynamic plugin manager for plugin operations
+     * @param activeTabsProvider Provider for opening URLs in browser tabs
      */
-    fun registerPluginManagerPanel(context: PluginContext, dynamicPluginManager: DynamicPluginManager)
+    fun registerPluginManagerPanel(
+        context: PluginContext,
+        dynamicPluginManager: DynamicPluginManager,
+        activeTabsProvider: ActiveTabsProvider?
+    )
 }

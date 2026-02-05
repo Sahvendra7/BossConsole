@@ -91,7 +91,8 @@ object PluginStoreConfig {
     }
 
     /**
-     * Decode is_admin claim from JWT token
+     * Decode admin status from JWT token.
+     * Returns true if user has is_admin:true or has admin/store_admin role.
      */
     private fun decodeIsAdmin(token: String?): Boolean {
         if (token == null) return false
@@ -102,10 +103,20 @@ object PluginStoreConfig {
             val payload = parts[1]
                 .replace("-", "+")
                 .replace("_", "/")
-            val decodedBytes = java.util.Base64.getDecoder().decode(payload)
+            // Add padding if needed
+            val paddedPayload = when (payload.length % 4) {
+                2 -> payload + "=="
+                3 -> payload + "="
+                else -> payload
+            }
+            val decodedBytes = java.util.Base64.getDecoder().decode(paddedPayload)
             val payloadJson = String(decodedBytes, Charsets.UTF_8)
-            // Simple check for is_admin:true in the JSON
-            payloadJson.contains("\"is_admin\":true") || payloadJson.contains("\"is_admin\": true")
+            // Check for is_admin:true
+            if (payloadJson.contains("\"is_admin\":true") || payloadJson.contains("\"is_admin\": true")) {
+                return true
+            }
+            // Check for admin or store_admin role in app_metadata or roles
+            payloadJson.contains("\"admin\"") || payloadJson.contains("\"store_admin\"")
         } catch (_: Exception) {
             false
         }

@@ -69,11 +69,13 @@ object PluginManagerPanelPlugin : Plugin {
      * @param context Plugin context
      * @param binding Binding that will hold the component reference
      * @param operationsFactory Factory that takes the binding and returns operations
+     * @param onOpenUrl Optional callback to open URLs in a new browser tab
      */
     fun registerWithBinding(
         context: PluginContext,
         binding: ComponentBinding,
-        operationsFactory: (ComponentBinding) -> PluginManagerOperations
+        operationsFactory: (ComponentBinding) -> PluginManagerOperations,
+        onOpenUrl: ((String) -> Unit)? = null
     ) {
         context.panelRegistry.registerPanel(
             content = PluginManagerInfo,
@@ -84,7 +86,8 @@ object PluginManagerPanelPlugin : Plugin {
                 // Create component
                 val component = PluginManagerComponent(
                     componentContext = componentContext,
-                    operations = operations
+                    operations = operations,
+                    onOpenUrl = onOpenUrl
                 )
 
                 // Update binding with the new component

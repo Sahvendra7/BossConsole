@@ -98,3 +98,37 @@ export interface DownloadInfo {
   size: number
   versionId: string
 }
+
+
+/**
+ * Plugin manifest from plugin.json inside JAR
+ * Matches the structure in META-INF/boss-plugin/plugin.json
+ */
+export interface PluginManifest {
+  manifestVersion?: number
+  pluginId: string
+  displayName: string
+  version: string
+  apiVersion: string
+  mainClass: string
+  type?: PluginType | "mixed" | "service"
+  description?: string
+  author?: string
+  url?: string
+  homepageUrl?: string  // Alternative to url
+  iconUrl?: string
+  tags?: string[]
+  minBossVersion?: string
+  dependencies?: PluginDependency[]
+  sandbox?: {
+    maxThreads?: number
+    maxMemoryMb?: number
+    enableSandbox?: boolean
+  }
+  panel?: {
+    icon?: string
+    location?: string
+    order?: number
+  }
+  requiresAdmin?: boolean
+}

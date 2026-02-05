@@ -116,6 +116,15 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(path)
+
+                // Security: Validate path is within user's home directory (prevent path traversal)
+                val canonicalFile = file.canonicalFile
+                val homeDir = File(System.getProperty("user.home")).canonicalFile
+                if (!canonicalFile.absolutePath.startsWith(homeDir.absolutePath + File.separator) &&
+                    canonicalFile.absolutePath != homeDir.absolutePath) {
+                    return@withContext Result.failure(SecurityException("Access denied: file path outside user directory"))
+                }
+
                 // Note: We don't check exists() first to avoid race conditions.
                 // delete() and deleteRecursively() handle non-existent files gracefully.
                 val deleted = if (file.isDirectory) {
@@ -211,5 +220,67 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
             logger.warn(LogCategory.FILE, "Failed to copy to clipboard", error = e)
             Result.failure(e)
         }
+    }
+
+    suspend fun writeFile(path: String, content: String): Result<Unit> {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                val file = java.io.File(path)
+
+                // Security: Validate path is within user's home directory (prevent path traversal)
+                val canonicalFile = file.canonicalFile
+                val homeDir = File(System.getProperty("user.home")).canonicalFile
+                if (!canonicalFile.absolutePath.startsWith(homeDir.absolutePath + File.separator) &&
+                    canonicalFile.absolutePath != homeDir.absolutePath) {
+                    return@withContext Result.failure(SecurityException("Access denied: file path outside user directory"))
+                }
+
+                // Ensure parent directory exists
+                val parentDir = file.parentFile
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs()
+                }
+
+                file.writeText(content)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                logger.warn(LogCategory.FILE, "Failed to write file", mapOf("path" to path), error = e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun readFile(path: String): Result<String> {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                val file = java.io.File(path)
+
+                // Security: Validate path is within user's home directory (prevent path traversal)
+                val canonicalFile = file.canonicalFile
+                val homeDir = File(System.getProperty("user.home")).canonicalFile
+                if (!canonicalFile.absolutePath.startsWith(homeDir.absolutePath + File.separator) &&
+                    canonicalFile.absolutePath != homeDir.absolutePath) {
+                    return@withContext Result.failure(SecurityException("Access denied: file path outside user directory"))
+                }
+
+                if (!file.exists()) {
+                    return@withContext Result.failure(IllegalArgumentException("File does not exist: $path"))
+                }
+                Result.success(file.readText())
+            } catch (e: Exception) {
+                logger.warn(LogCategory.FILE, "Failed to read file", mapOf("path" to path), error = e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    fun getDownloadsDirectory(): String {
+        val homeDir = System.getProperty("user.home")
+        val downloadsDir = java.io.File(homeDir, "Downloads")
+        return if (downloadsDir.exists()) downloadsDir.absolutePath else homeDir
+    }
+
+    fun getHomeDirectory(): String {
+        return System.getProperty("user.home")
     }
 }

@@ -3,10 +3,15 @@ package ai.rever.boss.components.plugin
 import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.AuthDataProvider
 import ai.rever.boss.plugin.api.BookmarkDataProvider
+import ai.rever.boss.plugin.api.ContextMenuProvider
 import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
+import ai.rever.boss.plugin.api.LogDataProvider
+import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
+import ai.rever.boss.plugin.api.SettingsProvider
+import ai.rever.boss.plugin.api.TerminalContentProvider
 import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelId
@@ -16,6 +21,7 @@ import ai.rever.boss.plugin.api.PerformanceDataProvider
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.plugin.api.PluginSandboxRef
+import ai.rever.boss.plugin.api.PluginStoreApiKeyProvider
 import ai.rever.boss.plugin.api.RunConfigurationDataProvider
 import ai.rever.boss.plugin.api.SecretDataProvider
 import ai.rever.boss.plugin.api.SplitViewOperations
@@ -232,6 +238,20 @@ class TrackingPluginContext(
     override val authDataProvider: AuthDataProvider? get() = delegate.authDataProvider
     override val userManagementProvider: UserManagementProvider? get() = delegate.userManagementProvider
     override val roleManagementProvider: RoleManagementProvider? get() = delegate.roleManagementProvider
+
+    // Terminal providers - delegate to underlying context
+    override val terminalContentProvider: TerminalContentProvider? get() = delegate.terminalContentProvider
+    override val panelEventProvider: PanelEventProvider? get() = delegate.panelEventProvider
+    override val settingsProvider: SettingsProvider? get() = delegate.settingsProvider
+
+    // Context menu provider - delegate to underlying context
+    override val contextMenuProvider: ContextMenuProvider? get() = delegate.contextMenuProvider
+
+    // Log data provider - delegate to underlying context
+    override val logDataProvider: LogDataProvider? get() = delegate.logDataProvider
+
+    // Plugin Store API key provider - delegate to underlying context
+    override val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider? get() = delegate.pluginStoreApiKeyProvider
 
     /**
      * Get the panels registered by this plugin.

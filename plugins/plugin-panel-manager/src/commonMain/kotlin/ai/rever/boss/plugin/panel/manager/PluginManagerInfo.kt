@@ -19,7 +19,7 @@ object PluginManagerInfo : PanelInfo {
         pluginId = "ai.rever.boss.plugin-manager"
     )
 
-    override val displayName: String = "Plugins"
+    override val displayName: String = "Plugin Manager"
 
     override val icon: ImageVector = Icons.Default.Extension
 

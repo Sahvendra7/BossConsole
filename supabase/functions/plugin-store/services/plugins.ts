@@ -241,3 +241,42 @@ export async function getPopularTags(
 
   return data || []
 }
+
+/**
+ * Update an existing plugin's metadata
+ */
+export async function updatePlugin(
+  supabase: SupabaseClient,
+  pluginUuid: string,
+  updates: {
+    displayName?: string
+    description?: string
+    homepageUrl?: string
+    iconUrl?: string
+    type?: string
+    apiVersion?: string
+  }
+): Promise<void> {
+  const updateData: Record<string, unknown> = {}
+
+  if (updates.displayName !== undefined) updateData.display_name = updates.displayName
+  if (updates.description !== undefined) updateData.description = updates.description
+  if (updates.homepageUrl !== undefined) updateData.homepage_url = updates.homepageUrl
+  if (updates.iconUrl !== undefined) updateData.icon_url = updates.iconUrl
+  if (updates.type !== undefined) updateData.type = updates.type
+  if (updates.apiVersion !== undefined) updateData.api_version = updates.apiVersion
+
+  if (Object.keys(updateData).length === 0) {
+    return // Nothing to update
+  }
+
+  const { error } = await supabase
+    .from('plugins')
+    .update(updateData)
+    .eq('id', pluginUuid)
+
+  if (error) {
+    console.error('Error updating plugin:', error)
+    throw new Error(`Failed to update plugin: ${error.message}`)
+  }
+}

@@ -13,13 +13,19 @@
  * - GET  /plugin-store/:pluginId/rating          - Get user's rating
  * - DELETE /plugin-store/:pluginId/rating        - Delete user's rating
  * - GET  /plugin-store/:pluginId/ratings         - Get all ratings
- * - POST /plugin-store/publish         - Publish new plugin (auth required)
- * - POST /plugin-store/:pluginId/version         - Publish new version (auth required)
- * - POST /plugin-store/version/finalize          - Finalize after JAR upload
+ * - POST /plugin-store/publish         - Publish new plugin (auth required via JWT or API key)
+ * - POST /plugin-store/github          - Simplified: publish from GitHub URL (auth required via JWT or API key)
+ * - POST /plugin-store/:pluginId/version         - Publish new version (auth required via JWT or API key)
+ * - POST /plugin-store/version/finalize          - Finalize after JAR upload (auth required via JWT or API key)
  * - GET  /plugin-store/tags/popular    - Get popular tags
  * - GET  /plugin-store/health          - Health check
  * - GET  /plugin-store/doc             - Swagger UI documentation
  * - GET  /plugin-store/openapi         - OpenAPI specification (JSON)
+ *
+ * API Key Routes (requires JWT auth, not API keys):
+ * - POST   /plugin-store/api-keys      - Create a new API key
+ * - GET    /plugin-store/api-keys      - List user's API keys (masked)
+ * - DELETE /plugin-store/api-keys/:keyId         - Revoke an API key
  *
  * Admin Routes (requires is_admin=true in JWT):
  * - POST   /plugin-store/admin/:pluginId/publish - Enable/disable a plugin
@@ -36,6 +42,7 @@ import download from "./routes/download.ts"
 import rating from "./routes/rating.ts"
 import publish from "./routes/publish.ts"
 import admin from "./routes/admin.ts"
+import apiKeys from "./routes/api-keys.ts"
 import type { PluginStoreContext } from "./types/context.ts"
 
 const app = new OpenAPIHono<{ Variables: PluginStoreContext }>().basePath("/plugin-store")
@@ -49,7 +56,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 app.use("*", cors({
   origin: ['boss://plugins', 'http://localhost:3000', 'https://risaboss.com'],
   allowMethods: ['POST', 'GET', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'apikey'],
+  allowHeaders: ['Content-Type', 'Authorization', 'apikey', 'X-API-Key'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
   credentials: true,
@@ -73,8 +80,9 @@ app.get("/health", (ctx) => {
 // Mount routes
 // Note: Order matters - more specific routes first, wildcard routes last
 app.route("/", admin)          // /admin/:pluginId/publish, /admin/:pluginId, /admin/:pluginId/verify
+app.route("/", apiKeys)        // /api-keys (POST, GET, DELETE)
 app.route("/version", publish) // /version/finalize
-app.route("/", publish)        // /publish, /:pluginId/version
+app.route("/", publish)        // /publish, /github, /:pluginId/version
 app.route("/", download)       // /:pluginId/download, /:pluginId/download/:version
 app.route("/", rating)         // /:pluginId/rate, /:pluginId/rating, /:pluginId/ratings
 app.route("/", browse)         // /list, /search, /tags/popular, /:pluginId (wildcard last)
@@ -93,7 +101,7 @@ app.doc("/openapi", {
       description: "Production server"
     },
     {
-      url: "http://localhost:54321/functions/v1/plugin-store",
+      url: "http://127.0.0.1:54321/functions/v1/plugin-store",
       description: "Local development server"
     }
   ],
@@ -112,7 +120,11 @@ app.doc("/openapi", {
     },
     {
       name: "Publish",
-      description: "Publish plugins and versions (requires authentication)"
+      description: "Publish plugins and versions (requires authentication via JWT or API key)"
+    },
+    {
+      name: "API Keys",
+      description: "Manage API keys for CI/CD publishing (requires JWT authentication)"
     },
     {
       name: "Admin",

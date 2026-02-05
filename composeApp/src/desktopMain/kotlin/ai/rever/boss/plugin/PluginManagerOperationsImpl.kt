@@ -2,6 +2,7 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.plugin.api.PluginManifest
+import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.plugin.api.PluginManifestConstants
 import ai.rever.boss.plugin.panel.manager.ExtractedManifest
 import ai.rever.boss.plugin.panel.manager.InstalledPluginState
@@ -86,10 +87,11 @@ class PluginManagerOperationsImpl(
         }
     }
 
-    override suspend fun installPlugin(jarPath: String): Result<Unit> {
+    override suspend fun installPlugin(jarPath: String, sourceUrl: String?, version: String?): Result<Unit> {
         return try {
             logger.info(LogCategory.SYSTEM, "Installing plugin from JAR", mapOf(
-                "jarPath" to jarPath
+                "jarPath" to jarPath,
+                "sourceUrl" to (sourceUrl ?: "none")
             ))
 
             val sourceFile = File(jarPath)
@@ -114,13 +116,23 @@ class PluginManagerOperationsImpl(
 
             val result = dynamicPluginManager.installPlugin(installPath, enabled = true)
             if (result.isSuccess) {
-                val pluginId = result.getOrNull()?.manifest?.pluginId
+                val manifest = result.getOrNull()?.manifest
+                val pluginId = manifest?.pluginId
+                val installedVersion = version ?: manifest?.version
                 logger.info(LogCategory.SYSTEM, "Plugin installed successfully", mapOf(
-                    "pluginId" to pluginId
+                    "pluginId" to pluginId,
+                    "version" to (installedVersion ?: "unknown"),
+                    "sourceUrl" to (sourceUrl ?: "none")
                 ))
-                // Persist installed state
+                // Persist installed state with source URL for update tracking
                 if (pluginId != null) {
-                    PluginPersistence.addInstalledPlugin(pluginId, installPath)
+                    PluginPersistence.addInstalledPlugin(
+                        pluginId = pluginId,
+                        jarPath = installPath,
+                        enabled = true,
+                        sourceUrl = sourceUrl,
+                        installedVersion = installedVersion
+                    )
                 }
                 Result.success(Unit)
             } else {
@@ -232,6 +244,14 @@ class PluginManagerOperationsImpl(
                 "pluginId" to pluginId
             ))
 
+            // Check if this plugin was installed from GitHub
+            val sourceUrl = PluginPersistence.getSourceUrl(pluginId)
+            if (!sourceUrl.isNullOrBlank() && sourceUrl.contains("github.com")) {
+                // Update from GitHub
+                return updatePluginFromGitHub(pluginId, sourceUrl)
+            }
+
+            // Fall back to plugin store update
             val manager = updateManager
                 ?: return Result.failure(Exception("Update manager not available"))
 
@@ -271,6 +291,15 @@ class PluginManagerOperationsImpl(
                 return Result.failure(installResult.exceptionOrNull() ?: Exception("Install failed"))
             }
 
+            // Update persistence with new version
+            PluginPersistence.addInstalledPlugin(
+                pluginId = pluginId,
+                jarPath = targetPath,
+                enabled = true,
+                sourceUrl = null,
+                installedVersion = updateInfo.newVersion
+            )
+
             logger.info(LogCategory.SYSTEM, "Plugin updated successfully", mapOf(
                 "pluginId" to pluginId,
                 "oldVersion" to updateInfo.currentVersion,
@@ -280,6 +309,54 @@ class PluginManagerOperationsImpl(
             Result.success(Unit)
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Exception updating plugin", error = e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Update a plugin from GitHub.
+     */
+    private suspend fun updatePluginFromGitHub(pluginId: String, githubUrl: String): Result<Unit> {
+        return try {
+            logger.info(LogCategory.SYSTEM, "Updating plugin from GitHub", mapOf(
+                "pluginId" to pluginId,
+                "githubUrl" to githubUrl
+            ))
+
+            // Fetch the latest version from GitHub
+            val fetchResult = fetchFromGitHub(
+                githubUrl = githubUrl,
+                buildIfNoRelease = false,
+                onProgress = { },
+                onStatus = { }
+            )
+
+            if (fetchResult.isFailure) {
+                return Result.failure(fetchResult.exceptionOrNull() ?: Exception("Failed to fetch from GitHub"))
+            }
+
+            val (jarPath, manifest) = fetchResult.getOrThrow()
+
+            // Uninstall old version
+            val uninstallResult = dynamicPluginManager.uninstallPlugin(pluginId, force = true)
+            if (uninstallResult.isFailure) {
+                return Result.failure(uninstallResult.exceptionOrNull() ?: Exception("Uninstall failed"))
+            }
+
+            // Install new version with GitHub source URL preserved
+            val installResult = installPlugin(jarPath, sourceUrl = githubUrl, version = manifest.version)
+            if (installResult.isFailure) {
+                return Result.failure(installResult.exceptionOrNull() ?: Exception("Install failed"))
+            }
+
+            logger.info(LogCategory.SYSTEM, "Plugin updated from GitHub successfully", mapOf(
+                "pluginId" to pluginId,
+                "newVersion" to manifest.version
+            ))
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "Exception updating plugin from GitHub", error = e)
             Result.failure(e)
         }
     }
@@ -301,8 +378,11 @@ class PluginManagerOperationsImpl(
         try {
             logger.debug(LogCategory.SYSTEM, "Refreshing plugin lists")
 
-            // Refresh installed plugins
-            val installedPlugins = dynamicPluginManager.getInstalledPlugins()
+            // Check if current user is admin
+            val isAdmin = AuthStateManager.currentUser.value?.isAdmin == true
+
+            // Refresh installed plugins (filter by admin status)
+            val installedPlugins = dynamicPluginManager.getVisibleInstalledPlugins()
             val installedStates = installedPlugins.map { info ->
                 val canUnloadResult = dynamicPluginManager.checkCanUnload(info.manifest.pluginId)
                 InstalledPluginState(
@@ -314,24 +394,29 @@ class PluginManagerOperationsImpl(
                     healthy = info.state == ai.rever.boss.plugin.api.PluginState.LOADED,
                     canUnload = canUnloadResult.isAllowed,
                     jarPath = info.jarPath,
-                    url = info.manifest.url
+                    url = info.manifest.url,
+                    requiresAdmin = info.manifest.requiresAdmin
                 )
             }
             onInstalledPluginsChanged(installedStates)
 
-            // Refresh available plugins from remote repository
+            // Refresh available plugins from remote repository (filter by admin status)
             repositoryManager?.let { repoManager ->
                 val remoteRepo = repoManager.getRepository("supabase-store")
                 if (remoteRepo != null && remoteRepo.isAvailable) {
                     val listResult = remoteRepo.listPlugins()
                     if (listResult.isSuccess) {
-                        onAvailablePluginsChanged(listResult.getOrThrow())
+                        // Filter out admin-only plugins for non-admin users
+                        val filteredPlugins = listResult.getOrThrow()
+                            .filter { !it.requiresAdmin || isAdmin }
+                        onAvailablePluginsChanged(filteredPlugins)
                     }
                 }
             }
 
             logger.debug(LogCategory.SYSTEM, "Plugin lists refreshed", mapOf(
-                "installedCount" to installedStates.size
+                "installedCount" to installedStates.size,
+                "isAdmin" to isAdmin
             ))
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Error refreshing plugin lists", error = e)
@@ -342,21 +427,147 @@ class PluginManagerOperationsImpl(
         try {
             logger.debug(LogCategory.SYSTEM, "Checking for plugin updates")
 
+            val allUpdates = mutableListOf<UpdateInfo>()
+
             updateManager?.let { manager ->
-                // Build map of installed plugins for update check
+                // Build map of installed plugins for update check (plugin store)
                 val installedPlugins = dynamicPluginManager.getInstalledPlugins()
                     .associate { it.manifest.pluginId to it.manifest.version }
                 manager.checkForUpdates(installedPlugins)
-                val updates = manager.availableUpdates.value
-                onUpdatesChanged(updates)
-
-                logger.debug(LogCategory.SYSTEM, "Update check complete", mapOf(
-                    "updatesAvailable" to updates.size
-                ))
+                allUpdates.addAll(manager.availableUpdates.value)
             }
+
+            // Also check GitHub releases for plugins installed from GitHub
+            val githubUpdates = checkGitHubUpdates()
+            allUpdates.addAll(githubUpdates)
+
+            // Remove duplicates (prefer plugin store updates)
+            val uniqueUpdates = allUpdates.distinctBy { it.pluginId }
+            onUpdatesChanged(uniqueUpdates)
+
+            logger.debug(LogCategory.SYSTEM, "Update check complete", mapOf(
+                "updatesAvailable" to uniqueUpdates.size,
+                "fromStore" to (uniqueUpdates.size - githubUpdates.size),
+                "fromGitHub" to githubUpdates.size
+            ))
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Error checking for updates", error = e)
         }
+    }
+
+    /**
+     * Check GitHub releases for updates to plugins installed from GitHub.
+     */
+    private suspend fun checkGitHubUpdates(): List<UpdateInfo> = withContext(Dispatchers.IO) {
+        val updates = mutableListOf<UpdateInfo>()
+
+        // Get all installed plugins with GitHub source URLs
+        val installedEntries = PluginPersistence.getInstalledPlugins()
+        val installedPlugins = dynamicPluginManager.getInstalledPlugins()
+            .associateBy { it.manifest.pluginId }
+
+        for (entry in installedEntries) {
+            val sourceUrl = entry.sourceUrl
+            if (sourceUrl.isNullOrBlank() || !sourceUrl.contains("github.com")) {
+                continue
+            }
+
+            try {
+                // Parse GitHub URL to get owner/repo
+                val regex = Regex("https://github\\.com/([^/]+)/([^/]+)(?:/.*)?")
+                val match = regex.matchEntire(sourceUrl.trimEnd('/')) ?: continue
+                val owner = match.groupValues[1]
+                val repo = match.groupValues[2].removeSuffix(".git")
+
+                // Get latest release version from GitHub
+                val latestVersion = getGitHubLatestVersion(owner, repo)
+                if (latestVersion == null) {
+                    logger.debug(LogCategory.SYSTEM, "No releases found for GitHub plugin", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "sourceUrl" to sourceUrl
+                    ))
+                    continue
+                }
+
+                // Compare with installed version
+                val installedVersion = entry.installedVersion
+                    ?: installedPlugins[entry.pluginId]?.manifest?.version
+                    ?: continue
+
+                if (isNewerVersion(latestVersion, installedVersion)) {
+                    val plugin = installedPlugins[entry.pluginId]
+                    updates.add(UpdateInfo(
+                        pluginId = entry.pluginId,
+                        displayName = plugin?.manifest?.displayName ?: entry.pluginId,
+                        currentVersion = installedVersion,
+                        newVersion = latestVersion,
+                        changelog = "",
+                        size = 0,
+                        critical = false,
+                        releaseDate = 0,
+                        downloadUrl = sourceUrl, // Store GitHub URL for download
+                        requiresRestart = false
+                    ))
+                    logger.info(LogCategory.SYSTEM, "GitHub update available", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "currentVersion" to installedVersion,
+                        "newVersion" to latestVersion
+                    ))
+                }
+            } catch (e: Exception) {
+                logger.debug(LogCategory.SYSTEM, "Failed to check GitHub update", mapOf(
+                    "pluginId" to entry.pluginId,
+                    "error" to (e.message ?: "unknown")
+                ))
+            }
+        }
+
+        updates
+    }
+
+    /**
+     * Get the latest release version from GitHub.
+     */
+    private fun getGitHubLatestVersion(owner: String, repo: String): String? {
+        return try {
+            val apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
+            val connection = java.net.URL(apiUrl).openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("User-Agent", "BOSS-Plugin-Manager")
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            if (connection.responseCode != 200) {
+                return null
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            val json = Json { ignoreUnknownKeys = true }
+            val releaseData = json.parseToJsonElement(responseText).jsonObject
+
+            // Get version from tag_name (remove 'v' prefix if present)
+            val tagName = releaseData["tag_name"]?.jsonPrimitive?.content ?: return null
+            tagName.removePrefix("v").removePrefix("V")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Check if version1 is newer than version2 using semantic versioning.
+     */
+    private fun isNewerVersion(version1: String, version2: String): Boolean {
+        val v1Parts = version1.split(".").mapNotNull { it.toIntOrNull() }
+        val v2Parts = version2.split(".").mapNotNull { it.toIntOrNull() }
+
+        for (i in 0 until maxOf(v1Parts.size, v2Parts.size)) {
+            val v1 = v1Parts.getOrElse(i) { 0 }
+            val v2 = v2Parts.getOrElse(i) { 0 }
+            if (v1 > v2) return true
+            if (v1 < v2) return false
+        }
+        return false
     }
 
     override suspend fun browseForPlugin(): String? {
@@ -442,8 +653,12 @@ class PluginManagerOperationsImpl(
                 onStatus("Parsing GitHub URL...")
 
                 // Parse GitHub URL to get owner/repo
+                val trimmedUrl = githubUrl.trim()
+                if (trimmedUrl.isBlank()) {
+                    return@withContext Result.failure(Exception("GitHub URL cannot be empty"))
+                }
                 val regex = Regex("https://github\\.com/([^/]+)/([^/]+)(?:/.*)?")
-                val match = regex.matchEntire(githubUrl.trimEnd('/'))
+                val match = regex.matchEntire(trimmedUrl.trimEnd('/'))
                     ?: return@withContext Result.failure(Exception("Invalid GitHub URL format"))
 
                 val owner = match.groupValues[1]

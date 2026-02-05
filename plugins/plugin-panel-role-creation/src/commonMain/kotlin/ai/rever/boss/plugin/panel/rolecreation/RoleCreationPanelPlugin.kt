@@ -56,7 +56,21 @@ object RoleCreationPanelPlugin : Plugin {
     }
 
     override fun register(context: PluginContext) {
-        // No-op: This plugin requires explicit registration with data provider
-        // Use register(context, roleManagementProvider) instead
+        val roleMgmtProvider = context.roleManagementProvider
+
+        if (roleMgmtProvider == null) {
+            // Provider not available - cannot register
+            return
+        }
+
+        this.roleManagementProvider = roleMgmtProvider
+
+        context.panelRegistry.registerPanel(RoleCreationInfo) { ctx, panelInfo ->
+            RoleCreationComponent(
+                ctx = ctx,
+                panelInfo = panelInfo,
+                roleManagementProvider = roleMgmtProvider
+            )
+        }
     }
 }

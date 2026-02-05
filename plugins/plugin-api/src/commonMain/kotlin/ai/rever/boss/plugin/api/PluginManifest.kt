@@ -129,7 +129,14 @@ data class PluginManifest(
      * Specifies icon, location, and display settings.
      */
     @SerialName("panel")
-    val panel: PluginPanelConfig? = null
+    val panel: PluginPanelConfig? = null,
+
+    /**
+     * Whether this plugin requires admin privileges.
+     * If true, the plugin will only be visible and active for admin users.
+     */
+    @SerialName("requiresAdmin")
+    val requiresAdmin: Boolean = false
 )
 
 /**

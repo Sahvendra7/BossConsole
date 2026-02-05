@@ -175,6 +175,28 @@ export const FinalizeVersionResponseSchema = z.object({
 })
 
 // ============================================================================
+// Simplified GitHub Publish Schema
+// ============================================================================
+
+export const PublishFromGitHubRequestSchema = z.object({
+  githubUrl: z.string().url('Must be a valid GitHub URL').refine(
+    (url) => url.includes('github.com'),
+    'URL must be a GitHub repository URL'
+  ),
+  changelog: z.string().max(5000).optional(),
+  tags: z.array(z.string().max(50)).max(10).optional().default([])
+})
+
+export const PublishFromGitHubResponseSchema = z.object({
+  success: z.boolean(),
+  pluginId: z.string().optional(),
+  displayName: z.string().optional(),
+  version: z.string().optional(),
+  created: z.boolean().optional(), // true if new plugin, false if updated
+  error: z.string().optional()
+})
+
+// ============================================================================
 // Common Schemas
 // ============================================================================
 

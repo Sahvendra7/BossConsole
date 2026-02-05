@@ -64,6 +64,40 @@ interface ActiveTabsProvider {
      * @return The fallback icon vector
      */
     fun getFallbackIcon(typeId: String): ImageVector?
+
+    /**
+     * Get browser integration for a specific tab.
+     *
+     * This allows plugins to execute JavaScript and interact with browser tabs.
+     * Only browser tabs (e.g., Fluck tabs) support browser integration.
+     *
+     * @param tabId The ID of the tab to get browser integration for
+     * @return A BrowserIntegration instance, or null if:
+     *         - The tab is not a browser tab
+     *         - The browser is not available
+     *         - The tab does not exist
+     */
+    fun getBrowserIntegration(tabId: String): BrowserIntegration?
+
+    /**
+     * Create a new browser tab with the given URL and title.
+     *
+     * This creates a new Fluck (browser) tab in the active panel and navigates to the URL.
+     * The tab will be automatically selected after creation.
+     *
+     * @param url The initial URL to navigate to
+     * @param title The tab title (displayed in the tab bar)
+     * @return The ID of the created tab, or null if creation failed
+     */
+    fun createBrowserTab(url: String, title: String): String?
+
+    /**
+     * Close a tab by its ID.
+     *
+     * @param tabId The ID of the tab to close
+     * @return true if the tab was closed successfully
+     */
+    fun closeTab(tabId: String): Boolean
 }
 
 /**

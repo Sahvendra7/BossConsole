@@ -62,7 +62,24 @@ object AdminRoleManagementPanelPlugin : Plugin {
     }
 
     override fun register(context: PluginContext) {
-        // No-op: This plugin requires explicit registration with data providers
-        // Use register(context, userManagementProvider, authDataProvider) instead
+        val userMgmtProvider = context.userManagementProvider
+        val authProvider = context.authDataProvider
+
+        if (userMgmtProvider == null || authProvider == null) {
+            // Providers not available - cannot register
+            return
+        }
+
+        this.userManagementProvider = userMgmtProvider
+        this.authDataProvider = authProvider
+
+        context.panelRegistry.registerPanel(AdminRoleManagementInfo) { ctx, panelInfo ->
+            AdminRoleManagementComponent(
+                ctx = ctx,
+                panelInfo = panelInfo,
+                userManagementProvider = userMgmtProvider,
+                authDataProvider = authProvider
+            )
+        }
     }
 }

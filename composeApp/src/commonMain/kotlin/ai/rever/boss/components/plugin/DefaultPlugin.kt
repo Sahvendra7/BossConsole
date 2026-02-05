@@ -35,6 +35,7 @@ import ai.rever.boss.components.events.TerminalEventBus
 import ai.rever.boss.components.overlays.ContextMenuItem
 import ai.rever.boss.components.overlays.contextMenu
 import ai.rever.boss.components.plugin.panels.left_top.BookmarksDialogProviderImpl
+import ai.rever.boss.components.plugin.panels.left_top.createDownloadDataProvider
 import ai.rever.boss.plugin.ui.ContextMenuItemData
 import ai.rever.boss.components.plugin.panels.left_top.createDownloadDataProvider
 import ai.rever.boss.components.plugin.providers.DirectoryPickerProviderImpl
@@ -44,15 +45,24 @@ import ai.rever.boss.plugin.panel.codebase.ProjectData
 import ai.rever.boss.window.Project
 import ai.rever.boss.window.selectProjectInWindow
 import ai.rever.boss.components.plugin.providers.FluckPanelContentProviderImpl
+import ai.rever.boss.components.plugin.providers.SplitViewOperationsImpl
+import ai.rever.boss.components.plugin.providers.WorkspaceDataProviderImpl
+import ai.rever.boss.components.plugin.providers.createLogDataProvider
+import ai.rever.boss.components.plugin.providers.createPerformanceDataProvider
 import ai.rever.boss.components.plugin.panels.right_top.LLMRpaFactory
 import ai.rever.boss.components.plugin.panels.right_top.RpaRecorderFactory
 import ai.rever.boss.components.plugin.panels.right_top.RpaEngineFactory
+import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
+import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
+import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
 import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.auth.AuthDataProviderImpl
 import ai.rever.boss.services.auth.AuthStateManager
+import ai.rever.boss.services.auth.PluginStoreApiKeyProviderImpl
+import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
 import ai.rever.boss.services.supabase.RoleManagementProviderImpl
 import ai.rever.boss.services.supabase.SecretDataProviderImpl
 import ai.rever.boss.services.supabase.UserManagementProviderImpl
@@ -60,14 +70,30 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.logging.LogSanitizer
 import ai.rever.boss.window.WindowProjectState
+import ai.rever.boss.plugin.api.ActiveTabData
+import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.AuthDataProvider
+import ai.rever.boss.plugin.api.FileNodeData
+import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
+import ai.rever.boss.plugin.api.NodeLoadingStateData
+import ai.rever.boss.plugin.api.ContextMenuProvider
+import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.PanelRegistry
+import ai.rever.boss.plugin.api.PluginStoreApiKeyProvider
+import ai.rever.boss.plugin.api.BrowserIntegration as ApiBrowserIntegration
 import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.RoleManagementProvider
+import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.UserManagementProvider
+import ai.rever.boss.plugin.api.WorkspaceDataProvider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Tab
+import androidx.compose.material.icons.outlined.Terminal
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.panel.secretmanager.SecretManagerInfo
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
@@ -89,6 +115,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -98,7 +126,9 @@ class DefaultPlugin(
     override val tabRegistry: TabRegistry,
     val windowProjectState: WindowProjectState?,
     val windowGitState: WindowGitState? = null,
-    private val _windowId: String? = null
+    private val _windowId: String? = null,
+    private val workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager? = null,
+    private val splitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null
 ) : PluginContext {
 
     companion object {
@@ -243,9 +273,92 @@ class DefaultPlugin(
         RoleManagementProviderImpl()
     }
 
-    // Note: fileSystemDataProvider, secretDataProvider, runConfigurationDataProvider, and activeTabsProvider
-    // are implemented on SandboxedPluginContext which has access to window-scoped services
-    // through the DynamicPluginManager createSandboxedContext mechanism
+    // File system data provider for codebase plugin
+    override val fileSystemDataProvider: FileSystemDataProvider by lazy {
+        ApiFileSystemDataProviderAdapter()
+    }
+
+    // Workspace data provider for plugins that manage workspaces
+    override val workspaceDataProvider: WorkspaceDataProvider? by lazy {
+        if (workspaceManager != null) {
+            WorkspaceDataProviderImpl(workspaceManager)
+        } else {
+            null
+        }
+    }
+
+    // Bookmark data provider for plugins that manage bookmarks
+    override val bookmarkDataProvider: ai.rever.boss.plugin.api.BookmarkDataProvider by lazy {
+        BookmarkDataProviderImpl()
+    }
+
+    // Split view operations for plugins that need tab/panel operations
+    override val splitViewOperations: SplitViewOperations? by lazy {
+        if (splitViewState != null) {
+            SplitViewOperationsImpl(splitViewState)
+        } else {
+            null
+        }
+    }
+
+    // Active tabs provider for topofmind plugin
+    override val activeTabsProvider: ActiveTabsProvider? by lazy {
+        if (splitViewState != null && workspaceManager != null) {
+            ApiActiveTabsProviderAdapter(splitViewState, workspaceManager, _windowId ?: "unknown", pluginScope)
+        } else {
+            null
+        }
+    }
+
+    // Run configuration data provider for run-configurations plugin
+    override val runConfigurationDataProvider: ai.rever.boss.plugin.api.RunConfigurationDataProvider by lazy {
+        ai.rever.boss.run.RunConfigurationDataProviderImpl()
+    }
+
+    // Performance data provider for performance plugin
+    override val performanceDataProvider: ai.rever.boss.plugin.api.PerformanceDataProvider by lazy {
+        createPerformanceDataProvider()
+    }
+
+    // Download data provider for downloads plugin
+    override val downloadDataProvider: ai.rever.boss.plugin.api.DownloadDataProvider by lazy {
+        createDownloadDataProvider()
+    }
+
+    // Secret data provider for secret manager and user secret list plugins
+    override val secretDataProvider: ai.rever.boss.plugin.api.SecretDataProvider by lazy {
+        ai.rever.boss.services.supabase.SecretDataProviderImpl()
+    }
+
+    // Terminal content provider for terminal plugin
+    override val terminalContentProvider: ai.rever.boss.plugin.api.TerminalContentProvider by lazy {
+        ai.rever.boss.components.plugin.providers.TerminalContentProviderImpl()
+    }
+
+    // Panel event provider for plugins that need to trigger panel events
+    override val panelEventProvider: ai.rever.boss.plugin.api.PanelEventProvider by lazy {
+        ai.rever.boss.components.plugin.providers.PanelEventProviderImpl()
+    }
+
+    // Settings provider for plugins that need to open settings
+    override val settingsProvider: ai.rever.boss.plugin.api.SettingsProvider by lazy {
+        ai.rever.boss.components.plugin.providers.SettingsProviderImpl()
+    }
+
+    // Context menu provider for plugins that need context menu functionality
+    override val contextMenuProvider: ContextMenuProvider by lazy {
+        DefaultContextMenuProvider()
+    }
+
+    // Log data provider for console plugin
+    override val logDataProvider: LogDataProvider by lazy {
+        createLogDataProvider()
+    }
+
+    // Plugin Store API key provider for secret manager and other plugins
+    override val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider by lazy {
+        PluginStoreApiKeyProviderImpl()
+    }
 
     /**
      * Create a sandboxed plugin context for a specific plugin.
@@ -393,7 +506,11 @@ class DefaultPlugin(
         // This is the ONLY bundled panel plugin - used for managing dynamic plugins
         // ============================================================
         val pluginManagerContext = createSandboxedContext(PLUGIN_ID_PLUGIN_MANAGER)
-        PluginManagerSetup.registerPluginManagerPanel(pluginManagerContext, dynamicPluginManager)
+        PluginManagerSetup.registerPluginManagerPanel(
+            pluginManagerContext,
+            dynamicPluginManager,
+            activeTabsProvider
+        )
 
         // ============================================================
         // DYNAMIC PANEL PLUGINS (loaded from JARs)
@@ -784,6 +901,289 @@ class DefaultPlugin(
                     }
                 }
         }
+    }
+}
+
+/**
+ * Adapter that implements the plugin-api FileSystemDataProvider interface
+ * by wrapping the platform-specific file scanning infrastructure.
+ */
+private class ApiFileSystemDataProviderAdapter : FileSystemDataProvider {
+    private val delegate = FileSystemDataProviderImpl()
+
+    override suspend fun scanDirectory(path: String): FileNodeData? {
+        val node = delegate.scanDirectory(path) ?: return null
+        return convertToFileNodeData(node)
+    }
+
+    override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
+        val node = delegate.scanDirectoryWithDepth(path, maxDepth, startDepth) ?: return null
+        return convertToFileNodeData(node)
+    }
+
+    override fun directoryHasChildren(path: String): Boolean {
+        return delegate.directoryHasChildren(path)
+    }
+
+    override fun openFile(path: String, windowId: String) {
+        delegate.openFile(path, windowId)
+    }
+
+    override suspend fun createFile(parentPath: String, fileName: String): Result<String> {
+        return delegate.createFile(parentPath, fileName)
+    }
+
+    override suspend fun createFolder(parentPath: String, folderName: String): Result<String> {
+        return delegate.createFolder(parentPath, folderName)
+    }
+
+    override suspend fun delete(path: String): Result<Unit> {
+        return delegate.delete(path)
+    }
+
+    override suspend fun rename(path: String, newName: String): Result<String> {
+        return delegate.rename(path, newName)
+    }
+
+    override fun revealInFileManager(path: String): Result<Unit> {
+        return delegate.revealInFileManager(path)
+    }
+
+    override fun copyToClipboard(text: String): Result<Unit> {
+        return delegate.copyToClipboard(text)
+    }
+
+    override suspend fun writeFile(path: String, content: String): Result<Unit> {
+        return delegate.writeFile(path, content)
+    }
+
+    override suspend fun readFile(path: String): Result<String> {
+        return delegate.readFile(path)
+    }
+
+    override fun getDownloadsDirectory(): String {
+        return delegate.getDownloadsDirectory()
+    }
+
+    override fun getHomeDirectory(): String {
+        return delegate.getHomeDirectory()
+    }
+
+    private fun convertToFileNodeData(node: ai.rever.boss.plugin.panel.codebase.FileNode): FileNodeData {
+        return FileNodeData(
+            name = node.name,
+            path = node.path,
+            isDirectory = node.isDirectory,
+            children = node.children.map { convertToFileNodeData(it) },
+            hasChildren = node.hasChildren,
+            loadingState = when (node.loadingState) {
+                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.UNKNOWN -> NodeLoadingStateData.UNKNOWN
+                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.CHECKING -> NodeLoadingStateData.CHECKING
+                ai.rever.boss.plugin.panel.codebase.NodeLoadingState.LOADED -> NodeLoadingStateData.LOADED
+            },
+            loadDepth = node.loadDepth
+        )
+    }
+}
+
+/**
+ * Adapter that implements the plugin-api ActiveTabsProvider interface
+ * by wrapping the SplitViewState for tab collection.
+ */
+private class ApiActiveTabsProviderAdapter(
+    private val splitViewState: ai.rever.boss.components.window_panel.SplitViewState,
+    private val workspaceManager: ai.rever.boss.components.workspaces.WorkspaceManager,
+    private val windowId: String,
+    private val scope: CoroutineScope
+) : ActiveTabsProvider {
+
+    private val tabsLogger = BossLogger.forComponent("ActiveTabsProvider")
+    private val _activeTabs = kotlinx.coroutines.flow.MutableStateFlow<List<ActiveTabData>>(emptyList())
+    override val activeTabs: kotlinx.coroutines.flow.StateFlow<List<ActiveTabData>> = _activeTabs
+
+    init {
+        // Start polling loop (like bundled LLMRpaIntegration.kt does)
+        // This ensures dynamic plugins receive tab updates
+        scope.launch {
+            var consecutiveFailures = 0
+            while (isActive) {
+                try {
+                    refreshTabs()
+                    consecutiveFailures = 0
+                } catch (e: Exception) {
+                    consecutiveFailures++
+                    tabsLogger.warn(LogCategory.GENERAL, "Failed to refresh tabs", mapOf(
+                        "consecutiveFailures" to consecutiveFailures
+                    ), error = e)
+                }
+                // Base interval 2s, +1s per failure, max 10s
+                delay(minOf(2000L + (consecutiveFailures * 1000L), 10000L))
+            }
+        }
+    }
+
+    override suspend fun refreshTabs() {
+        val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)
+        _activeTabs.value = tabs.map { convertToActiveTabData(it) }
+    }
+
+    override fun selectTab(tabId: String, panelId: String) {
+        splitViewState.selectTabInPanel(tabId, panelId)
+    }
+
+    override fun getTabUrl(tabId: String): String? {
+        val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)
+        val tab = tabs.find { it.tabInfo.id == tabId }
+        return (tab?.tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo)?.currentUrl
+    }
+
+    override fun getFaviconCacheKey(tabId: String): String? {
+        val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)
+        val tab = tabs.find { it.tabInfo.id == tabId }
+        return (tab?.tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo)?.faviconCacheKey
+    }
+
+    @androidx.compose.runtime.Composable
+    override fun loadFavicon(cacheKey: String?): androidx.compose.ui.graphics.painter.Painter? {
+        return loadFaviconFromCache(cacheKey)?.painter
+    }
+
+    override fun getFallbackIcon(typeId: String): androidx.compose.ui.graphics.vector.ImageVector? {
+        // Return a generic tab icon based on type
+        return when {
+            typeId.contains("fluck", ignoreCase = true) -> Icons.Outlined.Language
+            typeId.contains("terminal", ignoreCase = true) -> Icons.Outlined.Terminal
+            typeId.contains("editor", ignoreCase = true) -> Icons.Outlined.Code
+            else -> Icons.Outlined.Tab
+        }
+    }
+
+    override fun getBrowserIntegration(tabId: String): ApiBrowserIntegration? {
+        // Set the selected tab ID for the accessor
+        BrowserAccessor.selectedTabId = tabId
+
+        // Store the split view state so BrowserAccessor can find the browser
+        // This is critical for dynamic plugins that don't have access to LocalSplitViewState
+        storeSplitViewState(splitViewState)
+
+        // Get the internal browser integration
+        val internalIntegration = BrowserAccessor().getActiveBrowserIntegration()
+            ?: return null
+
+        // Wrap it in an adapter that implements the plugin-api interface
+        return BrowserIntegrationAdapter(internalIntegration)
+    }
+
+    override fun createBrowserTab(url: String, title: String): String? {
+        return try {
+            val activeComponent = splitViewState.getActiveTabsComponent() ?: return null
+            val timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            val tabId = "plugin-tab-$timestamp"
+
+            val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+                id = tabId,
+                typeId = ai.rever.boss.plugin.tab.fluck.FluckTabType.typeId,
+                _title = title,
+                _icon = androidx.compose.material.icons.Icons.Outlined.Language,
+                url = url
+            )
+
+            val tabIndex = activeComponent.addTab(fluckTab)
+            if (tabIndex >= 0) {
+                activeComponent.selectTab(tabIndex)
+                tabId
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun closeTab(tabId: String): Boolean {
+        return try {
+            val allPanels = splitViewState.getAllPanels()
+            for (panel in allPanels) {
+                val tabsComponent = panel.tabsComponent
+                // Check if the tab exists by trying to get its component
+                val component = tabsComponent.getComponentById(tabId)
+                if (component != null) {
+                    tabsComponent.removeTabById(tabId)
+                    return true
+                }
+            }
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun convertToActiveTabData(tab: ai.rever.boss.plugin.panel.topofmind.ActiveTab): ActiveTabData {
+        val tabInfo = tab.tabInfo
+        val fluckTab = tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+        return ActiveTabData(
+            tabId = tabInfo.id,
+            typeId = tabInfo.typeId.typeId,
+            title = tabInfo.title,
+            workspaceId = tab.workspaceId,
+            workspaceName = tab.workspaceName,
+            panelId = tab.panelId,
+            windowId = tab.windowId,
+            splitPosition = tab.splitPosition,
+            url = fluckTab?.currentUrl,
+            faviconCacheKey = fluckTab?.faviconCacheKey
+        )
+    }
+}
+
+/**
+ * Adapter that bridges the internal BrowserIntegration to the plugin-api BrowserIntegration.
+ * This allows dynamic plugins to use browser capabilities through the PluginContext API.
+ */
+private class BrowserIntegrationAdapter(
+    private val internal: InternalBrowserIntegration
+) : ApiBrowserIntegration {
+
+    override suspend fun executeJavaScript(script: String): Any? {
+        return internal.executeJavaScript(script)
+    }
+
+    override fun isBrowserAvailable(): Boolean {
+        return internal.isBrowserAvailable()
+    }
+
+    override suspend fun getCurrentUrl(): String? {
+        return internal.getCurrentUrl()
+    }
+}
+
+/**
+ * Default implementation of ContextMenuProvider that bridges the plugin API
+ * to the app's native context menu implementation.
+ *
+ * Converts ContextMenuItemData (from plugin-ui-core) to ContextMenuItem (from app)
+ * and applies the contextMenu modifier.
+ */
+private class DefaultContextMenuProvider : ContextMenuProvider {
+
+    @androidx.compose.runtime.Composable
+    override fun applyContextMenu(
+        modifier: androidx.compose.ui.Modifier,
+        items: List<ContextMenuItemData>
+    ): androidx.compose.ui.Modifier {
+        // Convert plugin API items to app's ContextMenuItem format
+        val appItems = items.map { data ->
+            if (data.isDivider) {
+                ContextMenuItem(isDivider = true)
+            } else {
+                ContextMenuItem(
+                    text = data.label,
+                    icon = data.icon,
+                    onClick = data.onClick
+                )
+            }
+        }
+        return modifier.contextMenu(items = appItems)
     }
 }
 
