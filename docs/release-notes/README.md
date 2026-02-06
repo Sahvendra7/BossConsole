@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.24-alpha.1](v8.16.24-alpha.1.md) | 2026-02-06 | Alpha release introducing interactive plugin setup wizard for streamlined first-time user onboarding |
 | [v8.16.23-alpha.1](v8.16.23-alpha.1.md) | 2026-02-05 | Alpha release focused on dynamic plugin architecture with Maven Central publishing and runtime plugin management |
 | [v8.16.22](v8.16.22.md) | 2026-01-31 | Maintenance release adding plugin sandbox for improved stability and crash isolation |
 | [v8.16.21](v8.16.21.md) | 2026-01-30 | Maintenance release adding refactoring capabilities to BossEditor with Rename support |
