@@ -24,6 +24,50 @@ interface TerminalContentProvider {
 }
 
 /**
+ * Provider interface for tab-specific terminal rendering.
+ * This allows terminal tabs to be loaded as a dynamic plugin.
+ *
+ * Unlike TerminalContentProvider which is for the sidebar terminal panel,
+ * this interface provides persistent terminal content for individual tab instances.
+ */
+interface TerminalTabContentProvider {
+    /**
+     * Display persistent tabbed terminal content for a specific terminal tab.
+     *
+     * @param terminalId Unique ID for this terminal instance, used as key in state registry
+     * @param initialCommand Optional command to run after terminal starts (only for new terminals)
+     * @param workingDirectory Optional working directory for the terminal
+     * @param onExit Called when the last terminal tab is closed
+     * @param onTitleChange Called when terminal window title changes via escape sequences
+     */
+    @Composable
+    fun PersistentTabbedTerminalContent(
+        terminalId: String,
+        initialCommand: String? = null,
+        workingDirectory: String? = null,
+        onExit: () -> Unit = {},
+        onTitleChange: ((String) -> Unit)? = null
+    )
+
+    /**
+     * Check if a terminal state exists for the given window and terminal ID.
+     *
+     * @param windowId The window ID
+     * @param terminalId The terminal ID
+     * @return true if the terminal state exists
+     */
+    fun hasTerminalState(windowId: String, terminalId: String): Boolean
+
+    /**
+     * Remove a terminal state for the given window and terminal ID.
+     *
+     * @param windowId The window ID
+     * @param terminalId The terminal ID
+     */
+    fun removeTerminalState(windowId: String, terminalId: String)
+}
+
+/**
  * Provider interface for panel events.
  * Allows plugins to trigger panel operations.
  */

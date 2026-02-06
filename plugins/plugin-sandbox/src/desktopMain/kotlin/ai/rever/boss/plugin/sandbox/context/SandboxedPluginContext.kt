@@ -28,6 +28,8 @@ import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
+import ai.rever.boss.plugin.api.TerminalTabContentProvider
+import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.sandbox.PluginSandbox
 import kotlinx.coroutines.CoroutineScope
@@ -161,6 +163,14 @@ class SandboxedPluginContext(
     // URL history provider - delegate to underlying context
     override val urlHistoryProvider: UrlHistoryProvider?
         get() = delegate.urlHistoryProvider
+
+    // Terminal tab content provider - delegate to underlying context
+    override val terminalTabContentProvider: TerminalTabContentProvider?
+        get() = delegate.terminalTabContentProvider
+
+    // Editor content provider - delegate to underlying context
+    override val editorContentProvider: EditorContentProvider?
+        get() = delegate.editorContentProvider
 
     /**
      * Get the underlying sandbox for this context.

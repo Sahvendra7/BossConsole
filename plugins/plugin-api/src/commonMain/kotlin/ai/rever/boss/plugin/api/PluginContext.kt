@@ -317,6 +317,24 @@ interface PluginContext {
      */
     val urlHistoryProvider: UrlHistoryProvider?
         get() = null
+
+    /**
+     * Optional terminal tab content provider for terminal tab plugins.
+     *
+     * Returns null if terminal tab functionality is not available.
+     * Dynamic terminal tab plugins can use this to render persistent terminal content.
+     */
+    val terminalTabContentProvider: TerminalTabContentProvider?
+        get() = null
+
+    /**
+     * Optional editor content provider for code editor tab plugins.
+     *
+     * Returns null if editor functionality is not available.
+     * Dynamic editor plugins can use this to render code editor content.
+     */
+    val editorContentProvider: EditorContentProvider?
+        get() = null
 }
 
 /**

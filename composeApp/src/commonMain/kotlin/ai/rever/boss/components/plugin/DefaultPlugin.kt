@@ -26,9 +26,10 @@ import ai.rever.boss.components.plugin.providers.DashboardContentProviderImpl
 import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
 import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
 import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
-import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
-import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
-import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
+// DISABLED: Tab type registrations moved to dynamic plugins
+// import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
+// import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
+// import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.auth.AuthDataProviderImpl
 import ai.rever.boss.services.auth.AuthStateManager
@@ -66,6 +67,10 @@ import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createZoomSettingsProvider
 import ai.rever.boss.components.plugin.providers.createUrlHistoryProvider
+import ai.rever.boss.components.plugin.providers.createTerminalTabContentProvider
+import ai.rever.boss.components.plugin.providers.createEditorContentProvider
+import ai.rever.boss.plugin.api.TerminalTabContentProvider
+import ai.rever.boss.plugin.api.EditorContentProvider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
@@ -358,6 +363,16 @@ class DefaultPlugin(
         createUrlHistoryProvider()
     }
 
+    // Terminal tab content provider for terminal tab plugins
+    override val terminalTabContentProvider: TerminalTabContentProvider? by lazy {
+        createTerminalTabContentProvider()
+    }
+
+    // Editor content provider for code editor tab plugins
+    override val editorContentProvider: EditorContentProvider? by lazy {
+        createEditorContentProvider()
+    }
+
     /**
      * Create a sandboxed plugin context for a specific plugin.
      *
@@ -531,11 +546,11 @@ class DefaultPlugin(
         // TAB TYPE PLUGINS
         // ============================================================
 
-        // Tab Types - using extension functions (they handle complex callback wiring)
-        // Note: Tab types currently use the main context; sandbox integration is future work
+        // Tab Types - DISABLED: Moved to dynamic plugins
+        // These are now loaded from external JARs via the Plugin Store
         // registerFluck() // DISABLED: Moved to dynamic plugin (fluck-browser)
-        registerCodeEditor()
-        registerTerminalTab()
+        // registerCodeEditor() // DISABLED: Moved to dynamic plugin (editor-tab)
+        // registerTerminalTab() // DISABLED: Moved to dynamic plugin (terminal-tab)
 
         // ============================================================
         // EXTERNAL PLUGINS (loaded from ~/.boss/plugins/)
