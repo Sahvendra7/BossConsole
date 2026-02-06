@@ -69,8 +69,8 @@ fun PluginInstallWizardWindow(
 
     DialogWindow(
         onCloseRequest = {
-            // Disable window close button - users must complete or use "Skip All"
-            // The wizard is important for first-time setup
+            // Allow users to close the wizard window
+            onDismiss()
         },
         title = "BOSS Plugin Setup",
         resizable = false,
