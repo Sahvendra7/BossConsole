@@ -40,6 +40,9 @@ object PluginListProvider {
     val DEFAULT_PLUGIN_IDS = setOf(
         "ai.rever.boss.plugin.dynamic.terminal",
         "ai.rever.boss.plugin.dynamic.console",
+        "ai.rever.boss.plugin.dynamic.fluck",
+        "ai.rever.boss.plugin.dynamic.usersecretlist",
+        "ai.rever.boss.plugin.dynamic.downloads",
         "ai.rever.boss.plugin.dynamic.codebase",
         "ai.rever.boss.plugin.dynamic.bookmarks",
         "ai.rever.boss.plugin.dynamic.topofmind"
@@ -53,6 +56,9 @@ object PluginListProvider {
         // Essential
         "ai.rever.boss.plugin.dynamic.terminal" to PluginCategory.ESSENTIAL,
         "ai.rever.boss.plugin.dynamic.console" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.fluck" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.usersecretlist" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.downloads" to PluginCategory.ESSENTIAL,
 
         // Developer
         "ai.rever.boss.plugin.dynamic.codebase" to PluginCategory.DEVELOPER,
@@ -62,7 +68,6 @@ object PluginListProvider {
         // Productivity
         "ai.rever.boss.plugin.dynamic.bookmarks" to PluginCategory.PRODUCTIVITY,
         "ai.rever.boss.plugin.dynamic.topofmind" to PluginCategory.PRODUCTIVITY,
-        "ai.rever.boss.plugin.dynamic.downloads" to PluginCategory.PRODUCTIVITY,
 
         // Automation
         "ai.rever.boss.plugin.dynamic.llmrpa" to PluginCategory.AUTOMATION,
@@ -72,8 +77,7 @@ object PluginListProvider {
         // Admin
         "ai.rever.boss.plugin.dynamic.adminrolemanagement" to PluginCategory.ADMIN,
         "ai.rever.boss.plugin.dynamic.rolecreation" to PluginCategory.ADMIN,
-        "ai.rever.boss.plugin.dynamic.secretmanager" to PluginCategory.ADMIN,
-        "ai.rever.boss.plugin.dynamic.usersecretlist" to PluginCategory.ADMIN
+        "ai.rever.boss.plugin.dynamic.secretmanager" to PluginCategory.ADMIN
     )
 
     /**
@@ -97,7 +101,7 @@ object PluginListProvider {
         "ai.rever.boss.plugin.dynamic.secretmanager" to Icons.Default.Key,
         "ai.rever.boss.plugin.dynamic.usersecretlist" to Icons.Default.Key,
         "ai.rever.boss.plugin.dynamic.performance" to Icons.Default.AutoAwesome,
-        "ai.rever.boss.plugin.dynamic.fluck" to Icons.Default.Extension,
+        "ai.rever.boss.plugin.dynamic.fluck" to Icons.Default.Psychology,
         "ai.rever.boss.plugin.dynamic.runconfigurations" to Icons.Default.PlayArrow
     )
 
@@ -159,12 +163,13 @@ object PluginListProvider {
     /**
      * Fallback list of plugins when the repository is not available.
      * This ensures the wizard can still function offline or during initialization.
+     * Plugin IDs use the format: ai.rever.boss.plugin.dynamic.<name>
      */
     private fun getFallbackPluginList(): List<WizardPluginInfo> {
         return listOf(
             // Essential
             WizardPluginInfo(
-                id = "plugin-panel-terminal",
+                id = "ai.rever.boss.plugin.dynamic.terminal",
                 name = "Terminal",
                 description = "Integrated terminal for command-line access",
                 version = "1.0.0",
@@ -173,7 +178,7 @@ object PluginListProvider {
                 category = PluginCategory.ESSENTIAL
             ),
             WizardPluginInfo(
-                id = "plugin-panel-console",
+                id = "ai.rever.boss.plugin.dynamic.console",
                 name = "Console",
                 description = "Application logs and debugging output",
                 version = "1.0.0",
@@ -181,10 +186,37 @@ object PluginListProvider {
                 isDefault = true,
                 category = PluginCategory.ESSENTIAL
             ),
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.fluck",
+                name = "ChatGPT",
+                description = "AI-powered chat assistant",
+                version = "1.0.0",
+                icon = Icons.Default.Psychology,
+                isDefault = true,
+                category = PluginCategory.ESSENTIAL
+            ),
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.usersecretlist",
+                name = "My Secrets",
+                description = "View your secrets and shared credentials",
+                version = "1.0.0",
+                icon = Icons.Default.Key,
+                isDefault = true,
+                category = PluginCategory.ESSENTIAL
+            ),
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.downloads",
+                name = "Downloads",
+                description = "Manage downloaded files",
+                version = "1.0.0",
+                icon = Icons.Default.Download,
+                isDefault = true,
+                category = PluginCategory.ESSENTIAL
+            ),
 
             // Developer
             WizardPluginInfo(
-                id = "plugin-panel-codebase",
+                id = "ai.rever.boss.plugin.dynamic.codebase",
                 name = "Codebase",
                 description = "File browser and code navigation",
                 version = "1.0.0",
@@ -193,7 +225,7 @@ object PluginListProvider {
                 category = PluginCategory.DEVELOPER
             ),
             WizardPluginInfo(
-                id = "plugin-panel-git-status",
+                id = "ai.rever.boss.plugin.dynamic.gitstatus",
                 name = "Git Status",
                 description = "View git repository status",
                 version = "1.0.0",
@@ -202,7 +234,7 @@ object PluginListProvider {
                 category = PluginCategory.DEVELOPER
             ),
             WizardPluginInfo(
-                id = "plugin-panel-git-log",
+                id = "ai.rever.boss.plugin.dynamic.gitlog",
                 name = "Git Log",
                 description = "Browse git commit history",
                 version = "1.0.0",
@@ -213,7 +245,7 @@ object PluginListProvider {
 
             // Productivity
             WizardPluginInfo(
-                id = "plugin-panel-bookmarks",
+                id = "ai.rever.boss.plugin.dynamic.bookmarks",
                 name = "Bookmarks",
                 description = "Save and organize your favorite tabs",
                 version = "1.0.0",
@@ -222,7 +254,7 @@ object PluginListProvider {
                 category = PluginCategory.PRODUCTIVITY
             ),
             WizardPluginInfo(
-                id = "plugin-panel-topofmind",
+                id = "ai.rever.boss.plugin.dynamic.topofmind",
                 name = "Top of Mind",
                 description = "Quick access to recent and important tabs",
                 version = "1.0.0",
@@ -230,19 +262,10 @@ object PluginListProvider {
                 isDefault = true,
                 category = PluginCategory.PRODUCTIVITY
             ),
-            WizardPluginInfo(
-                id = "plugin-panel-downloads",
-                name = "Downloads",
-                description = "Manage downloaded files",
-                version = "1.0.0",
-                icon = Icons.Default.Download,
-                isDefault = false,
-                category = PluginCategory.PRODUCTIVITY
-            ),
 
             // Automation
             WizardPluginInfo(
-                id = "plugin-panel-llm-rpa",
+                id = "ai.rever.boss.plugin.dynamic.llmrpa",
                 name = "LLM RPA",
                 description = "AI-powered robotic process automation",
                 version = "1.0.0",
@@ -251,7 +274,7 @@ object PluginListProvider {
                 category = PluginCategory.AUTOMATION
             ),
             WizardPluginInfo(
-                id = "plugin-panel-rpa-recorder",
+                id = "ai.rever.boss.plugin.dynamic.rparecorder",
                 name = "RPA Recorder",
                 description = "Record automation scripts",
                 version = "1.0.0",
@@ -260,7 +283,7 @@ object PluginListProvider {
                 category = PluginCategory.AUTOMATION
             ),
             WizardPluginInfo(
-                id = "plugin-panel-rpa-engine",
+                id = "ai.rever.boss.plugin.dynamic.rpaengine",
                 name = "RPA Engine",
                 description = "Execute automation scripts",
                 version = "1.0.0",
@@ -271,7 +294,7 @@ object PluginListProvider {
 
             // Admin
             WizardPluginInfo(
-                id = "plugin-panel-role-management",
+                id = "ai.rever.boss.plugin.dynamic.adminrolemanagement",
                 name = "Role Management",
                 description = "Manage user roles and permissions",
                 version = "1.0.0",
@@ -280,7 +303,7 @@ object PluginListProvider {
                 category = PluginCategory.ADMIN
             ),
             WizardPluginInfo(
-                id = "plugin-panel-role-creation",
+                id = "ai.rever.boss.plugin.dynamic.rolecreation",
                 name = "Role Creation",
                 description = "Create and configure new roles",
                 version = "1.0.0",
@@ -289,7 +312,7 @@ object PluginListProvider {
                 category = PluginCategory.ADMIN
             ),
             WizardPluginInfo(
-                id = "plugin-panel-secret-manager",
+                id = "ai.rever.boss.plugin.dynamic.secretmanager",
                 name = "Secret Manager",
                 description = "Securely manage API keys and secrets",
                 version = "1.0.0",

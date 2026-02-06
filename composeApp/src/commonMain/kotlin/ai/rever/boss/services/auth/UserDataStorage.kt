@@ -1,5 +1,7 @@
 package ai.rever.boss.services.auth
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -102,152 +104,162 @@ object UserDataStorage {
      * Preserves the pluginWizardCompleted flag if it was previously set,
      * and also merges any pending wizard completion status.
      */
-    fun saveUserData(user: UserInfo, authenticatedVia: String? = null) {
-        try {
-            // Check for pending wizard completed status (set before login)
-            val pendingWizardCompleted = if (pendingWizardCompletedFile.exists()) {
-                try {
-                    pendingWizardCompletedFile.readText().trim().toBoolean()
-                } catch (e: Exception) {
+    suspend fun saveUserData(user: UserInfo, authenticatedVia: String? = null) {
+        withContext(Dispatchers.IO) {
+            try {
+                // Check for pending wizard completed status (set before login)
+                val pendingWizardCompleted = if (pendingWizardCompletedFile.exists()) {
+                    try {
+                        pendingWizardCompletedFile.readText().trim().toBoolean()
+                    } catch (e: Exception) {
+                        false
+                    }
+                } else {
                     false
                 }
-            } else {
-                false
-            }
-            
-            // Preserve existing pluginWizardCompleted status if file exists
-            val existingWizardCompleted = if (storageFile.exists()) {
-                try {
-                    val existingContent = storageFile.readText()
-                    val existingData = json.decodeFromString<StoredUserData>(existingContent)
-                    existingData.pluginWizardCompleted
-                } catch (e: Exception) {
-                    false
-                }
-            } else {
-                false
-            }
-            
-            // Use pending status OR existing status (either one being true means completed)
-            val wizardCompleted = pendingWizardCompleted || existingWizardCompleted
 
-            val data = StoredUserData(
-                id = user.id,
-                email = user.email,
-                createdAt = user.createdAt,
-                authenticatedVia = authenticatedVia,
-                pluginWizardCompleted = wizardCompleted
-            )
-            val content = json.encodeToString(data)
-            storageFile.writeText(content)
-            logger.debug(LogCategory.AUTH, "Saved user data", mapOf("email" to LogSanitizer.maskEmail(user.email)))
-            
-            // Clean up pending file if it exists
-            if (pendingWizardCompletedFile.exists()) {
-                pendingWizardCompletedFile.delete()
+                // Preserve existing pluginWizardCompleted status if file exists
+                val existingWizardCompleted = if (storageFile.exists()) {
+                    try {
+                        val existingContent = storageFile.readText()
+                        val existingData = json.decodeFromString<StoredUserData>(existingContent)
+                        existingData.pluginWizardCompleted
+                    } catch (e: Exception) {
+                        false
+                    }
+                } else {
+                    false
+                }
+
+                // Use pending status OR existing status (either one being true means completed)
+                val wizardCompleted = pendingWizardCompleted || existingWizardCompleted
+
+                val data = StoredUserData(
+                    id = user.id,
+                    email = user.email,
+                    createdAt = user.createdAt,
+                    authenticatedVia = authenticatedVia,
+                    pluginWizardCompleted = wizardCompleted
+                )
+                val content = json.encodeToString(data)
+                storageFile.writeText(content)
+                logger.debug(LogCategory.AUTH, "Saved user data", mapOf("email" to LogSanitizer.maskEmail(user.email)))
+
+                // Clean up pending file if it exists
+                if (pendingWizardCompletedFile.exists()) {
+                    pendingWizardCompletedFile.delete()
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.AUTH, "Error saving user data", error = e)
             }
-        } catch (e: Exception) {
-            logger.error(LogCategory.AUTH, "Error saving user data", error = e)
         }
     }
 
     /**
      * Load user data from persistent storage
      */
-    fun loadUserData(): UserInfo? {
-        return try {
-            if (storageFile.exists()) {
-                val content = storageFile.readText()
-                val data = json.decodeFromString<StoredUserData>(content)
-                logger.debug(LogCategory.AUTH, "Loaded user data", mapOf(
-                    "email" to LogSanitizer.maskEmail(data.email),
-                    "authenticatedVia" to (data.authenticatedVia ?: "unknown")
-                ))
-                UserInfo(
-                    id = data.id,
-                    email = data.email,
-                    createdAt = data.createdAt
-                )
-            } else {
-                logger.debug(LogCategory.AUTH, "No stored user data found")
+    suspend fun loadUserData(): UserInfo? {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (storageFile.exists()) {
+                    val content = storageFile.readText()
+                    val data = json.decodeFromString<StoredUserData>(content)
+                    logger.debug(LogCategory.AUTH, "Loaded user data", mapOf(
+                        "email" to LogSanitizer.maskEmail(data.email),
+                        "authenticatedVia" to (data.authenticatedVia ?: "unknown")
+                    ))
+                    UserInfo(
+                        id = data.id,
+                        email = data.email,
+                        createdAt = data.createdAt
+                    )
+                } else {
+                    logger.debug(LogCategory.AUTH, "No stored user data found")
+                    null
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.AUTH, "Error loading user data", error = e)
                 null
             }
-        } catch (e: Exception) {
-            logger.error(LogCategory.AUTH, "Error loading user data", error = e)
-            null
         }
     }
 
     /**
      * Clear stored user data (on logout)
      */
-    fun clearUserData() {
-        try {
-            if (storageFile.exists()) {
-                storageFile.delete()
-                logger.debug(LogCategory.AUTH, "Cleared user data")
+    suspend fun clearUserData() {
+        withContext(Dispatchers.IO) {
+            try {
+                if (storageFile.exists()) {
+                    storageFile.delete()
+                    logger.debug(LogCategory.AUTH, "Cleared user data")
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.AUTH, "Error clearing user data", error = e)
             }
-        } catch (e: Exception) {
-            logger.error(LogCategory.AUTH, "Error clearing user data", error = e)
         }
     }
 
     /**
      * Check if the plugin installation wizard has been completed for this user.
-     * 
+     *
      * Checks both the main user_data.json and the pending file (for cases where
      * the wizard was completed before user logged in).
      */
-    fun isPluginWizardCompleted(): Boolean {
-        return try {
-            // First check the main user data file
-            if (storageFile.exists()) {
-                val content = storageFile.readText()
-                val data = json.decodeFromString<StoredUserData>(content)
-                if (data.pluginWizardCompleted) {
-                    return true
+    suspend fun isPluginWizardCompleted(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                // First check the main user data file
+                if (storageFile.exists()) {
+                    val content = storageFile.readText()
+                    val data = json.decodeFromString<StoredUserData>(content)
+                    if (data.pluginWizardCompleted) {
+                        return@withContext true
+                    }
                 }
-            }
-            
-            // Also check the pending file (wizard completed before login)
-            if (pendingWizardCompletedFile.exists()) {
-                val pendingValue = pendingWizardCompletedFile.readText().trim().toBoolean()
-                if (pendingValue) {
-                    return true
+
+                // Also check the pending file (wizard completed before login)
+                if (pendingWizardCompletedFile.exists()) {
+                    val pendingValue = pendingWizardCompletedFile.readText().trim().toBoolean()
+                    if (pendingValue) {
+                        return@withContext true
+                    }
                 }
+
+                false
+            } catch (e: Exception) {
+                logger.error(LogCategory.AUTH, "Error checking plugin wizard status", error = e)
+                false
             }
-            
-            false
-        } catch (e: Exception) {
-            logger.error(LogCategory.AUTH, "Error checking plugin wizard status", error = e)
-            false
         }
     }
 
     /**
      * Mark the plugin installation wizard as completed for this user.
-     * 
+     *
      * If user_data.json doesn't exist yet (user not logged in), stores the setting
      * in a separate file that will be merged when the user logs in.
      */
-    fun setPluginWizardCompleted(completed: Boolean) {
-        try {
-            if (storageFile.exists()) {
-                val content = storageFile.readText()
-                val data = json.decodeFromString<StoredUserData>(content)
-                val updatedData = data.copy(pluginWizardCompleted = completed)
-                storageFile.writeText(json.encodeToString(updatedData))
-                logger.debug(LogCategory.AUTH, "Updated plugin wizard completion status", mapOf(
-                    "completed" to completed
-                ))
-            } else {
-                // File doesn't exist yet - store in a temporary pending file
-                // This will be merged when saveUserData is called
-                pendingWizardCompletedFile.parentFile?.mkdirs()
-                pendingWizardCompletedFile.writeText(completed.toString())
+    suspend fun setPluginWizardCompleted(completed: Boolean) {
+        withContext(Dispatchers.IO) {
+            try {
+                if (storageFile.exists()) {
+                    val content = storageFile.readText()
+                    val data = json.decodeFromString<StoredUserData>(content)
+                    val updatedData = data.copy(pluginWizardCompleted = completed)
+                    storageFile.writeText(json.encodeToString(updatedData))
+                    logger.debug(LogCategory.AUTH, "Updated plugin wizard completion status", mapOf(
+                        "completed" to completed
+                    ))
+                } else {
+                    // File doesn't exist yet - store in a temporary pending file
+                    // This will be merged when saveUserData is called
+                    pendingWizardCompletedFile.parentFile?.mkdirs()
+                    pendingWizardCompletedFile.writeText(completed.toString())
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.AUTH, "Error setting plugin wizard status", error = e)
             }
-        } catch (e: Exception) {
-            logger.error(LogCategory.AUTH, "Error setting plugin wizard status", error = e)
         }
     }
 }

@@ -82,6 +82,18 @@ class PluginInstallWizardState(
         private set
 
     /**
+     * List of plugins that failed to install (pluginId to error message).
+     */
+    var failedPlugins by mutableStateOf<List<Pair<String, String>>>(emptyList())
+        private set
+
+    /**
+     * Whether installation has been attempted (used to prevent re-triggering).
+     */
+    var installationAttempted by mutableStateOf(false)
+        private set
+
+    /**
      * Error message if installation failed.
      */
     var installationError by mutableStateOf<String?>(null)
@@ -188,20 +200,26 @@ class PluginInstallWizardState(
      */
     fun startInstallation() {
         isInstalling = true
+        installationAttempted = true
         installationProgress = 0f
         installationStatus = "Preparing installation..."
         installationError = null
         installedPluginIds = emptyList()
+        failedPlugins = emptyList()
     }
 
     /**
      * Mark installation as complete.
+     *
+     * @param installedIds List of successfully installed plugin IDs
+     * @param failed List of plugins that failed to install (pluginId to error message)
      */
-    fun completeInstallation(installedIds: List<String>) {
+    fun completeInstallation(installedIds: List<String>, failed: List<Pair<String, String>> = emptyList()) {
         isInstalling = false
         installationProgress = 1f
         installationStatus = "Installation complete"
         installedPluginIds = installedIds
+        failedPlugins = failed
     }
 
     /**
@@ -242,7 +260,9 @@ class PluginInstallWizardState(
         installationProgress = 0f
         installationStatus = ""
         isInstalling = false
+        installationAttempted = false
         installedPluginIds = emptyList()
+        failedPlugins = emptyList()
         installationError = null
     }
 }

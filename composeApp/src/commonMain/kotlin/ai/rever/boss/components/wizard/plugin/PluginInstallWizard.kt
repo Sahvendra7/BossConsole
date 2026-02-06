@@ -76,14 +76,15 @@ fun PluginInstallWizard(
     state: PluginInstallWizardState,
     onDismiss: () -> Unit,
     onComplete: () -> Unit,
-    onInstallPlugins: suspend (List<String>, (Float, String) -> Unit) -> Result<List<String>>
+    onInstallPlugins: suspend (List<String>, (Float, String) -> Unit) -> Result<PluginInstallResult>
 ) {
     val currentStep = state.wizardState.currentStep
     val scope = rememberCoroutineScope()
 
     // Handle installation when we reach the Installing step
+    // Use installationAttempted flag to prevent re-triggering (fixes race condition)
     LaunchedEffect(currentStep) {
-        if (currentStep is PluginInstallStep.Installing && !state.isInstalling && state.installedPluginIds.isEmpty()) {
+        if (currentStep is PluginInstallStep.Installing && !state.isInstalling && !state.installationAttempted) {
             val selectedIds = state.getSelectedPluginIds()
             if (selectedIds.isEmpty()) {
                 // No plugins selected, skip to complete
@@ -95,8 +96,8 @@ fun PluginInstallWizard(
                     state.updateProgress(progress, status)
                 }
                 result.fold(
-                    onSuccess = { installedIds ->
-                        state.completeInstallation(installedIds)
+                    onSuccess = { installResult ->
+                        state.completeInstallation(installResult.installedIds, installResult.failedPlugins)
                         state.goToNextStep()
                     },
                     onFailure = { error ->
@@ -192,7 +193,8 @@ fun PluginInstallWizard(
                                 }
                             )
                             is PluginInstallStep.Complete -> CompleteStepContent(
-                                installedCount = state.installedPluginIds.size
+                                installedCount = state.installedPluginIds.size,
+                                failedPlugins = state.failedPlugins
                             )
                         }
                     }
@@ -499,10 +501,16 @@ private fun InstallingStepContent(
     }
 }
 
+// Warning/error color
+private val WarningOrange = Color(0xFFFF9800)
+
 @Composable
 private fun CompleteStepContent(
-    installedCount: Int
+    installedCount: Int,
+    failedPlugins: List<Pair<String, String>> = emptyList()
 ) {
+    val hasFailures = failedPlugins.isNotEmpty()
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -510,15 +518,15 @@ private fun CompleteStepContent(
     ) {
         Icon(
             imageVector = Icons.Default.CheckCircle,
-            contentDescription = "Success",
+            contentDescription = if (hasFailures) "Partial Success" else "Success",
             modifier = Modifier.size(72.dp),
-            tint = SuccessGreen
+            tint = if (hasFailures) WarningOrange else SuccessGreen
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "You're All Set!",
+            text = if (hasFailures) "Installation Complete" else "You're All Set!",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White
@@ -537,15 +545,56 @@ private fun CompleteStepContent(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        // Show failed plugins if any
+        if (hasFailures) {
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = "You can install more plugins anytime from the Plugin Manager",
-            fontSize = 13.sp,
-            color = BossDarkTextSecondary.copy(alpha = 0.8f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(BossDarkSurface)
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "${failedPlugins.size} plugin${if (failedPlugins.size > 1) "s" else ""} failed to install:",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = WarningOrange
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    failedPlugins.forEach { (pluginId, error) ->
+                        Text(
+                            text = "\u2022 $pluginId: $error",
+                            fontSize = 12.sp,
+                            color = BossDarkTextSecondary,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "You can retry installing these plugins from the Plugin Manager",
+                fontSize = 13.sp,
+                color = BossDarkTextSecondary.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
+            )
+        } else {
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Text(
+                text = "You can install more plugins anytime from the Plugin Manager",
+                fontSize = 13.sp,
+                color = BossDarkTextSecondary.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
+            )
+        }
     }
 }
 

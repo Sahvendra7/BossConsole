@@ -151,6 +151,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalSplitViewState
@@ -1043,14 +1044,22 @@ fun ComponentContext.BossApp(
     LaunchedEffect(isFirstWindow, currentDefaultPlugin) {
         if (isFirstWindow && !pluginWizardChecked && currentDefaultPlugin != null) {
             pluginWizardChecked = true
-            val wizardCompleted = UserDataStorage.isPluginWizardCompleted()
+            // Run IO operations off the main thread
+            val wizardCompleted = withContext(Dispatchers.IO) {
+                UserDataStorage.isPluginWizardCompleted()
+            }
             if (!wizardCompleted) {
-                availablePluginsForWizard = PluginWizardIntegration.getAvailablePlugins()
-                if (availablePluginsForWizard.isNotEmpty()) {
+                val plugins = withContext(Dispatchers.IO) {
+                    PluginWizardIntegration.getAvailablePlugins()
+                }
+                if (plugins.isNotEmpty()) {
+                    availablePluginsForWizard = plugins
                     showPluginInstallWizard = true
                 } else {
                     // No plugins available, mark wizard as completed
-                    UserDataStorage.setPluginWizardCompleted(true)
+                    withContext(Dispatchers.IO) {
+                        UserDataStorage.setPluginWizardCompleted(true)
+                    }
                 }
             }
         }
@@ -2161,9 +2170,12 @@ fun ComponentContext.BossApp(
         MenuActionsHandler.showPluginWizardEvents
             .onEach { eventWindowId ->
                 if (eventWindowId == windowId) {
-                    // Load plugins if not already loaded
+                    // Load plugins if not already loaded (on IO thread)
                     if (availablePluginsForWizard.isEmpty()) {
-                        availablePluginsForWizard = PluginWizardIntegration.getAvailablePlugins()
+                        val plugins = withContext(Dispatchers.IO) {
+                            PluginWizardIntegration.getAvailablePlugins()
+                        }
+                        availablePluginsForWizard = plugins
                     }
                     if (availablePluginsForWizard.isNotEmpty()) {
                         showPluginInstallWizard = true
@@ -2808,12 +2820,16 @@ fun ComponentContext.BossApp(
                     onDismiss = {
                         // User dismissed without completing - still mark as completed
                         // so they're not prompted again
-                        UserDataStorage.setPluginWizardCompleted(true)
+                        coroutineScope.launch(Dispatchers.IO) {
+                            UserDataStorage.setPluginWizardCompleted(true)
+                        }
                         showPluginInstallWizard = false
                         focusRequester.requestFocus()
                     },
                     onComplete = {
-                        UserDataStorage.setPluginWizardCompleted(true)
+                        coroutineScope.launch(Dispatchers.IO) {
+                            UserDataStorage.setPluginWizardCompleted(true)
+                        }
                         showPluginInstallWizard = false
                         focusRequester.requestFocus()
                     },

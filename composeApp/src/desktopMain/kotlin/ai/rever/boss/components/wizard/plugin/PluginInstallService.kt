@@ -26,18 +26,18 @@ class PluginInstallService(
      *
      * @param pluginIds List of plugin IDs to install
      * @param onProgress Callback for progress updates (0.0 to 1.0, status message)
-     * @return Result containing list of successfully installed plugin IDs
+     * @return Result containing installation result with both successful and failed plugin IDs
      */
     suspend fun installPlugins(
         pluginIds: List<String>,
         onProgress: (Float, String) -> Unit
-    ): Result<List<String>> = withContext(Dispatchers.IO) {
+    ): Result<PluginInstallResult> = withContext(Dispatchers.IO) {
         val installedIds = mutableListOf<String>()
         val failedIds = mutableListOf<Pair<String, String>>() // pluginId to error message
 
         if (pluginIds.isEmpty()) {
             onProgress(1f, "No plugins to install")
-            return@withContext Result.success(emptyList())
+            return@withContext Result.success(PluginInstallResult(emptyList(), emptyList()))
         }
 
         val repositoryManager = PluginStoreSetup.repositoryManager
@@ -147,8 +147,8 @@ class PluginInstallService(
             ))
         }
 
-        // Return success with installed IDs (partial success is still success)
-        Result.success(installedIds)
+        // Return result with both installed and failed IDs
+        Result.success(PluginInstallResult(installedIds, failedIds))
     }
 
     companion object {
