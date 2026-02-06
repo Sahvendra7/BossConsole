@@ -29,11 +29,13 @@ import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.components.dialogs.CloneProjectDialog
-import ai.rever.boss.components.wizard.plugin.PluginInstallWizard
+import ai.rever.boss.components.wizard.plugin.PluginWizardWindow
 import ai.rever.boss.components.wizard.plugin.PluginWizardIntegration
 import ai.rever.boss.components.wizard.plugin.WizardPluginInfo
 import ai.rever.boss.components.wizard.plugin.rememberPluginInstallWizardState
 import ai.rever.boss.services.auth.UserDataStorage
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.icons.FileIcons
@@ -542,6 +544,15 @@ fun ComponentContext.BossApp(
     panelRegistry: PanelRegistry,
     onToggleMaximize: (() -> Unit)? = null
 ) {
+    val logger = remember { BossLogger.forComponent("BossApp") }
+
+    // Log once when BossApp first composes
+    LaunchedEffect(Unit) {
+        logger.info(LogCategory.SYSTEM, "BossApp initialized", mapOf(
+            "windowId" to windowId,
+            "isFirstWindow" to isFirstWindow.toString()
+        ))
+    }
 
     // Use the passed panelRegistry instance (created in BossWindow for menu access)
     val tabRegistry = remember { TabRegistry() }
@@ -939,6 +950,7 @@ fun ComponentContext.BossApp(
     // Plugin install wizard state (shown on first login)
     var showPluginInstallWizard by remember { mutableStateOf(false) }
     var pluginWizardChecked by remember { mutableStateOf(false) }
+    var pluginWizardRetryCount by remember { mutableStateOf(0) }
     var availablePluginsForWizard by remember { mutableStateOf<List<WizardPluginInfo>>(emptyList()) }
     var currentDefaultPlugin by remember { mutableStateOf<DefaultPlugin?>(null) }
 
@@ -1041,26 +1053,86 @@ fun ComponentContext.BossApp(
     }
 
     // Check if plugin install wizard should be shown (only for first window)
-    LaunchedEffect(isFirstWindow, currentDefaultPlugin) {
-        if (isFirstWindow && !pluginWizardChecked && currentDefaultPlugin != null) {
-            pluginWizardChecked = true
-            // Run IO operations off the main thread
+    // Depend on pluginWizardRetryCount to prevent race conditions - retry logic is explicit
+    LaunchedEffect(isFirstWindow, currentDefaultPlugin, pluginWizardRetryCount) {
+        val defaultPlugin = currentDefaultPlugin
+
+        // Early exit: Check retry limit FIRST to prevent race conditions
+        if (pluginWizardRetryCount >= 3) {
+            logger.error(LogCategory.SYSTEM, "Plugin wizard fetch failed after 3 attempts, giving up")
+            return@LaunchedEffect
+        }
+
+        // Early exit: Already checked successfully
+        if (pluginWizardChecked) {
+            return@LaunchedEffect
+        }
+
+        if (isFirstWindow && defaultPlugin != null) {
+            // Get plugin manager (already initialized by this point)
+            val pluginManager = defaultPlugin.dynamicPluginManager
+
+            // Check if wizard was already completed
             val wizardCompleted = withContext(Dispatchers.IO) {
                 UserDataStorage.isPluginWizardCompleted()
             }
-            if (!wizardCompleted) {
-                val plugins = withContext(Dispatchers.IO) {
-                    PluginWizardIntegration.getAvailablePlugins()
+
+            // Check if any plugins are installed (in-memory operation, no IO needed)
+            val installedPlugins = pluginManager.getInstalledPlugins()
+            val hasNoPlugins = installedPlugins.isEmpty()
+
+            // Show wizard if: (1) first time (wizard not completed) OR (2) no plugins installed
+            val shouldShowWizard = !wizardCompleted || hasNoPlugins
+
+            if (shouldShowWizard) {
+                // Exponential backoff: 0ms, 500ms, 1000ms, 1500ms (on retries)
+                if (pluginWizardRetryCount > 0) {
+                    val delayMs = pluginWizardRetryCount * 500L
+                    logger.info(LogCategory.SYSTEM, "Retrying plugin fetch after ${delayMs}ms delay", mapOf(
+                        "attempt" to (pluginWizardRetryCount + 1).toString()
+                    ))
+                    delay(delayMs)
                 }
-                if (plugins.isNotEmpty()) {
-                    availablePluginsForWizard = plugins
-                    showPluginInstallWizard = true
-                } else {
-                    // No plugins available, mark wizard as completed
-                    withContext(Dispatchers.IO) {
-                        UserDataStorage.setPluginWizardCompleted(true)
+
+                try {
+                    val plugins = withContext(Dispatchers.IO) {
+                        PluginWizardIntegration.getAvailablePlugins()
                     }
+
+                    if (plugins.isNotEmpty()) {
+                        availablePluginsForWizard = plugins
+                        showPluginInstallWizard = true
+                        pluginWizardChecked = true  // Set AFTER successfully showing wizard
+
+                        val reason = if (!wizardCompleted) "first_time" else "no_plugins_installed"
+                        logger.info(LogCategory.SYSTEM, "Plugin wizard shown", mapOf(
+                            "reason" to reason,
+                            "availablePlugins" to plugins.size.toString()
+                        ))
+                    } else {
+                        // No plugins available to install
+                        logger.info(LogCategory.SYSTEM, "No plugins available to install")
+                        pluginWizardChecked = true  // Set to prevent further attempts
+                        if (!wizardCompleted) {
+                            withContext(Dispatchers.IO) {
+                                UserDataStorage.setPluginWizardCompleted(true)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.error(LogCategory.SYSTEM, "Failed to fetch plugins", mapOf(
+                        "attempt" to (pluginWizardRetryCount + 1).toString(),
+                        "maxAttempts" to "3"
+                    ), error = e)
+                    // Increment counter to trigger retry via LaunchedEffect dependency
+                    pluginWizardRetryCount++
                 }
+            } else {
+                logger.info(LogCategory.SYSTEM, "Plugin wizard not needed", mapOf(
+                    "wizardCompleted" to wizardCompleted.toString(),
+                    "pluginsInstalled" to installedPlugins.size.toString()
+                ))
+                pluginWizardChecked = true  // Set to prevent further checks
             }
         }
     }
@@ -2815,7 +2887,7 @@ fun ComponentContext.BossApp(
                 val wizardState = rememberPluginInstallWizardState(availablePluginsForWizard)
                 val dynamicPluginManager = currentDefaultPlugin?.dynamicPluginManager
 
-                PluginInstallWizard(
+                PluginWizardWindow(
                     state = wizardState,
                     onDismiss = {
                         // User dismissed without completing - still mark as completed
@@ -2825,6 +2897,7 @@ fun ComponentContext.BossApp(
                         }
                         showPluginInstallWizard = false
                         focusRequester.requestFocus()
+                        logger.info(LogCategory.SYSTEM, "Plugin wizard dismissed by user")
                     },
                     onComplete = {
                         coroutineScope.launch(Dispatchers.IO) {
@@ -2832,12 +2905,25 @@ fun ComponentContext.BossApp(
                         }
                         showPluginInstallWizard = false
                         focusRequester.requestFocus()
+                        logger.info(LogCategory.SYSTEM, "Plugin wizard completed")
                     },
                     onInstallPlugins = { pluginIds, onProgress ->
-                        if (dynamicPluginManager != null) {
-                            PluginWizardIntegration.installPlugins(dynamicPluginManager, pluginIds, onProgress)
-                        } else {
-                            Result.failure(Exception("Plugin manager not available"))
+                        when {
+                            dynamicPluginManager != null -> {
+                                try {
+                                    logger.info(LogCategory.SYSTEM, "Installing plugins from wizard", mapOf(
+                                        "pluginCount" to pluginIds.size.toString()
+                                    ))
+                                    PluginWizardIntegration.installPlugins(dynamicPluginManager, pluginIds, onProgress)
+                                } catch (e: Exception) {
+                                    logger.error(LogCategory.SYSTEM, "Plugin installation failed", error = e)
+                                    Result.failure(e)
+                                }
+                            }
+                            else -> {
+                                logger.error(LogCategory.SYSTEM, "Plugin manager not available during installation")
+                                Result.failure(Exception("Plugin manager not available"))
+                            }
                         }
                     }
                 )

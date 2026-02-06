@@ -11,6 +11,7 @@ import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -194,6 +195,10 @@ class KeyboardEventBusTest {
         assertEquals(1, KeyboardEventBus.getHandlerCounts()[KeyboardEventPriority.GLOBAL])
 
         job.cancelAndJoin()
+
+        // Yield to allow the coroutine dispatcher to process the invokeOnCompletion handler
+        // that removes the handler from the list. This ensures the cleanup completes before assertion.
+        yield()
 
         assertEquals(0, KeyboardEventBus.getHandlerCounts()[KeyboardEventPriority.GLOBAL] ?: 0)
     }

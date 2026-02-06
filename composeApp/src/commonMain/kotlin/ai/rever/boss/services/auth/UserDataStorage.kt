@@ -211,18 +211,43 @@ object UserDataStorage {
             try {
                 // First check the main user data file
                 if (storageFile.exists()) {
-                    val content = storageFile.readText()
-                    val data = json.decodeFromString<StoredUserData>(content)
-                    if (data.pluginWizardCompleted) {
-                        return@withContext true
+                    try {
+                        val content = storageFile.readText()
+                        val data = json.decodeFromString<StoredUserData>(content)
+                        if (data.pluginWizardCompleted) {
+                            return@withContext true
+                        }
+                    } catch (e: kotlinx.serialization.SerializationException) {
+                        logger.error(
+                            LogCategory.SYSTEM,
+                            "User data file corrupted, will reset on next save",
+                            error = e
+                        )
+                        // Don't delete here - let next save handle it
+                        // Fall through to check pending file
+                    } catch (e: Exception) {
+                        logger.error(
+                            LogCategory.SYSTEM,
+                            "Error reading user data file",
+                            error = e
+                        )
+                        // Fall through to check pending file
                     }
                 }
 
                 // Also check the pending file (wizard completed before login)
                 if (pendingWizardCompletedFile.exists()) {
-                    val pendingValue = pendingWizardCompletedFile.readText().trim().toBoolean()
-                    if (pendingValue) {
-                        return@withContext true
+                    try {
+                        val pendingValue = pendingWizardCompletedFile.readText().trim().toBoolean()
+                        if (pendingValue) {
+                            return@withContext true
+                        }
+                    } catch (e: Exception) {
+                        logger.error(
+                            LogCategory.SYSTEM,
+                            "Error reading pending wizard file",
+                            error = e
+                        )
                     }
                 }
 

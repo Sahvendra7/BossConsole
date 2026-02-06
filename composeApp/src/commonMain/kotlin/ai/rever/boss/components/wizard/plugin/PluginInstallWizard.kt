@@ -221,7 +221,7 @@ fun PluginInstallWizard(
 }
 
 @Composable
-private fun WizardHeader(
+internal fun WizardHeader(
     currentStep: PluginInstallStep,
     onBack: (() -> Unit)?,
     onDismiss: (() -> Unit)?
@@ -272,7 +272,7 @@ private fun WizardHeader(
 }
 
 @Composable
-private fun WelcomeStepContent() {
+internal fun WelcomeStepContent() {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -332,7 +332,7 @@ private fun WelcomeStepContent() {
 }
 
 @Composable
-private fun CategoryStepContent(
+internal fun CategoryStepContent(
     category: PluginCategory,
     plugins: List<WizardPluginInfo>,
     isPluginSelected: (String) -> Boolean,
@@ -404,7 +404,7 @@ private fun CategoryStepContent(
 }
 
 @Composable
-private fun InstallingStepContent(
+internal fun InstallingStepContent(
     progress: Float,
     status: String,
     error: String?,
@@ -505,7 +505,7 @@ private fun InstallingStepContent(
 private val WarningOrange = Color(0xFFFF9800)
 
 @Composable
-private fun CompleteStepContent(
+internal fun CompleteStepContent(
     installedCount: Int,
     failedPlugins: List<Pair<String, String>> = emptyList()
 ) {
@@ -599,7 +599,7 @@ private fun CompleteStepContent(
 }
 
 @Composable
-private fun WizardNavigation(
+internal fun WizardNavigation(
     currentStep: PluginInstallStep,
     isInstalling: Boolean,
     hasSelectedPlugins: Boolean,
