@@ -51,6 +51,18 @@ class SandboxedTabRegistry(
         delegate.registerTabType(content, wrappedFactory)
     }
 
+    override fun unregisterTabType(typeId: ai.rever.boss.plugin.api.TabTypeId) {
+        delegate.unregisterTabType(typeId)
+    }
+
+    override fun addUnregisterListener(listener: (ai.rever.boss.plugin.api.TabTypeId) -> Unit) {
+        delegate.addUnregisterListener(listener)
+    }
+
+    override fun removeUnregisterListener(listener: (ai.rever.boss.plugin.api.TabTypeId) -> Unit) {
+        delegate.removeUnregisterListener(listener)
+    }
+
     override fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
         return delegate.createTabComponent(config, componentContext)
     }

@@ -22,8 +22,19 @@ private val faviconLogger = BossLogger.forComponent("FaviconLoader")
  */
 @Composable
 fun rememberFaviconLoader(tabInfo: TabInfo): ai.rever.boss.plugin.api.TabIcon.Image? {
-    // Extract faviconCacheKey if this is a Fluck browser tab
-    val faviconCacheKey = (tabInfo as? FluckTabInfo)?.faviconCacheKey
+    // Extract faviconCacheKey - first check built-in FluckTabInfo, then try reflection for dynamic plugins
+    val faviconCacheKey = when (tabInfo) {
+        is FluckTabInfo -> tabInfo.faviconCacheKey
+        else -> {
+            // Try reflection for dynamic plugin tabs that have faviconCacheKey property
+            try {
+                val property = tabInfo::class.members.find { it.name == "faviconCacheKey" }
+                property?.call(tabInfo) as? String
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
     // State to hold the loaded favicon
     var loadedFavicon by remember(faviconCacheKey) {

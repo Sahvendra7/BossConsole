@@ -123,6 +123,60 @@ object BrowserJavaScripts {
     """.trimIndent()
 
     /**
+     * JavaScript to inject for tracking right-click on link elements.
+     * Should be injected once after page load.
+     *
+     * Sets window._rightClickedLinkUrl to the href of the clicked link,
+     * or null if not clicking on a link.
+     *
+     * This enables the context menu to show "Copy Link URL" and "Open Link in New Tab"
+     * options when right-clicking on a link.
+     */
+    val injectLinkClickTracker = """
+        (function() {
+            if (!window._linkClickTrackerAdded) {
+                document.addEventListener('contextmenu', function(event) {
+                    const link = event.target.closest('a');
+                    if (link && link.href) {
+                        window._rightClickedLinkUrl = link.href;
+                    } else {
+                        window._rightClickedLinkUrl = null;
+                    }
+                }, true);
+                window._linkClickTrackerAdded = true;
+            }
+        })();
+    """.trimIndent()
+
+    /**
+     * JavaScript to inject for Cmd+Click (Mac) / Ctrl+Click (Windows/Linux) to open links in new tabs.
+     * Should be injected once after page load.
+     *
+     * When the user holds Cmd/Ctrl and clicks on a link, this intercepts the click,
+     * prevents the default navigation, and calls window.open() with _blank target.
+     * JxBrowser's OpenPopupCallback then routes this to open as a new tab.
+     *
+     * Uses capture phase (true) to intercept before normal click handlers.
+     */
+    val injectCmdClickHandler = """
+        (function() {
+            if (!window._cmdClickHandlerAdded) {
+                document.addEventListener('click', function(event) {
+                    const link = event.target.closest('a');
+                    if (link && link.href) {
+                        if (event.metaKey || event.ctrlKey) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.open(link.href, '_blank');
+                        }
+                    }
+                }, true);
+                window._cmdClickHandlerAdded = true;
+            }
+        })();
+    """.trimIndent()
+
+    /**
      * Generate JavaScript to find a link element at given screen coordinates.
      *
      * Uses document.elementFromPoint() to find the element, then traverses up

@@ -44,3 +44,19 @@ interface SettingsProvider {
      */
     fun openSettings(windowId: String, section: String)
 }
+
+/**
+ * Provider interface for the Boss Console dashboard content.
+ * Allows browser plugins to display the host's dashboard for about:blank pages.
+ */
+interface DashboardContentProvider {
+    /**
+     * Display the Boss Console dashboard.
+     *
+     * @param onNavigate Callback when user wants to navigate to a URL (from search or quick links)
+     */
+    @Composable
+    fun DashboardContent(
+        onNavigate: (String) -> Unit
+    )
+}

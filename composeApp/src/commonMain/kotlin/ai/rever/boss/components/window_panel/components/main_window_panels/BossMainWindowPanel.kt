@@ -20,6 +20,10 @@ import ai.rever.boss.plugin.api.TabComponentWithUI
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.api.TabUpdateProvider
+import ai.rever.boss.plugin.api.TabUpdateProviderFactory
+import ai.rever.boss.components.plugin.TabUpdateRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
@@ -1013,25 +1017,249 @@ class BossTabsComponent(
     val windowId: String
 ) : ComponentContext by componentContext {
 
+    // Unique ID for this component (used for TabUpdateRegistry)
+    private val componentId = "${windowId}_${System.identityHashCode(this)}"
+
     private val tabComponents = mutableStateMapOf<String, TabComponentWithUI>()
     private val tabsNavigation = TabsNavigation<TabInfo>()
 
     // Expose tab state for UI
     val tabsState: Value<TabsNavigation.TabsState<TabInfo>> = tabsNavigation.state
 
+    // Listener for tab type unregistration
+    private val unregisterListener: (ai.rever.boss.plugin.api.TabTypeId) -> Unit = { typeId ->
+        bossMainWindowPanelLogger.info(LogCategory.UI, "Received unregister notification", mapOf(
+            "typeId" to typeId.typeId,
+            "pluginId" to typeId.pluginId,
+            "windowId" to windowId
+        ))
+        closeTabsByType(typeId)
+    }
+
+    /**
+     * Factory for creating TabUpdateProviders for dynamic plugins.
+     *
+     * This allows tab-based plugins to update their tab's title, icon, and other
+     * metadata displayed in the tab bar without needing direct access to the
+     * BossTabsComponent.
+     */
+    val tabUpdateProviderFactory: TabUpdateProviderFactory = object : TabUpdateProviderFactory {
+        override fun createProvider(tabId: String, typeId: TabTypeId): TabUpdateProvider? {
+            // Find the tab index
+            val tabs = tabsState.value.tabs
+            val tabIndex = tabs.indexOfFirst { it.id == tabId }
+            if (tabIndex < 0) {
+                bossMainWindowPanelLogger.warn(LogCategory.UI, "Cannot create TabUpdateProvider - tab not found", mapOf(
+                    "tabId" to tabId,
+                    "typeId" to typeId.typeId
+                ))
+                return null
+            }
+
+            return BossTabUpdateProvider(
+                tabId = tabId,
+                typeId = typeId,
+                bossTabsComponent = this@BossTabsComponent
+            )
+        }
+    }
+
+    /**
+     * Implementation of TabUpdateProvider that updates tabs in BossTabsComponent.
+     */
+    private inner class BossTabUpdateProvider(
+        override val tabId: String,
+        private val typeId: TabTypeId,
+        private val bossTabsComponent: BossTabsComponent
+    ) : TabUpdateProvider {
+
+        override fun updateTitle(title: String) {
+            val tabs = bossTabsComponent.tabsState.value.tabs
+            val tabIndex = tabs.indexOfFirst { it.id == tabId }
+            if (tabIndex < 0) return
+
+            val currentTab = tabs[tabIndex]
+
+            // Update based on tab type - built-in FluckTabInfo or generic via reflection
+            val updatedTab = when (currentTab) {
+                is FluckTabInfo -> currentTab.updateTitle(title)
+                else -> {
+                    // Try reflection for dynamic plugin tab types that have updateTitle(String)
+                    try {
+                        val updateMethod = currentTab::class.members.find {
+                            it.name == "updateTitle" && it.parameters.size == 2 // receiver + title param
+                        }
+                        val result = updateMethod?.call(currentTab, title) as? TabInfo
+                        if (result != null) {
+                            result
+                        } else {
+                            bossMainWindowPanelLogger.debug(LogCategory.UI, "Cannot update title - no updateTitle method", mapOf(
+                                "tabId" to tabId,
+                                "tabType" to currentTab::class.simpleName
+                            ))
+                            return
+                        }
+                    } catch (e: Exception) {
+                        bossMainWindowPanelLogger.debug(LogCategory.UI, "Cannot update title via reflection", mapOf(
+                            "tabId" to tabId,
+                            "tabType" to currentTab::class.simpleName,
+                            "error" to (e.message ?: "unknown")
+                        ))
+                        return
+                    }
+                }
+            }
+
+            bossTabsComponent.updateTab(tabIndex, updatedTab)
+        }
+
+        override fun updateFavicon(faviconUrl: String?) {
+            val tabs = bossTabsComponent.tabsState.value.tabs
+            val tabIndex = tabs.indexOfFirst { it.id == tabId }
+            if (tabIndex < 0) return
+
+            val currentTab = tabs[tabIndex]
+
+            // Update based on tab type - built-in FluckTabInfo or generic via reflection
+            val updatedTab = when (currentTab) {
+                is FluckTabInfo -> currentTab.updateFaviconCacheKey(faviconUrl)
+                else -> {
+                    // Try reflection for dynamic plugin tab types that have updateFaviconCacheKey(String?)
+                    try {
+                        val updateMethod = currentTab::class.members.find {
+                            it.name == "updateFaviconCacheKey" && it.parameters.size == 2
+                        }
+                        val result = updateMethod?.call(currentTab, faviconUrl) as? TabInfo
+                        if (result != null) {
+                            result
+                        } else {
+                            bossMainWindowPanelLogger.debug(LogCategory.UI, "Cannot update favicon - no updateFaviconCacheKey method", mapOf(
+                                "tabId" to tabId,
+                                "tabType" to currentTab::class.simpleName
+                            ))
+                            return
+                        }
+                    } catch (e: Exception) {
+                        bossMainWindowPanelLogger.debug(LogCategory.UI, "Cannot update favicon via reflection", mapOf(
+                            "tabId" to tabId,
+                            "tabType" to currentTab::class.simpleName,
+                            "error" to (e.message ?: "unknown")
+                        ))
+                        return
+                    }
+                }
+            }
+
+            bossTabsComponent.updateTab(tabIndex, updatedTab)
+        }
+
+        override fun updateUrl(url: String) {
+            val tabs = bossTabsComponent.tabsState.value.tabs
+            val tabIndex = tabs.indexOfFirst { it.id == tabId }
+            if (tabIndex < 0) return
+
+            val currentTab = tabs[tabIndex]
+
+            if (currentTab is FluckTabInfo) {
+                // Get current title for navigation update
+                val title = currentTab.title
+                val updatedTab = currentTab.updateNavigation(title, url)
+                bossTabsComponent.updateTab(tabIndex, updatedTab)
+            }
+        }
+
+        override fun closeTab() {
+            bossTabsComponent.removeTabById(tabId)
+        }
+
+        override fun openNewTab(url: String): String? {
+            val newTabId = "browser_${kotlinx.datetime.Clock.System.now().toEpochMilliseconds()}"
+            val newTab = FluckTabInfo(
+                id = newTabId,
+                typeId = ai.rever.boss.plugin.api.TabTypeId("fluck"),
+                _title = "Loading...",
+                url = url
+            )
+            val index = bossTabsComponent.addTab(newTab)
+            return if (index >= 0) newTabId else null
+        }
+    }
+
+    init {
+        // Register listener to close tabs when their type is unregistered (plugin disabled)
+        tabRegistry.addUnregisterListener(unregisterListener)
+        bossMainWindowPanelLogger.info(LogCategory.UI, "Registered unregister listener", mapOf(
+            "windowId" to windowId
+        ))
+
+        // Register this component's TabUpdateProviderFactory with the global registry
+        TabUpdateRegistry.register(componentId, tabUpdateProviderFactory)
+        bossMainWindowPanelLogger.debug(LogCategory.UI, "Registered TabUpdateProviderFactory", mapOf(
+            "componentId" to componentId
+        ))
+    }
+
+    /**
+     * Close all tabs of a specific type.
+     * Called when a plugin is disabled/unloaded to clean up its open tabs.
+     */
+    fun closeTabsByType(typeId: ai.rever.boss.plugin.api.TabTypeId) {
+        val tabs = tabsState.value.tabs
+        val indicesToRemove = mutableListOf<Int>()
+        
+        bossMainWindowPanelLogger.info(LogCategory.UI, "closeTabsByType called", mapOf(
+            "targetTypeId" to typeId.typeId,
+            "targetPluginId" to typeId.pluginId,
+            "tabCount" to tabs.size
+        ))
+        
+        for (i in tabs.indices) {
+            val tabTypeId = tabs[i].typeId
+            bossMainWindowPanelLogger.debug(LogCategory.UI, "Checking tab", mapOf(
+                "index" to i,
+                "tabId" to tabs[i].id,
+                "tabTypeId" to tabTypeId.typeId,
+                "tabPluginId" to tabTypeId.pluginId,
+                "matches" to (tabTypeId == typeId)
+            ))
+            if (tabTypeId == typeId) {
+                indicesToRemove.add(i)
+                bossMainWindowPanelLogger.info(LogCategory.UI, "Will close tab", mapOf(
+                    "tabId" to tabs[i].id,
+                    "typeId" to typeId.typeId
+                ))
+            }
+        }
+        
+        // Remove tabs in reverse order to avoid index issues
+        for (i in indicesToRemove.sortedDescending()) {
+            removeTab(i)
+        }
+        
+        if (indicesToRemove.isNotEmpty()) {
+            bossMainWindowPanelLogger.info(LogCategory.UI, "Closed tabs for disabled plugin", mapOf(
+                "typeId" to typeId.typeId,
+                "count" to indicesToRemove.size
+            ))
+        }
+    }
+
     // Add a new tab
     fun addTab(config: TabInfo): Int {
         // Create component for this tab
         val component = tabRegistry.createTabComponent(config, this)
-        
+
         if (component != null) {
             // Store component
             tabComponents[config.id] = component
-            
+
+            // Register tab with TabUpdateRegistry for plugin updates
+            TabUpdateRegistry.registerTab(config.id, componentId)
+
             // Add to navigation
             return tabsNavigation.addTab(config)
         }
-        
+
         return -1 // Failed to create component
     }
 
@@ -1039,6 +1267,9 @@ class BossTabsComponent(
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let {
+            // Unregister tab from TabUpdateRegistry
+            TabUpdateRegistry.unregisterTab(it.id)
+
             // Dispose the component if it has a dispose method
             val component = tabComponents.remove(it.id)
             if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {

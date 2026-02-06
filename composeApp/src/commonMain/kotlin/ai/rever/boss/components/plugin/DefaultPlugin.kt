@@ -22,6 +22,7 @@ import ai.rever.boss.components.plugin.providers.SplitViewOperationsImpl
 import ai.rever.boss.components.plugin.providers.WorkspaceDataProviderImpl
 import ai.rever.boss.components.plugin.providers.createLogDataProvider
 import ai.rever.boss.components.plugin.providers.createPerformanceDataProvider
+import ai.rever.boss.components.plugin.providers.DashboardContentProviderImpl
 import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
 import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
 import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
@@ -48,6 +49,7 @@ import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
 import ai.rever.boss.plugin.api.NodeLoadingStateData
 import ai.rever.boss.plugin.api.ContextMenuProvider
+import ai.rever.boss.plugin.api.DashboardContentProvider
 import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PluginStoreApiKeyProvider
@@ -57,8 +59,13 @@ import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
+import ai.rever.boss.plugin.api.ZoomSettingsProvider
+import ai.rever.boss.plugin.api.UrlHistoryProvider
+import ai.rever.boss.components.plugin.providers.createZoomSettingsProvider
+import ai.rever.boss.components.plugin.providers.createUrlHistoryProvider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
@@ -330,6 +337,27 @@ class DefaultPlugin(
         PluginStoreApiKeyProviderImpl()
     }
 
+    // Tab update provider factory - delegates to global TabUpdateRegistry
+    // This allows dynamic plugins to update tab titles, favicons, etc.
+    // Individual BossTabsComponent instances register with TabUpdateRegistry
+    override val tabUpdateProviderFactory: TabUpdateProviderFactory
+        get() = TabUpdateRegistry
+
+    // Dashboard content provider for browser plugins showing about:blank
+    override val dashboardContentProvider: DashboardContentProvider by lazy {
+        DashboardContentProviderImpl()
+    }
+
+    // Zoom settings provider for per-domain zoom persistence
+    override val zoomSettingsProvider: ZoomSettingsProvider by lazy {
+        createZoomSettingsProvider()
+    }
+
+    // URL history provider for browser autocomplete
+    override val urlHistoryProvider: UrlHistoryProvider by lazy {
+        createUrlHistoryProvider()
+    }
+
     /**
      * Create a sandboxed plugin context for a specific plugin.
      *
@@ -505,7 +533,7 @@ class DefaultPlugin(
 
         // Tab Types - using extension functions (they handle complex callback wiring)
         // Note: Tab types currently use the main context; sandbox integration is future work
-        registerFluck()
+        // registerFluck() // DISABLED: Moved to dynamic plugin (fluck-browser)
         registerCodeEditor()
         registerTerminalTab()
 

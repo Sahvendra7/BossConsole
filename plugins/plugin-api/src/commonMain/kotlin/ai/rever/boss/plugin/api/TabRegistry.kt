@@ -13,6 +13,9 @@ open class TabRegistry {
     // Callbacks to notify when tab types are registered/unregistered
     private val changeListeners = mutableListOf<() -> Unit>()
 
+    // Callbacks to notify when a specific tab type is unregistered (for closing open tabs)
+    private val unregisterListeners = mutableListOf<(TabTypeId) -> Unit>()
+
     // Register a tab type from a plugin
     open fun registerTabType(
         content: TabTypeInfo,
@@ -32,8 +35,10 @@ open class TabRegistry {
      * @param typeId The ID of the tab type to unregister
      */
     open fun unregisterTabType(typeId: TabTypeId) {
+        println("[TabRegistry] unregisterTabType called: typeId=${typeId.typeId}, pluginId=${typeId.pluginId}, listenerCount=${unregisterListeners.size}")
         tabHandlers.remove(typeId)
         tabFactories.remove(typeId)
+        notifyUnregister(typeId)
         notifyChange()
     }
 
@@ -51,8 +56,28 @@ open class TabRegistry {
         changeListeners.remove(listener)
     }
 
+    /**
+     * Add a listener that will be called when a tab type is unregistered.
+     * The listener receives the typeId of the unregistered tab type.
+     * Use this to close all open tabs of that type.
+     */
+    open fun addUnregisterListener(listener: (TabTypeId) -> Unit) {
+        unregisterListeners.add(listener)
+    }
+
+    /**
+     * Remove an unregister listener.
+     */
+    open fun removeUnregisterListener(listener: (TabTypeId) -> Unit) {
+        unregisterListeners.remove(listener)
+    }
+
     private fun notifyChange() {
         changeListeners.forEach { it() }
+    }
+
+    private fun notifyUnregister(typeId: TabTypeId) {
+        unregisterListeners.forEach { it(typeId) }
     }
 
     // Create a component for a tab configuration

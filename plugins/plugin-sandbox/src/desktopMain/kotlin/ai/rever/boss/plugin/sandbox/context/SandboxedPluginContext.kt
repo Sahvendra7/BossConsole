@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.AuthDataProvider
 import ai.rever.boss.plugin.api.BookmarkDataProvider
 import ai.rever.boss.plugin.api.ContextMenuProvider
+import ai.rever.boss.plugin.api.DashboardContentProvider
 import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
@@ -23,7 +24,10 @@ import ai.rever.boss.plugin.api.RunConfigurationDataProvider
 import ai.rever.boss.plugin.api.SecretDataProvider
 import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
+import ai.rever.boss.plugin.api.ZoomSettingsProvider
+import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.sandbox.PluginSandbox
 import kotlinx.coroutines.CoroutineScope
@@ -141,6 +145,22 @@ class SandboxedPluginContext(
     // Plugin Store API key provider - delegate to underlying context
     override val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider?
         get() = delegate.pluginStoreApiKeyProvider
+
+    // Tab update provider factory - delegate to underlying context
+    override val tabUpdateProviderFactory: TabUpdateProviderFactory?
+        get() = delegate.tabUpdateProviderFactory
+
+    // Dashboard content provider - delegate to underlying context
+    override val dashboardContentProvider: DashboardContentProvider?
+        get() = delegate.dashboardContentProvider
+
+    // Zoom settings provider - delegate to underlying context
+    override val zoomSettingsProvider: ZoomSettingsProvider?
+        get() = delegate.zoomSettingsProvider
+
+    // URL history provider - delegate to underlying context
+    override val urlHistoryProvider: UrlHistoryProvider?
+        get() = delegate.urlHistoryProvider
 
     /**
      * Get the underlying sandbox for this context.

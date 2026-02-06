@@ -4,6 +4,7 @@ import ai.rever.boss.plugin.api.ActiveTabsProvider
 import ai.rever.boss.plugin.api.AuthDataProvider
 import ai.rever.boss.plugin.api.BookmarkDataProvider
 import ai.rever.boss.plugin.api.ContextMenuProvider
+import ai.rever.boss.plugin.api.DashboardContentProvider
 import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
@@ -30,7 +31,10 @@ import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.plugin.api.TabTypeInfo
+import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
+import ai.rever.boss.plugin.api.ZoomSettingsProvider
+import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
@@ -178,6 +182,14 @@ class TrackingTabRegistry(
         delegate.removeChangeListener(listener)
     }
 
+    override fun addUnregisterListener(listener: (TabTypeId) -> Unit) {
+        delegate.addUnregisterListener(listener)
+    }
+
+    override fun removeUnregisterListener(listener: (TabTypeId) -> Unit) {
+        delegate.removeUnregisterListener(listener)
+    }
+
     override fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
         return delegate.createTabComponent(config, componentContext)
     }
@@ -253,6 +265,18 @@ class TrackingPluginContext(
     // Plugin Store API key provider - delegate to underlying context
     override val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider? get() = delegate.pluginStoreApiKeyProvider
 
+    // Tab update provider factory - delegate to underlying context
+    override val tabUpdateProviderFactory: TabUpdateProviderFactory? get() = delegate.tabUpdateProviderFactory
+
+    // Dashboard content provider - delegate to underlying context
+    override val dashboardContentProvider: DashboardContentProvider? get() = delegate.dashboardContentProvider
+
+    // Zoom settings provider - delegate to underlying context
+    override val zoomSettingsProvider: ZoomSettingsProvider? get() = delegate.zoomSettingsProvider
+
+    // URL history provider - delegate to underlying context
+    override val urlHistoryProvider: UrlHistoryProvider? get() = delegate.urlHistoryProvider
+
     /**
      * Get the panels registered by this plugin.
      */
@@ -267,13 +291,20 @@ class TrackingPluginContext(
      * Unregister all panels and tab types registered by this plugin.
      */
     fun unregisterAll() {
+        println("[TrackingPluginContext] unregisterAll called for plugin: $pluginId")
+        
         // Unregister all panels
-        for (panelId in tracker.getPanelsForPlugin(pluginId)) {
+        val panels = tracker.getPanelsForPlugin(pluginId)
+        println("[TrackingPluginContext] Panels to unregister: ${panels.size}")
+        for (panelId in panels) {
             delegate.panelRegistry.unregisterPanel(panelId)
         }
 
         // Unregister all tab types
-        for (tabTypeId in tracker.getTabTypesForPlugin(pluginId)) {
+        val tabTypes = tracker.getTabTypesForPlugin(pluginId)
+        println("[TrackingPluginContext] Tab types to unregister: ${tabTypes.size} - $tabTypes")
+        for (tabTypeId in tabTypes) {
+            println("[TrackingPluginContext] Unregistering tab type: ${tabTypeId.typeId}")
             delegate.tabRegistry.unregisterTabType(tabTypeId)
         }
 

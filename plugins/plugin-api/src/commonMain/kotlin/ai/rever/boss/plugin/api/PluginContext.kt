@@ -279,6 +279,44 @@ interface PluginContext {
      */
     val pluginStoreApiKeyProvider: PluginStoreApiKeyProvider?
         get() = null
+
+    /**
+     * Optional factory for creating tab update providers.
+     *
+     * Returns null if tab update functionality is not available.
+     * Dynamic tab plugins can use this to update their tab's title, favicon,
+     * and other metadata displayed in the tab bar.
+     */
+    val tabUpdateProviderFactory: TabUpdateProviderFactory?
+        get() = null
+
+    /**
+     * Optional dashboard content provider for browser plugins.
+     *
+     * Returns null if dashboard content is not available.
+     * Browser plugins can use this to display the host's dashboard
+     * for about:blank pages instead of implementing their own.
+     */
+    val dashboardContentProvider: DashboardContentProvider?
+        get() = null
+
+    /**
+     * Optional zoom settings provider for browser plugins.
+     *
+     * Returns null if zoom settings persistence is not available.
+     * Browser plugins can use this to persist per-domain zoom levels.
+     */
+    val zoomSettingsProvider: ZoomSettingsProvider?
+        get() = null
+
+    /**
+     * Optional URL history provider for browser plugins.
+     *
+     * Returns null if URL history is not available.
+     * Browser plugins can use this for URL bar autocomplete suggestions.
+     */
+    val urlHistoryProvider: UrlHistoryProvider?
+        get() = null
 }
 
 /**
