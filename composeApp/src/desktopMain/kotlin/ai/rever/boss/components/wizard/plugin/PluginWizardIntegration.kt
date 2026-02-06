@@ -1,0 +1,36 @@
+package ai.rever.boss.components.wizard.plugin
+
+import ai.rever.boss.components.plugin.DynamicPluginManager
+
+/**
+ * Desktop implementation of the plugin wizard integration.
+ *
+ * Provides access to plugin repository functionality for the wizard.
+ */
+actual object PluginWizardIntegration {
+    /**
+     * Get the list of available plugins for the wizard.
+     *
+     * @return List of plugins formatted for the wizard UI
+     */
+    actual suspend fun getAvailablePlugins(): List<WizardPluginInfo> {
+        return PluginListProvider.getAvailablePlugins()
+    }
+
+    /**
+     * Install the selected plugins.
+     *
+     * @param dynamicPluginManager The plugin manager to use for installation
+     * @param pluginIds List of plugin IDs to install
+     * @param onProgress Progress callback (0.0 to 1.0, status message)
+     * @return Result containing the list of successfully installed plugin IDs
+     */
+    actual suspend fun installPlugins(
+        dynamicPluginManager: DynamicPluginManager,
+        pluginIds: List<String>,
+        onProgress: (Float, String) -> Unit
+    ): Result<List<String>> {
+        val service = PluginInstallService.create(dynamicPluginManager)
+        return service.installPlugins(pluginIds, onProgress)
+    }
+}

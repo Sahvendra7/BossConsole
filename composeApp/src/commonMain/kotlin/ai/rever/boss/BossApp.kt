@@ -29,6 +29,11 @@ import ai.rever.boss.components.dialogs.TerminalLinkOpenDialog
 import ai.rever.boss.components.dialogs.ShortcutHelpDialog
 import ai.rever.boss.components.dialogs.NewProjectWizardDialog
 import ai.rever.boss.components.dialogs.CloneProjectDialog
+import ai.rever.boss.components.wizard.plugin.PluginInstallWizard
+import ai.rever.boss.components.wizard.plugin.PluginWizardIntegration
+import ai.rever.boss.components.wizard.plugin.WizardPluginInfo
+import ai.rever.boss.components.wizard.plugin.rememberPluginInstallWizardState
+import ai.rever.boss.services.auth.UserDataStorage
 import ai.rever.boss.components.dialogs.ProjectSelectionDialog
 import ai.rever.boss.components.dialogs.ProjectOpenModeDialog
 import ai.rever.boss.icons.FileIcons
@@ -930,6 +935,12 @@ fun ComponentContext.BossApp(
     var showCloneProjectDialog by remember { mutableStateOf(false) }
     var projectToOpen by remember { mutableStateOf<Project?>(null) }
 
+    // Plugin install wizard state (shown on first login)
+    var showPluginInstallWizard by remember { mutableStateOf(false) }
+    var pluginWizardChecked by remember { mutableStateOf(false) }
+    var availablePluginsForWizard by remember { mutableStateOf<List<WizardPluginInfo>>(emptyList()) }
+    var currentDefaultPlugin by remember { mutableStateOf<DefaultPlugin?>(null) }
+
     // State for save feedback
     var saveMessage by remember { mutableStateOf<String?>(null) }
 
@@ -975,6 +986,7 @@ fun ComponentContext.BossApp(
             workspaceManager = workspaceManager,
             splitViewState = splitViewState
         )
+        currentDefaultPlugin = plugin
         draggablePanelComponent.update()
 
         onDispose {
@@ -1024,6 +1036,23 @@ fun ComponentContext.BossApp(
             LLMSettingsManager.loadSettings()
         } catch (e: Exception) {
             // Ignore errors during settings load to prevent app crash
+        }
+    }
+
+    // Check if plugin install wizard should be shown (only for first window)
+    LaunchedEffect(isFirstWindow, currentDefaultPlugin) {
+        if (isFirstWindow && !pluginWizardChecked && currentDefaultPlugin != null) {
+            pluginWizardChecked = true
+            val wizardCompleted = UserDataStorage.isPluginWizardCompleted()
+            if (!wizardCompleted) {
+                availablePluginsForWizard = PluginWizardIntegration.getAvailablePlugins()
+                if (availablePluginsForWizard.isNotEmpty()) {
+                    showPluginInstallWizard = true
+                } else {
+                    // No plugins available, mark wizard as completed
+                    UserDataStorage.setPluginWizardCompleted(true)
+                }
+            }
         }
     }
     
@@ -2127,6 +2156,23 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Handle Show Plugin Wizard menu events
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.showPluginWizardEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    // Load plugins if not already loaded
+                    if (availablePluginsForWizard.isEmpty()) {
+                        availablePluginsForWizard = PluginWizardIntegration.getAvailablePlugins()
+                    }
+                    if (availablePluginsForWizard.isNotEmpty()) {
+                        showPluginInstallWizard = true
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
     with(draggablePanelComponent) {
         BossTheme {
             // Create window provider implementations for plugins
@@ -2748,6 +2794,35 @@ fun ComponentContext.BossApp(
                         WindowOperations.createNewWindowWithProject(selectedProj)
                         projectToOpen = null
                         focusRequester.requestFocus()
+                    }
+                )
+            }
+
+            // Plugin install wizard (shown on first login)
+            if (showPluginInstallWizard && availablePluginsForWizard.isNotEmpty()) {
+                val wizardState = rememberPluginInstallWizardState(availablePluginsForWizard)
+                val dynamicPluginManager = currentDefaultPlugin?.dynamicPluginManager
+
+                PluginInstallWizard(
+                    state = wizardState,
+                    onDismiss = {
+                        // User dismissed without completing - still mark as completed
+                        // so they're not prompted again
+                        UserDataStorage.setPluginWizardCompleted(true)
+                        showPluginInstallWizard = false
+                        focusRequester.requestFocus()
+                    },
+                    onComplete = {
+                        UserDataStorage.setPluginWizardCompleted(true)
+                        showPluginInstallWizard = false
+                        focusRequester.requestFocus()
+                    },
+                    onInstallPlugins = { pluginIds, onProgress ->
+                        if (dynamicPluginManager != null) {
+                            PluginWizardIntegration.installPlugins(dynamicPluginManager, pluginIds, onProgress)
+                        } else {
+                            Result.failure(Exception("Plugin manager not available"))
+                        }
                     }
                 )
             }

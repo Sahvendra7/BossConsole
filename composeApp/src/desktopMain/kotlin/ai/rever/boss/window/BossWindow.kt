@@ -639,6 +639,13 @@ fun ApplicationScope.BossWindow(
                     }
                 )
 
+                Item(
+                    "Plugin Setup Wizard...",
+                    onClick = {
+                        MenuActionsHandler.triggerShowPluginWizard(windowState.id)
+                    }
+                )
+
                 Separator()
 
                 Item(

@@ -168,6 +168,7 @@ fun ComponentContext.BossAppWithAuth(
 
         is AuthService.AuthState.Authenticated -> {
             // Show main BOSS app - all auth methods provide inherent 2FA
+            // Plugin wizard is shown inside BossApp where DynamicPluginManager is accessible
             BossApp(
                 windowId = windowId,
                 isFirstWindow = isFirstWindow,

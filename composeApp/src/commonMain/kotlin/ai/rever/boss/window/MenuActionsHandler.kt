@@ -437,4 +437,18 @@ object MenuActionsHandler {
     fun triggerRefactorSafeDelete(windowId: String) {
         _refactorSafeDeleteEvents.tryEmit(windowId)
     }
+
+    // ========== Plugin Wizard Events ==========
+
+    private val _showPluginWizardEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val showPluginWizardEvents: SharedFlow<String> = _showPluginWizardEvents.asSharedFlow()
+
+    /**
+     * Trigger a "Show Plugin Wizard" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerShowPluginWizard(windowId: String) {
+        _showPluginWizardEvents.tryEmit(windowId)
+    }
 }
