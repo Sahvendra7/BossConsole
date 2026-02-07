@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.27-alpha.1](v8.16.27-alpha.1.md) | 2026-02-07 | Major plugin API enhancements for dynamic tab providers and improved browser URL handling for better navigation experience |
 | [v8.16.26](v8.16.26.md) | 2026-02-06 | Enhanced plugin wizard with automatic triggering when no plugins are installed and improved modal dialog experience |
 | [v8.16.25](v8.16.25.md) | 2026-02-06 | Stable release promoting the plugin install wizard with Help menu access and threading improvements |
 | [v8.16.24-alpha.1](v8.16.24-alpha.1.md) | 2026-02-06 | Alpha release introducing interactive plugin setup wizard for streamlined first-time user onboarding |
