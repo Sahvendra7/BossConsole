@@ -134,22 +134,27 @@ internal class BrowserHandleImpl(
                 }
             }
 
-            val url = event.url()
-            navigationListeners.forEach { listener ->
-                try {
-                    listener(url)
-                } catch (e: Exception) {
-                    logger.warn(LogCategory.BROWSER, "Navigation listener threw exception", error = e)
+            // Only notify navigation listeners for main frame navigations
+            // This prevents iframe navigations (which often load about:blank) from
+            // incorrectly updating the URL bar in plugins
+            if (event.isInMainFrame) {
+                val url = event.url()
+                navigationListeners.forEach { listener ->
+                    try {
+                        listener(url)
+                    } catch (e: Exception) {
+                        logger.warn(LogCategory.BROWSER, "Navigation listener threw exception", error = e)
+                    }
                 }
-            }
 
-            // Skip injection for about:blank pages (used for dashboard display)
-            // Only inject context menu trackers for actual web pages
-            if (url.isNotEmpty() && url != "about:blank") {
-                // Inject context menu trackers (video click and link click tracking)
-                // These set window._rightClickedOnVideo and window._rightClickedLinkUrl
-                // which are read by setupContextMenuHandler when building the menu
-                injectContextMenuTrackers()
+                // Skip injection for about:blank pages (used for dashboard display)
+                // Only inject context menu trackers for actual web pages
+                if (url.isNotEmpty() && url != "about:blank") {
+                    // Inject context menu trackers (video click and link click tracking)
+                    // These set window._rightClickedOnVideo and window._rightClickedLinkUrl
+                    // which are read by setupContextMenuHandler when building the menu
+                    injectContextMenuTrackers()
+                }
             }
         }
 
