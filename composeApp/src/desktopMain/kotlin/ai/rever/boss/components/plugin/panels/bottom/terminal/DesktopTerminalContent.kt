@@ -243,6 +243,9 @@ actual fun TabbedTerminalContent(
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
+ * @param onLinkClick Optional callback for hyperlink handling. If provided and returns true,
+ *                    the link is considered handled. If returns false or not provided,
+ *                    default link handling is used.
  */
 @Composable
 actual fun PersistentTabbedTerminalContent(
@@ -251,7 +254,8 @@ actual fun PersistentTabbedTerminalContent(
     workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit,
-    onTitleChange: ((String) -> Unit)?
+    onTitleChange: ((String) -> Unit)?,
+    onLinkClick: ((url: String, linkType: String) -> Boolean)?
 ) {
     // Observe reset generation to force recomposition when terminals are reset
     val resetGeneration by TabbedTerminalStateRegistry.resetGeneration.collectAsState()
@@ -323,7 +327,14 @@ actual fun PersistentTabbedTerminalContent(
                     onShowSettings = onShowSettings,
                     onShowWelcomeWizard = { showWelcomeWizard = true },
                     onWindowTitleChange = { title -> onTitleChange?.invoke(title) },
-                    onLinkClick = { info -> handleTerminalLinkClick(info, scope, terminalId, windowId) },
+                    onLinkClick = { info ->
+                        // Use custom callback if provided, otherwise use default handling
+                        if (onLinkClick != null) {
+                            onLinkClick(info.url, info.type.name)
+                        } else {
+                            handleTerminalLinkClick(info, scope, terminalId, windowId)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }

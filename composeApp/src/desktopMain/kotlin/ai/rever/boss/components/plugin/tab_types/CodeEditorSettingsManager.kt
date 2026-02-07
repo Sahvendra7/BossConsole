@@ -33,6 +33,20 @@ object CodeEditorSettings {
     /** Minimap width in pixels */
     var minimapWidth: Int = 80
 
+    // ============ Advanced Editor Toggles (for plugin API parity) ============
+
+    /** Whether to highlight other occurrences of the selected word */
+    var markOccurrences: Boolean = true
+
+    /** Whether to highlight the current line */
+    var highlightCurrentLine: Boolean = true
+
+    /** Whether to enable auto-indent when pressing Enter */
+    var autoIndent: Boolean = true
+
+    /** Whether PSI navigation (Cmd+Click) is enabled */
+    var navigationEnabled: Boolean = true
+
     // Theme colors
     fun getBackgroundColor(): Color = when (theme) {
         "Light" -> Color(0xFF_FFFFFF)
@@ -115,7 +129,12 @@ data class CodeEditorSettingsData(
     val lineSpacing: Float = 1.2f,
     val useNativeEditor: Boolean = true,
     val showMinimap: Boolean = false,
-    val minimapWidth: Int = 80
+    val minimapWidth: Int = 80,
+    // Advanced editor toggles
+    val markOccurrences: Boolean = true,
+    val highlightCurrentLine: Boolean = true,
+    val autoIndent: Boolean = true,
+    val navigationEnabled: Boolean = true
 )
 
 object CodeEditorSettingsManager {
@@ -150,6 +169,11 @@ object CodeEditorSettingsManager {
                 CodeEditorSettings.useNativeEditor = settings.useNativeEditor
                 CodeEditorSettings.showMinimap = settings.showMinimap
                 CodeEditorSettings.minimapWidth = settings.minimapWidth
+                // Advanced editor toggles
+                CodeEditorSettings.markOccurrences = settings.markOccurrences
+                CodeEditorSettings.highlightCurrentLine = settings.highlightCurrentLine
+                CodeEditorSettings.autoIndent = settings.autoIndent
+                CodeEditorSettings.navigationEnabled = settings.navigationEnabled
             }
         } catch (e: Exception) {
             logger.warn(LogCategory.EDITOR, "Failed to load code editor settings", error = e)
@@ -167,7 +191,12 @@ object CodeEditorSettingsManager {
                 lineSpacing = CodeEditorSettings.lineSpacing,
                 useNativeEditor = CodeEditorSettings.useNativeEditor,
                 showMinimap = CodeEditorSettings.showMinimap,
-                minimapWidth = CodeEditorSettings.minimapWidth
+                minimapWidth = CodeEditorSettings.minimapWidth,
+                // Advanced editor toggles
+                markOccurrences = CodeEditorSettings.markOccurrences,
+                highlightCurrentLine = CodeEditorSettings.highlightCurrentLine,
+                autoIndent = CodeEditorSettings.autoIndent,
+                navigationEnabled = CodeEditorSettings.navigationEnabled
             )
 
             val content = json.encodeToString(settings)

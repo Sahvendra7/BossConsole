@@ -26,7 +26,7 @@ import ai.rever.boss.components.plugin.providers.DashboardContentProviderImpl
 import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
 import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
 import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
-// DISABLED: Tab type registrations moved to dynamic plugins
+// DYNAMIC: Tab type registrations moved to dynamic plugins
 // import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 // import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 // import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
@@ -71,6 +71,20 @@ import ai.rever.boss.components.plugin.providers.createTerminalTabContentProvide
 import ai.rever.boss.components.plugin.providers.createEditorContentProvider
 import ai.rever.boss.plugin.api.TerminalTabContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
+import ai.rever.boss.plugin.api.NotificationProvider
+import ai.rever.boss.plugin.api.ApplicationEventBus
+import ai.rever.boss.plugin.api.PluginStorageFactory
+import ai.rever.boss.plugin.api.GenericDialogProvider
+import ai.rever.boss.plugin.api.NavigationResolverProvider
+import ai.rever.boss.plugin.api.NavigationTargetProvider
+import ai.rever.boss.plugin.api.SemanticTokenProvider
+import ai.rever.boss.components.plugin.providers.createNotificationProvider
+import ai.rever.boss.components.plugin.providers.createNavigationResolverProvider
+import ai.rever.boss.components.plugin.providers.createSemanticTokenProvider
+import ai.rever.boss.components.plugin.providers.NavigationTargetProviderImpl
+import ai.rever.boss.components.plugin.providers.createApplicationEventBus
+import ai.rever.boss.components.plugin.providers.createPluginStorageFactory
+import ai.rever.boss.components.plugin.providers.createGenericDialogProvider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
@@ -276,8 +290,8 @@ class DefaultPlugin(
 
     // Split view operations for plugins that need tab/panel operations
     override val splitViewOperations: SplitViewOperations? by lazy {
-        if (splitViewState != null) {
-            SplitViewOperationsImpl(splitViewState)
+        if (splitViewState != null && _windowId != null) {
+            SplitViewOperationsImpl(splitViewState, _windowId)
         } else {
             null
         }
@@ -372,6 +386,40 @@ class DefaultPlugin(
     override val editorContentProvider: EditorContentProvider? by lazy {
         createEditorContentProvider()
     }
+
+    // Phase 4: Notification provider for plugin toasts/notifications
+    override val notificationProvider: NotificationProvider by lazy {
+        createNotificationProvider(pluginToastState)
+    }
+
+    // Phase 4: Application event bus for state change events
+    override val applicationEventBus: ApplicationEventBus by lazy {
+        createApplicationEventBus(pluginScope)
+    }
+
+    // Phase 4: Plugin storage factory for persistent data
+    override val pluginStorageFactory: PluginStorageFactory by lazy {
+        createPluginStorageFactory()
+    }
+
+    // Phase 4: Generic dialog provider for common dialogs
+    override val genericDialogProvider: GenericDialogProvider? by lazy {
+        createGenericDialogProvider()
+    }
+
+    // Navigation resolver provider for PSI-based code navigation in dynamic plugins
+    override val navigationResolverProvider: NavigationResolverProvider? by lazy {
+        createNavigationResolverProvider()
+    }
+
+    // Semantic token provider for PSI-based semantic highlighting in dynamic plugins
+    override val semanticTokenProvider: SemanticTokenProvider? by lazy {
+        createSemanticTokenProvider()
+    }
+
+    // Navigation target provider for cursor positioning after file navigation in dynamic plugins
+    override val navigationTargetProvider: NavigationTargetProvider
+        get() = NavigationTargetProviderImpl
 
     /**
      * Create a sandboxed plugin context for a specific plugin.
@@ -546,11 +594,10 @@ class DefaultPlugin(
         // TAB TYPE PLUGINS
         // ============================================================
 
-        // Tab Types - DISABLED: Moved to dynamic plugins
-        // These are now loaded from external JARs via the Plugin Store
-        // registerFluck() // DISABLED: Moved to dynamic plugin (fluck-browser)
-        // registerCodeEditor() // DISABLED: Moved to dynamic plugin (editor-tab)
-        // registerTerminalTab() // DISABLED: Moved to dynamic plugin (terminal-tab)
+        // DYNAMIC: Tab types moved to dynamic plugins loaded from ~/.boss/plugins/
+        // registerFluck() // DYNAMIC: fluck-browser plugin
+        // registerCodeEditor() // DYNAMIC: editor-tab plugin
+        // registerTerminalTab() // DYNAMIC: terminal-tab plugin
 
         // ============================================================
         // EXTERNAL PLUGINS (loaded from ~/.boss/plugins/)

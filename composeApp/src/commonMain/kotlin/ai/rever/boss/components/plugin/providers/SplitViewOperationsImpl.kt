@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
+import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabsComponent
@@ -15,7 +16,8 @@ import kotlinx.coroutines.launch
  * This allows plugins to interact with the split view without direct coupling.
  */
 class SplitViewOperationsImpl(
-    private val splitViewState: SplitViewState
+    private val splitViewState: SplitViewState,
+    private val windowId: String
 ) : SplitViewOperations {
 
     // Coroutine scope for launching background operations
@@ -27,6 +29,15 @@ class SplitViewOperationsImpl(
 
     override fun openFileInActivePanel(filePath: String, fileName: String) {
         splitViewState.openFileInActivePanel(filePath, fileName)
+    }
+
+    override fun openFileAtPosition(filePath: String, fileName: String, line: Int, column: Int) {
+        // Use FileEventBus to open file with position - BossApp listens and handles NavigationTargetBus
+        println("[HOST-DEBUG] SplitViewOperationsImpl.openFileAtPosition: $filePath:$line:$column (windowId=$windowId)")
+        scope.launch {
+            FileEventBus.openFile(filePath, line, column, sourceWindowId = windowId)
+            println("[HOST-DEBUG] SplitViewOperationsImpl: FileEventBus.openFile called")
+        }
     }
 
     override fun setActivePanel(panelId: String) {

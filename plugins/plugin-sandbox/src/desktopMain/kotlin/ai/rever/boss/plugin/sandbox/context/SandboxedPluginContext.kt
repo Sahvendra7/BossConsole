@@ -30,6 +30,13 @@ import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.plugin.api.TerminalTabContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
+import ai.rever.boss.plugin.api.NotificationProvider
+import ai.rever.boss.plugin.api.ApplicationEventBus
+import ai.rever.boss.plugin.api.PluginStorageFactory
+import ai.rever.boss.plugin.api.GenericDialogProvider
+import ai.rever.boss.plugin.api.NavigationResolverProvider
+import ai.rever.boss.plugin.api.SemanticTokenProvider
+import ai.rever.boss.plugin.api.NavigationTargetProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import ai.rever.boss.plugin.sandbox.PluginSandbox
 import kotlinx.coroutines.CoroutineScope
@@ -171,6 +178,38 @@ class SandboxedPluginContext(
     // Editor content provider - delegate to underlying context
     override val editorContentProvider: EditorContentProvider?
         get() = delegate.editorContentProvider
+
+    // Phase 4: Notification provider - delegate to underlying context
+    override val notificationProvider: NotificationProvider?
+        get() = delegate.notificationProvider
+
+    // Phase 4: Application event bus - delegate to underlying context
+    override val applicationEventBus: ApplicationEventBus?
+        get() = delegate.applicationEventBus
+
+    // Phase 4: Plugin storage factory - delegate to underlying context
+    override val pluginStorageFactory: PluginStorageFactory?
+        get() = delegate.pluginStorageFactory
+
+    // Phase 4: Generic dialog provider - delegate to underlying context
+    override val genericDialogProvider: GenericDialogProvider?
+        get() = delegate.genericDialogProvider
+
+    // Navigation resolver provider - delegate to underlying context
+    override val navigationResolverProvider: NavigationResolverProvider?
+        get() = delegate.navigationResolverProvider
+
+    // Semantic token provider - delegate to underlying context
+    override val semanticTokenProvider: SemanticTokenProvider?
+        get() = delegate.semanticTokenProvider
+
+    // Navigation target provider - delegate to underlying context
+    override val navigationTargetProvider: NavigationTargetProvider?
+        get() {
+            val result = delegate.navigationTargetProvider
+            println("[HOST-DEBUG] SandboxedPluginContext.navigationTargetProvider: delegate=${delegate::class.simpleName}, result=$result")
+            return result
+        }
 
     /**
      * Get the underlying sandbox for this context.

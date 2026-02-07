@@ -59,6 +59,9 @@ expect fun TerminalContent(
  * @param onExit Called when the last terminal tab is closed
  * @param onShowSettings Called when user requests settings
  * @param onTitleChange Called when terminal window title changes via escape sequences (OSC 0/1/2)
+ * @param onLinkClick Optional callback for hyperlink handling. If provided and returns true,
+ *                    the link is considered handled. If returns false or not provided,
+ *                    default link handling is used.
  */
 @Composable
 expect fun PersistentTabbedTerminalContent(
@@ -67,7 +70,8 @@ expect fun PersistentTabbedTerminalContent(
     workingDirectory: String? = null,
     onExit: () -> Unit = {},
     onShowSettings: () -> Unit = {},
-    onTitleChange: ((String) -> Unit)? = null
+    onTitleChange: ((String) -> Unit)? = null,
+    onLinkClick: ((url: String, linkType: String) -> Boolean)? = null
 )
 
 /**

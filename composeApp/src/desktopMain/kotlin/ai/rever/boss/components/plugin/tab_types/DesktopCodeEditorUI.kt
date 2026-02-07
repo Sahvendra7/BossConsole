@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.components.events.FileEventBus
+import ai.rever.boss.plugin.api.MainFunctionInfo
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.psi.NavigationEvent
@@ -39,6 +40,10 @@ import kotlinx.coroutines.withContext
  * @param modifier Modifier for the editor
  * @param onModifiedStateChange Callback when modification state changes
  * @param onSaveRequested Callback when save is requested (Cmd+S or via FileSaveEventBus)
+ * @param onCursorPositionChange Optional callback when cursor position changes (for dynamic plugins)
+ * @param onRunFunction Optional callback when run gutter icon is clicked (for dynamic plugins)
+ * @param onNavigate Optional callback for PSI navigation (for dynamic plugins)
+ * @param showRunGutter Whether to show run gutter icons (default true)
  */
 @Composable
 fun DesktopCodeEditorUI(
@@ -49,7 +54,11 @@ fun DesktopCodeEditorUI(
     projectPath: String = "",
     modifier: Modifier = Modifier,
     onModifiedStateChange: (Boolean) -> Unit = {},
-    onSaveRequested: suspend () -> Boolean = { false }
+    onSaveRequested: suspend () -> Boolean = { false },
+    onCursorPositionChange: ((line: Int, column: Int) -> Unit)? = null,
+    onRunFunction: ((MainFunctionInfo) -> Unit)? = null,
+    onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null,
+    showRunGutter: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     val windowId = LocalWindowId.current
@@ -107,18 +116,30 @@ fun DesktopCodeEditorUI(
                     onCursorPositionChange = { line, column ->
                         cursorLine = line
                         cursorColumn = column
+                        // Invoke optional plugin callback
+                        onCursorPositionChange?.invoke(line, column)
                     },
                     onModifiedStateChange = { modified ->
                         isModified = modified
                         onModifiedStateChange(modified)
                     },
                     onRun = { detected ->
-                        scope.launch {
-                            executeDetectedMainFunction(detected, projectPath, windowId)
+                        if (showRunGutter) {
+                            // Convert to MainFunctionInfo and invoke plugin callback if provided
+                            if (onRunFunction != null) {
+                                onRunFunction.invoke(detected.toMainFunctionInfo())
+                            } else {
+                                scope.launch {
+                                    executeDetectedMainFunction(detected, projectPath, windowId)
+                                }
+                            }
                         }
                     },
                     onNavigate = { event ->
-                        if (event.filePath.isNotEmpty() && windowId != null) {
+                        // Invoke plugin callback if provided, otherwise use default behavior
+                        if (onNavigate != null) {
+                            onNavigate.invoke(event.filePath, event.line, event.column)
+                        } else if (event.filePath.isNotEmpty() && windowId != null) {
                             scope.launch {
                                 FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
                             }
@@ -143,18 +164,30 @@ fun DesktopCodeEditorUI(
                     onCursorPositionChange = { line, column ->
                         cursorLine = line
                         cursorColumn = column
+                        // Invoke optional plugin callback
+                        onCursorPositionChange?.invoke(line, column)
                     },
                     onModifiedStateChange = { modified ->
                         isModified = modified
                         onModifiedStateChange(modified)
                     },
                     onRun = { detected ->
-                        scope.launch {
-                            executeDetectedMainFunction(detected, projectPath, windowId)
+                        if (showRunGutter) {
+                            // Convert to MainFunctionInfo and invoke plugin callback if provided
+                            if (onRunFunction != null) {
+                                onRunFunction.invoke(detected.toMainFunctionInfo())
+                            } else {
+                                scope.launch {
+                                    executeDetectedMainFunction(detected, projectPath, windowId)
+                                }
+                            }
                         }
                     },
                     onNavigate = { event ->
-                        if (event.filePath.isNotEmpty() && windowId != null) {
+                        // Invoke plugin callback if provided, otherwise use default behavior
+                        if (onNavigate != null) {
+                            onNavigate.invoke(event.filePath, event.line, event.column)
+                        } else if (event.filePath.isNotEmpty() && windowId != null) {
                             scope.launch {
                                 // Open the target file at the specified position
                                 // For same-file navigation, FileEventBus handler will scroll to position
@@ -308,5 +341,21 @@ fun DesktopCodeEditorWithFileTracking(
         onSaveRequested = {
             tracker.save()
         }
+    )
+}
+
+/**
+ * Extension function to convert DetectedMainFunction to MainFunctionInfo for plugin API.
+ */
+private fun DetectedMainFunction.toMainFunctionInfo(): MainFunctionInfo {
+    return MainFunctionInfo(
+        filePath = this.filePath,
+        lineNumber = this.lineNumber,
+        functionName = this.functionName,
+        language = this.language.name.lowercase(),
+        className = this.className,
+        metadata = mapOf(
+            "packageName" to (this.packageName ?: "")
+        )
     )
 }

@@ -68,6 +68,30 @@ sealed class NavigationResult {
 }
 
 /**
+ * Information about a definition (class, function, property, etc.).
+ */
+data class DefinitionInfo(
+    val name: String,
+    val kind: NavigationTargetKind,
+    val filePath: String,
+    val offset: Int,
+    val line: Int,
+    val column: Int
+)
+
+/**
+ * Location of a reference to a symbol.
+ */
+data class ReferenceLocation(
+    val filePath: String,
+    val line: Int,
+    val column: Int,
+    val offset: Int,
+    val context: String,
+    val symbolName: String
+)
+
+/**
  * Navigation service for go-to-definition and find references.
  *
  * This service provides:
@@ -413,6 +437,87 @@ class NavigationService {
             // Fallback
             else -> (element.text.take(30)) to NavigationTargetKind.UNKNOWN
         }
+    }
+
+    /**
+     * Check if the element at the given offset is a definition (class, function, property, etc.).
+     *
+     * @param file The PSI file
+     * @param offset Character offset to check
+     * @return true if the element at offset is a definition
+     */
+    fun isDefinition(file: KtFile, offset: Int): Boolean {
+        val element = file.findElementAt(offset) ?: return false
+        val parent = element.parent
+
+        // Check if parent is a named declaration
+        return when (parent) {
+            is KtClass,
+            is KtObjectDeclaration,
+            is KtNamedFunction,
+            is KtProperty,
+            is KtParameter,
+            is KtTypeAlias,
+            is KtPrimaryConstructor,
+            is KtSecondaryConstructor -> true
+            else -> false
+        }
+    }
+
+    /**
+     * Get definition info for the element at the given offset.
+     *
+     * @param file The PSI file
+     * @param offset Character offset
+     * @param filePath Absolute path to the file
+     * @return DefinitionInfo if the element at offset is a definition, null otherwise
+     */
+    fun getDefinitionInfo(file: KtFile, offset: Int, filePath: String): DefinitionInfo? {
+        val element = file.findElementAt(offset) ?: return null
+
+        // Try to find a named declaration by traversing up the tree
+        var current: PsiElement? = element
+        var declaration: KtNamedDeclaration? = null
+
+        while (current != null && declaration == null) {
+            if (current is KtNamedDeclaration) {
+                // Check if the original element is part of the name identifier
+                val nameIdentifier = current.nameIdentifier
+                if (nameIdentifier != null && element.textOffset >= nameIdentifier.textOffset &&
+                    element.textOffset < nameIdentifier.textOffset + nameIdentifier.textLength) {
+                    declaration = current
+                }
+            }
+            current = current.parent
+        }
+
+        if (declaration == null) return null
+
+        val text = file.text
+        val declOffset = declaration.textOffset
+        val line = text.substring(0, declOffset.coerceAtMost(text.length)).count { it == '\n' } + 1
+        val lastNewline = text.lastIndexOf('\n', declOffset - 1)
+        val column = if (lastNewline < 0) declOffset + 1 else declOffset - lastNewline
+
+        val kind = when (declaration) {
+            is KtClass -> if (declaration.isInterface()) NavigationTargetKind.INTERFACE else NavigationTargetKind.CLASS
+            is KtObjectDeclaration -> NavigationTargetKind.OBJECT
+            is KtNamedFunction -> NavigationTargetKind.FUNCTION
+            is KtProperty -> NavigationTargetKind.PROPERTY
+            is KtParameter -> NavigationTargetKind.PARAMETER
+            is KtTypeAlias -> NavigationTargetKind.TYPE_ALIAS
+            is KtPrimaryConstructor, is KtSecondaryConstructor -> NavigationTargetKind.CONSTRUCTOR
+            else -> NavigationTargetKind.UNKNOWN
+        }
+
+        return DefinitionInfo(
+            name = declaration.name ?: "<anonymous>",
+            kind = kind,
+            filePath = filePath,
+            offset = declOffset,
+            line = line,
+            column = column
+        )
     }
 
     /**

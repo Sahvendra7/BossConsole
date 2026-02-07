@@ -35,6 +35,15 @@ import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
+import ai.rever.boss.plugin.api.TerminalTabContentProvider
+import ai.rever.boss.plugin.api.EditorContentProvider
+import ai.rever.boss.plugin.api.NotificationProvider
+import ai.rever.boss.plugin.api.ApplicationEventBus
+import ai.rever.boss.plugin.api.PluginStorageFactory
+import ai.rever.boss.plugin.api.GenericDialogProvider
+import ai.rever.boss.plugin.api.NavigationResolverProvider
+import ai.rever.boss.plugin.api.SemanticTokenProvider
+import ai.rever.boss.plugin.api.NavigationTargetProvider
 import ai.rever.boss.plugin.browser.BrowserService
 import com.arkivanov.decompose.ComponentContext
 import kotlinx.coroutines.CoroutineScope
@@ -276,6 +285,33 @@ class TrackingPluginContext(
 
     // URL history provider - delegate to underlying context
     override val urlHistoryProvider: UrlHistoryProvider? get() = delegate.urlHistoryProvider
+
+    // Terminal tab content provider - delegate to underlying context
+    override val terminalTabContentProvider: TerminalTabContentProvider? get() = delegate.terminalTabContentProvider
+
+    // Editor content provider - delegate to underlying context
+    override val editorContentProvider: EditorContentProvider? get() = delegate.editorContentProvider
+
+    // Phase 4: Notification provider - delegate to underlying context
+    override val notificationProvider: NotificationProvider? get() = delegate.notificationProvider
+
+    // Phase 4: Application event bus - delegate to underlying context
+    override val applicationEventBus: ApplicationEventBus? get() = delegate.applicationEventBus
+
+    // Phase 4: Plugin storage factory - delegate to underlying context
+    override val pluginStorageFactory: PluginStorageFactory? get() = delegate.pluginStorageFactory
+
+    // Phase 4: Generic dialog provider - delegate to underlying context
+    override val genericDialogProvider: GenericDialogProvider? get() = delegate.genericDialogProvider
+
+    // Navigation resolver provider - delegate to underlying context
+    override val navigationResolverProvider: NavigationResolverProvider? get() = delegate.navigationResolverProvider
+
+    // Semantic token provider - delegate to underlying context
+    override val semanticTokenProvider: SemanticTokenProvider? get() = delegate.semanticTokenProvider
+
+    // Navigation target provider - delegate to underlying context
+    override val navigationTargetProvider: NavigationTargetProvider? get() = delegate.navigationTargetProvider
 
     /**
      * Get the panels registered by this plugin.

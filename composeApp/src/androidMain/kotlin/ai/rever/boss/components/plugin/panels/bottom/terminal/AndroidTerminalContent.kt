@@ -64,7 +64,8 @@ actual fun PersistentTabbedTerminalContent(
     workingDirectory: String?,
     onExit: () -> Unit,
     onShowSettings: () -> Unit,
-    onTitleChange: ((String) -> Unit)?
+    onTitleChange: ((String) -> Unit)?,
+    onLinkClick: ((url: String, linkType: String) -> Boolean)?
 ) {
     Box(
         modifier = Modifier

@@ -1300,10 +1300,9 @@ object EditorCanvasRenderer {
 
         if (foldRegion.isCollapsed) {
             // ChevronRight style - › pointing right
-            // Material Icons typically use 45° angles and centered positioning
-            val chevronPadding = indicatorSize * 0.25f  // 25% padding
-            val chevronWidth = indicatorSize * 0.4f     // Width of chevron
-            val chevronHeight = indicatorSize * 0.5f    // Height of chevron
+            val chevronPadding = indicatorSize * 0.15f  // 15% padding for larger icon
+            val chevronWidth = indicatorSize * 0.55f    // Width of chevron
+            val chevronHeight = indicatorSize * 0.65f   // Height of chevron
 
             val path = Path()
             val centerY = indicatorY + indicatorSize / 2f
@@ -1327,10 +1326,9 @@ object EditorCanvasRenderer {
             )
         } else {
             // ExpandMore style - ˅ pointing down
-            // Material Icons typically use 45° angles and centered positioning
-            val chevronPadding = indicatorSize * 0.25f  // 25% padding
-            val chevronWidth = indicatorSize * 0.5f     // Width of chevron
-            val chevronHeight = indicatorSize * 0.4f    // Height of chevron
+            val chevronPadding = indicatorSize * 0.15f  // 15% padding for larger icon
+            val chevronWidth = indicatorSize * 0.65f    // Width of chevron
+            val chevronHeight = indicatorSize * 0.55f   // Height of chevron
 
             val path = Path()
             val centerX = indicatorX + indicatorSize / 2f

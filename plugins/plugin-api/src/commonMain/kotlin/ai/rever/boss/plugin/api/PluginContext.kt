@@ -335,6 +335,82 @@ interface PluginContext {
      */
     val editorContentProvider: EditorContentProvider?
         get() = null
+
+    // ============================================================
+    // PHASE 4: CORE MISSING APIs
+    // Event-driven architecture, user feedback, and plugin storage
+    // ============================================================
+
+    /**
+     * Optional notification provider for displaying toasts/notifications.
+     *
+     * Returns null if notification functionality is not available.
+     * Dynamic plugins can use this to show user feedback without
+     * implementing their own notification UI.
+     */
+    val notificationProvider: NotificationProvider?
+        get() = null
+
+    /**
+     * Optional application event bus for state change notifications.
+     *
+     * Returns null if event bus is not available.
+     * Dynamic plugins can use this to react to application events
+     * (file changes, project selection, etc.) without polling.
+     */
+    val applicationEventBus: ApplicationEventBus?
+        get() = null
+
+    /**
+     * Optional plugin storage factory for persistent data.
+     *
+     * Returns null if plugin storage is not available.
+     * Dynamic plugins can use this to save preferences and state
+     * that persists across application restarts.
+     */
+    val pluginStorageFactory: PluginStorageFactory?
+        get() = null
+
+    /**
+     * Optional generic dialog provider for common dialogs.
+     *
+     * Returns null if dialog functionality is not available.
+     * Dynamic plugins can use this for text input, confirmation,
+     * and choice dialogs with consistent styling.
+     */
+    val genericDialogProvider: GenericDialogProvider?
+        get() = null
+
+    /**
+     * Optional navigation resolver provider for PSI-based code navigation.
+     *
+     * Returns null if navigation services are not available.
+     * Dynamic editor plugins can use this to resolve Cmd+Click navigation
+     * targets using the host's PSI infrastructure.
+     */
+    val navigationResolverProvider: NavigationResolverProvider?
+        get() = null
+
+    /**
+     * Optional semantic token provider for PSI-based semantic highlighting.
+     *
+     * Returns null if semantic highlighting is not available.
+     * Dynamic editor plugins can use this to get semantic tokens
+     * (function calls, property accesses, etc.) from the host's PSI analysis.
+     */
+    val semanticTokenProvider: SemanticTokenProvider?
+        get() = null
+
+    /**
+     * Optional navigation target provider for cursor positioning after file navigation.
+     *
+     * Returns null if navigation target functionality is not available.
+     * Dynamic editor plugins can use this to listen for navigation events
+     * and position their cursor at the target location (e.g., after Cmd+Click
+     * go-to-definition or clicking a usage in the usages popup).
+     */
+    val navigationTargetProvider: NavigationTargetProvider?
+        get() = null
 }
 
 /**

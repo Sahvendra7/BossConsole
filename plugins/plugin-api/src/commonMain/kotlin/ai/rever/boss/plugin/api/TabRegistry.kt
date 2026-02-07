@@ -35,7 +35,6 @@ open class TabRegistry {
      * @param typeId The ID of the tab type to unregister
      */
     open fun unregisterTabType(typeId: TabTypeId) {
-        println("[TabRegistry] unregisterTabType called: typeId=${typeId.typeId}, pluginId=${typeId.pluginId}, listenerCount=${unregisterListeners.size}")
         tabHandlers.remove(typeId)
         tabFactories.remove(typeId)
         notifyUnregister(typeId)
@@ -82,7 +81,8 @@ open class TabRegistry {
 
     // Create a component for a tab configuration
     open fun createTabComponent(config: TabInfo, componentContext: ComponentContext): TabComponentWithUI? {
-        return tabFactories[config.typeId]?.invoke(config, componentContext)
+        val factory = tabFactories[config.typeId]
+        return factory?.invoke(config, componentContext)
     }
 
     /**

@@ -571,8 +571,8 @@ fun ComponentContext.BossApp(
     )
 
     // Create split view operations wrapper for plugins
-    val splitViewOperations = remember(splitViewState) {
-        SplitViewOperationsImpl(splitViewState)
+    val splitViewOperations = remember(splitViewState, windowId) {
+        SplitViewOperationsImpl(splitViewState, windowId)
     }
 
     // Create workspace data provider wrapper for plugins
@@ -1269,14 +1269,20 @@ fun ComponentContext.BossApp(
     // Listen for file open events - now handled by split state
     // Issue #506: Filter by window to prevent file opening in all windows
     LaunchedEffect(splitViewState, windowId) {
+        println("[HOST-DEBUG] BossApp: Starting FileEventBus collector for windowId=$windowId")
         FileEventBus.fileOpenEvents
+            .onEach { event ->
+                println("[HOST-DEBUG] BossApp: Received FileEventBus event: ${event.filePath}:${event.line}:${event.column}, sourceWindowId=${event.sourceWindowId}, myWindowId=$windowId")
+            }
             .filter { event -> event.sourceWindowId == windowId }
             .onEach { event ->
+                println("[HOST-DEBUG] BossApp: Event passed filter, opening file and emitting to NavigationTargetBus")
                 splitViewState.openFileInActivePanel(event.filePath, event.fileName)
                 // Emit navigation target for cursor positioning (PSI navigation)
                 // Issue #506: Pass windowId for multi-window filtering
                 if (event.line > 0) {
                     NavigationTargetBus.navigateTo(event.filePath, event.line, event.column, sourceWindowId = windowId)
+                    println("[HOST-DEBUG] BossApp: NavigationTargetBus.navigateTo called")
                 }
             }
             .launchIn(this)
@@ -2950,6 +2956,9 @@ fun ComponentContext.BossApp(
                     }
                 }
             }
+
+            // Phase 4: Generic dialog host for plugin dialogs
+            ai.rever.boss.components.plugin.providers.GenericDialogHostContent()
             }
         }
     }

@@ -166,6 +166,17 @@ interface SplitViewOperations {
     fun openFileInActivePanel(filePath: String, fileName: String)
 
     /**
+     * Open a file in the active panel and navigate to a specific position.
+     * This is used for code navigation (go-to-definition, find usages).
+     *
+     * @param filePath Absolute path to the file
+     * @param fileName Display name for the tab
+     * @param line Target line number (1-based)
+     * @param column Target column number (1-based)
+     */
+    fun openFileAtPosition(filePath: String, fileName: String, line: Int, column: Int)
+
+    /**
      * Set the active panel.
      */
     fun setActivePanel(panelId: String)
