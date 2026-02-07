@@ -44,6 +44,16 @@ interface TabTypeInfo {
     val icon: ImageVector
 }
 
+/**
+ * Extended TabInfo interface for terminal tabs.
+ * Both bundled TerminalTabInfo and dynamic plugin's TerminalTabData should implement this.
+ * This allows the dynamic plugin to access terminal-specific properties without reflection.
+ */
+interface TerminalTabInfoInterface : TabInfo {
+    val initialCommand: String?
+    val workingDirectory: String?
+}
+
 interface TabComponentWithUI: ComponentContext {
     val tabTypeInfo: TabTypeInfo
     val config: TabInfo
