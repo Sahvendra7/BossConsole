@@ -71,15 +71,28 @@ jobs:
         with:
           cache-read-only: false
 
+      - name: 🧹 Stop Kotlin Daemon (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "Stopping any existing Kotlin daemons to avoid file handle issues"
+          ./gradlew --stop || true
+        shell: bash
+
       - name: 🧪 Run Tests
         run: |
           echo "🧪 Running tests on ${{ matrix.os }}"
           ./gradlew test --continue
+        env:
+          # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
+          GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
       - name: 🔨 Build Application
         run: |
           echo "🔨 Building application for ${{ matrix.os }}"
           ./gradlew build --stacktrace
+        env:
+          # Windows-specific: disable daemon to avoid file handle issues (KT-55959)
+          GRADLE_OPTS: ${{ matrix.os == 'windows-latest' && '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.caching=true -Dkotlin.daemon.jvm.options=-Xmx2g' || '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true' }}
 
       - name: 🏗️ Create Executable JAR
         if: matrix.os == 'ubuntu-latest'
