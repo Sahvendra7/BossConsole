@@ -1086,6 +1086,9 @@ private fun PublishTab(
                                                         description = manifest.description
                                                         authorName = manifest.author ?: ""
                                                         homepageUrl = manifest.url ?: trimmedUrl
+                                                        apiVersion = manifest.apiVersion
+                                                        minBossVersion = manifest.minBossVersion.ifEmpty { "1.0.0" }
+                                                        pluginType = manifest.type
                                                         fetchStatus = null
                                                     },
                                                     { error ->
@@ -1140,6 +1143,9 @@ private fun PublishTab(
                                                         description = manifest.description
                                                         authorName = manifest.author ?: ""
                                                         homepageUrl = manifest.url ?: ""
+                                                        apiVersion = manifest.apiVersion
+                                                        minBossVersion = manifest.minBossVersion.ifEmpty { "1.0.0" }
+                                                        pluginType = manifest.type
                                                     }
                                                 }
                                             }

@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.panel.manager
 
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelInfo
+import ai.rever.boss.plugin.api.PluginType
 import ai.rever.boss.plugin.repository.PluginInfo
 import ai.rever.boss.plugin.updater.UpdateInfo
 import androidx.compose.runtime.Composable
@@ -25,7 +26,10 @@ data class ExtractedManifest(
     val version: String,
     val description: String,
     val author: String?,
-    val url: String?
+    val url: String?,
+    val apiVersion: String = "1.0",
+    val minBossVersion: String = "",
+    val type: PluginType = PluginType.PANEL
 )
 
 /**

@@ -623,7 +623,10 @@ class PluginManagerOperationsImpl(
                         version = manifest.version,
                         description = manifest.description,
                         author = manifest.author,
-                        url = manifest.url
+                        url = manifest.url,
+                        apiVersion = manifest.apiVersion,
+                        minBossVersion = manifest.minBossVersion,
+                        type = manifest.type
                     )
                 }
             } catch (e: Exception) {

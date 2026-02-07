@@ -136,7 +136,14 @@ data class PluginManifest(
      * If true, the plugin will only be visible and active for admin users.
      */
     @SerialName("requiresAdmin")
-    val requiresAdmin: Boolean = false
+    val requiresAdmin: Boolean = false,
+
+    /**
+     * Minimum BOSS version required to run this plugin (e.g., "8.16.27").
+     * The plugin will not load if the host BOSS version is lower.
+     */
+    @SerialName("minBossVersion")
+    val minBossVersion: String = ""
 )
 
 /**

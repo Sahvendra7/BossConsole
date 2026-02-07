@@ -58,6 +58,12 @@ data class PluginInfo(
     val apiVersion: String = "1.0",
 
     /**
+     * Minimum BOSS application version required.
+     */
+    @SerialName("minBossVersion")
+    val minBossVersion: String = "",
+
+    /**
      * Download URL for the plugin JAR.
      */
     @SerialName("downloadUrl")
