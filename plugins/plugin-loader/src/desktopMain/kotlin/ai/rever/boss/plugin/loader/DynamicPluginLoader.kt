@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.api.Plugin
 import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.plugin.api.PluginManifestConstants
 import ai.rever.boss.plugin.api.PluginState
+import ai.rever.boss.plugin.api.Version
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import java.lang.ref.WeakReference
@@ -70,6 +71,12 @@ class DynamicPluginLoaderImpl(
      */
     private val loadedPlugins = ConcurrentHashMap<String, LoadedPlugin>()
 
+    /**
+     * Current BOSS application version. Must be set before loading plugins
+     * that have minBossVersion requirements.
+     */
+    var currentBossVersion: String? = null
+
     override suspend fun loadPlugin(jarPath: String): Result<LoadedPlugin> {
         return try {
             logger.info(LogCategory.SYSTEM, "Loading plugin from JAR", mapOf(
@@ -96,6 +103,25 @@ class DynamicPluginLoaderImpl(
                     manifest.apiVersion,
                     PluginManifestConstants.CURRENT_API_VERSION
                 ))
+            }
+
+            // Check minimum BOSS version compatibility
+            val minBossVersion = manifest.minBossVersion
+            if (!minBossVersion.isNullOrBlank()) {
+                val currentVersion = currentBossVersion
+                if (currentVersion == null) {
+                    logger.warn(LogCategory.SYSTEM, "Skipping minBossVersion validation - currentBossVersion not set", mapOf(
+                        "pluginId" to pluginId,
+                        "requiredVersion" to minBossVersion
+                    ))
+                } else if (!isBossVersionCompatible(minBossVersion, currentVersion)) {
+                    return Result.failure(PluginBossVersionException(
+                        "Plugin requires BOSS version $minBossVersion or later, but current version is $currentVersion",
+                        pluginId,
+                        minBossVersion,
+                        currentVersion
+                    ))
+                }
             }
 
             // Create classloader
@@ -280,6 +306,34 @@ class DynamicPluginLoaderImpl(
         val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
         val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
         return major to minor
+    }
+
+    /**
+     * Check if the current BOSS version meets the plugin's minimum version requirement.
+     * Uses semantic versioning comparison with proper prerelease handling.
+     *
+     * Note: If version parsing fails, the plugin is allowed to load with a warning logged.
+     * This "fail-open" approach prevents blocking plugins due to malformed version strings,
+     * while still logging the issue for investigation.
+     */
+    private fun isBossVersionCompatible(requiredVersion: String, currentVersion: String): Boolean {
+        val required = Version.parse(requiredVersion)
+        if (required == null) {
+            logger.warn(LogCategory.SYSTEM, "Failed to parse required version, allowing plugin", mapOf(
+                "requiredVersion" to requiredVersion
+            ))
+            return true
+        }
+
+        val current = Version.parse(currentVersion)
+        if (current == null) {
+            logger.warn(LogCategory.SYSTEM, "Failed to parse current version, allowing plugin", mapOf(
+                "currentVersion" to currentVersion
+            ))
+            return true
+        }
+
+        return current >= required
     }
 
     /**

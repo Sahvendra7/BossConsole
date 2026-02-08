@@ -2,6 +2,7 @@ package ai.rever.boss.updater
 
 import ai.rever.boss.config.GitHubConfig
 import ai.rever.boss.utils.ApplicationRestarter
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -82,7 +83,7 @@ actual class UpdateService {
             val authenticatedResponse = apiClient.get(url) {
                 headers {
                     append("Accept", "application/vnd.github.v3+json")
-                    append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+                    append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
                     append("Authorization", "Bearer ${authContext.token}")
                 }
             }
@@ -106,7 +107,7 @@ actual class UpdateService {
         return apiClient.get(url) {
             headers {
                 append("Accept", "application/vnd.github.v3+json")
-                append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+                append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
             }
         }
     }
@@ -150,8 +151,8 @@ actual class UpdateService {
                 logger.warn(LogCategory.NETWORK, "Update check failed", mapOf("error" to errorMessage))
                 return UpdateInfo(
                     available = false,
-                    currentVersion = Version.CURRENT,
-                    latestVersion = Version.CURRENT,
+                    currentVersion = AppVersion.CURRENT,
+                    latestVersion = AppVersion.CURRENT,
                     releaseNotes = ""
                 )
             }
@@ -162,7 +163,7 @@ actual class UpdateService {
             // 1. If user explicitly enabled prerelease updates, include them
             // 2. If current version is a prerelease, always include prereleases (so beta users get beta updates)
             val includePreReleases = UpdateSettings.includePreReleases ||
-                Version.CURRENT.preRelease != null
+                AppVersion.CURRENT.preRelease != null
 
             // Get the latest version based on prerelease preference
             val latestRelease = releases
@@ -178,8 +179,8 @@ actual class UpdateService {
             if (latestRelease == null) {
                 return UpdateInfo(
                     available = false,
-                    currentVersion = Version.CURRENT,
-                    latestVersion = Version.CURRENT,
+                    currentVersion = AppVersion.CURRENT,
+                    latestVersion = AppVersion.CURRENT,
                     releaseNotes = ""
                 )
             }
@@ -188,13 +189,13 @@ actual class UpdateService {
             if (latestVersion == null) {
                 return UpdateInfo(
                     available = false,
-                    currentVersion = Version.CURRENT,
-                    latestVersion = Version.CURRENT,
+                    currentVersion = AppVersion.CURRENT,
+                    latestVersion = AppVersion.CURRENT,
                     releaseNotes = ""
                 )
             }
             
-            val isUpdateAvailable = latestVersion.isNewerThan(Version.CURRENT)
+            val isUpdateAvailable = latestVersion.isNewerThan(AppVersion.CURRENT)
             
             // Find the appropriate asset for the current platform
             val platform = getCurrentPlatform()
@@ -226,7 +227,7 @@ actual class UpdateService {
             
             UpdateInfo(
                 available = isUpdateAvailable,
-                currentVersion = Version.CURRENT,
+                currentVersion = AppVersion.CURRENT,
                 latestVersion = latestVersion,
                 releaseNotes = latestRelease.body,
                 downloadUrl = asset?.browser_download_url,
@@ -249,8 +250,8 @@ actual class UpdateService {
 
             UpdateInfo(
                 available = false,
-                currentVersion = Version.CURRENT,
-                latestVersion = Version.CURRENT,
+                currentVersion = AppVersion.CURRENT,
+                latestVersion = AppVersion.CURRENT,
                 releaseNotes = ""
             )
         }
@@ -521,7 +522,7 @@ actual class UpdateService {
 
             UpdateInfo(
                 available = true,
-                currentVersion = Version.CURRENT,
+                currentVersion = AppVersion.CURRENT,
                 latestVersion = version,
                 releaseNotes = release.body,
                 downloadUrl = asset?.browser_download_url,

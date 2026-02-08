@@ -10,9 +10,9 @@ import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.api.PluginUnloadAware
 import ai.rever.boss.plugin.api.TabRegistry
-import ai.rever.boss.plugin.loader.DynamicPluginLoader
 import ai.rever.boss.plugin.loader.DynamicPluginLoaderImpl
 import ai.rever.boss.plugin.loader.PluginUnloadException
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
 import ai.rever.boss.plugin.sandbox.SandboxConfig
 import ai.rever.boss.utils.logging.BossLogger
@@ -88,7 +88,9 @@ class DynamicPluginManager(
     /**
      * The underlying plugin loader.
      */
-    private val pluginLoader: DynamicPluginLoader = DynamicPluginLoaderImpl()
+    private val pluginLoader = DynamicPluginLoaderImpl().apply {
+        currentBossVersion = AppVersion.CURRENT.toString()
+    }
 
     /**
      * Tracks registrations by plugin for cleanup.

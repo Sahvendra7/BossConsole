@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
 
 /**
@@ -13,8 +14,8 @@ actual class UpdateService {
         // Return no update available
         return UpdateInfo(
             available = false,
-            currentVersion = Version.CURRENT,
-            latestVersion = Version.CURRENT,
+            currentVersion = AppVersion.CURRENT,
+            latestVersion = AppVersion.CURRENT,
             releaseNotes = "Updates are handled through App Store"
         )
     }

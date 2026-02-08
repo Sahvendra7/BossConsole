@@ -29,7 +29,7 @@ object VersionVerifier {
     fun verifyVersionConsistency() {
         try {
             // Get runtime version from VersionConstants
-            val runtimeVersion = Version.CURRENT
+            val runtimeVersion = AppVersion.CURRENT
 
             // Try to load version from properties file if available
             // Note: In production builds, version.properties may not be embedded
@@ -98,11 +98,11 @@ object VersionVerifier {
      * Get current runtime version for display purposes.
      */
     @JvmStatic
-    fun getCurrentVersion(): Version = Version.CURRENT
+    fun getCurrentVersion(): Version = AppVersion.CURRENT
 
     /**
      * Get current version as string (e.g., "8.12.19").
      */
     @JvmStatic
-    fun getCurrentVersionString(): String = Version.CURRENT.toString()
+    fun getCurrentVersionString(): String = AppVersion.CURRENT.toString()
 }

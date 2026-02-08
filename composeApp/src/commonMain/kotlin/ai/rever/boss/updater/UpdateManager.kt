@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -129,7 +130,7 @@ class UpdateManager {
             // Convert VersionInfo to UpdateInfo
             val updateInfo = UpdateInfo(
                 available = true,
-                currentVersion = Version.CURRENT,
+                currentVersion = AppVersion.CURRENT,
                 latestVersion = versionInfo.version,
                 releaseNotes = versionInfo.releaseNotes,
                 downloadUrl = versionInfo.downloadUrl,
@@ -179,7 +180,7 @@ class UpdateManager {
     /**
      * Get current application version
      */
-    fun getCurrentVersion(): Version = Version.CURRENT
+    fun getCurrentVersion(): Version = AppVersion.CURRENT
     
     /**
      * Check if enough time has passed since last check for automatic checking

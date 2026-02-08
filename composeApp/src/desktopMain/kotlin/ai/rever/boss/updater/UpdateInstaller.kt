@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -143,7 +144,7 @@ object UpdateInstaller {
             return true
         }
 
-        val currentVersion = Version.CURRENT
+        val currentVersion = AppVersion.CURRENT
 
         logger.info(LogCategory.SYSTEM, "Version check", mapOf(
             "current" to currentVersion.toString(),

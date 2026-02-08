@@ -1,7 +1,7 @@
 package ai.rever.boss.crash
 
 import ai.rever.boss.config.GitHubConfig
-import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import io.ktor.client.*
@@ -107,7 +107,7 @@ object CrashReportService {
             val response = httpClient.get(searchUrl) {
                 headers {
                     append("Accept", "application/vnd.github.v3+json")
-                    append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+                    append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
                     append("Authorization", "Bearer ${authContext.token}")
                 }
             }
@@ -136,7 +136,7 @@ object CrashReportService {
         val response = httpClient.post(ISSUES_ENDPOINT) {
             headers {
                 append("Accept", "application/vnd.github.v3+json")
-                append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+                append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
                 append("Authorization", "Bearer ${authContext.token}")
             }
             contentType(ContentType.Application.Json)
@@ -187,7 +187,7 @@ object CrashReportService {
         val response = httpClient.post(commentsUrl) {
             headers {
                 append("Accept", "application/vnd.github.v3+json")
-                append("User-Agent", "BOSS-Desktop-${Version.CURRENT}")
+                append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
                 append("Authorization", "Bearer ${authContext.token}")
             }
             contentType(ContentType.Application.Json)

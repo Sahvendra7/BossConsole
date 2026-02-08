@@ -1,6 +1,6 @@
 package ai.rever.boss.crash
 
-import ai.rever.boss.utils.Version
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.logging.LogSanitizer
@@ -218,7 +218,7 @@ object CrashHandler {
                 System.getenv("BOSS_DEV_MODE")?.toBoolean() == true
 
         return AppInfo(
-            version = Version.CURRENT.toString(),
+            version = AppVersion.CURRENT.toString(),
             platform = platform,
             isDebug = isDebug
         )

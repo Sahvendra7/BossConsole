@@ -80,7 +80,7 @@ actual object CLIVersionManager {
      */
     actual suspend fun isCLIVersionCurrent(): Boolean {
         val installedVersion = getInstalledCLIVersion() ?: return false
-        val currentVersion = Version.CURRENT.toString()
+        val currentVersion = AppVersion.CURRENT.toString()
 
         val isCurrent = installedVersion == currentVersion
         logger.debug(LogCategory.SYSTEM, "CLI version check", mapOf("installed" to installedVersion, "current" to currentVersion, "upToDate" to isCurrent))
@@ -103,7 +103,7 @@ actual object CLIVersionManager {
         val needsUpdate = !isCLIVersionCurrent()
         if (needsUpdate) {
             val installedVersion = getInstalledCLIVersion() ?: "unknown"
-            logger.info(LogCategory.SYSTEM, "CLI version check: Update needed", mapOf("from" to installedVersion, "to" to Version.CURRENT.toString()))
+            logger.info(LogCategory.SYSTEM, "CLI version check: Update needed", mapOf("from" to installedVersion, "to" to AppVersion.CURRENT.toString()))
         }
 
         return needsUpdate

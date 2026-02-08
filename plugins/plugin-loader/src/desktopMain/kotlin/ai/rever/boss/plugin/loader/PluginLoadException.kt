@@ -67,3 +67,14 @@ class PluginSignatureException(
     pluginId: String? = null,
     cause: Throwable? = null
 ) : PluginLoadException(message, pluginId, cause)
+
+/**
+ * Exception thrown when a plugin requires a newer BOSS version.
+ */
+class PluginBossVersionException(
+    message: String,
+    pluginId: String? = null,
+    val requiredVersion: String? = null,
+    val currentVersion: String? = null,
+    cause: Throwable? = null
+) : PluginLoadException(message, pluginId, cause)
