@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.30](v8.16.30.md) | 2026-02-08 | Plugin system enhancements with project selection API and minimum version validation for safer plugin installations |
 | [v8.16.29](v8.16.29.md) | 2026-02-08 | Maintenance release adding screen capture support for browser plugins with enhanced permission APIs |
 | [v8.16.28](v8.16.28.md) | 2026-02-08 | Stable release introducing mandatory tab plugins for streamlined setup and improved Windows CI/CD reliability |
 | [v8.16.27-alpha.1](v8.16.27-alpha.1.md) | 2026-02-07 | Major plugin API enhancements for dynamic tab providers and improved browser URL handling for better navigation experience |
