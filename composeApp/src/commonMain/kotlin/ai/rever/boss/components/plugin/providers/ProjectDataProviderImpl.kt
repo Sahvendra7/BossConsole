@@ -4,6 +4,8 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.plugin.api.ProjectData
 import ai.rever.boss.plugin.api.ProjectDataProvider
 import ai.rever.boss.window.Project
+import ai.rever.boss.window.WindowProjectState
+import ai.rever.boss.window.selectProjectInWindow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +17,9 @@ import kotlinx.coroutines.launch
  * Implementation of ProjectDataProvider that wraps ProjectState.
  * Converts between composeApp's Project type and plugin's ProjectData type.
  */
-class ProjectDataProviderImpl : ProjectDataProvider {
+class ProjectDataProviderImpl(
+    private val windowProjectState: WindowProjectState?
+) : ProjectDataProvider {
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -38,6 +42,10 @@ class ProjectDataProviderImpl : ProjectDataProvider {
 
     override fun removeRecentProject(projectPath: String) {
         ProjectState.removeRecentProject(projectPath)
+    }
+
+    override fun selectProject(project: ProjectData) {
+        selectProjectInWindow(windowProjectState, project.toProject())
     }
 
     // Extension functions for type conversion

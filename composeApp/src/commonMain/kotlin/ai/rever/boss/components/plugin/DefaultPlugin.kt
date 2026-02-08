@@ -428,6 +428,16 @@ class DefaultPlugin(
     override val navigationTargetProvider: NavigationTargetProvider
         get() = NavigationTargetProviderImpl
 
+    // Directory picker provider for codebase plugin's "Open Project" feature
+    override val directoryPickerProvider: ai.rever.boss.plugin.api.DirectoryPickerProvider by lazy {
+        DirectoryPickerProviderImpl()
+    }
+
+    // Project data provider for managing recent projects
+    override val projectDataProvider: ai.rever.boss.plugin.api.ProjectDataProvider by lazy {
+        ProjectDataProviderImpl(windowProjectState)
+    }
+
     /**
      * Create a sandboxed plugin context for a specific plugin.
      *

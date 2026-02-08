@@ -425,6 +425,24 @@ interface PluginContext {
      */
     val navigationTargetProvider: NavigationTargetProvider?
         get() = null
+
+    /**
+     * Optional directory picker provider for file browser plugins.
+     *
+     * Returns null if directory picker functionality is not available.
+     * Dynamic plugins can use this for the codebase panel's "Open Project" feature.
+     */
+    val directoryPickerProvider: DirectoryPickerProvider?
+        get() = null
+
+    /**
+     * Optional project data provider for managing recent projects.
+     *
+     * Returns null if project management is not available.
+     * Dynamic plugins can use this to track and select projects.
+     */
+    val projectDataProvider: ProjectDataProvider?
+        get() = null
 }
 
 /**

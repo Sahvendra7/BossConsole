@@ -38,4 +38,12 @@ interface ProjectDataProvider {
      * @param projectPath The project path to remove
      */
     fun removeRecentProject(projectPath: String)
+
+    /**
+     * Select a project in the current window.
+     * This sets the window's current working directory.
+     *
+     * @param project The project to select
+     */
+    fun selectProject(project: ProjectData)
 }
