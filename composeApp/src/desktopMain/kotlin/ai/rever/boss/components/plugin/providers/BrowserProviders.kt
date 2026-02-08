@@ -1,10 +1,17 @@
 package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.components.plugin.tab_types.fluck.BrowserZoomSettingsManager
+import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.UrlHistoryManager
+import ai.rever.boss.components.window_panel.SplitViewStateRegistry
+import ai.rever.boss.platform.MacOSScreenCapture
+import ai.rever.boss.plugin.api.InternalBrowserTabData
+import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.UrlHistoryEntry
 import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.plugin.api.ZoomSettingsProvider
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlin.math.abs
 
 /**
@@ -76,3 +83,55 @@ actual fun createZoomSettingsProvider(): ZoomSettingsProvider = zoomSettingsProv
  * Actual implementation for creating UrlHistoryProvider on desktop.
  */
 actual fun createUrlHistoryProvider(): UrlHistoryProvider = urlHistoryProviderInstance
+
+/**
+ * Desktop implementation of ScreenCaptureProvider.
+ *
+ * Provides:
+ * - Internal browser tab collection for screen capture picker
+ * - macOS screen capture permission APIs
+ */
+private class DesktopScreenCaptureProvider : ScreenCaptureProvider {
+    private val logger = BossLogger.forComponent("ScreenCaptureProvider")
+
+    override fun getInternalBrowserTabs(): List<InternalBrowserTabData> {
+        val internalTabs = mutableListOf<InternalBrowserTabData>()
+
+        try {
+            SplitViewStateRegistry.getAllStates().forEach { (windowId, state) ->
+                state.collectAllActiveTabs(null, windowId)
+                    .filter { it.tabInfo is FluckTabInfo }
+                    .forEachIndexed { index, activeTab ->
+                        val fluckTab = activeTab.tabInfo as FluckTabInfo
+                        internalTabs.add(
+                            InternalBrowserTabData(
+                                title = fluckTab.title,
+                                url = fluckTab.currentUrl,
+                                faviconCacheKey = fluckTab.faviconCacheKey
+                            )
+                        )
+                    }
+            }
+        } catch (e: Exception) {
+            logger.warn(LogCategory.BROWSER, "Failed to collect internal tabs", error = e)
+        }
+
+        return internalTabs
+    }
+
+    override fun hasPermission(): Boolean {
+        return MacOSScreenCapture.hasPermission()
+    }
+
+    override fun requestPermission(): Boolean {
+        return MacOSScreenCapture.requestPermission()
+    }
+}
+
+// Lazy singleton
+private val screenCaptureProviderInstance by lazy { DesktopScreenCaptureProvider() }
+
+/**
+ * Actual implementation for creating ScreenCaptureProvider on desktop.
+ */
+actual fun createScreenCaptureProvider(): ScreenCaptureProvider = screenCaptureProviderInstance

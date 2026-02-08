@@ -156,16 +156,31 @@ object ScreenCaptureNotifier {
 
             when (source.category) {
                 CaptureSourceItem.Category.BROWSER_TAB -> {
-                    val browser = pending.sources.browsers()[source.index]
-                    pending.tell.selectSource(browser, audioMode)
+                    val browsers = pending.sources.browsers()
+                    if (source.index < browsers.size) {
+                        pending.tell.selectSource(browsers[source.index], audioMode)
+                    } else {
+                        logger.error(LogCategory.BROWSER, "Invalid browser index", mapOf("index" to source.index, "size" to browsers.size))
+                        pending.tell.cancel()
+                    }
                 }
                 CaptureSourceItem.Category.WINDOW -> {
-                    val window = pending.sources.applicationWindows()[source.index]
-                    pending.tell.selectSource(window, audioMode)
+                    val windows = pending.sources.applicationWindows()
+                    if (source.index < windows.size) {
+                        pending.tell.selectSource(windows[source.index], audioMode)
+                    } else {
+                        logger.error(LogCategory.BROWSER, "Invalid window index", mapOf("index" to source.index, "size" to windows.size))
+                        pending.tell.cancel()
+                    }
                 }
                 CaptureSourceItem.Category.SCREEN -> {
-                    val screen = pending.sources.screens()[source.index]
-                    pending.tell.selectSource(screen, audioMode)
+                    val screens = pending.sources.screens()
+                    if (source.index < screens.size) {
+                        pending.tell.selectSource(screens[source.index], audioMode)
+                    } else {
+                        logger.error(LogCategory.BROWSER, "Invalid screen index", mapOf("index" to source.index, "size" to screens.size))
+                        pending.tell.cancel()
+                    }
                 }
             }
         } else {

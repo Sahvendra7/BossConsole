@@ -42,6 +42,7 @@ import ai.rever.boss.plugin.api.ApplicationEventBus
 import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.GenericDialogProvider
 import ai.rever.boss.plugin.api.NavigationResolverProvider
+import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.SemanticTokenProvider
 import ai.rever.boss.plugin.api.NavigationTargetProvider
 import ai.rever.boss.plugin.browser.BrowserService
@@ -285,6 +286,9 @@ class TrackingPluginContext(
 
     // URL history provider - delegate to underlying context
     override val urlHistoryProvider: UrlHistoryProvider? get() = delegate.urlHistoryProvider
+
+    // Screen capture provider - delegate to underlying context
+    override val screenCaptureProvider: ScreenCaptureProvider? get() = delegate.screenCaptureProvider
 
     // Terminal tab content provider - delegate to underlying context
     override val terminalTabContentProvider: TerminalTabContentProvider? get() = delegate.terminalTabContentProvider

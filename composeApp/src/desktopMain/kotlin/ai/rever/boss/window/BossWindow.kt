@@ -16,6 +16,8 @@ import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
+import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCaptureNotifier
+import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCapturePickerDialog
 import ai.rever.boss.components.plugin.panels.bottom.terminal.resetAllTerminalStates
 import ai.rever.bossterm.compose.onboarding.OnboardingWizard
 import ai.rever.bossterm.compose.settings.SettingsManager
@@ -919,6 +921,20 @@ fun ApplicationScope.BossWindow(
                 onDismiss = { showWelcomeWizard = false },
                 onComplete = { showWelcomeWizard = false },
                 settingsManager = SettingsManager.instance
+            )
+        }
+
+        // Screen Capture Picker Dialog
+        val captureRequest by ScreenCaptureNotifier.captureRequest.collectAsState()
+        captureRequest?.let { request ->
+            ScreenCapturePickerDialog(
+                screens = request.screens,
+                windows = request.windows,
+                browsers = request.browsers,
+                onDismiss = { ScreenCaptureNotifier.cancel(request.requestId) },
+                onSelect = { source, audioMode ->
+                    ScreenCaptureNotifier.selectSource(request.requestId, source, audioMode)
+                }
             )
         }
     }

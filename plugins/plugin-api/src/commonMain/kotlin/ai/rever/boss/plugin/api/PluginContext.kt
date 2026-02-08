@@ -319,6 +319,20 @@ interface PluginContext {
         get() = null
 
     /**
+     * Optional screen capture provider for browser plugins.
+     *
+     * Returns null if screen capture functionality is not available.
+     * Browser plugins can use this for:
+     * - Getting internal browser tabs to display in screen capture picker
+     * - Checking/requesting macOS screen capture permission
+     *
+     * The actual screen capture flow (StartCaptureSessionCallback, picker UI)
+     * is handled by the plugin itself.
+     */
+    val screenCaptureProvider: ScreenCaptureProvider?
+        get() = null
+
+    /**
      * Optional terminal tab content provider for terminal tab plugins.
      *
      * Returns null if terminal tab functionality is not available.

@@ -756,12 +756,18 @@ object FluckEngine {
             override fun on(params: RequestPermissionCallback.Params, action: RequestPermissionCallback.Action) {
                 val permissionType = params.permissionType()
 
+                logger.debug(LogCategory.BROWSER, "Permission requested", mapOf(
+                    "type" to permissionType.name
+                ))
+
                 // Auto-grant camera and microphone permissions for video conferencing
                 when (permissionType) {
                     PermissionType.VIDEO_CAPTURE -> {
+                        logger.info(LogCategory.BROWSER, "Granting VIDEO_CAPTURE permission")
                         action.grant()
                     }
                     PermissionType.AUDIO_CAPTURE -> {
+                        logger.info(LogCategory.BROWSER, "Granting AUDIO_CAPTURE permission")
                         action.grant()
                     }
                     PermissionType.NOTIFICATIONS -> {
@@ -769,6 +775,7 @@ object FluckEngine {
                     }
                     else -> {
                         // For other permissions, auto-grant as well
+                        logger.debug(LogCategory.BROWSER, "Granting permission", mapOf("type" to permissionType.name))
                         action.grant()
                     }
                 }

@@ -67,6 +67,7 @@ import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createZoomSettingsProvider
 import ai.rever.boss.components.plugin.providers.createUrlHistoryProvider
+import ai.rever.boss.components.plugin.providers.createScreenCaptureProvider
 import ai.rever.boss.components.plugin.providers.createTerminalTabContentProvider
 import ai.rever.boss.components.plugin.providers.createEditorContentProvider
 import ai.rever.boss.plugin.api.TerminalTabContentProvider
@@ -77,6 +78,7 @@ import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.GenericDialogProvider
 import ai.rever.boss.plugin.api.NavigationResolverProvider
 import ai.rever.boss.plugin.api.NavigationTargetProvider
+import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.SemanticTokenProvider
 import ai.rever.boss.components.plugin.providers.createNotificationProvider
 import ai.rever.boss.components.plugin.providers.createNavigationResolverProvider
@@ -375,6 +377,11 @@ class DefaultPlugin(
     // URL history provider for browser autocomplete
     override val urlHistoryProvider: UrlHistoryProvider by lazy {
         createUrlHistoryProvider()
+    }
+
+    // Screen capture provider for browser plugins
+    override val screenCaptureProvider: ScreenCaptureProvider by lazy {
+        createScreenCaptureProvider()
     }
 
     // Terminal tab content provider for terminal tab plugins

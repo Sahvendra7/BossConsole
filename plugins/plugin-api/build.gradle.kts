@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.risaboss"
-version = "1.0.12"
+version = "1.0.13"
 
 kotlin {
     // Suppress expect/actual classes beta warning (KT-61573)
