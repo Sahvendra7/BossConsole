@@ -21,16 +21,16 @@ actual object PluginWizardIntegration {
      * Install the selected plugins.
      *
      * @param dynamicPluginManager The plugin manager to use for installation
-     * @param pluginIds List of plugin IDs to install
+     * @param plugins List of plugins to install (includes GitHub URL info for GitHub-sourced plugins)
      * @param onProgress Progress callback (0.0 to 1.0, status message)
      * @return Result containing installation result with both successful and failed plugin IDs
      */
     actual suspend fun installPlugins(
         dynamicPluginManager: DynamicPluginManager,
-        pluginIds: List<String>,
+        plugins: List<WizardPluginInfo>,
         onProgress: (Float, String) -> Unit
     ): Result<PluginInstallResult> {
         val service = PluginInstallService.create(dynamicPluginManager)
-        return service.installPlugins(pluginIds, onProgress)
+        return service.installPlugins(plugins, onProgress)
     }
 }

@@ -76,7 +76,7 @@ fun PluginInstallWizard(
     state: PluginInstallWizardState,
     onDismiss: () -> Unit,
     onComplete: () -> Unit,
-    onInstallPlugins: suspend (List<String>, (Float, String) -> Unit) -> Result<PluginInstallResult>
+    onInstallPlugins: suspend (List<WizardPluginInfo>, (Float, String) -> Unit) -> Result<PluginInstallResult>
 ) {
     val currentStep = state.wizardState.currentStep
     val scope = rememberCoroutineScope()
@@ -85,14 +85,14 @@ fun PluginInstallWizard(
     // Use installationAttempted flag to prevent re-triggering (fixes race condition)
     LaunchedEffect(currentStep) {
         if (currentStep is PluginInstallStep.Installing && !state.isInstalling && !state.installationAttempted) {
-            val selectedIds = state.getSelectedPluginIds()
-            if (selectedIds.isEmpty()) {
+            val selectedPlugins = state.getSelectedPlugins()
+            if (selectedPlugins.isEmpty()) {
                 // No plugins selected, skip to complete
                 state.completeInstallation(emptyList())
                 state.goToNextStep()
             } else {
                 state.startInstallation()
-                val result = onInstallPlugins(selectedIds) { progress, status ->
+                val result = onInstallPlugins(selectedPlugins) { progress, status ->
                     state.updateProgress(progress, status)
                 }
                 result.fold(

@@ -614,7 +614,10 @@ class PluginManagerOperationsImpl(
                     logger.debug(LogCategory.SYSTEM, "Extracted manifest from JAR", mapOf(
                         "jarPath" to jarPath,
                         "pluginId" to manifest.pluginId,
-                        "version" to manifest.version
+                        "version" to manifest.version,
+                        "apiVersion" to manifest.apiVersion,
+                        "minBossVersion" to manifest.minBossVersion,
+                        "type" to manifest.type.name
                     ))
 
                     ExtractedManifest(

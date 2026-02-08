@@ -2913,14 +2913,14 @@ fun ComponentContext.BossApp(
                         focusRequester.requestFocus()
                         logger.info(LogCategory.SYSTEM, "Plugin wizard completed")
                     },
-                    onInstallPlugins = { pluginIds, onProgress ->
+                    onInstallPlugins = { plugins, onProgress ->
                         when {
                             dynamicPluginManager != null -> {
                                 try {
                                     logger.info(LogCategory.SYSTEM, "Installing plugins from wizard", mapOf(
-                                        "pluginCount" to pluginIds.size.toString()
+                                        "pluginCount" to plugins.size.toString()
                                     ))
-                                    PluginWizardIntegration.installPlugins(dynamicPluginManager, pluginIds, onProgress)
+                                    PluginWizardIntegration.installPlugins(dynamicPluginManager, plugins, onProgress)
                                 } catch (e: Exception) {
                                     logger.error(LogCategory.SYSTEM, "Plugin installation failed", error = e)
                                     Result.failure(e)

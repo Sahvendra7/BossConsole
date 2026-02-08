@@ -19,8 +19,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
  * @property version Plugin version
  * @property icon Optional icon for the plugin
  * @property isDefault Whether this plugin should be selected by default
+ * @property isMandatory Whether this plugin is mandatory and cannot be deselected
  * @property category The category this plugin belongs to
- * @property downloadUrl URL to download the plugin
+ * @property downloadUrl URL to download the plugin from repository
+ * @property githubUrl GitHub URL to fetch the plugin (used for GitHub-sourced plugins)
  */
 data class WizardPluginInfo(
     val id: String,
@@ -29,8 +31,10 @@ data class WizardPluginInfo(
     val version: String,
     val icon: ImageVector? = null,
     val isDefault: Boolean = false,
+    val isMandatory: Boolean = false,
     val category: PluginCategory = PluginCategory.OTHER,
-    val downloadUrl: String = ""
+    val downloadUrl: String = "",
+    val githubUrl: String = ""
 )
 
 /**
@@ -105,10 +109,18 @@ class PluginInstallWizardState(
     private val pluginsByCategory: Map<PluginCategory, List<WizardPluginInfo>> =
         availablePlugins.groupBy { it.category }
 
+    /**
+     * Set of mandatory plugin IDs that cannot be deselected.
+     */
+    private val mandatoryPluginIds: Set<String> = availablePlugins
+        .filter { it.isMandatory }
+        .map { it.id }
+        .toSet()
+
     init {
-        // Initialize with default selections
+        // Initialize with default selections (mandatory plugins are always selected)
         availablePlugins.forEach { plugin ->
-            _selectedPlugins[plugin.id] = plugin.isDefault
+            _selectedPlugins[plugin.id] = plugin.isDefault || plugin.isMandatory
         }
     }
 
@@ -127,16 +139,33 @@ class PluginInstallWizardState(
     }
 
     /**
+     * Check if a plugin is mandatory.
+     */
+    fun isPluginMandatory(pluginId: String): Boolean {
+        return pluginId in mandatoryPluginIds
+    }
+
+    /**
      * Toggle a plugin's selection state.
+     * Mandatory plugins cannot be deselected.
      */
     fun togglePlugin(pluginId: String) {
+        // Don't allow deselecting mandatory plugins
+        if (isPluginMandatory(pluginId) && isPluginSelected(pluginId)) {
+            return
+        }
         _selectedPlugins[pluginId] = !isPluginSelected(pluginId)
     }
 
     /**
      * Set a plugin's selection state.
+     * Mandatory plugins cannot be deselected.
      */
     fun setPluginSelected(pluginId: String, selected: Boolean) {
+        // Don't allow deselecting mandatory plugins
+        if (isPluginMandatory(pluginId) && !selected) {
+            return
+        }
         _selectedPlugins[pluginId] = selected
     }
 
@@ -150,11 +179,13 @@ class PluginInstallWizardState(
     }
 
     /**
-     * Deselect all plugins in a category.
+     * Deselect all plugins in a category (except mandatory ones).
      */
     fun deselectAllInCategory(category: PluginCategory) {
         getPluginsForCategory(category).forEach { plugin ->
-            _selectedPlugins[plugin.id] = false
+            if (!plugin.isMandatory) {
+                _selectedPlugins[plugin.id] = false
+            }
         }
     }
 

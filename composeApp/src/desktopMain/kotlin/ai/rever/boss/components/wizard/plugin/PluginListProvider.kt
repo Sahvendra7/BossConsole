@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Web
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -49,16 +50,38 @@ object PluginListProvider {
     )
 
     /**
+     * Plugin IDs that are mandatory and cannot be deselected.
+     * These are core tab plugins that provide essential functionality.
+     */
+    val MANDATORY_PLUGIN_IDS = setOf(
+        "ai.rever.boss.plugin.dynamic.fluckbrowser",
+        "ai.rever.boss.plugin.dynamic.editortab",
+        "ai.rever.boss.plugin.dynamic.terminaltab"
+    )
+
+    /**
+     * Map of plugin IDs to their GitHub URLs (for plugins not in the repository).
+     */
+    private val GITHUB_PLUGIN_URLS = mapOf(
+        "ai.rever.boss.plugin.dynamic.fluckbrowser" to "https://github.com/risa-labs-inc/boss-plugin-fluck-browser",
+        "ai.rever.boss.plugin.dynamic.editortab" to "https://github.com/risa-labs-inc/boss-plugin-editor-tab",
+        "ai.rever.boss.plugin.dynamic.terminaltab" to "https://github.com/risa-labs-inc/boss-plugin-terminal-tab"
+    )
+
+    /**
      * Map of plugin IDs to their categories.
      * Plugin IDs use the format: ai.rever.boss.plugin.dynamic.<name>
      */
     private val PLUGIN_CATEGORIES = mapOf(
-        // Essential
+        // Essential (includes mandatory tab plugins)
         "ai.rever.boss.plugin.dynamic.terminal" to PluginCategory.ESSENTIAL,
         "ai.rever.boss.plugin.dynamic.console" to PluginCategory.ESSENTIAL,
         "ai.rever.boss.plugin.dynamic.fluck" to PluginCategory.ESSENTIAL,
         "ai.rever.boss.plugin.dynamic.usersecretlist" to PluginCategory.ESSENTIAL,
         "ai.rever.boss.plugin.dynamic.downloads" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.fluckbrowser" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.editortab" to PluginCategory.ESSENTIAL,
+        "ai.rever.boss.plugin.dynamic.terminaltab" to PluginCategory.ESSENTIAL,
 
         // Developer
         "ai.rever.boss.plugin.dynamic.codebase" to PluginCategory.DEVELOPER,
@@ -102,11 +125,16 @@ object PluginListProvider {
         "ai.rever.boss.plugin.dynamic.usersecretlist" to Icons.Default.Key,
         "ai.rever.boss.plugin.dynamic.performance" to Icons.Default.AutoAwesome,
         "ai.rever.boss.plugin.dynamic.fluck" to Icons.Default.Psychology,
-        "ai.rever.boss.plugin.dynamic.runconfigurations" to Icons.Default.PlayArrow
+        "ai.rever.boss.plugin.dynamic.runconfigurations" to Icons.Default.PlayArrow,
+        // Mandatory tab plugins
+        "ai.rever.boss.plugin.dynamic.fluckbrowser" to Icons.Default.Web,
+        "ai.rever.boss.plugin.dynamic.editortab" to Icons.Default.Code,
+        "ai.rever.boss.plugin.dynamic.terminaltab" to Icons.Default.Terminal
     )
 
     /**
      * Get available plugins for the wizard from the repository.
+     * Always includes mandatory GitHub plugins even if not in the repository.
      *
      * @return List of plugins formatted for the wizard
      */
@@ -125,9 +153,17 @@ object PluginListProvider {
                         "count" to pluginsWithSource.size
                     ))
 
-                    pluginsWithSource.map { pws: PluginWithSource ->
+                    val repoPlugins = pluginsWithSource.map { pws: PluginWithSource ->
                         convertToWizardPluginInfo(pws.plugin)
-                    }.sortedWith(compareBy({ it.category.ordinal }, { !it.isDefault }, { it.name }))
+                    }
+
+                    // Add mandatory GitHub plugins that aren't in the repository
+                    val existingIds = repoPlugins.map { it.id }.toSet()
+                    val mandatoryPlugins = getMandatoryGitHubPlugins()
+                        .filter { it.id !in existingIds }
+
+                    (repoPlugins + mandatoryPlugins)
+                        .sortedWith(compareBy({ !it.isMandatory }, { it.category.ordinal }, { !it.isDefault }, { it.name }))
                 },
                 onFailure = { error ->
                     logger.error(LogCategory.SYSTEM, "Failed to fetch plugins", error = error)
@@ -146,7 +182,9 @@ object PluginListProvider {
     private fun convertToWizardPluginInfo(plugin: PluginInfo): WizardPluginInfo {
         val category = PLUGIN_CATEGORIES[plugin.pluginId] ?: PluginCategory.OTHER
         val isDefault = plugin.pluginId in DEFAULT_PLUGIN_IDS
+        val isMandatory = plugin.pluginId in MANDATORY_PLUGIN_IDS
         val icon = PLUGIN_ICONS[plugin.pluginId] ?: Icons.Default.Extension
+        val githubUrl = GITHUB_PLUGIN_URLS[plugin.pluginId] ?: ""
 
         return WizardPluginInfo(
             id = plugin.pluginId,
@@ -154,9 +192,53 @@ object PluginListProvider {
             description = plugin.description,
             version = plugin.version,
             icon = icon,
-            isDefault = isDefault,
+            isDefault = isDefault || isMandatory, // Mandatory plugins are always selected by default
+            isMandatory = isMandatory,
             category = category,
-            downloadUrl = plugin.downloadUrl
+            downloadUrl = plugin.downloadUrl,
+            githubUrl = githubUrl
+        )
+    }
+
+    /**
+     * Get the mandatory GitHub plugins that must always be included.
+     * These are core tab plugins sourced from GitHub.
+     */
+    private fun getMandatoryGitHubPlugins(): List<WizardPluginInfo> {
+        return listOf(
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.fluckbrowser",
+                name = "Browser Tab",
+                description = "Full-featured embedded web browser with tabs support",
+                version = "1.0.7",
+                icon = Icons.Default.Web,
+                isDefault = true,
+                isMandatory = true,
+                category = PluginCategory.ESSENTIAL,
+                githubUrl = "https://github.com/risa-labs-inc/boss-plugin-fluck-browser"
+            ),
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.editortab",
+                name = "Code Editor Tab",
+                description = "Code editor with syntax highlighting and code folding",
+                version = "1.0.2",
+                icon = Icons.Default.Code,
+                isDefault = true,
+                isMandatory = true,
+                category = PluginCategory.ESSENTIAL,
+                githubUrl = "https://github.com/risa-labs-inc/boss-plugin-editor-tab"
+            ),
+            WizardPluginInfo(
+                id = "ai.rever.boss.plugin.dynamic.terminaltab",
+                name = "Terminal Tab",
+                description = "Terminal emulation tab with full PTY support",
+                version = "1.0.4",
+                icon = Icons.Default.Terminal,
+                isDefault = true,
+                isMandatory = true,
+                category = PluginCategory.ESSENTIAL,
+                githubUrl = "https://github.com/risa-labs-inc/boss-plugin-terminal-tab"
+            )
         )
     }
 
@@ -166,7 +248,7 @@ object PluginListProvider {
      * Plugin IDs use the format: ai.rever.boss.plugin.dynamic.<name>
      */
     private fun getFallbackPluginList(): List<WizardPluginInfo> {
-        return listOf(
+        return getMandatoryGitHubPlugins() + listOf(
             // Essential
             WizardPluginInfo(
                 id = "ai.rever.boss.plugin.dynamic.terminal",

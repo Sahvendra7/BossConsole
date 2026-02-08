@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.panel.manager
 
+import ai.rever.boss.plugin.api.PluginType as ApiPluginType
 import ai.rever.boss.plugin.repository.PluginInfo
 import ai.rever.boss.plugin.ui.BossBadge
 import ai.rever.boss.plugin.ui.BossCard
@@ -870,7 +871,19 @@ private fun UpdateCard(
 private enum class PluginType(val value: String, val displayText: String) {
     PANEL("panel", "Panel (Sidebar)"),
     TAB("tab", "Tab (Main Area)"),
-    HYBRID("hybrid", "Hybrid (Both)")
+    HYBRID("hybrid", "Hybrid (Both)");
+
+    companion object {
+        /**
+         * Convert from API PluginType to local UI PluginType.
+         */
+        fun fromApiType(apiType: ApiPluginType): PluginType = when (apiType) {
+            ApiPluginType.PANEL -> PANEL
+            ApiPluginType.TAB -> TAB
+            ApiPluginType.MIXED -> HYBRID
+            ApiPluginType.SERVICE -> PANEL // Default to PANEL for service type
+        }
+    }
 }
 
 /**
@@ -1088,7 +1101,7 @@ private fun PublishTab(
                                                         homepageUrl = manifest.url ?: trimmedUrl
                                                         apiVersion = manifest.apiVersion
                                                         minBossVersion = manifest.minBossVersion.ifEmpty { "1.0.0" }
-                                                        pluginType = manifest.type
+                                                        pluginType = PluginType.fromApiType(manifest.type)
                                                         fetchStatus = null
                                                     },
                                                     { error ->
@@ -1145,7 +1158,7 @@ private fun PublishTab(
                                                         homepageUrl = manifest.url ?: ""
                                                         apiVersion = manifest.apiVersion
                                                         minBossVersion = manifest.minBossVersion.ifEmpty { "1.0.0" }
-                                                        pluginType = manifest.type
+                                                        pluginType = PluginType.fromApiType(manifest.type)
                                                     }
                                                 }
                                             }
