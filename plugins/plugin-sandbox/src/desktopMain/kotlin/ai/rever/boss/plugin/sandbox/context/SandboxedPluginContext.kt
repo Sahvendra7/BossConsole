@@ -216,6 +216,10 @@ class SandboxedPluginContext(
             return result
         }
 
+    // Plugin-to-plugin API access - delegate to underlying context
+    override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
+    override fun registerPluginAPI(api: Any) = delegate.registerPluginAPI(api)
+
     /**
      * Get the underlying sandbox for this context.
      */

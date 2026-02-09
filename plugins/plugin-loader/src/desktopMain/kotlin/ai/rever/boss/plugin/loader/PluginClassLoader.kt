@@ -69,6 +69,10 @@ class PluginClassLoader(
             // BOSS Browser Service API
             "ai.rever.boss.plugin.browser.",
 
+            // BOSS Plugin type modules (must be from host for Compose stability)
+            "ai.rever.boss.plugin.bookmark.",
+            "ai.rever.boss.plugin.workspace.",
+
             // Compose (shared UI framework)
             "androidx.compose.",
 
@@ -84,7 +88,11 @@ class PluginClassLoader(
 
             // Logging
             "org.slf4j.",
-            "ai.rever.boss.plugin.logging."
+            "ai.rever.boss.plugin.logging.",
+
+            // BOSS Plugin UI components
+            "ai.rever.boss.plugin.ui.",
+            "ai.rever.boss.plugin.scrollbar."
         )
     }
 

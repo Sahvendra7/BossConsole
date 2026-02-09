@@ -35,8 +35,8 @@ kotlin {
                 // Serialization for manifest parsing
                 implementation(libs.kotlinx.serialization.json)
 
-                // Plugin API dependency
-                api(projects.plugins.pluginApi)
+                // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
+                api(projects.plugins.pluginApiCore)
 
                 // Logging
                 implementation(projects.plugins.pluginLogging)

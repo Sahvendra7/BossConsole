@@ -317,6 +317,10 @@ class TrackingPluginContext(
     // Navigation target provider - delegate to underlying context
     override val navigationTargetProvider: NavigationTargetProvider? get() = delegate.navigationTargetProvider
 
+    // Plugin-to-plugin API access - delegate to underlying context
+    override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
+    override fun registerPluginAPI(api: Any) = delegate.registerPluginAPI(api)
+
     /**
      * Get the panels registered by this plugin.
      */

@@ -180,6 +180,7 @@ class DynamicPluginLoaderImpl(
             val loadedPlugin = LoadedPlugin(
                 manifest = manifest,
                 instance = pluginInstance,
+                classLoader = classLoader,
                 jarPath = jarPath,
                 state = PluginState.LOADED
             )
@@ -222,6 +223,19 @@ class DynamicPluginLoaderImpl(
                     "Plugin not found: $pluginId",
                     pluginId
                 ))
+
+            // Check if the plugin can be unloaded (system plugins may be protected)
+            if (!loadedPlugin.manifest.canUnload) {
+                logger.warn(LogCategory.SYSTEM, "Cannot unload system plugin", mapOf(
+                    "pluginId" to pluginId,
+                    "systemPlugin" to loadedPlugin.manifest.systemPlugin
+                ))
+                return Result.failure(PluginUnloadException(
+                    "Cannot unload system plugin: $pluginId (canUnload=false)",
+                    pluginId,
+                    listOf("System plugin is protected from unloading")
+                ))
+            }
 
             // Update state
             loadedPlugins[pluginId] = loadedPlugin.copy(state = PluginState.UNLOADING)
@@ -340,6 +354,83 @@ class DynamicPluginLoaderImpl(
      * Get the classloader manager for advanced operations.
      */
     fun getClassLoaderManager(): PluginClassLoaderManager = classLoaderManager
+
+    /**
+     * Load all bundled plugins from a directory.
+     *
+     * Bundled plugins are system plugins that ship with BossConsole.
+     * They are loaded in priority order (lower loadPriority values load first).
+     *
+     * @param bundledDir Directory containing bundled plugin JARs
+     * @return List of successfully loaded plugins, sorted by load priority
+     */
+    suspend fun loadBundledPlugins(bundledDir: java.io.File): List<LoadedPlugin> {
+        if (!bundledDir.exists() || !bundledDir.isDirectory) {
+            logger.debug(LogCategory.SYSTEM, "Bundled plugins directory not found", mapOf(
+                "path" to bundledDir.absolutePath
+            ))
+            return emptyList()
+        }
+
+        val jarFiles = bundledDir.listFiles { file ->
+            file.isFile && file.extension == "jar"
+        } ?: emptyArray()
+
+        if (jarFiles.isEmpty()) {
+            logger.debug(LogCategory.SYSTEM, "No bundled plugins found", mapOf(
+                "path" to bundledDir.absolutePath
+            ))
+            return emptyList()
+        }
+
+        logger.info(LogCategory.SYSTEM, "Loading bundled plugins", mapOf(
+            "count" to jarFiles.size,
+            "path" to bundledDir.absolutePath
+        ))
+
+        // Load plugins and collect successful ones
+        val loadedBundled = mutableListOf<LoadedPlugin>()
+        for (jarFile in jarFiles) {
+            try {
+                val result = loadPlugin(jarFile.absolutePath)
+                if (result.isSuccess) {
+                    loadedBundled.add(result.getOrThrow())
+                } else {
+                    logger.error(LogCategory.SYSTEM, "Failed to load bundled plugin", mapOf(
+                        "file" to jarFile.name,
+                        "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                    ))
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.SYSTEM, "Exception loading bundled plugin", mapOf(
+                    "file" to jarFile.name
+                ), e)
+            }
+        }
+
+        // Sort by load priority (lower values first)
+        return loadedBundled.sortedBy { it.manifest.loadPriority }
+    }
+
+    /**
+     * Check if a plugin is a system/bundled plugin.
+     *
+     * @param pluginId The plugin ID to check
+     * @return True if the plugin is a system plugin
+     */
+    fun isSystemPlugin(pluginId: String): Boolean {
+        return loadedPlugins[pluginId]?.manifest?.systemPlugin == true
+    }
+
+    /**
+     * Check if a plugin can be unloaded.
+     *
+     * @param pluginId The plugin ID to check
+     * @return True if the plugin can be unloaded
+     */
+    fun canUnloadPlugin(pluginId: String): Boolean {
+        return loadedPlugins[pluginId]?.manifest?.canUnload != false
+    }
 
     /**
      * Dispose all loaded plugins and classloaders.

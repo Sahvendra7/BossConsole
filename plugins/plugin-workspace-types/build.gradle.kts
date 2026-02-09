@@ -25,6 +25,8 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
+                // Compose runtime for @Immutable annotation
+                implementation(libs.compose.mp.runtime)
             }
         }
     }

@@ -345,6 +345,21 @@ class DynamicPluginManager(
 
                 val manifest = loadedPlugin.manifest
 
+                // Check if plugin can be unloaded (system plugins may be protected)
+                if (!manifest.canUnload && !force) {
+                    logger.warn(LogCategory.SYSTEM, "Cannot unload system plugin", mapOf(
+                        "pluginId" to pluginId,
+                        "systemPlugin" to manifest.systemPlugin
+                    ))
+                    return@withLock Result.failure(
+                        PluginUnloadException(
+                            "Cannot unload system plugin: $pluginId (canUnload=false)",
+                            pluginId,
+                            listOf("System plugin is protected from unloading")
+                        )
+                    )
+                }
+
                 // Check if unload is allowed
                 if (!force) {
                     val canUnload = checkCanUnload(pluginId)
@@ -589,6 +604,134 @@ class DynamicPluginManager(
         ))
 
         return results
+    }
+
+    /**
+     * Load all bundled plugins from a directory.
+     *
+     * Bundled plugins are system plugins that ship with BossConsole.
+     * They are loaded in priority order (lower loadPriority values load first).
+     *
+     * @param bundledDir Directory containing bundled plugin JARs
+     * @return Map of plugin IDs to their load results
+     */
+    suspend fun loadBundledPlugins(
+        bundledDir: java.io.File
+    ): Map<String, Result<DynamicPluginInfo>> {
+        val results = mutableMapOf<String, Result<DynamicPluginInfo>>()
+
+        if (!bundledDir.exists() || !bundledDir.isDirectory) {
+            logger.debug(LogCategory.SYSTEM, "Bundled plugins directory not found", mapOf(
+                "path" to bundledDir.absolutePath
+            ))
+            return results
+        }
+
+        val jarFiles = bundledDir.listFiles { file ->
+            file.isFile && file.extension == "jar"
+        }?.toList() ?: emptyList()
+
+        if (jarFiles.isEmpty()) {
+            logger.debug(LogCategory.SYSTEM, "No bundled plugins found", mapOf(
+                "path" to bundledDir.absolutePath
+            ))
+            return results
+        }
+
+        logger.info(LogCategory.SYSTEM, "Loading bundled plugins", mapOf(
+            "count" to jarFiles.size,
+            "path" to bundledDir.absolutePath
+        ))
+
+        // Load each bundled plugin
+        for (jarFile in jarFiles) {
+            try {
+                val result = installPlugin(jarFile.absolutePath, enabled = true)
+                val pluginId = result.getOrNull()?.manifest?.pluginId ?: jarFile.nameWithoutExtension
+                results[pluginId] = result
+
+                if (result.isSuccess) {
+                    val info = result.getOrThrow()
+                    logger.info(LogCategory.SYSTEM, "Loaded bundled plugin", mapOf(
+                        "pluginId" to info.manifest.pluginId,
+                        "version" to info.manifest.version,
+                        "systemPlugin" to info.manifest.systemPlugin,
+                        "loadPriority" to info.manifest.loadPriority
+                    ))
+                } else {
+                    logger.error(LogCategory.SYSTEM, "Failed to load bundled plugin", mapOf(
+                        "file" to jarFile.name,
+                        "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                    ))
+                }
+            } catch (e: Exception) {
+                logger.error(LogCategory.SYSTEM, "Exception loading bundled plugin", mapOf(
+                    "file" to jarFile.name
+                ), e)
+                results[jarFile.nameWithoutExtension] = Result.failure(e)
+            }
+        }
+
+        // Sort results by loadPriority for logging
+        val sortedPlugins = results.values
+            .mapNotNull { it.getOrNull() }
+            .sortedBy { it.manifest.loadPriority }
+
+        logger.info(LogCategory.SYSTEM, "Finished loading bundled plugins", mapOf(
+            "total" to jarFiles.size,
+            "successful" to results.count { it.value.isSuccess },
+            "failed" to results.count { it.value.isFailure },
+            "loadOrder" to sortedPlugins.map { "${it.manifest.pluginId}(${it.manifest.loadPriority})" }
+        ))
+
+        return results
+    }
+
+    /**
+     * Check if a plugin is a system/bundled plugin.
+     *
+     * @param pluginId The plugin ID to check
+     * @return True if the plugin is a system plugin
+     */
+    fun isSystemPlugin(pluginId: String): Boolean {
+        return _pluginStates.value[pluginId]?.manifest?.systemPlugin == true
+    }
+
+    /**
+     * Get the bundled plugins directory path.
+     *
+     * @return The path to the bundled plugins directory
+     */
+    fun getBundledPluginsDirectory(): java.io.File {
+        // First check for system property override (useful for development)
+        val systemPropDir = System.getProperty("boss.bundled.plugins.dir")
+        if (!systemPropDir.isNullOrBlank()) {
+            return java.io.File(systemPropDir)
+        }
+
+        val userDir = System.getProperty("user.dir")
+
+        // Check multiple locations in order of priority:
+        // 1. bundled-plugins in current directory (production)
+        val prodDir = java.io.File(userDir, "bundled-plugins")
+        if (prodDir.exists() && prodDir.isDirectory) {
+            return prodDir
+        }
+
+        // 2. composeApp/build/bundled-plugins (development - Gradle run)
+        val devDir = java.io.File(userDir, "composeApp/build/bundled-plugins")
+        if (devDir.exists() && devDir.isDirectory) {
+            return devDir
+        }
+
+        // 3. ../build/bundled-plugins (development - running from composeApp)
+        val devDir2 = java.io.File(userDir, "../composeApp/build/bundled-plugins")
+        if (devDir2.exists() && devDir2.isDirectory) {
+            return devDir2
+        }
+
+        // Default to production location even if it doesn't exist
+        return prodDir
     }
 
     /**

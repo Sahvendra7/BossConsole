@@ -147,6 +147,248 @@ val generateVersionConstants = tasks.register("generateVersionConstants") {
     }
 }
 
+// Bundled plugins configuration
+// Downloads the latest boss-plugin-api from GitHub releases
+// Repo: https://github.com/risa-labs-inc/boss-plugin-api
+
+// Task to download latest bundled plugins from GitHub releases using curl
+val downloadBundledPlugins = tasks.register("downloadBundledPlugins") {
+    group = "build"
+    description = "Downloads the latest bundled plugin JARs from GitHub releases"
+
+    val destDir = layout.buildDirectory.dir("bundled-plugins")
+    outputs.dir(destDir)
+
+    doLast {
+        val bundledPluginsDir = destDir.get().asFile
+        bundledPluginsDir.mkdirs()
+
+        // List of bundled plugins to download from GitHub releases
+        // These are core plugins that ship with BossConsole
+        val bundledPlugins = listOf(
+            "risa-labs-inc/boss-plugin-api" to "boss-plugin-api",
+            "risa-labs-inc/boss-plugin-terminal-tab" to "boss-plugin-terminal-tab",
+            "risa-labs-inc/boss-plugin-fluck-browser" to "boss-plugin-fluck-browser",
+            "risa-labs-inc/boss-plugin-editor-tab" to "boss-plugin-editor-tab",
+            "risa-labs-inc/boss-plugin-plugin-manager" to "boss-plugin-plugin-manager"
+        )
+
+        for ((repo, artifactPrefix) in bundledPlugins) {
+            try {
+                logger.lifecycle("📦 Fetching latest release for $repo...")
+
+                // Get latest release info from GitHub API using curl
+                val apiUrl = "https://api.github.com/repos/$repo/releases/latest"
+                val curlProcess = ProcessBuilder("curl", "-s", "-H", "Accept: application/vnd.github.v3+json", apiUrl)
+                    .redirectErrorStream(true)
+                    .start()
+                val responseText = curlProcess.inputStream.bufferedReader().readText()
+                curlProcess.waitFor()
+
+                // Parse JSON to find the JAR asset
+                val tagNameMatch = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(responseText)
+                val tagName = tagNameMatch?.groupValues?.get(1) ?: "unknown"
+
+                // Find the JAR download URL (look for browser_download_url ending in .jar)
+                val jarUrlMatch = Regex(""""browser_download_url"\s*:\s*"([^"]+$artifactPrefix[^"]*\.jar)"""").find(responseText)
+
+                if (jarUrlMatch == null) {
+                    logger.warn("⚠️  No JAR asset found in release for $repo")
+                    continue
+                }
+
+                val jarUrl = jarUrlMatch.groupValues[1]
+                val jarFileName = jarUrl.substringAfterLast("/")
+                val destFile = File(bundledPluginsDir, jarFileName)
+
+                // Check if we already have this version
+                if (destFile.exists()) {
+                    logger.lifecycle("✅ $jarFileName already exists (version: $tagName)")
+                    continue
+                }
+
+                // Clean up old versions of this plugin
+                bundledPluginsDir.listFiles()?.filter {
+                    it.name.startsWith(artifactPrefix) && it.name.endsWith(".jar")
+                }?.forEach { oldFile ->
+                    logger.lifecycle("🗑️  Removing old version: ${oldFile.name}")
+                    oldFile.delete()
+                }
+
+                // Download the JAR using curl
+                logger.lifecycle("⬇️  Downloading $jarFileName...")
+                val downloadProcess = ProcessBuilder("curl", "-sL", "-o", destFile.absolutePath, jarUrl)
+                    .redirectErrorStream(true)
+                    .start()
+                downloadProcess.waitFor()
+
+                logger.lifecycle("✅ Downloaded $jarFileName (version: $tagName, size: ${destFile.length()} bytes)")
+
+            } catch (e: Exception) {
+                logger.warn("⚠️  Failed to download bundled plugin from $repo: ${e.message}")
+            }
+        }
+    }
+}
+
+// Task to copy bundled plugins from local build (for development)
+val copyBundledPluginsLocal = tasks.register("copyBundledPluginsLocal") {
+    group = "build"
+    description = "Copies bundled plugin JARs from local build (for development), keeping only the latest version"
+
+    val bossPluginApiDir = layout.projectDirectory.dir("../../boss_plugin/boss-plugin-api/build/libs")
+    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugin/plugin-manager/build/libs")
+    val bookmarksDir = layout.projectDirectory.dir("../../boss_plugin/bookmarks/build/libs")
+    val destDir = layout.buildDirectory.dir("bundled-plugins")
+
+    doLast {
+        val bundledPluginsDir = destDir.get().asFile
+        bundledPluginsDir.mkdirs()
+
+        // Helper to extract version from JAR filename (e.g., "boss-plugin-api-1.0.21.jar" -> "1.0.21")
+        fun extractVersion(fileName: String): String? {
+            val match = Regex(""".*-(\d+\.\d+\.\d+)\.jar$""").find(fileName)
+            return match?.groupValues?.get(1)
+        }
+
+        // Helper to compare versions (returns true if v1 > v2)
+        fun isNewerVersion(v1: String, v2: String): Boolean {
+            val v1Parts = v1.split(".").mapNotNull { it.toIntOrNull() }
+            val v2Parts = v2.split(".").mapNotNull { it.toIntOrNull() }
+            for (i in 0 until maxOf(v1Parts.size, v2Parts.size)) {
+                val p1 = v1Parts.getOrElse(i) { 0 }
+                val p2 = v2Parts.getOrElse(i) { 0 }
+                if (p1 > p2) return true
+                if (p1 < p2) return false
+            }
+            return false
+        }
+
+        // Helper to copy latest JAR, removing old versions
+        fun copyLatestJar(sourceDir: File, artifactPrefix: String) {
+            if (!sourceDir.exists()) {
+                logger.warn("⚠️  Source directory not found: ${sourceDir.absolutePath}")
+                return
+            }
+
+            // Find the latest JAR in source directory
+            val sourceJar = sourceDir.listFiles()?.filter {
+                it.name.startsWith(artifactPrefix) && it.name.endsWith(".jar") &&
+                !it.name.contains("-sources") && !it.name.contains("-javadoc")
+            }?.maxByOrNull { extractVersion(it.name) ?: "0.0.0" }
+
+            if (sourceJar == null) {
+                logger.warn("⚠️  No $artifactPrefix JAR found in: ${sourceDir.absolutePath}")
+                return
+            }
+
+            val sourceVersion = extractVersion(sourceJar.name) ?: "0.0.0"
+
+            // Check existing JARs in bundled-plugins directory
+            val existingJars = bundledPluginsDir.listFiles()?.filter {
+                it.name.startsWith(artifactPrefix) && it.name.endsWith(".jar")
+            } ?: emptyList()
+
+            // Find the latest existing version
+            val latestExisting = existingJars.maxByOrNull { extractVersion(it.name) ?: "0.0.0" }
+            val existingVersion = latestExisting?.let { extractVersion(it.name) } ?: "0.0.0"
+
+            // Only copy if source is newer or same version
+            if (isNewerVersion(existingVersion, sourceVersion)) {
+                logger.lifecycle("⏭️  Keeping existing $artifactPrefix v$existingVersion (source has v$sourceVersion)")
+                return
+            }
+
+            // Remove all old versions
+            existingJars.forEach { oldJar ->
+                logger.lifecycle("🗑️  Removing old version: ${oldJar.name}")
+                oldJar.delete()
+            }
+
+            // Copy the new JAR
+            val destFile = File(bundledPluginsDir, sourceJar.name)
+            sourceJar.copyTo(destFile, overwrite = true)
+            logger.lifecycle("✅ Copied ${sourceJar.name} (v$sourceVersion)")
+        }
+
+        // Copy boss-plugin-api
+        copyLatestJar(bossPluginApiDir.asFile, "boss-plugin-api")
+
+        // Copy plugin-manager
+        copyLatestJar(pluginManagerDir.asFile, "boss-plugin-plugin-manager")
+
+        // Copy bookmarks
+        copyLatestJar(bookmarksDir.asFile, "boss-plugin-bookmarks")
+    }
+}
+
+// Task to copy local plugin-manager to ~/.boss/plugins for development testing
+val copyPluginManagerToDev = tasks.register("copyPluginManagerToDev") {
+    group = "build"
+    description = "Copies local plugin-manager build to ~/.boss/plugins for development testing"
+
+    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugin/plugin-manager/build/libs")
+    val userHome = System.getProperty("user.home")
+    val destDir = File("$userHome/.boss/plugins")
+
+    doLast {
+        destDir.mkdirs()
+
+        val sourceDir = pluginManagerDir.asFile
+        val jarFile = sourceDir.listFiles()?.filter {
+            it.name.startsWith("boss-plugin-plugin-manager") && it.name.endsWith(".jar") &&
+            !it.name.contains("-sources") && !it.name.contains("-javadoc")
+        }?.maxByOrNull { it.lastModified() }
+
+        if (jarFile != null) {
+            // Remove old versions
+            destDir.listFiles()?.filter {
+                it.name.startsWith("boss-plugin-plugin-manager") && it.name.endsWith(".jar")
+            }?.forEach { oldFile ->
+                logger.lifecycle("🗑️  Removing old version: ${oldFile.name}")
+                oldFile.delete()
+            }
+
+            // Copy new version
+            val destFile = File(destDir, jarFile.name)
+            jarFile.copyTo(destFile, overwrite = true)
+            logger.lifecycle("✅ Copied ${jarFile.name} to ${destDir.absolutePath}")
+
+            // Update installed.json
+            val installedJson = File(destDir, "installed.json")
+            if (installedJson.exists()) {
+                val content = installedJson.readText()
+                val updatedContent = content.replace(
+                    Regex("boss-plugin-plugin-manager-[0-9]+\\.[0-9]+\\.[0-9]+\\.jar"),
+                    jarFile.name
+                )
+                installedJson.writeText(updatedContent)
+                logger.lifecycle("✅ Updated installed.json to reference ${jarFile.name}")
+            }
+        } else {
+            logger.warn("⚠️  No plugin-manager JAR found in: ${sourceDir.absolutePath}")
+            logger.warn("   Build it first: cd ~/Development/boss_plugin/plugin-manager && ./gradlew build")
+        }
+    }
+}
+
+// Task to prepare bundled plugins for app resources (used by native distributions)
+val prepareBundledPluginsResources = tasks.register<Copy>("prepareBundledPluginsResources") {
+    group = "build"
+    description = "Prepares bundled plugins in app resources structure for native distribution"
+
+    // Use local builds for development, GitHub releases for CI
+    val useLocalPlugins = System.getenv("CI") != "true"
+    if (useLocalPlugins) {
+        dependsOn(copyBundledPluginsLocal)
+    } else {
+        dependsOn(downloadBundledPlugins)
+    }
+
+    from(layout.buildDirectory.dir("bundled-plugins"))
+    into(layout.buildDirectory.dir("bundled-plugins-resources/common/bundled-plugins"))
+}
+
 // Task to generate versioned CLI scripts from templates
 val generateVersionedCLIScripts = tasks.register("generateVersionedCLIScripts") {
     val sourceDir = layout.projectDirectory.dir("../scripts")
@@ -303,7 +545,9 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
             implementation(projects.bosseditor)
-            implementation(projects.plugins.pluginApi)
+            // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
+            // Everything else comes from boss-plugin-api bundled plugin
+            implementation(projects.plugins.pluginApiCore)
             implementation(projects.plugins.pluginUiCore)
             implementation(projects.plugins.pluginLogging)
             implementation(projects.plugins.pluginScrollbar)
@@ -323,13 +567,13 @@ kotlin {
             implementation(projects.plugins.pluginRepository)
             implementation(projects.plugins.pluginUpdater)
             implementation(projects.plugins.pluginDependency)
-            implementation(projects.plugins.pluginPanelManager)
+            // Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
 
-            // Tab type plugins
-            implementation(projects.plugins.pluginTabCodeEditor)
-            implementation(projects.plugins.pluginTabTerminal)
-            implementation(projects.plugins.pluginTabChatgptFluck)
+            // Tab type plugins are now loaded dynamically from boss_plugin:
+            // - editor-tab (was plugin-tab-code-editor)
+            // - terminal-tab (was plugin-tab-terminal)
+            // - fluck-browser (was plugin-tab-chatgpt-fluck)
 
             implementation(libs.precompose)
 //            implementation(libs.precompose.molecule)
@@ -474,13 +718,20 @@ compose.desktop {
         nativeDistributions {
             targetFormats(
                 TargetFormat.Dmg,           // macOS
-                TargetFormat.Msi,           // Windows  
+                TargetFormat.Msi,           // Windows
                 TargetFormat.Deb,           // Linux - Ubuntu/Debian
                 TargetFormat.Rpm            // Linux - RHEL/Fedora
                 // Removed AppImage - not working reliably
                 // JAR distribution handled separately via createExecutableJar task
             )
             packageName = "BOSS"
+
+            // Include bundled plugins in the distribution
+            // These are system plugins that ship with BossConsole
+            appResourcesRootDir.set(layout.buildDirectory.dir("bundled-plugins-resources"))
+
+            // Note: Bundled plugins will be copied to bundled-plugins/ directory
+            // inside the app resources during the build process
             // Use base version (without prerelease suffix) for native packages
             // DMG and MSI don't support semver prerelease suffixes like "-beta.1"
             packageVersion = baseVersion
@@ -1071,6 +1322,8 @@ afterEvaluate {
     tasks.findByName("createDistributable")?.apply {
         // Ensure CLI scripts are generated before distribution tasks run
         dependsOn("generateVersionedCLIScripts")
+        // Ensure bundled plugins are prepared
+        dependsOn("prepareBundledPluginsResources")
 
         // On macOS with signing enabled, PTY4J signing must happen after createDistributable
         // Task chain: createDistributable → signPty4jBinaries → extractCLIToAppResources

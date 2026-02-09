@@ -26,6 +26,8 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
                 implementation(projects.plugins.pluginWorkspaceTypes)
+                // Compose runtime for @Immutable annotation
+                implementation(libs.compose.mp.runtime)
             }
         }
     }

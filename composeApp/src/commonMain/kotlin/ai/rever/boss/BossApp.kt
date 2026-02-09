@@ -163,8 +163,7 @@ import ai.rever.boss.plugin.api.LocalSplitViewOperations
 import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
-import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
-import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.topofmind.TabTreeState
 import ai.rever.boss.components.dialogs.GlobalSearchDialog
@@ -580,8 +579,9 @@ fun ComponentContext.BossApp(
         WorkspaceDataProviderImpl(workspaceManager)
     }
 
-    // Create bookmark data provider wrapper for plugins
-    val bookmarkDataProvider = remember { BookmarkDataProviderImpl() }
+    // Bookmark data provider is now provided by the bookmarks plugin via registerPluginAPI()
+    // Get it from BookmarkAPIAccess which queries the plugin system
+    val bookmarkDataProvider = BookmarkAPIAccess.getProvider()
 
     // Register this window's state in the global registry for multi-window features
     LaunchedEffect(splitViewState, windowId) {
@@ -1001,6 +1001,9 @@ fun ComponentContext.BossApp(
         )
         currentDefaultPlugin = plugin
         draggablePanelComponent.update()
+
+        // Initialize BookmarkAPIAccess so UI code can access bookmarks via the plugin system
+        BookmarkAPIAccess.initialize(plugin)
 
         onDispose {
             // NOTE: Browser disposal moved to main.kt onCloseRequest handler
@@ -2669,8 +2672,8 @@ fun ComponentContext.BossApp(
                     },
                     onBookmarkSelect = { bookmarkId, collectionId ->
                         showGlobalSearchDialog = false
-                        // Find the bookmark and open it
-                        val collection = bookmarkManager.collections.value.find { it.id == collectionId }
+                        // Find the bookmark and open it (gracefully handles missing plugin)
+                        val collection = BookmarkAPIAccess.getCollections().find { it.id == collectionId }
                         val bookmark = collection?.bookmarks?.find { it.id == bookmarkId }
                         if (bookmark != null) {
                             coroutineScope.launch {

@@ -1,8 +1,9 @@
 package ai.rever.boss.search
 
-import ai.rever.boss.components.bookmarks.bookmarkManager
 import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.model.KeymapActions
+import ai.rever.boss.plugin.api.PluginSearchResult
+import ai.rever.boss.plugin.api.SearchResultAction
 import ai.rever.boss.topofmind.TopOfMindStateHolder
 import ai.rever.boss.run.RunConfigurationManager
 import ai.rever.boss.utils.SystemUtils
@@ -25,8 +26,9 @@ private val logger = BossLogger.forComponent("GlobalSearchService")
  * Searches across multiple data sources:
  * - Files in the project directory
  * - Open tabs across all windows
- * - Bookmarks
+ * - Bookmarks (via registered SearchProviders from plugins)
  * - Run configurations
+ * - Plugin-contributed search results
  */
 object GlobalSearchService {
 
@@ -101,7 +103,7 @@ object GlobalSearchService {
      * Search across all data sources matching the given query.
      *
      * Searches are run in parallel across all categories for better performance
-     * with large datasets.
+     * with large datasets. Also queries registered search providers from plugins.
      *
      * @param query The search query
      * @return List of matching search results, sorted by relevance
@@ -121,7 +123,7 @@ object GlobalSearchService {
                     val searchResults = listOf(
                         async { searchFiles(query) },
                         async { searchTabs(query) },
-                        async { searchBookmarks(query) },
+                        async { searchPluginProviders(query) },  // Includes bookmarks from plugin
                         async { searchRunConfigs(query) },
                         async { searchCommands(query) }
                     ).awaitAll().flatten()
@@ -265,43 +267,84 @@ object GlobalSearchService {
     }
 
     /**
-     * Search bookmarks.
+     * Search registered search providers (includes bookmarks plugin and any other plugins).
+     *
+     * This queries all SearchProviders registered via PluginContext.registerSearchProvider().
+     * The bookmarks plugin registers a BookmarkSearchProvider that contributes bookmark results.
      */
-    private fun searchBookmarks(query: String): List<SearchResult.BookmarkResult> {
-        val collections = bookmarkManager.collections.value
-        if (collections.isEmpty()) {
+    private suspend fun searchPluginProviders(query: String): List<SearchResult> {
+        val providers = SearchRegistryImpl.providers.value
+        if (providers.isEmpty()) {
             return emptyList()
         }
 
-        val queryLower = query.lowercase()
-        val results = mutableListOf<SearchResult.BookmarkResult>()
+        val results = mutableListOf<SearchResult>()
 
-        for (collection in collections) {
-            for (bookmark in collection.bookmarks) {
-                val title = bookmark.tabConfig.title
-                val titleMatch = FuzzyMatcher.match(queryLower, title, title.lowercase())
+        for (provider in providers) {
+            try {
+                val providerResults = provider.search(query, MAX_RESULTS_PER_CATEGORY)
 
-                if (titleMatch != null && titleMatch.score >= MIN_SCORE) {
-                    results.add(
-                        SearchResult.BookmarkResult(
-                            title = title,
-                            bookmarkId = bookmark.id,
-                            collectionId = collection.id,
-                            collectionName = collection.name,
-                            tabType = bookmark.tabConfig.type,
-                            url = bookmark.tabConfig.url,
-                            filePath = bookmark.tabConfig.filePath,
-                            score = titleMatch.score,
-                            matchRanges = titleMatch.matchRanges
-                        )
-                    )
+                // Convert PluginSearchResult to SearchResult
+                for (result in providerResults) {
+                    val searchResult = convertPluginSearchResult(result)
+                    if (searchResult != null) {
+                        results.add(searchResult)
+                    }
                 }
+            } catch (e: Exception) {
+                logger.warn(LogCategory.SYSTEM, "Search provider failed", mapOf(
+                    "providerId" to provider.providerId
+                ), error = e)
             }
         }
 
         return results
             .sortedByDescending { it.score }
             .take(MAX_RESULTS_PER_CATEGORY)
+    }
+
+    /**
+     * Convert a PluginSearchResult to a SearchResult.
+     */
+    private fun convertPluginSearchResult(result: PluginSearchResult): SearchResult? {
+        // Map category string to SearchCategory
+        val category = when (result.category.lowercase()) {
+            "bookmarks" -> SearchCategory.BOOKMARKS
+            "files" -> SearchCategory.FILES
+            "tabs" -> SearchCategory.TABS
+            "run configs", "run_configs" -> SearchCategory.RUN_CONFIGS
+            "commands" -> SearchCategory.COMMANDS
+            else -> SearchCategory.BOOKMARKS // Default to bookmarks for plugin results
+        }
+
+        // Convert match ranges
+        val matchRanges = result.matchRanges.map { MatchRange(it.start, it.end) }
+
+        return when (category) {
+            SearchCategory.BOOKMARKS -> {
+                val url = when (val action = result.action) {
+                    is SearchResultAction.OpenUrl -> action.url
+                    else -> null
+                }
+                val filePath = when (val action = result.action) {
+                    is SearchResultAction.OpenFile -> action.path
+                    else -> null
+                }
+
+                SearchResult.BookmarkResult(
+                    title = result.title,
+                    bookmarkId = result.id,
+                    collectionId = result.metadata["collectionId"] ?: "",
+                    collectionName = result.metadata["collectionName"] ?: result.providerId,
+                    tabType = result.metadata["tabType"] ?: "browser",
+                    url = url,
+                    filePath = filePath,
+                    score = result.score,
+                    matchRanges = matchRanges
+                )
+            }
+            else -> null // Other categories handled by dedicated search methods
+        }
     }
 
     /**

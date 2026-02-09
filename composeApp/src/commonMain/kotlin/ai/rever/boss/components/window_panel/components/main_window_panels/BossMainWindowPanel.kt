@@ -27,7 +27,8 @@ import ai.rever.boss.components.plugin.TabUpdateRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
-import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
+import ai.rever.boss.services.bookmarks.rememberBookmarkCollections
 import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.NewTabDialog
 import ai.rever.boss.components.dialogs.RemoveBookmarkConfirmationDialog
@@ -155,8 +156,8 @@ fun BossTabsComponent.BossMainTabBar(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var tabToBookmark by remember { mutableStateOf<TabInfo?>(null) }
 
-    // Observe collections for reactive context menu updates
-    val collections by bookmarkManager.collections.collectAsState()
+    // Observe collections for reactive context menu updates (gracefully handles missing plugin)
+    val collections = rememberBookmarkCollections()
 
     // Remove bookmark dialog state
     var showRemoveBookmarkDialog by remember { mutableStateOf(false) }
@@ -332,7 +333,7 @@ fun BossTabsComponent.BossMainTabBar(
                             collections
 
                             val tabConfig = convertTabInfoToTabConfig(config)
-                            val existingBookmark = bookmarkManager.findBookmarkForTab(tabConfig)
+                            val existingBookmark = BookmarkAPIAccess.findBookmarkForTab(tabConfig)
 
                             if (existingBookmark != null) {
                                 // Tab is already bookmarked - show remove option WITH CONFIRMATION
@@ -352,15 +353,15 @@ fun BossTabsComponent.BossMainTabBar(
                             // Favorite current workspace
                             val currentWorkspace = workspaceManager.currentWorkspace.value
                             if (currentWorkspace != null) {
-                                val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
+                                val isFavorited = BookmarkAPIAccess.isFavorite(currentWorkspace.id)
                                 add(ContextMenuItem(
                                     if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
                                     if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                     onClick = {
                                         if (isFavorited) {
-                                            bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                            BookmarkAPIAccess.removeFavoriteWorkspace(currentWorkspace.id)
                                         } else {
-                                            bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                            BookmarkAPIAccess.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
                                         }
                                     }
                                 ))
@@ -518,15 +519,15 @@ fun BossTabsComponent.BossMainTabBar(
                             // Favorite current workspace
                             val currentWorkspace = workspaceManager.currentWorkspace.value
                             if (currentWorkspace != null) {
-                                val isFavorited = bookmarkManager.isFavorite(currentWorkspace.id)
+                                val isFavorited = BookmarkAPIAccess.isFavorite(currentWorkspace.id)
                                 add(ContextMenuItem(
                                     if (isFavorited) "Unfavorite Workspace" else "Favorite Workspace",
                                     if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                     onClick = {
                                         if (isFavorited) {
-                                            bookmarkManager.removeFavoriteWorkspace(currentWorkspace.id)
+                                            BookmarkAPIAccess.removeFavoriteWorkspace(currentWorkspace.id)
                                         } else {
-                                            bookmarkManager.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
+                                            BookmarkAPIAccess.addFavoriteWorkspace(currentWorkspace.id, currentWorkspace.name)
                                         }
                                     }
                                 ))
@@ -599,13 +600,13 @@ fun BossTabsComponent.BossMainTabBar(
         )
     }
 
-    // Bookmark dialog
+    // Bookmark dialog (gracefully handles missing bookmarks plugin)
     if (showBookmarkDialog && tabToBookmark != null) {
-        val collections by bookmarkManager.collections.collectAsState()
+        val dialogCollections = rememberBookmarkCollections()
         val workspaces by workspaceManager.workspaces.collectAsState()
         BookmarkDialog(
             tabTitle = tabToBookmark!!.title,
-            collections = collections,
+            collections = dialogCollections,
             workspaces = workspaces,
             onDismiss = {
                 showBookmarkDialog = false
@@ -627,9 +628,9 @@ fun BossTabsComponent.BossMainTabBar(
                         workspaceName = workspace?.name ?: "Unknown",
                         targetWorkspaces = targetWorkspaces
                     )
-                    val collection = collections.find { it.id == collectionId }
+                    val collection = dialogCollections.find { it.id == collectionId }
                     if (collection != null) {
-                        bookmarkManager.addBookmark(collection.name, bookmark)
+                        BookmarkAPIAccess.addBookmark(collection.name, bookmark)
                     }
                 }
 
@@ -649,7 +650,7 @@ fun BossTabsComponent.BossMainTabBar(
             },
             onConfirm = {
                 bookmarkToRemove?.let { (collectionId, bookmarkId, _) ->
-                    bookmarkManager.removeBookmark(collectionId, bookmarkId)
+                    BookmarkAPIAccess.removeBookmark(collectionId, bookmarkId)
                 }
                 showRemoveBookmarkDialog = false
                 bookmarkToRemove = null

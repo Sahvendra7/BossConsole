@@ -35,8 +35,8 @@ kotlin {
                 // Serialization
                 implementation(libs.kotlinx.serialization.json)
 
-                // Plugin API
-                api(projects.plugins.pluginApi)
+                // Minimal plugin-api-core
+                api(projects.plugins.pluginApiCore)
 
                 // Logging
                 implementation(projects.plugins.pluginLogging)

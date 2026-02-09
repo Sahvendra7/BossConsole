@@ -1,7 +1,6 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.git.GitDataProviderImpl
-import ai.rever.boss.plugin.panel.manager.PluginManagerPanelPlugin
 import ai.rever.boss.components.plugin.providers.TerminalContentProviderImpl
 import ai.rever.boss.components.plugin.providers.PanelEventProviderImpl
 import ai.rever.boss.components.plugin.providers.SettingsProviderImpl
@@ -34,7 +33,8 @@ import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier
 import ai.rever.boss.services.auth.AuthDataProviderImpl
 import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.services.auth.PluginStoreApiKeyProviderImpl
-import ai.rever.boss.services.bookmarks.BookmarkDataProviderImpl
+import ai.rever.boss.search.SearchRegistryImpl
+import ai.rever.boss.plugin.api.SearchProvider
 import ai.rever.boss.services.supabase.RoleManagementProviderImpl
 import ai.rever.boss.services.supabase.SecretDataProviderImpl
 import ai.rever.boss.services.supabase.UserManagementProviderImpl
@@ -174,6 +174,43 @@ class DefaultPlugin(
     // This scope should be cancelled when the plugin is disposed
     override val pluginScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    // ============================================================
+    // PLUGIN-TO-PLUGIN API REGISTRY
+    // Enables plugins to expose and consume APIs from other plugins
+    // ============================================================
+
+    /**
+     * Registry mapping API interface classes to their implementations.
+     * Thread-safe using ConcurrentHashMap for concurrent access from plugins.
+     */
+    private val apiRegistry = java.util.concurrent.ConcurrentHashMap<Class<*>, Any>()
+
+    /**
+     * Get a plugin API by its interface type.
+     */
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? {
+        return apiRegistry[apiClass] as? T
+    }
+
+    /**
+     * Register a plugin API for other plugins to consume.
+     * The API is registered under all interfaces it implements.
+     */
+    override fun registerPluginAPI(api: Any) {
+        // Register under all interfaces implemented by the API
+        api::class.java.interfaces.forEach { iface ->
+            apiRegistry[iface] = api
+            logger.debug(LogCategory.SYSTEM, "Registered plugin API", mapOf(
+                "interface" to iface.name,
+                "implementation" to api::class.java.name
+            ))
+        }
+
+        // Also register under the concrete class for direct lookups
+        apiRegistry[api::class.java] = api
+    }
+
     // Sandbox manager for plugin crash isolation
     private val sandboxManager: PluginSandboxManager = PluginSandboxManagerImpl()
 
@@ -285,9 +322,35 @@ class DefaultPlugin(
         }
     }
 
-    // Bookmark data provider for plugins that manage bookmarks
-    override val bookmarkDataProvider: ai.rever.boss.plugin.api.BookmarkDataProvider by lazy {
-        BookmarkDataProviderImpl()
+    // Bookmark data provider is now null - bookmarks plugin is self-contained
+    // The bookmarks plugin creates its own internal BookmarkManager
+    override val bookmarkDataProvider: ai.rever.boss.plugin.api.BookmarkDataProvider?
+        get() = null
+
+    // ============================================================
+    // SEARCH PROVIDER REGISTRATION
+    // Enables plugins to contribute to global search results
+    // ============================================================
+
+    /**
+     * Register a search provider for global search.
+     * Plugins can implement SearchProvider to contribute results to Spotlight.
+     */
+    override fun registerSearchProvider(provider: SearchProvider) {
+        SearchRegistryImpl.registerProvider(provider)
+        logger.debug(LogCategory.SYSTEM, "Search provider registered", mapOf(
+            "providerId" to provider.providerId
+        ))
+    }
+
+    /**
+     * Unregister a search provider.
+     */
+    override fun unregisterSearchProvider(providerId: String) {
+        SearchRegistryImpl.unregisterProvider(providerId)
+        logger.debug(LogCategory.SYSTEM, "Search provider unregistered", mapOf(
+            "providerId" to providerId
+        ))
     }
 
     // Split view operations for plugins that need tab/panel operations
@@ -522,6 +585,12 @@ class DefaultPlugin(
         logger.info(LogCategory.SYSTEM, "Initializing DefaultPlugin with sandboxed contexts")
 
         // ============================================================
+        // REGISTER PLUGIN LOADER DELEGATE
+        // This allows dynamic plugins (like plugin-manager) to interact with the plugin system
+        // ============================================================
+        PluginLoaderDelegateSetup.register(this, dynamicPluginManager)
+
+        // ============================================================
         // SANDBOXED PANEL PLUGINS
         // Each plugin gets its own sandbox for crash isolation
         // NOTE: Most panel plugins are now loaded dynamically from JARs.
@@ -580,15 +649,15 @@ class DefaultPlugin(
         // RpaEnginePanelPlugin.register(...)
 
         // ============================================================
-        // BUNDLED PLUGIN: Plugin Manager
+        // BUNDLED PLUGIN: Plugin Manager (DISABLED - using dynamic plugin instead)
         // This is the ONLY bundled panel plugin - used for managing dynamic plugins
         // ============================================================
-        val pluginManagerContext = createSandboxedContext(PLUGIN_ID_PLUGIN_MANAGER)
-        PluginManagerSetup.registerPluginManagerPanel(
-            pluginManagerContext,
-            dynamicPluginManager,
-            activeTabsProvider
-        )
+        // val pluginManagerContext = createSandboxedContext(PLUGIN_ID_PLUGIN_MANAGER)
+        // PluginManagerSetup.registerPluginManagerPanel(
+        //     pluginManagerContext,
+        //     dynamicPluginManager,
+        //     activeTabsProvider
+        // )
 
         // ============================================================
         // DYNAMIC PANEL PLUGINS (loaded from JARs)

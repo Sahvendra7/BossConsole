@@ -5,7 +5,8 @@ import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.cache.FaviconCache
 import ai.rever.boss.components.bookmarks.Bookmark
 import ai.rever.boss.components.bookmarks.WorkspacePanelTarget
-import ai.rever.boss.components.bookmarks.bookmarkManager
+import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
+import ai.rever.boss.services.bookmarks.rememberBookmarkCollections
 import ai.rever.boss.components.dashboard.Dashboard
 import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.InfoDialog
@@ -329,8 +330,8 @@ fun JxBrowserCompose(
         }
     }
 
-    // Bookmark state management
-    val collections by bookmarkManager.collections.collectAsState()
+    // Bookmark state management (gracefully handles missing bookmarks plugin)
+    val collections = rememberBookmarkCollections()
     var currentTitle by remember { mutableStateOf(initialUrl) }
     var currentFaviconKey by remember { mutableStateOf<String?>(null) }
 
@@ -359,9 +360,9 @@ fun JxBrowserCompose(
         )
     }
 
-    // Check if current page is bookmarked
+    // Check if current page is bookmarked (false if bookmarks plugin not available)
     val isBookmarked = remember(currentTabConfig, collections) {
-        bookmarkManager.isTabBookmarked(currentTabConfig)
+        BookmarkAPIAccess.isTabBookmarked(currentTabConfig)
     }
 
     // Dialog states for bookmark management
@@ -1849,7 +1850,7 @@ fun JxBrowserCompose(
                         )
                         val collection = collections.find { it.id == collectionId }
                         if (collection != null) {
-                            bookmarkManager.addBookmark(collection.name, bookmark)
+                            BookmarkAPIAccess.addBookmark(collection.name, bookmark)
                         }
                     }
 
@@ -1858,16 +1859,16 @@ fun JxBrowserCompose(
             )
         }
 
-        // Remove Bookmark Confirmation Dialog
+        // Remove Bookmark Confirmation Dialog (gracefully handles missing plugin)
         if (showRemoveBookmarkDialog) {
-            val existingBookmark = bookmarkManager.findBookmarkForTab(currentTabConfig)
+            val existingBookmark = BookmarkAPIAccess.findBookmarkForTab(currentTabConfig)
             if (existingBookmark != null) {
                 val (collectionId, bookmarkId) = existingBookmark
                 RemoveBookmarkConfirmationDialog(
                     bookmarkTitle = currentTitle,
                     onDismiss = { showRemoveBookmarkDialog = false },
                     onConfirm = {
-                        bookmarkManager.removeBookmark(collectionId, bookmarkId)
+                        BookmarkAPIAccess.removeBookmark(collectionId, bookmarkId)
                         showRemoveBookmarkDialog = false
                     }
                 )

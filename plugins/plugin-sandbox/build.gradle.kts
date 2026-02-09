@@ -44,8 +44,8 @@ kotlin {
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
 
-                // Plugin API dependency
-                api(projects.plugins.pluginApi)
+                // Minimal plugin-api-core
+                api(projects.plugins.pluginApiCore)
 
                 // Logging
                 implementation(projects.plugins.pluginLogging)

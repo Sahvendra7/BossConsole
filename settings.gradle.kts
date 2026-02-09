@@ -36,7 +36,11 @@ include(":shared")
 include(":bosseditor")
 
 // Plugin modules
-include(":plugins:plugin-api")
+// plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
+// Everything else comes from boss-plugin-api bundled plugin
+include(":plugins:plugin-api-core")
+// DEPRECATED: Full plugin-api moved to _deprecated/plugin-api
+// include(":plugins:plugin-api")
 include(":plugins:plugin-ui-core")
 include(":plugins:plugin-logging")
 include(":plugins:plugin-scrollbar")
@@ -55,11 +59,7 @@ include(":plugins:plugin-loader")
 include(":plugins:plugin-repository")
 include(":plugins:plugin-dependency")
 include(":plugins:plugin-updater")
-include(":plugins:plugin-panel-manager")
+// Plugin panel manager is now dynamic (loaded from boss_plugin as plugin-manager)
 
-
-
-// Tab type plugin modules
-include(":plugins:plugin-tab-code-editor")
-include(":plugins:plugin-tab-terminal")
-include(":plugins:plugin-tab-chatgpt-fluck")
+// Tab type plugins are now dynamic (loaded from boss_plugin):
+// - editor-tab, terminal-tab, fluck-browser
