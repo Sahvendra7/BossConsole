@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.32](v8.16.32.md) | 2026-02-09 | Build system reliability improvements with task dependency fixes and Kotlin platform updates |
 | [v8.16.30](v8.16.30.md) | 2026-02-08 | Plugin system enhancements with project selection API and minimum version validation for safer plugin installations |
 | [v8.16.29](v8.16.29.md) | 2026-02-08 | Maintenance release adding screen capture support for browser plugins with enhanced permission APIs |
 | [v8.16.28](v8.16.28.md) | 2026-02-08 | Stable release introducing mandatory tab plugins for streamlined setup and improved Windows CI/CD reliability |
