@@ -1315,6 +1315,11 @@ afterEvaluate {
         dependsOn("extractJcefNatives")
     }
 
+    // Ensure prepareAppResources depends on prepareBundledPluginsResources
+    tasks.findByName("prepareAppResources")?.apply {
+        dependsOn("prepareBundledPluginsResources")
+    }
+
     val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
     val signingDisabled = System.getenv("DISABLE_MACOS_SIGNING") == "true"
 
