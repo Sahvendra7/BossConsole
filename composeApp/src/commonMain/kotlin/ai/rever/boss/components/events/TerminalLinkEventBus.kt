@@ -51,4 +51,12 @@ object TerminalLinkEventBus {
     suspend fun emitLinkClick(url: String, sourceTerminalId: String? = null, sourceWindowId: String? = null) {
         _linkClickEvents.emit(TerminalLinkClickEvent(url, sourceTerminalId, sourceWindowId))
     }
+
+    /**
+     * Non-suspend version for callers that can't use coroutines (e.g., plugin reflection).
+     * Uses tryEmit which succeeds immediately when buffer has space (extraBufferCapacity = 10).
+     */
+    fun tryEmitLinkClick(url: String, sourceTerminalId: String? = null, sourceWindowId: String? = null): Boolean {
+        return _linkClickEvents.tryEmit(TerminalLinkClickEvent(url, sourceTerminalId, sourceWindowId))
+    }
 }
