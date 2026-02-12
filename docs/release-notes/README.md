@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.43](v8.16.43.md) | 2026-02-12 | Critical plugin memory leak fix ensuring proper cleanup of dynamic plugin browser instances when windows are closed |
 | [v8.16.42](v8.16.42.md) | 2026-02-12 | Critical stability fix preventing macOS crash when closing the application while in fullscreen mode |
 | [v8.16.40](v8.16.40.md) | 2026-02-12 | Terminal sidebar plugin stability improvements with bundled distribution and enhanced GitHub URL integration |
 | [v8.16.38](v8.16.38.md) | 2026-02-12 | Plugin system stability improvements and significant distribution size reduction with ~86MB saved by removing bundled JxBrowser platform binary |
