@@ -9,3 +9,12 @@ import ai.rever.boss.plugin.browser.BrowserService
  * On other platforms, this returns null.
  */
 expect fun getBrowserServiceInstance(): BrowserService?
+
+/**
+ * Dispose all browsers created by dynamic plugins via BrowserService.
+ *
+ * Called during window close to synchronously clean up plugin-created
+ * JxBrowser instances before AWT window destruction.
+ * No-op on non-desktop platforms.
+ */
+internal expect fun disposePluginBrowsers()

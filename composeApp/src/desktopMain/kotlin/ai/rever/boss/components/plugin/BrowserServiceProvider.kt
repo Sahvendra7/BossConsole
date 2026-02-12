@@ -9,3 +9,7 @@ import ai.rever.boss.plugin.browser.BrowserServiceImpl
  * Returns the BrowserServiceImpl singleton that wraps FluckEngine.
  */
 actual fun getBrowserServiceInstance(): BrowserService? = BrowserServiceImpl
+
+internal actual fun disposePluginBrowsers() {
+    BrowserServiceImpl.disposeAll()
+}

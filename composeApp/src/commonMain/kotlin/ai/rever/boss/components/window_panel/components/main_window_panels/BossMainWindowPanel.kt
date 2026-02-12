@@ -1425,6 +1425,8 @@ class BossTabsComponent(
             }
         }
         tabComponents.clear()
+        // Also dispose any browsers created by dynamic plugins via BrowserService
+        ai.rever.boss.components.plugin.disposePluginBrowsers()
     }
 }
 

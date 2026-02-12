@@ -8,3 +8,5 @@ import ai.rever.boss.plugin.browser.BrowserService
  * JxBrowser is not available in WASM, so this returns null.
  */
 actual fun getBrowserServiceInstance(): BrowserService? = null
+
+internal actual fun disposePluginBrowsers() {}
