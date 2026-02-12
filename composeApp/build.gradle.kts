@@ -241,6 +241,8 @@ val copyBundledPluginsLocal = tasks.register("copyBundledPluginsLocal") {
     val bossPluginApiDir = layout.projectDirectory.dir("../../boss_plugin/boss-plugin-api/build/libs")
     val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugin/plugin-manager/build/libs")
     val bookmarksDir = layout.projectDirectory.dir("../../boss_plugin/bookmarks/build/libs")
+    val terminalTabDir = layout.projectDirectory.dir("../../boss_plugin/terminal-tab/build/libs")
+    val terminalDir = layout.projectDirectory.dir("../../boss_plugin/terminal/build/libs")
     val destDir = layout.buildDirectory.dir("bundled-plugins")
 
     doLast {
@@ -321,6 +323,12 @@ val copyBundledPluginsLocal = tasks.register("copyBundledPluginsLocal") {
 
         // Copy bookmarks
         copyLatestJar(bookmarksDir.asFile, "boss-plugin-bookmarks")
+
+        // Copy terminal-tab
+        copyLatestJar(terminalTabDir.asFile, "boss-plugin-terminal-tab")
+
+        // Copy terminal (sidebar)
+        copyLatestJar(terminalDir.asFile, "boss-plugin-terminal")
     }
 }
 
