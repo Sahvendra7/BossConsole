@@ -12,7 +12,6 @@ import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
-import ai.rever.boss.plugin.api.TerminalContentProvider
 import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.PerformanceDataProvider
@@ -28,7 +27,6 @@ import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
-import ai.rever.boss.plugin.api.TerminalTabContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.NotificationProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
@@ -134,10 +132,6 @@ class SandboxedPluginContext(
     override val roleManagementProvider: RoleManagementProvider?
         get() = delegate.roleManagementProvider
 
-    // Terminal providers - delegate to underlying context
-    override val terminalContentProvider: TerminalContentProvider?
-        get() = delegate.terminalContentProvider
-
     override val panelEventProvider: PanelEventProvider?
         get() = delegate.panelEventProvider
 
@@ -175,10 +169,6 @@ class SandboxedPluginContext(
     // Screen capture provider - delegate to underlying context
     override val screenCaptureProvider: ScreenCaptureProvider?
         get() = delegate.screenCaptureProvider
-
-    // Terminal tab content provider - delegate to underlying context
-    override val terminalTabContentProvider: TerminalTabContentProvider?
-        get() = delegate.terminalTabContentProvider
 
     // Editor content provider - delegate to underlying context
     override val editorContentProvider: EditorContentProvider?

@@ -607,8 +607,8 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.compose.mp.components.resources)
 
-            // BossTerm - Terminal emulation library
-            implementation(libs.bossterm.compose)
+            // BossTerm - runtime only, accessed via terminal-tab plugin
+            runtimeOnly(libs.bossterm.compose)
 
             // Logging
             implementation(libs.slf4j.api)

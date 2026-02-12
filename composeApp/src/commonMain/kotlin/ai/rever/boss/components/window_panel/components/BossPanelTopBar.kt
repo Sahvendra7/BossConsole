@@ -29,6 +29,7 @@ fun BossPanelTopBar(
     title: String?,
     isHovered: Boolean,
     onReset: (() -> Unit)? = null,
+    onReloadPlugin: (() -> Unit)? = null,
     onMinimize: () -> Unit,
     content: (@Composable () -> Unit)? = null
 ) {
@@ -91,7 +92,16 @@ fun BossPanelTopBar(
                                     )
                                 )
                             }
-                            // Future menu options can be added here
+                            // Reload Plugin option
+                            onReloadPlugin?.let { reloadCallback ->
+                                add(
+                                    ContextMenuItem(
+                                        text = "Reload Plugin",
+                                        icon = Icons.Outlined.Refresh,
+                                        onClick = { reloadCallback() }
+                                    )
+                                )
+                            }
                         }
 
                         if (menuItems.isNotEmpty()) {

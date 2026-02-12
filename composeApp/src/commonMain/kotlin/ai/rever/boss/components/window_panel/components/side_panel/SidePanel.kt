@@ -11,6 +11,8 @@ import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
+import ai.rever.boss.window.LocalWindowId
+import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -45,6 +47,7 @@ fun BossDraggableComponent.SidePanel(
             .hoverable(interactionSource)
     ) {
         val title = component?.panelInfo?.displayName ?: "Default title"//getPanelTitle(panel)
+        val windowId = LocalWindowId.current
 
         BossPanelTopBar(
             title = title,
@@ -55,6 +58,13 @@ fun BossDraggableComponent.SidePanel(
                     PanelSandboxRegistry.getSandbox(panelId)?.resetHealth()
                     // Trigger component reset via PanelComponentStore
                     panelComponentStore.resetComponent(panelId)
+                }
+            },
+            onReloadPlugin = pluginContentId?.let { panelId ->
+                windowId?.let { wId ->
+                    {
+                        MenuActionsHandler.triggerReloadPlugin(wId, panelId)
+                    }
                 }
             },
             onMinimize = {

@@ -438,6 +438,33 @@ object MenuActionsHandler {
         _refactorSafeDeleteEvents.tryEmit(windowId)
     }
 
+    // ========== Plugin Reload Events ==========
+
+    private val _reloadAllPluginsEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val reloadAllPluginsEvents: SharedFlow<String> = _reloadAllPluginsEvents.asSharedFlow()
+
+    private val _reloadPluginEvents = MutableSharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>>(extraBufferCapacity = 10)
+    val reloadPluginEvents: SharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>> = _reloadPluginEvents.asSharedFlow()
+
+    /**
+     * Trigger a "Reload All Plugins" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerReloadAllPlugins(windowId: String) {
+        _reloadAllPluginsEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Reload Plugin" action for a specific panel in the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     * @param panelId The PanelId used to look up the owning plugin
+     */
+    fun triggerReloadPlugin(windowId: String, panelId: ai.rever.boss.plugin.api.PanelId) {
+        _reloadPluginEvents.tryEmit(Pair(windowId, panelId))
+    }
+
     // ========== Plugin Wizard Events ==========
 
     private val _showPluginWizardEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)

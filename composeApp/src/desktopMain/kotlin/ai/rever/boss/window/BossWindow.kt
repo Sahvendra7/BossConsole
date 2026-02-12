@@ -18,9 +18,7 @@ import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
 import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCaptureNotifier
 import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCapturePickerDialog
-import ai.rever.boss.components.plugin.panels.bottom.terminal.resetAllTerminalStates
-import ai.rever.bossterm.compose.onboarding.OnboardingWizard
-import ai.rever.bossterm.compose.settings.SettingsManager
+import ai.rever.boss.services.terminal.TerminalAPIAccess
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -675,6 +673,17 @@ fun ApplicationScope.BossWindow(
                     }
                 )
 
+                Separator()
+
+                Item(
+                    "Reload All Plugins",
+                    onClick = {
+                        menuScope.launch {
+                            MenuActionsHandler.triggerReloadAllPlugins(windowState.id)
+                        }
+                    }
+                )
+
                 // Debug: Test crash reporter (Issue #543)
                 // This crashes during Compose composition to properly test the separate window crash dialog
                 Separator()
@@ -873,7 +882,7 @@ fun ApplicationScope.BossWindow(
                                         try {
                                             // Use IO dispatcher for resource disposal per CLAUDE.md threading guidelines
                                             withContext(Dispatchers.IO) {
-                                                resetAllTerminalStates()
+                                                TerminalAPIAccess.resetAllTerminals()
                                             }
                                             resetTerminalResult = true
                                         } catch (e: Exception) {
@@ -917,10 +926,9 @@ fun ApplicationScope.BossWindow(
 
         // Welcome Wizard Dialog
         if (showWelcomeWizard) {
-            OnboardingWizard(
+            TerminalAPIAccess.TerminalOnboardingWizard(
                 onDismiss = { showWelcomeWizard = false },
-                onComplete = { showWelcomeWizard = false },
-                settingsManager = SettingsManager.instance
+                onComplete = { showWelcomeWizard = false }
             )
         }
 

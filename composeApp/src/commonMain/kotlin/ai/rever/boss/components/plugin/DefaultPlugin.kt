@@ -1,7 +1,6 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.git.GitDataProviderImpl
-import ai.rever.boss.components.plugin.providers.TerminalContentProviderImpl
 import ai.rever.boss.components.plugin.providers.PanelEventProviderImpl
 import ai.rever.boss.components.plugin.providers.SettingsProviderImpl
 import ai.rever.boss.cache.loadFaviconFromCache
@@ -68,9 +67,7 @@ import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createZoomSettingsProvider
 import ai.rever.boss.components.plugin.providers.createUrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createScreenCaptureProvider
-import ai.rever.boss.components.plugin.providers.createTerminalTabContentProvider
 import ai.rever.boss.components.plugin.providers.createEditorContentProvider
-import ai.rever.boss.plugin.api.TerminalTabContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.NotificationProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
@@ -391,11 +388,6 @@ class DefaultPlugin(
         ai.rever.boss.services.supabase.SecretDataProviderImpl()
     }
 
-    // Terminal content provider for terminal plugin
-    override val terminalContentProvider: ai.rever.boss.plugin.api.TerminalContentProvider by lazy {
-        ai.rever.boss.components.plugin.providers.TerminalContentProviderImpl()
-    }
-
     // Panel event provider for plugins that need to trigger panel events
     override val panelEventProvider: ai.rever.boss.plugin.api.PanelEventProvider by lazy {
         ai.rever.boss.components.plugin.providers.PanelEventProviderImpl()
@@ -445,11 +437,6 @@ class DefaultPlugin(
     // Screen capture provider for browser plugins
     override val screenCaptureProvider: ScreenCaptureProvider by lazy {
         createScreenCaptureProvider()
-    }
-
-    // Terminal tab content provider for terminal tab plugins
-    override val terminalTabContentProvider: TerminalTabContentProvider? by lazy {
-        createTerminalTabContentProvider()
     }
 
     // Editor content provider for code editor tab plugins

@@ -1,8 +1,8 @@
 package ai.rever.boss.run
 
 import ai.rever.boss.components.events.RunnerTerminalEventBus
-import ai.rever.boss.components.plugin.panels.bottom.terminal.SIDEBAR_TERMINAL_ID
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+import ai.rever.boss.plugin.api.SIDEBAR_TERMINAL_ID
+import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -191,7 +191,7 @@ actual object RunnerTerminalService {
         }
 
         // Perform I/O operations outside lock (window-scoped)
-        val closed = TabbedTerminalStateRegistry.closeActiveTab(windowId, terminalId)
+        val closed = TerminalAPIAccess.closeActiveTab(windowId, terminalId)
         if (closed) {
             logger.debug(LogCategory.TERMINAL, "Closed terminal tab", mapOf("terminalId" to terminalId, "configId" to configId, "windowId" to windowId))
         } else {
@@ -200,7 +200,7 @@ actual object RunnerTerminalService {
 
         // Clear sidebar tab tracking if this was a sidebar config (window-scoped)
         if (terminalId == SIDEBAR_TERMINAL_ID) {
-            TabbedTerminalStateRegistry.removeSidebarConfigTracking(windowId, configId)
+            TerminalAPIAccess.removeSidebarConfigTracking(windowId, configId)
         }
 
         // Emit stop event for any additional UI handling
@@ -257,7 +257,7 @@ actual object RunnerTerminalService {
         if (existingTerminalId != null && existingWindowId != null && !usesSidebar) {
             try {
                 // Send Ctrl+C to stop the running process (window-scoped)
-                val sent = TabbedTerminalStateRegistry.sendCtrlC(existingWindowId, existingTerminalId)
+                val sent = TerminalAPIAccess.sendInterrupt(existingWindowId, existingTerminalId)
                 if (sent) {
                     logger.debug(LogCategory.TERMINAL, "Sent Ctrl+C to stop existing process", mapOf("windowId" to existingWindowId))
                 }
@@ -329,7 +329,7 @@ actual object RunnerTerminalService {
 
         // Clear sidebar tab tracking for this window outside lock (I/O operation)
         if (isSidebar) {
-            TabbedTerminalStateRegistry.clearSidebarConfigTrackingForWindow(windowId)
+            TerminalAPIAccess.clearSidebarConfigTrackingForWindow(windowId)
         }
     }
 
@@ -422,7 +422,7 @@ actual object RunnerTerminalService {
             addWindowToConfig(configId, windowId)
         }
 
-        val success = TabbedTerminalStateRegistry.newSidebarTab(
+        val success = TerminalAPIAccess.newSidebarTab(
             windowId = windowId,
             command = command,
             workingDirectory = workingDirectory,

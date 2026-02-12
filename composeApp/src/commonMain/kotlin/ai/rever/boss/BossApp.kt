@@ -164,6 +164,7 @@ import ai.rever.boss.plugin.api.LocalBookmarkDataProvider
 import ai.rever.boss.plugin.api.LocalWorkspaceDataProvider
 import ai.rever.boss.plugin.api.LocalProjectPath
 import ai.rever.boss.services.bookmarks.BookmarkAPIAccess
+import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.components.plugin.panels.left_bottom.TopOfMind.LocalWorkspaceManager
 import ai.rever.boss.topofmind.TabTreeState
 import ai.rever.boss.components.dialogs.GlobalSearchDialog
@@ -1005,6 +1006,9 @@ fun ComponentContext.BossApp(
         // Initialize BookmarkAPIAccess so UI code can access bookmarks via the plugin system
         BookmarkAPIAccess.initialize(plugin)
 
+        // Initialize TerminalAPIAccess so host code can access terminal via the plugin system
+        TerminalAPIAccess.initialize(plugin)
+
         onDispose {
             // NOTE: Browser disposal moved to main.kt onCloseRequest handler
             // Browsers must be disposed BEFORE Compose disposal begins, not during it
@@ -1361,7 +1365,7 @@ fun ComponentContext.BossApp(
             .launchIn(this)
 
         // Stop runner terminal events
-        // Note: Ctrl+C is sent by RunnerTerminalService.stopRunner() via TabbedTerminalStateRegistry
+        // Note: Ctrl+C is sent by RunnerTerminalService.stopRunner() via TerminalAPIAccess
         // Issue #506: Filter by window to prevent stopping in all windows
         RunnerTerminalEventBus.stopEvents
             .filter { event -> event.sourceWindowId == windowId }
@@ -2260,6 +2264,41 @@ fun ComponentContext.BossApp(
                     }
                     if (availablePluginsForWizard.isNotEmpty()) {
                         showPluginInstallWizard = true
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Reload All Plugins menu events
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.reloadAllPluginsEvents
+            .onEach { eventWindowId ->
+                if (eventWindowId == windowId) {
+                    val manager = currentDefaultPlugin?.dynamicPluginManager ?: return@onEach
+                    val result = manager.reloadAllPlugins()
+                    val count = result.getOrElse { 0 }
+                    StatusMessageManager.showMessage("Reloaded $count plugin(s)")
+                }
+            }
+            .launchIn(this)
+    }
+
+    // Handle Reload Plugin (by panel ID) menu events
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.reloadPluginEvents
+            .onEach { (eventWindowId, panelId) ->
+                if (eventWindowId == windowId) {
+                    val manager = currentDefaultPlugin?.dynamicPluginManager ?: return@onEach
+                    val tracker = manager.getRegistrationTracker()
+                    val pluginId = tracker.getPluginIdForPanel(panelId)
+                    if (pluginId != null) {
+                        val result = manager.reloadPlugin(pluginId)
+                        if (result.isSuccess) {
+                            StatusMessageManager.showMessage("Reloaded: ${result.getOrNull()?.manifest?.displayName}")
+                        } else {
+                            StatusMessageManager.showMessage("Failed to reload plugin: ${result.exceptionOrNull()?.message}")
+                        }
                     }
                 }
             }

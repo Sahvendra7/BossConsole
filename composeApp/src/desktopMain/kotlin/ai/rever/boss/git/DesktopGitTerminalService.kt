@@ -1,12 +1,12 @@
 package ai.rever.boss.git
 
-import ai.rever.boss.components.plugin.panels.bottom.terminal.TabbedTerminalStateRegistry
+import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 
 /**
  * Desktop implementation of GitTerminalService.
- * Uses TabbedTerminalStateRegistry to open git commands in the sidebar terminal.
+ * Uses TerminalAPIAccess to open git commands in the sidebar terminal.
  */
 actual object GitTerminalService {
     private val logger = BossLogger.forComponent("GitTerminalService")
@@ -30,7 +30,7 @@ actual object GitTerminalService {
         // Generate a unique tab ID for this git operation
         val tabId = "git-${operationName.lowercase().replace(" ", "-")}-${System.currentTimeMillis()}"
 
-        val success = TabbedTerminalStateRegistry.newSidebarTab(
+        val success = TerminalAPIAccess.newSidebarTab(
             windowId = windowId,
             command = command,
             workingDirectory = workingDirectory,

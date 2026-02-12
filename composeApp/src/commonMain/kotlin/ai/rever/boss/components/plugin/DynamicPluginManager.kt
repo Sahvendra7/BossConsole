@@ -504,6 +504,59 @@ class DynamicPluginManager(
     }
 
     /**
+     * Reload a plugin by uninstalling and reinstalling from the same JAR path.
+     *
+     * @param pluginId The plugin ID to reload
+     * @return Result containing the reloaded plugin info or an error
+     */
+    suspend fun reloadPlugin(pluginId: String): Result<DynamicPluginInfo> {
+        val info = getPluginInfo(pluginId)
+            ?: return Result.failure(Exception("Plugin not found: $pluginId"))
+        val jarPath = info.jarPath
+        val wasEnabled = info.enabled
+
+        logger.info(LogCategory.SYSTEM, "Reloading plugin", mapOf(
+            "pluginId" to pluginId,
+            "jarPath" to jarPath
+        ))
+
+        val uninstallResult = uninstallPlugin(pluginId, force = true)
+        if (uninstallResult.isFailure) {
+            logger.error(LogCategory.SYSTEM, "Failed to uninstall plugin during reload", mapOf(
+                "pluginId" to pluginId,
+                "error" to (uninstallResult.exceptionOrNull()?.message ?: "unknown")
+            ))
+            return Result.failure(uninstallResult.exceptionOrNull() ?: Exception("Uninstall failed"))
+        }
+
+        return installPlugin(jarPath, enabled = wasEnabled)
+    }
+
+    /**
+     * Reload all installed plugins.
+     *
+     * @return Result containing the number of successfully reloaded plugins
+     */
+    suspend fun reloadAllPlugins(): Result<Int> {
+        val plugins = getInstalledPlugins().toList()
+        logger.info(LogCategory.SYSTEM, "Reloading all plugins", mapOf(
+            "count" to plugins.size
+        ))
+
+        var reloaded = 0
+        for (info in plugins) {
+            val result = reloadPlugin(info.manifest.pluginId)
+            if (result.isSuccess) reloaded++
+        }
+
+        logger.info(LogCategory.SYSTEM, "Finished reloading all plugins", mapOf(
+            "total" to plugins.size,
+            "reloaded" to reloaded
+        ))
+        return Result.success(reloaded)
+    }
+
+    /**
      * Get information about a plugin.
      */
     fun getPluginInfo(pluginId: String): DynamicPluginInfo? {

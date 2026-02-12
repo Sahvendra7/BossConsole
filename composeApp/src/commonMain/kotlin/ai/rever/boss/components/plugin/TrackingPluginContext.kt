@@ -12,7 +12,6 @@ import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
-import ai.rever.boss.plugin.api.TerminalContentProvider
 import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelId
@@ -35,7 +34,6 @@ import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.WorkspaceDataProvider
 import ai.rever.boss.plugin.api.ZoomSettingsProvider
 import ai.rever.boss.plugin.api.UrlHistoryProvider
-import ai.rever.boss.plugin.api.TerminalTabContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.NotificationProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
@@ -118,6 +116,18 @@ class PluginRegistrationTracker {
     fun hasRegistrations(pluginId: String): Boolean {
         return (panelsByPlugin[pluginId]?.isNotEmpty() == true) ||
                (tabTypesByPlugin[pluginId]?.isNotEmpty() == true)
+    }
+
+    /**
+     * Reverse lookup: find which plugin registered a given panel.
+     *
+     * @param panelId The panel ID to look up
+     * @return The plugin ID that registered this panel, or null if not found
+     */
+    fun getPluginIdForPanel(panelId: PanelId): String? {
+        return panelsByPlugin.entries
+            .firstOrNull { (_, panels) -> panelId in panels }
+            ?.key
     }
 }
 
@@ -261,8 +271,6 @@ class TrackingPluginContext(
     override val userManagementProvider: UserManagementProvider? get() = delegate.userManagementProvider
     override val roleManagementProvider: RoleManagementProvider? get() = delegate.roleManagementProvider
 
-    // Terminal providers - delegate to underlying context
-    override val terminalContentProvider: TerminalContentProvider? get() = delegate.terminalContentProvider
     override val panelEventProvider: PanelEventProvider? get() = delegate.panelEventProvider
     override val settingsProvider: SettingsProvider? get() = delegate.settingsProvider
 
@@ -289,9 +297,6 @@ class TrackingPluginContext(
 
     // Screen capture provider - delegate to underlying context
     override val screenCaptureProvider: ScreenCaptureProvider? get() = delegate.screenCaptureProvider
-
-    // Terminal tab content provider - delegate to underlying context
-    override val terminalTabContentProvider: TerminalTabContentProvider? get() = delegate.terminalTabContentProvider
 
     // Editor content provider - delegate to underlying context
     override val editorContentProvider: EditorContentProvider? get() = delegate.editorContentProvider
