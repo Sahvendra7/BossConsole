@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.38](v8.16.38.md) | 2026-02-12 | Plugin system stability improvements and significant distribution size reduction with ~86MB saved by removing bundled JxBrowser platform binary |
 | [v8.16.36](v8.16.36.md) | 2026-02-12 | Terminal plugin architecture refactoring with hot-reload support for improved modularity and developer experience |
 | [v8.16.34](v8.16.34.md) | 2026-02-12 | Critical terminal tab fix ensuring terminals open in the correct project directory |
 | [v8.16.33](v8.16.33.md) | 2026-02-12 | Build system improvement bundling the bookmarks plugin directly into CI releases |
