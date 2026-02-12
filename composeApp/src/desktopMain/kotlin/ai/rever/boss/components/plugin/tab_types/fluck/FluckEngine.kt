@@ -132,8 +132,11 @@ object FluckEngine {
             cleanupStaleLockFiles(profileDirPath)
             // Also clean up any other lock-related files
             cleanupAllLockRelatedFiles(profileDirPath)
-        } else {
         }
+
+        // Clean up ALL temporary profiles from previous sessions
+        // At startup time, no temp profiles should be in use
+        cleanupAllTemporaryProfiles(userHome)
     }
 
     /**
@@ -151,6 +154,7 @@ object FluckEngine {
             val currentTimeMs = System.currentTimeMillis()
 
             // Find all processes that match JxBrowser's Chromium
+            // Also catch chrome_crashpad orphans whose parent is dead
             val staleProcesses = ProcessHandle.allProcesses()
                 .filter { process ->
                     try {
@@ -162,7 +166,9 @@ object FluckEngine {
                                 command.contains("chromium", ignoreCase = true) ||
                                 command.contains("jxbrowser", ignoreCase = true)
 
-                        // Security: Then check if it's from our JxBrowser installation
+                        if (!isChromiumExecutable) return@filter false
+
+                        // Security: Check if it's from our JxBrowser installation
                         // Use explicit full paths to avoid false positives
                         val isFromBossDir = command.contains(bossChromiumDir) ||
                                 command.contains(bossBrandedChromiumDir) ||
@@ -170,7 +176,14 @@ object FluckEngine {
                                 commandLine.contains(bossBrandedChromiumDir) ||
                                 commandLine.contains(bossProfileDir)
 
-                        val isJxBrowserChromium = isChromiumExecutable && isFromBossDir
+                        // Also detect orphaned chrome_crashpad processes:
+                        // These are helper processes whose parent (the main Chromium) has died.
+                        // They have "chrome_crashpad" in the command but may not reference BOSS dirs.
+                        // Safe to kill if their parent process is dead (orphaned to PID 1/launchd).
+                        val isCrashpadOrphan = command.contains("chrome_crashpad") &&
+                                !process.parent().isPresent
+
+                        val isJxBrowserChromium = isFromBossDir || isCrashpadOrphan
 
                         // Don't kill processes that belong to current BOSS instance
                         val parentPid = process.parent().map { it.pid() }.orElse(-1L)
@@ -613,22 +626,14 @@ object FluckEngine {
     }
 
     private fun deleteLockFiles(lockFile: java.io.File, socketFile: java.io.File, cookieFile: java.io.File) {
-        if (lockFile.exists()) {
-            val deleted = lockFile.delete()
-            if (!deleted) {
-            } else {
-            }
-        }
-        if (socketFile.exists()) {
-            val deleted = socketFile.delete()
-            if (!deleted) {
-            } else {
-            }
-        }
-        if (cookieFile.exists()) {
-            val deleted = cookieFile.delete()
-            if (!deleted) {
-            } else {
+        // Use Files.deleteIfExists which handles symlinks properly on macOS
+        // File.delete() can silently fail on dangling symlinks
+        listOf(lockFile, socketFile, cookieFile).forEach { file ->
+            try {
+                Files.deleteIfExists(file.toPath())
+            } catch (e: Exception) {
+                // Fallback to File.delete()
+                file.delete()
             }
         }
     }
@@ -636,6 +641,7 @@ object FluckEngine {
     /**
      * Clean up old temporary profiles to prevent disk space accumulation.
      * Deletes browser-profile-* directories older than 24 hours.
+     * Called during engine initialization (may run alongside active engine).
      */
     private fun cleanupOldTemporaryProfiles(userHome: String) {
         try {
@@ -651,6 +657,38 @@ object FluckEngine {
                 dir.deleteRecursively()
             }
         } catch (e: Exception) {
+        }
+    }
+
+    /**
+     * Clean up ALL temporary profiles on startup.
+     * At startup time, no temp profiles should be in use — they are always
+     * leftovers from crashed/killed sessions. Safe to delete unconditionally.
+     */
+    private fun cleanupAllTemporaryProfiles(userHome: String) {
+        try {
+            val bossDir = java.io.File(userHome, ".boss")
+            var cleanedCount = 0
+
+            bossDir.listFiles()?.filter {
+                it.isDirectory &&
+                it.name.startsWith("browser-profile-") &&
+                it.name != "browser-profile"
+            }?.forEach { dir ->
+                if (dir.deleteRecursively()) {
+                    cleanedCount++
+                }
+            }
+
+            if (cleanedCount > 0) {
+                logger.info(LogCategory.BROWSER, "Cleaned up temporary browser profiles", mapOf(
+                    "count" to cleanedCount
+                ))
+            }
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Error cleaning temporary profiles", mapOf(
+                "error" to (e.message ?: "unknown")
+            ))
         }
     }
 
