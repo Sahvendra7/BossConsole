@@ -100,6 +100,12 @@ internal class BrowserHandleImpl(
     // Helper to create LockedBrowser for FormFieldDetector/FormFieldInjector
     private fun createLockedBrowser(): LockedBrowser = LockedBrowser(browser, browserLock)
 
+    /** Expose the raw JxBrowser instance for internal use (e.g. RPA recorder). */
+    internal fun getRawBrowser(): Browser = browser
+
+    /** Expose the browser lock for creating [LockedBrowser] wrappers externally. */
+    internal fun getBrowserLock(): ReentrantReadWriteLock = browserLock
+
     init {
         setupEventListeners()
         setupBrowserHandlers()

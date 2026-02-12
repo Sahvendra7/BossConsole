@@ -4,6 +4,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
 import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
+import ai.rever.boss.plugin.browser.BrowserServiceImpl
 import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -107,7 +108,7 @@ private fun findBrowserForTab(
             val tabInfo = selectedTab.tabInfo
 
             // Get browser based on tab info type
-            return when (tabInfo) {
+            val lockedBrowser: LockedBrowser? = when (tabInfo) {
                 is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo -> {
                     val component = findFluckTabComponentById(splitViewState, tabInfo.id)
                     if (component != null) {
@@ -119,7 +120,6 @@ private fun findBrowserForTab(
                                 null
                             }
                         } catch (e: Exception) {
-                            // Component might be disposing
                             null
                         }
                     } else {
@@ -135,11 +135,34 @@ private fun findBrowserForTab(
                             null
                         }
                     } catch (e: Exception) {
-                        // Component might be disposing
                         null
                     }
                 }
                 else -> null
+            }
+
+            if (lockedBrowser != null) return lockedBrowser
+
+            // Fallback: for dynamic plugin browser tabs (typeId "fluck" but not FluckTabInfo),
+            // look up the browser via BrowserServiceImpl active handles by matching URL
+            if (tabInfo.typeId.typeId == "fluck") {
+                val tabUrl = try {
+                    tabInfo::class.java.methods
+                        .firstOrNull { it.name == "getCurrentUrl" && it.parameterCount == 0 }
+                        ?.invoke(tabInfo) as? String
+                        ?: tabInfo::class.java.methods
+                            .firstOrNull { it.name == "getInitialUrl" && it.parameterCount == 0 }
+                            ?.invoke(tabInfo) as? String
+                } catch (_: Exception) { null }
+
+                if (!tabUrl.isNullOrBlank()) {
+                    val handle = BrowserServiceImpl.getActiveHandles().firstOrNull { h ->
+                        h.isValid && h.getCurrentUrl() == tabUrl
+                    }
+                    if (handle != null) {
+                        return LockedBrowser(handle.getRawBrowser(), handle.getBrowserLock())
+                    }
+                }
             }
         }
 
@@ -189,20 +212,41 @@ actual fun createFluckTabInfo(activeTab: Any): FluckTabInfo? {
     // ActiveTab is from composeApp's topofmind package
     val activeTabTyped = activeTab as? ai.rever.boss.topofmind.ActiveTab
         ?: return null
-    
+
     val tabInfo = activeTabTyped.tabInfo
-    
-    // Check if this is a Fluck tab by checking the TabInfo type
+
+    // Check if this is a built-in Fluck tab
     if (tabInfo is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo) {
-        val result = FluckTabInfo(
+        return FluckTabInfo(
             id = tabInfo.id,
             title = tabInfo.title,
             url = tabInfo.currentUrl,
             panelId = activeTabTyped.panelId,
-            tabComponent = tabInfo // Store the FluckTabInfo itself
+            tabComponent = tabInfo
         )
-        return result
     }
+
+    // Check if this is a dynamic plugin browser tab (typeId "fluck")
+    if (tabInfo.typeId.typeId == "fluck") {
+        val url = try {
+            tabInfo::class.java.methods
+                .firstOrNull { it.name == "getCurrentUrl" && it.parameterCount == 0 }
+                ?.invoke(tabInfo) as? String
+                ?: tabInfo::class.java.methods
+                    .firstOrNull { it.name == "getInitialUrl" && it.parameterCount == 0 }
+                    ?.invoke(tabInfo) as? String
+                ?: ""
+        } catch (_: Exception) { "" }
+
+        return FluckTabInfo(
+            id = tabInfo.id,
+            title = tabInfo.title,
+            url = url,
+            panelId = activeTabTyped.panelId,
+            tabComponent = tabInfo
+        )
+    }
+
     return null
 }
 

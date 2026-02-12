@@ -84,6 +84,9 @@ object BrowserServiceImpl : BrowserService {
         return activeBrowsers.size
     }
 
+    /** Return all active browser handles for internal lookup (e.g. RPA recorder). */
+    internal fun getActiveHandles(): List<BrowserHandleImpl> = activeBrowsers.values.toList()
+
     /**
      * Dispose all active browsers.
      *

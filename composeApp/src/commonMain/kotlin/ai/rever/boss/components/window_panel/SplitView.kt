@@ -1052,7 +1052,7 @@ class SplitViewState(
 
             getAllPanels().forEach { panel ->
                 panel.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is FluckTabInfo && !seenTabIds.contains(tab.id)) {
+                    if (!seenTabIds.contains(tab.id) && (tab is FluckTabInfo || tab.typeId.typeId == "fluck")) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,
@@ -1166,7 +1166,7 @@ class SplitViewState(
         when (node) {
             is SplitNode.Panel -> {
                 node.tabsComponent.tabsState.value.tabs.forEach { tab ->
-                    if (tab is FluckTabInfo && !seenTabIds.contains(tab.id)) {
+                    if (!seenTabIds.contains(tab.id) && (tab is FluckTabInfo || tab.typeId.typeId == "fluck")) {
                         result.add(
                             ActiveTab(
                                 tabInfo = tab,

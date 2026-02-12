@@ -819,14 +819,27 @@ private class ApiActiveTabsProviderAdapter(
 
     override fun getTabUrl(tabId: String): String? {
         val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)
-        val tab = tabs.find { it.tabInfo.id == tabId }
-        return (tab?.tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo)?.currentUrl
+        val tab = tabs.find { it.tabInfo.id == tabId } ?: return null
+        val tabInfo = tab.tabInfo
+        val fluckTab = tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+        if (fluckTab != null) return fluckTab.currentUrl
+        if (tabInfo.typeId.typeId == "fluck") {
+            return getPropertyByReflection(tabInfo, "currentUrl")
+                ?: getPropertyByReflection(tabInfo, "initialUrl")
+        }
+        return null
     }
 
     override fun getFaviconCacheKey(tabId: String): String? {
         val tabs = splitViewState.collectAllActiveTabs(workspaceManager, windowId)
-        val tab = tabs.find { it.tabInfo.id == tabId }
-        return (tab?.tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo)?.faviconCacheKey
+        val tab = tabs.find { it.tabInfo.id == tabId } ?: return null
+        val tabInfo = tab.tabInfo
+        val fluckTab = tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+        if (fluckTab != null) return fluckTab.faviconCacheKey
+        if (tabInfo.typeId.typeId == "fluck") {
+            return getPropertyByReflection(tabInfo, "faviconCacheKey")
+        }
+        return null
     }
 
     @androidx.compose.runtime.Composable
@@ -907,6 +920,23 @@ private class ApiActiveTabsProviderAdapter(
     private fun convertToActiveTabData(tab: ai.rever.boss.topofmind.ActiveTab): ActiveTabData {
         val tabInfo = tab.tabInfo
         val fluckTab = tabInfo as? ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
+
+        // For dynamic plugin browser tabs (typeId "fluck" but not FluckTabInfo),
+        // extract URL and favicon via reflection from FluckBrowserTabData
+        val url: String?
+        val faviconCacheKey: String?
+        if (fluckTab != null) {
+            url = fluckTab.currentUrl
+            faviconCacheKey = fluckTab.faviconCacheKey
+        } else if (tabInfo.typeId.typeId == "fluck") {
+            url = getPropertyByReflection(tabInfo, "currentUrl")
+                ?: getPropertyByReflection(tabInfo, "initialUrl")
+            faviconCacheKey = getPropertyByReflection(tabInfo, "faviconCacheKey")
+        } else {
+            url = null
+            faviconCacheKey = null
+        }
+
         return ActiveTabData(
             tabId = tabInfo.id,
             typeId = tabInfo.typeId.typeId,
@@ -916,9 +946,20 @@ private class ApiActiveTabsProviderAdapter(
             panelId = tab.panelId,
             windowId = tab.windowId,
             splitPosition = tab.splitPosition,
-            url = fluckTab?.currentUrl,
-            faviconCacheKey = fluckTab?.faviconCacheKey
+            url = url,
+            faviconCacheKey = faviconCacheKey
         )
+    }
+
+    /** Helper to get a String property from an object via reflection. */
+    private fun getPropertyByReflection(obj: Any, propertyName: String): String? {
+        return try {
+            obj::class.java.methods
+                .firstOrNull { it.name == "get${propertyName.replaceFirstChar { c -> c.uppercase() }}" && it.parameterCount == 0 }
+                ?.invoke(obj) as? String
+        } catch (_: Exception) {
+            null
+        }
     }
 }
 
