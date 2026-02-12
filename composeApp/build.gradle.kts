@@ -618,8 +618,10 @@ kotlin {
             implementation(libs.zxing.core)
             implementation(libs.zxing.javase)
             
-            // JxBrowser with Compose and Swing support
-            implementation(jxbrowser.currentPlatform)
+            // JxBrowser - core API + Compose/Swing integration
+            // Platform binary (currentPlatform) excluded: BOSS downloads branded Chromium
+            // on first launch via ChromiumAutoDownloader (~86MB saved)
+            implementation("com.teamdev.jxbrowser:jxbrowser:$jxBrowserVersion")
             implementation(jxbrowser.compose)
             implementation(jxbrowser.swing)
 
