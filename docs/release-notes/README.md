@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.16.36](v8.16.36.md) | 2026-02-12 | Terminal plugin architecture refactoring with hot-reload support for improved modularity and developer experience |
 | [v8.16.34](v8.16.34.md) | 2026-02-12 | Critical terminal tab fix ensuring terminals open in the correct project directory |
 | [v8.16.33](v8.16.33.md) | 2026-02-12 | Build system improvement bundling the bookmarks plugin directly into CI releases |
 | [v8.16.32](v8.16.32.md) | 2026-02-09 | Build system reliability improvements with task dependency fixes and Kotlin platform updates |
