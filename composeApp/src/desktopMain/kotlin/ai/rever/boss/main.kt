@@ -390,6 +390,58 @@ fun main(args: Array<String>) {
                     BossWindow(
                         windowState = windowState,
                         onCloseRequest = {
+                            // Exit fullscreen/maximized BEFORE disposing browsers to prevent
+                            // SIGABRT crash in JxBrowser's getWindowHandle during macOS
+                            // fullscreen exit transition. requestToggleFullScreen() is async
+                            // (macOS Spaces animation takes ~300-500ms), so we add a brief
+                            // delay to let the transition start before disposing browsers.
+                            //
+                            // Blocking the UI thread here is acceptable: the app is closing
+                            // and the window is about to be destroyed anyway.
+                            val awtWindow = ai.rever.boss.utils.WindowFocusManager.getWindow(windowState.id)
+                            var needsTransitionWait = false
+                            if (awtWindow is java.awt.Frame) {
+                                if (awtWindow.extendedState != java.awt.Frame.NORMAL) {
+                                    logger.debug(LogCategory.UI, "Exiting maximized state before window close", mapOf(
+                                        "windowId" to windowState.id,
+                                        "extendedState" to awtWindow.extendedState.toString()
+                                    ))
+                                    awtWindow.extendedState = java.awt.Frame.NORMAL
+                                    needsTransitionWait = true
+                                }
+                                // macOS native fullscreen uses Spaces, not AWT exclusive mode.
+                                // GraphicsDevice.fullScreenWindow only detects AWT exclusive mode,
+                                // so we always attempt requestToggleFullScreen on macOS and let
+                                // it no-op if the window isn't in native fullscreen.
+                                val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
+                                if (isMacOS) {
+                                    try {
+                                        logger.debug(LogCategory.UI, "Requesting macOS fullscreen exit before window close", mapOf(
+                                            "windowId" to windowState.id
+                                        ))
+                                        val appClass = Class.forName("com.apple.eawt.Application")
+                                        val app = appClass.getMethod("getApplication").invoke(null)
+                                        appClass.getMethod("requestToggleFullScreen", java.awt.Window::class.java)
+                                            .invoke(app, awtWindow)
+                                        needsTransitionWait = true
+                                    } catch (e: Exception) {
+                                        logger.debug(LogCategory.UI, "macOS fullscreen exit not available", mapOf(
+                                            "errorType" to e.javaClass.simpleName,
+                                            "reason" to (e.message ?: "unknown")
+                                        ))
+                                    }
+                                }
+                                // Wait for fullscreen/maximize transition to start before
+                                // disposing browsers. Both state changes are async on macOS.
+                                // Using runBlocking{delay()} per THREADING.md guidelines;
+                                // blocking is acceptable here since the window is closing.
+                                if (needsTransitionWait) {
+                                    kotlinx.coroutines.runBlocking {
+                                        kotlinx.coroutines.delay(150)
+                                    }
+                                }
+                            }
+
                             // CRITICAL: Dispose all browsers BEFORE window close begins
                             // This prevents JxBrowser OffScreenWidget crash when it tries to
                             // access the window handle during Compose disposal

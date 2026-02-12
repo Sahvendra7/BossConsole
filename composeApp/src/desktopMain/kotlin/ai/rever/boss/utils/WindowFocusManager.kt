@@ -70,6 +70,14 @@ actual object WindowFocusManager {
     }
 
     /**
+     * Get a registered window by ID.
+     *
+     * @param windowId The window ID
+     * @return The AWT Window, or null if not registered
+     */
+    fun getWindow(windowId: String): Window? = windows[windowId]
+
+    /**
      * Unregister a window when it closes
      *
      * @param windowId The window ID to unregister
