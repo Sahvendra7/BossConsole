@@ -168,6 +168,7 @@ val downloadBundledPlugins = tasks.register("downloadBundledPlugins") {
         val bundledPlugins = listOf(
             "risa-labs-inc/boss-plugin-api" to "boss-plugin-api",
             "risa-labs-inc/boss-plugin-terminal-tab" to "boss-plugin-terminal-tab",
+            "risa-labs-inc/boss-plugin-terminal" to "boss-plugin-terminal",
             "risa-labs-inc/boss-plugin-fluck-browser" to "boss-plugin-fluck-browser",
             "risa-labs-inc/boss-plugin-editor-tab" to "boss-plugin-editor-tab",
             "risa-labs-inc/boss-plugin-plugin-manager" to "boss-plugin-plugin-manager",

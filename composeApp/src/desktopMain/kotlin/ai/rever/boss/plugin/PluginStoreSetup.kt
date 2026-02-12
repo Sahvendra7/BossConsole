@@ -91,6 +91,12 @@ object PluginStoreSetup {
             loadPriority = 10
         ),
         SystemPluginInfo(
+            pluginId = "ai.rever.boss.plugin.dynamic.terminal",
+            githubRepo = "risa-labs-inc/boss-plugin-terminal",
+            artifactPrefix = "boss-plugin-terminal",
+            loadPriority = 10
+        ),
+        SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
             githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
             artifactPrefix = "boss-plugin-fluck-browser",
