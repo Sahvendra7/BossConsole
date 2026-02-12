@@ -1527,16 +1527,25 @@ tasks.register("createExecutableJarWithIncrement") {
 // Uses desktop runtime classpath since this is a Kotlin Multiplatform project
 val desktopMain by kotlin.sourceSets.getting
 
+// Detached configuration for the JxBrowser platform binary needed by downloadChromium.
+// This is NOT included in the app runtime (branded Chromium is used instead).
+val jxBrowserPlatformBinary: Configuration by configurations.creating
+
+dependencies {
+    jxBrowserPlatformBinary(jxbrowser.currentPlatform)
+}
+
 tasks.register<JavaExec>("downloadChromium") {
     group = "jxbrowser"
     description = "Downloads JxBrowser Chromium binaries to a specified directory"
 
     dependsOn("desktopJar")
 
-    // Use the desktop JAR and its dependencies
+    // Use the desktop JAR and its dependencies, plus the platform binary for extraction
     classpath = files(
         tasks.named("desktopJar").map { it.outputs.files },
-        configurations.named("desktopRuntimeClasspath")
+        configurations.named("desktopRuntimeClasspath"),
+        jxBrowserPlatformBinary
     )
     mainClass.set("ai.rever.boss.ChromiumDownloaderKt")
 
