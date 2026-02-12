@@ -65,7 +65,8 @@ object PluginListProvider {
     private val GITHUB_PLUGIN_URLS = mapOf(
         "ai.rever.boss.plugin.dynamic.fluckbrowser" to "https://github.com/risa-labs-inc/boss-plugin-fluck-browser",
         "ai.rever.boss.plugin.dynamic.editortab" to "https://github.com/risa-labs-inc/boss-plugin-editor-tab",
-        "ai.rever.boss.plugin.dynamic.terminaltab" to "https://github.com/risa-labs-inc/boss-plugin-terminal-tab"
+        "ai.rever.boss.plugin.dynamic.terminaltab" to "https://github.com/risa-labs-inc/boss-plugin-terminal-tab",
+        "ai.rever.boss.plugin.dynamic.terminal" to "https://github.com/risa-labs-inc/boss-plugin-terminal"
     )
 
     /**
