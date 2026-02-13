@@ -51,11 +51,5 @@
     <!-- Allow spawning subprocesses -->
     <key>com.apple.security.inherit</key>
     <true/>
-
-    <!-- WebAuthn/Passkey: Associated domains for platform authenticator -->
-    <key>com.apple.developer.associated-domains</key>
-    <array>
-        <string>webcredentials:api.risaboss.com</string>
-    </array>
 </dict>
 </plist>

@@ -27,17 +27,5 @@
     <!-- Inherit entitlements from parent process -->
     <key>com.apple.security.inherit</key>
     <true/>
-
-    <!-- WebAuthn/Passkey: Associated domains for platform authenticator -->
-    <key>com.apple.developer.associated-domains</key>
-    <array>
-        <string>webcredentials:api.risaboss.com</string>
-    </array>
-
-    <!-- WebAuthn/Passkey: Keychain access for credential storage -->
-    <key>com.apple.security.keychain-access-groups</key>
-    <array>
-        <string>$(AppIdentifierPrefix)ai.rever.boss.browser</string>
-    </array>
 </dict>
 </plist>

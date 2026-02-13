@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       jxbrowser_version:
-        description: 'JxBrowser version (e.g., 8.17.0)'
+        description: 'JxBrowser version (e.g., 8.15.0)'
         required: true
-        default: '8.17.0'
+        default: '8.15.0'
 
 env:
-  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '8.17.0' }}
+  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '8.15.0' }}
 
 jobs:
   # Build the Chromium branding tool first
@@ -194,27 +194,16 @@ jobs:
           fi
 
           # Re-sign all helpers after modifications
-          # Use Developer ID + entitlements when available for WebAuthn/passkey support
           echo "Re-signing helpers..."
-          if [ "$SIGNING_AVAILABLE" = "true" ]; then
-            SIGN_IDENTITY="$MACOS_DEVELOPER_ID"
-            ENTITLEMENTS_FLAG="--entitlements entitlements/boss-chromium.entitlements"
-          else
-            SIGN_IDENTITY="-"
-            ENTITLEMENTS_FLAG=""
-          fi
-
           for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
             if [ -d "$helper" ]; then
-              codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG "$helper" 2>/dev/null || true
+              codesign --force --sign - "$helper" 2>/dev/null || true
             fi
           done
 
           # Re-sign framework and main app
-          codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG \
-            "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
-          codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG \
-            "output/BOSS.app" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
           echo "Re-signing complete"
 
           # Create executable.name if not present (required by JxBrowser)
@@ -401,27 +390,16 @@ jobs:
           fi
 
           # Re-sign all helpers after modifications
-          # Use Developer ID + entitlements when available for WebAuthn/passkey support
           echo "Re-signing helpers..."
-          if [ "$SIGNING_AVAILABLE" = "true" ]; then
-            SIGN_IDENTITY="$MACOS_DEVELOPER_ID"
-            ENTITLEMENTS_FLAG="--entitlements entitlements/boss-chromium.entitlements"
-          else
-            SIGN_IDENTITY="-"
-            ENTITLEMENTS_FLAG=""
-          fi
-
           for helper in "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework/Helpers"/*.app; do
             if [ -d "$helper" ]; then
-              codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG "$helper" 2>/dev/null || true
+              codesign --force --sign - "$helper" 2>/dev/null || true
             fi
           done
 
           # Re-sign framework and main app
-          codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG \
-            "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
-          codesign --force --sign "$SIGN_IDENTITY" $ENTITLEMENTS_FLAG \
-            "output/BOSS.app" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app/Contents/Frameworks/Chromium Framework.framework" 2>/dev/null || true
+          codesign --force --sign - "output/BOSS.app" 2>/dev/null || true
           echo "Re-signing complete"
 
           # Create executable.name if not present (required by JxBrowser)

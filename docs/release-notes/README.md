@@ -12,9 +12,6 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
-| [v8.17.2](v8.17.2.md) | 2026-02-13 | Documentation update release adding missing release notes for v8.16.45 |
-| [v8.17.0](v8.17.0.md) | 2026-02-12 | Enhanced passkey authentication with full WebAuthn support in BOSS's embedded Chromium browser |
-| [v8.16.45](v8.16.45.md) | 2026-02-12 | WebAuthn/passkey support for embedded Chromium browser with improved macOS code signing and UI enhancements |
 | [v8.16.44](v8.16.44.md) | 2026-02-12 | RPA recorder plugin browser support and browser profile cleanup improvements for better resource management and automation capabilities |
 | [v8.16.43](v8.16.43.md) | 2026-02-12 | Critical plugin memory leak fix ensuring proper cleanup of dynamic plugin browser instances when windows are closed |
 | [v8.16.42](v8.16.42.md) | 2026-02-12 | Critical stability fix preventing macOS crash when closing the application while in fullscreen mode |
