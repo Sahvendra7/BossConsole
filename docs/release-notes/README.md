@@ -12,6 +12,8 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.2](v8.17.2.md) | 2026-02-13 | Documentation update release adding missing release notes for v8.16.45 |
+| [v8.17.1](v8.17.1.md) | 2026-02-15 | Stability-focused release reverting WebAuthn entitlements and JxBrowser 8.17.0 upgrade to restore stable state while features undergo additional testing |
 | [v8.16.44](v8.16.44.md) | 2026-02-12 | RPA recorder plugin browser support and browser profile cleanup improvements for better resource management and automation capabilities |
 | [v8.16.43](v8.16.43.md) | 2026-02-12 | Critical plugin memory leak fix ensuring proper cleanup of dynamic plugin browser instances when windows are closed |
 | [v8.16.42](v8.16.42.md) | 2026-02-12 | Critical stability fix preventing macOS crash when closing the application while in fullscreen mode |
