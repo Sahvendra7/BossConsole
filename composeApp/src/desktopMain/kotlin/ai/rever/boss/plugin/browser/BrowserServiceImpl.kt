@@ -23,12 +23,20 @@ object BrowserServiceImpl : BrowserService {
 
     override fun isAvailable(): Boolean {
         return try {
-            // Check if engine can be accessed without errors
-            // Accessing FluckEngine.engine triggers initialization if needed
-            FluckEngine.initError == null && !FluckEngine.engine.isClosed
+            val initErr = FluckEngine.initError
+            val engineClosed = FluckEngine.engine.isClosed
+            val available = initErr == null && !engineClosed
+            if (!available) {
+                logger.warn(LogCategory.BROWSER, "BrowserService not available", mapOf(
+                    "initError" to (initErr?.toString() ?: "none"),
+                    "engineClosed" to engineClosed.toString()
+                ))
+            }
+            available
         } catch (e: Exception) {
-            logger.debug(LogCategory.BROWSER, "BrowserService not available", mapOf(
-                "error" to (e.message ?: "unknown")
+            logger.warn(LogCategory.BROWSER, "BrowserService not available - exception", mapOf(
+                "error" to (e.message ?: "unknown"),
+                "errorType" to e.javaClass.simpleName
             ))
             false
         }

@@ -254,12 +254,44 @@ object ChromiumAutoDownloader {
     }
 
     /**
-     * Extract a zip file to a target directory
+     * Extract a zip file to a target directory.
+     * On macOS, uses native `ditto` to preserve symlinks, resource forks,
+     * and code signatures. Java's ZipInputStream breaks macOS framework
+     * symlinks (e.g. Versions/Current), causing Chromium startup failures.
      */
     private fun extractZip(zipPath: Path, targetDir: Path) {
         logger.debug(LogCategory.BROWSER, "Extracting Chromium", mapOf("targetDir" to targetDir.toString()))
         Files.createDirectories(targetDir)
 
+        if (System.getProperty("os.name").lowercase().contains("mac")) {
+            extractWithDitto(zipPath, targetDir)
+        } else {
+            extractWithJava(zipPath, targetDir)
+        }
+
+        logger.debug(LogCategory.BROWSER, "Extraction complete")
+    }
+
+    /**
+     * Extract using macOS native `ditto` which preserves symlinks and code signatures.
+     */
+    private fun extractWithDitto(zipPath: Path, targetDir: Path) {
+        val process = ProcessBuilder("ditto", "-xk", zipPath.toString(), targetDir.toString())
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exitCode = process.waitFor()
+        if (exitCode != 0) {
+            logger.warn(LogCategory.BROWSER, "ditto extraction failed, falling back to Java",
+                mapOf("exitCode" to exitCode, "output" to output))
+            extractWithJava(zipPath, targetDir)
+        }
+    }
+
+    /**
+     * Extract using Java's ZipInputStream (non-macOS or fallback).
+     */
+    private fun extractWithJava(zipPath: Path, targetDir: Path) {
         ZipInputStream(Files.newInputStream(zipPath)).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
@@ -283,17 +315,10 @@ object ChromiumAutoDownloader {
                     // Preserve executable bit on Unix
                     if (!System.getProperty("os.name").lowercase().contains("win")) {
                         val name = entry.name.lowercase()
-                        // Check if this is an executable file:
-                        // - Files inside macOS .app/Contents/MacOS/ directories
-                        // - Files containing "chromium" in the name
-                        // - Shared libraries (.so files)
-                        // - Shell scripts (.sh files)
-                        // - Files without extensions (common for Unix executables)
                         val isMacOSExecutable = name.contains(".app/contents/macos/")
                         val isChromium = name.contains("chromium") || name.contains("boss")
                         val isSharedLib = name.endsWith(".so")
                         val isShellScript = name.endsWith(".sh")
-                        // For "no extension" check, only look at the filename not the full path
                         val fileName = targetPath.fileName.toString()
                         val hasNoExtension = !fileName.contains(".")
 
@@ -307,8 +332,6 @@ object ChromiumAutoDownloader {
                 entry = zis.nextEntry
             }
         }
-
-        logger.debug(LogCategory.BROWSER, "Extraction complete")
     }
 
     /**
