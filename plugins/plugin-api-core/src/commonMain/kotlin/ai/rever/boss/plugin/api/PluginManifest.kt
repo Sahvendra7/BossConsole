@@ -219,6 +219,12 @@ enum class PluginType {
     MIXED,
 
     /**
+     * Plugin that provides both panels and tab types (alias for MIXED).
+     */
+    @SerialName("hybrid")
+    HYBRID,
+
+    /**
      * Plugin that provides services or utilities without UI.
      */
     @SerialName("service")
