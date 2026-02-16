@@ -667,7 +667,7 @@ kotlin {
 
         desktopTest.dependencies {
             implementation(kotlin("test-junit5"))
-            implementation("org.junit.jupiter:junit-jupiter:6.0.2")
+            implementation("org.junit.jupiter:junit-jupiter:6.0.3")
         }
     }
 }
