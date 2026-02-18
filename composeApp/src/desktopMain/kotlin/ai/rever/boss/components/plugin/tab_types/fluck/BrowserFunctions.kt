@@ -366,8 +366,11 @@ actual suspend fun resetBrowserProfile(): Boolean {
 actual fun disposeBrowser(browser: Any) {
     try {
         val jxBrowser = browser as? Browser
-        if (jxBrowser != null && !jxBrowser.isClosed) {
-            jxBrowser.close()
+        if (jxBrowser != null) {
+            FluckEngine.disposeBrowserFindBar(jxBrowser)
+            if (!jxBrowser.isClosed) {
+                jxBrowser.close()
+            }
         }
     } catch (e: Exception) {
         // Suppress exceptions during disposal to prevent crashes in cleanup code

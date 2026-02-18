@@ -1057,6 +1057,9 @@ internal class BrowserHandleImpl(
         currentViewState?.close()
         currentViewState = null
 
+        // Clean up find bar resources before closing browser
+        FluckEngine.disposeBrowserFindBar(browser)
+
         // Close browser
         if (!browser.isClosed) {
             browser.close()

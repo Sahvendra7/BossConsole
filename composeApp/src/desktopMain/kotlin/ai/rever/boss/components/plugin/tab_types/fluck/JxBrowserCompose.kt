@@ -23,6 +23,7 @@ import ai.rever.boss.components.plugin.panels.left_top.ProjectState
 import ai.rever.boss.components.workspaces.TabConfig
 import ai.rever.boss.components.workspaces.workspaceManager
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.window.AWTKeyboardInterceptor
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.LocalWindowProjectState
 import ai.rever.boss.window.Project
@@ -394,6 +395,14 @@ fun JxBrowserCompose(
     LaunchedEffect(selectedDropdownIndex) {
         if (selectedDropdownIndex >= 0 && dropdownSuggestions.isNotEmpty()) {
             dropdownListState.animateScrollToItem(selectedDropdownIndex)
+        }
+    }
+
+    // Update active context for this window to BROWSER when composable is active
+    DisposableEffect(windowId) {
+        AWTKeyboardInterceptor.updateWindowContext(windowId, ShortcutContext.BROWSER)
+        onDispose {
+            AWTKeyboardInterceptor.clearWindowContext(windowId)
         }
     }
 

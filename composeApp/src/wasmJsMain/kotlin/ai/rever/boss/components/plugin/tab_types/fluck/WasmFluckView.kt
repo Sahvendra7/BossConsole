@@ -17,17 +17,20 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 actual fun FluckView(
-    fileId: String, 
+    fileId: String,
     content: String,
     browser: Any?,
     browserViewState: Any?,
+    browserLock: Any?,
     onContentChange: (String) -> Unit,
     onTitleChange: (String) -> Unit,
     onIconChange: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
     onNavigationUpdate: ((String, String) -> Unit)?,
-    onNavigationStateChange: ((isBack: Boolean) -> Unit)?
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)?,
+    onFaviconCached: ((String?) -> Unit)?,
+    onCloseTab: (() -> Unit)?
 ) {
     // For WASM/JS, we could potentially use an iframe or similar
     // For now, we'll show a placeholder

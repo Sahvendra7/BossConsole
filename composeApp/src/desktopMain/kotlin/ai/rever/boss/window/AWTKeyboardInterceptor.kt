@@ -34,6 +34,12 @@ object AWTKeyboardInterceptor {
      */
     private val windowIdMap = ConcurrentHashMap<Window, String>()
 
+    /**
+     * Per-window active context tracking.
+     * Updated by Compose layer when the active tab type changes.
+     */
+    private val windowContextMap = ConcurrentHashMap<String, ShortcutContext>()
+
     // Double-shift detection for global search (like IntelliJ's Search Everywhere)
     private var lastShiftPressTime: Long = 0
     private var lastShiftReleaseTime: Long = 0
@@ -56,7 +62,30 @@ object AWTKeyboardInterceptor {
      * Call this from BossWindow's DisposableEffect onDispose.
      */
     fun unregisterWindow(awtWindow: Window) {
-        windowIdMap.remove(awtWindow)
+        val windowId = windowIdMap.remove(awtWindow)
+        if (windowId != null) {
+            windowContextMap.remove(windowId)
+        }
+    }
+
+    /**
+     * Update the active shortcut context for a window.
+     * Called from the Compose layer when the active tab type changes.
+     *
+     * @param windowId The BOSS window ID
+     * @param context The shortcut context of the currently active component
+     */
+    fun updateWindowContext(windowId: String, context: ShortcutContext) {
+        windowContextMap[windowId] = context
+    }
+
+    /**
+     * Clear the active context for a window (reverts to GLOBAL).
+     *
+     * @param windowId The BOSS window ID
+     */
+    fun clearWindowContext(windowId: String) {
+        windowContextMap.remove(windowId)
     }
 
     /**
@@ -146,7 +175,6 @@ object AWTKeyboardInterceptor {
             val matcher = KeymapMatcher(settings)
 
             // Try to match the key event against shortcuts
-            // Check TERMINAL context first (since terminal is likely focused), then WORKSPACE, then GLOBAL
             val binding = findMatchingBinding(event, matcher)
 
             if (binding != null) {
@@ -177,6 +205,7 @@ object AWTKeyboardInterceptor {
         dispatcher = null
         isInstalled = false
         windowIdMap.clear()
+        windowContextMap.clear()
     }
 
     /**
@@ -208,15 +237,72 @@ object AWTKeyboardInterceptor {
     }
 
     /**
+     * Detect the current shortcut context based on:
+     * 1. Explicit per-window context (set by Compose layer)
+     * 2. AWT focus owner class hierarchy (fallback)
+     */
+    private fun detectCurrentContext(windowId: String?): ShortcutContext {
+        // Primary: explicit per-window context from Compose layer
+        if (windowId != null) {
+            windowContextMap[windowId]?.let { return it }
+        }
+
+        // Fallback: detect from AWT focus owner's class hierarchy
+        val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+        return detectContextFromAwtComponent(focusOwner)
+    }
+
+    /**
+     * Detect shortcut context by walking up the AWT component hierarchy.
+     * JxBrowser components have "jxbrowser" in their package name.
+     */
+    private fun detectContextFromAwtComponent(component: java.awt.Component?): ShortcutContext {
+        var current: java.awt.Component? = component
+        while (current != null) {
+            val className = current.javaClass.name
+            if (className.contains("jxbrowser", ignoreCase = true)) {
+                return ShortcutContext.BROWSER
+            }
+            if (className.contains("bossterm", ignoreCase = true) ||
+                className.contains("TerminalPanel", ignoreCase = false)) {
+                return ShortcutContext.TERMINAL
+            }
+            current = current.parent
+        }
+        return ShortcutContext.GLOBAL
+    }
+
+    /**
+     * Check if a binding's context is eligible given the current active context.
+     * GLOBAL and WORKSPACE bindings always match.
+     * Component-specific bindings (BROWSER, TERMINAL, EDITOR) only match their context.
+     */
+    private fun isContextEligible(bindingContext: ShortcutContext, currentContext: ShortcutContext): Boolean {
+        return when (bindingContext) {
+            ShortcutContext.GLOBAL -> true
+            ShortcutContext.WORKSPACE -> true
+            else -> bindingContext == currentContext
+        }
+    }
+
+    /**
      * Find a matching binding for the AWT KeyEvent.
-     * Checks TERMINAL, WORKSPACE, and GLOBAL contexts.
+     * Context-aware: skips component-specific bindings when the focused component
+     * doesn't match, and prefers bindings whose context matches the current focus.
      */
     private fun findMatchingBinding(event: KeyEvent, matcher: KeymapMatcher): KeyBinding? {
-        // Convert AWT KeyEvent to the format expected by KeymapMatcher
         val keyName = getKeyName(event.keyCode)
         val settings = KeymapSettingsManager.currentSettings.value
 
-        // Check all enabled bindings
+        // Detect current context for filtering
+        val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+        val windowId = findWindowId(focusedWindow)
+        val currentContext = detectCurrentContext(windowId)
+
+        // Collect all matching bindings with their context priority
+        var bestMatch: KeyBinding? = null
+        var bestPriority = -1
+
         for (binding in settings.shortcuts.values) {
             if (!binding.enabled) continue
 
@@ -242,11 +328,25 @@ object AWTKeyboardInterceptor {
             }
 
             if (primaryMatch && hasShift == event.isShiftDown && hasAlt == event.isAltDown) {
-                return binding
+                // Skip bindings whose context doesn't match
+                if (!isContextEligible(binding.context, currentContext)) continue
+
+                // Prioritize: exact context match > GLOBAL > WORKSPACE
+                val priority = when {
+                    binding.context == currentContext -> 3
+                    binding.context == ShortcutContext.GLOBAL -> 2
+                    binding.context == ShortcutContext.WORKSPACE -> 1
+                    else -> 0
+                }
+
+                if (priority > bestPriority) {
+                    bestMatch = binding
+                    bestPriority = priority
+                }
             }
         }
 
-        return null
+        return bestMatch
     }
 
     /**
@@ -409,6 +509,10 @@ object AWTKeyboardInterceptor {
             // Browser Controls
             KeymapActions.BROWSER_RELOAD -> {
                 MenuActionsHandler.triggerReloadBrowser(windowId)
+                true
+            }
+            KeymapActions.BROWSER_FIND -> {
+                MenuActionsHandler.triggerBrowserFind(windowId)
                 true
             }
 

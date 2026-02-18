@@ -63,6 +63,9 @@ object MenuActionsHandler {
     private val _reloadBrowserEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val reloadBrowserEvents: SharedFlow<String> = _reloadBrowserEvents.asSharedFlow()
 
+    private val _browserFindEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val browserFindEvents: SharedFlow<String> = _browserFindEvents.asSharedFlow()
+
     private val _saveWorkspaceEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val saveWorkspaceEvents: SharedFlow<String> = _saveWorkspaceEvents.asSharedFlow()
 
@@ -289,6 +292,15 @@ object MenuActionsHandler {
      */
     fun triggerReloadBrowser(windowId: String) {
         _reloadBrowserEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger a "Browser Find" action for the specified window.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerBrowserFind(windowId: String) {
+        _browserFindEvents.tryEmit(windowId)
     }
 
     /**

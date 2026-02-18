@@ -5,10 +5,14 @@ import com.teamdev.jxbrowser.devtools.DevTools
 import com.teamdev.jxbrowser.event.Subscription
 import com.teamdev.jxbrowser.frame.Frame
 import com.teamdev.jxbrowser.navigation.Navigation
+import com.teamdev.jxbrowser.search.FindOptions
+import com.teamdev.jxbrowser.search.FindResult
+import com.teamdev.jxbrowser.search.TextFinder
 import com.teamdev.jxbrowser.zoom.Zoom
 import com.teamdev.jxbrowser.zoom.ZoomLevel
 import java.util.Optional
 import java.util.concurrent.locks.ReentrantReadWriteLock
+import java.util.function.Consumer
 import kotlin.concurrent.read
 
 /**
@@ -63,6 +67,8 @@ class LockedBrowser(
 
     fun zoom(): LockedZoom = LockedZoom(browser.zoom(), lock)
 
+    fun textFinder(): LockedTextFinder = LockedTextFinder(browser.textFinder(), lock)
+
     /**
      * Access raw browser for operations that can't be wrapped.
      * Use this for event registration (browser.on()) and callback registration (browser.set())
@@ -114,4 +120,24 @@ class LockedZoom(
     fun level(): ZoomLevel = lock.read { zoom.level() }
 
     fun level(newLevel: ZoomLevel) = lock.read { zoom.level(newLevel) }
+}
+
+/**
+ * Thread-safe wrapper for TextFinder operations (find-in-page).
+ */
+class LockedTextFinder(
+    private val textFinder: TextFinder,
+    private val lock: ReentrantReadWriteLock
+) {
+    fun find(text: String, callback: Consumer<FindResult>) = lock.read {
+        textFinder.find(text, callback)
+    }
+
+    fun find(text: String, options: FindOptions, callback: Consumer<FindResult>) = lock.read {
+        textFinder.find(text, options, callback)
+    }
+
+    fun stopFindingAndClearSelection() = lock.read {
+        textFinder.stopFindingAndClearSelection()
+    }
 }

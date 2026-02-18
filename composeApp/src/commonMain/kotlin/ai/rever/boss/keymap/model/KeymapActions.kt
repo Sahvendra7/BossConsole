@@ -20,6 +20,7 @@ object KeymapActions {
     const val BROWSER_ZOOM_RESET = "browser.zoom_reset"
     const val BROWSER_ZOOM_IN = "browser.zoom_in"
     const val BROWSER_ZOOM_OUT = "browser.zoom_out"
+    const val BROWSER_FIND = "browser.find"
 
     // Navigation Actions
     const val PANEL_NAVIGATE_LEFT = "panel.navigate_left"
@@ -87,6 +88,7 @@ object KeymapActions {
         BROWSER_ZOOM_RESET to "Reset browser zoom to 100%",
         BROWSER_ZOOM_IN to "Increase browser zoom level",
         BROWSER_ZOOM_OUT to "Decrease browser zoom level",
+        BROWSER_FIND to "Find text on page",
         PANEL_NAVIGATE_LEFT to "Switch to the left/previous panel",
         PANEL_NAVIGATE_RIGHT to "Switch to the right/next panel",
         PANEL_NAVIGATE_UP to "Switch to the previous panel (upward)",
@@ -122,6 +124,7 @@ object KeymapActions {
         BROWSER_ZOOM_RESET to Categories.BROWSER_CONTROLS,
         BROWSER_ZOOM_IN to Categories.BROWSER_CONTROLS,
         BROWSER_ZOOM_OUT to Categories.BROWSER_CONTROLS,
+        BROWSER_FIND to Categories.BROWSER_CONTROLS,
         PANEL_NAVIGATE_LEFT to Categories.NAVIGATION,
         PANEL_NAVIGATE_RIGHT to Categories.NAVIGATION,
         PANEL_NAVIGATE_UP to Categories.NAVIGATION,
@@ -157,6 +160,7 @@ object KeymapActions {
         BROWSER_ZOOM_RESET to ShortcutContext.BROWSER,
         BROWSER_ZOOM_IN to ShortcutContext.BROWSER,
         BROWSER_ZOOM_OUT to ShortcutContext.BROWSER,
+        BROWSER_FIND to ShortcutContext.BROWSER,
         PANEL_NAVIGATE_LEFT to ShortcutContext.GLOBAL,
         PANEL_NAVIGATE_RIGHT to ShortcutContext.GLOBAL,
         PANEL_NAVIGATE_UP to ShortcutContext.GLOBAL,
@@ -186,7 +190,7 @@ object KeymapActions {
     fun getAllActionIds(): List<String> = listOf(
         WINDOW_NEW, WINDOW_CLOSE,
         TAB_NEW, TAB_CLOSE,
-        BROWSER_RELOAD, BROWSER_ZOOM_RESET, BROWSER_ZOOM_IN, BROWSER_ZOOM_OUT,
+        BROWSER_RELOAD, BROWSER_ZOOM_RESET, BROWSER_ZOOM_IN, BROWSER_ZOOM_OUT, BROWSER_FIND,
         PANEL_NAVIGATE_LEFT, PANEL_NAVIGATE_RIGHT, PANEL_NAVIGATE_UP, PANEL_NAVIGATE_DOWN,
         PANEL_SPLIT_VERTICAL, PANEL_SPLIT_HORIZONTAL, QUICK_SWITCHER_OPEN,
         WORKSPACE_SAVE,

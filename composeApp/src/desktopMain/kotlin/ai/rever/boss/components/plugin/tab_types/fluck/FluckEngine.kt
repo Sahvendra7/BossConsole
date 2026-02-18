@@ -43,6 +43,248 @@ sealed class EngineInitError {
 // Singleton engine for all browser tabs
 object FluckEngine {
     private val logger = BossLogger.forComponent("FluckEngine")
+
+    /**
+     * Swing-based find bar that overlays the browser window.
+     * Uses JxBrowser's TextFinder API for searching (no focus stealing).
+     * Styled to match BossTerm's SearchBar (VS Code-style, dark theme, top-right).
+     */
+    private val activeFindBars = java.util.concurrent.ConcurrentHashMap<com.teamdev.jxbrowser.browser.Browser, BrowserFindBar>()
+
+    private class BrowserFindBar(
+        private val browser: com.teamdev.jxbrowser.browser.Browser
+    ) {
+        private var dialog: javax.swing.JDialog? = null
+        private var textField: javax.swing.JTextField? = null
+        private var infoLabel: javax.swing.JLabel? = null
+        private var caseSensitive = false
+        private var ownerWindow: java.awt.Window? = null
+        private var componentListener: java.awt.event.ComponentListener? = null
+        private var searchTimer: javax.swing.Timer? = null
+        var visible = false
+            private set
+
+        fun toggle() {
+            if (visible) hide() else show()
+        }
+
+        fun show() {
+            visible = true
+            val window = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                ?: return
+            ownerWindow = window
+            javax.swing.SwingUtilities.invokeLater {
+                if (dialog == null) {
+                    createDialog(window)
+                }
+                positionDialog(window)
+                dialog?.isVisible = true
+                textField?.requestFocusInWindow()
+                textField?.selectAll()
+            }
+        }
+
+        fun hide() {
+            visible = false
+            javax.swing.SwingUtilities.invokeLater {
+                dialog?.isVisible = false
+                try {
+                    if (!browser.isClosed) browser.textFinder().stopFindingAndClearSelection()
+                } catch (e: Exception) {
+                    logger.debug(LogCategory.BROWSER, "Error clearing find highlights", mapOf("error" to (e.message ?: "unknown")))
+                }
+            }
+        }
+
+        private fun positionDialog(owner: java.awt.Window) {
+            val d = dialog ?: return
+            d.pack()
+            val x = owner.x + owner.width - d.width - 16
+            val y = owner.y + 80
+            d.setLocation(x.coerceAtLeast(owner.x + 4), y)
+        }
+
+        /** Unified find method — #4: deduplicated from doFind/doInitialFind */
+        private fun performFind(backward: Boolean) {
+            val query = textField?.text ?: return
+            if (query.isEmpty()) {
+                infoLabel?.text = ""
+                try {
+                    if (!browser.isClosed) browser.textFinder().stopFindingAndClearSelection()
+                } catch (e: Exception) {
+                    logger.debug(LogCategory.BROWSER, "Error clearing find", mapOf("error" to (e.message ?: "unknown")))
+                }
+                return
+            }
+            if (browser.isClosed) return
+            try {
+                val options = com.teamdev.jxbrowser.search.FindOptions.newBuilder()
+                    .matchCase(caseSensitive)
+                    .searchBackward(backward)
+                    .build()
+                browser.textFinder().find(query, options) { result ->
+                    javax.swing.SwingUtilities.invokeLater {
+                        val total = result.numberOfMatches()
+                        val current = result.selectedMatch()
+                        if (total > 0) {
+                            infoLabel?.text = "$current/$total"
+                            infoLabel?.foreground = java.awt.Color(0xCC, 0xCC, 0xCC)
+                        } else {
+                            infoLabel?.text = "0/0"
+                            infoLabel?.foreground = java.awt.Color(0xFF, 0x6B, 0x6B)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logger.debug(LogCategory.BROWSER, "Find operation failed", mapOf("error" to (e.message ?: "unknown")))
+            }
+        }
+
+        /** #8: Debounced live search — 150ms delay to avoid hammering renderer per keystroke */
+        private fun debouncedFind() {
+            searchTimer?.stop()
+            searchTimer = javax.swing.Timer(150) { performFind(false) }
+            searchTimer?.isRepeats = false
+            searchTimer?.start()
+        }
+
+        private fun createDialog(owner: java.awt.Window) {
+            val bg = java.awt.Color(0x25, 0x25, 0x26)
+            val inputBg = java.awt.Color(0x3C, 0x3C, 0x3C)
+            val fg = java.awt.Color(0xCC, 0xCC, 0xCC)
+            val mutedFg = java.awt.Color(0x80, 0x80, 0x80)
+            val font = java.awt.Font("SansSerif", java.awt.Font.PLAIN, 13)
+            val smallFont = java.awt.Font("SansSerif", java.awt.Font.PLAIN, 11)
+
+            // #3: Use Window-accepting constructor instead of Frame cast
+            val d = javax.swing.JDialog(owner)
+            d.isUndecorated = true
+            d.isAlwaysOnTop = false
+            d.background = bg
+            d.type = java.awt.Window.Type.UTILITY
+
+            val content = javax.swing.JPanel()
+            content.background = bg
+            content.layout = java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 4)
+            content.border = javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(java.awt.Color(0x3C, 0x3C, 0x3C)),
+                javax.swing.BorderFactory.createEmptyBorder(2, 6, 2, 6)
+            )
+
+            val tf = javax.swing.JTextField(14)
+            tf.font = font
+            tf.foreground = java.awt.Color.WHITE
+            tf.background = inputBg
+            tf.caretColor = java.awt.Color.WHITE
+            tf.border = javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(java.awt.Color(0x55, 0x55, 0x55)),
+                javax.swing.BorderFactory.createEmptyBorder(2, 6, 2, 6)
+            )
+            tf.preferredSize = java.awt.Dimension(160, 28)
+            textField = tf
+
+            val info = javax.swing.JLabel("")
+            info.font = smallFont
+            info.foreground = mutedFg
+            info.preferredSize = java.awt.Dimension(44, 28)
+            info.horizontalAlignment = javax.swing.SwingConstants.CENTER
+            infoLabel = info
+
+            fun makeBtn(html: String, tooltip: String): javax.swing.JButton {
+                val b = javax.swing.JButton(html)
+                b.font = font
+                b.foreground = fg
+                b.background = bg
+                b.isFocusPainted = false
+                b.isBorderPainted = false
+                b.isContentAreaFilled = false
+                b.isOpaque = false
+                b.toolTipText = tooltip
+                b.preferredSize = java.awt.Dimension(28, 28)
+                b.margin = java.awt.Insets(0, 0, 0, 0)
+                b.horizontalAlignment = javax.swing.SwingConstants.CENTER
+                b.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+                return b
+            }
+
+            val prevBtn = makeBtn("<html><span style='font-size:10px;color:#cccccc;'>\u25B2</span></html>", "Previous (Shift+Enter)")
+            val nextBtn = makeBtn("<html><span style='font-size:10px;color:#cccccc;'>\u25BC</span></html>", "Next (Enter)")
+            val caseBtn = makeBtn("<html><span style='font-size:12px;color:#808080;'>Aa</span></html>", "Case sensitive")
+            caseBtn.preferredSize = java.awt.Dimension(40, 28)
+            val closeBtn = makeBtn("<html><span style='font-size:12px;color:#cccccc;'>\u2715</span></html>", "Close (Esc)")
+
+            prevBtn.addActionListener { performFind(true) }
+            nextBtn.addActionListener { performFind(false) }
+            caseBtn.addActionListener {
+                caseSensitive = !caseSensitive
+                val color = if (caseSensitive) "#4a90e2" else "#808080"
+                val weight = if (caseSensitive) "bold" else "normal"
+                caseBtn.text = "<html><span style='font-size:12px;color:$color;font-weight:$weight;'>Aa</span></html>"
+                performFind(false)
+            }
+            closeBtn.addActionListener { hide() }
+
+            val isMac = SystemUtils.isMacOS
+            tf.addKeyListener(object : java.awt.event.KeyAdapter() {
+                override fun keyPressed(e: java.awt.event.KeyEvent) {
+                    val isMainMod = if (isMac) e.isMetaDown else e.isControlDown
+                    when {
+                        e.keyCode == java.awt.event.KeyEvent.VK_ESCAPE -> { hide(); e.consume() }
+                        e.keyCode == java.awt.event.KeyEvent.VK_F && isMainMod && !e.isShiftDown -> { hide(); e.consume() }
+                        e.keyCode == java.awt.event.KeyEvent.VK_ENTER && e.isShiftDown -> { performFind(true); e.consume() }
+                        e.keyCode == java.awt.event.KeyEvent.VK_ENTER -> { performFind(false); e.consume() }
+                    }
+                }
+            })
+
+            // #8: Debounced live search on typing
+            tf.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+                override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = debouncedFind()
+                override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = debouncedFind()
+                override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = debouncedFind()
+            })
+
+            content.add(tf)
+            content.add(info)
+            content.add(prevBtn)
+            content.add(nextBtn)
+            content.add(caseBtn)
+            content.add(closeBtn)
+            d.contentPane = content
+
+            val listener = object : java.awt.event.ComponentAdapter() {
+                override fun componentMoved(e: java.awt.event.ComponentEvent?) = positionDialog(owner)
+                override fun componentResized(e: java.awt.event.ComponentEvent?) = positionDialog(owner)
+            }
+            owner.addComponentListener(listener)
+            componentListener = listener
+
+            dialog = d
+        }
+
+        fun dispose() {
+            searchTimer?.stop()
+            searchTimer = null
+            componentListener?.let { listener ->
+                ownerWindow?.removeComponentListener(listener)
+            }
+            componentListener = null
+            ownerWindow = null
+            dialog?.dispose()
+            dialog = null
+            textField = null
+            infoLabel = null
+        }
+    }
+
+    /**
+     * Clean up find bar resources for a browser that is being closed.
+     * Call from browser disposal logic to prevent resource leaks.
+     */
+    fun disposeBrowserFindBar(browser: com.teamdev.jxbrowser.browser.Browser) {
+        activeFindBars.remove(browser)?.dispose()
+    }
+
     private var _engine: Engine? = null
     private var initializationError: Throwable? = null
     private var attemptCount = 0
@@ -943,6 +1185,12 @@ object FluckEngine {
                                 ai.rever.boss.window.MenuActionsHandler.triggerCloseTab(focusedWindowId)
                                 return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
                             }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F -> {
+                                // Toggle Swing-based find bar (uses TextFinder API, no focus issues)
+                                val findBar = activeFindBars.getOrPut(browser) { BrowserFindBar(browser) }
+                                findBar.toggle()
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
                             else -> {
                                 // Let other main modifier + key combos pass through to the native menu bar
                             }
@@ -953,7 +1201,8 @@ object FluckEngine {
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_R,
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_N,
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_T,
-                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_W -> {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_W,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F -> {
                                 logger.debug(LogCategory.BROWSER, "No window focused, cannot dispatch shortcut", mapOf("shortcut" to "$modifierName+${keyCode.name}"))
                             }
                             else -> { /* Not a handled shortcut, no logging needed */ }
@@ -975,6 +1224,45 @@ object FluckEngine {
                                 ai.rever.boss.window.MenuActionsHandler.triggerSaveWorkspace(focusedWindowId)
                                 return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
                             }
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_V -> {
+                                // Paste without formatting:
+                                // 1. Save original clipboard
+                                // 2. Replace with plain text only (strips HTML/RTF)
+                                // 3. Dispatch synthetic Cmd+V via JxBrowser API (triggers native paste)
+                                // 4. Restore original clipboard after delay
+                                try {
+                                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                    val originalContents = clipboard.getContents(null)
+                                    val plainText = clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+                                    if (plainText != null) {
+                                        clipboard.setContents(java.awt.datatransfer.StringSelection(plainText), null)
+                                        // Dispatch Cmd+V (or Ctrl+V) as a native key event to trigger paste
+                                        val pasteModifiers = com.teamdev.jxbrowser.ui.KeyModifiers.newBuilder()
+                                            .apply {
+                                                if (SystemUtils.isMacOS) metaDown(true) else controlDown(true)
+                                            }
+                                            .build()
+                                        browser.dispatch(com.teamdev.jxbrowser.ui.event.KeyPressed.newBuilder(
+                                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_V
+                                        ).keyModifiers(pasteModifiers).build())
+                                        browser.dispatch(com.teamdev.jxbrowser.ui.event.KeyReleased.newBuilder(
+                                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_V
+                                        ).keyModifiers(pasteModifiers).build())
+                                        // Restore original clipboard after paste completes
+                                        if (originalContents != null) {
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                delay(200)
+                                                try {
+                                                    clipboard.setContents(originalContents, null)
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    logger.debug(LogCategory.BROWSER, "Paste without formatting failed", mapOf("error" to (e.message ?: "unknown")))
+                                }
+                                return@PressKeyCallback com.teamdev.jxbrowser.browser.callback.input.PressKeyCallback.Response.suppress()
+                            }
                             else -> {
                                 // Let other main modifier + Shift + key combos pass through
                             }
@@ -983,7 +1271,8 @@ object FluckEngine {
                         // Log only for shortcuts we handle to avoid spam
                         when (keyCode) {
                             com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_F,
-                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_S -> {
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_S,
+                            com.teamdev.jxbrowser.ui.KeyCode.KEY_CODE_V -> {
                                 logger.debug(LogCategory.BROWSER, "No window focused, cannot dispatch shortcut", mapOf("shortcut" to "$modifierName+Shift+${keyCode.name}"))
                             }
                             else -> { /* Not a handled shortcut, no logging needed */ }

@@ -82,6 +82,14 @@ object KeymapPresets {
                 category = KeymapActions.Categories.BROWSER_CONTROLS,
                 description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
             ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_FIND)
+            ),
             // Navigation
             KeyBinding(
                 actionId = KeymapActions.PANEL_NAVIGATE_LEFT,
@@ -327,6 +335,14 @@ object KeymapPresets {
                 context = ShortcutContext.BROWSER,
                 category = KeymapActions.Categories.BROWSER_CONTROLS,
                 description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_FIND)
             ),
             // Navigation - VS Code uses Cmd+Alt+Arrow for editor group navigation
             KeyBinding(
@@ -580,6 +596,14 @@ object KeymapPresets {
                 context = ShortcutContext.BROWSER,
                 category = KeymapActions.Categories.BROWSER_CONTROLS,
                 description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
+            ),
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_FIND,
+                key = "F",
+                modifiers = listOf("Cmd"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_FIND)
             ),
             // Navigation - IntelliJ uses Cmd+Alt+Arrow for navigation
             KeyBinding(

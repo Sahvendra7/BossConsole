@@ -81,6 +81,15 @@ object EmacsPresetDefinition {
                 category = KeymapActions.Categories.BROWSER_CONTROLS,
                 description = KeymapActions.getDescription(KeymapActions.BROWSER_ZOOM_OUT)
             ),
+            // Emacs: C-s (isearch-forward) for browser find
+            KeyBinding(
+                actionId = KeymapActions.BROWSER_FIND,
+                key = "S",
+                modifiers = listOf("Ctrl"),
+                context = ShortcutContext.BROWSER,
+                category = KeymapActions.Categories.BROWSER_CONTROLS,
+                description = KeymapActions.getDescription(KeymapActions.BROWSER_FIND)
+            ),
             // Navigation - Emacs: C-x o (other window)
             KeyBinding(
                 actionId = KeymapActions.PANEL_NAVIGATE_LEFT,

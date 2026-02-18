@@ -25,13 +25,16 @@ actual fun FluckView(
     content: String,
     browser: Any?,
     browserViewState: Any?,
+    browserLock: Any?,
     onContentChange: (String) -> Unit,
     onTitleChange: (String) -> Unit,
     onIconChange: (ImageVector) -> Unit,
     onTabIconUpdate: (TabIcon) -> Unit,
     onOpenInNewTab: (String) -> Unit,
     onNavigationUpdate: ((String, String) -> Unit)?,
-    onNavigationStateChange: ((isBack: Boolean) -> Unit)?
+    onNavigationStateChange: ((isBack: Boolean) -> Unit)?,
+    onFaviconCached: ((String?) -> Unit)?,
+    onCloseTab: (() -> Unit)?
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
