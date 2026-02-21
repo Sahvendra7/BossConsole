@@ -473,7 +473,8 @@ object PluginStoreSetup {
                 PluginPersistence.addInstalledPlugin(
                     pluginId = plugin.pluginId,
                     jarPath = destFile.absolutePath,
-                    enabled = true
+                    enabled = true,
+                    installedVersion = tagName.removePrefix("v")
                 )
 
                 true
@@ -712,7 +713,8 @@ object PluginStoreSetup {
                 PluginPersistence.addInstalledPlugin(
                     pluginId = pluginId,
                     jarPath = destFile.absolutePath,
-                    enabled = existingPlugin?.enabled ?: true
+                    enabled = existingPlugin?.enabled ?: true,
+                    installedVersion = bundledVersion
                 )
 
                 logger.info(LogCategory.SYSTEM, "Registered bundled plugin in persistence", mapOf(

@@ -52,6 +52,8 @@ object PluginPersistence {
                 logger.info(LogCategory.SYSTEM, "Loaded installed plugins config", mapOf(
                     "count" to (config?.plugins?.size ?: 0)
                 ))
+                // Backfill missing installedVersion from JAR manifests
+                backfillMissingVersions(config!!)
                 config!!
             } else {
                 logger.debug(LogCategory.SYSTEM, "No installed plugins config found, creating new")
@@ -62,6 +64,54 @@ object PluginPersistence {
             logger.error(LogCategory.SYSTEM, "Failed to load installed plugins config", error = e)
             config = InstalledPluginsConfig()
             config!!
+        }
+    }
+
+    /**
+     * Backfill null installedVersion fields by reading plugin.json from JAR manifests.
+     * Saves config if any versions were updated.
+     */
+    private fun backfillMissingVersions(cfg: InstalledPluginsConfig) {
+        var updated = false
+        val updatedPlugins = cfg.plugins.map { entry ->
+            if (entry.installedVersion == null) {
+                val version = extractVersionFromJar(entry.jarPath)
+                if (version != null) {
+                    updated = true
+                    logger.debug(LogCategory.SYSTEM, "Backfilled plugin version from JAR", mapOf(
+                        "pluginId" to entry.pluginId,
+                        "version" to version
+                    ))
+                    entry.copy(installedVersion = version)
+                } else entry
+            } else entry
+        }
+        if (updated) {
+            cfg.plugins.clear()
+            cfg.plugins.addAll(updatedPlugins)
+            saveConfigInternal()
+        }
+    }
+
+    /**
+     * Extract version from a plugin JAR's META-INF/boss-plugin/plugin.json manifest.
+     */
+    private fun extractVersionFromJar(jarPath: String): String? {
+        return try {
+            val jarFile = java.util.jar.JarFile(File(jarPath))
+            val entry = jarFile.getJarEntry("META-INF/boss-plugin/plugin.json")
+            if (entry != null) {
+                val content = jarFile.getInputStream(entry).bufferedReader().readText()
+                jarFile.close()
+                // Simple JSON extraction — avoid pulling in full parser for this
+                val versionMatch = Regex(""""version"\s*:\s*"([^"]+)"""").find(content)
+                versionMatch?.groupValues?.get(1)
+            } else {
+                jarFile.close()
+                null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
