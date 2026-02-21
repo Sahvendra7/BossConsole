@@ -1,5 +1,7 @@
 package ai.rever.bosseditor.features
 
+import androidx.compose.ui.graphics.Color
+
 /**
  * Types of icons that can appear in the editor gutter.
  */
@@ -41,7 +43,21 @@ enum class GutterIconType {
     OVERRIDE,
 
     /** Recursive call indicator */
-    RECURSIVE
+    RECURSIVE,
+
+    /** Custom plugin-provided icon */
+    CUSTOM
+}
+
+/**
+ * Shapes available for custom gutter icons.
+ */
+enum class GutterIconShape {
+    CIRCLE,
+    FILLED_CIRCLE,
+    TRIANGLE,
+    SQUARE,
+    DIAMOND
 }
 
 /**
@@ -61,7 +77,10 @@ data class GutterIcon(
     val type: GutterIconType,
     val tooltip: String? = null,
     val priority: Int = 100,
-    val action: String? = null
+    val action: String? = null,
+    val customColor: Color? = null,
+    val customShape: GutterIconShape? = null,
+    val customText: String? = null
 ) {
     companion object {
         /**
@@ -118,6 +137,36 @@ data class GutterIcon(
                 priority = 20,
                 action = "toggleBookmark"
             )
+
+        /**
+         * Creates a custom gutter icon with a specified color and shape.
+         *
+         * @param line The line number (0-indexed)
+         * @param color The color to render the icon
+         * @param shape The shape of the icon
+         * @param tooltip Tooltip text shown on hover
+         * @param text Optional short text to display (1-2 chars)
+         * @param priority Priority for ordering (lower = more important)
+         * @param action Optional action identifier for click handling
+         */
+        fun custom(
+            line: Int,
+            color: Color,
+            shape: GutterIconShape = GutterIconShape.FILLED_CIRCLE,
+            tooltip: String? = null,
+            text: String? = null,
+            priority: Int = 50,
+            action: String? = null
+        ): GutterIcon = GutterIcon(
+            line = line,
+            type = GutterIconType.CUSTOM,
+            tooltip = tooltip,
+            priority = priority,
+            action = action,
+            customColor = color,
+            customShape = shape,
+            customText = text
+        )
     }
 }
 

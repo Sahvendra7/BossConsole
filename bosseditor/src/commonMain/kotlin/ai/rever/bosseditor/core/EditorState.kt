@@ -446,6 +446,7 @@ class EditorState(
      * @param viewportWidth Viewport width in pixels
      * @param contentWidth Total content width (longest line) in pixels
      * @param charWidth Character width in pixels
+     * @param gutterWidth Gutter width in pixels
      */
     fun updateVisibleLineRange(
         firstLine: Int,
@@ -454,7 +455,8 @@ class EditorState(
         viewportHeight: Float = 0f,
         viewportWidth: Float = 0f,
         contentWidth: Float = 0f,
-        charWidth: Float = 0f
+        charWidth: Float = 0f,
+        gutterWidth: Float = 0f
     ) {
         val clampedFirst = firstLine.coerceAtLeast(0)
         val clampedLast = (firstLine + lineCount).coerceAtMost(document.lineCount - 1)
@@ -466,7 +468,8 @@ class EditorState(
             viewportHeight = viewportHeight,
             viewportWidth = viewportWidth,
             contentWidth = contentWidth,
-            charWidth = charWidth
+            charWidth = charWidth,
+            gutterWidth = gutterWidth
         )
     }
 
@@ -681,7 +684,9 @@ data class VisibleViewport(
     /** Total content width in pixels (longest line width, for horizontal scrollbar) */
     val contentWidth: Float = 0f,
     /** Character width in pixels (for horizontal scroll calculations) */
-    val charWidth: Float = 0f
+    val charWidth: Float = 0f,
+    /** Gutter width in pixels (line numbers + icons + fold indicators) */
+    val gutterWidth: Float = 0f
 )
 
 /**

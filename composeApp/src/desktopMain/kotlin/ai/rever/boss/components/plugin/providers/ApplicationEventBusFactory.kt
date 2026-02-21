@@ -8,6 +8,7 @@ import ai.rever.boss.plugin.api.FileChangeEvent
 import ai.rever.boss.plugin.api.PluginLifecycleEvent
 import ai.rever.boss.plugin.api.ProjectChangeEvent
 import ai.rever.boss.plugin.api.TabEvent
+import ai.rever.boss.plugin.api.TerminalSessionEvent
 import ai.rever.boss.plugin.api.WindowFocusEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -67,15 +68,16 @@ class ApplicationEventBusImpl private constructor(
             PluginLifecycleEvent::class.java -> _events.filterIsInstance<PluginLifecycleEvent>() as Flow<T>
             TabEvent::class.java -> _events.filterIsInstance<TabEvent>() as Flow<T>
             AuthEvent::class.java -> _events.filterIsInstance<AuthEvent>() as Flow<T>
+            TerminalSessionEvent::class.java -> _events.filterIsInstance<TerminalSessionEvent>() as Flow<T>
             CustomPluginEvent::class.java -> _events.filterIsInstance<CustomPluginEvent>() as Flow<T>
             else -> _events.filterIsInstance(eventType.kotlin)
         }
     }
 
     override fun publish(event: ApplicationEvent) {
-        // Only allow plugins to publish custom events
-        // System events should only be published internally
-        if (event is CustomPluginEvent) {
+        // Allow plugins to publish custom events and terminal session events
+        // Other system events should only be published internally
+        if (event is CustomPluginEvent || event is TerminalSessionEvent) {
             _events.tryEmit(event)
         }
     }

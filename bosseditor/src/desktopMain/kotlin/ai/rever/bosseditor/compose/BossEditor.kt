@@ -28,6 +28,15 @@ import ai.rever.bosseditor.scrollbar.EditorScrollbar
 import ai.rever.bosseditor.scrollbar.HorizontalEditorScrollbar
 import ai.rever.bosseditor.scrollbar.rememberEditorScrollbarAdapter
 import ai.rever.bosseditor.scrollbar.rememberHorizontalEditorScrollbarAdapter
+import ai.rever.bosseditor.features.CompletionItem
+import ai.rever.bosseditor.features.CompletionProvider
+import ai.rever.bosseditor.features.CompletionState
+import ai.rever.bosseditor.features.CompositeCompletionProvider
+import ai.rever.bosseditor.features.GutterDecorationProvider
+import ai.rever.bosseditor.features.GutterIcon
+import ai.rever.bosseditor.lsp.providers.CompletionTrigger
+import ai.rever.bosseditor.lsp.providers.TriggerResult
+import ai.rever.bosseditor.ui.CompletionPopup
 import ai.rever.bosseditor.theme.EditorColors
 import ai.rever.bosseditor.theme.EditorTheme
 import ai.rever.bosseditor.theme.LocalEditorTheme
@@ -47,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -142,6 +152,14 @@ fun BossEditor(
     onNavigate: ((filePath: String, line: Int, column: Int) -> Unit)? = null,
     onShowUsages: ((references: List<ReferenceLocation>, definition: DefinitionInfo, clickPosition: Offset) -> Unit)? = null,
     onNavigationFailed: ((reason: NavigationFailureReason, clickPosition: Offset) -> Unit)? = null,
+    // Gutter decoration API
+    gutterDecorationProviders: List<GutterDecorationProvider> = emptyList(),
+    gutterIcons: List<GutterIcon> = emptyList(),
+    onGutterIconClick: ((GutterIcon) -> Unit)? = null,
+    // Code completion API
+    completionProviders: List<CompletionProvider> = emptyList(),
+    completionTrigger: CompletionTrigger = CompletionTrigger(),
+    onCompletionItemSelected: ((CompletionItem) -> Unit)? = null,
     // Refactoring callbacks
     onRename: (() -> Unit)? = null,
     onRefactorMenu: (() -> Unit)? = null,
@@ -158,6 +176,20 @@ fun BossEditor(
             onExtractMethod = onExtractMethod,
             onInline = onInline
         )
+    }
+
+    // Gutter decoration provider support - collect decorations from providers
+    var providerGutterIcons by remember { mutableStateOf<List<GutterIcon>>(emptyList()) }
+    val mergedGutterIcons = remember(gutterIcons, providerGutterIcons) {
+        (gutterIcons + providerGutterIcons).sortedBy { it.priority }
+    }
+
+    // Code completion state management
+    var completionState by remember { mutableStateOf<CompletionState?>(null) }
+    val compositeCompletionProvider = remember(completionProviders) {
+        if (completionProviders.isNotEmpty()) {
+            CompositeCompletionProvider(completionProviders)
+        } else null
     }
 
     // Create input handler
@@ -271,6 +303,25 @@ fun BossEditor(
     // Get visual line mapper for fold-aware minimap rendering and scrollbar
     val visualLineMapper by state.visualLineMapper.collectAsState()
 
+    // Collect decorations from gutter providers when visible range changes
+    LaunchedEffect(gutterDecorationProviders, firstVisibleLine, visibleLineCount) {
+        if (gutterDecorationProviders.isNotEmpty()) {
+            kotlinx.coroutines.delay(16) // Debounce to avoid thrashing on rapid scroll
+            val startLine = firstVisibleLine
+            val endLine = firstVisibleLine + visibleLineCount
+            val decorations = gutterDecorationProviders.flatMap { provider ->
+                try {
+                    provider.getDecorations(startLine, endLine)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            providerGutterIcons = decorations
+        } else {
+            providerGutterIcons = emptyList()
+        }
+    }
+
     // Collect scroll offset for scrollbar
     val scrollOffset by state.scrollOffset.collectAsState()
 
@@ -355,6 +406,59 @@ fun BossEditor(
     // Get current caret line for minimap current line indicator
     val caretPosition by state.caretPosition.collectAsState()
     val minimapCurrentLine = caretPosition.line
+
+    // Trigger completion when document changes (typing)
+    LaunchedEffect(state.document.documentVersion, caretPosition) {
+        val provider = compositeCompletionProvider ?: return@LaunchedEffect
+        val caretPos = caretPosition
+        val lineText = if (caretPos.line < state.document.lineCount) {
+            state.document.getLineText(caretPos.line)
+        } else ""
+        val prefix = completionTrigger.getIdentifierPrefix(lineText, caretPos.column)
+
+        // Check for trigger character at caret (e.g. '.', '(', ':')
+        // This must be checked independently of prefix since trigger chars aren't identifier chars
+        val triggerChar = completionTrigger.getTriggerCharacterAt(lineText, caretPos.column)
+
+        if (triggerChar != null) {
+            // Trigger character typed (e.g. obj. -> member completion)
+            val result = provider.getCompletions(caretPos, "", triggerChar)
+            completionState = if (result.items.isNotEmpty()) {
+                CompletionState(
+                    triggerPosition = caretPos,
+                    prefix = "",
+                    allItems = result.items
+                )
+            } else null
+        } else if (prefix.isNotEmpty()) {
+            val triggerResult = completionTrigger.shouldTrigger(
+                char = prefix.last(),
+                position = caretPos,
+                lineText = lineText
+            )
+
+            when (triggerResult) {
+                is TriggerResult.Trigger -> {
+                    val result = provider.getCompletions(caretPos, prefix)
+                    completionState = if (result.items.isNotEmpty()) {
+                        CompletionState(
+                            triggerPosition = caretPos,
+                            prefix = prefix,
+                            allItems = result.items
+                        )
+                    } else null
+                }
+                is TriggerResult.Cancel -> {
+                    completionState = null
+                }
+                is TriggerResult.NoTrigger -> {
+                    completionState = completionState?.withPrefix(prefix)
+                }
+            }
+        } else {
+            completionState = null
+        }
+    }
 
     // Convert selection to OffsetRange for minimap
     val selectionValue by state.selection.collectAsState()
@@ -442,10 +546,61 @@ fun BossEditor(
         )
     }
 
+    // Handle completion item acceptance (insert text and notify)
+    val handleCompletionAccept: (CompletionItem) -> Unit = remember(state, onCompletionItemSelected) {
+        { item ->
+            // Replace the typed prefix with the completion insert text
+            val currentState = completionState
+            if (currentState != null) {
+                val prefixLen = currentState.prefix.length
+                val caretPos = state.caretPosition.value
+                val deleteStart = EditorPosition(caretPos.line, (caretPos.column - prefixLen).coerceAtLeast(0))
+                state.setSelection(EditorRange(deleteStart, caretPos))
+                state.deleteSelection()
+                state.insertText(item.insertText)
+            }
+            completionState = null
+            onCompletionItemSelected?.invoke(item)
+        }
+    }
+
     // Provide theme via CompositionLocal
     CompositionLocalProvider(LocalEditorTheme provides theme) {
         Column(
             modifier = modifier
+                .onPreviewKeyEvent { event ->
+                    // Intercept completion navigation keys before the editor handles them
+                    val cs = completionState
+                    if (cs != null && cs.hasItems && event.type == KeyEventType.KeyDown) {
+                        when (event.key) {
+                            Key.DirectionUp -> {
+                                completionState = cs.moveUp()
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                completionState = cs.moveDown()
+                                true
+                            }
+                            Key.PageUp -> {
+                                completionState = cs.pageUp()
+                                true
+                            }
+                            Key.PageDown -> {
+                                completionState = cs.pageDown()
+                                true
+                            }
+                            Key.Enter, Key.Tab -> {
+                                cs.selectedItem?.let { handleCompletionAccept(it) }
+                                true
+                            }
+                            Key.Escape -> {
+                                completionState = null
+                                true
+                            }
+                            else -> false
+                        }
+                    } else false
+                }
                 .onKeyEvent { event ->
                     if (!readOnly) {
                         inputHandler.handleKeyEvent(event)
@@ -482,6 +637,8 @@ fun BossEditor(
                     foldingEnabled = foldingEnabled,
                     scrollSpeed = scrollSpeed,
                     getLineTokens = tokenProvider,
+                    gutterIcons = mergedGutterIcons,
+                    onGutterIconClick = onGutterIconClick,
                     onCaretPositionChanged = onCaretPositionChanged,
                     onSelectionChanged = onSelectionChanged,
                     onNavigationRequest = if (onNavigate != null) handleNavigationRequest else null,
@@ -533,6 +690,30 @@ fun BossEditor(
                                 else -> {} // Other refactorings not yet implemented
                             }
                         }
+                    )
+                }
+
+                // Completion popup
+                val currentCompletionState = completionState
+                if (currentCompletionState != null && currentCompletionState.hasItems) {
+                    // Position popup below caret using actual measured values from EditorCanvas
+                    val caretPos = caretPosition
+                    val viewport = visibleViewport
+                    val popupLineHeight = viewport.lineHeight.takeIf { it > 0 } ?: (fontSize * lineSpacing)
+                    val popupCharWidth = viewport.charWidth.takeIf { it > 0 } ?: (fontSize * 0.6f)
+                    val popupGutterWidth = viewport.gutterWidth
+                    val popupX = (popupGutterWidth + caretPos.column * popupCharWidth).toInt()
+                    val popupY = ((caretPos.line - firstVisibleLine + 1) * popupLineHeight).toInt()
+
+                    CompletionPopup(
+                        state = currentCompletionState,
+                        position = IntOffset(popupX, popupY),
+                        onItemSelected = handleCompletionAccept,
+                        onDismiss = { completionState = null },
+                        onNavigateUp = { completionState = currentCompletionState.moveUp() },
+                        onNavigateDown = { completionState = currentCompletionState.moveDown() },
+                        onPageUp = { completionState = currentCompletionState.pageUp() },
+                        onPageDown = { completionState = currentCompletionState.pageDown() }
                     )
                 }
 

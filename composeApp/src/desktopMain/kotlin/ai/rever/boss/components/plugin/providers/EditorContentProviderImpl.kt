@@ -291,6 +291,145 @@ class EditorContentProviderImpl : EditorContentProvider {
 
     override fun getAvailableFonts(): List<String> = CodeEditorSettings.getAvailableFonts()
 
+    // ============ Phase 3: Minimap Settings ============
+
+    override fun isMinimapVisible(): Boolean = CodeEditorSettings.showMinimap
+
+    override fun setMinimapVisible(visible: Boolean) {
+        CodeEditorSettings.showMinimap = visible
+        GlobalScope.launch {
+            CodeEditorSettingsManager.saveSettings()
+        }
+    }
+
+    override fun getMinimapWidth(): Int = CodeEditorSettings.minimapWidth
+
+    override fun setMinimapWidth(width: Int) {
+        if (width in 40..300) {
+            CodeEditorSettings.minimapWidth = width
+            GlobalScope.launch {
+                CodeEditorSettingsManager.saveSettings()
+            }
+        }
+    }
+
+    // ============ Phase 3: Line Spacing ============
+
+    override fun getLineSpacing(): Float = CodeEditorSettings.lineSpacing
+
+    override fun setLineSpacing(spacing: Float) {
+        if (spacing in 1.0f..3.0f) {
+            CodeEditorSettings.lineSpacing = spacing
+            GlobalScope.launch {
+                CodeEditorSettingsManager.saveSettings()
+            }
+        }
+    }
+
+    // ============ Phase 3: Font Rendering ============
+
+    override fun isLigaturesEnabled(): Boolean = CodeEditorSettings.useLigatures
+
+    override fun setLigaturesEnabled(enabled: Boolean) {
+        CodeEditorSettings.useLigatures = enabled
+        GlobalScope.launch {
+            CodeEditorSettingsManager.saveSettings()
+        }
+    }
+
+    override fun isAntialiasingEnabled(): Boolean = CodeEditorSettings.useAntialiasing
+
+    override fun setAntialiasingEnabled(enabled: Boolean) {
+        CodeEditorSettings.useAntialiasing = enabled
+        GlobalScope.launch {
+            CodeEditorSettingsManager.saveSettings()
+        }
+    }
+
+    // ============ Phase 3: Native Editor Toggle ============
+
+    override fun isNativeEditorEnabled(): Boolean = CodeEditorSettings.useNativeEditor
+
+    override fun setNativeEditorEnabled(enabled: Boolean) {
+        CodeEditorSettings.useNativeEditor = enabled
+        GlobalScope.launch {
+            CodeEditorSettingsManager.saveSettings()
+        }
+    }
+
+    // ============ Phase 3: Undo/Redo ============
+
+    override fun undo(): Boolean = EditorSearchEventBus.undo()
+
+    override fun redo(): Boolean = EditorSearchEventBus.redo()
+
+    override fun canUndo(): Boolean = EditorSearchEventBus.canUndo()
+
+    override fun canRedo(): Boolean = EditorSearchEventBus.canRedo()
+
+    // ============ Phase 3: Search State ============
+
+    override fun getSearchQuery(): String? = EditorSearchEventBus.getSearchQuery()
+
+    override fun getSearchMatchCount(): Int = EditorSearchEventBus.getSearchMatchCount()
+
+    override fun getCurrentSearchMatchIndex(): Int = EditorSearchEventBus.getCurrentSearchMatchIndex()
+
+    // ============ Phase 4: Code Completion (E13) ============
+
+    override fun registerCompletionProvider(id: String, provider: Any) {
+        if (provider is ai.rever.bosseditor.features.CompletionProvider) {
+            ai.rever.bosseditor.features.CompletionProviderRegistry.register(id, provider)
+        }
+    }
+
+    override fun unregisterCompletionProvider(id: String): Boolean {
+        return ai.rever.bosseditor.features.CompletionProviderRegistry.unregister(id)
+    }
+
+    // ============ Phase 4: Custom Color Schemes (E15) ============
+
+    override fun registerColorScheme(name: String, baseTheme: String, colorOverrides: Map<String, String>): Boolean {
+        return try {
+            val base = ai.rever.bosseditor.theme.EditorTheme.forName(baseTheme)
+            val builder = ai.rever.bosseditor.theme.EditorThemeBuilder(name, base)
+
+            for ((key, hexValue) in colorOverrides) {
+                val color = try {
+                    val hex = hexValue.removePrefix("#")
+                    androidx.compose.ui.graphics.Color(hex.toLong(16) or 0xFF000000)
+                } catch (e: Exception) { continue }
+
+                when (key.lowercase()) {
+                    "background" -> builder.background(color)
+                    "text" -> builder.text(color)
+                    "caret" -> builder.caret(color)
+                    "keyword" -> builder.keyword(color)
+                    "function" -> builder.function(color)
+                    "string" -> builder.string(color)
+                    "number" -> builder.number(color)
+                    "comment" -> builder.comment(color)
+                    "annotation" -> builder.annotation(color)
+                    "variable" -> builder.variable(color)
+                    "property" -> builder.property(color)
+                    "operator" -> builder.operator(color)
+                    "error" -> builder.error(color)
+                    "datatype" -> builder.dataType(color)
+                    "doccomment" -> builder.docComment(color)
+                }
+            }
+
+            ai.rever.bosseditor.theme.EditorTheme.registerTheme(builder.build())
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun unregisterColorScheme(name: String): Boolean {
+        return ai.rever.bosseditor.theme.EditorTheme.unregisterTheme(name)
+    }
+
     companion object {
         // Feature toggles (global state for now, could be per-editor in future)
         private var codeFoldingEnabled: Boolean = true

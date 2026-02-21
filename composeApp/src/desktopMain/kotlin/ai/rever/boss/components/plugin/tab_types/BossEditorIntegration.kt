@@ -235,6 +235,20 @@ fun BossEditorIntegration(
         }
     }
 
+    // Register undo/redo provider with the event bus so plugins can trigger undo/redo
+    DisposableEffect(editorState) {
+        val undoRedoProvider = object : EditorSearchEventBus.UndoRedoProvider {
+            override fun undo(): Boolean = editorState.undoManager.undo()
+            override fun redo(): Boolean = editorState.undoManager.redo()
+            override fun canUndo(): Boolean = editorState.undoManager.canUndo
+            override fun canRedo(): Boolean = editorState.undoManager.canRedo
+        }
+        EditorSearchEventBus.registerUndoRedoProvider(undoRedoProvider)
+        onDispose {
+            EditorSearchEventBus.unregisterUndoRedoProvider(undoRedoProvider)
+        }
+    }
+
     // Note: Semantic highlighting is now handled internally by BossEditor
     // via NavigationManager, which uses PSI-based SemanticHighlighter
 
@@ -1053,6 +1067,20 @@ private fun BossEditorIntegrationInternal(
     DisposableEffect(tokenCache) {
         onDispose {
             tokenCache?.dispose()
+        }
+    }
+
+    // Register undo/redo provider with the event bus so plugins can trigger undo/redo
+    DisposableEffect(editorState) {
+        val undoRedoProvider = object : EditorSearchEventBus.UndoRedoProvider {
+            override fun undo(): Boolean = editorState.undoManager.undo()
+            override fun redo(): Boolean = editorState.undoManager.redo()
+            override fun canUndo(): Boolean = editorState.undoManager.canUndo
+            override fun canRedo(): Boolean = editorState.undoManager.canRedo
+        }
+        EditorSearchEventBus.registerUndoRedoProvider(undoRedoProvider)
+        onDispose {
+            EditorSearchEventBus.unregisterUndoRedoProvider(undoRedoProvider)
         }
     }
 

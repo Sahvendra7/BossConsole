@@ -409,6 +409,61 @@ interface PluginContext {
         get() = null
 
     /**
+     * Optional clipboard provider for reading/writing system clipboard.
+     *
+     * Returns null if clipboard access is not available.
+     * Dynamic plugins can use this instead of AWT clipboard which
+     * doesn't work under classloader isolation.
+     */
+    val clipboardProvider: ClipboardProvider?
+        get() = null
+
+    /**
+     * Optional file picker provider for open/save file dialogs.
+     *
+     * Returns null if file picker is not available.
+     * Dynamic plugins can use this for file open and save operations.
+     */
+    val filePickerProvider: FilePickerProvider?
+        get() = null
+
+    /**
+     * Optional keyboard shortcut provider for querying key bindings.
+     *
+     * Returns null if keyboard shortcut information is not available.
+     * Dynamic plugins can use this to display shortcut information.
+     */
+    val keyboardShortcutProvider: KeyboardShortcutProvider?
+        get() = null
+
+    /**
+     * Optional cache provider for managing plugin cached data.
+     *
+     * Returns null if cache management is not available.
+     * Dynamic plugins can use this to manage their own cache directories.
+     */
+    val cacheProvider: CacheProvider?
+        get() = null
+
+    /**
+     * Optional background task provider for structured task management.
+     *
+     * Returns null if task management is not available.
+     * Dynamic plugins can use this for named, trackable background tasks.
+     */
+    val backgroundTaskProvider: BackgroundTaskProvider?
+        get() = null
+
+    /**
+     * Optional diagnostic provider for plugin diagnostic reporting.
+     *
+     * Returns null if diagnostic reporting is not available.
+     * Dynamic plugins can use this to report and query diagnostic info.
+     */
+    val diagnosticProvider: DiagnosticProvider?
+        get() = null
+
+    /**
      * Optional directory picker provider for file browser plugins.
      *
      * Returns null if directory picker functionality is not available.

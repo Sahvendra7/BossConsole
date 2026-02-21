@@ -84,6 +84,8 @@ fun EditorCanvas(
     onCaretPositionChanged: (EditorPosition) -> Unit = {},
     onSelectionChanged: (EditorRange?) -> Unit = {},
     onNavigationRequest: ((EditorPosition, Offset) -> Unit)? = null,
+    gutterIcons: List<ai.rever.bosseditor.features.GutterIcon> = emptyList(),
+    onGutterIconClick: ((ai.rever.bosseditor.features.GutterIcon) -> Unit)? = null,
     onFoldToggle: ((Int) -> Unit)? = null, // Document line number
     onContextMenuRequest: ((EditorPosition, Offset) -> Unit)? = null // Right-click context menu
 ) {
@@ -123,12 +125,15 @@ fun EditorCanvas(
     }
 
     // Calculate gutter width based on line count (includes fold indicator space when enabled)
-    val gutterWidth = remember(editorState.document.lineCount, fontFamily, fontSize, showLineNumbers, foldingEnabled) {
+    val hasGutterIcons = gutterIcons.isNotEmpty()
+    val gutterWidth = remember(editorState.document.lineCount, fontFamily, fontSize, showLineNumbers, foldingEnabled, hasGutterIcons) {
         if (showLineNumbers) {
             val baseWidth = calculateGutterWidth(textMeasurer, editorState.document.lineCount, fontFamily, fontSize)
-            // Add space for fold indicator: 16 (size) + 4 (minimal padding) = 20px
-            val foldIndicatorSpace = if (foldingEnabled) 20f else 0f
-            baseWidth + foldIndicatorSpace
+            // Add space for fold indicator chevron + padding
+            val foldIndicatorSpace = if (foldingEnabled) 28f else 0f
+            // Add space for gutter icon strip when icons are present
+            val iconStripWidth = if (hasGutterIcons) GUTTER_ICON_STRIP_WIDTH else 0f
+            baseWidth + foldIndicatorSpace + iconStripWidth
         } else {
             0f
         }
@@ -242,7 +247,8 @@ fun EditorCanvas(
                 viewportHeight = viewportSize.height,
                 viewportWidth = effectiveViewportWidth,
                 contentWidth = contentWidth,
-                charWidth = charWidth
+                charWidth = charWidth,
+                gutterWidth = gutterWidth
             )
         }
     }
@@ -389,9 +395,28 @@ fun EditorCanvas(
                         position.x >= gutterWidth - 20f &&
                         position.x < gutterWidth
 
+                    // Check for gutter icon click (only in the icon strip, not line number area)
+                    val iconStripWidth = if (hasGutterIcons) GUTTER_ICON_STRIP_WIDTH else 0f
+                    val isGutterIconClick = showLineNumbers &&
+                        hasGutterIcons &&
+                        position.x >= 0f &&
+                        position.x < iconStripWidth
+
                     when (clickCount) {
                         1 -> {
-                            // Check for fold indicator click first
+                            // Check for gutter icon click first
+                            if (isGutterIconClick && onGutterIconClick != null && gutterIcons.isNotEmpty()) {
+                                val visualLine = ((position.y + scrollOffset.y.toFloat()) / lineHeight).toInt()
+                                val documentLine = visualLineMapper.visualToDocument(visualLine)
+                                val icon = gutterIcons.find { it.line == documentLine }
+                                if (icon != null) {
+                                    onGutterIconClick.invoke(icon)
+                                    isDragging = false
+                                    return@awaitEachGesture
+                                }
+                            }
+
+                            // Check for fold indicator click
                             if (isFoldIndicatorClick && onFoldToggle != null) {
                                 // Calculate which visual line was clicked
                                 val visualLine = ((position.y + scrollOffset.y.toFloat()) / lineHeight).toInt()
@@ -568,6 +593,7 @@ fun EditorCanvas(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
+                gutterIconStripWidth = if (hasGutterIcons) GUTTER_ICON_STRIP_WIDTH else 0f,
                 visualLineMapper = visualLineMapper,
                 allFoldRegions = editorState.getAllFoldRegions(),
                 foldingEnabled = foldingEnabled,
@@ -580,7 +606,8 @@ fun EditorCanvas(
                 indentGuides = indentGuides,
                 activeIndentGuide = activeIndentGuide,
                 indentGuidesEnabled = indentGuidesEnabled,
-                tabSize = tabSize
+                tabSize = tabSize,
+                gutterIcons = gutterIcons
             )
 
             // Clip to canvas bounds and render
@@ -596,6 +623,9 @@ fun EditorCanvas(
 // Constants for multi-click detection
 private const val MULTI_CLICK_TIMEOUT = 400L // ms
 private const val MULTI_CLICK_DISTANCE = 10f // pixels
+
+// Width of the icon strip at the left of the gutter (when gutter icons are present)
+const val GUTTER_ICON_STRIP_WIDTH = 28f
 
 /**
  * Extension to check if shift is pressed during pointer event.

@@ -32,6 +32,12 @@ import ai.rever.boss.plugin.api.NotificationProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
 import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.GenericDialogProvider
+import ai.rever.boss.plugin.api.ClipboardProvider
+import ai.rever.boss.plugin.api.FilePickerProvider
+import ai.rever.boss.plugin.api.BackgroundTaskProvider
+import ai.rever.boss.plugin.api.CacheProvider
+import ai.rever.boss.plugin.api.DiagnosticProvider
+import ai.rever.boss.plugin.api.KeyboardShortcutProvider
 import ai.rever.boss.plugin.api.NavigationResolverProvider
 import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.SemanticTokenProvider
@@ -205,6 +211,30 @@ class SandboxedPluginContext(
             println("[HOST-DEBUG] SandboxedPluginContext.navigationTargetProvider: delegate=${delegate::class.simpleName}, result=$result")
             return result
         }
+
+    // Clipboard provider - delegate to underlying context
+    override val clipboardProvider: ClipboardProvider?
+        get() = delegate.clipboardProvider
+
+    // File picker provider - delegate to underlying context
+    override val filePickerProvider: FilePickerProvider?
+        get() = delegate.filePickerProvider
+
+    // Keyboard shortcut provider - delegate to underlying context
+    override val keyboardShortcutProvider: KeyboardShortcutProvider?
+        get() = delegate.keyboardShortcutProvider
+
+    // Cache provider - delegate to underlying context
+    override val cacheProvider: CacheProvider?
+        get() = delegate.cacheProvider
+
+    // Background task provider - delegate to underlying context
+    override val backgroundTaskProvider: BackgroundTaskProvider?
+        get() = delegate.backgroundTaskProvider
+
+    // Diagnostic provider - delegate to underlying context
+    override val diagnosticProvider: DiagnosticProvider?
+        get() = delegate.diagnosticProvider
 
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)

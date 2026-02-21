@@ -304,7 +304,28 @@ object EditorSearchEventBus {
         fun onGoToLine()
     }
 
+    /**
+     * Interface for querying search state from the focused editor.
+     */
+    interface SearchStateProvider {
+        fun getSearchQuery(): String?
+        fun getSearchMatchCount(): Int
+        fun getCurrentSearchMatchIndex(): Int
+    }
+
+    /**
+     * Interface for undo/redo operations on the focused editor.
+     */
+    interface UndoRedoProvider {
+        fun undo(): Boolean
+        fun redo(): Boolean
+        fun canUndo(): Boolean
+        fun canRedo(): Boolean
+    }
+
     private var currentListener: SearchActionListener? = null
+    private var currentSearchStateProvider: SearchStateProvider? = null
+    private var currentUndoRedoProvider: UndoRedoProvider? = null
 
     /**
      * Register a listener for search actions.
@@ -324,37 +345,52 @@ object EditorSearchEventBus {
     }
 
     /**
-     * Trigger find action on the current listener.
+     * Register a search state provider from the focused editor.
      */
-    fun triggerFind() {
-        currentListener?.onFind()
+    fun registerSearchStateProvider(provider: SearchStateProvider) {
+        currentSearchStateProvider = provider
     }
 
     /**
-     * Trigger replace action on the current listener.
+     * Unregister a search state provider.
      */
-    fun triggerReplace() {
-        currentListener?.onReplace()
+    fun unregisterSearchStateProvider(provider: SearchStateProvider) {
+        if (currentSearchStateProvider == provider) {
+            currentSearchStateProvider = null
+        }
     }
 
     /**
-     * Trigger find next action on the current listener.
+     * Register an undo/redo provider from the focused editor.
      */
-    fun triggerFindNext() {
-        currentListener?.onFindNext()
+    fun registerUndoRedoProvider(provider: UndoRedoProvider) {
+        currentUndoRedoProvider = provider
     }
 
     /**
-     * Trigger find previous action on the current listener.
+     * Unregister an undo/redo provider.
      */
-    fun triggerFindPrevious() {
-        currentListener?.onFindPrevious()
+    fun unregisterUndoRedoProvider(provider: UndoRedoProvider) {
+        if (currentUndoRedoProvider == provider) {
+            currentUndoRedoProvider = null
+        }
     }
 
-    /**
-     * Trigger go to line action on the current listener.
-     */
-    fun triggerGoToLine() {
-        currentListener?.onGoToLine()
-    }
+    // Search action triggers
+    fun triggerFind() { currentListener?.onFind() }
+    fun triggerReplace() { currentListener?.onReplace() }
+    fun triggerFindNext() { currentListener?.onFindNext() }
+    fun triggerFindPrevious() { currentListener?.onFindPrevious() }
+    fun triggerGoToLine() { currentListener?.onGoToLine() }
+
+    // Search state queries
+    fun getSearchQuery(): String? = currentSearchStateProvider?.getSearchQuery()
+    fun getSearchMatchCount(): Int = currentSearchStateProvider?.getSearchMatchCount() ?: 0
+    fun getCurrentSearchMatchIndex(): Int = currentSearchStateProvider?.getCurrentSearchMatchIndex() ?: -1
+
+    // Undo/Redo operations
+    fun undo(): Boolean = currentUndoRedoProvider?.undo() ?: false
+    fun redo(): Boolean = currentUndoRedoProvider?.redo() ?: false
+    fun canUndo(): Boolean = currentUndoRedoProvider?.canUndo() ?: false
+    fun canRedo(): Boolean = currentUndoRedoProvider?.canRedo() ?: false
 }

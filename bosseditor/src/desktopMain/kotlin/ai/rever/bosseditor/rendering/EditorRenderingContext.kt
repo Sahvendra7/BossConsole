@@ -80,6 +80,7 @@ data class EditorRenderingContext(
     // Line numbers
     val showLineNumbers: Boolean,
     val gutterWidth: Float,
+    val gutterIconStripWidth: Float = 0f,
 
     // Folding state
     val visualLineMapper: VisualLineMapper,
@@ -169,6 +170,7 @@ data class EditorRenderingContext(
             currentSearchMatchIndex: Int = -1,
             showLineNumbers: Boolean = true,
             gutterWidth: Float = 30f,
+            gutterIconStripWidth: Float = 0f,
             visualLineMapper: VisualLineMapper? = null,
             allFoldRegions: List<FoldRegion> = emptyList(),
             foldingEnabled: Boolean = true,
@@ -232,6 +234,7 @@ data class EditorRenderingContext(
                 currentSearchMatchIndex = currentSearchMatchIndex,
                 showLineNumbers = showLineNumbers,
                 gutterWidth = gutterWidth,
+                gutterIconStripWidth = gutterIconStripWidth,
                 visualLineMapper = mapper,
                 allFoldRegions = allFoldRegions,
                 foldingEnabled = foldingEnabled,

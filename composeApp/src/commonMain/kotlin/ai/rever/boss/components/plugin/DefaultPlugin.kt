@@ -73,11 +73,22 @@ import ai.rever.boss.plugin.api.NotificationProvider
 import ai.rever.boss.plugin.api.ApplicationEventBus
 import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.GenericDialogProvider
+import ai.rever.boss.plugin.api.BackgroundTaskHandle
+import ai.rever.boss.plugin.api.BackgroundTaskProvider
+import ai.rever.boss.plugin.api.CacheProvider
+import ai.rever.boss.plugin.api.ClipboardProvider
+import ai.rever.boss.plugin.api.DiagnosticEntry
+import ai.rever.boss.plugin.api.DiagnosticProvider
+import ai.rever.boss.plugin.api.FilePickerProvider
+import ai.rever.boss.plugin.api.KeyboardShortcutInfo
+import ai.rever.boss.plugin.api.KeyboardShortcutProvider
 import ai.rever.boss.plugin.api.NavigationResolverProvider
 import ai.rever.boss.plugin.api.NavigationTargetProvider
 import ai.rever.boss.plugin.api.ScreenCaptureProvider
 import ai.rever.boss.plugin.api.SemanticTokenProvider
 import ai.rever.boss.components.plugin.providers.createNotificationProvider
+import ai.rever.boss.components.plugin.providers.createClipboardProvider
+import ai.rever.boss.components.plugin.providers.createFilePickerProvider
 import ai.rever.boss.components.plugin.providers.createNavigationResolverProvider
 import ai.rever.boss.components.plugin.providers.createSemanticTokenProvider
 import ai.rever.boss.components.plugin.providers.NavigationTargetProviderImpl
@@ -477,6 +488,36 @@ class DefaultPlugin(
     // Navigation target provider for cursor positioning after file navigation in dynamic plugins
     override val navigationTargetProvider: NavigationTargetProvider
         get() = NavigationTargetProviderImpl
+
+    // Clipboard provider for plugins that need clipboard access
+    override val clipboardProvider: ClipboardProvider? by lazy {
+        createClipboardProvider()
+    }
+
+    // File picker provider for plugins that need file open/save dialogs
+    override val filePickerProvider: FilePickerProvider? by lazy {
+        createFilePickerProvider()
+    }
+
+    // Keyboard shortcut provider for plugins that need shortcut information
+    override val keyboardShortcutProvider: KeyboardShortcutProvider by lazy {
+        DefaultKeyboardShortcutProvider()
+    }
+
+    // Cache provider for plugin cache management
+    override val cacheProvider: CacheProvider by lazy {
+        DefaultCacheProvider()
+    }
+
+    // Background task provider for structured task management
+    override val backgroundTaskProvider: BackgroundTaskProvider by lazy {
+        DefaultBackgroundTaskProvider(pluginScope)
+    }
+
+    // Diagnostic provider for plugin diagnostic reporting
+    override val diagnosticProvider: DiagnosticProvider by lazy {
+        DefaultDiagnosticProvider()
+    }
 
     // Directory picker provider for codebase plugin's "Open Project" feature
     override val directoryPickerProvider: ai.rever.boss.plugin.api.DirectoryPickerProvider by lazy {
@@ -991,6 +1032,154 @@ private class BrowserIntegrationAdapter(
  * Converts ContextMenuItemData (from plugin-ui-core) to ContextMenuItem (from app)
  * and applies the contextMenu modifier.
  */
+/**
+ * Default implementation of KeyboardShortcutProvider that bridges
+ * the existing getKeyboardShortcuts() data to the plugin API.
+ */
+/**
+ * Default implementation of CacheProvider.
+ * Uses ~/.boss/plugin-cache/{pluginId}/ for cache storage.
+ */
+private class DefaultCacheProvider : CacheProvider {
+    private val cacheBaseDir = File(System.getProperty("user.home"), ".boss/plugin-cache")
+
+    override fun clearPluginCache(pluginId: String): Boolean {
+        return try {
+            val cacheDir = File(cacheBaseDir, pluginId)
+            if (cacheDir.exists()) {
+                cacheDir.deleteRecursively()
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun getPluginCacheSize(pluginId: String): Long {
+        return try {
+            val cacheDir = File(cacheBaseDir, pluginId)
+            if (cacheDir.exists()) {
+                cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            } else {
+                0L
+            }
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
+    override fun getPluginCacheDirectory(pluginId: String): String {
+        val cacheDir = File(cacheBaseDir, pluginId)
+        cacheDir.mkdirs()
+        return cacheDir.absolutePath
+    }
+}
+
+/**
+ * Default implementation of BackgroundTaskProvider.
+ * Launches tasks on the plugin scope with tracking.
+ */
+private class DefaultBackgroundTaskProvider(
+    private val scope: kotlinx.coroutines.CoroutineScope
+) : BackgroundTaskProvider {
+    private val activeTasks = java.util.concurrent.ConcurrentHashMap<String, DefaultBackgroundTaskHandle>()
+
+    override fun launchTask(name: String, task: suspend () -> Unit): BackgroundTaskHandle? {
+        return try {
+            val taskId = "${name}-${System.currentTimeMillis()}"
+            val job = scope.launch {
+                try {
+                    task()
+                } finally {
+                    activeTasks.remove(taskId)
+                }
+            }
+            val handle = DefaultBackgroundTaskHandle(name, job)
+            activeTasks[taskId] = handle
+            handle
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun getRunningTasks(): List<BackgroundTaskHandle> {
+        return activeTasks.values.filter { it.isActive }.toList()
+    }
+
+    override fun cancelAll(): Int {
+        var count = 0
+        activeTasks.values.forEach {
+            if (it.isActive) {
+                it.cancel()
+                count++
+            }
+        }
+        activeTasks.clear()
+        return count
+    }
+}
+
+private class DefaultBackgroundTaskHandle(
+    override val name: String,
+    override val job: kotlinx.coroutines.Job
+) : BackgroundTaskHandle {
+    override val isActive: Boolean get() = job.isActive
+    override fun cancel() = job.cancel()
+}
+
+/**
+ * Default implementation of DiagnosticProvider.
+ * Stores diagnostics in memory with a ring buffer.
+ */
+private class DefaultDiagnosticProvider : DiagnosticProvider {
+    private val maxEntries = 200
+    private val entries = java.util.concurrent.ConcurrentLinkedDeque<DiagnosticEntry>()
+
+    override fun reportDiagnostic(category: String, message: String, metadata: Map<String, String>) {
+        entries.addFirst(DiagnosticEntry(
+            timestamp = System.currentTimeMillis(),
+            category = category,
+            message = message,
+            metadata = metadata
+        ))
+        // Trim to max size
+        while (entries.size > maxEntries) {
+            entries.removeLast()
+        }
+    }
+
+    override fun getRecentDiagnostics(limit: Int): List<DiagnosticEntry> {
+        return entries.take(limit)
+    }
+
+    override fun clearDiagnostics() {
+        entries.clear()
+    }
+}
+
+private class DefaultKeyboardShortcutProvider : KeyboardShortcutProvider {
+    override fun getShortcuts(): List<KeyboardShortcutInfo> {
+        return ai.rever.boss.components.settings.sections.getKeyboardShortcuts().map {
+            KeyboardShortcutInfo(
+                action = it.action,
+                key = it.key,
+                modifiers = it.modifiers,
+                category = it.category.name.replace("_", " ").lowercase()
+                    .replaceFirstChar { c -> c.uppercase() },
+                description = it.description
+            )
+        }
+    }
+
+    override fun getShortcutsByCategory(category: String): List<KeyboardShortcutInfo> {
+        return getShortcuts().filter { it.category == category }
+    }
+
+    override fun isMacOS(): Boolean {
+        return ai.rever.boss.components.settings.sections.isMacOS()
+    }
+}
+
 private class DefaultContextMenuProvider : ContextMenuProvider {
 
     @androidx.compose.runtime.Composable

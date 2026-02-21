@@ -4,6 +4,7 @@ import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.features.Diagnostic
 import ai.rever.bosseditor.features.DiagnosticSeverity
 import ai.rever.bosseditor.features.GutterIcon
+import ai.rever.bosseditor.features.GutterIconShape
 import ai.rever.bosseditor.features.GutterIconType
 import ai.rever.bosseditor.features.Hyperlink
 import ai.rever.bosseditor.features.IndentGuide
@@ -1245,8 +1246,9 @@ object EditorCanvasRenderer {
                 fontSize = ctx.fontSize
             )
             // Position line numbers with padding on both sides
-            val leftPadding = 4f
-            val rightPadding = 4f
+            // Offset by icon strip width to avoid overlapping gutter icons
+            val leftPadding = 4f + ctx.gutterIconStripWidth
+            val rightPadding = 12f
             val foldIndicatorSpace = if (ctx.foldingEnabled) 20f else 0f
             // Right-align but ensure minimum left padding
             val x = maxOf(leftPadding, ctx.gutterWidth - foldIndicatorSpace - rightPadding - measurement.width)
@@ -1287,8 +1289,8 @@ object EditorCanvasRenderer {
         // Find fold region starting at this line
         val foldRegion = ctx.allFoldRegions.find { it.startLine == documentLine } ?: return
 
-        // Fold indicator dimensions with minimal padding
-        val indicatorSize = 16f
+        // Fold indicator dimensions - scale with line height
+        val indicatorSize = ctx.lineHeight * 0.6f
         val paddingRight = 4f // Minimal padding from gutter border
         val strokeWidth = 2f
 
@@ -1300,9 +1302,10 @@ object EditorCanvasRenderer {
 
         if (foldRegion.isCollapsed) {
             // ChevronRight style - › pointing right
-            val chevronPadding = indicatorSize * 0.15f  // 15% padding for larger icon
-            val chevronWidth = indicatorSize * 0.55f    // Width of chevron
-            val chevronHeight = indicatorSize * 0.65f   // Height of chevron
+            // Material Icons typically use 45° angles and centered positioning
+            val chevronPadding = indicatorSize * 0.25f  // 25% padding
+            val chevronWidth = indicatorSize * 0.4f     // Width of chevron
+            val chevronHeight = indicatorSize * 0.5f    // Height of chevron
 
             val path = Path()
             val centerY = indicatorY + indicatorSize / 2f
@@ -1326,9 +1329,10 @@ object EditorCanvasRenderer {
             )
         } else {
             // ExpandMore style - ˅ pointing down
-            val chevronPadding = indicatorSize * 0.15f  // 15% padding for larger icon
-            val chevronWidth = indicatorSize * 0.65f    // Width of chevron
-            val chevronHeight = indicatorSize * 0.55f   // Height of chevron
+            // Material Icons typically use 45° angles and centered positioning
+            val chevronPadding = indicatorSize * 0.25f  // 25% padding
+            val chevronWidth = indicatorSize * 0.5f     // Width of chevron
+            val chevronHeight = indicatorSize * 0.4f    // Height of chevron
 
             val path = Path()
             val centerX = indicatorX + indicatorSize / 2f
@@ -1364,7 +1368,7 @@ object EditorCanvasRenderer {
     ) {
         val icon = ctx.gutterIcons.find { it.line == line } ?: return
 
-        val iconSize = ctx.lineHeight * 0.8f // 80% of line height
+        val iconSize = ctx.lineHeight * 0.5f // 50% of line height - matches font size
         val iconX = 4f // Left padding
         val iconY = y + (ctx.lineHeight - iconSize) / 2f
 
@@ -1457,6 +1461,53 @@ object EditorCanvasRenderer {
                     radius = iconSize / 2f,
                     center = Offset(iconX + iconSize / 2f, iconY + iconSize / 2f)
                 )
+            }
+            GutterIconType.CUSTOM -> {
+                val color = icon.customColor ?: Color(0xFF9E9E9E)
+                val shape = icon.customShape ?: GutterIconShape.FILLED_CIRCLE
+                val centerX = iconX + iconSize / 2f
+                val centerY = iconY + iconSize / 2f
+                when (shape) {
+                    GutterIconShape.FILLED_CIRCLE -> {
+                        drawCircle(
+                            color = color,
+                            radius = iconSize / 2f,
+                            center = Offset(centerX, centerY)
+                        )
+                    }
+                    GutterIconShape.CIRCLE -> {
+                        drawCircle(
+                            color = color,
+                            radius = iconSize / 2f,
+                            center = Offset(centerX, centerY),
+                            style = Stroke(width = 2f)
+                        )
+                    }
+                    GutterIconShape.TRIANGLE -> {
+                        val path = Path()
+                        path.moveTo(centerX, iconY)
+                        path.lineTo(iconX + iconSize, iconY + iconSize)
+                        path.lineTo(iconX, iconY + iconSize)
+                        path.close()
+                        drawPath(path, color)
+                    }
+                    GutterIconShape.SQUARE -> {
+                        drawRect(
+                            color = color,
+                            topLeft = Offset(iconX, iconY),
+                            size = androidx.compose.ui.geometry.Size(iconSize, iconSize)
+                        )
+                    }
+                    GutterIconShape.DIAMOND -> {
+                        val path = Path()
+                        path.moveTo(centerX, iconY)
+                        path.lineTo(iconX + iconSize, centerY)
+                        path.lineTo(centerX, iconY + iconSize)
+                        path.lineTo(iconX, centerY)
+                        path.close()
+                        drawPath(path, color)
+                    }
+                }
             }
         }
     }

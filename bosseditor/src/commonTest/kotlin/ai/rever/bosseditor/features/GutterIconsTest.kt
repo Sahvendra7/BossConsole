@@ -227,7 +227,7 @@ class GutterIconsTest {
 
     @Test
     fun testGutterIconTypes() {
-        assertEquals(13, GutterIconType.entries.size)
+        assertEquals(14, GutterIconType.entries.size)
         assertTrue(GutterIconType.entries.contains(GutterIconType.RUN))
         assertTrue(GutterIconType.entries.contains(GutterIconType.DEBUG))
         assertTrue(GutterIconType.entries.contains(GutterIconType.BREAKPOINT))
@@ -241,5 +241,6 @@ class GutterIconsTest {
         assertTrue(GutterIconType.entries.contains(GutterIconType.BOOKMARK))
         assertTrue(GutterIconType.entries.contains(GutterIconType.OVERRIDE))
         assertTrue(GutterIconType.entries.contains(GutterIconType.RECURSIVE))
+        assertTrue(GutterIconType.entries.contains(GutterIconType.CUSTOM))
     }
 }

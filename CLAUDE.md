@@ -124,3 +124,4 @@ App registers `boss://` protocol for authentication callbacks from external brow
 - [Role Creation](docs/ROLE_CREATION_GUIDE.md) - Creating and managing roles
 - [Windows Deep Link](docs/WINDOWS_DEEP_LINK_SETUP.md) - Windows protocol handler setup
 - [Release Rebuild](docs/RELEASE_REBUILD_GUIDE.md) - Re-running release builds
+

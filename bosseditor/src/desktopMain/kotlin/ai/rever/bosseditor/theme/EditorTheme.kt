@@ -267,19 +267,47 @@ data class EditorTheme(
 ) {
     companion object {
         /**
-         * Gets a theme by name.
+         * Registry of custom themes added by plugins. Thread-safe.
          */
-        fun forName(name: String): EditorTheme = when (name) {
-            "Light" -> Light
-            "Dracula" -> Dracula
-            "Monokai" -> Monokai
-            "Solarized Dark" -> SolarizedDark
-            "Solarized Light" -> SolarizedLight
-            else -> Dark // Default
+        private val themeLock = Any()
+        private val customThemes = mutableMapOf<String, EditorTheme>()
+
+        /**
+         * Gets a theme by name.
+         * Checks custom themes first, then falls back to built-in themes.
+         */
+        fun forName(name: String): EditorTheme {
+            synchronized(themeLock) { customThemes[name] }?.let { return it }
+            return when (name) {
+                "Light" -> Light
+                "Dracula" -> Dracula
+                "Monokai" -> Monokai
+                "Solarized Dark" -> SolarizedDark
+                "Solarized Light" -> SolarizedLight
+                else -> Dark // Default
+            }
         }
 
         /**
-         * Available theme names.
+         * Registers a custom theme.
+         * If a theme with the same name already exists, it will be replaced.
+         * Thread-safe.
+         */
+        fun registerTheme(theme: EditorTheme) {
+            synchronized(themeLock) { customThemes[theme.name] = theme }
+        }
+
+        /**
+         * Unregisters a custom theme by name.
+         * @return true if a theme was removed, false if no such theme existed
+         * Thread-safe.
+         */
+        fun unregisterTheme(name: String): Boolean {
+            return synchronized(themeLock) { customThemes.remove(name) != null }
+        }
+
+        /**
+         * Built-in theme names.
          */
         val availableThemes = listOf(
             "Dark",
@@ -289,6 +317,12 @@ data class EditorTheme(
             "Solarized Dark",
             "Solarized Light"
         )
+
+        /**
+         * All theme names (built-in + custom).
+         */
+        val allThemes: List<String>
+            get() = synchronized(themeLock) { availableThemes + customThemes.keys.sorted() }
 
         // ========== Theme Definitions ==========
 
@@ -940,3 +974,119 @@ data class EditorTheme(
  * CompositionLocal for providing editor theme.
  */
 val LocalEditorTheme = staticCompositionLocalOf { EditorTheme.Dark }
+
+/**
+ * Builder for creating custom editor themes by overriding specific colors from a base theme.
+ *
+ * Rather than specifying all ~78 color properties, you can derive from an existing theme
+ * and only override the colors you want to change.
+ *
+ * ## Usage
+ * ```kotlin
+ * val myTheme = EditorTheme.Dark.derive("My Dark Theme") {
+ *     background(Color(0xFF1A1A2E))
+ *     keyword(Color(0xFFE94560))
+ *     string(Color(0xFF0F3460))
+ *     comment(Color(0xFF16213E))
+ * }
+ * ```
+ */
+class EditorThemeBuilder(
+    private val name: String,
+    private val baseTheme: EditorTheme
+) {
+    // Theme metadata
+    private var isDark: Boolean? = null
+
+    // Editor colors
+    private var background: Color? = null
+    private var text: Color? = null
+    private var caret: Color? = null
+    private var selectionBackground: Color? = null
+    private var currentLineHighlight: Color? = null
+
+    // Gutter colors
+    private var gutterBackground: Color? = null
+    private var gutterBorder: Color? = null
+    private var lineNumber: Color? = null
+    private var lineNumberActive: Color? = null
+
+    // Syntax colors
+    private var keyword: Color? = null
+    private var dataType: Color? = null
+    private var function: Color? = null
+    private var string: Color? = null
+    private var number: Color? = null
+    private var comment: Color? = null
+    private var docComment: Color? = null
+    private var annotation: Color? = null
+    private var variable: Color? = null
+    private var property: Color? = null
+    private var operator: Color? = null
+    private var error: Color? = null
+
+    fun isDark(dark: Boolean) = apply { isDark = dark }
+    fun background(color: Color) = apply { background = color }
+    fun text(color: Color) = apply { text = color }
+    fun caret(color: Color) = apply { caret = color }
+    fun selectionBackground(color: Color) = apply { selectionBackground = color }
+    fun currentLineHighlight(color: Color) = apply { currentLineHighlight = color }
+    fun gutterBackground(color: Color) = apply { gutterBackground = color }
+    fun gutterBorder(color: Color) = apply { gutterBorder = color }
+    fun lineNumber(color: Color) = apply { lineNumber = color }
+    fun lineNumberActive(color: Color) = apply { lineNumberActive = color }
+    fun keyword(color: Color) = apply { keyword = color }
+    fun dataType(color: Color) = apply { dataType = color }
+    fun function(color: Color) = apply { function = color }
+    fun string(color: Color) = apply { string = color }
+    fun number(color: Color) = apply { number = color }
+    fun comment(color: Color) = apply { comment = color }
+    fun docComment(color: Color) = apply { docComment = color }
+    fun annotation(color: Color) = apply { annotation = color }
+    fun variable(color: Color) = apply { variable = color }
+    fun property(color: Color) = apply { property = color }
+    fun operator(color: Color) = apply { operator = color }
+    fun error(color: Color) = apply { error = color }
+
+    fun build(): EditorTheme {
+        val base = baseTheme.colors
+        return EditorTheme(
+            name = name,
+            isDark = isDark ?: baseTheme.isDark,
+            colors = base.copy(
+                background = background ?: base.background,
+                text = text ?: base.text,
+                caret = caret ?: base.caret,
+                selectionBackground = selectionBackground ?: base.selectionBackground,
+                currentLineHighlight = currentLineHighlight ?: base.currentLineHighlight,
+                gutterBackground = gutterBackground ?: base.gutterBackground,
+                gutterBorder = gutterBorder ?: base.gutterBorder,
+                lineNumber = lineNumber ?: base.lineNumber,
+                lineNumberActive = lineNumberActive ?: base.lineNumberActive,
+                keyword = keyword ?: base.keyword,
+                dataType = dataType ?: base.dataType,
+                function = function ?: base.function,
+                string = string ?: base.string,
+                number = number ?: base.number,
+                comment = comment ?: base.comment,
+                docComment = docComment ?: base.docComment,
+                annotation = annotation ?: base.annotation,
+                variable = variable ?: base.variable,
+                property = property ?: base.property,
+                operator = operator ?: base.operator,
+                error = error ?: base.error
+            )
+        )
+    }
+}
+
+/**
+ * Creates a new theme derived from this one, applying the given customizations.
+ *
+ * @param name The name for the new theme
+ * @param block Configuration block for customizing colors
+ * @return A new EditorTheme with the specified overrides
+ */
+fun EditorTheme.derive(name: String, block: EditorThemeBuilder.() -> Unit): EditorTheme {
+    return EditorThemeBuilder(name, this).apply(block).build()
+}
