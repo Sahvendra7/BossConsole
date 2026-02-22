@@ -180,6 +180,13 @@ boss --help                    # Show help
 
 ---
 
+## Related Repositories
+
+- [**boss-plugins**](https://github.com/risa-labs-inc/boss-plugins) - Master repository for all BOSS plugins, managed as git submodules
+- [**BossConsole-Releases**](https://github.com/risa-labs-inc/BossConsole-Releases) - Pre-built installers for all platforms
+
+---
+
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/risa-labs-inc/BossConsole/issues)
