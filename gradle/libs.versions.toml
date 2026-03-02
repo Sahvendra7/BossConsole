@@ -29,7 +29,7 @@ jxbrowser = "8.17.0"
 jxbrowser-gradle-plugin = "2.0.0"
 maven-publish = "0.36.0"
 jna = "5.18.1"
-rsyntaxtextarea = "3.6.1"
+rsyntaxtextarea = "3.6.2"
 rstaui = "3.3.2"
 autocomplete = "3.3.3"
 # IntelliJ PSI for code navigation
