@@ -410,25 +410,34 @@ fun main(args: Array<String>) {
                                     needsTransitionWait = true
                                 }
                                 // macOS native fullscreen uses Spaces, not AWT exclusive mode.
-                                // GraphicsDevice.fullScreenWindow only detects AWT exclusive mode,
-                                // so we always attempt requestToggleFullScreen on macOS and let
-                                // it no-op if the window isn't in native fullscreen.
+                                // requestToggleFullScreen is a TOGGLE — calling it when not
+                                // fullscreen will ENTER fullscreen. We must detect whether the
+                                // window is actually in native fullscreen before calling it.
+                                // Detection: in native fullscreen, the window bounds match the
+                                // full screen size (not the visible/usable area).
                                 val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
                                 if (isMacOS) {
-                                    try {
-                                        logger.debug(LogCategory.UI, "Requesting macOS fullscreen exit before window close", mapOf(
-                                            "windowId" to windowState.id
-                                        ))
-                                        val appClass = Class.forName("com.apple.eawt.Application")
-                                        val app = appClass.getMethod("getApplication").invoke(null)
-                                        appClass.getMethod("requestToggleFullScreen", java.awt.Window::class.java)
-                                            .invoke(app, awtWindow)
-                                        needsTransitionWait = true
-                                    } catch (e: Exception) {
-                                        logger.debug(LogCategory.UI, "macOS fullscreen exit not available", mapOf(
-                                            "errorType" to e.javaClass.simpleName,
-                                            "reason" to (e.message ?: "unknown")
-                                        ))
+                                    val screenBounds = awtWindow.graphicsConfiguration?.device?.defaultConfiguration?.bounds
+                                    val windowBounds = awtWindow.bounds
+                                    val isNativeFullscreen = screenBounds != null &&
+                                        windowBounds.width >= screenBounds.width &&
+                                        windowBounds.height >= screenBounds.height
+                                    if (isNativeFullscreen) {
+                                        try {
+                                            logger.debug(LogCategory.UI, "Requesting macOS fullscreen exit before window close", mapOf(
+                                                "windowId" to windowState.id
+                                            ))
+                                            val appClass = Class.forName("com.apple.eawt.Application")
+                                            val app = appClass.getMethod("getApplication").invoke(null)
+                                            appClass.getMethod("requestToggleFullScreen", java.awt.Window::class.java)
+                                                .invoke(app, awtWindow)
+                                            needsTransitionWait = true
+                                        } catch (e: Exception) {
+                                            logger.debug(LogCategory.UI, "macOS fullscreen exit not available", mapOf(
+                                                "errorType" to e.javaClass.simpleName,
+                                                "reason" to (e.message ?: "unknown")
+                                            ))
+                                        }
                                     }
                                 }
                                 // Wait for fullscreen/maximize transition to start before
