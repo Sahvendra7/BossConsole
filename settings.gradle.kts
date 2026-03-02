@@ -39,8 +39,6 @@ include(":bosseditor")
 // plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
 // Everything else comes from boss-plugin-api bundled plugin
 include(":plugins:plugin-api-core")
-// DEPRECATED: Full plugin-api moved to _deprecated/plugin-api
-// include(":plugins:plugin-api")
 include(":plugins:plugin-ui-core")
 include(":plugins:plugin-logging")
 include(":plugins:plugin-scrollbar")
