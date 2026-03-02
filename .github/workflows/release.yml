@@ -616,7 +616,7 @@ jobs:
           fi
 
       - name: 📤 Upload macOS DMG (ARM64)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-macos-arm64-${{ needs.prepare-version.outputs.version }}
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
@@ -785,7 +785,7 @@ jobs:
           fi
 
       - name: 📤 Upload Linux Packages (AMD64)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-linux-amd64-${{ needs.prepare-version.outputs.version }}
           path: |
@@ -971,7 +971,7 @@ jobs:
           fi
 
       - name: 📤 Upload Linux Packages (ARM64)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-linux-arm64-${{ needs.prepare-version.outputs.version }}
           path: |
@@ -1256,7 +1256,7 @@ jobs:
         shell: powershell
 
       - name: 📤 Upload Windows MSI
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-windows-${{ needs.prepare-version.outputs.version }}
           path: composeApp/build/compose/binaries/main/msi/
@@ -1410,7 +1410,7 @@ jobs:
           }
 
       - name: 📤 Upload Windows ARM64 MSI
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-windows-arm64-${{ needs.prepare-version.outputs.version }}
           path: composeApp/build/compose/binaries/main/msi/

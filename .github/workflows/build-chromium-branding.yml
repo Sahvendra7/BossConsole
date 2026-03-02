@@ -38,7 +38,7 @@ jobs:
           GOOS=windows GOARCH=arm64 go build -o chromium_branding_windows_arm64.exe .
 
       - name: Upload Branding Tool
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: branding-tool
           path: |
@@ -248,7 +248,7 @@ jobs:
           ls -la boss-chromium-macos-arm64.zip
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-macos-arm64
           path: boss-chromium-macos-arm64.zip
@@ -437,7 +437,7 @@ jobs:
           zip -r ../boss-chromium-macos-x64.zip .
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-macos-x64
           path: boss-chromium-macos-x64.zip
@@ -520,7 +520,7 @@ jobs:
           Compress-Archive -Path output/* -DestinationPath boss-chromium-windows-x64.zip
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-windows-x64
           path: boss-chromium-windows-x64.zip
@@ -635,7 +635,7 @@ jobs:
           Compress-Archive -Path output\* -DestinationPath boss-chromium-windows-arm64.zip
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-windows-arm64
           path: boss-chromium-windows-arm64.zip
@@ -730,7 +730,7 @@ jobs:
           zip -r ../boss-chromium-linux-x64.zip .
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-linux-x64
           path: boss-chromium-linux-x64.zip
@@ -837,7 +837,7 @@ jobs:
           zip -r ../boss-chromium-linux-arm64.zip .
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: boss-chromium-linux-arm64
           path: boss-chromium-linux-arm64.zip
