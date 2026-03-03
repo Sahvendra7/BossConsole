@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.config.ConfigLoader
@@ -42,7 +43,7 @@ actual fun getEnvironmentVariable(name: String): String? {
 
     // Fallback to reading from ~/.boss/env_vars file for DMG distributions
     try {
-        val envFile = File(System.getProperty("user.home"), ".boss/env_vars")
+        val envFile = BossDirectories.resolve("env_vars")
         if (envFile.exists()) {
             val envVars = envFile.readLines()
                 .filter { it.isNotBlank() && !it.startsWith("#") }
@@ -56,7 +57,7 @@ actual fun getEnvironmentVariable(name: String): String? {
                 }
             val result = envVars[name]
             if (!result.isNullOrBlank()) {
-                logger.debug(LogCategory.SYSTEM, "Found env var from ~/.boss/env_vars", mapOf("name" to name))
+                logger.debug(LogCategory.SYSTEM, "Found env var from env_vars file", mapOf("name" to name))
                 return result
             }
         }
@@ -72,7 +73,7 @@ actual fun getEnvironmentVariable(name: String): String? {
  * Desktop implementation of LLM Settings Manager
  */
 actual object LLMSettingsManager {
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/llm_settings.json")
+    private val settingsFile = BossDirectories.resolve("llm_settings.json")
     
     actual suspend fun loadSettings() {
         withContext(Dispatchers.IO) {
@@ -103,7 +104,7 @@ actual object LLMSettingsManager {
     
     private fun createEnvVarsTemplateIfNeeded() {
         try {
-            val envFile = File(System.getProperty("user.home"), ".boss/env_vars")
+            val envFile = BossDirectories.resolve("env_vars")
             if (!envFile.exists()) {
                 envFile.parentFile?.mkdirs()
                 val template = """

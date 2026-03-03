@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.scrollbar
 
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +22,7 @@ import java.io.File
  */
 actual object ScrollbarSettingsManager {
     private val logger = BossLogger.forComponent("ScrollbarSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/scrollbar-settings.json")
+    private val settingsFile = BossDirectories.resolve("scrollbar-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

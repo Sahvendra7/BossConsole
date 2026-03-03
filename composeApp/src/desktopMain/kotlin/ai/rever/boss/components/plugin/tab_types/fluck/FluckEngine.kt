@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
 import ai.rever.boss.config.JxBrowserConfig
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.platform.FileNameSanitizer
@@ -365,7 +366,7 @@ object FluckEngine {
 
         val userHome = System.getProperty("user.home")
         val selectedProfile = BrowserSettings.currentProfile
-        val profileDirPath = Paths.get(userHome, ".boss", selectedProfile)
+        val profileDirPath = BossDirectories.resolve(selectedProfile).toPath()
 
         // First, kill any stale Chromium processes from previous sessions
         killStaleChromiumProcesses(userHome)
@@ -389,9 +390,9 @@ object FluckEngine {
         var killedAny = false
         try {
             // Use explicit paths for more precise matching (security: avoid killing unrelated processes)
-            val bossChromiumDir = "$userHome/.boss/jxbrowser-chromium"
-            val bossBrandedChromiumDir = "$userHome/.boss/boss-chromium"
-            val bossProfileDir = "$userHome/.boss/browser-profile"
+            val bossChromiumDir = BossDirectories.resolve("jxbrowser-chromium").absolutePath
+            val bossBrandedChromiumDir = BossDirectories.resolve("boss-chromium").absolutePath
+            val bossProfileDir = BossDirectories.resolve("browser-profile").absolutePath
             val currentPid = ProcessHandle.current().pid()
             val currentTimeMs = System.currentTimeMillis()
 
@@ -692,7 +693,7 @@ object FluckEngine {
         }
 
         // Priority 2: Cached BOSS-branded Chromium
-        val cachedBrandedDir = Paths.get(userHome, ".boss", "boss-chromium")
+        val cachedBrandedDir = BossDirectories.resolve("boss-chromium").toPath()
         if (isValidChromiumDir(cachedBrandedDir)) {
             return cachedBrandedDir
         }
@@ -887,7 +888,7 @@ object FluckEngine {
      */
     private fun cleanupOldTemporaryProfiles(userHome: String) {
         try {
-            val bossDir = java.io.File(userHome, ".boss")
+            val bossDir = BossDirectories.rootDir
             val oneDayAgo = System.currentTimeMillis() - (24 * 60 * 60 * 1000)
 
             bossDir.listFiles()?.filter {
@@ -909,7 +910,7 @@ object FluckEngine {
      */
     private fun cleanupAllTemporaryProfiles(userHome: String) {
         try {
-            val bossDir = java.io.File(userHome, ".boss")
+            val bossDir = BossDirectories.rootDir
             var cleanedCount = 0
 
             bossDir.listFiles()?.filter {
@@ -936,7 +937,7 @@ object FluckEngine {
 
     private fun createEngineWithProfile(chromiumDir: java.nio.file.Path, userHome: String): Engine {
         val selectedProfile = BrowserSettings.currentProfile
-        val profileDirPath = Paths.get(userHome, ".boss", selectedProfile)
+        val profileDirPath = BossDirectories.resolve(selectedProfile).toPath()
         profileDirPath.toFile().mkdirs()
 
         return try {
@@ -952,7 +953,7 @@ object FluckEngine {
 
             // Profile is genuinely in use by another process, use temporary
             val tempProfile = "browser-profile-${System.currentTimeMillis()}"
-            val tempProfilePath = Paths.get(userHome, ".boss", tempProfile)
+            val tempProfilePath = BossDirectories.resolve(tempProfile).toPath()
             tempProfilePath.toFile().mkdirs()
 
             try {
@@ -1556,7 +1557,7 @@ object FluckEngine {
 
             // Step 4: Delete browser profile directory
             val selectedProfile = BrowserSettings.currentProfile
-            val profileDir = java.io.File(userHome, ".boss/$selectedProfile")
+            val profileDir = BossDirectories.resolve(selectedProfile)
 
             if (profileDir.exists()) {
                 profileDeleted = profileDir.deleteRecursively()

@@ -1,5 +1,6 @@
 package ai.rever.boss.updater
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +53,7 @@ data class UpdateSettingsData(
  */
 actual object UpdateSettingsManager {
     private val logger = BossLogger.forComponent("UpdateSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/update-settings.json")
+    private val settingsFile = BossDirectories.resolve("update-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

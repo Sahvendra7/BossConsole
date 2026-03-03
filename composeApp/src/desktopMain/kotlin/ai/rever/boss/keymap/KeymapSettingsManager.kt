@@ -1,5 +1,6 @@
 package ai.rever.boss.keymap
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.keymap.model.KeymapSettings
@@ -23,7 +24,7 @@ import java.io.File
  */
 actual object KeymapSettingsManager {
     private val logger = BossLogger.forComponent("KeymapSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/keymap-settings.json")
+    private val settingsFile = BossDirectories.resolve("keymap-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

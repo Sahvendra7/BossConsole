@@ -1,5 +1,6 @@
 package ai.rever.boss.performance
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -442,7 +443,7 @@ object PerformanceMonitor {
     suspend fun exportMetrics(): Result<String> = withContext(Dispatchers.IO) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss").format(Date())
-            val exportFile = File(System.getProperty("user.home"), ".boss/performance-export-$timestamp.json")
+            val exportFile = BossDirectories.resolve("performance-export-$timestamp.json")
             exportFile.parentFile?.mkdirs()
 
             val historyData = _history.value

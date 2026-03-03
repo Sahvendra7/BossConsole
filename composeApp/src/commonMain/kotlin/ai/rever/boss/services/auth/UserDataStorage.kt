@@ -7,6 +7,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.services.supabase.models.UserInfo
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -76,8 +77,8 @@ import ai.rever.boss.utils.logging.LogSanitizer
  * This file is automatically created and managed by this service.
  */
 object UserDataStorage {
-    private val storageFile = File(System.getProperty("user.home"), ".boss/user_data.json")
-    private val pendingWizardCompletedFile = File(System.getProperty("user.home"), ".boss/pending_wizard_completed")
+    private val storageFile = BossDirectories.resolve("user_data.json")
+    private val pendingWizardCompletedFile = BossDirectories.resolve("pending_wizard_completed")
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true

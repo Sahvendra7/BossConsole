@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.tab_types
 
 import ai.rever.boss.font.FontManager
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.graphics.Color
@@ -139,7 +140,7 @@ data class CodeEditorSettingsData(
 
 object CodeEditorSettingsManager {
     private val logger = BossLogger.forComponent("CodeEditorSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/code-editor-settings.json")
+    private val settingsFile = BossDirectories.resolve("code-editor-settings.json")
     private val json = Json { 
         prettyPrint = true
         ignoreUnknownKeys = true

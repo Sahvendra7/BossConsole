@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -76,7 +77,7 @@ class PluginStateManager(
      * Base directory for BOSS configuration files.
      * Defaults to `~/.boss`.
      */
-    private val configDir: File = File(System.getProperty("user.home"), ".boss")
+    private val configDir: File = BossDirectories.rootDir
 ) {
     private val logger = BossLogger.forComponent("PluginStateManager")
 

@@ -1,5 +1,6 @@
 package ai.rever.bosseditor.lsp.config
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.lsp.logging.LspLoggerConfig
 import ai.rever.bosseditor.lsp.logging.LogCategory
@@ -62,14 +63,12 @@ class LspSettingsManager private constructor() {
     val configuration: StateFlow<LspConfiguration> = _configuration.asStateFlow()
 
     private val settingsFile: File by lazy {
-        val bossDir = File(System.getProperty("user.home"), ".boss")
-        bossDir.mkdirs()
-        File(bossDir, "lsp-settings.json")
+        BossDirectories.rootDir.mkdirs()
+        BossDirectories.resolve("lsp-settings.json")
     }
 
     private val logDir: File by lazy {
-        val bossDir = File(System.getProperty("user.home"), ".boss")
-        File(bossDir, "logs").also { it.mkdirs() }
+        BossDirectories.resolve("logs").also { it.mkdirs() }
     }
 
     init {

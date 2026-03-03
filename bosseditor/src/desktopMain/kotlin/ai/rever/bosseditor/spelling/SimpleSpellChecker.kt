@@ -1,5 +1,6 @@
 package ai.rever.bosseditor.spelling
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.bosseditor.lsp.logging.LspLogger
 import ai.rever.bosseditor.lsp.logging.LogCategory
 import java.io.File
@@ -23,7 +24,7 @@ import java.util.concurrent.Executors
  */
 class SimpleSpellChecker(
     private val dictionaryPath: String? = null,
-    private val customDictionaryPath: String = System.getProperty("user.home") + "/.boss/spelling/custom.txt"
+    private val customDictionaryPath: String = BossDirectories.resolve("spelling/custom.txt").absolutePath
 ) : SpellChecker {
 
     private val logger = LspLogger.forComponent("SimpleSpellChecker")

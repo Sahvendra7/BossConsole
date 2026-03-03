@@ -1,5 +1,6 @@
 package ai.rever.bosseditor.settings
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.bosseditor.lsp.logging.LogCategory
 import ai.rever.bosseditor.lsp.logging.LspLogger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -99,8 +100,7 @@ class EditorSettingsManager private constructor(
 
     companion object {
         private val DEFAULT_SETTINGS_PATH: String by lazy {
-            val home = System.getProperty("user.home")
-            "$home/.boss/editor-settings.json"
+            BossDirectories.resolve("editor-settings.json").absolutePath
         }
 
         /** Singleton instance */

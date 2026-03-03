@@ -73,8 +73,7 @@ object ProjectState {
     }
 
     private fun getRecentProjectsFile(): java.io.File {
-        val userHome = System.getProperty("user.home")
-        val bossDir = java.io.File(userHome, ".boss")
+        val bossDir = ai.rever.boss.plugin.pathutils.BossDirectories.rootDir
         if (!bossDir.exists()) bossDir.mkdirs()
         return java.io.File(bossDir, RECENT_PROJECTS_FILE)
     }

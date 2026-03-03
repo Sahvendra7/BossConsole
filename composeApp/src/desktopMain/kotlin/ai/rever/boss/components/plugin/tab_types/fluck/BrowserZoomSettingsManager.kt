@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,7 @@ data class BrowserZoomSettingsData(
  */
 object BrowserZoomSettingsManager {
     private val logger = BossLogger.forComponent("BrowserZoomSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/browser-zoom-settings.json")
+    private val settingsFile = BossDirectories.resolve("browser-zoom-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

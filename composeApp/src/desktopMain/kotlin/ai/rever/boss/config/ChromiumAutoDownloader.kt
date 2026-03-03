@@ -1,5 +1,6 @@
 package ai.rever.boss.config
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.utils.VersionConstants
@@ -52,7 +53,7 @@ object ChromiumAutoDownloader {
      * Get the target directory for Chromium installation
      */
     fun getChromiumDir(): Path =
-        Paths.get(System.getProperty("user.home"), ".boss", "boss-chromium")
+        BossDirectories.resolve("boss-chromium").toPath()
 
     /**
      * Check if Chromium is already installed, valid, and matches the current JxBrowser version.
@@ -340,7 +341,7 @@ object ChromiumAutoDownloader {
      * before we switched to branded Chromium.
      */
     private fun cleanupOldChromium() {
-        val oldDir = Paths.get(System.getProperty("user.home"), ".boss", "jxbrowser-chromium")
+        val oldDir = BossDirectories.resolve("jxbrowser-chromium").toPath()
         if (oldDir.toFile().exists()) {
             logger.debug(LogCategory.BROWSER, "Cleaning up old JxBrowser Chromium", mapOf("path" to oldDir.toString()))
             try {

@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -53,7 +54,7 @@ data class DashboardStats(
  */
 object DashboardStatsManager {
     private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/dashboard-stats.json")
+    private val settingsFile = BossDirectories.resolve("dashboard-stats.json")
     private val json = Json {
         prettyPrint = false
         ignoreUnknownKeys = true

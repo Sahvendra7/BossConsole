@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.plugin.pathutils.BossDirectories
 
 /**
  * Data class representing a recently visited browser page.
@@ -60,7 +61,7 @@ object RecentBrowserPagesManager {
     private val logger = BossLogger.forComponent("RecentBrowserPagesManager")
     private const val MAX_PAGES = 30
     private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-browser-pages.json")
+    private val settingsFile = BossDirectories.resolve("recent-browser-pages.json")
     private val json = Json {
         prettyPrint = false
         ignoreUnknownKeys = true
@@ -232,7 +233,7 @@ object RecentBrowserPagesManager {
      */
     private suspend fun bootstrapFromBrowserHistory() = withContext(Dispatchers.IO) {
         try {
-            val browserHistoryFile = File(System.getProperty("user.home"), ".boss/browser-history.json")
+            val browserHistoryFile = BossDirectories.resolve("browser-history.json")
             if (!browserHistoryFile.exists()) return@withContext
 
             val content = browserHistoryFile.readText()

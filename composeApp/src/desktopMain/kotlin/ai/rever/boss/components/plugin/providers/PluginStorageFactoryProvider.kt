@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.plugin.api.PluginStorageFactory
 import ai.rever.boss.plugin.api.PluginStorageProvider
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -63,7 +64,7 @@ class PluginStorageProviderImpl(
     }
 
     private val storageDir: File by lazy {
-        val dir = File(System.getProperty("user.home"), ".boss/plugin-data/$pluginId")
+        val dir = BossDirectories.resolve("plugin-data/$pluginId")
         if (!dir.exists()) {
             dir.mkdirs()
         }

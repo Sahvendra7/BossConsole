@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.git.GitDataProviderImpl
 import ai.rever.boss.components.plugin.providers.PanelEventProviderImpl
 import ai.rever.boss.components.plugin.providers.SettingsProviderImpl
@@ -742,7 +743,7 @@ class DefaultPlugin(
      * This scans for JAR files and installs them via DynamicPluginManager.
      */
     private fun loadExternalPlugins() {
-        val pluginDir = File(System.getProperty("user.home"), ".boss/plugins")
+        val pluginDir = BossDirectories.resolve("plugins")
 
         if (!pluginDir.exists() || !pluginDir.isDirectory) {
             logger.debug(LogCategory.SYSTEM, "External plugins directory not found", mapOf(
@@ -1041,7 +1042,7 @@ private class BrowserIntegrationAdapter(
  * Uses ~/.boss/plugin-cache/{pluginId}/ for cache storage.
  */
 private class DefaultCacheProvider : CacheProvider {
-    private val cacheBaseDir = File(System.getProperty("user.home"), ".boss/plugin-cache")
+    private val cacheBaseDir = BossDirectories.resolve("plugin-cache")
 
     override fun clearPluginCache(pluginId: String): Boolean {
         return try {

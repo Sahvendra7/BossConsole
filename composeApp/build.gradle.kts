@@ -896,11 +896,13 @@ tasks.register("runProduction") {
 }
 
 // Configure all JavaExec tasks with boss.log.level from gradle.properties
+// Also enable dev mode so ./gradlew run uses ~/.boss_debug (not ~/.boss)
 tasks.withType<JavaExec>().configureEach {
     val bossLogLevel = project.findProperty("boss.log.level") as? String
     if (bossLogLevel != null) {
         systemProperty("boss.log.level", bossLogLevel)
     }
+    systemProperty("boss.dev.mode", "true")
 }
 
 // Configure run task based on which wrapper task will execute

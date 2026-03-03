@@ -1,5 +1,6 @@
 package ai.rever.boss.focusmode
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,7 @@ import java.io.File
  */
 actual object FocusModeSettingsManager {
     private val logger = BossLogger.forComponent("FocusModeSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/focus-mode-settings.json")
+    private val settingsFile = BossDirectories.resolve("focus-mode-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

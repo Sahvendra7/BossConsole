@@ -1,6 +1,7 @@
 package ai.rever.boss.cache
 
 import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import io.ktor.client.*
@@ -59,7 +60,7 @@ object HighQualityFaviconService {
     }
 
     private val cacheDir: File by lazy {
-        val dir = File(System.getProperty("user.home"), ".boss/cache/$HQ_CACHE_DIR_NAME")
+        val dir = BossDirectories.resolve("cache/$HQ_CACHE_DIR_NAME")
         dir.mkdirs()
         dir
     }

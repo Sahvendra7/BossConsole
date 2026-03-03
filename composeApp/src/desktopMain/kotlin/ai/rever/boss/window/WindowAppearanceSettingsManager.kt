@@ -1,5 +1,6 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,7 @@ import java.io.File
  */
 actual object WindowAppearanceSettingsManager {
     private val logger = BossLogger.forComponent("WindowAppearanceSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/window-appearance-settings.json")
+    private val settingsFile = BossDirectories.resolve("window-appearance-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

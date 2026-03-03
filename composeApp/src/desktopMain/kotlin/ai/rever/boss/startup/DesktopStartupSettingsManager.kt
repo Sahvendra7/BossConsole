@@ -1,5 +1,6 @@
 package ai.rever.boss.startup
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +23,7 @@ import java.io.File
  */
 actual object StartupSettingsManager {
     private val logger = BossLogger.forComponent("StartupSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/startup-settings.json")
+    private val settingsFile = BossDirectories.resolve("startup-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

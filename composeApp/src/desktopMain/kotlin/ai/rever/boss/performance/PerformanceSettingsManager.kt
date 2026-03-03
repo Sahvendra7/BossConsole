@@ -1,5 +1,6 @@
 package ai.rever.boss.performance
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +18,7 @@ import java.io.File
  * - Graceful error handling with fallback to defaults
  */
 actual object PerformanceSettingsManager {
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/performance-settings.json")
+    private val settingsFile = BossDirectories.resolve("performance-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

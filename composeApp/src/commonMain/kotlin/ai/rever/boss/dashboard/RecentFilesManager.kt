@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.extractFileName
 
 private val recentFilesLogger = BossLogger.forComponent("RecentFilesManager")
@@ -48,7 +49,7 @@ data class RecentFilesData(
 object RecentFilesManager {
     private const val MAX_FILES = 20
     private const val SAVE_DEBOUNCE_MS = 5000L // Debounce saves to max once per 5 seconds
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/recent-files.json")
+    private val settingsFile = BossDirectories.resolve("recent-files.json")
     private val json = Json {
         prettyPrint = false
         ignoreUnknownKeys = true

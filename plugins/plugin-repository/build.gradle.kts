@@ -41,6 +41,9 @@ kotlin {
                 // Logging
                 implementation(projects.plugins.pluginLogging)
 
+                // Path utilities (BossDirectories)
+                implementation(projects.plugins.pluginPathUtils)
+
                 // Ktor client for remote repositories
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)

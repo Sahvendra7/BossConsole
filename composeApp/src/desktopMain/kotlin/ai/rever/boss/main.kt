@@ -3,6 +3,7 @@ package ai.rever.boss
 import ai.rever.boss.cli.createBossCLI
 import ai.rever.boss.cli.CLICommandHandler
 import ai.rever.boss.config.ChromiumAutoDownloader
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.components.dialogs.ChromiumDownloadContent
 import BossTheme
 import BossDarkBackground
@@ -484,8 +485,7 @@ fun main(args: Array<String>) {
 
 private fun setupNativeLibraryPaths() {
     // Ensure temp directories exist and are set properly
-    val userHome = System.getProperty("user.home")
-    val bossDir = File(userHome, ".boss")
+    val bossDir = BossDirectories.rootDir
     val tempDir = File(bossDir, "temp")
     val pty4jDir = File(tempDir, "pty4j")
     
@@ -512,7 +512,7 @@ private fun setupNativeLibraryPaths() {
     }
     
     // Also set java.io.tmpdir to a proper location
-    if (!System.getProperty("java.io.tmpdir").startsWith(userHome)) {
+    if (!System.getProperty("java.io.tmpdir").startsWith(System.getProperty("user.home"))) {
         System.setProperty("java.io.tmpdir", tempDir.absolutePath)
     }
 }

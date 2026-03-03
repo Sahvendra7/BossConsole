@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import ai.rever.boss.plugin.api.TabIcon
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import java.io.File
 import java.security.MessageDigest
 import javax.imageio.ImageIO
@@ -22,7 +23,7 @@ object FaviconCache {
     private const val CACHE_DIR_NAME = "favicon-cache"
 
     private val cacheDir: File by lazy {
-        val appCacheDir = File(System.getProperty("user.home"), ".boss/cache/$CACHE_DIR_NAME")
+        val appCacheDir = BossDirectories.resolve("cache/$CACHE_DIR_NAME")
         appCacheDir.mkdirs()
         appCacheDir
     }

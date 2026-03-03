@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin
 
 import ai.rever.boss.config.SupabaseClientConfig
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.services.supabase.SupabaseConfig
 import ai.rever.boss.plugin.repository.LocalPluginRepository
 import ai.rever.boss.plugin.repository.PluginRepositoryManager
@@ -54,14 +55,14 @@ object PluginStoreSetup {
      * Local plugin directory (installed plugins).
      */
     private val _pluginDir: File by lazy {
-        File(System.getProperty("user.home"), ".boss/plugins").apply { mkdirs() }
+        BossDirectories.resolve("plugins").apply { mkdirs() }
     }
 
     /**
      * Download cache directory.
      */
     private val _cacheDir: File by lazy {
-        File(System.getProperty("user.home"), ".boss/plugin-cache").apply { mkdirs() }
+        BossDirectories.resolve("plugin-cache").apply { mkdirs() }
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())

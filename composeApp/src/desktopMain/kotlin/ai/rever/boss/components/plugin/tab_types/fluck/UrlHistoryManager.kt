@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +21,7 @@ data class UrlHistoryEntry(
 
 object UrlHistoryManager {
     private val logger = BossLogger.forComponent("UrlHistoryManager")
-    private val historyFile = File(System.getProperty("user.home"), ".boss/browser-history.json")
+    private val historyFile = BossDirectories.resolve("browser-history.json")
     private val history = ConcurrentHashMap<String, UrlHistoryEntry>()
     private val json = Json { 
         prettyPrint = true

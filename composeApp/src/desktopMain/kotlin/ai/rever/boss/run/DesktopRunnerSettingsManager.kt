@@ -1,5 +1,6 @@
 package ai.rever.boss.run
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -24,7 +25,7 @@ import java.io.File
  */
 actual object RunnerSettingsManager {
     private val logger = BossLogger.forComponent("RunnerSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/runner-settings.json")
+    private val settingsFile = BossDirectories.resolve("runner-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

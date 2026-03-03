@@ -16,6 +16,7 @@ import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import ai.rever.boss.plugin.pathutils.BossDirectories
 
 /**
  * Configuration for a panel in a split template.
@@ -68,7 +69,7 @@ data class CustomTemplatesData(
  */
 object SplitTemplatesManager {
     private val logger = BossLogger.forComponent("SplitTemplatesManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/split-templates.json")
+    private val settingsFile = BossDirectories.resolve("split-templates.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

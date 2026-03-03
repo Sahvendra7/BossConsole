@@ -1,5 +1,6 @@
 package ai.rever.boss.components.workspaces
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -19,7 +20,7 @@ import java.io.File
  */
 actual object WorkspaceSettingsManager {
     private val logger = BossLogger.forComponent("WorkspaceSettingsManager")
-    private val settingsFile = File(System.getProperty("user.home"), ".boss/workspace-settings.json")
+    private val settingsFile = BossDirectories.resolve("workspace-settings.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

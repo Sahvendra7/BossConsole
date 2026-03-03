@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.repository.remote
 
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import java.io.File
 import java.security.MessageDigest
 
@@ -14,7 +15,7 @@ import java.security.MessageDigest
  * @param cacheDir Directory to store cached JARs (defaults to ~/.boss/plugin-cache)
  */
 class PluginDownloadCache(
-    private val cacheDir: File = File(System.getProperty("user.home"), ".boss/plugin-cache")
+    private val cacheDir: File = BossDirectories.resolve("plugin-cache")
 ) {
     private val logger = BossLogger.forComponent("PluginDownloadCache")
 

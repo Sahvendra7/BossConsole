@@ -35,6 +35,7 @@ kotlin {
                 implementation(libs.compose.mp.foundation)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
+                implementation(project(":plugins:plugin-path-utils"))
             }
         }
         val desktopMain by getting {
