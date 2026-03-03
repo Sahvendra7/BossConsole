@@ -1,16 +1,20 @@
 package ai.rever.boss.plugin.sandbox
 
 import ai.rever.boss.plugin.api.PanelId
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Global registry that tracks which panels are managed by which sandboxes.
  *
  * This allows the panel rendering code to look up the sandbox for a panel
  * and wrap the content with an error boundary.
+ *
+ * Thread-safe: uses [ConcurrentHashMap] since registration happens on plugin
+ * loading threads while lookups happen on the composition thread.
  */
 object PanelSandboxRegistry {
 
-    private val panelToSandbox = mutableMapOf<String, PluginSandbox>()
+    private val panelToSandbox = ConcurrentHashMap<String, PluginSandbox>()
 
     /**
      * Register a panel with its managing sandbox.

@@ -23,6 +23,9 @@ import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.plugin.api.TabUpdateProvider
 import ai.rever.boss.plugin.api.TabUpdateProviderFactory
+import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
+import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
+import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.plugin.TabUpdateRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
 import ai.rever.boss.components.bookmarks.Bookmark
@@ -753,7 +756,35 @@ fun BossTabsComponent.BossMainPanelContent(
         // Terminal state is preserved by TerminalStateRegistry (keyed by tab ID)
         if (activeTab != null && activeComponent != null) {
             key(activeTab.id) {
-                activeComponent.Content()
+                // Check if this tab type has a sandbox for error boundary wrapping
+                val sandbox = TabSandboxRegistry.getSandbox(activeTab.typeId)
+                if (sandbox != null) {
+                    val logger = BossLogger.forComponent("BossMainPanelContent")
+                    PluginErrorBoundary(
+                        pluginId = sandbox.pluginId,
+                        sandbox = sandbox,
+                        onRestart = {
+                            scope.launch {
+                                val result = sandbox.restart()
+                                if (result.isFailure) {
+                                    logger.error(LogCategory.UI, "Failed to restart plugin", mapOf(
+                                        "pluginId" to sandbox.pluginId,
+                                        "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                                    ))
+                                    StatusMessageManager.showMessage(
+                                        "Failed to restart plugin: ${sandbox.pluginId}",
+                                        durationMs = 5000
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        activeComponent.Content()
+                    }
+                } else {
+                    // No sandbox - render directly (built-in tabs or backwards compatibility)
+                    activeComponent.Content()
+                }
             }
         } else {
             // Show Dashboard when no tabs are open

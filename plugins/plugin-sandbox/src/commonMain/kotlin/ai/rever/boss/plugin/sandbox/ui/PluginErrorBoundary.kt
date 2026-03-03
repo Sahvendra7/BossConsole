@@ -5,11 +5,13 @@ import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 
 /**
  * Composition local for providing an error handler to child composables.
@@ -42,9 +44,11 @@ val LocalPluginSandbox = compositionLocalOf<PluginSandbox?> { null }
  * uncaught exceptions in coroutines launched via `sandboxScope`. These are recorded in health
  * metrics and may trigger watchdog restart.
  *
- * **Limitation**: Compose doesn't have built-in try-catch for composables. Errors thrown directly
- * during composition (e.g., in @Composable functions, not in callbacks) may crash the component
- * and propagate up the composition tree. These are NOT caught by this boundary.
+ * **Layer 3 - Composition crash interception (desktop)**: On desktop platforms, a
+ * [PluginCrashInterceptor] hooks into the global uncaught exception handler to catch errors
+ * thrown during composition (e.g., `NoSuchMethodError` from binary incompatibility). These
+ * errors are attributed to the plugin by inspecting the stack trace and set the error state
+ * in this boundary, showing the fallback UI instead of crashing the app.
  *
  * ## Mitigation Strategies for Plugin Authors
  *
@@ -82,6 +86,28 @@ fun PluginErrorBoundary(
     val logger = remember { BossLogger.forComponent("PluginErrorBoundary") }
 
     var error by remember { mutableStateOf<Throwable?>(null) }
+
+    // Register a composition-scoped crash interceptor to catch errors thrown during
+    // composition (e.g., NoSuchMethodError from binary incompatibility).
+    // Uses expect/actual: on desktop, this hooks into Thread.UncaughtExceptionHandler;
+    // on other platforms, this is a no-op.
+    DisposableEffect(pluginId) {
+        val registration = registerCrashInterceptor(pluginId) { e ->
+            logger.error(LogCategory.UI, "Composition crash intercepted for plugin", mapOf(
+                "pluginId" to pluginId,
+                "errorType" to e.javaClass.simpleName
+            ), e)
+            sandbox.recordError(e)
+            // Callback runs on the UncaughtExceptionHandler thread, not the main thread.
+            // Use Snapshot.withMutableSnapshot to safely mutate Compose state from any thread.
+            Snapshot.withMutableSnapshot {
+                error = e
+            }
+        }
+        onDispose {
+            registration?.invoke()
+        }
+    }
 
     if (error != null) {
         PluginErrorFallback(

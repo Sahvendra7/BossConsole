@@ -378,12 +378,18 @@ object SplitTemplatesManager {
         return try {
             val process = ProcessBuilder("git", "remote", "get-url", "origin")
                 .directory(File(projectPath))
-                .redirectErrorStream(true)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
 
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val url = reader.readLine()?.trim() ?: return "https://google.com"
-            process.waitFor()
+            val exitCode = process.waitFor()
+
+            // Validate: git must succeed and output must look like a URL/remote
+            if (exitCode != 0 || (!url.startsWith("git@") && !url.startsWith("https://") &&
+                        !url.startsWith("http://") && !url.startsWith("ssh://"))) {
+                return "https://google.com"
+            }
 
             // Convert SSH URL to HTTPS if needed
             convertGitUrlToWebUrl(url)

@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeInfo
 import ai.rever.boss.plugin.sandbox.PluginSandbox
+import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import com.arkivanov.decompose.ComponentContext
@@ -31,6 +32,9 @@ class SandboxedTabRegistry(
             "pluginId" to sandbox.pluginId
         ))
 
+        // Register tab type-to-sandbox mapping for error boundary integration
+        TabSandboxRegistry.register(content.typeId, sandbox)
+
         // Wrap the factory with error handling
         val wrappedFactory: (TabInfo, ComponentContext) -> TabComponentWithUI = { tabInfo, ctx ->
             try {
@@ -52,6 +56,9 @@ class SandboxedTabRegistry(
     }
 
     override fun unregisterTabType(typeId: ai.rever.boss.plugin.api.TabTypeId) {
+        // Remove tab type-to-sandbox mapping
+        TabSandboxRegistry.unregister(typeId)
+
         delegate.unregisterTabType(typeId)
     }
 

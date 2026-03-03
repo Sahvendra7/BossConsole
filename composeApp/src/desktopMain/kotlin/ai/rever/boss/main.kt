@@ -63,6 +63,9 @@ fun main(args: Array<String>) {
     // Install crash handler after logger is ready
     ai.rever.boss.crash.CrashHandler.install()
 
+    // Install plugin crash interceptor (chains after CrashHandler to catch plugin-specific crashes)
+    ai.rever.boss.plugin.sandbox.ui.installCrashInterceptor()
+
     logger.info(LogCategory.SYSTEM, "BOSS starting up")
 
     // Single-instance check: ensure only one BOSS instance runs
