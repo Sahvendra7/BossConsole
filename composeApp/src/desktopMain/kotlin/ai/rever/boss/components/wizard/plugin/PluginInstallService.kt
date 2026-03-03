@@ -102,13 +102,13 @@ class PluginInstallService(
 
                 val pluginInfo = pluginWithSource.plugin
 
-                // Download the plugin
-                onProgress(progress + (0.3f / totalPlugins), "Downloading ${plugin.name}...")
-                val targetPath = File(pluginDir, "${plugin.id}-${pluginInfo.version}.jar").absolutePath
-                val downloadResult = repositoryManager.downloadPlugin(plugin.id, pluginInfo.version, targetPath)
-                val jarPath: String? = downloadResult.getOrNull()
+                // Download the latest version of the plugin (pass null for version)
+                onProgress(progress + (0.2f / totalPlugins), "Downloading ${plugin.name}...")
+                val tempPath = File(pluginDir, "${plugin.id}-downloading.jar").absolutePath
+                val downloadResult = repositoryManager.downloadPlugin(plugin.id, null, tempPath)
+                val downloadedPath: String? = downloadResult.getOrNull()
 
-                if (jarPath == null) {
+                if (downloadedPath == null) {
                     val error = downloadResult.exceptionOrNull()?.message ?: "Download failed"
                     logger.error(LogCategory.SYSTEM, "Failed to download plugin", mapOf(
                         "pluginId" to plugin.id,
@@ -118,22 +118,37 @@ class PluginInstallService(
                     continue
                 }
 
+                // Extract manifest to get the actual downloaded version
+                onProgress(progress + (0.4f / totalPlugins), "Extracting manifest for ${plugin.name}...")
+                val manifest = extractManifestFromJar(downloadedPath)
+                val actualVersion = manifest?.version ?: pluginInfo.version
+
+                // Rename to include actual version
+                val finalFile = File(pluginDir, "${plugin.id}-${actualVersion}.jar")
+                val downloadedFile = File(downloadedPath)
+                if (downloadedFile.absolutePath != finalFile.absolutePath) {
+                    if (finalFile.exists()) finalFile.delete()
+                    downloadedFile.renameTo(finalFile)
+                }
+                val jarPath = finalFile.absolutePath
+
                 // Install the plugin
                 onProgress(progress + (0.6f / totalPlugins), "Loading ${plugin.name}...")
                 val installResult = dynamicPluginManager.installPlugin(jarPath, enabled = true)
 
                 if (installResult.isSuccess) {
-                    // Persist the installation
+                    // Persist the installation with actual version
                     PluginPersistence.addInstalledPlugin(
                         pluginId = plugin.id,
                         jarPath = jarPath,
                         enabled = true,
                         sourceUrl = pluginInfo.downloadUrl,
-                        installedVersion = pluginInfo.version
+                        installedVersion = actualVersion
                     )
 
                     logger.info(LogCategory.SYSTEM, "Plugin installed successfully", mapOf(
-                        "pluginId" to plugin.id
+                        "pluginId" to plugin.id,
+                        "version" to actualVersion
                     ))
                     installedIds.add(plugin.id)
                 } else {
@@ -142,6 +157,8 @@ class PluginInstallService(
                         "pluginId" to plugin.id,
                         "error" to error
                     ))
+                    // Clean up the JAR on failed install
+                    finalFile.delete()
                     failedIds.add(plugin.id to error)
                 }
 
