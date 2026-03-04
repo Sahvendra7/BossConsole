@@ -217,9 +217,14 @@ object PluginCrashInterceptor {
         }
 
         // Strategy 3: Resolve stack trace classes via cached plugin classloaders.
-        // Tries each registered plugin classloader to find which one loaded the class,
-        // attributing the error to that plugin.
+        // This is the slow path (O(stackFrames × classloaders) with Class.forName calls).
+        // Strategies 1 and 2 should cover most cases; log when we fall through here.
         if (classLoaderToPluginId.isNotEmpty()) {
+            logger.debug(LogCategory.UI, "Attribution falling through to strategy 3 (classloader resolution)", mapOf(
+                "errorType" to throwable.javaClass.simpleName,
+                "stackDepth" to throwable.stackTrace.size,
+                "loaderCount" to classLoaderToPluginId.size
+            ))
             try {
                 for (element in throwable.stackTrace) {
                     for ((loader, pId) in classLoaderToPluginId) {

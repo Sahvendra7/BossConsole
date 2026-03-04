@@ -32,11 +32,15 @@ val LocalPluginErrorHandler = compositionLocalOf<(Throwable) -> Unit> { { } }
 object PluginCrashRegistry {
     private val logger = BossLogger.forComponent("PluginCrashRegistry")
 
-    private val _crashedPlugins = mutableStateOf(mapOf<String, Throwable>())
+    /** Thread-safe tracking store for crashed plugins. Used by watchdog and non-UI queries. */
+    private val _crashedPluginsMap = ConcurrentHashMap<String, Throwable>()
 
-    /** Map of pluginId to the error that crashed it. @Composable to establish snapshot read dependency for recomposition. */
+    /** Compose-observable state, only mutated on EDT via invokeLater. */
+    private val _crashedPluginsState = mutableStateOf(mapOf<String, Throwable>())
+
+    /** @Composable to establish snapshot read dependency for recomposition. */
     val crashedPlugins: Map<String, Throwable>
-        @Composable get() = _crashedPlugins.value
+        @Composable get() = _crashedPluginsState.value
 
     /**
      * Thread-safe mapping of pluginId → (tabId, closeAction).
@@ -79,8 +83,9 @@ object PluginCrashRegistry {
      * and shows a status message notification.
      */
     fun recordCrash(pluginId: String, error: Throwable) {
-        // Store crash info (kept for watchdog / tracking)
-        _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
+        // Store crash info in thread-safe map (for watchdog / non-UI tracking).
+        // This runs on the crashing thread — ConcurrentHashMap is safe here.
+        _crashedPluginsMap[pluginId] = error
 
         val mapping = activeTabMappings[pluginId]
 
@@ -101,27 +106,30 @@ object PluginCrashRegistry {
                         "pluginId" to pluginId
                     ), e)
                 }
-                _crashedPlugins.value = _crashedPlugins.value - pluginId
+                _crashedPluginsMap.remove(pluginId)
+                _crashedPluginsState.value = _crashedPluginsMap.toMap()
                 onCrashNotify?.invoke(pluginId, error)
             }
         } else {
             logger.warn(LogCategory.UI, "Cannot close crashed tab — no active tab registered", mapOf(
                 "pluginId" to pluginId
             ))
-            // Fallback: force repaint so any composable reading crashedPlugins can react
+            // Sync Compose state on EDT, then force repaint as fallback
             javax.swing.SwingUtilities.invokeLater {
+                _crashedPluginsState.value = _crashedPluginsMap.toMap()
                 java.awt.Window.getWindows().forEach { it.repaint() }
             }
         }
     }
 
-    /** Clear crash state for a plugin (e.g., after restart or tab close). */
+    /** Clear crash state for a plugin (e.g., after restart or tab close). Safe to call from EDT. */
     fun clearCrash(pluginId: String) {
-        _crashedPlugins.value = _crashedPlugins.value - pluginId
+        _crashedPluginsMap.remove(pluginId)
+        _crashedPluginsState.value = _crashedPluginsMap.toMap()
     }
 
-    /** Check if a plugin has crashed (non-composable). */
-    fun hasCrashed(pluginId: String): Boolean = _crashedPlugins.value.containsKey(pluginId)
+    /** Check if a plugin has crashed (non-composable, thread-safe). */
+    fun hasCrashed(pluginId: String): Boolean = _crashedPluginsMap.containsKey(pluginId)
 }
 
 /**
