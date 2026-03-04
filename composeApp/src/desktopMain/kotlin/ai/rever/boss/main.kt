@@ -31,7 +31,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowExceptionHandler
+import androidx.compose.ui.window.WindowExceptionHandlerFactory
+import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -302,6 +306,39 @@ fun main(args: Array<String>) {
     }
 
     application {
+        // Provide a custom WindowExceptionHandlerFactory that intercepts plugin crashes
+        // during composition. Compose's default factory shows an error dialog and disposes
+        // the window, which bypasses our UncaughtExceptionHandler-based interceptor.
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        val pluginAwareExceptionHandlerFactory = run {
+            val defaultFactory = LocalWindowExceptionHandlerFactory.current
+            object : WindowExceptionHandlerFactory {
+                override fun exceptionHandler(window: java.awt.Window): WindowExceptionHandler {
+                    val defaultHandler = defaultFactory.exceptionHandler(window)
+                    return WindowExceptionHandler { throwable ->
+                        val pluginId = ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
+                            .attributeToPlugin(throwable)
+                        if (pluginId != null) {
+                            // Plugin crash — let the interceptor handle it (sets error state
+                            // in PluginErrorBoundary to show fallback UI)
+                            logger.warn(LogCategory.SYSTEM,
+                                "Compose exception intercepted for plugin",
+                                mapOf("pluginId" to pluginId,
+                                    "errorType" to throwable.javaClass.simpleName))
+                            ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
+                                .tryHandle(pluginId, throwable)
+                        } else {
+                            // Not a plugin crash — delegate to default (shows error dialog)
+                            defaultHandler.onException(throwable)
+                        }
+                    }
+                }
+            }
+        }
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        CompositionLocalProvider(
+            LocalWindowExceptionHandlerFactory provides pluginAwareExceptionHandlerFactory
+        ) {
         // State for Chromium download
         var isDownloadingChromium by remember { mutableStateOf(chromiumNeedsDownload) }
         var downloadProgress by remember {
@@ -480,6 +517,7 @@ fun main(args: Array<String>) {
                 }
             }
         }
+        } // CompositionLocalProvider
     }
 }
 

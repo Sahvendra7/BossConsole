@@ -87,12 +87,13 @@ fun PluginErrorBoundary(
 
     var error by remember { mutableStateOf<Throwable?>(null) }
 
-    // Register a composition-scoped crash interceptor to catch errors thrown during
-    // composition (e.g., NoSuchMethodError from binary incompatibility).
-    // Uses expect/actual: on desktop, this hooks into Thread.UncaughtExceptionHandler;
-    // on other platforms, this is a no-op.
-    DisposableEffect(pluginId) {
-        val registration = registerCrashInterceptor(pluginId) { e ->
+    // Register crash interceptor eagerly during composition via remember{} so it's
+    // active BEFORE content() is invoked. DisposableEffect fires too late — only after
+    // the first successful composition — but crashes like NoSuchMethodError happen
+    // DURING the first composition of content(). Uses expect/actual: on desktop, this
+    // hooks into Thread.UncaughtExceptionHandler; on other platforms, this is a no-op.
+    val crashRegistration = remember(pluginId) {
+        registerCrashInterceptor(pluginId) { e ->
             logger.error(LogCategory.UI, "Composition crash intercepted for plugin", mapOf(
                 "pluginId" to pluginId,
                 "errorType" to e.javaClass.simpleName
@@ -104,8 +105,10 @@ fun PluginErrorBoundary(
                 error = e
             }
         }
+    }
+    DisposableEffect(pluginId) {
         onDispose {
-            registration?.invoke()
+            crashRegistration?.invoke()
         }
     }
 

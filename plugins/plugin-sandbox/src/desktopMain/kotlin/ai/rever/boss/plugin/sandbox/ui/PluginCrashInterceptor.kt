@@ -144,6 +144,34 @@ object PluginCrashInterceptor {
     }
 
     /**
+     * Handle a crash attributed to a specific plugin.
+     *
+     * Called by the custom [WindowExceptionHandlerFactory] in main.kt when Compose catches
+     * a composition error and [attributeToPlugin] identifies the responsible plugin.
+     *
+     * @return true if the callback was invoked successfully
+     */
+    fun tryHandle(pluginId: String, throwable: Throwable): Boolean {
+        val callback = interceptors[pluginId] ?: return false
+
+        logger.warn(LogCategory.SYSTEM, "Handling plugin crash via WindowExceptionHandler", mapOf(
+            "pluginId" to pluginId,
+            "errorType" to throwable.javaClass.simpleName,
+            "message" to (throwable.message ?: "no message")
+        ))
+
+        return try {
+            callback(throwable)
+            true
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "Error in plugin crash callback", mapOf(
+                "pluginId" to pluginId
+            ), e)
+            false
+        }
+    }
+
+    /**
      * Register a classloader-to-pluginId mapping.
      *
      * Called by plugin loading infrastructure to pre-cache the mapping,
