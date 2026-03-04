@@ -107,7 +107,8 @@ class BossDirectoriesTest {
         fun `resolve handles nested paths`() {
             val resolved = BossDirectories.resolve("cache/favicons")
             assertTrue(resolved.absolutePath.startsWith(BossDirectories.rootDir.absolutePath))
-            assertTrue(resolved.absolutePath.endsWith("cache/favicons"))
+            val expected = "cache" + java.io.File.separator + "favicons"
+            assertTrue(resolved.absolutePath.endsWith(expected))
         }
     }
 
