@@ -63,7 +63,6 @@ class LspSettingsManager private constructor() {
     val configuration: StateFlow<LspConfiguration> = _configuration.asStateFlow()
 
     private val settingsFile: File by lazy {
-        BossDirectories.rootDir.mkdirs()
         BossDirectories.resolve("lsp-settings.json")
     }
 
