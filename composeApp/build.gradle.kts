@@ -554,7 +554,8 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
-            implementation("com.risaboss:bosseditor-compose-desktop:1.0.3")
+            // BossEditor: external code editor library (resolves from Maven Central)
+            implementation(libs.bosseditor.compose.desktop)
             // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
             // Everything else comes from boss-plugin-api bundled plugin
             implementation(projects.plugins.pluginApiCore)
