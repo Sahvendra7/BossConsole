@@ -46,6 +46,10 @@ object PluginCrashRegistry {
     fun recordCrash(pluginId: String, error: Throwable) {
         javax.swing.SwingUtilities.invokeLater {
             _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
+            // Force all windows to repaint so Compose picks up the state change.
+            // After a composition crash, the corrupted SubcomposeLayout slot won't
+            // request a new frame on its own — we must force it.
+            java.awt.Window.getWindows().forEach { it.repaint() }
         }
     }
 
