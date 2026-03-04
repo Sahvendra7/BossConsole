@@ -229,7 +229,7 @@ object PluginCrashInterceptor {
                         } catch (_: Throwable) {
                             null
                         }
-                        if (clazz != null) {
+                        if (clazz != null && clazz.classLoader == loader) {
                             return pId
                         }
                     }

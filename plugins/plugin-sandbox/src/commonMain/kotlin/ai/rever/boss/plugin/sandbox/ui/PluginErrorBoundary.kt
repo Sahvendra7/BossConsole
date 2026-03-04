@@ -11,7 +11,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.Snapshot
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -35,7 +34,7 @@ object PluginCrashRegistry {
 
     private val _crashedPlugins = mutableStateOf(mapOf<String, Throwable>())
 
-    /** Map of pluginId to the error that crashed it. Read this in composables to react to crashes. */
+    /** Map of pluginId to the error that crashed it. @Composable to establish snapshot read dependency for recomposition. */
     val crashedPlugins: Map<String, Throwable>
         @Composable get() = _crashedPlugins.value
 

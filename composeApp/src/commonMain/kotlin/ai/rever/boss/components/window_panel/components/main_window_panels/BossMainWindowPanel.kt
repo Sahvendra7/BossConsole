@@ -780,9 +780,10 @@ fun BossTabsComponent.BossMainPanelContent(
                 }
             }
 
+            val pluginLogger = if (sandbox != null) remember { BossLogger.forComponent("BossMainPanelContent") } else null
+
             key(activeTab.id) {
                 if (sandbox != null) {
-                    val logger = BossLogger.forComponent("BossMainPanelContent")
                     PluginErrorBoundary(
                         pluginId = sandbox.pluginId,
                         sandbox = sandbox,
@@ -790,7 +791,7 @@ fun BossTabsComponent.BossMainPanelContent(
                             scope.launch {
                                 val result = sandbox.restart()
                                 if (result.isFailure) {
-                                    logger.error(LogCategory.UI, "Failed to restart plugin", mapOf(
+                                    pluginLogger?.error(LogCategory.UI, "Failed to restart plugin", mapOf(
                                         "pluginId" to sandbox.pluginId,
                                         "error" to (result.exceptionOrNull()?.message ?: "unknown")
                                     ))
