@@ -51,6 +51,7 @@ object PluginCrashRegistry {
      * Registered by the composeApp module to show a status message.
      * Parameters: (pluginId, error).
      */
+    @Volatile
     var onCrashNotify: ((pluginId: String, error: Throwable) -> Unit)? = null
 
     /**
@@ -93,7 +94,13 @@ object PluginCrashRegistry {
                     "pluginId" to pluginId,
                     "tabId" to tabId
                 ))
-                closeAction()
+                try {
+                    closeAction()
+                } catch (e: Throwable) {
+                    logger.warn(LogCategory.UI, "closeAction threw during crash cleanup", mapOf(
+                        "pluginId" to pluginId
+                    ), e)
+                }
                 _crashedPlugins.value = _crashedPlugins.value - pluginId
                 onCrashNotify?.invoke(pluginId, error)
             }

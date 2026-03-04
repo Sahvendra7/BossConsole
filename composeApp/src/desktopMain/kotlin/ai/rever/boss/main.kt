@@ -321,17 +321,18 @@ fun main(args: Array<String>) {
         // during composition. Compose's default factory shows an error dialog and disposes
         // the window, which bypasses our UncaughtExceptionHandler-based interceptor.
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-        val pluginAwareExceptionHandlerFactory = run {
-            val defaultFactory = LocalWindowExceptionHandlerFactory.current
+        val defaultExceptionHandlerFactory = LocalWindowExceptionHandlerFactory.current
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        val pluginAwareExceptionHandlerFactory = remember(defaultExceptionHandlerFactory) {
             object : WindowExceptionHandlerFactory {
                 override fun exceptionHandler(window: java.awt.Window): WindowExceptionHandler {
-                    val defaultHandler = defaultFactory.exceptionHandler(window)
+                    val defaultHandler = defaultExceptionHandlerFactory.exceptionHandler(window)
                     return WindowExceptionHandler { throwable ->
                         val pluginId = ai.rever.boss.plugin.sandbox.ui.PluginCrashInterceptor
                             .attributeToPlugin(throwable)
                         if (pluginId != null) {
-                            // Plugin crash — let the interceptor handle it (sets error state
-                            // in PluginErrorBoundary to show fallback UI)
+                            // Plugin crash — let the interceptor handle it (closes tab,
+                            // shows status message)
                             logger.warn(LogCategory.SYSTEM,
                                 "Compose exception intercepted for plugin",
                                 mapOf("pluginId" to pluginId,
