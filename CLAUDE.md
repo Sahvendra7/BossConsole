@@ -29,10 +29,12 @@ BOSS (Business Operating System Service) is a desktop application built with Kot
 
 ### Module Structure
 - **`composeApp/`** - Main Compose Multiplatform UI application
-- **`bosseditor/`** - Standalone code editor with LSP and PSI support
 - **`server/`** - Minimal Ktor server component
 - **`shared/`** - Shared business logic
 - **`supabase/`** - Database migrations and Edge Functions
+
+### External Dependencies
+- **BossEditor** (`com.risaboss:bosseditor-compose-desktop`) - Standalone code editor with LSP and PSI support (see [docs/BOSSEDITOR.md](docs/BOSSEDITOR.md))
 
 ### Key Technologies
 - Kotlin Multiplatform + Compose Multiplatform
@@ -116,7 +118,7 @@ App registers `boss://` protocol for authentication callbacks from external brow
 ## Documentation
 
 - [Core Subsystems](docs/SUBSYSTEMS.md) - Auth, UI, keyboard shortcuts, threading, default browser, runner, BossTerm
-- [BossEditor Module](docs/BOSSEDITOR.md) - LSP, PSI, editor features
+- [BossEditor](docs/BOSSEDITOR.md) - External editor dependency, LSP, PSI, editor features
 - [Application Features](docs/FEATURES.md) - Performance monitoring, dashboard, downloads, Chromium branding
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference
 - [Threading Best Practices](docs/THREADING.md) - Threading patterns and pitfalls

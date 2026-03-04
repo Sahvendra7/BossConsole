@@ -554,7 +554,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
-            implementation(projects.bosseditor)
+            implementation("com.risaboss:bosseditor-compose-desktop:1.0.3")
             // Minimal plugin-api-core (PluginContext, DynamicPlugin, PluginManifest)
             // Everything else comes from boss-plugin-api bundled plugin
             implementation(projects.plugins.pluginApiCore)

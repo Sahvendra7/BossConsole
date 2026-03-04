@@ -33,8 +33,6 @@ dependencyResolutionManagement {
 include(":composeApp")
 include(":server")
 include(":shared")
-include(":bosseditor")
-
 // Plugin modules
 // plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
 // Everything else comes from boss-plugin-api bundled plugin
