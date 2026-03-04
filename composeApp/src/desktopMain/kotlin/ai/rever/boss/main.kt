@@ -71,6 +71,17 @@ fun main(args: Array<String>) {
     // Install plugin crash interceptor (chains after CrashHandler to catch plugin-specific crashes)
     ai.rever.boss.plugin.sandbox.ui.installCrashInterceptor()
 
+    // Register notification callback for plugin crashes.
+    // Tab closing is handled directly by PluginCrashRegistry via the closeAction
+    // registered in BossMainPanelContent. This callback only shows the status message.
+    ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry.onCrashNotify = { pluginId, error ->
+        val errorMsg = error.message?.take(60) ?: error.javaClass.simpleName
+        ai.rever.boss.components.bars.horizontal.StatusMessageManager.showMessage(
+            "Plugin '$pluginId' crashed: $errorMsg",
+            durationMs = 8000
+        )
+    }
+
     logger.info(LogCategory.SYSTEM, "BOSS starting up")
 
     // Single-instance check: ensure only one BOSS instance runs

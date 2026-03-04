@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Composition local for providing an error handler to child composables.
@@ -30,6 +31,8 @@ val LocalPluginErrorHandler = compositionLocalOf<(Throwable) -> Unit> { { } }
  * allowing PluginErrorBoundary to show the fallback UI in a fresh composition.
  */
 object PluginCrashRegistry {
+    private val logger = BossLogger.forComponent("PluginCrashRegistry")
+
     private val _crashedPlugins = mutableStateOf(mapOf<String, Throwable>())
 
     /** Map of pluginId to the error that crashed it. Read this in composables to react to crashes. */
@@ -37,23 +40,76 @@ object PluginCrashRegistry {
         @Composable get() = _crashedPlugins.value
 
     /**
-     * Record a crash for a plugin. Defers the state mutation to after the current
-     * render frame completes via SwingUtilities.invokeLater, because this is called
-     * from Compose's WindowExceptionHandler during an active render pass. Mutating
-     * snapshot state during a render pass doesn't trigger recomposition reliably,
-     * especially when SubcomposeLayout compositions are corrupted.
+     * Thread-safe mapping of pluginId → (tabId, closeAction).
+     * The closeAction directly calls removeTabById() on the owning BossTabsComponent,
+     * avoiding dependency on SplitViewStateRegistry (which may not be populated during
+     * the first composition frame when crashes typically occur).
+     */
+    private val activeTabMappings = ConcurrentHashMap<String, Pair<String, () -> Unit>>()
+
+    /**
+     * Notification callback invoked (on EDT via invokeLater) after a crashed tab is closed.
+     * Registered by the composeApp module to show a status message.
+     * Parameters: (pluginId, error).
+     */
+    var onCrashNotify: ((pluginId: String, error: Throwable) -> Unit)? = null
+
+    /**
+     * Register the active tab for a plugin with a direct close callback.
+     * Called from BossMainPanelContent during composition (via remember{}),
+     * BEFORE PluginErrorBoundary renders content. The closeAction captures
+     * a direct reference to the owning BossTabsComponent.removeTabById(),
+     * so it works even before SplitViewStateRegistry is populated.
+     */
+    fun registerActiveTab(pluginId: String, tabId: String, closeAction: () -> Unit) {
+        activeTabMappings[pluginId] = tabId to closeAction
+    }
+
+    /** Unregister the active tab mapping for a plugin (called on dispose). */
+    fun unregisterActiveTab(pluginId: String) {
+        activeTabMappings.remove(pluginId)
+    }
+
+    /**
+     * Record a crash for a plugin. Defers to SwingUtilities.invokeLater because this
+     * is called from the uncaught exception handler during an active render pass.
+     *
+     * Instead of trying to recompose inside the corrupted SubcomposeLayout, this
+     * closes the crashed tab via Decompose navigation (which lives outside Compose)
+     * and shows a status message notification.
      */
     fun recordCrash(pluginId: String, error: Throwable) {
-        javax.swing.SwingUtilities.invokeLater {
-            _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
-            // Force all windows to repaint so Compose picks up the state change.
-            // After a composition crash, the corrupted SubcomposeLayout slot won't
-            // request a new frame on its own — we must force it.
-            java.awt.Window.getWindows().forEach { it.repaint() }
+        // Store crash info (kept for watchdog / tracking)
+        _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
+
+        val mapping = activeTabMappings[pluginId]
+
+        if (mapping != null) {
+            val (tabId, closeAction) = mapping
+            // Close the crashed tab via Decompose navigation on the EDT.
+            // closeAction directly calls BossTabsComponent.removeTabById(),
+            // bypassing the corrupted SubcomposeLayout entirely.
+            javax.swing.SwingUtilities.invokeLater {
+                logger.info(LogCategory.UI, "Closing crashed plugin tab", mapOf(
+                    "pluginId" to pluginId,
+                    "tabId" to tabId
+                ))
+                closeAction()
+                _crashedPlugins.value = _crashedPlugins.value - pluginId
+                onCrashNotify?.invoke(pluginId, error)
+            }
+        } else {
+            logger.warn(LogCategory.UI, "Cannot close crashed tab — no active tab registered", mapOf(
+                "pluginId" to pluginId
+            ))
+            // Fallback: force repaint so any composable reading crashedPlugins can react
+            javax.swing.SwingUtilities.invokeLater {
+                java.awt.Window.getWindows().forEach { it.repaint() }
+            }
         }
     }
 
-    /** Clear crash state for a plugin (e.g., after restart). */
+    /** Clear crash state for a plugin (e.g., after restart or tab close). */
     fun clearCrash(pluginId: String) {
         _crashedPlugins.value = _crashedPlugins.value - pluginId
     }
