@@ -158,11 +158,8 @@ object PluginCrashInterceptor {
      *
      * Checks for:
      * 1. Thread name containing plugin sandbox identifier (`plugin-sandbox-<pluginId>`)
-     * 2. Stack frame classloaders against the pre-cached classloader-to-pluginId map
-     *
-     * Note: Strategy 2 uses classloaders already resolved by the JVM for loaded classes
-     * (via [Class.getClassLoader]), not [Class.forName]. This is safe during exception
-     * handling because it only inspects already-loaded classes on the stack.
+     * 2. Stack frame class names matching registered plugin package prefixes
+     * 3. Stack frame classloaders resolved via cached plugin classloaders
      *
      * @return The plugin ID if attributed, null otherwise
      */
@@ -175,23 +172,38 @@ object PluginCrashInterceptor {
             }
         }
 
-        // Strategy 2: Check classloaders of stack trace classes against cached mappings.
-        // Uses the throwing exception's stack trace classes which are already loaded —
-        // Class.forName with initialize=false only resolves, it doesn't trigger <clinit>.
-        // However, even that can fail in edge cases, so we only look up classes that
-        // are already in the JVM's loaded class table via the cached classloader map.
+        // Strategy 2: Match stack trace class names against registered plugin package prefixes.
+        // Plugin classes follow the convention ai.rever.boss.plugin.dynamic.<shortId>.* where
+        // the pluginId is ai.rever.boss.plugin.dynamic.<shortId>. This is a fast string
+        // comparison that avoids class loading entirely.
+        try {
+            for (element in throwable.stackTrace) {
+                for (pluginId in interceptors.keys) {
+                    if (element.className.startsWith("$pluginId.")) {
+                        return pluginId
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // Don't let attribution itself crash
+        }
+
+        // Strategy 3: Resolve stack trace classes via cached plugin classloaders.
+        // Tries each registered plugin classloader to find which one loaded the class,
+        // attributing the error to that plugin.
         if (classLoaderToPluginId.isNotEmpty()) {
             try {
                 for (element in throwable.stackTrace) {
-                    val clazz = try {
-                        Class.forName(element.className, false, null)
-                    } catch (_: Throwable) {
-                        null
-                    }
-                    val classLoader = clazz?.classLoader ?: continue
-                    val pluginId = classLoaderToPluginId[classLoader]
-                    if (pluginId != null && interceptors.containsKey(pluginId)) {
-                        return pluginId
+                    for ((loader, pId) in classLoaderToPluginId) {
+                        if (!interceptors.containsKey(pId)) continue
+                        val clazz = try {
+                            Class.forName(element.className, false, loader)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (clazz != null) {
+                            return pId
+                        }
                     }
                 }
             } catch (_: Throwable) {
