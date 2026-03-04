@@ -22,6 +22,37 @@ import androidx.compose.runtime.snapshots.Snapshot
 val LocalPluginErrorHandler = compositionLocalOf<(Throwable) -> Unit> { { } }
 
 /**
+ * Tracks which plugins have crashed during composition.
+ *
+ * When a plugin crashes during composition (e.g., NoSuchMethodError), the SubcomposeLayout
+ * tree is left corrupted and can't recompose. This registry is read at a level ABOVE the
+ * corrupted tree (in BossMainPanelContent's key()) to force a complete teardown and rebuild,
+ * allowing PluginErrorBoundary to show the fallback UI in a fresh composition.
+ */
+object PluginCrashRegistry {
+    private val _crashedPlugins = mutableStateOf(mapOf<String, Throwable>())
+
+    /** Map of pluginId to the error that crashed it. Read this in composables to react to crashes. */
+    val crashedPlugins: Map<String, Throwable>
+        @Composable get() = _crashedPlugins.value
+
+    /** Record a crash for a plugin. Triggers recomposition of any composable reading [crashedPlugins]. */
+    fun recordCrash(pluginId: String, error: Throwable) {
+        Snapshot.withMutableSnapshot {
+            _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
+        }
+    }
+
+    /** Clear crash state for a plugin (e.g., after restart). */
+    fun clearCrash(pluginId: String) {
+        _crashedPlugins.value = _crashedPlugins.value - pluginId
+    }
+
+    /** Check if a plugin has crashed (non-composable). */
+    fun hasCrashed(pluginId: String): Boolean = _crashedPlugins.value.containsKey(pluginId)
+}
+
+/**
  * Composition local for providing the plugin sandbox to child composables.
  */
 val LocalPluginSandbox = compositionLocalOf<PluginSandbox?> { null }
@@ -99,11 +130,11 @@ fun PluginErrorBoundary(
                 "errorType" to e.javaClass.simpleName
             ), e)
             sandbox.recordError(e)
-            // Callback runs on the UncaughtExceptionHandler thread, not the main thread.
-            // Use Snapshot.withMutableSnapshot to safely mutate Compose state from any thread.
-            Snapshot.withMutableSnapshot {
-                error = e
-            }
+            // Record in the crash registry so the parent (BossMainPanelContent) can
+            // force a full subtree rebuild via key() change. This is necessary because
+            // after a composition crash, the SubcomposeLayout tree is corrupted and
+            // can't recompose in-place — we need the parent to tear it down entirely.
+            PluginCrashRegistry.recordCrash(pluginId, e)
         }
     }
     DisposableEffect(pluginId) {
@@ -112,15 +143,23 @@ fun PluginErrorBoundary(
         }
     }
 
-    if (error != null) {
+    // Check both local error state and the crash registry.
+    // The registry is populated by the crash interceptor for composition crashes
+    // that corrupt the SubcomposeLayout tree. When the parent rebuilds the tree
+    // (via key() change), this boundary is recreated fresh and reads from the registry.
+    val registryCrash = PluginCrashRegistry.crashedPlugins[pluginId]
+    val activeError = error ?: registryCrash
+
+    if (activeError != null) {
         PluginErrorFallback(
             pluginId = pluginId,
-            error = error!!,
+            error = activeError,
             onRestart = {
                 logger.info(LogCategory.UI, "User requested plugin restart", mapOf(
                     "pluginId" to pluginId
                 ))
                 error = null
+                PluginCrashRegistry.clearCrash(pluginId)
                 onRestart()
             },
             onDismiss = {
@@ -128,6 +167,7 @@ fun PluginErrorBoundary(
                     "pluginId" to pluginId
                 ))
                 error = null
+                PluginCrashRegistry.clearCrash(pluginId)
             }
         )
     } else {

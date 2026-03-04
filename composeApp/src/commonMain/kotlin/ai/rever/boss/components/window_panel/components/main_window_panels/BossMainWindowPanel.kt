@@ -24,6 +24,7 @@ import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.plugin.api.TabUpdateProvider
 import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.plugin.TabUpdateRegistry
@@ -755,7 +756,12 @@ fun BossTabsComponent.BossMainPanelContent(
         // Only render the active tab - hidden tabs would still receive input
         // Terminal state is preserved by TerminalStateRegistry (keyed by tab ID)
         if (activeTab != null && activeComponent != null) {
-            key(activeTab.id) {
+            // Include crash registry state in key so that when a plugin crashes during
+            // composition (corrupting the SubcomposeLayout tree), the entire subtree is
+            // torn down and rebuilt fresh, allowing PluginErrorBoundary to show fallback UI.
+            val crashState = PluginCrashRegistry.crashedPlugins
+            val crashKey = crashState[TabSandboxRegistry.getSandbox(activeTab.typeId)?.pluginId]
+            key(activeTab.id, crashKey != null) {
                 // Check if this tab type has a sandbox for error boundary wrapping
                 val sandbox = TabSandboxRegistry.getSandbox(activeTab.typeId)
                 if (sandbox != null) {
