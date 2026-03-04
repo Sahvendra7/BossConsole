@@ -36,9 +36,15 @@ object PluginCrashRegistry {
     val crashedPlugins: Map<String, Throwable>
         @Composable get() = _crashedPlugins.value
 
-    /** Record a crash for a plugin. Triggers recomposition of any composable reading [crashedPlugins]. */
+    /**
+     * Record a crash for a plugin. Defers the state mutation to after the current
+     * render frame completes via SwingUtilities.invokeLater, because this is called
+     * from Compose's WindowExceptionHandler during an active render pass. Mutating
+     * snapshot state during a render pass doesn't trigger recomposition reliably,
+     * especially when SubcomposeLayout compositions are corrupted.
+     */
     fun recordCrash(pluginId: String, error: Throwable) {
-        Snapshot.withMutableSnapshot {
+        javax.swing.SwingUtilities.invokeLater {
             _crashedPlugins.value = _crashedPlugins.value + (pluginId to error)
         }
     }
