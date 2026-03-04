@@ -26,6 +26,7 @@ import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
+import ai.rever.boss.plugin.sandbox.ui.PluginErrorFallback
 import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.plugin.TabUpdateRegistry
 import ai.rever.boss.components.tabs_navigation.TabsNavigation
@@ -756,40 +757,69 @@ fun BossTabsComponent.BossMainPanelContent(
         // Only render the active tab - hidden tabs would still receive input
         // Terminal state is preserved by TerminalStateRegistry (keyed by tab ID)
         if (activeTab != null && activeComponent != null) {
-            // Include crash registry state in key so that when a plugin crashes during
-            // composition (corrupting the SubcomposeLayout tree), the entire subtree is
-            // torn down and rebuilt fresh, allowing PluginErrorBoundary to show fallback UI.
-            val crashState = PluginCrashRegistry.crashedPlugins
-            val crashKey = crashState[TabSandboxRegistry.getSandbox(activeTab.typeId)?.pluginId]
-            key(activeTab.id, crashKey != null) {
-                // Check if this tab type has a sandbox for error boundary wrapping
-                val sandbox = TabSandboxRegistry.getSandbox(activeTab.typeId)
-                if (sandbox != null) {
-                    val logger = BossLogger.forComponent("BossMainPanelContent")
-                    PluginErrorBoundary(
-                        pluginId = sandbox.pluginId,
-                        sandbox = sandbox,
-                        onRestart = {
-                            scope.launch {
-                                val result = sandbox.restart()
-                                if (result.isFailure) {
-                                    logger.error(LogCategory.UI, "Failed to restart plugin", mapOf(
-                                        "pluginId" to sandbox.pluginId,
-                                        "error" to (result.exceptionOrNull()?.message ?: "unknown")
-                                    ))
-                                    StatusMessageManager.showMessage(
-                                        "Failed to restart plugin: ${sandbox.pluginId}",
-                                        durationMs = 5000
-                                    )
-                                }
+            val sandbox = TabSandboxRegistry.getSandbox(activeTab.typeId)
+            // Check crash registry BEFORE entering PluginErrorBoundary/SubcomposeLayout.
+            // After a composition crash, the SubcomposeLayout tree is corrupted and can't
+            // recompose. By checking here (above the corrupted tree), the PluginCrashRegistry
+            // state change triggers a recomposition at this level, showing fallback directly.
+            val crashedError = if (sandbox != null) PluginCrashRegistry.crashedPlugins[sandbox.pluginId] else null
+
+            if (crashedError != null && sandbox != null) {
+                // Plugin crashed during composition — show fallback directly, bypassing
+                // the corrupted SubcomposeLayout tree entirely.
+                PluginErrorFallback(
+                    pluginId = sandbox.pluginId,
+                    error = crashedError,
+                    onRestart = {
+                        scope.launch {
+                            PluginCrashRegistry.clearCrash(sandbox.pluginId)
+                            val result = sandbox.restart()
+                            if (result.isFailure) {
+                                val logger = BossLogger.forComponent("BossMainPanelContent")
+                                logger.error(LogCategory.UI, "Failed to restart plugin", mapOf(
+                                    "pluginId" to sandbox.pluginId,
+                                    "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                                ))
+                                StatusMessageManager.showMessage(
+                                    "Failed to restart plugin: ${sandbox.pluginId}",
+                                    durationMs = 5000
+                                )
                             }
                         }
-                    ) {
+                    },
+                    onDismiss = {
+                        PluginCrashRegistry.clearCrash(sandbox.pluginId)
+                    }
+                )
+            } else {
+                key(activeTab.id) {
+                    if (sandbox != null) {
+                        val logger = BossLogger.forComponent("BossMainPanelContent")
+                        PluginErrorBoundary(
+                            pluginId = sandbox.pluginId,
+                            sandbox = sandbox,
+                            onRestart = {
+                                scope.launch {
+                                    val result = sandbox.restart()
+                                    if (result.isFailure) {
+                                        logger.error(LogCategory.UI, "Failed to restart plugin", mapOf(
+                                            "pluginId" to sandbox.pluginId,
+                                            "error" to (result.exceptionOrNull()?.message ?: "unknown")
+                                        ))
+                                        StatusMessageManager.showMessage(
+                                            "Failed to restart plugin: ${sandbox.pluginId}",
+                                            durationMs = 5000
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            activeComponent.Content()
+                        }
+                    } else {
+                        // No sandbox - render directly (built-in tabs or backwards compatibility)
                         activeComponent.Content()
                     }
-                } else {
-                    // No sandbox - render directly (built-in tabs or backwards compatibility)
-                    activeComponent.Content()
                 }
             }
         } else {
