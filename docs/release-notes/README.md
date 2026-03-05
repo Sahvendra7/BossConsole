@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.7](v8.17.7.md) | 2026-03-05 | Plugin crash sandboxing with PluginCrashRegistry, centralized .boss data directory via BossDirectories, and BossEditor migrated to Maven artifact |
 | [v8.17.6](v8.17.6.md) | 2026-03-02 | macOS fullscreen close fix, deprecated plugin-api module removed, and CI/CD dependency updates |
 | [v8.17.5](v8.17.5.md) | 2026-02-21 | Complete plugin API parity closing all 42 gaps across editor, terminal, and platform categories, plus installed plugin version tracking fix |
 | [v8.17.4](v8.17.4.md) | 2026-02-19 | Browser find-in-page (Cmd+F) and paste-without-formatting (Cmd+Shift+V), Supabase Realtime for live plugin store updates, and HYBRID plugin type fix |
