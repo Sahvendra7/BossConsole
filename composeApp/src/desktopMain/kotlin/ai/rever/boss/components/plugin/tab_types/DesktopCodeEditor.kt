@@ -59,18 +59,19 @@ actual fun writeFileContent(filePath: String, content: String): Boolean {
     }
 }
 
-// Actual implementations that use the settings
-actual fun getCodeEditorFontSize(): Int = CodeEditorSettings.fontSize
-actual fun getCodeEditorFontFamily(): FontFamily = CodeEditorSettings.getFontFamily()
-actual fun getCodeEditorBackgroundColor(): Color = CodeEditorSettings.getBackgroundColor()
-actual fun getCodeEditorTextColor(): Color = CodeEditorSettings.getTextColor()
-actual fun getCodeEditorLineNumberColor(): Color = CodeEditorSettings.getLineNumberColor()
-actual fun getCodeEditorLineNumberBgColor(): Color = CodeEditorSettings.getLineNumberBgColor()
-actual fun getCodeEditorKeywordColor(): Color = CodeEditorSettings.getKeywordColor()
-actual fun getCodeEditorCommentColor(): Color = CodeEditorSettings.getCommentColor()
+// Hardcoded defaults matching non-desktop actuals (these are only used by the
+// commonMain CodeEditorUI composable which is never rendered on desktop).
+actual fun getCodeEditorFontSize(): Int = 14
+actual fun getCodeEditorFontFamily(): FontFamily = FontFamily.Monospace
+actual fun getCodeEditorBackgroundColor(): Color = Color(0xFF_1E1E1E)
+actual fun getCodeEditorTextColor(): Color = Color(0xFF_D4D4D4)
+actual fun getCodeEditorLineNumberColor(): Color = Color(0xFF_858585)
+actual fun getCodeEditorLineNumberBgColor(): Color = Color(0xFF_2D2D30)
+actual fun getCodeEditorKeywordColor(): Color = Color(0xFF_569CD6)
+actual fun getCodeEditorCommentColor(): Color = Color(0xFF_6A9955)
 
 /**
- * Desktop implementation uses RSyntaxTextArea via DesktopCodeEditorUI.
+ * Desktop implementation uses BossEditor via DesktopCodeEditorUI.
  */
 @Composable
 actual fun PlatformCodeEditorUI(

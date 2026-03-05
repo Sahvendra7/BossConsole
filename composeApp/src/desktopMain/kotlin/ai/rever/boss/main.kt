@@ -10,9 +10,9 @@ import BossDarkBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import ai.rever.boss.psi.PSIBootstrap
-import ai.rever.boss.psi.PSIThreadBridge
-import ai.rever.boss.psi.ProjectIndexer
+import ai.rever.bosseditor.psi.PSIBootstrap
+import ai.rever.bosseditor.psi.PSIThreadBridge
+import ai.rever.bosseditor.psi.ProjectIndexer
 import ai.rever.boss.utils.DeepLinkHandler
 import ai.rever.boss.utils.SingleInstanceManager
 import ai.rever.boss.utils.logging.BossLogger

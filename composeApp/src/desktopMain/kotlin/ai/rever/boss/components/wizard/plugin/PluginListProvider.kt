@@ -171,6 +171,8 @@ object PluginListProvider {
                     getFallbackPluginList()
                 }
             )
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e // Don't swallow scope cancellation
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Error getting available plugins", error = e)
             getFallbackPluginList()

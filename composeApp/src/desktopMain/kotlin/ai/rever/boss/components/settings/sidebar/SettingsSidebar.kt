@@ -36,11 +36,6 @@ enum class SettingsSection(
         description = "Configure browser behavior, user agent, and link handling",
         icon = Icons.Outlined.Language
     ),
-    CODE_EDITOR(
-        displayName = "Code Editor",
-        description = "Font, theme, and editor appearance settings",
-        icon = Icons.Outlined.Code
-    ),
     BOSS_EDITOR(
         displayName = "BossEditor",
         description = "Scroll behavior, code folding, and bracket matching",

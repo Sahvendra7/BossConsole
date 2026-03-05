@@ -651,14 +651,6 @@ kotlin {
             // CLI argument parsing
             implementation("com.github.ajalt.clikt:clikt:5.1.0")
 
-            // RSyntaxTextArea - Advanced code editor with syntax highlighting, code folding, etc.
-            // https://github.com/bobbylight/RSyntaxTextArea
-            implementation(libs.rsyntaxtextarea)
-            // RSTAUI - Search/replace dialogs, Go to Line, Find toolbar
-            implementation(libs.rstaui)
-            // AutoComplete - Code completion with parameter hints
-            implementation(libs.autocomplete)
-
             // Kotlin PSI - Code navigation with go-to-definition for Kotlin files
             // Uses kotlin-compiler-embeddable which includes shaded IntelliJ PSI classes
             // at org.jetbrains.kotlin.com.intellij.* (not com.intellij.*)

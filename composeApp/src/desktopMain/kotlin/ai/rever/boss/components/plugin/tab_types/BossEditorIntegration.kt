@@ -5,12 +5,10 @@ import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.events.NavigationTargetBus
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.font.FontManager
-import ai.rever.boss.psi.NavigationEvent
-import ai.rever.boss.psi.NavigationResult
-import ai.rever.boss.psi.NavigationService
-import ai.rever.boss.psi.PSIBootstrap
-import ai.rever.boss.psi.PSIThreadBridge
-import ai.rever.boss.psi.ProjectIndexer
+import ai.rever.bosseditor.psi.NavigationResult
+import ai.rever.bosseditor.psi.PSIBootstrap
+import ai.rever.bosseditor.psi.PSIThreadBridge
+import ai.rever.bosseditor.psi.ProjectIndexer
 import ai.rever.boss.run.DetectedMainFunction
 import ai.rever.boss.run.Language
 import ai.rever.boss.run.MainFunctionDetectorProvider
@@ -29,8 +27,8 @@ import ai.rever.bosseditor.features.UsagesPopup
 import ai.rever.bosseditor.features.UsagesPopupState
 import ai.rever.bosseditor.psi.DefinitionInfo
 import ai.rever.bosseditor.psi.ReferenceLocation
-import ai.rever.bosseditor.psi.NavigationService as BossEditorNavigationService
-import ai.rever.bosseditor.psi.NavigationTargetKind as BossEditorNavigationTargetKind
+import ai.rever.bosseditor.psi.NavigationService
+import ai.rever.bosseditor.psi.NavigationTargetKind
 import ai.rever.bosseditor.core.EditorPosition
 import ai.rever.bosseditor.refactoring.RefactorContext
 import ai.rever.bosseditor.refactoring.RefactorResult
@@ -101,8 +99,7 @@ private val logger = BossLogger.forComponent("BossEditorIntegration")
 /**
  * BossEditor integration layer for BOSS application.
  *
- * This composable provides a drop-in replacement for RSyntaxEditorWithGutter,
- * using the native Compose Canvas-based BossEditor instead of RSyntaxTextArea.
+ * This composable provides the native Compose Canvas-based BossEditor.
  *
  * ## Features
  * - Native Compose rendering (no Swing interop)
@@ -194,7 +191,7 @@ fun BossEditorIntegration(
     var renameDialogOffset by remember { mutableStateOf(IntOffset.Zero) }
 
     // Create bosseditor navigation service for refactoring (separate from composeApp's)
-    val bossEditorNavigationService = remember { BossEditorNavigationService() }
+    val bossEditorNavigationService = remember { NavigationService() }
     val renameRefactoring = remember(bossEditorNavigationService) { RenameRefactoring(bossEditorNavigationService) }
 
     // State for extract variable dialog
@@ -519,11 +516,11 @@ fun BossEditorIntegration(
                                 if (definitionInfo != null) {
                                     renameSymbolName = definitionInfo.name
                                     renameSymbolKind = when (definitionInfo.kind) {
-                                        BossEditorNavigationTargetKind.CLASS -> SymbolKind.CLASS
-                                        BossEditorNavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
-                                        BossEditorNavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
-                                        BossEditorNavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
-                                        BossEditorNavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
+                                        NavigationTargetKind.CLASS -> SymbolKind.CLASS
+                                        NavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
+                                        NavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
+                                        NavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
+                                        NavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
                                         else -> null
                                     }
                                     // Calculate dialog position near the caret
@@ -1029,7 +1026,7 @@ private fun BossEditorIntegrationInternal(
     var renameDialogOffset by remember { mutableStateOf(IntOffset.Zero) }
 
     // Create bosseditor navigation service for refactoring (separate from composeApp's)
-    val bossEditorNavigationService = remember { BossEditorNavigationService() }
+    val bossEditorNavigationService = remember { NavigationService() }
     val renameRefactoring = remember(bossEditorNavigationService) { RenameRefactoring(bossEditorNavigationService) }
 
     // State for extract variable dialog
@@ -1329,11 +1326,11 @@ private fun BossEditorIntegrationInternal(
                                 if (definitionInfo != null) {
                                     renameSymbolName = definitionInfo.name
                                     renameSymbolKind = when (definitionInfo.kind) {
-                                        BossEditorNavigationTargetKind.CLASS -> SymbolKind.CLASS
-                                        BossEditorNavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
-                                        BossEditorNavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
-                                        BossEditorNavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
-                                        BossEditorNavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
+                                        NavigationTargetKind.CLASS -> SymbolKind.CLASS
+                                        NavigationTargetKind.FUNCTION -> SymbolKind.FUNCTION
+                                        NavigationTargetKind.PROPERTY -> SymbolKind.PROPERTY
+                                        NavigationTargetKind.PARAMETER -> SymbolKind.PARAMETER
+                                        NavigationTargetKind.VARIABLE -> SymbolKind.VARIABLE
                                         else -> null
                                     }
                                     // Calculate dialog position near the caret
@@ -1941,7 +1938,7 @@ private fun getLexerForLanguage(language: String): BaseLexer? {
  * Run gutter for BossEditor showing detected main functions.
  *
  * This is a pure Compose implementation that directly uses EditorState's
- * scroll offset, avoiding the Swing synchronization issues in RSyntaxGutterOverlay.
+ * scroll offset.
  */
 @Composable
 private fun BossEditorRunGutter(

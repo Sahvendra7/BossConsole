@@ -5,13 +5,13 @@ import ai.rever.boss.plugin.api.NavigationResolveResult
 import ai.rever.boss.plugin.api.DefinitionInfoData
 import ai.rever.boss.plugin.api.ReferenceLocationData
 import ai.rever.boss.plugin.api.NavigationTargetKind as ApiNavigationTargetKind
-import ai.rever.boss.psi.NavigationResult
-import ai.rever.boss.psi.NavigationService
-import ai.rever.boss.psi.NavigationTargetKind
-import ai.rever.boss.psi.PSIBootstrap
-import ai.rever.boss.psi.PSIThreadBridge
-import ai.rever.boss.psi.ProjectIndexer
-import ai.rever.boss.psi.ReferenceService
+import ai.rever.bosseditor.psi.NavigationResult
+import ai.rever.bosseditor.psi.NavigationService
+import ai.rever.bosseditor.psi.NavigationTargetKind
+import ai.rever.bosseditor.psi.PSIBootstrap
+import ai.rever.bosseditor.psi.PSIThreadBridge
+import ai.rever.bosseditor.psi.ProjectIndexer
+import ai.rever.bosseditor.psi.ReferenceService
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers

@@ -17,7 +17,7 @@ import java.io.File
  * This manager provides:
  * - System font discovery (monospace and all fonts)
  * - Bundled font loading (JetBrains Mono, Fira Code)
- * - AWT font creation for RSyntaxTextArea
+ * - AWT font creation for Swing components
  * - Compose FontFamily creation for UI
  * - Platform-specific defaults
  * - Font availability checking
@@ -190,11 +190,11 @@ object FontManager {
     }
 
     // ===================
-    // Public API: AWT Font Loading (for RSyntaxTextArea)
+    // Public API: AWT Font Loading
     // ===================
 
     /**
-     * Load an AWT Font for use with RSyntaxTextArea.
+     * Load an AWT Font for use with Swing components.
      *
      * @param fontName Font family name (or bundled font marker)
      * @param style Font style (Font.PLAIN, Font.BOLD, Font.ITALIC, Font.BOLD or Font.ITALIC)

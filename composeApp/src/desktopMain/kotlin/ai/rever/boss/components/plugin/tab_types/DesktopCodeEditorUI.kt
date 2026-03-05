@@ -4,7 +4,6 @@ import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.plugin.api.MainFunctionInfo
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.keymap.model.KeymapActions
-import ai.rever.boss.psi.NavigationEvent
 import ai.rever.boss.run.DetectedMainFunction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,13 +20,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Desktop-specific Code Editor UI using RSyntaxTextArea.
+ * Desktop-specific Code Editor UI using BossEditor (native Compose Canvas).
  *
  * This composable provides a full-featured code editor with:
- * - Syntax highlighting (50+ languages via RSyntaxTextArea)
- * - Code folding
- * - Bracket matching
- * - Line numbers with fold indicators
+ * - Syntax highlighting via BossEditor lexers
+ * - Semantic highlighting for Kotlin (via PSI)
  * - Run gutter icons for detected main functions
  * - File modification tracking with save support (Cmd+S)
  * - Theme integration with BOSS themes
@@ -101,103 +98,49 @@ fun DesktopCodeEditorUI(
     Column(modifier = modifier.fillMaxSize()) {
         // Main editor area
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (CodeEditorSettings.useNativeEditor) {
-                // Use native BossEditor (Compose Canvas-based)
-                BossEditorIntegration(
-                    content = content,
-                    onContentChange = { newContent ->
-                        onContentChange(newContent)
-                    },
-                    language = language,
-                    filePath = filePath,
-                    projectPath = projectPath,
-                    modifier = Modifier.fillMaxSize(),
-                    isReadOnly = false,
-                    onCursorPositionChange = { line, column ->
-                        cursorLine = line
-                        cursorColumn = column
-                        // Invoke optional plugin callback
-                        onCursorPositionChange?.invoke(line, column)
-                    },
-                    onModifiedStateChange = { modified ->
-                        isModified = modified
-                        onModifiedStateChange(modified)
-                    },
-                    onRun = { detected ->
-                        if (showRunGutter) {
-                            // Convert to MainFunctionInfo and invoke plugin callback if provided
-                            if (onRunFunction != null) {
-                                onRunFunction.invoke(detected.toMainFunctionInfo())
-                            } else {
-                                scope.launch {
-                                    executeDetectedMainFunction(detected, projectPath, windowId)
-                                }
-                            }
-                        }
-                    },
-                    onNavigate = { event ->
-                        // Invoke plugin callback if provided, otherwise use default behavior
-                        if (onNavigate != null) {
-                            onNavigate.invoke(event.filePath, event.line, event.column)
-                        } else if (event.filePath.isNotEmpty() && windowId != null) {
+            BossEditorIntegration(
+                content = content,
+                onContentChange = { newContent ->
+                    onContentChange(newContent)
+                },
+                language = language,
+                filePath = filePath,
+                projectPath = projectPath,
+                modifier = Modifier.fillMaxSize(),
+                isReadOnly = false,
+                onCursorPositionChange = { line, column ->
+                    cursorLine = line
+                    cursorColumn = column
+                    // Invoke optional plugin callback
+                    onCursorPositionChange?.invoke(line, column)
+                },
+                onModifiedStateChange = { modified ->
+                    isModified = modified
+                    onModifiedStateChange(modified)
+                },
+                onRun = { detected ->
+                    if (showRunGutter) {
+                        // Convert to MainFunctionInfo and invoke plugin callback if provided
+                        if (onRunFunction != null) {
+                            onRunFunction.invoke(detected.toMainFunctionInfo())
+                        } else {
                             scope.launch {
-                                FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
+                                executeDetectedMainFunction(detected, projectPath, windowId)
                             }
                         }
                     }
-                )
-            } else {
-                // Use RSyntaxTextArea (Swing-based) - default for maximum compatibility
-                RSyntaxEditorWithGutter(
-                    content = content,
-                    onContentChange = { newContent ->
-                        onContentChange(newContent)
-                    },
-                    language = language,
-                    filePath = filePath,
-                    projectPath = projectPath,
-                    modifier = Modifier.fillMaxSize(),
-                    isReadOnly = false,
-                    fontSize = CodeEditorSettings.fontSize,
-                    fontFamily = CodeEditorSettings.fontFamily,
-                    theme = CodeEditorSettings.theme,
-                    onCursorPositionChange = { line, column ->
-                        cursorLine = line
-                        cursorColumn = column
-                        // Invoke optional plugin callback
-                        onCursorPositionChange?.invoke(line, column)
-                    },
-                    onModifiedStateChange = { modified ->
-                        isModified = modified
-                        onModifiedStateChange(modified)
-                    },
-                    onRun = { detected ->
-                        if (showRunGutter) {
-                            // Convert to MainFunctionInfo and invoke plugin callback if provided
-                            if (onRunFunction != null) {
-                                onRunFunction.invoke(detected.toMainFunctionInfo())
-                            } else {
-                                scope.launch {
-                                    executeDetectedMainFunction(detected, projectPath, windowId)
-                                }
-                            }
-                        }
-                    },
-                    onNavigate = { event ->
-                        // Invoke plugin callback if provided, otherwise use default behavior
-                        if (onNavigate != null) {
-                            onNavigate.invoke(event.filePath, event.line, event.column)
-                        } else if (event.filePath.isNotEmpty() && windowId != null) {
-                            scope.launch {
-                                // Open the target file at the specified position
-                                // For same-file navigation, FileEventBus handler will scroll to position
-                                // For cross-file, it opens the file and navigates
-                                FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
-                            }
+                },
+                onNavigate = { event ->
+                    // Invoke plugin callback if provided, otherwise use default behavior
+                    if (onNavigate != null) {
+                        onNavigate.invoke(event.filePath, event.line, event.column)
+                    } else if (event.filePath.isNotEmpty() && windowId != null) {
+                        scope.launch {
+                            FileEventBus.openFile(event.filePath, event.line, event.column, sourceWindowId = windowId)
                         }
                     }
-                )
-            }
+                }
+            )
         }
 
         // Status bar
@@ -342,6 +285,43 @@ fun DesktopCodeEditorWithFileTracking(
             tracker.save()
         }
     )
+}
+
+/**
+ * Determines the programming language from a file path based on its extension.
+ */
+private fun getLanguageFromFilePath(filePath: String): String {
+    val extension = filePath.substringAfterLast('.', "").lowercase()
+    return when (extension) {
+        "kt", "kts" -> "kotlin"
+        "java" -> "java"
+        "js", "mjs", "cjs" -> "javascript"
+        "ts", "tsx" -> "typescript"
+        "py", "pyw" -> "python"
+        "rb" -> "ruby"
+        "pl", "pm" -> "perl"
+        "rs" -> "rust"
+        "go" -> "go"
+        "swift" -> "swift"
+        "c" -> "c"
+        "cpp", "cc", "cxx", "hpp", "h" -> "cpp"
+        "cs" -> "csharp"
+        "m", "mm" -> "objectivec"
+        "json" -> "json"
+        "xml" -> "xml"
+        "html", "htm" -> "html"
+        "css" -> "css"
+        "toml" -> "toml"
+        "yaml", "yml" -> "yaml"
+        "sql" -> "sql"
+        "sh", "zsh", "ksh", "bash" -> "shell"
+        "bat", "cmd" -> "batch"
+        "ps1", "psm1" -> "powershell"
+        "md", "mkd", "mdx" -> "markdown"
+        "el" -> "lisp"
+        "" -> "text"
+        else -> extension
+    }
 }
 
 /**

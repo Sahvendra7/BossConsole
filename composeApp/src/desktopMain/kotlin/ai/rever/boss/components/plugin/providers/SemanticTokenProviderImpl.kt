@@ -3,10 +3,10 @@ package ai.rever.boss.components.plugin.providers
 import ai.rever.boss.plugin.api.SemanticTokenProvider
 import ai.rever.boss.plugin.api.SemanticElement
 import ai.rever.boss.plugin.api.SemanticElementType
-import ai.rever.boss.psi.PSIBootstrap
-import ai.rever.boss.psi.PSIThreadBridge
-import ai.rever.boss.psi.SemanticCache
-import ai.rever.boss.psi.SemanticType
+import ai.rever.bosseditor.psi.PSIBootstrap
+import ai.rever.bosseditor.psi.PSIThreadBridge
+import ai.rever.bosseditor.psi.SemanticCache
+import ai.rever.bosseditor.psi.SemanticType
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +25,7 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
-import ai.rever.boss.psi.SemanticElement as HostSemanticElement
+import ai.rever.bosseditor.psi.SemanticElement as HostSemanticElement
 
 private val logger = BossLogger.forComponent("SemanticTokenProvider")
 

@@ -1,12 +1,11 @@
 package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.components.events.FileEventBus
-import ai.rever.boss.components.plugin.tab_types.CodeEditorSettings
-import ai.rever.boss.components.plugin.tab_types.CodeEditorSettingsManager
 import ai.rever.boss.components.plugin.tab_types.DesktopCodeEditorUI
 import ai.rever.boss.components.plugin.tab_types.EditorSearchEventBus
 import ai.rever.boss.components.plugin.tab_types.readFileContentSafe
 import ai.rever.boss.components.plugin.tab_types.writeFileContent
+import ai.rever.boss.font.FontManager
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.FileReadResult
 import ai.rever.boss.plugin.api.MainFunctionInfo
@@ -16,6 +15,8 @@ import ai.rever.boss.plugin.run.RunConfigurationType
 import ai.rever.boss.plugin.run.RunConfiguration
 import ai.rever.boss.components.events.RunEventBus
 import ai.rever.boss.run.MainFunctionDetectorProvider
+import ai.rever.bosseditor.settings.EditorSettings
+import ai.rever.bosseditor.settings.EditorSettingsManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,9 @@ import ai.rever.boss.components.plugin.tab_types.FileReadResult as InternalFileR
  * file I/O functions to enable dynamic editor plugins to access editor functionality.
  */
 class EditorContentProviderImpl : EditorContentProvider {
+
+    private val mgr get() = EditorSettingsManager.instance
+    private val settings get() = mgr.settings.value
 
     @Composable
     override fun CodeEditorContent(
@@ -130,56 +134,38 @@ class EditorContentProviderImpl : EditorContentProvider {
 
     // ============ Phase 1: Editor Feature Toggles ============
 
-    override fun isCodeFoldingEnabled(): Boolean = codeFoldingEnabled
+    override fun isCodeFoldingEnabled(): Boolean = settings.foldingEnabled
 
     override fun setCodeFoldingEnabled(enabled: Boolean) {
-        codeFoldingEnabled = enabled
+        mgr.updateSetting { it.copy(foldingEnabled = enabled) }
     }
 
-    override fun isBracketMatchingEnabled(): Boolean = bracketMatchingEnabled
+    override fun isBracketMatchingEnabled(): Boolean = settings.bracketMatchingEnabled
 
     override fun setBracketMatchingEnabled(enabled: Boolean) {
-        bracketMatchingEnabled = enabled
+        mgr.updateSetting { it.copy(bracketMatchingEnabled = enabled) }
     }
 
     // ============ Phase 1: Advanced Editor Toggles ============
 
-    override fun isMarkOccurrencesEnabled(): Boolean = CodeEditorSettings.markOccurrences
+    override fun isMarkOccurrencesEnabled(): Boolean = settings.markOccurrencesEnabled
 
     override fun setMarkOccurrencesEnabled(enabled: Boolean) {
-        CodeEditorSettings.markOccurrences = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
+        mgr.updateSetting { it.copy(markOccurrencesEnabled = enabled) }
     }
 
-    override fun isCurrentLineHighlightEnabled(): Boolean = CodeEditorSettings.highlightCurrentLine
+    override fun isCurrentLineHighlightEnabled(): Boolean = settings.highlightCurrentLine
 
     override fun setCurrentLineHighlightEnabled(enabled: Boolean) {
-        CodeEditorSettings.highlightCurrentLine = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
-    }
-
-    override fun isAutoIndentEnabled(): Boolean = CodeEditorSettings.autoIndent
-
-    override fun setAutoIndentEnabled(enabled: Boolean) {
-        CodeEditorSettings.autoIndent = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
+        mgr.updateSetting { it.copy(highlightCurrentLine = enabled) }
     }
 
     // ============ Phase 1: PSI Navigation APIs ============
 
-    override fun isNavigationEnabled(): Boolean = CodeEditorSettings.navigationEnabled
+    override fun isNavigationEnabled(): Boolean = navigationEnabled
 
     override fun setNavigationEnabled(enabled: Boolean) {
-        CodeEditorSettings.navigationEnabled = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
+        navigationEnabled = enabled
     }
 
     override fun navigateToDefinition(filePath: String, line: Int, column: Int) {
@@ -246,114 +232,57 @@ class EditorContentProviderImpl : EditorContentProvider {
 
     // ============ Phase 2: Theme Integration ============
 
-    override fun getAvailableThemes(): List<String> = listOf(
-        "Dark",
-        "Light",
-        "Dracula",
-        "Monokai",
-        "Solarized Dark",
-        "Solarized Light"
-    )
+    override fun getAvailableThemes(): List<String> = EditorSettings.availableThemes
 
-    override fun getCurrentTheme(): String = CodeEditorSettings.theme
+    override fun getCurrentTheme(): String = settings.themeName
 
     override fun setTheme(theme: String) {
         if (theme in getAvailableThemes()) {
-            CodeEditorSettings.theme = theme
-            // Settings will be persisted via CodeEditorSettingsManager
-            GlobalScope.launch {
-                CodeEditorSettingsManager.saveSettings()
-            }
+            mgr.updateSetting { it.copy(themeName = theme) }
         }
     }
 
     // ============ Phase 3: Font Customization ============
 
-    override fun getFontSize(): Int = CodeEditorSettings.fontSize
+    override fun getFontSize(): Int = settings.fontSize.toInt()
 
     override fun setFontSize(size: Int) {
         if (size in 8..72) {
-            CodeEditorSettings.fontSize = size
-            GlobalScope.launch {
-                CodeEditorSettingsManager.saveSettings()
-            }
+            mgr.updateSetting { it.copy(fontSize = size.toFloat()) }
         }
     }
 
-    override fun getFontFamily(): String = CodeEditorSettings.fontFamily
+    override fun getFontFamily(): String = settings.fontFamily ?: FontManager.BUNDLED_JETBRAINS_MONO
 
     override fun setFontFamily(family: String) {
-        CodeEditorSettings.fontFamily = family
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
+        mgr.updateSetting { it.copy(fontFamily = family) }
     }
 
-    override fun getAvailableFonts(): List<String> = CodeEditorSettings.getAvailableFonts()
+    override fun getAvailableFonts(): List<String> = FontManager.getAvailableMonospaceFonts()
 
     // ============ Phase 3: Minimap Settings ============
 
-    override fun isMinimapVisible(): Boolean = CodeEditorSettings.showMinimap
+    override fun isMinimapVisible(): Boolean = settings.showMinimap
 
     override fun setMinimapVisible(visible: Boolean) {
-        CodeEditorSettings.showMinimap = visible
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
+        mgr.updateSetting { it.copy(showMinimap = visible) }
     }
 
-    override fun getMinimapWidth(): Int = CodeEditorSettings.minimapWidth
+    override fun getMinimapWidth(): Int = settings.minimapWidth
 
     override fun setMinimapWidth(width: Int) {
         if (width in 40..300) {
-            CodeEditorSettings.minimapWidth = width
-            GlobalScope.launch {
-                CodeEditorSettingsManager.saveSettings()
-            }
+            mgr.updateSetting { it.copy(minimapWidth = width) }
         }
     }
 
     // ============ Phase 3: Line Spacing ============
 
-    override fun getLineSpacing(): Float = CodeEditorSettings.lineSpacing
+    override fun getLineSpacing(): Float = settings.lineSpacing
 
     override fun setLineSpacing(spacing: Float) {
         if (spacing in 1.0f..3.0f) {
-            CodeEditorSettings.lineSpacing = spacing
-            GlobalScope.launch {
-                CodeEditorSettingsManager.saveSettings()
-            }
-        }
-    }
-
-    // ============ Phase 3: Font Rendering ============
-
-    override fun isLigaturesEnabled(): Boolean = CodeEditorSettings.useLigatures
-
-    override fun setLigaturesEnabled(enabled: Boolean) {
-        CodeEditorSettings.useLigatures = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
-    }
-
-    override fun isAntialiasingEnabled(): Boolean = CodeEditorSettings.useAntialiasing
-
-    override fun setAntialiasingEnabled(enabled: Boolean) {
-        CodeEditorSettings.useAntialiasing = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
-        }
-    }
-
-    // ============ Phase 3: Native Editor Toggle ============
-
-    override fun isNativeEditorEnabled(): Boolean = CodeEditorSettings.useNativeEditor
-
-    override fun setNativeEditorEnabled(enabled: Boolean) {
-        CodeEditorSettings.useNativeEditor = enabled
-        GlobalScope.launch {
-            CodeEditorSettingsManager.saveSettings()
+            mgr.updateSetting { it.copy(lineSpacing = spacing) }
         }
     }
 
@@ -431,9 +360,8 @@ class EditorContentProviderImpl : EditorContentProvider {
     }
 
     companion object {
-        // Feature toggles (global state for now, could be per-editor in future)
-        private var codeFoldingEnabled: Boolean = true
-        private var bracketMatchingEnabled: Boolean = true
+        // Runtime toggle for PSI navigation (not a BossEditor setting)
+        private var navigationEnabled: Boolean = true
     }
 }
 

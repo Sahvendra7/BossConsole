@@ -5,7 +5,7 @@ import java.awt.Color as AwtColor
 
 /**
  * Extension functions for converting between Compose and AWT colors.
- * Used for RSyntaxTextArea theme integration.
+ * Used for Swing/AWT interop.
  */
 
 /**

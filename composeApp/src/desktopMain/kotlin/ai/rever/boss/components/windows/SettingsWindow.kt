@@ -248,8 +248,7 @@ private fun SettingsContentArea(
             // Category-specific content
             when (section) {
                 SettingsSection.FLUCK -> FluckBrowserSettings()
-                SettingsSection.CODE_EDITOR -> CodeEditorSettings()
-                SettingsSection.RUNNER -> RunnerSettings()
+SettingsSection.RUNNER -> RunnerSettings()
                 SettingsSection.WORKSPACE -> WorkspaceSettings()
                 SettingsSection.LLM_PROVIDERS -> LLMProvidersSettings()
                 SettingsSection.UPDATES -> UpdatesSettings()

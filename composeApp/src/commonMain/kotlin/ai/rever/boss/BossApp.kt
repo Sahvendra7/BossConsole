@@ -1126,6 +1126,8 @@ fun ComponentContext.BossApp(
                             }
                         }
                     }
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e // Don't retry on scope cancellation
                 } catch (e: Exception) {
                     logger.error(LogCategory.SYSTEM, "Failed to fetch plugins", mapOf(
                         "attempt" to (pluginWizardRetryCount + 1).toString(),

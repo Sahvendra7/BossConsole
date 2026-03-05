@@ -434,7 +434,7 @@ expect fun getCodeEditorCommentColor(): Color
 
 /**
  * Platform-specific code editor UI.
- * Desktop uses RSyntaxTextArea, other platforms use BasicTextField.
+ * Desktop uses BossEditor, other platforms use BasicTextField.
  */
 @Composable
 expect fun PlatformCodeEditorUI(
