@@ -1,4 +1,4 @@
-package ai.rever.boss.components.plugin.tab_types.fluck
+package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger

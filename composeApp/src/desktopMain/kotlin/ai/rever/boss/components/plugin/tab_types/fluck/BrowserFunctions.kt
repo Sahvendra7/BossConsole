@@ -1,16 +1,18 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
+import ai.rever.boss.plugin.browser.BrowserSettings
+import ai.rever.boss.plugin.browser.EngineInitError
+import ai.rever.boss.plugin.browser.FluckEngine
+import ai.rever.boss.plugin.browser.LocalAwtWindow
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.event.Subscription
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
-import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.ui.Rect
 import com.teamdev.jxbrowser.view.compose.BrowserViewState
 import com.teamdev.jxbrowser.view.swing.BrowserView
@@ -30,37 +32,6 @@ import com.teamdev.jxbrowser.browser.callback.ConfirmCallback
 import com.teamdev.jxbrowser.browser.callback.PromptCallback
 
 private val logger = BossLogger.forComponent("BrowserFunctions")
-
-// User agent settings
-object BrowserSettings {
-    var userAgent: String? = null
-    var customUserAgent: String? = null
-    var currentProfile: String = "browser-profile"
-    val availableProfiles = mutableListOf("browser-profile")
-
-    // Browser initialization retry settings (configurable via Settings)
-    var maxInitRetries: Int = 3
-    var maxRecoveryAttempts: Int = 3
-
-    // JavaScript dialog settings (configurable via Settings > Browser)
-    // Due to JxBrowser threading limitations, dialogs must be auto-handled
-    enum class JsConfirmBehavior { AUTO_CONFIRM, AUTO_CANCEL }
-    var jsConfirmBehavior: JsConfirmBehavior = JsConfirmBehavior.AUTO_CONFIRM
-    var jsPromptDefaultValue: String = ""  // Empty string or user-configured default
-    var jsPromptUsePageDefault: Boolean = true  // Use page's default value if true, else use jsPromptDefaultValue
-
-    // Secret Manager settings (configurable via Settings > Browser > Secret Manager)
-    var discretePasswordFill: Boolean = true  // Hide filled passwords with blur effect for privacy
-}
-
-/**
- * CompositionLocal providing the current AWT Window for this Compose window.
- * Used by JxBrowser to get the correct window handle for BrowserViewState.
- *
- * This fixes the multi-window crash where browsers in window 2 would reference
- * window 1's handle because getValidComposeWindow() returned the first window.
- */
-val LocalAwtWindow = compositionLocalOf<Window?> { null }
 
 /**
  * Gets a valid AWT Window that is safe to use with JxBrowser.
@@ -165,19 +136,11 @@ private fun setupBrowserDialogHandlers(browser: Browser) {
 /**
  * Configures browser to handle popup requests intelligently based on window features.
  *
- * Complete solution using JxBrowser's two-phase popup handling:
+ * Complete solution using JxBrowser's two-phase popup handling (Issue #137, Issue #173):
  * 1. CreatePopupCallback - Allows all popup creation (returns create())
  * 2. OpenPopupCallback - Checks initialBounds() to decide:
- *    - Empty bounds (regular links) → Open as tab in BOSS
- *    - Non-empty bounds (OAuth popups) → Create Swing window to display popup
- *
- * This properly fixes both issues:
- * - Issue #137: Mail app links open as tabs, not OS windows
- * - Issue #173: OAuth popups work correctly with window.opener communication
- *
- * Implementation details:
- * - Empty bounds popups: Close popup browser, open URL as tab via callback
- * - Non-empty bounds popups: Create JFrame, embed BrowserView, handle window lifecycle
+ *    - Empty bounds (regular links) → Open as tab in BOSS (Issue #137)
+ *    - Non-empty bounds (OAuth popups) → Create Swing window to display popup (Issue #173)
  *
  * @param browser The browser instance to configure
  * @param onOpenInNewTab Callback invoked with the target URL when popup should open in new tab
@@ -190,7 +153,6 @@ private fun configureBrowserPopupHandler(
     browser.set(
         com.teamdev.jxbrowser.browser.callback.CreatePopupCallback::class.java,
         com.teamdev.jxbrowser.browser.callback.CreatePopupCallback {
-            // Allow popup creation - we'll decide what to do in OpenPopupCallback
             com.teamdev.jxbrowser.browser.callback.CreatePopupCallback.Response.create()
         }
     )
@@ -203,31 +165,24 @@ private fun configureBrowserPopupHandler(
             val initialBounds = params.initialBounds()
             val targetUrl = popupBrowser.url()
 
-            // Check if popup has specific window dimensions
             val isEmptyBounds = initialBounds == Rect.empty()
 
             if (isEmptyBounds) {
-                // No dimensions = regular link (mail app, target="_blank")
-                // Open as tab in BOSS instead of OS window
                 if (targetUrl.isEmpty() || targetUrl == "about:blank") {
-                    // Use LoadStarted instead of NavigationFinished for immediate response
-                    // This fires as soon as navigation begins, not when page fully loads
                     val cleanedUp = AtomicBoolean(false)
                     var subscription: Subscription? = null
                     val scope = CoroutineScope(Dispatchers.Default + Job())
 
+                    // Use LoadStarted instead of NavigationFinished for immediate response
                     subscription = popupBrowser.navigation().on(LoadStarted::class.java) {
                         try {
                             // Issue #255: Protect popup browser URL access from "closed object" exception
                             val loadedUrl = popupBrowser.url()
                             if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
-                                // Only cleanup if we're the first handler to run
                                 if (cleanedUp.compareAndSet(false, true)) {
-                                    // Check if this URL is a download - if so, skip opening in new tab
                                     val isDownload = FluckEngine.isActiveDownload(loadedUrl)
                                     logger.debug(LogCategory.BROWSER, "Popup LoadStarted", mapOf("url" to loadedUrl, "isDownload" to isDownload))
                                     if (!isDownload) {
-                                        // Notify that a tab is being opened (might be download redirect)
                                         FluckEngine.notifyTabOpened()
                                         onOpenInNewTab(loadedUrl)
                                     } else {
@@ -241,7 +196,6 @@ private fun configureBrowserPopupHandler(
                                 }
                             }
                         } catch (e: Exception) {
-                            // Popup browser was closed - cleanup and exit
                             // Issue #255: Gracefully handle "closed object" exceptions
                             if (cleanedUp.compareAndSet(false, true)) {
                                 subscription?.unsubscribe()
@@ -250,10 +204,8 @@ private fun configureBrowserPopupHandler(
                         }
                     }
 
-                    // Timeout fallback: cleanup after 3 seconds (reduced from 10s)
                     scope.launch {
                         delay(3_000)
-                        // Only cleanup if we're the first handler to run
                         if (cleanedUp.compareAndSet(false, true)) {
                             subscription?.unsubscribe()
                             if (!popupBrowser.isClosed) {
@@ -263,11 +215,9 @@ private fun configureBrowserPopupHandler(
                         }
                     }
                 } else {
-                    // Check if this URL is a download - if so, skip opening in new tab
                     val isDownload = FluckEngine.isActiveDownload(targetUrl)
                     logger.debug(LogCategory.BROWSER, "Popup with immediate URL", mapOf("url" to targetUrl, "isDownload" to isDownload))
                     if (!isDownload) {
-                        // Notify that a tab is being opened (might be download redirect)
                         FluckEngine.notifyTabOpened()
                         onOpenInNewTab(targetUrl)
                     } else {
@@ -276,50 +226,39 @@ private fun configureBrowserPopupHandler(
                     popupBrowser.close()
                 }
             } else {
-                // Has dimensions = OAuth/payment popup (window.open with features)
-                // Create Swing window to display the popup browser
                 SwingUtilities.invokeLater {
                     try {
-                        // Create JFrame for the popup
                         val frame = JFrame()
                         val subscriptions = mutableListOf<Subscription>()
 
-                        frame.title = "Popup" // Will be updated by page title
+                        frame.title = "Popup"
                         frame.defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
-
-                        // Set position and size from bounds
                         frame.setLocation(initialBounds.origin().x(), initialBounds.origin().y())
                         frame.setSize(initialBounds.size().width(), initialBounds.size().height())
 
-                        // Create BrowserView and add to frame
                         val browserView = BrowserView.newInstance(popupBrowser)
                         frame.contentPane.add(browserView)
 
-                        // Update frame title when page title changes - store subscription
                         subscriptions += popupBrowser.on(com.teamdev.jxbrowser.browser.event.TitleChanged::class.java) { event ->
                             SwingUtilities.invokeLater {
                                 frame.title = event.title()
                             }
                         }
 
-                        // Close frame when browser closes - store subscription
                         subscriptions += popupBrowser.on(BrowserClosed::class.java) {
                             SwingUtilities.invokeLater {
-                                // Cleanup subscriptions before disposing
                                 subscriptions.forEach { it.unsubscribe() }
                                 frame.dispose()
                             }
                         }
 
-                        // Close browser when frame closes
                         frame.addWindowListener(object : java.awt.event.WindowAdapter() {
                             override fun windowClosing(e: java.awt.event.WindowEvent?) {
-                                // Cleanup subscriptions before closing browser
                                 subscriptions.forEach {
                                     try {
                                         it.unsubscribe()
                                     } catch (_: Exception) {
-                                        // Ignore errors during cleanup
+                                        // Intentional: ignore errors during cleanup
                                     }
                                 }
                                 if (!popupBrowser.isClosed) {
@@ -328,11 +267,9 @@ private fun configureBrowserPopupHandler(
                             }
                         })
 
-                        // Show the popup window
                         frame.isVisible = true
                     } catch (e: Exception) {
                         logger.error(LogCategory.BROWSER, "Error creating popup window", error = e)
-                        // Close browser on error
                         if (!popupBrowser.isClosed) {
                             popupBrowser.close()
                         }
@@ -340,7 +277,6 @@ private fun configureBrowserPopupHandler(
                 }
             }
 
-            // Return proceed() to notify the engine we've handled the popup
             com.teamdev.jxbrowser.browser.callback.OpenPopupCallback.Response.proceed()
         }
     )
@@ -348,13 +284,9 @@ private fun configureBrowserPopupHandler(
 
 actual fun createBrowser(): Any {
     val browser = FluckEngine.engine.newBrowser()
-    // Enable swipe navigation for touchscreen devices
     browser.settings().enableOverscrollHistoryNavigation()
-    // Register download callback on this browser
     FluckEngine.setupBrowserDownloadHandler(browser as com.teamdev.jxbrowser.browser.Browser)
-    // Register screen capture handler to prevent repeated permission dialogs on macOS
     FluckEngine.setupCaptureSessionHandler(browser)
-    // Register keyboard interceptor to forward menu shortcuts (Cmd+R, Cmd+N, etc.) to native menu bar
     FluckEngine.setupKeyboardInterceptor(browser)
     return browser
 }
@@ -373,7 +305,6 @@ actual fun disposeBrowser(browser: Any) {
             }
         }
     } catch (e: Exception) {
-        // Suppress exceptions during disposal to prevent crashes in cleanup code
         logger.warn(LogCategory.BROWSER, "Exception during browser disposal", mapOf("error" to (e.message ?: "unknown")))
     }
 }
@@ -381,7 +312,6 @@ actual fun disposeBrowser(browser: Any) {
 actual fun createBrowserViewState(browser: Any, window: Any?): Any? {
     val jxBrowser = browser as Browser
 
-    // Use provided window first (from LocalAwtWindow), fall back to finding a valid window
     val awtWindow = (window as? Window)?.takeIf {
         try { it.isDisplayable && it.isShowing } catch (e: Exception) { false }
     } ?: getValidComposeWindow()
@@ -391,29 +321,9 @@ actual fun createBrowserViewState(browser: Any, window: Any?): Any? {
         return null
     }
 
-    // Use MainScope to ensure UI operations happen on the main thread
     return BrowserViewState(jxBrowser, MainScope(), awtWindow)
 }
 
-/**
- * Recreates the BrowserViewState for an existing browser.
- * Used when re-acquiring rendering surface after fullscreen exit.
- *
- * JxBrowser can only have one active rendering surface per browser instance.
- * After exiting fullscreen, the Swing BrowserView releases the surface, but
- * the existing Compose BrowserViewState doesn't automatically re-acquire it.
- * Creating a fresh BrowserViewState forces JxBrowser to establish a new
- * rendering connection.
- *
- * Note: The old BrowserViewState.close() must be called before this to:
- * 1. Release the browser from the old state
- * 2. Cancel the MainScope created with the old state (BrowserViewState.close()
- *    internally cancels its coroutine scope)
- *
- * @param browser The existing JxBrowser Browser instance
- * @param window The AWT Window to associate with the new BrowserViewState
- * @return A new BrowserViewState, or null if window is invalid
- */
 actual fun recreateBrowserViewState(browser: Any, window: Any?): Any? {
     val jxBrowser = browser as? Browser
     if (jxBrowser == null || jxBrowser.isClosed) {
@@ -434,13 +344,6 @@ actual fun recreateBrowserViewState(browser: Any, window: Any?): Any? {
     return BrowserViewState(jxBrowser, MainScope(), awtWindow)
 }
 
-/**
- * Closes the BrowserViewState to release the browser for recreation.
- * Must be called before recreateBrowserViewState() to avoid
- * "Browser instance is already used by another state instance" error.
- *
- * @param viewState The BrowserViewState to close
- */
 actual fun closeBrowserViewState(viewState: Any) {
     try {
         val state = viewState as? BrowserViewState
@@ -464,24 +367,20 @@ actual fun getBrowserState(
     window: Any?
 ): Pair<Any, Any>? {
     return try {
-        // Verify engine is available before creating browser
         val engine = FluckEngine.engine
         if (engine.isClosed) {
             logger.warn(LogCategory.BROWSER, "getBrowserState: Engine is closed, cannot create browser")
             return null
         }
 
-        // Create a new browser - each tab has its own independent browser
         val browser = createBrowser() as Browser
 
-        // Verify browser was created successfully
         if (browser.isClosed) {
             logger.warn(LogCategory.BROWSER, "getBrowserState: Browser was closed immediately after creation")
             return null
         }
 
         // Subscribe to BrowserClosed event for event-driven recovery (Issue #351)
-        // This replaces polling - we get notified immediately when browser closes
         if (onBrowserClosed != null) {
             browser.on(BrowserClosed::class.java) {
                 logger.debug(LogCategory.BROWSER, "BrowserClosed event fired")
@@ -490,21 +389,16 @@ actual fun getBrowserState(
         }
 
         // Configure JS dialog handlers to prevent UI freeze (Issue #369)
-        // Must call tell.ok() immediately to unblock JxBrowser, then show informational dialog
         setupBrowserDialogHandlers(browser)
 
-        // Configure popup handler BEFORE creating view state
-        // This intercepts target="_blank" and window.open() intelligently:
-        // - OAuth popups with specific dimensions → Real popup windows
-        // - Regular links without dimensions → New tabs
+        // Configure popup handler: OAuth popups → real windows, regular links → tabs
         if (onOpenInNewTab != null) {
             configureBrowserPopupHandler(browser, onOpenInNewTab)
         }
 
-        // Pass the window from LocalAwtWindow to ensure browsers get the correct window handle
+        // Pass window from LocalAwtWindow for correct multi-window support
         val browserViewState = createBrowserViewState(browser, window)
 
-        // If browserViewState creation failed (no valid window), clean up and return null
         if (browserViewState == null) {
             logger.warn(LogCategory.BROWSER, "getBrowserState: Could not create BrowserViewState - no valid window available")
             if (!browser.isClosed) {
@@ -513,14 +407,12 @@ actual fun getBrowserState(
             return null
         }
 
-        // Load the URL (verify browser is still valid first)
         if (!browser.isClosed && url != "about:blank" && url.isNotEmpty()) {
             browser.navigation().loadUrl(url)
         }
 
         Pair(browser, browserViewState)
     } catch (e: Exception) {
-        // Provide detailed error info for debugging
         val errorType = when {
             e.message?.contains("closed object", ignoreCase = true) == true ->
                 "JxBrowser closed object error (engine or browser was disposed)"
@@ -533,33 +425,19 @@ actual fun getBrowserState(
     }
 }
 
-/**
- * Returns the current engine generation counter.
- * Increments every time the FluckEngine is reinitialized.
- */
 actual fun getEngineGeneration(): Long = FluckEngine.currentEngineGeneration
 
-/**
- * Checks if a browser instance is still valid and usable.
- * Returns false if browser is null, closed, or its engine is closed.
- */
 actual fun isBrowserValid(browser: Any?): Boolean {
     if (browser == null) return false
     val jxBrowser = browser as? Browser ?: return false
     return try {
-        // Check if browser is closed
         !jxBrowser.isClosed
     } catch (e: Exception) {
-        // Any exception means browser is in bad state
         logger.warn(LogCategory.BROWSER, "isBrowserValid: Exception checking browser state", mapOf("error" to (e.message ?: "unknown")))
         false
     }
 }
 
-/**
- * Returns user-friendly error message if engine initialization failed.
- * Useful for showing specific feedback about license validation or network errors.
- */
 actual fun getEngineInitError(): String? {
     return FluckEngine.initError?.let { error ->
         when (error) {
@@ -570,39 +448,19 @@ actual fun getEngineInitError(): String? {
     }
 }
 
-/**
- * Resets engine initialization state to allow retry after fixing network issues.
- */
 actual fun resetEngineInitialization() {
     FluckEngine.resetInitializationState()
 }
 
-/**
- * Get max initialization retries from settings.
- * Configurable via Settings > Browser > Advanced.
- */
 actual fun getMaxInitRetries(): Int = BrowserSettings.maxInitRetries
 
-/**
- * Get max recovery attempts from settings.
- * Configurable via Settings > Browser > Advanced.
- */
 actual fun getMaxRecoveryAttempts(): Int = BrowserSettings.maxRecoveryAttempts
 
-/**
- * Composable function to observe engine generation changes.
- * Returns the current generation and triggers recomposition when it changes.
- */
 @Composable
 actual fun collectEngineGeneration(): Long {
     val generation by FluckEngine.engineGenerationFlow.collectAsState()
     return generation
 }
 
-/**
- * Get the current AWT Window from the LocalAwtWindow CompositionLocal.
- * This ensures browsers get the correct window handle for their containing window.
- */
 @Composable
 actual fun getCurrentAwtWindow(): Any? = LocalAwtWindow.current
-

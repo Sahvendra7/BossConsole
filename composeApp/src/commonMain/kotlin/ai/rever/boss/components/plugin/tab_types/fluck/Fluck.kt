@@ -1,6 +1,5 @@
 package ai.rever.boss.components.plugin.tab_types.fluck
 
-import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.components.registery.*
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentBrowserPagesManager
@@ -36,7 +35,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -1148,111 +1146,3 @@ fun BrowserRecoveryView(url: String) {
     }
 }
 
-fun DefaultPlugin.registerFluck() = tabRegistry.registerTabType(FluckTabType) { tabInfo, ctx ->
-    // Find the parent component
-    val parentComponent = ctx as? ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
-    
-    createFluckTabComponent(
-        config = tabInfo, 
-        componentContext = ctx,
-        onTitleUpdate = { newTitle ->
-            // Update the tab title when the page title changes
-            parentComponent?.let { parent ->
-                // Find the tab by ID instead of by reference
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-                
-                if (tabIndex >= 0) {
-                    val currentTab = tabs[tabIndex]
-                    if (currentTab is FluckTabInfo) {
-                        // Update using the current tab info, not the original one
-                        parent.updateTab(tabIndex, currentTab.updateTitle(newTitle))
-                    }
-                }
-            }
-        },
-        onIconUpdate = { newIcon ->
-            // Update the tab icon when the favicon is loaded
-            parentComponent?.let { parent ->
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-                
-                if (tabIndex >= 0) {
-                    val currentTab = tabs[tabIndex]
-                    if (currentTab is FluckTabInfo) {
-                        parent.updateTab(tabIndex, currentTab.updateIcon(newIcon))
-                    }
-                }
-            }
-        },
-        onTabIconUpdate = { newTabIcon ->
-            // Update the tab icon with the actual favicon
-            parentComponent?.let { parent ->
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-                
-                if (tabIndex >= 0) {
-                    val currentTab = tabs[tabIndex]
-                    if (currentTab is FluckTabInfo) {
-                        parent.updateTab(tabIndex, currentTab.updateTabIcon(newTabIcon))
-                    }
-                }
-            }
-        },
-        onOpenInNewTab = { url ->
-            // Create a new tab with the specified URL
-            parentComponent?.let { parent ->
-                val newTabId = "browser_${Clock.System.now().toEpochMilliseconds()}"
-                val newTab = FluckTabInfo(
-                    id = newTabId,
-                    typeId = TabTypeId("fluck"),
-                    _title = "Loading...",
-                    url = url
-                )
-                parent.addTab(newTab)
-            }
-        },
-        onNavigationUpdate = { title, url ->
-            // Update navigation history
-            parentComponent?.let { parent ->
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-
-                if (tabIndex >= 0) {
-                    val currentTab = tabs[tabIndex]
-                    if (currentTab is FluckTabInfo) {
-                        // Create new instance with updated navigation (fixes synchronous title update)
-                        // Using updateNavigation() instead of navigateToPage() + copy() ensures
-                        // proper Compose recomposition without mutation-before-copy issues
-                        val updatedTab = currentTab.updateNavigation(title, url)
-                        parent.updateTab(tabIndex, updatedTab)
-                    }
-                }
-            }
-        },
-        onFaviconCacheKeyUpdate = { newCacheKey ->
-            // Update favicon cache key (Issue #160)
-            parentComponent?.let { parent ->
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-
-                if (tabIndex >= 0) {
-                    val currentTab = tabs[tabIndex]
-                    if (currentTab is FluckTabInfo) {
-                        parent.updateTab(tabIndex, currentTab.updateFaviconCacheKey(newCacheKey))
-                    }
-                }
-            }
-        },
-        onCloseTab = {
-            // Close this tab
-            parentComponent?.let { parent ->
-                val tabs = parent.tabsState.value.tabs
-                val tabIndex = tabs.indexOfFirst { it.id == tabInfo.id }
-                if (tabIndex >= 0) {
-                    parent.removeTab(tabIndex)
-                }
-            }
-        }
-    )
-}

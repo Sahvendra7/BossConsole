@@ -10,8 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
-import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
+import ai.rever.boss.plugin.browser.FluckEngine
+import ai.rever.boss.plugin.browser.LocalAwtWindow
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted

@@ -7,8 +7,8 @@ import BossDarkContentBackground
 import BossDarkSurface
 import BossDarkTextPrimary
 import BossDarkTextSecondary
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
+import ai.rever.boss.plugin.browser.BrowserSettings
+import ai.rever.boss.plugin.browser.BrowserSettingsManager
 import ai.rever.boss.components.settings.shared.SettingsSection
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

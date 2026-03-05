@@ -1,5 +1,9 @@
-package ai.rever.boss.components.plugin.tab_types.fluck
+package ai.rever.boss.plugin.browser
 
+import ai.rever.boss.components.plugin.tab_types.fluck.DownloadItem
+import ai.rever.boss.components.plugin.tab_types.fluck.DownloadManager
+import ai.rever.boss.components.plugin.tab_types.fluck.DownloadSettings
+import ai.rever.boss.components.plugin.tab_types.fluck.DownloadStatus
 import ai.rever.boss.config.JxBrowserConfig
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.logging.BossLogger

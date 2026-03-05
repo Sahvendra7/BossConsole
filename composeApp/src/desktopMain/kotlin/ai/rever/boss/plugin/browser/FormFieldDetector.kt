@@ -1,4 +1,4 @@
-package ai.rever.boss.components.plugin.tab_types.fluck
+package ai.rever.boss.plugin.browser
 
 import com.teamdev.jxbrowser.js.JsAccessible
 import kotlinx.coroutines.CompletableDeferred

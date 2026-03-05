@@ -3,7 +3,7 @@ package ai.rever.boss.components.plugin.panels.left_top
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadItem
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadManager
 import ai.rever.boss.components.plugin.tab_types.fluck.DownloadStatus
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.plugin.browser.FluckEngine
 import ai.rever.boss.platform.FileSystemUtils
 import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.DownloadItemData

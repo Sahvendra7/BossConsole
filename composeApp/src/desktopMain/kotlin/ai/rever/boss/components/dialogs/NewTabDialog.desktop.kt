@@ -1,6 +1,6 @@
 package ai.rever.boss.components.dialogs
 
-import ai.rever.boss.components.plugin.tab_types.fluck.UrlHistoryManager
+import ai.rever.boss.plugin.browser.UrlHistoryManager
 
 actual object UrlHistoryProvider {
     actual fun getSuggestions(query: String, limit: Int): List<UrlSuggestion> {

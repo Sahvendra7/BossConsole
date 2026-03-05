@@ -1,6 +1,6 @@
 package ai.rever.boss.services.passkey.desktop
 
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.plugin.browser.FluckEngine
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.teamdev.jxbrowser.browser.Browser

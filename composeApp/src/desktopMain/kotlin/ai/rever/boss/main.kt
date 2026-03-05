@@ -150,7 +150,7 @@ fun main(args: Array<String>) {
         }
         try {
             // Close browser engine first to release lock files
-            val engine = ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.currentEngine
+            val engine = ai.rever.boss.plugin.browser.FluckEngine.currentEngine
             if (engine != null && !engine.isClosed) {
                 engine.close()
             }
@@ -204,7 +204,7 @@ fun main(args: Array<String>) {
     // Proactively clean up stale JxBrowser lock files from previous sessions
     // This is especially important for debug mode where shutdown hooks may not run
     try {
-        ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine.proactiveCleanupOnStartup()
+        ai.rever.boss.plugin.browser.FluckEngine.proactiveCleanupOnStartup()
     } catch (e: Exception) {
         logger.warn(LogCategory.SYSTEM, "Proactive browser lock cleanup failed", error = e)
     }

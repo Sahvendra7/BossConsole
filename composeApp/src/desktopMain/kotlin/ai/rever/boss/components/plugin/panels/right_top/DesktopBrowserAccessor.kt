@@ -3,7 +3,7 @@ package ai.rever.boss.components.plugin.panels.right_top
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent
-import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
+import ai.rever.boss.plugin.browser.LockedBrowser
 import ai.rever.boss.plugin.browser.BrowserServiceImpl
 import com.teamdev.jxbrowser.browser.Browser
 import kotlinx.coroutines.Dispatchers

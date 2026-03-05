@@ -1,8 +1,8 @@
 package ai.rever.boss.components.plugin.providers
 
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserZoomSettingsManager
+import ai.rever.boss.plugin.browser.BrowserZoomSettingsManager
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
-import ai.rever.boss.components.plugin.tab_types.fluck.UrlHistoryManager
+import ai.rever.boss.plugin.browser.UrlHistoryManager
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.platform.MacOSScreenCapture
 import ai.rever.boss.plugin.api.InternalBrowserTabData

@@ -14,10 +14,10 @@ import ai.rever.boss.focusmode.FocusModeSettingsManager
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.window.WindowType
 import ai.rever.boss.updater.UpdateManager
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
-import ai.rever.boss.components.plugin.tab_types.fluck.LocalAwtWindow
-import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCaptureNotifier
-import ai.rever.boss.components.plugin.tab_types.fluck.ScreenCapturePickerDialog
+import ai.rever.boss.plugin.browser.FluckEngine
+import ai.rever.boss.plugin.browser.LocalAwtWindow
+import ai.rever.boss.plugin.browser.ScreenCaptureNotifier
+import ai.rever.boss.plugin.browser.ScreenCapturePickerDialog
 import ai.rever.boss.services.terminal.TerminalAPIAccess
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer

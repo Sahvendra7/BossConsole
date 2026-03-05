@@ -2,7 +2,7 @@ package ai.rever.boss.utils
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
+import ai.rever.boss.plugin.browser.FluckEngine
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay

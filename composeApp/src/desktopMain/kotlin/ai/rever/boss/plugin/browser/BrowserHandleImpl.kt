@@ -1,10 +1,5 @@
 package ai.rever.boss.plugin.browser
 
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserJavaScripts
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
-import ai.rever.boss.components.plugin.tab_types.fluck.FormFieldDetector
-import ai.rever.boss.components.plugin.tab_types.fluck.FormFieldInjector
-import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
 import ai.rever.boss.tabfullscreen.FullscreenBrowserWindow
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import ai.rever.boss.utils.MacOSGestureHandler

@@ -1,6 +1,5 @@
 package ai.rever.boss.plugin.browser
 
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.teamdev.jxbrowser.browser.Browser

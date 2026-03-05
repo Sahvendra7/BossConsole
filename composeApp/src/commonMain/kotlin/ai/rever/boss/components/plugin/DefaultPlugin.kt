@@ -26,7 +26,6 @@ import ai.rever.boss.components.plugin.panels.right_top.BrowserAccessor
 import ai.rever.boss.components.plugin.panels.right_top.storeSplitViewState
 import ai.rever.boss.components.plugin.panels.right_top.BrowserIntegration as InternalBrowserIntegration
 // DYNAMIC: Tab type registrations moved to dynamic plugins
-// import ai.rever.boss.components.plugin.tab_types.fluck.registerFluck
 // import ai.rever.boss.components.plugin.tab_types.registerCodeEditor
 // import ai.rever.boss.components.plugin.tab_types.registerTerminalTab
 import ai.rever.boss.components.plugin.tab_types.fluck.SecretChangeNotifier

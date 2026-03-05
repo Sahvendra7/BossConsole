@@ -1,7 +1,7 @@
 package ai.rever.boss.components.plugin.panels.right_top
 
-import ai.rever.boss.components.plugin.tab_types.fluck.FluckEngine
-import ai.rever.boss.components.plugin.tab_types.fluck.LockedBrowser
+import ai.rever.boss.plugin.browser.FluckEngine
+import ai.rever.boss.plugin.browser.LockedBrowser
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.arkivanov.decompose.ComponentContext

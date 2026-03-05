@@ -1,7 +1,7 @@
 package ai.rever.boss.components.settings.sections
 
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettings
-import ai.rever.boss.components.plugin.tab_types.fluck.BrowserSettingsManager
+import ai.rever.boss.plugin.browser.BrowserSettings
+import ai.rever.boss.plugin.browser.BrowserSettingsManager
 import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.boss.components.settings.shared.SettingsDropdown
 import ai.rever.boss.components.settings.shared.SettingsTextField
