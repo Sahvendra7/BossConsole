@@ -2591,12 +2591,13 @@ fun ComponentContext.BossApp(
                         newTabDialogInitialType = null
                         focusRequester.requestFocus()
                     },
+                    tabRegistry = tabRegistry,
                     onCreateTab = { type, path ->
                         // Get the active panel component first, fallback to last interacted, then original
-                        val targetComponent = splitViewState.getActiveTabsComponent() 
-                            ?: splitViewState.getLastInteractedTabComponent() 
+                        val targetComponent = splitViewState.getActiveTabsComponent()
+                            ?: splitViewState.getLastInteractedTabComponent()
                             ?: tabsComponent
-                        
+
                         when (type) {
                             TabType.URL -> {
                                 val tab = FluckTabInfo(

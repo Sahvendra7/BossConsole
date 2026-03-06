@@ -361,6 +361,21 @@ class DynamicPluginManager(
 
                 val loadedPlugin = pluginLoader.getPlugin(pluginId)
                 if (loadedPlugin == null) {
+                    // Plugin not in classloader — may have been unloaded during
+                    // incompatibility handling but still tracked in _pluginStates.
+                    // Clean up state so the update flow can proceed to reinstall.
+                    val pluginState = _pluginStates.value[pluginId]
+                    if (pluginState != null) {
+                        logger.info(LogCategory.SYSTEM, "Plugin already unloaded from classloader, cleaning up state", mapOf(
+                            "pluginId" to pluginId,
+                            "state" to pluginState.state.name
+                        ))
+                        val trackingContext = trackingContexts.remove(pluginId)
+                        trackingContext?.unregisterAll()
+                        managerScope.launch { sandboxManager.removeSandbox(pluginId) }
+                        removePluginState(pluginId)
+                        return@withLock Result.success(Unit)
+                    }
                     return@withLock Result.failure(
                         PluginUnloadException("Plugin not found: $pluginId", pluginId)
                     )

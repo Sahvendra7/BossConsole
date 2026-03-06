@@ -549,6 +549,7 @@ fun BossTabsComponent.BossMainTabBar(
                 showNewTabDialog = false
                 selectedTabType = null
             },
+            tabRegistry = tabRegistry,
             initialTabType = selectedTabType,
             onCreateTab = { type, path ->
                 when (type) {
@@ -893,6 +894,7 @@ fun BossTabsComponent.BossMainPanelContent(
                 showNewTabDialog = false
                 selectedTabType = null
             },
+            tabRegistry = tabRegistry,
             initialTabType = selectedTabType,
             onCreateTab = { type, path ->
                 when (type) {

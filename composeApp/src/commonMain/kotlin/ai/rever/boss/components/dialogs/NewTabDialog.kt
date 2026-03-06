@@ -2,6 +2,11 @@ package ai.rever.boss.components.dialogs
 
 import ContextMenuBackground
 import ContextMenuBorder
+import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.tab.fluck.FluckTabType
+import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
+import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.icons.FileIcons
@@ -111,8 +116,10 @@ private fun validateFilePath(path: String, basePath: String? = null): String? {
     }
 }
 
-enum class TabType {
-    URL, FILE, TERMINAL
+enum class TabType(val tabTypeId: TabTypeId) {
+    URL(FluckTabType.typeId),
+    FILE(CodeEditorTabType.typeId),
+    TERMINAL(TerminalTabType.typeId)
 }
 
 // Simple URL parameter encoding
@@ -142,9 +149,13 @@ data class UrlSuggestion(
 fun NewTabDialog(
     onDismiss: () -> Unit,
     onCreateTab: (type: TabType, path: String) -> Unit,
+    tabRegistry: TabRegistry,
     initialTabType: TabType? = null
 ) {
-    var selectedType by remember { mutableStateOf(initialTabType ?: TabType.URL) }
+    val availableTypes = TabType.entries.filter { tabRegistry.isRegistered(it.tabTypeId) }
+    val defaultType = if (initialTabType != null && initialTabType in availableTypes) initialTabType
+        else availableTypes.firstOrNull() ?: TabType.URL
+    var selectedType by remember { mutableStateOf(defaultType) }
     var urlText by remember { mutableStateOf("") }
     var fileText by remember { mutableStateOf("") }
     var terminalCommand by remember { mutableStateOf("") }
@@ -247,16 +258,32 @@ fun NewTabDialog(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 
+                if (availableTypes.isEmpty()) {
+                    // Empty state when no tab plugins are enabled
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No tab types available. Enable a tab plugin or install one from the Plugin Store.",
+                            color = Color(0xFF999999),
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
                 // Type selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (TabType.URL in availableTypes) {
                     TabTypeOption(
                         icon = Icons.Default.Language,
                         label = "URL",
                         isSelected = selectedType == TabType.URL,
-                        onClick = { 
+                        onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.FILE -> fileText = inputText
@@ -267,12 +294,14 @@ fun NewTabDialog(
                         },
                         modifier = Modifier.weight(1f)
                     )
-                    
+                    }
+
+                    if (TabType.FILE in availableTypes) {
                     TabTypeOption(
                         icon = Icons.AutoMirrored.Filled.InsertDriveFile,
                         label = "File",
                         isSelected = selectedType == TabType.FILE,
-                        onClick = { 
+                        onClick = {
                             // Save current text before switching
                             when (selectedType) {
                                 TabType.URL -> urlText = inputText
@@ -283,7 +312,9 @@ fun NewTabDialog(
                         },
                         modifier = Modifier.weight(1f)
                     )
-                    
+                    }
+
+                    if (TabType.TERMINAL in availableTypes) {
                     TabTypeOption(
                         icon = Icons.Outlined.Terminal,
                         label = "Terminal",
@@ -300,10 +331,11 @@ fun NewTabDialog(
                         },
                         modifier = Modifier.weight(1f)
                     )
+                    }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Input field
                 Column {
                     // Show terminal command input or URL/File input
@@ -864,9 +896,10 @@ fun NewTabDialog(
                         }
                     }
                 }
-                
+                } // end availableTypes.isNotEmpty() else
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -889,7 +922,7 @@ fun NewTabDialog(
                             val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
                             handleCreateTab(selectedType, input, onCreateTab, onDismiss)
                         },
-                        enabled = selectedType == TabType.TERMINAL || inputText.isNotBlank(),
+                        enabled = availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank()),
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = Color(0xFF4A9EFF),
                             contentColor = Color.White,
