@@ -5,6 +5,7 @@ import ai.rever.boss.plugin.api.LoadedPluginInfo
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.services.auth.AuthStateManager
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -120,7 +121,8 @@ class PluginLoaderDelegateImpl(
                     healthy = info.state == PluginState.LOADED,
                     jarPath = info.jarPath,
                     installedAt = 0L,
-                    requiresAdmin = info.manifest.requiresAdmin
+                    requiresAdmin = info.manifest.requiresAdmin,
+                    isIncompatible = PluginCrashRegistry.isIncompatible(info.manifest.pluginId)
                 )
             }.filter { !it.requiresAdmin || isAdmin }
         } catch (e: Exception) {

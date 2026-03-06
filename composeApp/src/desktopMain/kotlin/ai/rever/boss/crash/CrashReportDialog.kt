@@ -53,7 +53,8 @@ import kotlinx.coroutines.launch
 fun CrashReportDialog(
     crashReport: CrashReport,
     onDismiss: () -> Unit,
-    onSubmit: (userNotes: String?, includeLogs: Boolean) -> Unit
+    onSubmit: (userNotes: String?, includeLogs: Boolean) -> Unit,
+    onCleanAndRestart: (() -> Unit)? = null
 ) {
     var userNotes by remember { mutableStateOf("") }
     var includeLogs by remember { mutableStateOf(false) }
@@ -322,6 +323,24 @@ fun CrashReportDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
+                // Clean & Restart button
+                if (onCleanAndRestart != null) {
+                    Button(
+                        onClick = onCleanAndRestart,
+                        enabled = !isSubmitting,
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFFC62828),
+                            contentColor = Color.White,
+                            disabledBackgroundColor = Color(0xFF3C3F41),
+                            disabledContentColor = Color(0xFF666666)
+                        ),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Clean Data & Restart")
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
                 // Don't Send button
                 TextButton(
                     onClick = onDismiss,

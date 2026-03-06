@@ -47,6 +47,7 @@ fun SandboxedPanelContent(
         SandboxState.DISABLED -> {
             PluginDisabledFallback(
                 pluginId = pluginId,
+                isIncompatible = PluginCrashRegistry.isIncompatible(pluginId),
                 onEnable = { scope.launch { onEnable() } }
             )
         }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,11 +36,13 @@ import androidx.compose.ui.unit.dp
  * Fallback UI displayed when a plugin crashes.
  *
  * Shows the error information and provides options to:
- * - Restart the plugin
+ * - Restart the plugin (for recoverable errors)
+ * - Update the plugin (for binary incompatibility errors)
  * - Dismiss the error (keep the fallback visible)
  *
  * @param pluginId The ID of the crashed plugin
  * @param error The error that caused the crash
+ * @param isIncompatible Whether the error is a binary incompatibility (plugin needs update)
  * @param onRestart Callback when the user clicks "Restart Plugin"
  * @param onDismiss Optional callback when the user dismisses the error without restarting
  */
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.dp
 fun PluginErrorFallback(
     pluginId: String,
     error: Throwable,
+    isIncompatible: Boolean = false,
     onRestart: () -> Unit,
     onDismiss: (() -> Unit)? = null
 ) {
@@ -79,19 +83,19 @@ fun PluginErrorFallback(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Error icon
+        // Icon — update icon for incompatibility, warning for general errors
         Icon(
-            imageVector = Icons.Outlined.Warning,
-            contentDescription = "Error",
+            imageVector = if (isIncompatible) Icons.Outlined.SystemUpdate else Icons.Outlined.Warning,
+            contentDescription = if (isIncompatible) "Update Required" else "Error",
             modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.error
+            tint = if (isIncompatible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // Title
         Text(
-            text = "Plugin Error",
+            text = if (isIncompatible) "Plugin Update Required" else "Plugin Error",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -122,7 +126,11 @@ fun PluginErrorFallback(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = error.message ?: "Unknown error",
+                text = if (isIncompatible) {
+                    "This plugin is incompatible with the current version of BOSS. Please update it."
+                } else {
+                    error.message ?: "Unknown error"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
@@ -132,27 +140,38 @@ fun PluginErrorFallback(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Restart button
-        Button(
-            onClick = onRestart,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Restart Plugin")
+        if (isIncompatible) {
+            // Dismiss button — restart won't help for incompatible plugins
+            OutlinedButton(onClick = onDismiss ?: {}) {
+                Text("Dismiss")
+            }
+        } else {
+            // Restart button for recoverable errors
+            Button(
+                onClick = onRestart,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Restart Plugin")
+            }
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
         // Help text
         Text(
-            text = "If this problem persists, try restarting the application.",
+            text = if (isIncompatible) {
+                "Update this plugin to a version compatible with the current BOSS release."
+            } else {
+                "If this problem persists, try restarting the application."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = TextAlign.Center

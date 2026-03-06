@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin.sandbox
 
 import ai.rever.boss.plugin.sandbox.health.PluginHealthMetrics
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -232,6 +233,18 @@ class InProcessPluginSandbox(
         ), wrappedError)
 
         _healthMetrics.value = _healthMetrics.value.withError()
+
+        // Binary incompatibility is deterministic — restart will never fix it.
+        // Skip the restart loop and disable immediately.
+        if (PluginErrorClassifier.isBinaryIncompatibility(error)) {
+            logger.error(LogCategory.SYSTEM, "Binary incompatibility detected, disabling plugin", mapOf(
+                "pluginId" to pluginId,
+                "errorType" to error.javaClass.simpleName
+            ))
+            PluginCrashRegistry.markIncompatible(pluginId)
+            _state.value = SandboxState.DISABLED
+            return
+        }
 
         // Check if we should mark as unhealthy
         if (_healthMetrics.value.consecutiveErrors >= config.maxConsecutiveErrors) {

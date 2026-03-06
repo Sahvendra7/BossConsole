@@ -1,5 +1,6 @@
 package ai.rever.boss.crash
 
+import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -131,6 +132,11 @@ object CrashHandler {
                         ))
                         frame.dispose()
                         terminateAfterCrash()
+                    },
+                    onCleanAndRestart = {
+                        logger.info(LogCategory.SYSTEM, "User requested clean data and restart")
+                        frame.dispose()
+                        cleanDataAndRestart()
                     }
                 )
             }
@@ -268,6 +274,67 @@ object CrashHandler {
         clearPendingReport()
         logger.info(LogCategory.SYSTEM, "Terminating application after crash")
         System.exit(1)
+    }
+
+    /**
+     * Delete the BOSS data directory and restart the application.
+     *
+     * This gives users a clean slate when corrupted plugins or cached data
+     * cause persistent crashes (e.g., after a BOSS version upgrade with
+     * incompatible plugins).
+     */
+    private fun cleanDataAndRestart() {
+        try {
+            val dataDir = BossDirectories.rootDir
+            logger.info(LogCategory.SYSTEM, "Cleaning BOSS data directory", mapOf(
+                "path" to dataDir.absolutePath
+            ))
+
+            // Delete everything in the data dir
+            if (dataDir.exists()) {
+                dataDir.deleteRecursively()
+                logger.info(LogCategory.SYSTEM, "Deleted BOSS data directory")
+            }
+
+            // Restart the app by launching a new process
+            val javaBin = ProcessHandle.current().info().command().orElse(null)
+            if (javaBin != null) {
+                logger.info(LogCategory.SYSTEM, "Restarting application")
+                ProcessBuilder(javaBin, *getRestartArgs())
+                    .inheritIO()
+                    .start()
+            } else {
+                logger.warn(LogCategory.SYSTEM, "Cannot determine Java binary for restart")
+            }
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "Failed to clean data and restart", error = e)
+        }
+
+        clearPendingReport()
+        System.exit(0)
+    }
+
+    /**
+     * Get the command-line arguments for restarting the application.
+     */
+    private fun getRestartArgs(): Array<String> {
+        val args = mutableListOf<String>()
+
+        // Pass through system properties that were set
+        val relevantProps = listOf("boss.dev.mode", "boss.log.level")
+        for (prop in relevantProps) {
+            System.getProperty(prop)?.let { value ->
+                args.add("-D$prop=$value")
+            }
+        }
+
+        // Add the JAR or classpath
+        val sunCommand = System.getProperty("sun.java.command")
+        if (sunCommand != null) {
+            args.addAll(sunCommand.split(" "))
+        }
+
+        return args.toTypedArray()
     }
 
     /**

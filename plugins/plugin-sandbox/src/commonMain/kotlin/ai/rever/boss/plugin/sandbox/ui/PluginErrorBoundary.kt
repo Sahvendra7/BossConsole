@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin.sandbox.ui
 
+import ai.rever.boss.plugin.sandbox.PluginErrorClassifier
 import ai.rever.boss.plugin.sandbox.PluginSandbox
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
@@ -32,14 +33,22 @@ val LocalPluginErrorHandler = compositionLocalOf<(Throwable) -> Unit> { { } }
 object PluginCrashRegistry {
     private val logger = BossLogger.forComponent("PluginCrashRegistry")
 
+    /**
+     * Stores crash information including the error and whether it's a binary incompatibility.
+     */
+    data class CrashInfo(
+        val error: Throwable,
+        val isBinaryIncompatibility: Boolean
+    )
+
     /** Thread-safe tracking store for crashed plugins. Used by watchdog and non-UI queries. */
-    private val _crashedPluginsMap = ConcurrentHashMap<String, Throwable>()
+    private val _crashedPluginsMap = ConcurrentHashMap<String, CrashInfo>()
 
     /** Compose-observable state, only mutated on EDT via invokeLater. */
-    private val _crashedPluginsState = mutableStateOf(mapOf<String, Throwable>())
+    private val _crashedPluginsState = mutableStateOf(mapOf<String, CrashInfo>())
 
     /** @Composable to establish snapshot read dependency for recomposition. */
-    val crashedPlugins: Map<String, Throwable>
+    val crashedPlugins: Map<String, CrashInfo>
         @Composable get() = _crashedPluginsState.value
 
     /**
@@ -85,7 +94,10 @@ object PluginCrashRegistry {
     fun recordCrash(pluginId: String, error: Throwable) {
         // Store crash info in thread-safe map (for watchdog / non-UI tracking).
         // This runs on the crashing thread — ConcurrentHashMap is safe here.
-        _crashedPluginsMap[pluginId] = error
+        _crashedPluginsMap[pluginId] = CrashInfo(
+            error = error,
+            isBinaryIncompatibility = PluginErrorClassifier.isBinaryIncompatibility(error)
+        )
 
         val mapping = activeTabMappings[pluginId]
 
@@ -130,6 +142,26 @@ object PluginCrashRegistry {
 
     /** Check if a plugin has crashed (non-composable, thread-safe). */
     fun hasCrashed(pluginId: String): Boolean = _crashedPluginsMap.containsKey(pluginId)
+
+    /**
+     * Thread-safe set of plugins disabled due to binary incompatibility.
+     * Persists across crash clear/tab close cycles so the DISABLED state fallback
+     * can show the "incompatible" variant.
+     */
+    private val _incompatiblePlugins = ConcurrentHashMap.newKeySet<String>()
+
+    /** Mark a plugin as incompatible (called from sandbox when binary incompatibility is detected). */
+    fun markIncompatible(pluginId: String) {
+        _incompatiblePlugins.add(pluginId)
+    }
+
+    /** Check if a plugin was disabled due to binary incompatibility. */
+    fun isIncompatible(pluginId: String): Boolean = _incompatiblePlugins.contains(pluginId)
+
+    /** Clear incompatible state (e.g., after plugin update). */
+    fun clearIncompatible(pluginId: String) {
+        _incompatiblePlugins.remove(pluginId)
+    }
 }
 
 /**
@@ -228,12 +260,16 @@ fun PluginErrorBoundary(
     // that corrupt the SubcomposeLayout tree. When the parent rebuilds the tree
     // (via key() change), this boundary is recreated fresh and reads from the registry.
     val registryCrash = PluginCrashRegistry.crashedPlugins[pluginId]
-    val activeError = error ?: registryCrash
+    val localError = error
+    val activeError = localError ?: registryCrash?.error
+    val isIncompatible = registryCrash?.isBinaryIncompatibility == true ||
+        (localError != null && PluginErrorClassifier.isBinaryIncompatibility(localError))
 
     if (activeError != null) {
         PluginErrorFallback(
             pluginId = pluginId,
             error = activeError,
+            isIncompatible = isIncompatible,
             onRestart = {
                 logger.info(LogCategory.UI, "User requested plugin restart", mapOf(
                     "pluginId" to pluginId

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,14 +35,17 @@ import androidx.compose.ui.unit.dp
  * Fallback UI shown when a plugin is disabled.
  *
  * Displays a message explaining the plugin is disabled and provides
- * a button to re-enable it.
+ * a button to re-enable it. When [isIncompatible] is true, shows
+ * an "incompatible" variant prompting the user to update the plugin.
  *
  * @param pluginId The ID of the disabled plugin
+ * @param isIncompatible Whether the plugin was disabled due to binary incompatibility
  * @param onEnable Callback when the user clicks "Re-enable Plugin"
  */
 @Composable
 fun PluginDisabledFallback(
     pluginId: String,
+    isIncompatible: Boolean = false,
     onEnable: () -> Unit
 ) {
     Column(
@@ -53,16 +57,16 @@ fun PluginDisabledFallback(
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Outlined.Block,
+            imageVector = if (isIncompatible) Icons.Outlined.SystemUpdate else Icons.Outlined.Block,
             contentDescription = null,
             modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.outline
+            tint = if (isIncompatible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
         )
 
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "Plugin Disabled",
+            text = if (isIncompatible) "Plugin Incompatible" else "Plugin Disabled",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -70,7 +74,11 @@ fun PluginDisabledFallback(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Plugin '$pluginId' has been disabled",
+            text = if (isIncompatible) {
+                "Plugin '$pluginId' is incompatible with this version of BOSS"
+            } else {
+                "Plugin '$pluginId' has been disabled"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -79,7 +87,11 @@ fun PluginDisabledFallback(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "This may be due to repeated errors or manual disabling.",
+            text = if (isIncompatible) {
+                "This plugin needs to be updated to work with this version of BOSS."
+            } else {
+                "This may be due to repeated errors or manual disabling."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
@@ -89,12 +101,12 @@ fun PluginDisabledFallback(
 
         OutlinedButton(onClick = onEnable) {
             Icon(
-                imageVector = Icons.Outlined.Refresh,
+                imageVector = if (isIncompatible) Icons.Outlined.SystemUpdate else Icons.Outlined.Refresh,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text("Re-enable Plugin")
+            Text(if (isIncompatible) "Check for Updates" else "Re-enable Plugin")
         }
     }
 }

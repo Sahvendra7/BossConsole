@@ -13,8 +13,10 @@ import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.loader.DynamicPluginLoaderImpl
 import ai.rever.boss.plugin.loader.PluginUnloadException
 import ai.rever.boss.utils.AppVersion
+import ai.rever.boss.plugin.sandbox.PluginErrorClassifier
 import ai.rever.boss.plugin.sandbox.PluginSandboxManager
 import ai.rever.boss.plugin.sandbox.SandboxConfig
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.CoroutineScope
@@ -226,31 +228,51 @@ class DynamicPluginManager(
                 val shouldHideAdminPlugin = manifest.requiresAdmin && !isAdmin
 
                 // Register the plugin (unless it's an admin-only plugin and user is not admin)
+                var registrationFailed = false
                 if (enabled && !shouldHideAdminPlugin) {
                     try {
                         loadedPlugin.instance.register(trackingContext)
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
+                        // Catch Throwable (not just Exception) because binary incompatibility
+                        // errors like NoSuchMethodError extend Error, not Exception.
                         logger.error(LogCategory.SYSTEM, "Error registering plugin", mapOf(
-                            "pluginId" to manifest.pluginId
+                            "pluginId" to manifest.pluginId,
+                            "errorType" to e.javaClass.simpleName
                         ), e)
 
-                        // Cleanup on failure
-                        trackingContext.unregisterAll()
-                        trackingContexts.remove(manifest.pluginId)
-                        pluginLoader.unloadPlugin(manifest.pluginId)
+                        if (PluginErrorClassifier.isBinaryIncompatibility(e)) {
+                            // Binary incompatibility is deterministic — track as DISABLED
+                            // so the UI shows "Plugin Incompatible" with update prompt.
+                            PluginCrashRegistry.markIncompatible(manifest.pluginId)
+                            registrationFailed = true
 
-                        notifyListeners { it.pluginLoadFailed(manifest, e) }
-                        return@withLock Result.failure(e)
+                            trackingContext.unregisterAll()
+                            trackingContexts.remove(manifest.pluginId)
+                            pluginLoader.unloadPlugin(manifest.pluginId)
+                        } else {
+                            // Recoverable error — cleanup and report failure
+                            trackingContext.unregisterAll()
+                            trackingContexts.remove(manifest.pluginId)
+                            pluginLoader.unloadPlugin(manifest.pluginId)
+
+                            notifyListeners { it.pluginLoadFailed(manifest, e) }
+                            return@withLock Result.failure(e)
+                        }
                     }
                 }
 
                 // Create plugin info
+                val pluginState = when {
+                    registrationFailed -> PluginState.DISABLED
+                    enabled && !shouldHideAdminPlugin -> PluginState.LOADED
+                    else -> PluginState.DISABLED
+                }
                 val info = DynamicPluginInfo(
                     manifest = manifest,
                     jarPath = jarPath,
-                    state = if (enabled && !shouldHideAdminPlugin) PluginState.LOADED else PluginState.DISABLED,
+                    state = pluginState,
                     loadedAt = System.currentTimeMillis(),
-                    enabled = enabled
+                    enabled = enabled && !registrationFailed
                 )
 
                 // Track hidden admin plugins
@@ -273,9 +295,10 @@ class DynamicPluginManager(
                 ))
 
                 Result.success(info)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error(LogCategory.SYSTEM, "Failed to install plugin", mapOf(
-                    "jarPath" to jarPath
+                    "jarPath" to jarPath,
+                    "errorType" to e.javaClass.simpleName
                 ), e)
                 Result.failure(e)
             }
@@ -447,6 +470,9 @@ class DynamicPluginManager(
                 // Enable sandbox
                 sandboxManager.enablePlugin(pluginId)
 
+                // Clear any prior incompatible state on successful re-enable
+                PluginCrashRegistry.clearIncompatible(pluginId)
+
                 // Update state
                 val currentInfo = _pluginStates.value[pluginId]
                 if (currentInfo != null) {
@@ -457,9 +483,10 @@ class DynamicPluginManager(
                 }
 
                 Result.success(Unit)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error(LogCategory.SYSTEM, "Failed to enable plugin", mapOf(
-                    "pluginId" to pluginId
+                    "pluginId" to pluginId,
+                    "errorType" to e.javaClass.simpleName
                 ), e)
                 Result.failure(e)
             }
@@ -642,9 +669,10 @@ class DynamicPluginManager(
                         "error" to (result.exceptionOrNull()?.message ?: "unknown")
                     ))
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error(LogCategory.SYSTEM, "Exception loading persisted plugin", mapOf(
-                    "pluginId" to entry.pluginId
+                    "pluginId" to entry.pluginId,
+                    "errorType" to e.javaClass.simpleName
                 ), e)
                 results[entry.pluginId] = Result.failure(e)
             }
@@ -717,9 +745,10 @@ class DynamicPluginManager(
                         "error" to (result.exceptionOrNull()?.message ?: "unknown")
                     ))
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error(LogCategory.SYSTEM, "Exception loading bundled plugin", mapOf(
-                    "file" to jarFile.name
+                    "file" to jarFile.name,
+                    "errorType" to e.javaClass.simpleName
                 ), e)
                 results[jarFile.nameWithoutExtension] = Result.failure(e)
             }
@@ -826,9 +855,10 @@ class DynamicPluginManager(
                                 logger.info(LogCategory.SYSTEM, "Re-registered admin plugin", mapOf(
                                     "pluginId" to pluginId
                                 ))
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 logger.error(LogCategory.SYSTEM, "Failed to re-register admin plugin", mapOf(
-                                    "pluginId" to pluginId
+                                    "pluginId" to pluginId,
+                                    "errorType" to e.javaClass.simpleName
                                 ), e)
                             }
                         }
