@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.10](v8.17.10.md) | 2026-03-06 | Auto-disable incompatible plugins with crash recovery and cleaner New Tab dialog hiding disabled plugin tabs |
 | [v8.17.8](v8.17.8.md) | 2026-03-05 | Dead Fluck browser UI removed (~8k lines) and browser infrastructure consolidated into plugin/browser package |
 | [v8.17.7](v8.17.7.md) | 2026-03-05 | Plugin crash sandboxing with PluginCrashRegistry, centralized .boss data directory via BossDirectories, and BossEditor migrated to Maven artifact |
 | [v8.17.6](v8.17.6.md) | 2026-03-02 | macOS fullscreen close fix, deprecated plugin-api module removed, and CI/CD dependency updates |
