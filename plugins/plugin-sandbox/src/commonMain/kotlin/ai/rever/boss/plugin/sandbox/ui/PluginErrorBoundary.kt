@@ -2,11 +2,13 @@ package ai.rever.boss.plugin.sandbox.ui
 
 import ai.rever.boss.plugin.sandbox.PluginErrorClassifier
 import ai.rever.boss.plugin.sandbox.PluginSandbox
+import ai.rever.boss.plugin.sandbox.SandboxState
 import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -255,14 +257,28 @@ fun PluginErrorBoundary(
         }
     }
 
+    // Check sandbox state — if DISABLED (e.g. binary incompatibility), show error
+    // immediately without attempting to render content. This prevents repeated crashes
+    // when a plugin is already known to be broken.
+    val sandboxState by sandbox.state.collectAsState()
+
     // Check both local error state and the crash registry.
     // The registry is populated by the crash interceptor for composition crashes
     // that corrupt the SubcomposeLayout tree. When the parent rebuilds the tree
     // (via key() change), this boundary is recreated fresh and reads from the registry.
     val registryCrash = PluginCrashRegistry.crashedPlugins[pluginId]
     val localError = error
-    val activeError = localError ?: registryCrash?.error
-    val isIncompatible = registryCrash?.isBinaryIncompatibility == true ||
+    val activeError = when {
+        sandboxState == SandboxState.DISABLED -> {
+            // Sandbox was disabled (e.g. binary incompatibility) — synthesize an error
+            // if none is already recorded, so the fallback UI always shows.
+            localError ?: registryCrash?.error
+                ?: NoSuchMethodError("Plugin disabled due to binary incompatibility")
+        }
+        else -> localError ?: registryCrash?.error
+    }
+    val isIncompatible = PluginCrashRegistry.isIncompatible(pluginId) ||
+        registryCrash?.isBinaryIncompatibility == true ||
         (localError != null && PluginErrorClassifier.isBinaryIncompatibility(localError))
 
     if (activeError != null) {
