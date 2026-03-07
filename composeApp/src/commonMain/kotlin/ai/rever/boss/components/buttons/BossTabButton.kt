@@ -93,14 +93,16 @@ fun BossTabButton(
     
     // State for tooltip
     var showTooltip by remember { mutableStateOf(false) }
-    var buttonPosition by remember { mutableStateOf(Offset.Zero) }
-    var buttonSize by remember { mutableStateOf(IntOffset(0, 0)) }
-    var tooltipSize by remember { mutableStateOf(IntOffset(0, 0)) }
-    
+    // Non-observable holders for layout measurements to avoid triggering
+    // remeasure during the layout phase (prevents reentrancy crashes)
+    val buttonPositionRef = remember { floatArrayOf(0f, 0f) }
+    val buttonSizeRef = remember { intArrayOf(0, 0) }
+    val tooltipSizeRef = remember { intArrayOf(0, 0) }
+
     // Calculate tooltip position - centered above the button
-    val tooltipPosition = IntOffset(
-        x = buttonPosition.x.toInt() + (buttonSize.x - tooltipSize.x) / 2,
-        y = buttonPosition.y.toInt() - tooltipSize.y - 5
+    fun computeTooltipPosition() = IntOffset(
+        x = buttonPositionRef[0].toInt() + (buttonSizeRef[0] - tooltipSizeRef[0]) / 2,
+        y = buttonPositionRef[1].toInt() - tooltipSizeRef[1] - 5
     )
     
     // Handle hover tooltip delay
@@ -119,7 +121,7 @@ fun BossTabButton(
     if (showTooltip) {
         Popup(
             alignment = Alignment.TopStart,
-            offset = tooltipPosition,
+            offset = computeTooltipPosition(),
             properties = PopupProperties(
                 focusable = false,
                 dismissOnClickOutside = false
@@ -128,10 +130,8 @@ fun BossTabButton(
             Surface(
                 modifier = Modifier
                     .onGloballyPositioned { coordinates ->
-                        tooltipSize = IntOffset(
-                            coordinates.size.width,
-                            coordinates.size.height
-                        )
+                        tooltipSizeRef[0] = coordinates.size.width
+                        tooltipSizeRef[1] = coordinates.size.height
                     },
                 color = BossDarkBorder,
                 shape = RoundedCornerShape(4.dp)
@@ -171,8 +171,8 @@ fun BossTabButton(
         ContextMenu(
             items = contextMenuItems,
             offset = IntOffset(
-                buttonPosition.x.toInt(),
-                buttonPosition.y.toInt() + buttonSize.y
+                buttonPositionRef[0].toInt(),
+                buttonPositionRef[1].toInt() + buttonSizeRef[1]
             ),
             onDismissRequest = { showContextMenu = false }
         )
@@ -199,12 +199,12 @@ fun BossTabButton(
             .widthIn(min = 180.dp, max = 450.dp)
             .hoverable(interactionSource)
             .onGloballyPositioned { coordinates ->
-                buttonPosition = coordinates.positionInParent()
+                val pos = coordinates.positionInParent()
+                buttonPositionRef[0] = pos.x
+                buttonPositionRef[1] = pos.y
                 windowPosition = coordinates.positionInWindow()
-                buttonSize = IntOffset(
-                    coordinates.size.width,
-                    coordinates.size.height
-                )
+                buttonSizeRef[0] = coordinates.size.width
+                buttonSizeRef[1] = coordinates.size.height
                 // Register bounds for drag system (include actual index for LazyRow virtualization)
                 if (compositeTabId != null && tabDragComponent != null && tabIndex >= 0) {
                     val bounds = coordinates.boundsInWindow()

@@ -55,7 +55,7 @@ fun BossPanelTopBar(
 
         // State for dropdown menu (moved outside AnimatedVisibility to be accessible in condition)
         var showMenu by remember { mutableStateOf(false) }
-        var buttonHeight by remember { mutableStateOf(0) }
+        val buttonHeightRef = remember { intArrayOf(0) }
 
         AnimatedVisibility(
             visible = isHovered || showMenu,  // Keep visible while menu is open
@@ -69,7 +69,7 @@ fun BossPanelTopBar(
                 // More button with context menu
                 Box(
                     modifier = Modifier.onGloballyPositioned { coordinates ->
-                        buttonHeight = coordinates.size.height
+                        buttonHeightRef[0] = coordinates.size.height
                     }
                 ) {
                     BossActionButton(
@@ -107,7 +107,7 @@ fun BossPanelTopBar(
                         if (menuItems.isNotEmpty()) {
                             ContextMenu(
                                 items = menuItems,
-                                offset = IntOffset(0, buttonHeight),
+                                offset = IntOffset(0, buttonHeightRef[0]),
                                 onDismissRequest = { showMenu = false }
                             )
                         } else {

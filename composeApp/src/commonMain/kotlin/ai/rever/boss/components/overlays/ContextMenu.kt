@@ -136,7 +136,8 @@ private fun ContextMenuContent(
                     }
                 }
 
-                var rowWidth by remember { mutableStateOf(0) }
+                // Non-observable holder to avoid triggering remeasure during layout
+                val rowWidthRef = remember { intArrayOf(0) }
 
                 // Keep parent highlighted when submenu is open
                 val isHighlighted = isHovered || (hasSubMenu && expandedSubMenuIndex == index)
@@ -157,7 +158,7 @@ private fun ContextMenuContent(
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                             .fillMaxWidth()
                             .onGloballyPositioned { coordinates ->
-                                rowWidth = coordinates.size.width
+                                rowWidthRef[0] = coordinates.size.width
                             },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -252,7 +253,7 @@ private fun ContextMenuContent(
 
                         Popup(
                             alignment = Alignment.TopStart,
-                            offset = IntOffset(rowWidth, 0) // Position to the right of parent menu item
+                            offset = IntOffset(rowWidthRef[0], 0) // Position to the right of parent menu item
                         ) {
                             val scrollState = rememberScrollState()
                             val needsScrollbar = scrollState.maxValue > 0
@@ -333,7 +334,8 @@ private fun SubMenuContent(
                 }
             }
 
-            var rowWidth by remember { mutableStateOf(0) }
+            // Non-observable holder to avoid triggering remeasure during layout
+            val rowWidthRef = remember { intArrayOf(0) }
 
             // Keep parent highlighted when nested submenu is open
             val isHighlighted = subIsHovered || (hasNestedSubMenu && expandedSubMenuIndex == index)
@@ -354,7 +356,7 @@ private fun SubMenuContent(
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                         .fillMaxWidth()
                         .onGloballyPositioned { coordinates ->
-                            rowWidth = coordinates.size.width
+                            rowWidthRef[0] = coordinates.size.width
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -389,7 +391,7 @@ private fun SubMenuContent(
                 if (hasNestedSubMenu && expandedSubMenuIndex == index) {
                     Popup(
                         alignment = Alignment.TopStart,
-                        offset = IntOffset(rowWidth, 0)
+                        offset = IntOffset(rowWidthRef[0], 0)
                     ) {
                         val scrollState = rememberScrollState()
                         val needsScrollbar = scrollState.maxValue > 0

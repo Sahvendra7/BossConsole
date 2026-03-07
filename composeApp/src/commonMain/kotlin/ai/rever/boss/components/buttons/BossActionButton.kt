@@ -23,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -88,45 +87,46 @@ fun BossActionButton(
     val resolvedIconColor = iconColor ?: color
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
-    var buttonPosition by remember { mutableStateOf(Offset.Zero) }
-    var buttonSize by remember { mutableStateOf(IntOffset(0, 0)) }
-    var contextMenuSize by remember { mutableStateOf(IntOffset(0, 0)) }
-    var hintPopupSize by remember { mutableStateOf(IntOffset(0, 0)) }
-    
-    val menuPosition = run {
-        val x = buttonPosition.x.toInt() +
+    // Non-observable holders for layout measurements to avoid triggering
+    // remeasure during the layout phase (prevents reentrancy crashes)
+    val buttonPositionRef = remember { floatArrayOf(0f, 0f) }
+    val buttonSizeRef = remember { intArrayOf(0, 0) }
+    val contextMenuSizeRef = remember { intArrayOf(0, 0) }
+    val hintPopupSizeRef = remember { intArrayOf(0, 0) }
+
+    // Popup positions are computed lazily when Popups become visible
+    fun computeMenuPosition(): IntOffset {
+        val x = buttonPositionRef[0].toInt() +
                 when (contextDirection) {
-                    right -> buttonSize.x
-                    left -> -contextMenuSize.x
-                    else -> (buttonSize.x - contextMenuSize.x) / 2
+                    right -> buttonSizeRef[0]
+                    left -> -contextMenuSizeRef[0]
+                    else -> (buttonSizeRef[0] - contextMenuSizeRef[0]) / 2
                 }
-        val y = buttonPosition.y.toInt() +
+        val y = buttonPositionRef[1].toInt() +
                 when (contextDirection) {
-                    top -> -contextMenuSize.y
-                    bottom -> buttonSize.y
+                    top -> -contextMenuSizeRef[1]
+                    bottom -> buttonSizeRef[1]
                     else -> 0
                 }
-        IntOffset(x, y)
+        return IntOffset(x, y)
     }
 
     // State for hover popup - use class-level state holder to survive recomposition
     val hoverState = remember { HoverPopupState() }
-    val hoverPopupPosition by remember(buttonPosition, buttonSize, hintPopupSize, hintDirection) {
-        mutableStateOf(
-            IntOffset(
-                buttonPosition.x.toInt() +
-                    when (hintDirection) {
-                        right -> buttonSize.x
-                        left -> -hintPopupSize.x
-                        else -> (buttonSize.x - hintPopupSize.x) / 2
-                    },
-                buttonPosition.y.toInt() +
-                    when (hintDirection) {
-                        top -> -hintPopupSize.y
-                        bottom -> buttonSize.y
-                        else -> 0
-                    }
-            )
+    fun computeHoverPopupPosition(): IntOffset {
+        return IntOffset(
+            buttonPositionRef[0].toInt() +
+                when (hintDirection) {
+                    right -> buttonSizeRef[0]
+                    left -> -hintPopupSizeRef[0]
+                    else -> (buttonSizeRef[0] - hintPopupSizeRef[0]) / 2
+                },
+            buttonPositionRef[1].toInt() +
+                when (hintDirection) {
+                    top -> -hintPopupSizeRef[1]
+                    bottom -> buttonSizeRef[1]
+                    else -> 0
+                }
         )
     }
 
@@ -168,13 +168,11 @@ fun BossActionButton(
     if (showContextMenu && contextMenuItems != null) {
         ContextMenu(
             items = contextMenuItems,
-            offset = menuPosition,
+            offset = computeMenuPosition(),
             onDismissRequest = { showContextMenu = false },
             modifier = Modifier.onGloballyPositioned { coordinates ->
-                contextMenuSize = IntOffset(
-                    coordinates.size.width,
-                    coordinates.size.height
-                )
+                contextMenuSizeRef[0] = coordinates.size.width
+                contextMenuSizeRef[1] = coordinates.size.height
             }
         )
     }
@@ -185,16 +183,14 @@ fun BossActionButton(
     if (hoverState.isShowing && displayHintText != null) {
         Popup(
             alignment = Alignment.TopStart,
-            offset = hoverPopupPosition,
+            offset = computeHoverPopupPosition(),
             properties = PopupProperties(focusable = false)
         ) {
             Surface(
                 modifier = Modifier
                     .onGloballyPositioned { coordinates ->
-                        hintPopupSize = IntOffset(
-                            coordinates.size.width,
-                            coordinates.size.height
-                        )
+                        hintPopupSizeRef[0] = coordinates.size.width
+                        hintPopupSizeRef[1] = coordinates.size.height
                     },
                 color = BossDarkBorder,
                 shape = RoundedCornerShape(4.dp)
@@ -286,11 +282,11 @@ fun BossActionButton(
                 }
             }
             .onGloballyPositioned { coordinates ->
-                buttonPosition = coordinates.positionInParent()
-                buttonSize = IntOffset(
-                    coordinates.size.width,
-                    coordinates.size.height
-                )
+                val pos = coordinates.positionInParent()
+                buttonPositionRef[0] = pos.x
+                buttonPositionRef[1] = pos.y
+                buttonSizeRef[0] = coordinates.size.width
+                buttonSizeRef[1] = coordinates.size.height
             }
     ) {
         if (_leftLogo != null) {
