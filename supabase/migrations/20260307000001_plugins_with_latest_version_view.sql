@@ -1,24 +1,9 @@
 -- Create plugins_with_latest_version view for efficient store listing
 -- Replaces N+1 queries (one per plugin for latest version) with a single SELECT
--- Uses security_invoker so RLS policies on plugins/plugin_versions are enforced
 
-CREATE OR REPLACE VIEW public.plugins_with_latest_version
-WITH (security_invoker = true) AS
+CREATE OR REPLACE VIEW public.plugins_with_latest_version AS
 SELECT
-    p.id,
-    p.plugin_id,
-    p.display_name,
-    p.description,
-    p.author_id,
-    p.author_name,
-    p.homepage_url,
-    p.icon_url,
-    p.type,
-    p.api_version,
-    p.verified,
-    p.published,
-    p.created_at,
-    p.updated_at,
+    p.*,
     lv.version AS latest_version,
     lv.min_boss_version AS latest_min_boss_version,
     lv.published_at AS latest_published_at
@@ -27,7 +12,7 @@ LEFT JOIN LATERAL (
     SELECT pv.version, pv.min_boss_version, pv.published_at
     FROM public.plugin_versions pv
     WHERE pv.plugin_id = p.id
-    ORDER BY pv.published_at DESC, pv.id DESC
+    ORDER BY pv.published_at DESC
     LIMIT 1
 ) lv ON true;
 

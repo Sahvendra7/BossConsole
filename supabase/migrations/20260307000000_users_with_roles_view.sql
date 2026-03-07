@@ -1,8 +1,7 @@
 -- Create users_with_roles view for efficient user+role listing
 -- Replaces N+1 RPC calls (one per user) with a single SELECT query
 
-CREATE OR REPLACE VIEW public.users_with_roles
-WITH (security_invoker = true) AS
+CREATE OR REPLACE VIEW public.users_with_roles AS
 SELECT
     u.id,
     u.email,
