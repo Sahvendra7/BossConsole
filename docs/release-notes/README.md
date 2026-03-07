@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.12](v8.17.12.md) | 2026-03-07 | Documentation maintenance release adding missing release notes for v8.17.11 |
 | [v8.17.11](v8.17.11.md) | 2026-03-06 | macOS default browser detection fixes: reliable Swift-based handler lookup, null-safe check, and platform-aware instructions dialog |
 | [v8.17.10](v8.17.10.md) | 2026-03-06 | Auto-disable incompatible plugins with crash recovery and cleaner New Tab dialog hiding disabled plugin tabs |
 | [v8.17.8](v8.17.8.md) | 2026-03-05 | Dead Fluck browser UI removed (~8k lines) and browser infrastructure consolidated into plugin/browser package |
