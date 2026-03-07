@@ -222,7 +222,39 @@ class SplitViewState(
         return findPanel(_activePanelId.value)?.tabsComponent
     }
     
+    companion object {
+        private val BROWSER_FILE_EXTENSIONS = setOf(
+            // Images
+            "png", "jpg", "jpeg", "gif", "svg", "bmp", "ico", "webp",
+            // Documents
+            "pdf",
+            // Video
+            "mp4", "webm", "ogg", "mov", "avi", "mkv",
+            // Audio
+            "mp3", "wav", "flac", "aac", "m4a"
+        )
+
+        fun shouldOpenInBrowser(fileName: String): Boolean {
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+            return ext in BROWSER_FILE_EXTENSIONS
+        }
+    }
+
     fun openFileInActivePanel(filePath: String, fileName: String) {
+        // Route browser-renderable files (images, PDFs) to the browser tab
+        if (shouldOpenInBrowser(fileName)) {
+            openUrlInActivePanel("file://$filePath", fileName)
+            return
+        }
+
+        openFileInEditorTab(filePath, fileName)
+    }
+
+    /**
+     * Force-open a file in the code editor, bypassing smart file routing.
+     * Used by "Open With > Editor" context menu action.
+     */
+    fun openFileInEditorTab(filePath: String, fileName: String) {
         val activeComponent = getActiveTabsComponent() ?: return
 
         // Check if file is already open in any panel
@@ -629,9 +661,11 @@ class SplitViewState(
     }
     
     private fun findPanelWithFile(filePath: String): Pair<String, BossTabsComponent>? {
+        val fileUrl = "file://$filePath"
         getAllPanels().forEach { panel ->
             if (panel.tabsComponent.tabsState.value.tabs.any { tab ->
-                tab is EditorTabInfo && tab.filePath == filePath
+                (tab is EditorTabInfo && tab.filePath == filePath) ||
+                (tab is FluckTabInfo && tab.currentUrl == fileUrl)
             }) {
                 return panel.id to panel.tabsComponent
             }

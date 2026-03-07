@@ -31,6 +31,14 @@ class SplitViewOperationsImpl(
         splitViewState.openFileInActivePanel(filePath, fileName)
     }
 
+    override fun openFileInBrowser(filePath: String, fileName: String) {
+        splitViewState.openUrlInActivePanel("file://$filePath", fileName)
+    }
+
+    override fun openFileInEditor(filePath: String, fileName: String) {
+        splitViewState.openFileInEditorTab(filePath, fileName)
+    }
+
     override fun openFileAtPosition(filePath: String, fileName: String, line: Int, column: Int) {
         // Use FileEventBus to open file with position - BossApp listens and handles NavigationTargetBus
         println("[HOST-DEBUG] SplitViewOperationsImpl.openFileAtPosition: $filePath:$line:$column (windowId=$windowId)")

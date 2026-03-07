@@ -166,6 +166,20 @@ interface SplitViewOperations {
     fun openFileInActivePanel(filePath: String, fileName: String)
 
     /**
+     * Open a file in the browser tab (for images, PDFs, etc.).
+     */
+    fun openFileInBrowser(filePath: String, fileName: String) {
+        openUrlInActivePanel("file://$filePath", fileName)
+    }
+
+    /**
+     * Force-open a file in the code editor, bypassing smart file routing.
+     */
+    fun openFileInEditor(filePath: String, fileName: String) {
+        openFileInActivePanel(filePath, fileName)
+    }
+
+    /**
      * Open a file in the active panel and navigate to a specific position.
      * This is used for code navigation (go-to-definition, find usages).
      *

@@ -1195,18 +1195,17 @@ private class DefaultContextMenuProvider : ContextMenuProvider {
         items: List<ContextMenuItemData>
     ): androidx.compose.ui.Modifier {
         // Convert plugin API items to app's ContextMenuItem format
-        val appItems = items.map { data ->
-            if (data.isDivider) {
-                ContextMenuItem(isDivider = true)
-            } else {
-                ContextMenuItem(
-                    text = data.label,
-                    icon = data.icon,
-                    onClick = data.onClick
-                )
-            }
-        }
+        val appItems = items.map { it.toContextMenuItem() }
         return modifier.contextMenu(items = appItems)
     }
+
+    private fun ContextMenuItemData.toContextMenuItem(): ContextMenuItem =
+        if (isDivider) ContextMenuItem(isDivider = true)
+        else ContextMenuItem(
+            text = label,
+            icon = icon,
+            subMenu = subMenu?.map { it.toContextMenuItem() },
+            onClick = onClick
+        )
 }
 
