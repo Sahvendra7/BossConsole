@@ -229,21 +229,23 @@ class SplitViewState(
             // Documents
             "pdf",
             // Video
-            "mp4", "webm", "ogg", "mov", "avi", "mkv",
+            "mp4", "webm", "mov", "avi", "mkv",
             // Audio
-            "mp3", "wav", "flac", "aac", "m4a"
+            "mp3", "wav", "flac", "aac", "m4a", "ogg"
         )
 
         fun shouldOpenInBrowser(fileName: String): Boolean {
             val ext = fileName.substringAfterLast('.', "").lowercase()
             return ext in BROWSER_FILE_EXTENSIONS
         }
+
+        fun toFileUrl(filePath: String): String = "file://$filePath"
     }
 
     fun openFileInActivePanel(filePath: String, fileName: String) {
         // Route browser-renderable files (images, PDFs) to the browser tab
         if (shouldOpenInBrowser(fileName)) {
-            openUrlInActivePanel("file://$filePath", fileName)
+            openUrlInActivePanel(toFileUrl(filePath), fileName)
             return
         }
 
@@ -257,17 +259,10 @@ class SplitViewState(
     fun openFileInEditorTab(filePath: String, fileName: String) {
         val activeComponent = getActiveTabsComponent() ?: return
 
-        // Check if file is already open in any panel
-        findPanelWithFile(filePath)?.let { (panelId, component) ->
-            component.tabsState.value.tabs
-                .indexOfFirst { tab ->
-                    tab is EditorTabInfo && tab.filePath == filePath
-                }
-                .takeIf { it >= 0 }
-                ?.let { tabIndex ->
-                    component.selectTab(tabIndex)
-                    setActivePanel(panelId)
-                }
+        // Check if file is already open in an editor tab in any panel
+        findPanelWithEditorTab(filePath)?.let { (panelId, component, tabIndex) ->
+            component.selectTab(tabIndex)
+            setActivePanel(panelId)
             return
         }
 
@@ -661,13 +656,28 @@ class SplitViewState(
     }
     
     private fun findPanelWithFile(filePath: String): Pair<String, BossTabsComponent>? {
-        val fileUrl = "file://$filePath"
+        val fileUrl = toFileUrl(filePath)
         getAllPanels().forEach { panel ->
             if (panel.tabsComponent.tabsState.value.tabs.any { tab ->
                 (tab is EditorTabInfo && tab.filePath == filePath) ||
                 (tab is FluckTabInfo && tab.currentUrl == fileUrl)
             }) {
                 return panel.id to panel.tabsComponent
+            }
+        }
+        return null
+    }
+
+    /**
+     * Find the panel that contains an editor tab for the given file path.
+     * Unlike findPanelWithFile, this only matches EditorTabInfo (not browser tabs).
+     */
+    private fun findPanelWithEditorTab(filePath: String): Triple<String, BossTabsComponent, Int>? {
+        getAllPanels().forEach { panel ->
+            val tabIndex = panel.tabsComponent.tabsState.value.tabs
+                .indexOfFirst { tab -> tab is EditorTabInfo && tab.filePath == filePath }
+            if (tabIndex >= 0) {
+                return Triple(panel.id, panel.tabsComponent, tabIndex)
             }
         }
         return null

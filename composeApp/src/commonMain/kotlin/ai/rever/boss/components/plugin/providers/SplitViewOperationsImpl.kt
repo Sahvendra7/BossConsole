@@ -4,6 +4,8 @@ import ai.rever.boss.plugin.tab.terminal.TerminalTabType
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
 import ai.rever.boss.components.events.FileEventBus
 import ai.rever.boss.components.window_panel.SplitViewState
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.plugin.api.SplitViewOperations
 import ai.rever.boss.plugin.api.TabsComponent
 import ai.rever.boss.plugin.workspace.LayoutWorkspace
@@ -20,6 +22,8 @@ class SplitViewOperationsImpl(
     private val windowId: String
 ) : SplitViewOperations {
 
+    private val logger = BossLogger.forComponent("SplitViewOperationsImpl")
+
     // Coroutine scope for launching background operations
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -32,7 +36,7 @@ class SplitViewOperationsImpl(
     }
 
     override fun openFileInBrowser(filePath: String, fileName: String) {
-        splitViewState.openUrlInActivePanel("file://$filePath", fileName)
+        splitViewState.openUrlInActivePanel(SplitViewState.toFileUrl(filePath), fileName)
     }
 
     override fun openFileInEditor(filePath: String, fileName: String) {
@@ -41,10 +45,10 @@ class SplitViewOperationsImpl(
 
     override fun openFileAtPosition(filePath: String, fileName: String, line: Int, column: Int) {
         // Use FileEventBus to open file with position - BossApp listens and handles NavigationTargetBus
-        println("[HOST-DEBUG] SplitViewOperationsImpl.openFileAtPosition: $filePath:$line:$column (windowId=$windowId)")
+        logger.debug(LogCategory.UI, "openFileAtPosition: $filePath:$line:$column", mapOf("windowId" to windowId))
         scope.launch {
             FileEventBus.openFile(filePath, line, column, sourceWindowId = windowId)
-            println("[HOST-DEBUG] SplitViewOperationsImpl: FileEventBus.openFile called")
+            logger.debug(LogCategory.UI, "FileEventBus.openFile called")
         }
     }
 

@@ -174,10 +174,12 @@ interface SplitViewOperations {
 
     /**
      * Force-open a file in the code editor, bypassing smart file routing.
+     * Unlike [openFileInActivePanel], this always creates an editor tab
+     * even for browser-renderable file types (images, PDFs, etc.).
+     *
+     * Implementors must route to a non-smart-routing path (e.g. openFileInEditorTab).
      */
-    fun openFileInEditor(filePath: String, fileName: String) {
-        openFileInActivePanel(filePath, fileName)
-    }
+    fun openFileInEditor(filePath: String, fileName: String)
 
     /**
      * Open a file in the active panel and navigate to a specific position.
