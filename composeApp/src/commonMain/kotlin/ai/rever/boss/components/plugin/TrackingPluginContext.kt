@@ -12,6 +12,7 @@ import ai.rever.boss.plugin.api.LogDataProvider
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
+import ai.rever.boss.plugin.api.SupabaseDataProvider
 import ai.rever.boss.plugin.api.UserManagementProvider
 import ai.rever.boss.plugin.api.PanelComponentWithUI
 import ai.rever.boss.plugin.api.PanelId
@@ -276,6 +277,7 @@ class TrackingPluginContext(
     override val authDataProvider: AuthDataProvider? get() = delegate.authDataProvider
     override val userManagementProvider: UserManagementProvider? get() = delegate.userManagementProvider
     override val roleManagementProvider: RoleManagementProvider? get() = delegate.roleManagementProvider
+    override val supabaseDataProvider: SupabaseDataProvider? get() = delegate.supabaseDataProvider
 
     override val panelEventProvider: PanelEventProvider? get() = delegate.panelEventProvider
     override val settingsProvider: SettingsProvider? get() = delegate.settingsProvider

@@ -36,6 +36,7 @@ import ai.rever.boss.search.SearchRegistryImpl
 import ai.rever.boss.plugin.api.SearchProvider
 import ai.rever.boss.services.supabase.RoleManagementProviderImpl
 import ai.rever.boss.services.supabase.SecretDataProviderImpl
+import ai.rever.boss.services.supabase.SupabaseDataProviderImpl
 import ai.rever.boss.services.supabase.UserManagementProviderImpl
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -58,6 +59,7 @@ import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SplitViewOperations
+import ai.rever.boss.plugin.api.SupabaseDataProvider
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabUpdateProviderFactory
 import ai.rever.boss.plugin.api.UserManagementProvider
@@ -314,6 +316,11 @@ class DefaultPlugin(
     // Role management provider for admin plugins
     override val roleManagementProvider: RoleManagementProvider by lazy {
         RoleManagementProviderImpl()
+    }
+
+    // Generic Supabase data provider for plugins
+    override val supabaseDataProvider: SupabaseDataProvider by lazy {
+        SupabaseDataProviderImpl()
     }
 
     // File system data provider for codebase plugin
