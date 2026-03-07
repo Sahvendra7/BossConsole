@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.13](v8.17.13.md) | 2026-03-07 | Plugin API expansion adding generic SupabaseDataProvider for Postgrest queries without Supabase SDK imports |
 | [v8.17.12](v8.17.12.md) | 2026-03-07 | Documentation maintenance release adding missing release notes for v8.17.11 |
 | [v8.17.11](v8.17.11.md) | 2026-03-06 | macOS default browser detection fixes: reliable Swift-based handler lookup, null-safe check, and platform-aware instructions dialog |
 | [v8.17.10](v8.17.10.md) | 2026-03-06 | Auto-disable incompatible plugins with crash recovery and cleaner New Tab dialog hiding disabled plugin tabs |
