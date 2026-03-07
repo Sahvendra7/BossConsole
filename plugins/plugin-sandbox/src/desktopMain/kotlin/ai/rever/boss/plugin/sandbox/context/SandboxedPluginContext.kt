@@ -138,6 +138,9 @@ class SandboxedPluginContext(
     override val roleManagementProvider: RoleManagementProvider?
         get() = delegate.roleManagementProvider
 
+    override val supabaseDataProvider: ai.rever.boss.plugin.api.SupabaseDataProvider?
+        get() = delegate.supabaseDataProvider
+
     override val panelEventProvider: PanelEventProvider?
         get() = delegate.panelEventProvider
 
