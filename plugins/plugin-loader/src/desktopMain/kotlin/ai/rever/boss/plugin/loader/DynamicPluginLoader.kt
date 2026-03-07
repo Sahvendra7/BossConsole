@@ -127,6 +127,16 @@ class DynamicPluginLoaderImpl(
             // Create classloader
             val classLoader = classLoaderManager.createClassLoader(manifest, jarPath)
 
+            // Binary compatibility check
+            val validation = BinaryCompatibilityValidator.validate(classLoader, jarPath)
+            if (!validation.isCompatible) {
+                classLoaderManager.closeClassLoader(pluginId, classLoader)
+                return Result.failure(PluginBinaryIncompatibilityException(
+                    "Plugin '$pluginId' has binary incompatibilities: ${validation.errors.first()}",
+                    pluginId
+                ))
+            }
+
             // Load main class
             val pluginClass = try {
                 classLoader.loadClass(manifest.mainClass)

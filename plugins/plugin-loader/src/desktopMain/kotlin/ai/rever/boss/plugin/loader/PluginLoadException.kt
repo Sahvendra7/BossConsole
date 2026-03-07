@@ -78,3 +78,12 @@ class PluginBossVersionException(
     val currentVersion: String? = null,
     cause: Throwable? = null
 ) : PluginLoadException(message, pluginId, cause)
+
+/**
+ * Exception thrown when a plugin JAR has binary incompatibilities with the current API.
+ */
+class PluginBinaryIncompatibilityException(
+    message: String,
+    pluginId: String? = null,
+    cause: Throwable? = null
+) : PluginLoadException(message, pluginId, cause)
