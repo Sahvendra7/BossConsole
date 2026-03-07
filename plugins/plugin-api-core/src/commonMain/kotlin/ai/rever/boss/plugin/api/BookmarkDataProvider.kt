@@ -227,8 +227,9 @@ interface TabsComponent {
      * @param id Unique ID for the tab
      * @param title Display title
      * @param workingDirectory Optional working directory
+     * @param initialCommand Optional command to run when terminal starts
      */
-    fun addTerminalTab(id: String, title: String, workingDirectory: String?)
+    fun addTerminalTab(id: String, title: String, workingDirectory: String?, initialCommand: String? = null)
 }
 
 // ==================== Composition Locals ====================

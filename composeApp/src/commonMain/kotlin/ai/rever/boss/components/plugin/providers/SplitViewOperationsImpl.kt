@@ -81,11 +81,12 @@ private class TabsComponentWrapper(
     private val bossTabsComponent: ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 ) : TabsComponent {
 
-    override fun addTerminalTab(id: String, title: String, workingDirectory: String?) {
+    override fun addTerminalTab(id: String, title: String, workingDirectory: String?, initialCommand: String?) {
         val terminalTabInfo = TerminalTabInfo(
             id = id,
             typeId = TerminalTabType.typeId,
             title = title,
+            initialCommand = initialCommand,
             workingDirectory = workingDirectory
         )
         bossTabsComponent.addTab(terminalTabInfo)
