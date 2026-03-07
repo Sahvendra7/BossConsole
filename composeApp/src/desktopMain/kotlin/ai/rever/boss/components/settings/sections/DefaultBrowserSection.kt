@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /**
- * Default Browser section for Fluck Browser settings
+ * Default Browser section for BOSS Console settings
  *
  * Allows users to:
  * - Check if BOSS is the default browser
@@ -330,13 +330,17 @@ fun DefaultBrowserSection() {
         )
     }
 
-    // Instructions Dialog (Windows)
+    // Instructions Dialog (platform-aware)
     if (showInstructionsDialog) {
+        val platformName = DefaultBrowserManager.getPlatformName()
+        val isMacOS = platformName == "macOS"
+
         AlertDialog(
             onDismissRequest = { showInstructionsDialog = false },
             title = {
                 Text(
-                    "Complete Setup in Windows Settings",
+                    if (isMacOS) "Complete Setup in System Settings"
+                    else "Complete Setup in Windows Settings",
                     color = BossDarkTextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
@@ -345,16 +349,23 @@ fun DefaultBrowserSection() {
             text = {
                 Column {
                     Text(
-                        "Windows Settings has been opened. Please complete these steps:",
+                        if (isMacOS) "System Settings has been opened. Please complete these steps:"
+                        else "Windows Settings has been opened. Please complete these steps:",
                         color = BossDarkTextSecondary,
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "1. Scroll down to \"Web browser\"\n" +
-                        "2. Click on the current browser\n" +
-                        "3. Select \"BOSS Console\" from the list\n" +
-                        "4. Close Settings",
+                        if (isMacOS) {
+                            "1. Find \"Default web browser\" in Desktop & Dock\n" +
+                            "2. Click the dropdown menu\n" +
+                            "3. Select \"BOSS Console\" from the list"
+                        } else {
+                            "1. Scroll down to \"Web browser\"\n" +
+                            "2. Click on the current browser\n" +
+                            "3. Select \"BOSS Console\" from the list\n" +
+                            "4. Close Settings"
+                        },
                         color = BossDarkTextPrimary,
                         fontSize = 13.sp,
                         lineHeight = 22.sp

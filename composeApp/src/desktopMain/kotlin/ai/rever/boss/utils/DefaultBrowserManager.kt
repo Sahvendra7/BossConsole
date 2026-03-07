@@ -66,9 +66,8 @@ actual object DefaultBrowserManager {
                 BOSS will attempt to register as your default browser automatically.
 
                 If automatic registration fails, you can set it manually:
-                1. Open System Preferences
-                2. Go to General
-                3. Select BOSS from the "Default web browser" dropdown
+                - macOS Ventura and later: System Settings > Desktop & Dock > Default web browser
+                - macOS Monterey and earlier: System Preferences > General > Default web browser
             """.trimIndent()
 
             isWindows -> """

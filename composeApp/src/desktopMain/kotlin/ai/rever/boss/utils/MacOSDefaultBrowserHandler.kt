@@ -4,7 +4,6 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.awt.Desktop
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.io.path.createTempFile
@@ -17,7 +16,6 @@ private val logger = BossLogger.forComponent("MacOSDefaultBrowserHandler")
  * Uses macOS APIs and system commands to:
  * - Check if BOSS is the default browser
  * - Set BOSS as the default browser
- * - Register http/https URL handlers
  */
 object MacOSDefaultBrowserHandler {
     private const val BUNDLE_ID = "ai.rever.boss"
@@ -25,18 +23,18 @@ object MacOSDefaultBrowserHandler {
     /**
      * Check if BOSS is currently the default browser on macOS
      *
-     * Uses `defaults read` to query LaunchServices for http/https handlers
+     * Uses LSCopyDefaultHandlerForURLScheme via Swift script to query http/https handlers
      */
     suspend fun isDefaultBrowser(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            // Check both http and https handlers
-            val httpDefault = getDefaultHandlerViaDefaults("http")
-            val httpsDefault = getDefaultHandlerViaDefaults("https")
+            val httpDefault = getDefaultHandlerForScheme("http")
+            val httpsDefault = getDefaultHandlerForScheme("https")
 
             logger.debug(LogCategory.BROWSER, "macOS default browser check", mapOf("httpHandler" to (httpDefault ?: "none"), "httpsHandler" to (httpsDefault ?: "none")))
 
             // BOSS is default if both schemes point to our bundle ID
-            val isDefault = httpDefault == BUNDLE_ID && httpsDefault == BUNDLE_ID
+            val isDefault = httpDefault.equals(BUNDLE_ID, ignoreCase = true) &&
+                httpsDefault.equals(BUNDLE_ID, ignoreCase = true)
 
             Result.success(isDefault)
         } catch (e: Exception) {
@@ -79,29 +77,39 @@ object MacOSDefaultBrowserHandler {
     }
 
     /**
-     * Get default handler using defaults read command
+     * Get default handler for a URL scheme using LSCopyDefaultHandlerForURLScheme via Swift script
      */
-    private fun getDefaultHandlerViaDefaults(scheme: String): String? {
+    private fun getDefaultHandlerForScheme(scheme: String): String? {
         return try {
-            val process = ProcessBuilder(
-                "defaults",
-                "read",
-                "com.apple.LaunchServices/com.apple.launchservices.secure",
-                "LSHandlers"
-            ).redirectErrorStream(true).start()
+            val swiftScript = """
+                import Foundation
+                import ApplicationServices
+
+                if let handler = LSCopyDefaultHandlerForURLScheme("$scheme" as CFString) {
+                    print(handler.takeRetainedValue() as String)
+                    exit(0)
+                } else {
+                    exit(1)
+                }
+            """.trimIndent()
+
+            val scriptFile = createTempFile("get_default_browser", ".swift").toFile()
+            scriptFile.deleteOnExit()
+            scriptFile.writeText(swiftScript)
+
+            val process = ProcessBuilder("swift", scriptFile.absolutePath)
+                .redirectErrorStream(true)
+                .start()
 
             val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                reader.readText()
+                reader.readText().trim()
             }
 
-            process.waitFor()
+            val exitCode = process.waitFor()
 
-            // Parse the plist-style output to find the handler for our scheme
-            // Output format: { LSHandlerURLScheme = "http"; LSHandlerRoleAll = "com.apple.safari"; }
-            val regex = """LSHandlerURLScheme\s*=\s*"?$scheme"?;[^}]*LSHandlerRoleAll\s*=\s*"?([^";]+)"?""".toRegex()
-            regex.find(output)?.groupValues?.get(1)
+            if (exitCode == 0 && output.isNotEmpty()) output else null
         } catch (e: Exception) {
-            logger.warn(LogCategory.BROWSER, "Error reading defaults", error = e)
+            logger.warn(LogCategory.BROWSER, "Error getting default handler for scheme", mapOf("scheme" to scheme), error = e)
             null
         }
     }
@@ -154,41 +162,38 @@ object MacOSDefaultBrowserHandler {
     }
 
     /**
-     * Open System Preferences to Default Browser settings
+     * Open System Settings (Ventura+) or System Preferences (Monterey and earlier)
+     * to the Default Browser settings pane
      */
     private fun openSystemPreferences() {
         try {
-            // Open System Preferences to General pane where default browser is set
-            val process = ProcessBuilder(
-                "open",
+            val url = if (getMacOSMajorVersion() >= 13) {
+                "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
+            } else {
                 "x-apple.systempreferences:com.apple.preference.general"
-            ).start()
+            }
 
+            val process = ProcessBuilder("open", url).start()
             process.waitFor()
 
-            logger.info(LogCategory.BROWSER, "Opened System Preferences for user to set default browser")
+            logger.info(LogCategory.BROWSER, "Opened System Settings for user to set default browser")
         } catch (e: Exception) {
-            logger.warn(LogCategory.BROWSER, "Error opening System Preferences", error = e)
+            logger.warn(LogCategory.BROWSER, "Error opening System Settings", error = e)
         }
     }
 
     /**
-     * Register URL handler for http/https with Desktop API
+     * Get the macOS major version number (e.g. 13 for Ventura, 14 for Sonoma)
      */
-    fun registerURLHandler(onURL: (String) -> Unit) {
-        if (Desktop.isDesktopSupported()) {
-            try {
-                Desktop.getDesktop().setOpenURIHandler { event ->
-                    val uri = event.uri.toString()
-                    if (uri.startsWith("http://") || uri.startsWith("https://")) {
-                        logger.debug(LogCategory.BROWSER, "Received HTTP(S) URL (macOS)", mapOf("uri" to uri))
-                        onURL(uri)
-                    }
-                }
-                logger.info(LogCategory.BROWSER, "Registered macOS URL handler for http/https")
-            } catch (e: Exception) {
-                logger.error(LogCategory.BROWSER, "Failed to register macOS URL handler", error = e)
-            }
+    private fun getMacOSMajorVersion(): Int {
+        return try {
+            val process = ProcessBuilder("sw_vers", "-productVersion").start()
+            val version = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText().trim() }
+            process.waitFor()
+            version.substringBefore(".").toIntOrNull() ?: 0
+        } catch (e: Exception) {
+            logger.warn(LogCategory.BROWSER, "Error getting macOS version", error = e)
+            0
         }
     }
 }
