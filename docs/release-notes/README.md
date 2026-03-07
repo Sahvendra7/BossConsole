@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.15](v8.17.15.md) | 2026-03-07 | Database performance and security hardening with optimized Postgres views for user/role and plugin store queries, RLS bypass fix, and anonymous access revocation |
 | [v8.17.14](v8.17.14.md) | 2026-03-07 | Critical fix restoring SupabaseDataProvider access for sandboxed plugins via SandboxedPluginContext delegation |
 | [v8.17.13](v8.17.13.md) | 2026-03-07 | Plugin API expansion adding generic SupabaseDataProvider for Postgrest queries without Supabase SDK imports |
 | [v8.17.12](v8.17.12.md) | 2026-03-07 | Documentation maintenance release adding missing release notes for v8.17.11 |
