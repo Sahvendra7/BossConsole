@@ -33,8 +33,8 @@ object MacOSDefaultBrowserHandler {
             logger.debug(LogCategory.BROWSER, "macOS default browser check", mapOf("httpHandler" to (httpDefault ?: "none"), "httpsHandler" to (httpsDefault ?: "none")))
 
             // BOSS is default if both schemes point to our bundle ID
-            val isDefault = httpDefault.equals(BUNDLE_ID, ignoreCase = true) &&
-                httpsDefault.equals(BUNDLE_ID, ignoreCase = true)
+            val isDefault = BUNDLE_ID.equals(httpDefault, ignoreCase = true) &&
+                BUNDLE_ID.equals(httpsDefault, ignoreCase = true)
 
             Result.success(isDefault)
         } catch (e: Exception) {
