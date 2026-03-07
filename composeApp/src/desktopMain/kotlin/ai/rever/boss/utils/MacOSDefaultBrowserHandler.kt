@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempFile
 
 private val logger = BossLogger.forComponent("MacOSDefaultBrowserHandler")
@@ -19,16 +20,19 @@ private val logger = BossLogger.forComponent("MacOSDefaultBrowserHandler")
  */
 object MacOSDefaultBrowserHandler {
     private const val BUNDLE_ID = "ai.rever.boss"
+    private const val PROCESS_TIMEOUT_SECONDS = 30L
 
     /**
      * Check if BOSS is currently the default browser on macOS
      *
-     * Uses LSCopyDefaultHandlerForURLScheme via Swift script to query http/https handlers
+     * Uses a single Swift script with LSCopyDefaultHandlerForURLScheme to query
+     * both http and https handlers, avoiding double Swift JIT compilation overhead.
      */
     suspend fun isDefaultBrowser(): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            val httpDefault = getDefaultHandlerForScheme("http")
-            val httpsDefault = getDefaultHandlerForScheme("https")
+            val handlers = getDefaultHandlers()
+            val httpDefault = handlers["http"]
+            val httpsDefault = handlers["https"]
 
             logger.debug(LogCategory.BROWSER, "macOS default browser check", mapOf("httpHandler" to (httpDefault ?: "none"), "httpsHandler" to (httpsDefault ?: "none")))
 
@@ -77,24 +81,25 @@ object MacOSDefaultBrowserHandler {
     }
 
     /**
-     * Get default handler for a URL scheme using LSCopyDefaultHandlerForURLScheme via Swift script
+     * Get default handlers for both http and https schemes in a single Swift invocation.
+     *
+     * Returns a map of scheme -> bundle ID. Uses one Swift process to avoid
+     * double JIT compilation overhead.
      */
-    private fun getDefaultHandlerForScheme(scheme: String): String? {
-        return try {
+    private fun getDefaultHandlers(): Map<String, String> {
+        val scriptFile = createTempFile("get_default_browser", ".swift").toFile()
+        try {
             val swiftScript = """
                 import Foundation
                 import ApplicationServices
 
-                if let handler = LSCopyDefaultHandlerForURLScheme("$scheme" as CFString) {
-                    print(handler.takeRetainedValue() as String)
-                    exit(0)
-                } else {
-                    exit(1)
+                for scheme in ["http", "https"] {
+                    if let handler = LSCopyDefaultHandlerForURLScheme(scheme as CFString) {
+                        print("\(scheme)=\(handler.takeRetainedValue() as String)")
+                    }
                 }
             """.trimIndent()
 
-            val scriptFile = createTempFile("get_default_browser", ".swift").toFile()
-            scriptFile.deleteOnExit()
             scriptFile.writeText(swiftScript)
 
             val process = ProcessBuilder("swift", scriptFile.absolutePath)
@@ -105,12 +110,27 @@ object MacOSDefaultBrowserHandler {
                 reader.readText().trim()
             }
 
-            val exitCode = process.waitFor()
+            val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                logger.warn(LogCategory.BROWSER, "Swift process timed out getting default handlers")
+                return emptyMap()
+            }
 
-            if (exitCode == 0 && output.isNotEmpty()) output else null
+            if (process.exitValue() != 0) return emptyMap()
+
+            // Parse "http=com.apple.Safari\nhttps=com.apple.Safari" format
+            return output.lines()
+                .mapNotNull { line ->
+                    val parts = line.split("=", limit = 2)
+                    if (parts.size == 2) parts[0] to parts[1] else null
+                }
+                .toMap()
         } catch (e: Exception) {
-            logger.warn(LogCategory.BROWSER, "Error getting default handler for scheme", mapOf("scheme" to scheme), error = e)
-            null
+            logger.warn(LogCategory.BROWSER, "Error getting default handlers", error = e)
+            return emptyMap()
+        } finally {
+            scriptFile.delete()
         }
     }
 
@@ -118,8 +138,8 @@ object MacOSDefaultBrowserHandler {
      * Set default handler for a URL scheme using Swift script
      */
     private fun setDefaultHandlerForScheme(scheme: String): Boolean {
-        return try {
-            // Create temporary Swift script to set default handler
+        val scriptFile = createTempFile("set_default_browser", ".swift").toFile()
+        try {
             val swiftScript = """
                 import AppKit
                 import ApplicationServices
@@ -138,8 +158,6 @@ object MacOSDefaultBrowserHandler {
                 }
             """.trimIndent()
 
-            val scriptFile = createTempFile("set_default_browser", ".swift").toFile()
-            scriptFile.deleteOnExit()
             scriptFile.writeText(swiftScript)
 
             val process = ProcessBuilder("swift", scriptFile.absolutePath)
@@ -150,14 +168,21 @@ object MacOSDefaultBrowserHandler {
                 reader.readText()
             }
 
-            val exitCode = process.waitFor()
+            val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                logger.warn(LogCategory.BROWSER, "Swift process timed out setting default handler", mapOf("scheme" to scheme))
+                return false
+            }
 
             logger.debug(LogCategory.BROWSER, "Swift script output", mapOf("scheme" to scheme, "output" to output.trim()))
 
-            exitCode == 0
+            return process.exitValue() == 0
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Error setting default handler", mapOf("scheme" to scheme, "error" to (e.message ?: "unknown")))
-            false
+            return false
+        } finally {
+            scriptFile.delete()
         }
     }
 
@@ -174,7 +199,11 @@ object MacOSDefaultBrowserHandler {
             }
 
             val process = ProcessBuilder("open", url).start()
-            process.waitFor()
+            if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                logger.warn(LogCategory.BROWSER, "Timed out opening System Settings")
+                return
+            }
 
             logger.info(LogCategory.BROWSER, "Opened System Settings for user to set default browser")
         } catch (e: Exception) {
@@ -189,7 +218,10 @@ object MacOSDefaultBrowserHandler {
         return try {
             val process = ProcessBuilder("sw_vers", "-productVersion").start()
             val version = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText().trim() }
-            process.waitFor()
+            if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return 0
+            }
             version.substringBefore(".").toIntOrNull() ?: 0
         } catch (e: Exception) {
             logger.warn(LogCategory.BROWSER, "Error getting macOS version", error = e)

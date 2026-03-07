@@ -333,14 +333,16 @@ fun DefaultBrowserSection() {
     // Instructions Dialog (platform-aware)
     if (showInstructionsDialog) {
         val platformName = DefaultBrowserManager.getPlatformName()
-        val isMacOS = platformName == "macOS"
 
         AlertDialog(
             onDismissRequest = { showInstructionsDialog = false },
             title = {
                 Text(
-                    if (isMacOS) "Complete Setup in System Settings"
-                    else "Complete Setup in Windows Settings",
+                    when (platformName) {
+                        "macOS" -> "Complete Setup in System Settings"
+                        "Windows" -> "Complete Setup in Windows Settings"
+                        else -> "Complete Setup in System Settings"
+                    },
                     color = BossDarkTextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
@@ -349,22 +351,33 @@ fun DefaultBrowserSection() {
             text = {
                 Column {
                     Text(
-                        if (isMacOS) "System Settings has been opened. Please complete these steps:"
-                        else "Windows Settings has been opened. Please complete these steps:",
+                        when (platformName) {
+                            "macOS" -> "System Settings has been opened. Please complete these steps:"
+                            "Windows" -> "Windows Settings has been opened. Please complete these steps:"
+                            else -> "Please complete these steps in your system settings:"
+                        },
                         color = BossDarkTextSecondary,
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        if (isMacOS) {
-                            "1. Find \"Default web browser\" in Desktop & Dock\n" +
-                            "2. Click the dropdown menu\n" +
-                            "3. Select \"BOSS Console\" from the list"
-                        } else {
-                            "1. Scroll down to \"Web browser\"\n" +
-                            "2. Click on the current browser\n" +
-                            "3. Select \"BOSS Console\" from the list\n" +
-                            "4. Close Settings"
+                        when (platformName) {
+                            "macOS" -> {
+                                "1. Find \"Default web browser\" in Desktop & Dock\n" +
+                                "2. Click the dropdown menu\n" +
+                                "3. Select \"BOSS Console\" from the list"
+                            }
+                            "Windows" -> {
+                                "1. Scroll down to \"Web browser\"\n" +
+                                "2. Click on the current browser\n" +
+                                "3. Select \"BOSS Console\" from the list\n" +
+                                "4. Close Settings"
+                            }
+                            else -> {
+                                "1. Open \"Default Applications\" in your desktop settings\n" +
+                                "2. Find \"Web Browser\"\n" +
+                                "3. Select \"BOSS Console\" from the list"
+                            }
                         },
                         color = BossDarkTextPrimary,
                         fontSize = 13.sp,
