@@ -7,6 +7,7 @@ import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.components.registery.PanelComponentStore
 import ai.rever.boss.components.window_panel.components.BossPanelTopBar
 import ai.rever.boss.plugin.sandbox.PanelSandboxRegistry
+import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginErrorBoundary
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
@@ -74,9 +75,16 @@ fun BossDraggableComponent.SidePanel(
         Divider(color = BossDarkBorder)
 
         Box(modifier = Modifier.fillMaxSize()) {
+            // Read crash state so a plugin crash triggers full subtree teardown/rebuild.
+            // Without this, a composition crash (e.g. NoSuchMethodError) corrupts the
+            // subtree and the PluginErrorBoundary can't recompose to show the error UI.
+            val crashState = pluginContentId?.let {
+                PanelSandboxRegistry.getSandbox(it)?.pluginId
+            }?.let { PluginCrashRegistry.crashedPlugins[it] }
+
             // Force recomposition when component instance changes (e.g., after reset)
-            // This ensures the UI fully refreshes instead of showing stale state
-            key(component) {
+            // or when crash state changes (allows error boundary to show crash UI)
+            key(component, crashState) {
                 // Render panel content with optional error boundary wrapping
                 RenderPanelContent(
                     component = component,
