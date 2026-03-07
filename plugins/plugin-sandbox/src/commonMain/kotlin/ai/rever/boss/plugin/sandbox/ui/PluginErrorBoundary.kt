@@ -273,10 +273,12 @@ fun PluginErrorBoundary(
             // Sandbox was disabled (e.g. binary incompatibility) — synthesize an error
             // if none is already recorded, so the fallback UI always shows.
             localError ?: registryCrash?.error
-                ?: NoSuchMethodError("Plugin disabled due to binary incompatibility")
+                ?: RuntimeException("Plugin is disabled")
         }
         else -> localError ?: registryCrash?.error
     }
+    // Three distinct sources: persisted flag (survives crash clear), transient crash info,
+    // and locally-caught errors that bypassed the registry.
     val isIncompatible = PluginCrashRegistry.isIncompatible(pluginId) ||
         registryCrash?.isBinaryIncompatibility == true ||
         (localError != null && PluginErrorClassifier.isBinaryIncompatibility(localError))

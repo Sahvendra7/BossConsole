@@ -167,9 +167,11 @@ interface SplitViewOperations {
 
     /**
      * Open a file in the browser tab (for images, PDFs, etc.).
+     * Note: file:// URL construction here must stay in sync with
+     * SplitViewState.toFileUrl() for duplicate-tab detection to work.
      */
     fun openFileInBrowser(filePath: String, fileName: String) {
-        openUrlInActivePanel("file://$filePath", fileName)
+        openUrlInActivePanel(java.io.File(filePath).toURI().toString(), fileName)
     }
 
     /**

@@ -239,7 +239,7 @@ class SplitViewState(
             return ext in BROWSER_FILE_EXTENSIONS
         }
 
-        fun toFileUrl(filePath: String): String = "file://$filePath"
+        fun toFileUrl(filePath: String): String = java.io.File(filePath).toURI().toString()
     }
 
     fun openFileInActivePanel(filePath: String, fileName: String) {
@@ -668,16 +668,22 @@ class SplitViewState(
         return null
     }
 
+    private data class PanelTabMatch(
+        val panelId: String,
+        val component: BossTabsComponent,
+        val tabIndex: Int
+    )
+
     /**
      * Find the panel that contains an editor tab for the given file path.
      * Unlike findPanelWithFile, this only matches EditorTabInfo (not browser tabs).
      */
-    private fun findPanelWithEditorTab(filePath: String): Triple<String, BossTabsComponent, Int>? {
+    private fun findPanelWithEditorTab(filePath: String): PanelTabMatch? {
         getAllPanels().forEach { panel ->
             val tabIndex = panel.tabsComponent.tabsState.value.tabs
                 .indexOfFirst { tab -> tab is EditorTabInfo && tab.filePath == filePath }
             if (tabIndex >= 0) {
-                return Triple(panel.id, panel.tabsComponent, tabIndex)
+                return PanelTabMatch(panel.id, panel.tabsComponent, tabIndex)
             }
         }
         return null
