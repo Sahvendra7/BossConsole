@@ -133,7 +133,8 @@ class DynamicPluginLoaderImpl(
                 classLoaderManager.closeClassLoader(pluginId, classLoader)
                 return Result.failure(PluginBinaryIncompatibilityException(
                     "Plugin '$pluginId' has binary incompatibilities: ${validation.errors.first()}",
-                    pluginId
+                    pluginId,
+                    manifest
                 ))
             }
 

@@ -12,7 +12,6 @@ import ai.rever.boss.plugin.api.PluginUnloadAware
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.loader.DynamicPluginLoaderImpl
 import ai.rever.boss.plugin.loader.PluginBinaryIncompatibilityException
-import ai.rever.boss.plugin.loader.PluginManifestReader
 import ai.rever.boss.plugin.loader.PluginUnloadException
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.plugin.sandbox.PluginErrorClassifier
@@ -203,11 +202,9 @@ class DynamicPluginManager(
                     // Binary incompatibility detected at load time — disable gracefully
                     if (error is PluginBinaryIncompatibilityException) {
                         val pluginId = error.pluginId
+                        val manifest = error.manifest
                         if (pluginId != null) {
                             PluginCrashRegistry.markIncompatible(pluginId)
-                            val manifest = try {
-                                PluginManifestReader.readFromJar(jarPath)
-                            } catch (_: Exception) { null }
                             if (manifest != null) {
                                 val info = DynamicPluginInfo(
                                     manifest = manifest,
@@ -224,7 +221,7 @@ class DynamicPluginManager(
                             "jarPath" to jarPath,
                             "error" to (error.message ?: "unknown")
                         ))
-                        notifyListeners { it.pluginLoadFailed(null, error) }
+                        notifyListeners { it.pluginLoadFailed(manifest, error) }
                         return@withLock Result.failure(error)
                     }
 

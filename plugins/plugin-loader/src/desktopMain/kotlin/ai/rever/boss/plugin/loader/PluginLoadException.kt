@@ -85,5 +85,6 @@ class PluginBossVersionException(
 class PluginBinaryIncompatibilityException(
     message: String,
     pluginId: String? = null,
+    val manifest: ai.rever.boss.plugin.api.PluginManifest? = null,
     cause: Throwable? = null
 ) : PluginLoadException(message, pluginId, cause)
