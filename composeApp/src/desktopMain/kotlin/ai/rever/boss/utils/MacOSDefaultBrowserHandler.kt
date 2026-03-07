@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempFile
 
@@ -106,8 +107,9 @@ object MacOSDefaultBrowserHandler {
                 .redirectErrorStream(true)
                 .start()
 
-            val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                reader.readText().trim()
+            // Read output on background thread so waitFor timeout can fire if Swift hangs
+            val outputFuture = CompletableFuture.supplyAsync {
+                BufferedReader(InputStreamReader(process.inputStream)).use { it.readText().trim() }
             }
 
             val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -118,6 +120,8 @@ object MacOSDefaultBrowserHandler {
             }
 
             if (process.exitValue() != 0) return emptyMap()
+
+            val output = outputFuture.get(1, TimeUnit.SECONDS)
 
             // Parse "http=com.apple.Safari\nhttps=com.apple.Safari" format
             return output.lines()
@@ -164,8 +168,9 @@ object MacOSDefaultBrowserHandler {
                 .redirectErrorStream(true)
                 .start()
 
-            val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                reader.readText()
+            // Read output on background thread so waitFor timeout can fire if Swift hangs
+            val outputFuture = CompletableFuture.supplyAsync {
+                BufferedReader(InputStreamReader(process.inputStream)).use { it.readText().trim() }
             }
 
             val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -175,7 +180,8 @@ object MacOSDefaultBrowserHandler {
                 return false
             }
 
-            logger.debug(LogCategory.BROWSER, "Swift script output", mapOf("scheme" to scheme, "output" to output.trim()))
+            val output = outputFuture.get(1, TimeUnit.SECONDS)
+            logger.debug(LogCategory.BROWSER, "Swift script output", mapOf("scheme" to scheme, "output" to output))
 
             return process.exitValue() == 0
         } catch (e: Exception) {
@@ -220,6 +226,7 @@ object MacOSDefaultBrowserHandler {
             val version = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText().trim() }
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
+                logger.warn(LogCategory.BROWSER, "Timed out getting macOS version")
                 return 0
             }
             version.substringBefore(".").toIntOrNull() ?: 0

@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun DefaultBrowserSection() {
+    val platformName = DefaultBrowserManager.getPlatformName()
     var isDefault by remember { mutableStateOf<Boolean?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -278,20 +279,17 @@ fun DefaultBrowserSection() {
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "Platform: ${DefaultBrowserManager.getPlatformName()}",
+                        text = "Platform: $platformName",
                         fontSize = 12.sp,
                         color = BossDarkTextPrimary,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = when {
-                            DefaultBrowserManager.getPlatformName() == "macOS" ->
-                                "BOSS will attempt to set itself as default automatically"
-                            DefaultBrowserManager.getPlatformName() == "Windows" ->
-                                "Windows requires manual selection in Settings"
-                            else ->
-                                "Uses XDG standards for Linux desktop environments"
+                        text = when (platformName) {
+                            "macOS" -> "BOSS will attempt to set itself as default automatically"
+                            "Windows" -> "Windows requires manual selection in Settings"
+                            else -> "Uses XDG standards for Linux desktop environments"
                         },
                         fontSize = 11.sp,
                         color = BossDarkTextSecondary
@@ -332,8 +330,6 @@ fun DefaultBrowserSection() {
 
     // Instructions Dialog (platform-aware)
     if (showInstructionsDialog) {
-        val platformName = DefaultBrowserManager.getPlatformName()
-
         AlertDialog(
             onDismissRequest = { showInstructionsDialog = false },
             title = {
