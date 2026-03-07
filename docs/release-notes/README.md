@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.18](v8.17.18.md) | 2026-03-07 | Plugin binary compatibility validation at load time with Compose layout reentrancy crash fix and corrected NoSuchMethodError detection |
 | [v8.17.17](v8.17.17.md) | 2026-03-07 | Documentation maintenance release adding missing release notes for v8.17.16 |
 | [v8.17.16](v8.17.16.md) | 2026-03-07 | Smart file routing opening media in browser and code in editor, "Open With" context menu, plugin crash recovery for disabled and side panel plugins, and Windows path handling fix |
 | [v8.17.15](v8.17.15.md) | 2026-03-07 | Database performance and security hardening with optimized Postgres views for user/role and plugin store queries, RLS bypass fix, and anonymous access revocation |
