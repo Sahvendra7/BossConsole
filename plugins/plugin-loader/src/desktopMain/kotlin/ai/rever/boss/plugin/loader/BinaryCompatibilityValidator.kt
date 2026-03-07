@@ -60,6 +60,10 @@ object BinaryCompatibilityValidator {
             ))
         }
 
+        // Collect all class names in this JAR — references between them are
+        // self-consistent (compiled together) and don't need cross-validation.
+        val jarClassNames = classEntries.map { it.first }.toSet()
+
         for ((className, bytes) in classEntries) {
             // First, ensure the class itself can be loaded
             try {
@@ -76,6 +80,9 @@ object BinaryCompatibilityValidator {
             try {
                 val refs = ConstantPoolParser.extractReferences(bytes)
                 for (ref in refs) {
+                    // Skip references to classes within the same JAR — they were
+                    // compiled together and are guaranteed to be consistent.
+                    if (ref.ownerClassName in jarClassNames) continue
                     verifyReference(ref, classLoader, className, errors)
                 }
             } catch (e: Exception) {
