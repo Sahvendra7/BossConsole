@@ -87,8 +87,8 @@ fun BossActionButton(
     val resolvedIconColor = iconColor ?: color
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
-    // Non-observable holders for layout measurements to avoid triggering
-    // remeasure during the layout phase (prevents reentrancy crashes)
+    // Non-observable holders: avoid triggering remeasure during the layout phase.
+    // Trade-off: popup positions won't update if button moves while open (acceptable for modal popups).
     val buttonPositionRef = remember { floatArrayOf(0f, 0f) }
     val buttonSizeRef = remember { intArrayOf(0, 0) }
     val contextMenuSizeRef = remember { intArrayOf(0, 0) }

@@ -136,7 +136,8 @@ private fun ContextMenuContent(
                     }
                 }
 
-                // Non-observable holder to avoid triggering remeasure during layout
+                // Non-observable holder: avoids triggering remeasure during layout phase.
+                // Trade-off: popup position won't update if parent moves while open (acceptable for menus).
                 val rowWidthRef = remember { intArrayOf(0) }
 
                 // Keep parent highlighted when submenu is open
