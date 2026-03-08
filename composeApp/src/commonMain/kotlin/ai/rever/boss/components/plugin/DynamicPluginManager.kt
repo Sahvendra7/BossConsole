@@ -59,6 +59,29 @@ data class DynamicPluginInfo(
 )
 
 /**
+ * Callback interface for spawning out-of-process plugin children.
+ *
+ * Implementors launch the plugin's child JVM or native-image binary,
+ * establish the gRPC transport, and return a stable lifecycle handle.
+ * Decoupled from any specific process-management library.
+ */
+interface OutOfProcessPluginSpawner {
+    /**
+     * Spawn a child process for the given plugin.
+     *
+     * @param manifest Plugin manifest (contains `nativeImagePath`, capabilities, etc.)
+     * @param jarPath  Path to the plugin JAR (used when launching a JVM subprocess)
+     * @return Success if the process started, or failure with the cause.
+     */
+    suspend fun spawn(manifest: PluginManifest, jarPath: String): Result<Unit>
+
+    /**
+     * Terminate the child process for the given plugin.
+     */
+    suspend fun terminate(pluginId: String): Result<Unit>
+}
+
+/**
  * Manager for dynamic plugin loading and unloading at runtime.
  *
  * This coordinates the full plugin lifecycle:
@@ -68,13 +91,18 @@ data class DynamicPluginInfo(
  * - Validating unload feasibility
  * - Cleaning up registrations on unload
  *
+ * When [outOfProcessSpawner] is provided, plugins whose manifest declares
+ * `isolationMode = "out-of-process"` are delegated to the spawner instead
+ * of being loaded into the kernel JVM classloader.
+ *
  * Follows IntelliJ IDEA patterns for dynamic plugin management.
  */
 class DynamicPluginManager(
     private val panelRegistry: PanelRegistry,
     private val tabRegistry: TabRegistry,
     private val sandboxManager: PluginSandboxManager,
-    private val createSandboxedContext: (pluginId: String, config: SandboxConfig) -> PluginContext
+    private val createSandboxedContext: (pluginId: String, config: SandboxConfig) -> PluginContext,
+    private val outOfProcessSpawner: OutOfProcessPluginSpawner? = null,
 ) {
     private val logger = BossLogger.forComponent("DynamicPluginManager")
 
@@ -231,6 +259,42 @@ class DynamicPluginManager(
 
                 val loadedPlugin = loadResult.getOrThrow()
                 val manifest = loadedPlugin.manifest
+
+                // ---- Out-of-process branch ----
+                if (manifest.isolationMode == "out-of-process") {
+                    val spawner = outOfProcessSpawner
+                    if (spawner == null) {
+                        logger.warn(LogCategory.SYSTEM, "No OutOfProcessPluginSpawner provided; loading in-process as fallback", mapOf(
+                            "pluginId" to manifest.pluginId
+                        ))
+                        // Fall through to in-process path below
+                    } else {
+                        // Unload from classloader — the child process owns execution
+                        pluginLoader.unloadPlugin(manifest.pluginId)
+
+                        val spawnResult = spawner.spawn(manifest, jarPath)
+                        if (spawnResult.isFailure) {
+                            notifyListeners { it.pluginLoadFailed(manifest, spawnResult.exceptionOrNull()!!) }
+                            return@withLock Result.failure(spawnResult.exceptionOrNull()!!)
+                        }
+
+                        val info = DynamicPluginInfo(
+                            manifest = manifest,
+                            jarPath = jarPath,
+                            state = if (enabled) PluginState.LOADED else PluginState.DISABLED,
+                            loadedAt = System.currentTimeMillis(),
+                            enabled = enabled,
+                        )
+                        updatePluginState(manifest.pluginId, info)
+                        notifyListeners { it.pluginLoaded(manifest) }
+
+                        logger.info(LogCategory.SYSTEM, "Out-of-process plugin spawned", mapOf(
+                            "pluginId" to manifest.pluginId,
+                            "jarPath" to jarPath,
+                        ))
+                        return@withLock Result.success(info)
+                    }
+                }
 
                 // Notify listeners before registration
                 notifyListeners { it.beforePluginLoaded(manifest) }
@@ -463,6 +527,13 @@ class DynamicPluginManager(
                 // Remove sandbox
                 managerScope.launch {
                     sandboxManager.removeSandbox(pluginId)
+                }
+
+                // Terminate out-of-process child if applicable
+                if (manifest.isolationMode == "out-of-process") {
+                    managerScope.launch {
+                        outOfProcessSpawner?.terminate(pluginId)
+                    }
                 }
 
                 // Unload the plugin
