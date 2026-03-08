@@ -186,6 +186,111 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
             ),
             authJar,
         )
+
+        val masteryOrchestratorJar = "$bossDataDir/services/boss-mastery-orchestrator-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-mastery-orchestrator",
+                processType = ProcessType.SERVICE,
+                displayName = "BOSS Mastery Orchestrator",
+                mainClass = "ai.rever.boss.mastery.orchestrator.MasteryOrchestratorMainKt",
+                classpath = masteryOrchestratorJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 3,
+            ),
+            masteryOrchestratorJar,
+        )
+
+        val workspaceJar = "$bossDataDir/services/boss-service-workspace-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-service-workspace",
+                processType = ProcessType.SERVICE,
+                displayName = "BOSS Workspace Service",
+                mainClass = "ai.rever.boss.service.workspace.WorkspaceServiceMainKt",
+                classpath = workspaceJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 3,
+            ),
+            workspaceJar,
+        )
+
+        val settingsJar = "$bossDataDir/services/boss-service-settings-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-service-settings",
+                processType = ProcessType.SERVICE,
+                displayName = "BOSS Settings Service",
+                mainClass = "ai.rever.boss.service.settings.SettingsServiceMainKt",
+                classpath = settingsJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 3,
+            ),
+            settingsJar,
+        )
+
+        val filesystemJar = "$bossDataDir/services/boss-service-filesystem-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-service-filesystem",
+                processType = ProcessType.SERVICE,
+                displayName = "BOSS FileSystem Service",
+                mainClass = "ai.rever.boss.service.filesystem.FileSystemServiceMainKt",
+                classpath = filesystemJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 3,
+            ),
+            filesystemJar,
+        )
+
+        val terminalJar = "$bossDataDir/services/boss-app-terminal-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-app-terminal",
+                processType = ProcessType.APP,
+                displayName = "BOSS Terminal App",
+                mainClass = "ai.rever.boss.app.terminal.TerminalServiceMainKt",
+                classpath = terminalJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 5,
+            ),
+            terminalJar,
+        )
+
+        val editorJar = "$bossDataDir/services/boss-app-editor-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-app-editor",
+                processType = ProcessType.APP,
+                displayName = "BOSS Editor App",
+                mainClass = "ai.rever.boss.app.editor.EditorServiceMainKt",
+                classpath = editorJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 5,
+            ),
+            editorJar,
+        )
+
+        val browserJar = "$bossDataDir/services/boss-app-browser-all.jar"
+        spawnIfJarExists(
+            spawner, registry,
+            ProcessConfig(
+                processId = "boss-app-browser",
+                processType = ProcessType.APP,
+                displayName = "BOSS Browser App",
+                mainClass = "ai.rever.boss.app.browser.BrowserServiceMainKt",
+                classpath = browserJar,
+                restartPolicy = RestartPolicy.ON_FAILURE,
+                maxRestarts = 5,
+            ),
+            browserJar,
+        )
     }
 
     private fun spawnIfJarExists(

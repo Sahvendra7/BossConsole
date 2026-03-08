@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.kotlinSerialization)
+    id("org.graalvm.buildtools.native") version "0.10.6"
 }
 
 group = "ai.rever.boss.service.settings"
@@ -9,6 +10,20 @@ version = "1.0.0"
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+graalvmNative {
+    binaries {
+        named("main") {
+            mainClass.set("ai.rever.boss.service.settings.SettingsServiceMainKt")
+            buildArgs.add("--no-fallback")
+            buildArgs.add("-H:+ReportExceptionStackTraces")
+            buildArgs.add("--initialize-at-build-time=kotlin")
+        }
+    }
+    metadataRepository {
+        enabled.set(true)
     }
 }
 
