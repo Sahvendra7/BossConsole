@@ -29,10 +29,12 @@ class EventBusServiceImpl : EventBusServiceGrpcKt.EventBusServiceCoroutineImplBa
 
     // Track active subscribers for metrics
     private val subscriberCount = AtomicInteger(0)
+    private val anonIdCounter = AtomicInteger(0)
     private val subscriberInfo = ConcurrentHashMap<String, SubscriberInfo>()
 
     override fun subscribe(request: SubscribeRequest): Flow<EventEnvelope> {
-        val subscriberId = request.subscriberId.ifEmpty { "anon-${subscriberCount.incrementAndGet()}" }
+        val subscriberId = request.subscriberId.ifEmpty { "anon-${anonIdCounter.incrementAndGet()}" }
+        subscriberCount.incrementAndGet()
         val eventTypes = request.eventTypesList.toSet()
         val windowFilter = request.sourceWindowId.takeIf { it.isNotEmpty() }
 
@@ -42,7 +44,6 @@ class EventBusServiceImpl : EventBusServiceGrpcKt.EventBusServiceCoroutineImplBa
             windowFilter = windowFilter,
             subscribedAt = System.currentTimeMillis(),
         )
-        subscriberCount.incrementAndGet()
 
         logger.debug("New subscriber: id={}, types={}, window={}", subscriberId, eventTypes, windowFilter)
 

@@ -3,8 +3,6 @@ package ai.rever.boss.orchestrator
 import ai.rever.boss.ipc.proto.ProcessFailureReport
 import ai.rever.boss.ipc.proto.ProcessManifest
 import ai.rever.boss.ipc.proto.RepairStrategy
-import ai.rever.boss.process.ProcessRegistry
-import ai.rever.boss.process.ProcessSpawner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -15,12 +13,15 @@ import org.slf4j.LoggerFactory
  * Strategy selection:
  * - HIGH/MEDIUM confidence from CrashAnalyzer → use analyzer's strategy directly.
  * - LOW confidence → walk the [defaultLadder] based on consecutive failure count.
+ *
+ * Restart requests are delegated to [onRequestRestart] (typically calls
+ * KernelService.RequestShutdown so the kernel handles the actual process lifecycle).
  */
 class RepairEngine(
-    private val processSpawner: ProcessSpawner,
-    private val processRegistry: ProcessRegistry,
     private val analyzer: CrashAnalyzer,
     private val snapshotManager: SnapshotManager,
+    /** Called to request a restart. Kernel handles the actual re-spawn. */
+    private val onRequestRestart: suspend (processId: String, jvmArgsOverride: List<String>) -> Unit = { _, _ -> },
 ) {
     private val logger = LoggerFactory.getLogger(RepairEngine::class.java)
 
@@ -35,8 +36,8 @@ class RepairEngine(
 
     suspend fun handleFailure(report: ProcessFailureReport): RepairOutcome = withContext(Dispatchers.IO) {
         val processId = report.processId
-        val manifest: ProcessManifest? = processRegistry.getManifest(processId)
-            ?: if (report.hasManifest()) report.manifest else null
+        // Use manifest from the report (quine property — process describes itself)
+        val manifest: ProcessManifest? = if (report.hasManifest()) report.manifest else null
         val diagnostic = analyzer.analyze(report, manifest)
 
         logger.info(
@@ -54,45 +55,41 @@ class RepairEngine(
         executeStrategy(processId, strategy, report, diagnostic)
     }
 
-    private fun executeStrategy(
+    private suspend fun executeStrategy(
         processId: String,
         strategy: RepairStrategy,
         report: ProcessFailureReport,
         diagnostic: DiagnosticResult,
     ): RepairOutcome {
         return when (strategy) {
-            RepairStrategy.REPAIR_STRATEGY_RESTART,
-            RepairStrategy.REPAIR_STRATEGY_RESTART_TUNED -> {
-                val process = processRegistry.getProcess(processId)
-                    ?: return RepairOutcome.Failed(processId, "Process not found in registry")
+            RepairStrategy.REPAIR_STRATEGY_RESTART -> {
                 try {
-                    process.destroy()
-                    val extraArgs = if (strategy == RepairStrategy.REPAIR_STRATEGY_RESTART_TUNED) {
-                        listOf("-Xmx512m")
-                    } else emptyList()
-                    val config = if (extraArgs.isNotEmpty()) {
-                        process.config.copy(jvmArgs = process.config.jvmArgs + extraArgs)
-                    } else process.config
-                    val newProcess = processSpawner.spawn(config)
-                    processRegistry.register(processId, newProcess, processRegistry.getManifest(processId))
-                    processRegistry.incrementRestartCount(processId)
-                    logger.info("Restarted process: {}", processId)
+                    onRequestRestart(processId, emptyList())
+                    logger.info("Restart requested for process: {}", processId)
                     RepairOutcome.Restarted(processId)
                 } catch (e: Exception) {
-                    logger.error("Failed to restart process: {}", processId, e)
-                    RepairOutcome.Failed(processId, "Restart failed: ${e.message}")
+                    logger.error("Failed to request restart for process: {}", processId, e)
+                    RepairOutcome.Failed(processId, "Restart request failed: ${e.message}")
+                }
+            }
+
+            RepairStrategy.REPAIR_STRATEGY_RESTART_TUNED -> {
+                try {
+                    onRequestRestart(processId, listOf("-Xmx512m"))
+                    logger.info("Tuned restart requested for process: {}", processId)
+                    RepairOutcome.Restarted(processId)
+                } catch (e: Exception) {
+                    logger.error("Failed to request tuned restart for process: {}", processId, e)
+                    RepairOutcome.Failed(processId, "Tuned restart request failed: ${e.message}")
                 }
             }
 
             RepairStrategy.REPAIR_STRATEGY_RESET_STATE -> {
-                val process = processRegistry.getProcess(processId)
-                    ?: return RepairOutcome.Failed(processId, "Process not found in registry")
                 try {
-                    process.destroy()
-                    val newProcess = processSpawner.spawn(process.config)
-                    processRegistry.register(processId, newProcess, processRegistry.getManifest(processId))
-                    processRegistry.incrementRestartCount(processId)
-                    logger.info("Reset state for process: {}", processId)
+                    // Clear snapshots so process starts fresh, then restart
+                    snapshotManager.cleanup(processId, keepLast = 0)
+                    onRequestRestart(processId, emptyList())
+                    logger.info("State reset + restart requested for process: {}", processId)
                     RepairOutcome.StateReset(processId)
                 } catch (e: Exception) {
                     logger.error("Failed to reset state for process: {}", processId, e)

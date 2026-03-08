@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Monitors all registered processes via periodic health checks.
@@ -31,7 +32,7 @@ class ProcessMonitor(
     private val _failures = MutableSharedFlow<ProcessFailure>(extraBufferCapacity = 64)
     val failures: SharedFlow<ProcessFailure> = _failures.asSharedFlow()
 
-    private val monitorJobs = mutableMapOf<String, Job>()
+    private val monitorJobs = ConcurrentHashMap<String, Job>()
     private var globalMonitorJob: Job? = null
 
     /**

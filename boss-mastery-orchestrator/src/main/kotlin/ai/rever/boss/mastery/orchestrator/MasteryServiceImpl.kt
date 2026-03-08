@@ -71,18 +71,18 @@ class MasteryServiceImpl(
 
         try {
             coroutineScope {
-                val job = launch {
-                    executor.execute(def, request.inputMap).collect { progress ->
-                        emit(progress.toProto(executionId))
-                        when (progress) {
-                            is KProgress.Completed -> updateStatus(executionId, request.masteryId, "completed")
-                            is KProgress.Failed -> updateStatus(executionId, request.masteryId, "failed")
-                            else -> Unit
-                        }
+                // Register the coroutineScope's Job BEFORE any suspension point to prevent
+                // a cancel-window race where cancelMastery() arrives before registration (M9 fix).
+                runningJobs[executionId] = coroutineContext[Job]!!
+
+                executor.execute(def, request.inputMap).collect { progress ->
+                    emit(progress.toProto(executionId))
+                    when (progress) {
+                        is KProgress.Completed -> updateStatus(executionId, request.masteryId, "completed")
+                        is KProgress.Failed -> updateStatus(executionId, request.masteryId, "failed")
+                        else -> Unit
                     }
                 }
-                runningJobs[executionId] = job
-                job.join()
             }
         } finally {
             runningJobs.remove(executionId)

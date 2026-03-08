@@ -2,9 +2,7 @@ package ai.rever.boss.orchestrator
 
 import ai.rever.boss.ipc.ChildProcessBootstrap
 import ai.rever.boss.ipc.proto.*
-import ai.rever.boss.process.ProcessMonitor
-import ai.rever.boss.process.ProcessRegistry
-import ai.rever.boss.process.ProcessSpawner
+import ai.rever.boss.ipc.proto.KernelServiceGrpcKt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
@@ -14,7 +12,11 @@ import java.io.File
  * Entry point for the Orchestrator process.
  *
  * Connects to the kernel, registers itself, starts the OrchestratorService gRPC server,
- * and listens for process failures from ProcessMonitor to drive self-healing.
+ * and drives self-healing via the RepairEngine.
+ *
+ * C2 fix: No local ProcessRegistry or ProcessSpawner — the orchestrator asks the kernel
+ * to restart processes via KernelService.RequestShutdown, and the kernel's auto-respawn
+ * handles the actual re-spawn.
  */
 fun main() {
     val logger = LoggerFactory.getLogger("OrchestratorMain")
@@ -54,39 +56,58 @@ fun main() {
 
     runBlocking {
         val connection = bootstrap.connect(manifest)
+        val kernelStub = connection.kernelStub
 
-        val processRegistry = ProcessRegistry()
-        val processSpawner = ProcessSpawner(bootstrap.kernelAddress)
         val snapshotManager = SnapshotManager(dataDir)
         val analyzer = CrashAnalyzer()
-        val repairEngine = RepairEngine(processSpawner, processRegistry, analyzer, snapshotManager)
-        val monitor = ProcessMonitor(processRegistry)
 
-        val orchestratorService = OrchestratorServiceImpl(repairEngine, processRegistry)
+        // C2 fix: restart callback delegates to kernel via RequestShutdown.
+        // The kernel's auto-respawn handles re-spawning processes with ON_FAILURE policy.
+        val repairEngine = RepairEngine(
+            analyzer = analyzer,
+            snapshotManager = snapshotManager,
+            onRequestRestart = { processId, _ ->
+                kernelStub.requestShutdown(
+                    ShutdownRequest.newBuilder()
+                        .setProcessId(processId)
+                        .setForce(false)
+                        .setReason("RESTART_REQUESTED_BY_ORCHESTRATOR")
+                        .build()
+                )
+                logger.info("Sent restart request to kernel for process: {}", processId)
+            }
+        )
+
+        // C3 fix: approved repairs are executed via the repair engine
+        val orchestratorService = OrchestratorServiceImpl(
+            repairEngine = repairEngine,
+            processRegistry = null,  // orchestrator doesn't have a local registry (C2 fix)
+            onRepairApproved = { action ->
+                logger.info("Executing approved repair: {}", action.repairId)
+                // Re-run the repair strategy that was approved
+                when (action.strategyValue) {
+                    RepairStrategy.REPAIR_STRATEGY_RESTART_VALUE,
+                    RepairStrategy.REPAIR_STRATEGY_RESTART_TUNED_VALUE -> {
+                        val processId = when {
+                            action.hasRestart() -> action.restart.let { action.repairId }
+                            action.hasResetState() -> action.repairId
+                            else -> action.repairId
+                        }
+                        kernelStub.requestShutdown(
+                            ShutdownRequest.newBuilder()
+                                .setProcessId(processId)
+                                .setForce(false)
+                                .setReason("APPROVED_REPAIR")
+                                .build()
+                        )
+                    }
+                    else -> logger.warn("Approved repair strategy {} not auto-executable", action.strategy)
+                }
+            }
+        )
         connection.processServer.addService(orchestratorService)
-
         connection.startServer()
         logger.info("Orchestrator running on: {}", bootstrap.processAddress)
-
-        // Forward ProcessMonitor failures to the repair engine
-        launch {
-            monitor.failures.collect { failure ->
-                logger.warn(
-                    "Process failure detected: id={}, reason={}",
-                    failure.processId, failure.reason,
-                )
-                val report = ProcessFailureReport.newBuilder()
-                    .setProcessId(failure.processId)
-                    .setErrorType(failure.reason.name)
-                    .setErrorMessage(failure.errorMessage)
-                    .setStackTrace(failure.stackTrace)
-                    .setExitCode(failure.exitCode)
-                    .setTimestamp(failure.timestamp)
-                    .setConsecutiveFailures(processRegistry.getRestartCount(failure.processId) + 1)
-                    .build()
-                repairEngine.handleFailure(report)
-            }
-        }
 
         connection.awaitTermination()
     }

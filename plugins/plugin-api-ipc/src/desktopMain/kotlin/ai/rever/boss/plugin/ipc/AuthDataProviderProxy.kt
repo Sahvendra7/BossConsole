@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -38,33 +39,42 @@ class AuthDataProviderProxy(
     override val userPermissions: StateFlow<Set<String>> = _userPermissions.asStateFlow()
 
     init {
-        // Start watching auth state from the remote service
+        // Start watching auth state from the remote service with reconnection
         scope.launch {
-            try {
-                stub.watchCurrentUser(Empty.getDefaultInstance()).collect { response ->
-                    if (response.authenticated && response.hasUser()) {
-                        val user = response.user
-                        _currentUser.value = UserData(
-                            id = user.userId,
-                            email = user.email,
-                            displayName = user.displayName.takeIf { it.isNotEmpty() },
-                            avatarUrl = user.avatarUrl.takeIf { it.isNotEmpty() },
-                            roles = user.rolesList,
-                            createdAt = user.sessionCreatedAt,
-                        )
-                        _isAdmin.value = user.isAdmin
-                        _userPermissions.value = user.permissionsList.toSet()
-                    } else {
-                        _currentUser.value = null
-                        _isAdmin.value = false
-                        _userPermissions.value = emptySet()
+            var delayMs = 1_000L
+            while (isActive) {
+                try {
+                    stub.watchCurrentUser(Empty.getDefaultInstance()).collect { response ->
+                        if (response.authenticated && response.hasUser()) {
+                            val user = response.user
+                            _currentUser.value = UserData(
+                                id = user.userId,
+                                email = user.email,
+                                displayName = user.displayName.takeIf { it.isNotEmpty() },
+                                avatarUrl = user.avatarUrl.takeIf { it.isNotEmpty() },
+                                roles = user.rolesList,
+                                createdAt = user.sessionCreatedAt,
+                            )
+                            _isAdmin.value = user.isAdmin
+                            _userPermissions.value = user.permissionsList.toSet()
+                        } else {
+                            _currentUser.value = null
+                            _isAdmin.value = false
+                            _userPermissions.value = emptySet()
+                        }
                     }
+                    // Stream ended cleanly — reconnect immediately
+                    delayMs = 1_000L
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Connection lost — reset state and reconnect with backoff
+                    _currentUser.value = null
+                    _isAdmin.value = false
+                    _userPermissions.value = emptySet()
+                    kotlinx.coroutines.delay(delayMs)
+                    delayMs = (delayMs * 2).coerceAtMost(30_000L)
                 }
-            } catch (e: Exception) {
-                // Connection lost — reset state
-                _currentUser.value = null
-                _isAdmin.value = false
-                _userPermissions.value = emptySet()
             }
         }
     }

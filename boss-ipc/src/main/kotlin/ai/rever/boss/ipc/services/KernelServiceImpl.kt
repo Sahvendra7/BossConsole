@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * gRPC implementation of the KernelService.
@@ -77,7 +78,7 @@ class KernelServiceImpl(
 
             // Update metrics if provided
             if (ping.hasMetrics()) {
-                registeredProcesses[processId]?.lastMetrics = ping.metrics
+                registeredProcesses[processId]?.lastMetrics?.set(ping.metrics)
             }
 
             emit(
@@ -125,7 +126,7 @@ class KernelServiceImpl(
             .setState(ProcessState.PROCESS_STATE_RUNNING)
             .setStartTime(info.registeredAt)
             .apply {
-                info.lastMetrics?.let { setMetrics(it) }
+                info.lastMetrics.get()?.let { setMetrics(it) }
                 lastHeartbeats[processId]?.let { /* timestamp tracked internally */ }
             }
             .build()
@@ -137,7 +138,7 @@ class KernelServiceImpl(
                 .setProcessId(id)
                 .setState(ProcessState.PROCESS_STATE_RUNNING)
                 .setStartTime(info.registeredAt)
-                .apply { info.lastMetrics?.let { setMetrics(it) } }
+                .apply { info.lastMetrics.get()?.let { setMetrics(it) } }
                 .build()
         }
 
@@ -170,5 +171,5 @@ internal data class RegisteredProcessInfo(
     val manifest: ProcessManifest,
     val ipcAddress: String,
     val registeredAt: Long,
-    var lastMetrics: ProcessHealthMetrics? = null,
+    val lastMetrics: AtomicReference<ProcessHealthMetrics?> = AtomicReference(null),
 )

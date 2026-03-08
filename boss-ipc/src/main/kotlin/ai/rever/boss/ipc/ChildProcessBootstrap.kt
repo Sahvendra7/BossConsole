@@ -31,18 +31,27 @@ import org.slf4j.LoggerFactory
 class ChildProcessBootstrap {
 
     private val logger = LoggerFactory.getLogger(ChildProcessBootstrap::class.java)
+    private val startTimeMs = System.currentTimeMillis()
 
-    val processId: String = System.getenv("BOSS_PROCESS_ID")
-        ?: throw IllegalStateException("BOSS_PROCESS_ID environment variable not set")
+    val processId: String by lazy {
+        System.getenv("BOSS_PROCESS_ID")
+            ?: throw IllegalStateException("BOSS_PROCESS_ID environment variable not set")
+    }
 
-    val processType: String = System.getenv("BOSS_PROCESS_TYPE")
-        ?: throw IllegalStateException("BOSS_PROCESS_TYPE environment variable not set")
+    val processType: String by lazy {
+        System.getenv("BOSS_PROCESS_TYPE")
+            ?: throw IllegalStateException("BOSS_PROCESS_TYPE environment variable not set")
+    }
 
-    val kernelAddress: String = System.getenv("BOSS_KERNEL_IPC_ADDR")
-        ?: throw IllegalStateException("BOSS_KERNEL_IPC_ADDR environment variable not set")
+    val kernelAddress: String by lazy {
+        System.getenv("BOSS_KERNEL_IPC_ADDR")
+            ?: throw IllegalStateException("BOSS_KERNEL_IPC_ADDR environment variable not set")
+    }
 
-    val processAddress: String = System.getenv("BOSS_IPC_ADDR")
-        ?: IpcAddressResolver.resolveAddress(processType.lowercase(), processId)
+    val processAddress: String by lazy {
+        System.getenv("BOSS_IPC_ADDR")
+            ?: IpcAddressResolver.resolveAddress(processType.lowercase(), processId)
+    }
 
     /**
      * Connect to the kernel, register, and start heartbeat.
@@ -133,7 +142,7 @@ class ChildProcessBootstrap {
             .setHeapUsedBytes(runtime.totalMemory() - runtime.freeMemory())
             .setHeapMaxBytes(runtime.maxMemory())
             .setActiveThreads(Thread.activeCount())
-            .setUptimeMs(System.currentTimeMillis()) // Approximate
+            .setUptimeMs(System.currentTimeMillis() - startTimeMs)
             .build()
     }
 }

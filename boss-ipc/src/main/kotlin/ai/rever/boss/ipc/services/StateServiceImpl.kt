@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -30,6 +32,7 @@ class StateServiceImpl : StateServiceGrpcKt.StateServiceCoroutineImplBase() {
 
     // Shared flow for broadcasting state changes to watchers
     private val stateChanges = MutableSharedFlow<StateValue>(extraBufferCapacity = 128)
+    private val stateMutex = Mutex()
 
     override suspend fun getState(request: StateKey): StateValue {
         val entry = stateStore[request.key]
@@ -54,35 +57,35 @@ class StateServiceImpl : StateServiceGrpcKt.StateServiceCoroutineImplBase() {
     override suspend fun setState(request: StateUpdate): StateValue {
         val key = request.key
 
-        val newVersion = versionCounter.incrementAndGet()
-
-        // Optimistic concurrency check
-        if (request.expectedVersion > 0) {
-            val current = stateStore[key]
-            if (current != null && current.version != request.expectedVersion) {
-                logger.warn(
-                    "State update conflict for key={}: expected version {}, current {}",
-                    key, request.expectedVersion, current.version
-                )
-                // Return current value without updating (conflict)
-                return current.toStateValue()
+        val entry: StateEntry = stateMutex.withLock {
+            // Optimistic concurrency check
+            if (request.expectedVersion > 0) {
+                val current = stateStore[key]
+                if (current != null && current.version != request.expectedVersion) {
+                    logger.warn(
+                        "State update conflict for key={}: expected version {}, current {}",
+                        key, request.expectedVersion, current.version
+                    )
+                    // Return current value without updating (conflict)
+                    return current.toStateValue()
+                }
             }
-        }
 
-        val entry = StateEntry(
-            key = key,
-            value = request.value,
-            valueType = request.valueType,
-            version = newVersion,
-            timestamp = System.currentTimeMillis(),
-            ownerProcess = request.sourceProcess,
-        )
-        stateStore[key] = entry
+            val newVersion = versionCounter.incrementAndGet()
+            StateEntry(
+                key = key,
+                value = request.value,
+                valueType = request.valueType,
+                version = newVersion,
+                timestamp = System.currentTimeMillis(),
+                ownerProcess = request.sourceProcess,
+            ).also { stateStore[key] = it }
+        }
 
         val stateValue = entry.toStateValue()
         stateChanges.emit(stateValue)
 
-        logger.debug("State updated: key={}, version={}, owner={}", key, newVersion, request.sourceProcess)
+        logger.debug("State updated: key={}, version={}, owner={}", key, entry.version, request.sourceProcess)
 
         return stateValue
     }

@@ -146,6 +146,29 @@ object IpcAddressResolver {
         }
     }
 
+    /**
+     * Set owner-only (0700) permissions on a Unix domain socket file after the server starts.
+     * Prevents other local users from connecting to the IPC socket.
+     */
+    fun secureSocketFile(address: String) {
+        if (isWindows || !address.startsWith("unix://")) return
+        val path = address.removePrefix("unix://")
+        try {
+            val file = File(path)
+            if (file.exists()) {
+                val ownerOnly = setOf(
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE,
+                )
+                java.nio.file.Files.setPosixFilePermissions(file.toPath(), ownerOnly)
+            }
+        } catch (e: Exception) {
+            // Non-fatal: log but continue. Some filesystems don't support POSIX permissions.
+            println("WARN: Could not set socket permissions for $path: ${e.message}")
+        }
+    }
+
     private fun findAvailableTcpPort(): Int {
         for (port in TCP_PORT_BASE until TCP_PORT_BASE + TCP_PORT_RANGE) {
             try {

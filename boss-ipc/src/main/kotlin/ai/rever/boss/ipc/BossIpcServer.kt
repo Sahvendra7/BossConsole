@@ -33,6 +33,8 @@ class BossIpcServer(private val address: String) {
 
         server = builder.build().start()
         logger.info("IPC server started on: {}", address)
+        // Set owner-only permissions on Unix socket to prevent other local users from connecting
+        IpcAddressResolver.secureSocketFile(address)
 
         return this
     }

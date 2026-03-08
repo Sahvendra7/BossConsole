@@ -108,10 +108,19 @@ class ProcessSpawner(
 
     companion object {
         fun findJavaExecutable(): String {
-            // Use the same Java that's running the kernel
-            return ProcessHandle.current().info().command().orElse(null)
-                ?: System.getProperty("java.home")?.let { "$it/bin/java" }
-                ?: "java"
+            // Use the same Java that's running the kernel — but only if it IS java.
+            // In packaged app bundles, the current command is the app launcher (e.g., "BOSS"),
+            // not the java binary. In that case fall back to JAVA_HOME.
+            val currentCommand = ProcessHandle.current().info().command().orElse(null)
+            if (currentCommand != null &&
+                (currentCommand.endsWith("/java") || currentCommand.endsWith("\\java.exe") ||
+                 currentCommand.endsWith("/java.exe"))
+            ) {
+                return currentCommand
+            }
+            // Not a JVM launcher — fall back to JAVA_HOME or java.home system property
+            System.getenv("JAVA_HOME")?.let { return "$it/bin/java" }
+            return System.getProperty("java.home")?.let { "$it/bin/java" } ?: "java"
         }
     }
 }

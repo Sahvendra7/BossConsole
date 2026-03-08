@@ -17,7 +17,10 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class OrchestratorServiceImpl(
     private val repairEngine: RepairEngine,
-    private val processRegistry: ProcessRegistry,
+    /** Optional registry — null when orchestrator runs out-of-process (C2 fix). */
+    private val processRegistry: ProcessRegistry? = null,
+    /** Called after a user-approved repair action (C3 fix). */
+    private val onRepairApproved: suspend (RepairAction) -> Unit = {},
 ) : OrchestratorServiceGrpcKt.OrchestratorServiceCoroutineImplBase() {
 
     private val logger = LoggerFactory.getLogger(OrchestratorServiceImpl::class.java)
@@ -59,7 +62,7 @@ class OrchestratorServiceImpl(
     }
 
     override suspend fun getHealthDashboard(request: Empty): HealthDashboard {
-        val processes = processRegistry.getAllProcesses()
+        val processes = processRegistry?.getAllProcesses() ?: emptyList()
         val statuses = processes.map { proc ->
             ProcessHealthStatus.newBuilder()
                 .setProcessId(proc.config.processId)
@@ -108,9 +111,14 @@ class OrchestratorServiceImpl(
 
         return if (request.approved) {
             logger.info("Repair {} approved by user", request.repairId)
+            try {
+                onRepairApproved(pending)
+            } catch (e: Exception) {
+                logger.error("Failed to execute approved repair {}: {}", request.repairId, e.message)
+            }
             RepairApprovalResponse.newBuilder()
                 .setApplied(true)
-                .setResultMessage("Repair approved and queued for execution")
+                .setResultMessage("Repair approved and execution initiated")
                 .build()
         } else {
             logger.info("Repair {} rejected by user: {}", request.repairId, request.userNotes)
