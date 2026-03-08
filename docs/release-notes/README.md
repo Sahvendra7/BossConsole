@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.20](v8.17.20.md) | 2026-03-08 | Microkernel architecture foundation with gRPC IPC, AI-powered self-healing orchestration, and Supabase Realtime stability fixes |
 | [v8.17.19](v8.17.19.md) | 2026-03-08 | Fix intra-JAR false positives in plugin binary compatibility validator |
 | [v8.17.18](v8.17.18.md) | 2026-03-07 | Plugin binary compatibility validation at load time with Compose layout reentrancy crash fix and corrected NoSuchMethodError detection |
 | [v8.17.17](v8.17.17.md) | 2026-03-07 | Documentation maintenance release adding missing release notes for v8.17.16 |
