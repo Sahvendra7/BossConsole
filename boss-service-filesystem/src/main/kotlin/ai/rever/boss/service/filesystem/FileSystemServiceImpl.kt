@@ -28,9 +28,24 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
 
     private val logger = LoggerFactory.getLogger(FileSystemServiceImpl::class.java)
 
+    /** Paths that must not be accessed via IPC — prevents privilege-escalation via path injection. */
+    private val BLOCKED_PATH_PREFIXES = listOf("/etc", "/sys", "/proc")
+
+    /**
+     * Validates that [path] does not traverse outside its intended root and does not
+     * target sensitive system directories. Throws [IllegalArgumentException] on violation.
+     */
+    private fun validatePath(path: String) {
+        require(!path.contains("..")) { "Path traversal sequences ('..') are not allowed: $path" }
+        BLOCKED_PATH_PREFIXES.forEach { prefix ->
+            require(!path.startsWith(prefix)) { "Access to system path '$prefix' is not allowed: $path" }
+        }
+    }
+
     override suspend fun scanDirectory(request: ScanDirectoryRequest): ScanDirectoryResponse =
         withContext(Dispatchers.IO) {
             logger.debug("scanDirectory: path={}, recursive={}", request.path, request.recursive)
+            validatePath(request.path)
             val dir = File(request.path)
             if (!dir.exists() || !dir.isDirectory) {
                 return@withContext ScanDirectoryResponse.newBuilder()
@@ -70,6 +85,7 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
     override suspend fun readFile(request: ReadFileRequest): ReadFileResponse =
         withContext(Dispatchers.IO) {
             logger.debug("readFile: path={}", request.path)
+            validatePath(request.path)
             val file = File(request.path)
             if (!file.exists()) {
                 return@withContext ReadFileResponse.newBuilder()
@@ -102,6 +118,7 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
     override suspend fun writeFile(request: WriteFileRequest): WriteFileResponse =
         withContext(Dispatchers.IO) {
             logger.debug("writeFile: path={}", request.path)
+            validatePath(request.path)
             return@withContext try {
                 val file = File(request.path)
                 if (request.createParents) file.parentFile?.mkdirs()
@@ -128,6 +145,7 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
     override suspend fun createFile(request: CreateFileRequest): Empty =
         withContext(Dispatchers.IO) {
             logger.info("createFile: path={}, isDirectory={}", request.path, request.isDirectory)
+            validatePath(request.path)
             val file = File(request.path)
             if (request.createParents) file.parentFile?.mkdirs()
             if (request.isDirectory) file.mkdirs() else file.createNewFile()
@@ -137,6 +155,7 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
     override suspend fun deleteFile(request: DeleteFileRequest): Empty =
         withContext(Dispatchers.IO) {
             logger.info("deleteFile: path={}, recursive={}", request.path, request.recursive)
+            validatePath(request.path)
             val file = File(request.path)
             if (request.recursive && file.isDirectory) {
                 file.deleteRecursively()
@@ -149,6 +168,8 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
     override suspend fun renameFile(request: RenameFileRequest): Empty =
         withContext(Dispatchers.IO) {
             logger.info("renameFile: from={}, to={}", request.sourcePath, request.destinationPath)
+            validatePath(request.sourcePath)
+            validatePath(request.destinationPath)
             val dest = File(request.destinationPath)
             if (!request.overwrite && dest.exists()) {
                 throw IllegalStateException("Destination already exists: ${request.destinationPath}")
@@ -159,6 +180,7 @@ class FileSystemServiceImpl : FileSystemServiceGrpcKt.FileSystemServiceCoroutine
 
     override fun watchFileChanges(request: WatchFileChangesRequest): Flow<FileChangeEvent> = flow {
         logger.info("watchFileChanges: path={}, recursive={}", request.path, request.recursive)
+        validatePath(request.path)
         val root = Paths.get(request.path)
         if (!Files.exists(root)) {
             logger.warn("watchFileChanges: path not found: {}", request.path)

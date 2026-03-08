@@ -38,7 +38,7 @@ data class PanelToggleEvent(
 
 object PanelEventBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     private val _panelCloseEvents = MutableSharedFlow<PanelCloseEvent>()
     val panelCloseEvents: SharedFlow<PanelCloseEvent> = _panelCloseEvents.asSharedFlow()

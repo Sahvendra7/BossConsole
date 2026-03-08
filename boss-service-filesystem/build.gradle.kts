@@ -21,6 +21,11 @@ graalvmNative {
             buildArgs.add("--initialize-at-build-time=kotlin")
         }
     }
+    // metadataRepository automatically fetches GraalVM Reachability Metadata
+    // (reflect-config.json, resource-config.json, proxy-config.json, etc.) from
+    // https://github.com/oracle/graalvm-reachability-metadata for all known
+    // dependencies (gRPC, Netty, Ktor, kotlinx.serialization).
+    // No manual reflect-config.json files are needed for these libraries.
     metadataRepository {
         enabled.set(true)
     }

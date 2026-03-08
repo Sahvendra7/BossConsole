@@ -26,7 +26,7 @@ data class DashboardActivatePluginEvent(val pluginId: String, val sourceWindowId
  */
 object DashboardEventBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     // File operations
     private val _openFileEvents = MutableSharedFlow<DashboardOpenFileEvent>(extraBufferCapacity = 10)

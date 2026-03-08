@@ -9,8 +9,10 @@ import io.netty.channel.kqueue.KQueueDomainSocketChannel
 import io.netty.channel.kqueue.KQueueEventLoopGroup
 import io.netty.channel.kqueue.KQueueServerDomainSocketChannel
 import io.netty.channel.unix.DomainSocketAddress
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.net.InetSocketAddress
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Resolves IPC addresses for inter-process communication.
@@ -21,6 +23,8 @@ import java.net.InetSocketAddress
  * UDS path convention: $BOSS_DATA_DIR/ipc/boss-{type}-{id}.sock
  */
 object IpcAddressResolver {
+
+    private val logger = LoggerFactory.getLogger(IpcAddressResolver::class.java)
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("win")
     private val isMacOS = System.getProperty("os.name").lowercase().contains("mac")
@@ -39,12 +43,33 @@ object IpcAddressResolver {
     private const val TCP_PORT_RANGE = 100
 
     /**
+     * Cache of allocated TCP ports per process identity (processType:processId).
+     * Once a port is allocated for a given process, the same port is returned on
+     * subsequent calls, avoiding TOCTOU races where the port could be taken between
+     * discovery and actual bind in the server builder.
+     */
+    private val tcpPortCache = ConcurrentHashMap<String, Int>()
+
+    /** Regex for valid process identifiers — prevents path traversal in socket names. */
+    private val PROCESS_ID_REGEX = Regex("^[a-zA-Z0-9._-]+$")
+
+    /**
      * Get the IPC address for a process.
      * Returns a UDS path on macOS/Linux, or TCP localhost address on Windows.
+     *
+     * @throws IllegalArgumentException if processType or processId contain invalid characters.
      */
     fun resolveAddress(processType: String, processId: String): String {
+        require(PROCESS_ID_REGEX.matches(processType)) {
+            "Invalid processType '$processType': must match [a-zA-Z0-9._-]+"
+        }
+        require(PROCESS_ID_REGEX.matches(processId)) {
+            "Invalid processId '$processId': must match [a-zA-Z0-9._-]+"
+        }
         return if (isWindows) {
-            "tcp://localhost:${findAvailableTcpPort()}"
+            val key = "$processType:$processId"
+            val port = tcpPortCache.computeIfAbsent(key) { findAvailableTcpPort() }
+            "tcp://localhost:$port"
         } else {
             val socketFile = File(ipcDir, "boss-${processType}-${processId}.sock")
             "unix://${socketFile.absolutePath}"
@@ -165,7 +190,7 @@ object IpcAddressResolver {
             }
         } catch (e: Exception) {
             // Non-fatal: log but continue. Some filesystems don't support POSIX permissions.
-            println("WARN: Could not set socket permissions for $path: ${e.message}")
+            logger.warn("Could not set socket permissions for {}: {}", path, e.message)
         }
     }
 

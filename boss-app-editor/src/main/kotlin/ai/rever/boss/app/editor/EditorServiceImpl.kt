@@ -24,6 +24,16 @@ class EditorServiceImpl : EditorServiceGrpcKt.EditorServiceCoroutineImplBase() {
     /** path → isDirty: tracks files opened in this session */
     private val openFiles = ConcurrentHashMap<String, Boolean>()
 
+    /** Paths that must not be accessed via IPC — mirrors FileSystemServiceImpl policy. */
+    private val BLOCKED_PATH_PREFIXES = listOf("/etc", "/sys", "/proc")
+
+    private fun validatePath(path: String) {
+        require(!path.contains("..")) { "Path traversal sequences ('..') are not allowed: $path" }
+        BLOCKED_PATH_PREFIXES.forEach { prefix ->
+            require(!path.startsWith(prefix)) { "Access to system path '$prefix' is not allowed: $path" }
+        }
+    }
+
     // Language-specific main/entry-point patterns
     private val mainPatterns = listOf(
         Regex("""^\s*(?:suspend\s+)?fun\s+main\s*\("""),        // Kotlin
@@ -37,6 +47,7 @@ class EditorServiceImpl : EditorServiceGrpcKt.EditorServiceCoroutineImplBase() {
     override suspend fun openFile(request: OpenFileRequest): OpenFileResponse =
         withContext(Dispatchers.IO) {
             logger.info("openFile: path={}", request.path)
+            validatePath(request.path)
             val file = File(request.path)
             if (!file.exists() || !file.isFile) {
                 return@withContext OpenFileResponse.newBuilder()
@@ -64,6 +75,7 @@ class EditorServiceImpl : EditorServiceGrpcKt.EditorServiceCoroutineImplBase() {
     override suspend fun saveFile(request: SaveFileRequest): Empty =
         withContext(Dispatchers.IO) {
             logger.info("saveFile: path={}", request.path)
+            validatePath(request.path)
             try {
                 val file = File(request.path)
                 file.parentFile?.mkdirs()
@@ -90,6 +102,7 @@ class EditorServiceImpl : EditorServiceGrpcKt.EditorServiceCoroutineImplBase() {
     override suspend fun detectMainFunctions(request: DetectMainRequest): DetectMainResponse =
         withContext(Dispatchers.IO) {
             logger.info("detectMainFunctions: path={}", request.path)
+            validatePath(request.path)
             val file = File(request.path)
             if (!file.exists() || !file.isFile) return@withContext DetectMainResponse.newBuilder().build()
 

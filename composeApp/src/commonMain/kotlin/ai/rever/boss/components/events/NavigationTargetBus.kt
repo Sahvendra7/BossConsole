@@ -33,7 +33,7 @@ data class NavigationTargetEvent(
  */
 object NavigationTargetBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     private val _targets = MutableSharedFlow<NavigationTargetEvent>(
         replay = 1,  // Replay last event for late subscribers

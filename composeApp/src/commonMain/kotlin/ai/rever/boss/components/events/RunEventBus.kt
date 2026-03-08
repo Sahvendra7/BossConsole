@@ -22,7 +22,7 @@ typealias RunScanEvent = ai.rever.boss.plugin.run.RunScanEvent
  */
 object RunEventBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     private val _executeEvents = MutableSharedFlow<RunExecuteEvent>(
         replay = 0,

@@ -60,6 +60,11 @@ class ChildProcessBootstrap {
         manifest: ProcessManifest,
         scope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
     ): ChildProcessConnection {
+        // Brief delay to ensure the kernel gRPC server is accepting connections before
+        // our first connect attempt. The kernel spawns child processes and then binds
+        // its server; without this delay the first waitForReady often times out on
+        // slow machines.
+        delay(100)
         logger.info("Connecting to kernel at: {}", kernelAddress)
 
         // Connect to kernel

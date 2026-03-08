@@ -29,7 +29,7 @@ data class URLOpenEvent(
  */
 object URLEventBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     private val _urlOpenEvents = MutableSharedFlow<URLOpenEvent>(
         replay = 0,  // Don't replay past events to new subscribers (new windows)

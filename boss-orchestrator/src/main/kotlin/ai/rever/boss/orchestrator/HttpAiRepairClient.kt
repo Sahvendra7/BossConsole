@@ -1,5 +1,7 @@
 package ai.rever.boss.orchestrator
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
@@ -120,7 +122,7 @@ class HttpAiRepairClient : AiRepairClient {
 
     // ---- HTTP ----
 
-    private fun callApi(userPrompt: String): String {
+    private suspend fun callApi(userPrompt: String): String = withContext(Dispatchers.IO) {
         val requestBody = buildJsonObject {
             put("model", model)
             put("max_tokens", 2048)
@@ -160,7 +162,7 @@ class HttpAiRepairClient : AiRepairClient {
                 throw IOException("AI API returned HTTP $statusCode: $error")
             }
 
-            return connection.inputStream.reader(StandardCharsets.UTF_8).readText()
+            connection.inputStream.reader(StandardCharsets.UTF_8).readText()
         } finally {
             connection.disconnect()
         }

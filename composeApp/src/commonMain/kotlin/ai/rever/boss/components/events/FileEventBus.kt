@@ -32,7 +32,7 @@ fun validateFilePath(filePath: String): ai.rever.boss.plugin.events.FileValidati
  */
 object FileEventBus {
     /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
-    var ipcBridge: IpcEventBridge? = null
+    @Volatile var ipcBridge: IpcEventBridge? = null
 
     private val delegate = ai.rever.boss.plugin.events.FileEventBus
 
