@@ -36,3 +36,13 @@ tasks.jar {
         attributes["Main-Class"] = "ai.rever.boss.service.auth.AuthServiceMainKt"
     }
 }
+
+tasks.register<Jar>("fatJar") {
+    archiveClassifier.set("all")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes["Main-Class"] = "ai.rever.boss.service.auth.AuthServiceMainKt"
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    with(tasks.jar.get())
+}

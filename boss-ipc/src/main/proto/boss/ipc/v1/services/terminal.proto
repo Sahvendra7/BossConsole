@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package boss.ipc.v1.services;
+
+import "boss/ipc/v1/common.proto";
+
+option java_package = "ai.rever.boss.ipc.proto.services";
+option java_multiple_files = true;
+
+service TerminalService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc SendInput(SendInputRequest) returns (boss.ipc.v1.Empty);
+  rpc StreamOutput(StreamOutputRequest) returns (stream TerminalOutputChunk);
+  rpc Resize(ResizeRequest) returns (boss.ipc.v1.Empty);
+  rpc CloseSession(CloseSessionRequest) returns (boss.ipc.v1.Empty);
+  rpc ListSessions(boss.ipc.v1.Empty) returns (ListSessionsResponse);
+}
+
+message CreateSessionRequest {
+  string working_directory = 1;
+  repeated string command = 2;
+  map<string, string> environment = 3;
+  int32 cols = 4;
+  int32 rows = 5;
+}
+
+message CreateSessionResponse {
+  string session_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message SendInputRequest {
+  string session_id = 1;
+  bytes data = 2;
+}
+
+message StreamOutputRequest {
+  string session_id = 1;
+}
+
+message TerminalOutputChunk {
+  string session_id = 1;
+  bytes data = 2;
+  int64 timestamp = 3;
+  bool is_exit = 4;
+  int32 exit_code = 5;
+}
+
+message ResizeRequest {
+  string session_id = 1;
+  int32 cols = 2;
+  int32 rows = 3;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+}
+
+message TerminalSessionInfo {
+  string session_id = 1;
+  string working_directory = 2;
+  repeated string command = 3;
+  int64 created_at = 4;
+  bool is_alive = 5;
+}
+
+message ListSessionsResponse {
+  repeated TerminalSessionInfo sessions = 1;
+}

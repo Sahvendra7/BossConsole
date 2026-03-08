@@ -22,3 +22,19 @@ dependencies {
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+tasks.jar {
+    manifest {
+        attributes["Main-Class"] = "ai.rever.boss.orchestrator.OrchestratorMainKt"
+    }
+}
+
+tasks.register<Jar>("fatJar") {
+    archiveClassifier.set("all")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes["Main-Class"] = "ai.rever.boss.orchestrator.OrchestratorMainKt"
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    with(tasks.jar.get())
+}

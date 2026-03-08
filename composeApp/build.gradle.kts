@@ -619,6 +619,7 @@ kotlin {
             // Microkernel infrastructure (optional KERNEL mode)
             implementation(project(":boss-ipc"))
             implementation(project(":boss-process-manager"))
+            implementation(project(":boss-ui-sdk"))
             implementation(libs.compose.mp.components.resources)
 
             // BossTerm - runtime only, accessed via terminal-tab plugin
