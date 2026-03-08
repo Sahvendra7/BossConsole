@@ -40,6 +40,11 @@ dependencies {
     // Serialization (for session data)
     implementation(libs.kotlinx.serialization.json)
 
+    // Supabase auth integration
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.ktor.client.cio)
+
     // Testing
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.kotlinx.coroutines.test)

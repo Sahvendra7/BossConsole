@@ -80,13 +80,19 @@ fun main() {
     runBlocking {
         val connection = bootstrap.connect(manifest)
 
+        // Create Supabase client — reads SUPABASE_URL and SUPABASE_ANON_KEY from env
+        val supabaseClient = SupabaseAuthClient()
+
         // Add the auth service implementation
-        val authService = AuthServiceGrpcImpl()
+        val authService = AuthServiceGrpcImpl(supabaseClient)
         connection.processServer.addService(authService)
 
         // Start serving
         connection.startServer()
         logger.info("Auth Service running on: {}", bootstrap.processAddress)
+
+        // Restore any previous session from Supabase token storage
+        authService.restoreSession()
 
         // Wait for termination
         connection.awaitTermination()

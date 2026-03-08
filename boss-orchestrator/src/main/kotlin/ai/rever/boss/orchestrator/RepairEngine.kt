@@ -6,6 +6,7 @@ import ai.rever.boss.ipc.proto.RepairStrategy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import java.io.File
 
 /**
  * Executes repair strategies for failing processes.
@@ -14,12 +15,19 @@ import org.slf4j.LoggerFactory
  * - HIGH/MEDIUM confidence from CrashAnalyzer → use analyzer's strategy directly.
  * - LOW confidence → walk the [defaultLadder] based on consecutive failure count.
  *
+ * For PATCH_SOURCE and PATCH_CONFIG strategies, an optional [aiClient] is consulted
+ * to generate AI-powered proposals. If [aiClient] is null or returns null, sensible
+ * static descriptions are used instead.
+ *
  * Restart requests are delegated to [onRequestRestart] (typically calls
  * KernelService.RequestShutdown so the kernel handles the actual process lifecycle).
  */
 class RepairEngine(
     private val analyzer: CrashAnalyzer,
     private val snapshotManager: SnapshotManager,
+    private val aiClient: AiRepairClient? = null,
+    /** Root directory used to resolve relative source file paths from process manifests. */
+    private val projectRoot: String = System.getProperty("user.dir") ?: ".",
     /** Called to request a restart. Kernel handles the actual re-spawn. */
     private val onRequestRestart: suspend (processId: String, jvmArgsOverride: List<String>) -> Unit = { _, _ -> },
 ) {
@@ -36,7 +44,6 @@ class RepairEngine(
 
     suspend fun handleFailure(report: ProcessFailureReport): RepairOutcome = withContext(Dispatchers.IO) {
         val processId = report.processId
-        // Use manifest from the report (quine property — process describes itself)
         val manifest: ProcessManifest? = if (report.hasManifest()) report.manifest else null
         val diagnostic = analyzer.analyze(report, manifest)
 
@@ -52,13 +59,14 @@ class RepairEngine(
             defaultLadder[idx]
         }
 
-        executeStrategy(processId, strategy, report, diagnostic)
+        executeStrategy(processId, strategy, report, manifest, diagnostic)
     }
 
     private suspend fun executeStrategy(
         processId: String,
         strategy: RepairStrategy,
         report: ProcessFailureReport,
+        manifest: ProcessManifest?,
         diagnostic: DiagnosticResult,
     ): RepairOutcome {
         return when (strategy) {
@@ -86,7 +94,6 @@ class RepairEngine(
 
             RepairStrategy.REPAIR_STRATEGY_RESET_STATE -> {
                 try {
-                    // Clear snapshots so process starts fresh, then restart
                     snapshotManager.cleanup(processId, keepLast = 0)
                     onRequestRestart(processId, emptyList())
                     logger.info("State reset + restart requested for process: {}", processId)
@@ -98,19 +105,37 @@ class RepairEngine(
             }
 
             RepairStrategy.REPAIR_STRATEGY_PATCH_CONFIG -> {
-                logger.info("Config patch for process {} — manual intervention required", processId)
-                RepairOutcome.ConfigPatched(
-                    processId,
-                    diagnostic.suggestedFix ?: "Manual config review required",
+                logger.info("Config patch for process {} — consulting AI client", processId)
+
+                val aiProposal = aiClient?.proposeConfigFix(
+                    processId = processId,
+                    rootCause = diagnostic.rootCause,
+                    suggestedFix = diagnostic.suggestedFix,
+                    errorMessage = report.errorMessage,
                 )
+
+                val description = aiProposal?.toDescription()
+                    ?: diagnostic.suggestedFix
+                    ?: "Manual config review required"
+
+                RepairOutcome.ConfigPatched(processId, description)
             }
 
             RepairStrategy.REPAIR_STRATEGY_PATCH_SOURCE -> {
-                logger.info("Source patch for process {} — proposing code fix", processId)
-                RepairOutcome.CodeFixProposed(
-                    processId,
-                    "// TODO: AI-generated patch for ${diagnostic.rootCause}",
+                logger.info("Source patch for process {} — consulting AI client", processId)
+
+                val sourceFiles = readSourceFiles(manifest)
+                val aiProposal = aiClient?.proposeSourceFix(
+                    rootCause = diagnostic.rootCause,
+                    sourceFiles = sourceFiles,
+                    stackTrace = report.stackTrace,
+                    errorMessage = report.errorMessage,
                 )
+
+                val diff = aiProposal?.toSummary()
+                    ?: "// AI analysis unavailable — manual review required for: ${diagnostic.rootCause}"
+
+                RepairOutcome.CodeFixProposed(processId, diff)
             }
 
             else -> {
@@ -118,6 +143,24 @@ class RepairEngine(
                 RepairOutcome.Escalated(processId, buildEscalationReport(processId, report, diagnostic))
             }
         }
+    }
+
+    /**
+     * Reads source files listed in the process manifest.
+     * Paths are tried as absolute first, then relative to [projectRoot].
+     * Files that cannot be read are silently omitted.
+     */
+    private fun readSourceFiles(manifest: ProcessManifest?): Map<String, String> {
+        if (manifest == null || manifest.sourceFilesList.isEmpty()) return emptyMap()
+        return manifest.sourceFilesList.associateWith { path ->
+            try {
+                val file = File(path).takeIf { it.isAbsolute && it.isFile }
+                    ?: File(projectRoot, path).takeIf { it.isFile }
+                file?.readText() ?: ""
+            } catch (_: Exception) {
+                ""
+            }
+        }.filterValues { it.isNotBlank() }
     }
 
     private fun buildEscalationReport(

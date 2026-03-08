@@ -10,17 +10,16 @@ import org.slf4j.LoggerFactory
 /**
  * gRPC implementation of the AuthService.
  *
- * This is the service-side implementation that runs in the auth service process.
- * It manages authentication state and provides it to the kernel and other processes.
- *
- * In Phase 2, this initially wraps the same logic as AuthStateManager/SessionManager
- * from composeApp, but running in its own process.
+ * Manages authentication state and delegates sign-in/sign-out operations to Supabase
+ * via [SupabaseAuthClient]. Call [restoreSession] during startup to re-hydrate state
+ * from a previously stored Supabase session.
  */
-class AuthServiceGrpcImpl : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
+class AuthServiceGrpcImpl(
+    private val supabaseClient: SupabaseAuthClient? = null,
+) : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
 
     private val logger = LoggerFactory.getLogger(AuthServiceGrpcImpl::class.java)
 
-    // Auth state (mirrors what AuthStateManager does in monolith mode)
     private val authState = MutableStateFlow(AuthState.AUTH_STATE_NOT_AUTHENTICATED)
     private val currentUser = MutableStateFlow<UserInfo?>(null)
     private val userPermissions = MutableStateFlow<Set<String>>(emptySet())
@@ -33,14 +32,12 @@ class AuthServiceGrpcImpl : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
     }
 
     override fun watchAuthState(request: Empty): Flow<AuthStateResponse> = flow {
-        // Emit current state first
         emit(
             AuthStateResponse.newBuilder()
                 .setState(authState.value)
                 .apply { currentUser.value?.let { setUser(it) } }
                 .build()
         )
-        // Then stream changes
         authState.collect { state ->
             emit(
                 AuthStateResponse.newBuilder()
@@ -54,16 +51,63 @@ class AuthServiceGrpcImpl : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
     override suspend fun signIn(request: SignInRequest): SignInResponse {
         logger.info("Sign-in attempt for method: {}", request.authMethod)
 
-        // TODO: Integrate with Supabase auth client
-        // For now, return a placeholder response
-        return SignInResponse.newBuilder()
+        val client = supabaseClient ?: return SignInResponse.newBuilder()
             .setSuccess(false)
-            .setErrorMessage("Auth service Supabase integration pending")
+            .setErrorMessage("Auth service not configured: SUPABASE_URL / SUPABASE_ANON_KEY missing")
             .build()
+
+        return when (request.authMethod) {
+            "magic_link" -> handleMagicLink(client, request.email)
+            else -> handleEmailPassword(client, request.email, request.password)
+        }
+    }
+
+    private suspend fun handleEmailPassword(
+        client: SupabaseAuthClient,
+        email: String,
+        password: String,
+    ): SignInResponse {
+        return when (val result = client.signInWithEmailPassword(email, password)) {
+            is AuthResult.Success -> {
+                val userInfo = result.toUserInfo()
+                updateAuthState(AuthState.AUTH_STATE_AUTHENTICATED, userInfo, emptySet())
+                SignInResponse.newBuilder()
+                    .setSuccess(true)
+                    .setUser(userInfo)
+                    .setSessionToken(result.sessionToken)
+                    .build()
+            }
+            is AuthResult.Failure -> SignInResponse.newBuilder()
+                .setSuccess(false)
+                .setErrorMessage(result.message)
+                .build()
+            is AuthResult.MagicLinkSent -> SignInResponse.newBuilder()
+                .setSuccess(false)
+                .setErrorMessage("Unexpected magic link result for password auth")
+                .build()
+        }
+    }
+
+    private suspend fun handleMagicLink(client: SupabaseAuthClient, email: String): SignInResponse {
+        return when (val result = client.sendMagicLink(email)) {
+            is AuthResult.MagicLinkSent -> SignInResponse.newBuilder()
+                .setSuccess(true)
+                .setErrorMessage("Magic link sent to ${result.email}")
+                .build()
+            is AuthResult.Failure -> SignInResponse.newBuilder()
+                .setSuccess(false)
+                .setErrorMessage(result.message)
+                .build()
+            is AuthResult.Success -> SignInResponse.newBuilder()
+                .setSuccess(false)
+                .setErrorMessage("Unexpected success result for magic link")
+                .build()
+        }
     }
 
     override suspend fun signOut(request: Empty): SignOutResponse {
         logger.info("Sign-out requested")
+        supabaseClient?.signOut()
 
         authState.value = AuthState.AUTH_STATE_NOT_AUTHENTICATED
         currentUser.value = null
@@ -83,14 +127,12 @@ class AuthServiceGrpcImpl : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
     }
 
     override fun watchCurrentUser(request: Empty): Flow<UserInfoResponse> = flow {
-        // Emit current value
         emit(
             UserInfoResponse.newBuilder()
                 .setAuthenticated(currentUser.value != null)
                 .apply { currentUser.value?.let { setUser(it) } }
                 .build()
         )
-        // Stream changes
         currentUser.collect { user ->
             emit(
                 UserInfoResponse.newBuilder()
@@ -127,11 +169,34 @@ class AuthServiceGrpcImpl : AuthServiceGrpcKt.AuthServiceCoroutineImplBase() {
     }
 
     /**
-     * Update auth state programmatically (called during session restore, etc.)
+     * Attempts to restore a previous Supabase session. Call once at service startup.
+     * Updates auth state if a valid session is found.
      */
+    suspend fun restoreSession() {
+        val client = supabaseClient ?: return
+        when (val result = client.restoreSession()) {
+            is AuthResult.Success -> {
+                val userInfo = result.toUserInfo()
+                updateAuthState(AuthState.AUTH_STATE_AUTHENTICATED, userInfo, emptySet())
+                logger.info("Auth session restored for user: {}", result.email.take(3) + "***")
+            }
+            else -> logger.debug("No previous auth session to restore")
+        }
+    }
+
+    /** Update auth state programmatically (called during session restore, sign-in, etc.) */
     fun updateAuthState(state: AuthState, user: UserInfo?, permissions: Set<String>) {
         authState.value = state
         currentUser.value = user
         userPermissions.value = permissions
     }
+
+    private fun AuthResult.Success.toUserInfo(): UserInfo =
+        UserInfo.newBuilder()
+            .setUserId(userId)
+            .setEmail(email)
+            .setDisplayName(displayName)
+            .setIsAdmin(isAdmin)
+            .setSessionCreatedAt(sessionCreatedAt)
+            .build()
 }

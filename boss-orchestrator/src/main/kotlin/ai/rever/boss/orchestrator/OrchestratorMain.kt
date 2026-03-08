@@ -61,11 +61,21 @@ fun main() {
         val snapshotManager = SnapshotManager(dataDir)
         val analyzer = CrashAnalyzer()
 
+        // Use AI-powered repairs when AI_REPAIR_API_KEY is configured
+        val aiClient: AiRepairClient? = if (!System.getenv("AI_REPAIR_API_KEY").isNullOrBlank()) {
+            logger.info("AI repair client enabled (model={})", System.getenv("AI_REPAIR_MODEL") ?: "gpt-4o")
+            HttpAiRepairClient()
+        } else {
+            logger.info("AI_REPAIR_API_KEY not set — AI repair proposals disabled")
+            null
+        }
+
         // C2 fix: restart callback delegates to kernel via RequestShutdown.
         // The kernel's auto-respawn handles re-spawning processes with ON_FAILURE policy.
         val repairEngine = RepairEngine(
             analyzer = analyzer,
             snapshotManager = snapshotManager,
+            aiClient = aiClient,
             onRequestRestart = { processId, _ ->
                 kernelStub.requestShutdown(
                     ShutdownRequest.newBuilder()
