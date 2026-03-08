@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,6 +22,9 @@ data class WorkspaceLoadEvent(
  * Issue #506: Added sourceWindowId for multi-window support.
  */
 object WorkspaceEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _workspaceLoadEvents = MutableSharedFlow<WorkspaceLoadEvent>(
         replay = 0,  // Don't replay past events to new subscribers (new windows)
         extraBufferCapacity = 10  // Buffer up to 10 events if collector not ready yet
@@ -34,6 +38,8 @@ object WorkspaceEventBus {
      * @param sourceWindowId The window that should load the workspace (required for multi-window support)
      */
     suspend fun loadWorkspace(workspacePath: String, sourceWindowId: String) {
-        _workspaceLoadEvents.emit(WorkspaceLoadEvent(workspacePath, sourceWindowId))
+        val event = WorkspaceLoadEvent(workspacePath, sourceWindowId)
+        _workspaceLoadEvents.emit(event)
+        ipcBridge?.forward("WorkspaceLoadEvent", event, sourceWindowId)
     }
 }

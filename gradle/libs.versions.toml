@@ -30,6 +30,12 @@ jxbrowser = "8.17.0"
 jxbrowser-gradle-plugin = "2.0.0"
 maven-publish = "0.36.0"
 jna = "5.18.1"
+# gRPC + Protobuf for IPC
+grpc = "1.72.0"
+grpc-kotlin = "1.4.3"
+protobuf = "4.31.1"
+protobuf-gradle-plugin = "0.9.5"
+graalvm-native-plugin = "0.10.6"
 # IntelliJ PSI for code navigation
 intellij-platform = "243.21565.199"
 
@@ -91,6 +97,19 @@ compose-mp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose
 compose-mp-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
 compose-mp-components-ui-tooling-preview = { module = "org.jetbrains.compose.components:components-ui-tooling-preview", version.ref = "compose-multiplatform" }
 
+# gRPC + Protobuf IPC dependencies
+grpc-netty = { module = "io.grpc:grpc-netty", version.ref = "grpc" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+grpc-kotlin-stub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpc-kotlin" }
+grpc-services = { module = "io.grpc:grpc-services", version.ref = "grpc" }
+protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+# Netty transport for Unix domain sockets
+netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version = "4.1.119.Final" }
+netty-transport-native-kqueue = { module = "io.netty:netty-transport-native-kqueue", version = "4.1.119.Final" }
+netty-transport-native-unix-common = { module = "io.netty:netty-transport-native-unix-common", version = "4.1.119.Final" }
+
 # K1 PSI dependencies for code navigation
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 intellij-platform-core = { module = "com.jetbrains.intellij.platform:core", version.ref = "intellij-platform" }
@@ -109,3 +128,5 @@ ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 jxbrowser = { id = "com.teamdev.jxbrowser", version.ref = "jxbrowser-gradle-plugin" }
 mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobuf-gradle-plugin" }
+graalvmNative = { id = "org.graalvm.buildtools.native", version.ref = "graalvm-native-plugin" }

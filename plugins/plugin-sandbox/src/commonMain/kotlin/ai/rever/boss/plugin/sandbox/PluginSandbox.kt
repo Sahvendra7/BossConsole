@@ -69,6 +69,17 @@ interface PluginSandbox : PluginSandboxRef {
 }
 
 /**
+ * Controls whether a plugin sandbox runs in the same JVM process
+ * or as an isolated child process managed by the kernel.
+ */
+enum class SandboxMode {
+    /** Plugin runs in the host JVM (current default behavior). */
+    IN_PROCESS,
+    /** Plugin runs in a separate child process with IPC bridge. */
+    OUT_OF_PROCESS,
+}
+
+/**
  * Configuration for a plugin sandbox.
  */
 data class SandboxConfig(

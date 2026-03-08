@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -27,6 +28,9 @@ data class TerminalOpenEvent(
  * Similar to URLEventBus and FileEventBus but for terminal tabs.
  */
 object TerminalEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _terminalOpenEvents = MutableSharedFlow<TerminalOpenEvent>(
         replay = 0,  // Don't replay past events to new subscribers (new windows)
         extraBufferCapacity = 10  // Buffer up to 10 events if collector not ready yet
@@ -43,6 +47,8 @@ object TerminalEventBus {
      * @param workingDirectory Optional working directory for the terminal
      */
     suspend fun openTerminal(command: String? = null, sourceWindowId: String, workingDirectory: String? = null) {
-        _terminalOpenEvents.emit(TerminalOpenEvent(command, sourceWindowId, workingDirectory))
+        val event = TerminalOpenEvent(command, sourceWindowId, workingDirectory)
+        _terminalOpenEvents.emit(event)
+        ipcBridge?.forward("TerminalOpenEvent", event, sourceWindowId)
     }
 }

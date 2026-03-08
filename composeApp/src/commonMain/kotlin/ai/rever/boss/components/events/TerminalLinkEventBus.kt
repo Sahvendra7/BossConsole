@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -25,6 +26,9 @@ data class TerminalLinkClickEvent(
  * Issue #346: Terminal link click prompt with remember preference
  */
 object TerminalLinkEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     /**
      * SharedFlow for terminal link click events.
      *
@@ -49,7 +53,9 @@ object TerminalLinkEventBus {
      * @param sourceWindowId Optional window ID (for filtering events to correct window)
      */
     suspend fun emitLinkClick(url: String, sourceTerminalId: String? = null, sourceWindowId: String? = null) {
-        _linkClickEvents.emit(TerminalLinkClickEvent(url, sourceTerminalId, sourceWindowId))
+        val event = TerminalLinkClickEvent(url, sourceTerminalId, sourceWindowId)
+        _linkClickEvents.emit(event)
+        sourceWindowId?.let { ipcBridge?.forward("TerminalLinkClickEvent", event, it) }
     }
 
     /**

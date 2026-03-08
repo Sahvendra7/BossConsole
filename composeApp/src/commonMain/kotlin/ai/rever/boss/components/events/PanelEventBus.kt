@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import ai.rever.boss.plugin.api.PanelId
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -36,6 +37,9 @@ data class PanelToggleEvent(
 )
 
 object PanelEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _panelCloseEvents = MutableSharedFlow<PanelCloseEvent>()
     val panelCloseEvents: SharedFlow<PanelCloseEvent> = _panelCloseEvents.asSharedFlow()
 
@@ -51,14 +55,20 @@ object PanelEventBus {
     val panelToggleEvents: SharedFlow<PanelToggleEvent> = _panelToggleEvents.asSharedFlow()
 
     suspend fun closePanel(panelId: PanelId, sourceWindowId: String) {
-        _panelCloseEvents.emit(PanelCloseEvent(panelId, sourceWindowId))
+        val event = PanelCloseEvent(panelId, sourceWindowId)
+        _panelCloseEvents.emit(event)
+        ipcBridge?.forward("PanelCloseEvent", event, sourceWindowId)
     }
 
     suspend fun openPanel(panelId: PanelId, sourceWindowId: String) {
-        _panelOpenEvents.emit(PanelOpenEvent(panelId, sourceWindowId))
+        val event = PanelOpenEvent(panelId, sourceWindowId)
+        _panelOpenEvents.emit(event)
+        ipcBridge?.forward("PanelOpenEvent", event, sourceWindowId)
     }
 
     suspend fun togglePanel(panelId: PanelId, sourceWindowId: String) {
-        _panelToggleEvents.emit(PanelToggleEvent(panelId, sourceWindowId))
+        val event = PanelToggleEvent(panelId, sourceWindowId)
+        _panelToggleEvents.emit(event)
+        ipcBridge?.forward("PanelToggleEvent", event, sourceWindowId)
     }
 }

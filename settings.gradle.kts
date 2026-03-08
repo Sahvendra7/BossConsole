@@ -33,6 +33,16 @@ dependencyResolutionManagement {
 include(":composeApp")
 include(":server")
 include(":shared")
+// Microkernel architecture modules
+include(":boss-ipc")
+include(":boss-process-manager")
+include(":boss-service-auth")
+include(":boss-ui-sdk")
+include(":boss-orchestrator")
+include(":boss-plugin-runtime")
+include(":boss-mastery-sdk")
+include(":boss-mastery-orchestrator")
+include(":plugins:plugin-api-ipc")
 // Plugin modules
 // plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
 // Everything else comes from boss-plugin-api bundled plugin

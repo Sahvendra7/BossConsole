@@ -84,6 +84,15 @@ fun main(args: Array<String>) {
 
     logger.info(LogCategory.SYSTEM, "BOSS starting up")
 
+    // Initialize microkernel infrastructure (no-op in MONOLITH mode, which is default)
+    val processMode = if (System.getenv("BOSS_MODE") == "KERNEL") {
+        ai.rever.boss.process.ProcessMode.KERNEL
+    } else {
+        ai.rever.boss.process.ProcessMode.MONOLITH
+    }
+    val kernelBootstrap = ai.rever.boss.kernel.KernelBootstrap(processMode)
+    kernelBootstrap.initialize()
+
     // Single-instance check: ensure only one BOSS instance runs
     // On Windows, this prevents multiple windows when clicking deep links
     if (!SingleInstanceManager.acquireLock()) {
@@ -195,6 +204,12 @@ fun main(args: Array<String>) {
             BossLogger.shutdown()
         } catch (e: Exception) {
             System.err.println("Error shutting down logger: ${e.message}")
+        }
+        try {
+            // Shutdown microkernel infrastructure (child processes, IPC server)
+            kernelBootstrap.shutdown()
+        } catch (e: Exception) {
+            System.err.println("Error shutting down kernel: ${e.message}")
         }
         SingleInstanceManager.release()
     })

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import ai.rever.boss.plugin.run.RunnerTerminalOpenEvent
 import ai.rever.boss.plugin.run.RunnerTerminalStopEvent
 import ai.rever.boss.plugin.run.RunnerTerminalCloseEvent
@@ -18,6 +19,8 @@ typealias RunnerTerminalCloseEvent = ai.rever.boss.plugin.run.RunnerTerminalClos
  * Issue #347: Runner should open in terminal sidebar panel with run/stop state management
  */
 object RunnerTerminalEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
 
     private val _openEvents = MutableSharedFlow<RunnerTerminalOpenEvent>(
         replay = 0,
@@ -50,17 +53,17 @@ object RunnerTerminalEventBus {
         isRerun: Boolean,
         sourceWindowId: String
     ) {
-        _openEvents.emit(
-            RunnerTerminalOpenEvent(
-                terminalId = terminalId,
-                command = command,
-                configId = configId,
-                configName = configName,
-                workingDirectory = workingDirectory,
-                isRerun = isRerun,
-                sourceWindowId = sourceWindowId
-            )
+        val event = RunnerTerminalOpenEvent(
+            terminalId = terminalId,
+            command = command,
+            configId = configId,
+            configName = configName,
+            workingDirectory = workingDirectory,
+            isRerun = isRerun,
+            sourceWindowId = sourceWindowId
         )
+        _openEvents.emit(event)
+        ipcBridge?.forward("RunnerTerminalOpenEvent", event, sourceWindowId)
     }
 
     /**
@@ -68,7 +71,9 @@ object RunnerTerminalEventBus {
      * @param sourceWindowId Window that initiated the stop (required for multi-window support)
      */
     suspend fun stopRunnerTerminal(terminalId: String, configId: String, sourceWindowId: String) {
-        _stopEvents.emit(RunnerTerminalStopEvent(terminalId, configId, sourceWindowId))
+        val event = RunnerTerminalStopEvent(terminalId, configId, sourceWindowId)
+        _stopEvents.emit(event)
+        ipcBridge?.forward("RunnerTerminalStopEvent", event, sourceWindowId)
     }
 
     /**
@@ -76,6 +81,8 @@ object RunnerTerminalEventBus {
      * @param sourceWindowId Window that initiated the close (required for multi-window support)
      */
     suspend fun closeRunnerTerminal(terminalId: String, sourceWindowId: String) {
-        _closeEvents.emit(RunnerTerminalCloseEvent(terminalId, sourceWindowId))
+        val event = RunnerTerminalCloseEvent(terminalId, sourceWindowId)
+        _closeEvents.emit(event)
+        ipcBridge?.forward("RunnerTerminalCloseEvent", event, sourceWindowId)
     }
 }

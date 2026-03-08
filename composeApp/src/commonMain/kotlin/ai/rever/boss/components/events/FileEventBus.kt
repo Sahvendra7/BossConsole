@@ -3,6 +3,7 @@ package ai.rever.boss.components.events
 
 import ai.rever.boss.dashboard.DashboardStatsManager
 import ai.rever.boss.dashboard.RecentFilesManager
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.SharedFlow
 
 /**
@@ -30,6 +31,9 @@ fun validateFilePath(filePath: String): ai.rever.boss.plugin.events.FileValidati
  * Registers RecentFilesManager callback on first access.
  */
 object FileEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val delegate = ai.rever.boss.plugin.events.FileEventBus
 
     init {
@@ -43,6 +47,10 @@ object FileEventBus {
     val fileOpenEvents: SharedFlow<FileOpenEvent>
         get() = delegate.fileOpenEvents
 
-    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0, sourceWindowId: String, projectPath: String = "") =
+    suspend fun openFile(filePath: String, line: Int = 0, column: Int = 0, sourceWindowId: String, projectPath: String = "") {
         delegate.openFile(filePath, line, column, sourceWindowId, projectPath)
+        val cleanPath = stripFilePrefix(filePath)
+        val fileName = cleanPath.substringAfterLast('/').substringAfterLast('\\').ifEmpty { "untitled" }
+        ipcBridge?.forward("FileOpenEvent", FileOpenEvent(cleanPath, fileName, line, column, sourceWindowId), sourceWindowId)
+    }
 }

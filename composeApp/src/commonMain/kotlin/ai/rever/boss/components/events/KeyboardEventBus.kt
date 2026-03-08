@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.ui.input.key.KeyEvent
@@ -101,6 +102,9 @@ object KeyboardEventBus {
     private val logger = BossLogger.forComponent("KeyboardEventBus")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _events = MutableSharedFlow<KeyboardEvent>(
         replay = 0,
         extraBufferCapacity = 100,
@@ -136,6 +140,7 @@ object KeyboardEventBus {
     suspend fun emit(event: KeyboardEvent): Boolean {
         // Emit to flow for observers
         _events.emit(event)
+        ipcBridge?.forward("KeyboardEvent", event, event.sourceWindowId)
 
         // Process through priority chain
         val priorities = KeyboardEventPriority.entries.sortedBy { it.level }

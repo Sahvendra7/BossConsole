@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -31,6 +32,9 @@ data class NavigationTargetEvent(
  * still receive the navigation target.
  */
 object NavigationTargetBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _targets = MutableSharedFlow<NavigationTargetEvent>(
         replay = 1,  // Replay last event for late subscribers
         extraBufferCapacity = 5
@@ -48,7 +52,9 @@ object NavigationTargetBus {
      */
     suspend fun navigateTo(filePath: String, line: Int, column: Int, sourceWindowId: String) {
         if (line > 0) {
-            _targets.emit(NavigationTargetEvent(filePath, line, column, sourceWindowId))
+            val event = NavigationTargetEvent(filePath, line, column, sourceWindowId)
+            _targets.emit(event)
+            ipcBridge?.forward("NavigationTargetEvent", event, sourceWindowId)
         }
     }
 

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -27,6 +28,9 @@ data class URLOpenEvent(
  * Similar to FileEventBus but for HTTP(S) URLs instead of file paths.
  */
 object URLEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _urlOpenEvents = MutableSharedFlow<URLOpenEvent>(
         replay = 0,  // Don't replay past events to new subscribers (new windows)
         extraBufferCapacity = 10  // Buffer up to 10 events if collector not ready yet
@@ -43,6 +47,8 @@ object URLEventBus {
      * @param sourceWindowId The window that initiated this event (required for multi-window support)
      */
     suspend fun openURL(url: String, title: String = "Loading...", sourceWindowId: String) {
-        _urlOpenEvents.emit(URLOpenEvent(url, title, sourceWindowId))
+        val event = URLOpenEvent(url, title, sourceWindowId)
+        _urlOpenEvents.emit(event)
+        ipcBridge?.forward("URLOpenEvent", event, sourceWindowId)
     }
 }

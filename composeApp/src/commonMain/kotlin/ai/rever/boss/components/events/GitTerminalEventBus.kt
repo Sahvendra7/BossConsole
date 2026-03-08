@@ -1,6 +1,7 @@
 @file:Suppress("UNUSED")
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,6 +22,8 @@ typealias GitTerminalOpenEvent = ai.rever.boss.plugin.git.GitTerminalOpenEvent
  * Similar to RunnerTerminalEventBus but for git operations.
  */
 object GitTerminalEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
 
     private val _openEvents = MutableSharedFlow<GitTerminalOpenEvent>(
         replay = 0,
@@ -42,13 +45,13 @@ object GitTerminalEventBus {
         operationName: String,
         sourceWindowId: String
     ) {
-        _openEvents.emit(
-            GitTerminalOpenEvent(
-                command = command,
-                workingDirectory = workingDirectory,
-                operationName = operationName,
-                sourceWindowId = sourceWindowId
-            )
+        val event = GitTerminalOpenEvent(
+            command = command,
+            workingDirectory = workingDirectory,
+            operationName = operationName,
+            sourceWindowId = sourceWindowId
         )
+        _openEvents.emit(event)
+        ipcBridge?.forward("GitTerminalOpenEvent", event, sourceWindowId)
     }
 }

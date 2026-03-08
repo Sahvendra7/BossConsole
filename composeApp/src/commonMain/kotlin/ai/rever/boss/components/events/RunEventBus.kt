@@ -1,5 +1,6 @@
 package ai.rever.boss.components.events
 
+import ai.rever.boss.ipc.IpcEventBridge
 import ai.rever.boss.plugin.run.RunConfiguration
 import ai.rever.boss.plugin.run.RunExecuteEvent
 import ai.rever.boss.plugin.run.RunStopEvent
@@ -20,6 +21,9 @@ typealias RunScanEvent = ai.rever.boss.plugin.run.RunScanEvent
  * Each window's BossApp listens for events and the active window handles them.
  */
 object RunEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     private val _executeEvents = MutableSharedFlow<RunExecuteEvent>(
         replay = 0,
         extraBufferCapacity = 10
@@ -46,7 +50,9 @@ object RunEventBus {
      * @param sourceWindowId The window that initiated the run (required for multi-window support)
      */
     suspend fun execute(configuration: RunConfiguration, debug: Boolean = false, sourceWindowId: String) {
-        _executeEvents.emit(RunExecuteEvent(configuration, debug, sourceWindowId))
+        val event = RunExecuteEvent(configuration, debug, sourceWindowId)
+        _executeEvents.emit(event)
+        ipcBridge?.forward("RunExecuteEvent", event, sourceWindowId)
     }
 
     /**
@@ -56,7 +62,9 @@ object RunEventBus {
      * @param sourceWindowId The window that initiated the stop (required for multi-window support)
      */
     suspend fun stop(configId: String? = null, sourceWindowId: String) {
-        _stopEvents.emit(RunStopEvent(configId, sourceWindowId))
+        val event = RunStopEvent(configId, sourceWindowId)
+        _stopEvents.emit(event)
+        ipcBridge?.forward("RunStopEvent", event, sourceWindowId)
     }
 
     /**
@@ -66,6 +74,8 @@ object RunEventBus {
      * @param sourceWindowId The window that initiated the scan (required for multi-window support)
      */
     suspend fun scanProject(projectPath: String, sourceWindowId: String) {
-        _scanEvents.emit(RunScanEvent(projectPath, sourceWindowId))
+        val event = RunScanEvent(projectPath, sourceWindowId)
+        _scanEvents.emit(event)
+        ipcBridge?.forward("RunScanEvent", event, sourceWindowId)
     }
 }

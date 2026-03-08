@@ -146,6 +146,78 @@ data class PluginManifest(
     val minBossVersion: String = "",
 
     // ============================================================
+    // MICROKERNEL / PROCESS ISOLATION
+    // These fields support the OS-like multi-process architecture.
+    // ============================================================
+
+    /**
+     * Process isolation mode for this plugin.
+     * - "in-process": Plugin runs in the kernel JVM (default, backward compatible)
+     * - "out-of-process": Plugin runs in its own JVM or GraalVM native image
+     */
+    @SerialName("isolationMode")
+    val isolationMode: String = "in-process",
+
+    /**
+     * Capabilities this plugin exposes for use in Mastery DAG workflows.
+     * Each capability describes an action with typed input/output.
+     */
+    @SerialName("capabilities")
+    val capabilities: List<PluginCapability> = emptyList(),
+
+    /**
+     * Health monitoring contract for out-of-process plugins.
+     */
+    @SerialName("healthContract")
+    val healthContract: PluginHealthContract? = null,
+
+    /**
+     * Known failure modes and repair hints for the self-healing orchestrator.
+     */
+    @SerialName("repairHints")
+    val repairHints: List<PluginRepairHint> = emptyList(),
+
+    /**
+     * Paths to this plugin's source code files (quine self-description).
+     * Used by the orchestrator to read and understand the plugin for AI-powered repair.
+     */
+    @SerialName("sourceFiles")
+    val sourceFiles: List<String> = emptyList(),
+
+    /**
+     * Paths to configuration files this plugin reads.
+     */
+    @SerialName("configFiles")
+    val configFiles: List<String> = emptyList(),
+
+    /**
+     * Natural language description of what this plugin does.
+     * Used by the orchestrator for AI diagnosis and by Mastery for workflow generation.
+     */
+    @SerialName("behaviorSpec")
+    val behaviorSpec: String = "",
+
+    /**
+     * JSON Schema describing this plugin's configuration format.
+     * Used by the orchestrator for automated config repair.
+     */
+    @SerialName("configSchema")
+    val configSchema: String? = null,
+
+    /**
+     * Whether this plugin supports state snapshots for rollback on failure.
+     */
+    @SerialName("stateSnapshotEnabled")
+    val stateSnapshotEnabled: Boolean = false,
+
+    /**
+     * Path to GraalVM native image binary for this plugin (out-of-process mode only).
+     * If null, the plugin runs as a JVM subprocess.
+     */
+    @SerialName("nativeImagePath")
+    val nativeImagePath: String? = null,
+
+    // ============================================================
     // BUNDLED PLUGIN SUPPORT
     // These fields support system/bundled plugins that ship with
     // BossConsole and can be upgraded from the plugin store.
@@ -478,6 +550,105 @@ enum class PluginState {
      * Plugin is disabled.
      */
     DISABLED
+}
+
+// ============================================================
+// MICROKERNEL DATA CLASSES
+// ============================================================
+
+/**
+ * A capability that a plugin exposes for use in Mastery DAG workflows.
+ */
+@Serializable
+data class PluginCapability(
+    /** Action name (e.g., "run_command", "open_file", "navigate") */
+    @SerialName("action")
+    val action: String,
+    /** JSON Schema for this action's input */
+    @SerialName("inputSchemaJson")
+    val inputSchemaJson: String = "{}",
+    /** JSON Schema for this action's output */
+    @SerialName("outputSchemaJson")
+    val outputSchemaJson: String = "{}",
+    /** Human-readable description */
+    @SerialName("description")
+    val description: String = "",
+)
+
+/**
+ * Health monitoring contract for out-of-process plugins.
+ */
+@Serializable
+data class PluginHealthContract(
+    /** How often heartbeats are expected (milliseconds) */
+    @SerialName("heartbeatIntervalMs")
+    val heartbeatIntervalMs: Long = 5000,
+    /** Maximum time to wait for process startup (milliseconds) */
+    @SerialName("startupTimeoutMs")
+    val startupTimeoutMs: Long = 30000,
+)
+
+/**
+ * Known failure mode and repair hint for the self-healing orchestrator.
+ */
+@Serializable
+data class PluginRepairHint(
+    /** Regex pattern matching stack trace or error message */
+    @SerialName("failurePattern")
+    val failurePattern: String,
+    /** Severity of this failure type */
+    @SerialName("severity")
+    val severity: RepairSeverity,
+    /** Recommended repair strategy */
+    @SerialName("strategy")
+    val strategy: RepairStrategy,
+    /** Human-readable description of the failure */
+    @SerialName("description")
+    val description: String,
+    /** Suggested fix for user escalation */
+    @SerialName("suggestedFix")
+    val suggestedFix: String? = null,
+)
+
+/**
+ * Severity of a plugin failure.
+ */
+@Serializable
+enum class RepairSeverity {
+    /** Temporary, likely resolves on restart */
+    @SerialName("transient")
+    TRANSIENT,
+    /** Degraded functionality, may need config/state fix */
+    @SerialName("degraded")
+    DEGRADED,
+    /** Fatal, requires code fix or rollback */
+    @SerialName("fatal")
+    FATAL,
+}
+
+/**
+ * Strategy for repairing a failed plugin process.
+ */
+@Serializable
+enum class RepairStrategy {
+    /** Simple restart */
+    @SerialName("restart")
+    RESTART,
+    /** Clear persisted state, restart fresh */
+    @SerialName("reset_state")
+    RESET_STATE,
+    /** AI-assisted config file patch */
+    @SerialName("patch_config")
+    PATCH_CONFIG,
+    /** AI-assisted source code patch (requires user approval) */
+    @SerialName("patch_source")
+    PATCH_SOURCE,
+    /** Revert to previous plugin version */
+    @SerialName("rollback")
+    ROLLBACK,
+    /** Show diagnostic report to user */
+    @SerialName("escalate")
+    ESCALATE,
 }
 
 /**

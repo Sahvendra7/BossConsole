@@ -1,6 +1,7 @@
 package ai.rever.boss.components.events
 
 import ai.rever.boss.dashboard.SplitTemplate
+import ai.rever.boss.ipc.IpcEventBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -24,6 +25,9 @@ data class DashboardActivatePluginEvent(val pluginId: String, val sourceWindowId
  * Issue #506: All events include sourceWindowId for multi-window filtering.
  */
 object DashboardEventBus {
+    /** Optional IPC bridge for forwarding events cross-process in kernel mode. */
+    var ipcBridge: IpcEventBridge? = null
+
     // File operations
     private val _openFileEvents = MutableSharedFlow<DashboardOpenFileEvent>(extraBufferCapacity = 10)
     val openFileEvents: SharedFlow<DashboardOpenFileEvent> = _openFileEvents.asSharedFlow()
@@ -58,22 +62,49 @@ object DashboardEventBus {
     val activatePluginEvents: SharedFlow<DashboardActivatePluginEvent> = _activatePluginEvents.asSharedFlow()
 
     // Emit functions with sourceWindowId parameter (required for multi-window support)
-    suspend fun openFile(path: String, sourceWindowId: String) =
-        _openFileEvents.emit(DashboardOpenFileEvent(path, sourceWindowId))
-    suspend fun openUrlInNewTab(url: String, sourceWindowId: String) =
-        _openUrlInNewTabEvents.emit(DashboardOpenUrlEvent(url, sourceWindowId))
-    suspend fun newTab(sourceWindowId: String) =
-        _newTabEvents.emit(DashboardNewTabEvent(sourceWindowId))
-    suspend fun newTerminal(sourceWindowId: String) =
-        _newTerminalEvents.emit(DashboardNewTerminalEvent(sourceWindowId))
-    suspend fun showProjectDialog(sourceWindowId: String) =
-        _showProjectDialogEvents.emit(DashboardShowProjectDialogEvent(sourceWindowId))
-    suspend fun showFileDialog(sourceWindowId: String) =
-        _showFileDialogEvents.emit(DashboardShowFileDialogEvent(sourceWindowId))
-    suspend fun showNewProject(sourceWindowId: String) =
-        _showNewProjectEvents.emit(DashboardShowNewProjectEvent(sourceWindowId))
-    suspend fun applySplitTemplate(template: SplitTemplate, sourceWindowId: String) =
-        _applySplitTemplateEvents.emit(DashboardApplySplitTemplateEvent(template, sourceWindowId))
-    suspend fun activatePlugin(pluginId: String, sourceWindowId: String) =
-        _activatePluginEvents.emit(DashboardActivatePluginEvent(pluginId, sourceWindowId))
+    suspend fun openFile(path: String, sourceWindowId: String) {
+        val event = DashboardOpenFileEvent(path, sourceWindowId)
+        _openFileEvents.emit(event)
+        ipcBridge?.forward("DashboardOpenFileEvent", event, sourceWindowId)
+    }
+    suspend fun openUrlInNewTab(url: String, sourceWindowId: String) {
+        val event = DashboardOpenUrlEvent(url, sourceWindowId)
+        _openUrlInNewTabEvents.emit(event)
+        ipcBridge?.forward("DashboardOpenUrlEvent", event, sourceWindowId)
+    }
+    suspend fun newTab(sourceWindowId: String) {
+        val event = DashboardNewTabEvent(sourceWindowId)
+        _newTabEvents.emit(event)
+        ipcBridge?.forward("DashboardNewTabEvent", event, sourceWindowId)
+    }
+    suspend fun newTerminal(sourceWindowId: String) {
+        val event = DashboardNewTerminalEvent(sourceWindowId)
+        _newTerminalEvents.emit(event)
+        ipcBridge?.forward("DashboardNewTerminalEvent", event, sourceWindowId)
+    }
+    suspend fun showProjectDialog(sourceWindowId: String) {
+        val event = DashboardShowProjectDialogEvent(sourceWindowId)
+        _showProjectDialogEvents.emit(event)
+        ipcBridge?.forward("DashboardShowProjectDialogEvent", event, sourceWindowId)
+    }
+    suspend fun showFileDialog(sourceWindowId: String) {
+        val event = DashboardShowFileDialogEvent(sourceWindowId)
+        _showFileDialogEvents.emit(event)
+        ipcBridge?.forward("DashboardShowFileDialogEvent", event, sourceWindowId)
+    }
+    suspend fun showNewProject(sourceWindowId: String) {
+        val event = DashboardShowNewProjectEvent(sourceWindowId)
+        _showNewProjectEvents.emit(event)
+        ipcBridge?.forward("DashboardShowNewProjectEvent", event, sourceWindowId)
+    }
+    suspend fun applySplitTemplate(template: SplitTemplate, sourceWindowId: String) {
+        val event = DashboardApplySplitTemplateEvent(template, sourceWindowId)
+        _applySplitTemplateEvents.emit(event)
+        ipcBridge?.forward("DashboardApplySplitTemplateEvent", event, sourceWindowId)
+    }
+    suspend fun activatePlugin(pluginId: String, sourceWindowId: String) {
+        val event = DashboardActivatePluginEvent(pluginId, sourceWindowId)
+        _activatePluginEvents.emit(event)
+        ipcBridge?.forward("DashboardActivatePluginEvent", event, sourceWindowId)
+    }
 }

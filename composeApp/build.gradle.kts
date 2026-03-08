@@ -615,6 +615,10 @@ kotlin {
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
+
+            // Microkernel infrastructure (optional KERNEL mode)
+            implementation(project(":boss-ipc"))
+            implementation(project(":boss-process-manager"))
             implementation(libs.compose.mp.components.resources)
 
             // BossTerm - runtime only, accessed via terminal-tab plugin
