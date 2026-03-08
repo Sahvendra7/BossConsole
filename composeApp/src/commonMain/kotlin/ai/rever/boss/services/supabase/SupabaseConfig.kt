@@ -59,7 +59,14 @@ object SupabaseConfig {
                     autoLoadFromStorage = true
                 }
                 install(Postgrest)
-                install(Realtime)
+                install(Realtime) {
+                    // Increase heartbeat interval to prevent premature timeout disconnects.
+                    // Default is 10s with 30s timeout — on slower networks or under load
+                    // this can trigger "Heartbeat timeout" followed by websocket channel
+                    // close/cancel crashes in Ktor's RawWebSocket.
+                    heartbeatInterval = kotlin.time.Duration.parse("30s")
+                    reconnectDelay = kotlin.time.Duration.parse("7s")
+                }
                 install(Storage)
                 install(Functions)
                 

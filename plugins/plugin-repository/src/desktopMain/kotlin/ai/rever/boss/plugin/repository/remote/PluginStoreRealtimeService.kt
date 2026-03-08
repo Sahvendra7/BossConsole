@@ -13,9 +13,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -100,7 +102,12 @@ class PluginStoreRealtimeService {
                 supabaseUrl = baseUrl,
                 supabaseKey = anonKey
             ) {
-                install(Realtime)
+                install(Realtime) {
+                    // Match main SupabaseConfig heartbeat settings to prevent
+                    // "Heartbeat timeout" crashes in Ktor websocket
+                    heartbeatInterval = kotlin.time.Duration.parse("30s")
+                    reconnectDelay = kotlin.time.Duration.parse("7s")
+                }
             }
 
             subscribeToPlugins()
@@ -113,83 +120,108 @@ class PluginStoreRealtimeService {
 
     private fun subscribeToPlugins() {
         scope.launch {
-            try {
-                val client = supabaseClient ?: return@launch
+            var backoffMs = 5_000L
+            val maxBackoffMs = 60_000L
 
-                pluginsChannel = client.channel("plugins-changes")
-                val changeFlow = pluginsChannel!!.postgresChangeFlow<PostgresAction>(schema = "public") {
-                    table = "plugins"
-                }
+            while (isActive) {
+                try {
+                    val client = supabaseClient ?: return@launch
 
-                // Subscribe to the channel
-                pluginsChannel!!.subscribe()
-
-                isConnected = true
-                _events.emit(PluginStoreEvent.ConnectionStateChanged(true))
-                logger.info(LogCategory.NETWORK, "Subscribed to plugins table changes")
-
-                // Listen for changes
-                changeFlow.collect { action ->
-                    when (action) {
-                        is PostgresAction.Insert -> {
-                            val pluginId = action.record["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
-                            logger.debug(LogCategory.NETWORK, "Plugin inserted", mapOf("pluginId" to pluginId))
-                            _events.emit(PluginStoreEvent.PluginInserted(pluginId))
-                            triggerRefresh()
-                        }
-                        is PostgresAction.Update -> {
-                            val pluginId = action.record["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
-                            logger.debug(LogCategory.NETWORK, "Plugin updated", mapOf("pluginId" to pluginId))
-                            _events.emit(PluginStoreEvent.PluginUpdated(pluginId))
-                            triggerRefresh()
-                        }
-                        is PostgresAction.Delete -> {
-                            val pluginId = action.oldRecord["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
-                            logger.debug(LogCategory.NETWORK, "Plugin deleted", mapOf("pluginId" to pluginId))
-                            _events.emit(PluginStoreEvent.PluginDeleted(pluginId))
-                            triggerRefresh()
-                        }
-                        else -> {}
+                    pluginsChannel = client.channel("plugins-changes")
+                    val changeFlow = pluginsChannel!!.postgresChangeFlow<PostgresAction>(schema = "public") {
+                        table = "plugins"
                     }
+
+                    // Subscribe to the channel
+                    pluginsChannel!!.subscribe()
+
+                    isConnected = true
+                    backoffMs = 5_000L // Reset backoff on successful connection
+                    _events.emit(PluginStoreEvent.ConnectionStateChanged(true))
+                    logger.info(LogCategory.NETWORK, "Subscribed to plugins table changes")
+
+                    // Listen for changes
+                    changeFlow.collect { action ->
+                        when (action) {
+                            is PostgresAction.Insert -> {
+                                val pluginId = action.record["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
+                                logger.debug(LogCategory.NETWORK, "Plugin inserted", mapOf("pluginId" to pluginId))
+                                _events.emit(PluginStoreEvent.PluginInserted(pluginId))
+                                triggerRefresh()
+                            }
+                            is PostgresAction.Update -> {
+                                val pluginId = action.record["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
+                                logger.debug(LogCategory.NETWORK, "Plugin updated", mapOf("pluginId" to pluginId))
+                                _events.emit(PluginStoreEvent.PluginUpdated(pluginId))
+                                triggerRefresh()
+                            }
+                            is PostgresAction.Delete -> {
+                                val pluginId = action.oldRecord["plugin_id"]?.toString()?.removeSurrounding("\"") ?: ""
+                                logger.debug(LogCategory.NETWORK, "Plugin deleted", mapOf("pluginId" to pluginId))
+                                _events.emit(PluginStoreEvent.PluginDeleted(pluginId))
+                                triggerRefresh()
+                            }
+                            else -> {}
+                        }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.NETWORK, "Plugins subscription lost, reconnecting in ${backoffMs}ms", error = e)
+                    isConnected = false
+                    _events.emit(PluginStoreEvent.ConnectionStateChanged(false))
+                    // Clean up before retry
+                    try { pluginsChannel?.unsubscribe() } catch (_: Exception) {}
+                    pluginsChannel = null
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(maxBackoffMs)
                 }
-            } catch (e: Exception) {
-                logger.error(LogCategory.NETWORK, "Error in plugins subscription", error = e)
-                isConnected = false
-                _events.emit(PluginStoreEvent.ConnectionStateChanged(false))
             }
         }
     }
 
     private fun subscribeToVersions() {
         scope.launch {
-            try {
-                val client = supabaseClient ?: return@launch
+            var backoffMs = 5_000L
+            val maxBackoffMs = 60_000L
 
-                versionsChannel = client.channel("versions-changes")
-                val changeFlow = versionsChannel!!.postgresChangeFlow<PostgresAction>(schema = "public") {
-                    table = "plugin_versions"
-                }
+            while (isActive) {
+                try {
+                    val client = supabaseClient ?: return@launch
 
-                // Subscribe to the channel
-                versionsChannel!!.subscribe()
-
-                logger.info(LogCategory.NETWORK, "Subscribed to plugin_versions table changes")
-
-                // Listen for changes
-                changeFlow.collect { action ->
-                    when (action) {
-                        is PostgresAction.Insert -> {
-                            val version = action.record["version"]?.toString()?.removeSurrounding("\"") ?: ""
-                            // plugin_id here is the UUID foreign key, need to look up the actual plugin_id
-                            logger.debug(LogCategory.NETWORK, "Version published", mapOf("version" to version))
-                            _events.emit(PluginStoreEvent.VersionPublished("", version))
-                            triggerRefresh()
-                        }
-                        else -> {}
+                    versionsChannel = client.channel("versions-changes")
+                    val changeFlow = versionsChannel!!.postgresChangeFlow<PostgresAction>(schema = "public") {
+                        table = "plugin_versions"
                     }
+
+                    // Subscribe to the channel
+                    versionsChannel!!.subscribe()
+
+                    backoffMs = 5_000L // Reset backoff on successful connection
+                    logger.info(LogCategory.NETWORK, "Subscribed to plugin_versions table changes")
+
+                    // Listen for changes
+                    changeFlow.collect { action ->
+                        when (action) {
+                            is PostgresAction.Insert -> {
+                                val version = action.record["version"]?.toString()?.removeSurrounding("\"") ?: ""
+                                logger.debug(LogCategory.NETWORK, "Version published", mapOf("version" to version))
+                                _events.emit(PluginStoreEvent.VersionPublished("", version))
+                                triggerRefresh()
+                            }
+                            else -> {}
+                        }
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.NETWORK, "Versions subscription lost, reconnecting in ${backoffMs}ms", error = e)
+                    // Clean up before retry
+                    try { versionsChannel?.unsubscribe() } catch (_: Exception) {}
+                    versionsChannel = null
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(maxBackoffMs)
                 }
-            } catch (e: Exception) {
-                logger.error(LogCategory.NETWORK, "Error in versions subscription", error = e)
             }
         }
     }
