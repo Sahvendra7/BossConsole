@@ -14,6 +14,15 @@ java {
     }
 }
 
+// Detect if protoc + grpc codegen are available for this platform.
+// protoc-gen-grpc-java does NOT publish Windows ARM64 binaries.
+// protoc itself also lacks Windows ARM64.
+// On those platforms, use pre-generated sources from src/main/generated/.
+val osName: String = System.getProperty("os.name").lowercase()
+val osArch: String = System.getProperty("os.arch").lowercase()
+val isWindowsArm = osName.contains("win") && (osArch == "aarch64" || osArch == "arm")
+val protocAvailable = !isWindowsArm
+
 dependencies {
     // gRPC + Protobuf
     api(libs.grpc.protobuf)
@@ -26,7 +35,7 @@ dependencies {
     implementation(libs.grpc.netty)
     implementation(libs.netty.transport.native.unix.common)
 
-    // Platform-specific UDS transports
+    // Platform-specific UDS transports (all included — unused platforms are harmless)
     implementation(libs.netty.transport.native.kqueue) {
         artifact { classifier = "osx-x86_64" }
     }
@@ -52,27 +61,51 @@ dependencies {
     testImplementation(libs.grpc.services)
 }
 
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:4.31.1"
-    }
-    plugins {
-        create("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.72.0"
+if (protocAvailable) {
+    // Normal build: generate gRPC stubs from .proto files
+    protobuf {
+        protoc {
+            artifact = "com.google.protobuf:protoc:4.31.1"
         }
-        create("grpckt") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.3:jdk8@jar"
-        }
-    }
-    generateProtoTasks {
-        all().forEach { task ->
-            task.plugins {
-                create("grpc")
-                create("grpckt")
+        plugins {
+            create("grpc") {
+                artifact = "io.grpc:protoc-gen-grpc-java:1.72.0"
             }
-            task.builtins {
-                create("kotlin")
+            create("grpckt") {
+                artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.3:jdk8@jar"
             }
         }
+        generateProtoTasks {
+            all().forEach { task ->
+                task.plugins {
+                    create("grpc")
+                    create("grpckt")
+                }
+                task.builtins {
+                    create("kotlin")
+                }
+            }
+        }
+    }
+} else {
+    // Unsupported platform (Windows ARM64): use pre-generated sources.
+    // These are committed at src/main/generated/ and kept in sync
+    // by running `./gradlew :boss-ipc:generateProto` on a supported platform.
+    logger.warn("protoc not available for $osName/$osArch — using pre-generated gRPC sources")
+    sourceSets {
+        main {
+            java.srcDir("src/main/generated")
+        }
+    }
+
+    // Disable proto generation tasks to avoid resolution errors
+    protobuf {
+        protoc {
+            // Use a placeholder — protoc tasks are disabled below
+            artifact = "com.google.protobuf:protoc:4.31.1"
+        }
+    }
+    tasks.matching { it.name.startsWith("generateProto") || it.name.startsWith("extract") && it.name.contains("Proto") }.configureEach {
+        enabled = false
     }
 }
