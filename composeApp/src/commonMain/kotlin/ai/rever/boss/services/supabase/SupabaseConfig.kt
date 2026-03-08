@@ -70,8 +70,17 @@ object SupabaseConfig {
                 install(Storage)
                 install(Functions)
                 
-                // Configure HTTP client
-                httpEngine = CIO.create()
+                // Configure HTTP client with explicit timeouts to prevent
+                // "Connect timeout has expired" hangs when connection pool is stale.
+                httpEngine = CIO.create {
+                    maxConnectionsCount = 64
+                    requestTimeout = 30_000 // 30s for full request
+                    endpoint.connectTimeout = 15_000        // 15s to establish TCP
+                    endpoint.connectAttempts = 2             // Retry once on failure
+                    endpoint.keepAliveTime = 30_000          // 30s keep-alive
+                    endpoint.socketTimeout = 30_000          // 30s socket idle
+                    endpoint.maxConnectionsPerRoute = 20     // Per-host limit
+                }
             }
             
             _isInitialized.value = true
