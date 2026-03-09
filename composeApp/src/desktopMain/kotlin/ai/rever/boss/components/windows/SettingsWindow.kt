@@ -259,6 +259,7 @@ SettingsSection.RUNNER -> RunnerSettings()
                 SettingsSection.PERFORMANCE -> PerformanceSettings()
                 SettingsSection.STARTUP -> StartupSettingsSection()
                 SettingsSection.SCROLLBAR -> ScrollbarSettings()
+                SettingsSection.ADVANCED -> AdvancedSettings()
                 else -> {}
             }
         }

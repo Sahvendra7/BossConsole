@@ -105,6 +105,11 @@ enum class SettingsSection(
         displayName = "Scrollbars",
         description = "Scrollbar appearance and behavior settings",
         icon = Icons.Outlined.LinearScale
+    ),
+    ADVANCED(
+        displayName = "Advanced",
+        description = "Process mode, microkernel, and self-healing settings",
+        icon = Icons.Outlined.Science
     );
 
     companion object {
