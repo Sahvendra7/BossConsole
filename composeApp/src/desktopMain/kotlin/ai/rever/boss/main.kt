@@ -88,7 +88,9 @@ fun main(args: Array<String>) {
     // On Windows ARM64, boss-ipc/boss-process-manager modules are excluded (no protoc),
     // so KernelBootstrap may not be available — silently skip.
     val kernelBootstrap: Any? = try {
-        if (System.getenv("BOSS_MODE") == "KERNEL") {
+        val bossMode = System.getenv("BOSS_MODE")
+            ?: ai.rever.boss.config.ConfigLoader.getConfig("BOSS_MODE")
+        if (bossMode == "KERNEL") {
             val cls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
             val modeClass = Class.forName("ai.rever.boss.process.ProcessMode")
             val kernelMode = modeClass.enumConstants.first { it.toString() == "KERNEL" }
