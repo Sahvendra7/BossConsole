@@ -34,23 +34,31 @@ include(":composeApp")
 include(":server")
 include(":shared")
 // Microkernel architecture modules
-include(":boss-ipc")
-include(":boss-process-manager")
-include(":boss-service-auth")
-include(":boss-ui-sdk")
-include(":boss-orchestrator")
-include(":boss-plugin-runtime")
-include(":boss-mastery-sdk")
-include(":boss-mastery-orchestrator")
-// Phase 6: Service process modules (lightweight out-of-process services)
-include(":boss-service-workspace")
-include(":boss-service-settings")
-include(":boss-service-filesystem")
-// Phase 5: App process modules (process-isolated heavy components)
-include(":boss-app-terminal")
-include(":boss-app-editor")
-include(":boss-app-browser")
-include(":plugins:plugin-api-ipc")
+// protoc and protoc-gen-grpc-java do not publish Windows ARM64 binaries,
+// so all microkernel modules (which depend on boss-ipc proto generation)
+// are excluded on that platform. The microkernel is server-grade infrastructure
+// not needed for the Windows ARM64 desktop distribution.
+val settingsOsArch: String = System.getProperty("os.arch").lowercase()
+val settingsOsName: String = System.getProperty("os.name").lowercase()
+val isWindowsArm64 = settingsOsName.contains("win") && (settingsOsArch == "aarch64" || settingsOsArch == "arm")
+
+if (!isWindowsArm64) {
+    include(":boss-ipc")
+    include(":boss-process-manager")
+    include(":boss-service-auth")
+    include(":boss-ui-sdk")
+    include(":boss-orchestrator")
+    include(":boss-plugin-runtime")
+    include(":boss-mastery-sdk")
+    include(":boss-mastery-orchestrator")
+    include(":boss-service-workspace")
+    include(":boss-service-settings")
+    include(":boss-service-filesystem")
+    include(":boss-app-terminal")
+    include(":boss-app-editor")
+    include(":boss-app-browser")
+    include(":plugins:plugin-api-ipc")
+}
 // Plugin modules
 // plugin-api-core: Ultra-minimal core (PluginContext, DynamicPlugin, PluginManifest)
 // Everything else comes from boss-plugin-api bundled plugin

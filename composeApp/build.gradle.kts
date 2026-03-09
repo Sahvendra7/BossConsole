@@ -16,6 +16,13 @@ import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.TaskAction
 
+// Detect Windows ARM64 — microkernel modules excluded (no protoc binaries)
+val isWindowsArm64Build: Boolean = run {
+    val a = System.getProperty("os.arch").lowercase()
+    val n = System.getProperty("os.name").lowercase()
+    n.contains("win") && (a == "aarch64" || a == "arm")
+}
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     // alias(libs.plugins.androidApplication) // Disabled for desktop-focused development
@@ -524,7 +531,14 @@ kotlin {
     */
     
     sourceSets {
-        val desktopMain by getting
+        val desktopMain by getting {
+            if (isWindowsArm64Build) {
+                // Exclude kernel/remote source files that depend on boss-ipc (unavailable on Windows ARM64)
+                kotlin.srcDirs.forEach { srcDir ->
+                    kotlin.exclude("**/kernel/**", "**/plugin/remote/**")
+                }
+            }
+        }
         val desktopTest by getting
 
         // Add generated source directory to commonMain
@@ -617,9 +631,12 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
 
             // Microkernel infrastructure (optional KERNEL mode)
-            implementation(project(":boss-ipc"))
-            implementation(project(":boss-process-manager"))
-            implementation(project(":boss-ui-sdk"))
+            // Excluded on Windows ARM64 where protoc is unavailable
+            if (!isWindowsArm64Build) {
+                implementation(project(":boss-ipc"))
+                implementation(project(":boss-process-manager"))
+                implementation(project(":boss-ui-sdk"))
+            }
             implementation(libs.compose.mp.components.resources)
 
             // BossTerm - runtime only, accessed via terminal-tab plugin

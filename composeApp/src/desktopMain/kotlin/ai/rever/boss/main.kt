@@ -85,13 +85,19 @@ fun main(args: Array<String>) {
     logger.info(LogCategory.SYSTEM, "BOSS starting up")
 
     // Initialize microkernel infrastructure (no-op in MONOLITH mode, which is default)
-    val processMode = if (System.getenv("BOSS_MODE") == "KERNEL") {
-        ai.rever.boss.process.ProcessMode.KERNEL
-    } else {
-        ai.rever.boss.process.ProcessMode.MONOLITH
-    }
-    val kernelBootstrap = ai.rever.boss.kernel.KernelBootstrap(processMode)
-    kernelBootstrap.initialize()
+    // On Windows ARM64, boss-ipc/boss-process-manager modules are excluded (no protoc),
+    // so KernelBootstrap may not be available — silently skip.
+    val kernelBootstrap: Any? = try {
+        if (System.getenv("BOSS_MODE") == "KERNEL") {
+            val cls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
+            val modeClass = Class.forName("ai.rever.boss.process.ProcessMode")
+            val kernelMode = modeClass.enumConstants.first { it.toString() == "KERNEL" }
+            val instance = cls.getConstructor(modeClass).newInstance(kernelMode)
+            cls.getMethod("initialize").invoke(instance)
+            instance
+        } else null
+    } catch (_: ClassNotFoundException) { null }
+    catch (_: NoClassDefFoundError) { null }
 
     // Single-instance check: ensure only one BOSS instance runs
     // On Windows, this prevents multiple windows when clicking deep links
@@ -207,7 +213,9 @@ fun main(args: Array<String>) {
         }
         try {
             // Shutdown microkernel infrastructure (child processes, IPC server)
-            kernelBootstrap.shutdown()
+            kernelBootstrap?.let { kb ->
+                kb.javaClass.getMethod("shutdown").invoke(kb)
+            }
         } catch (e: Exception) {
             System.err.println("Error shutting down kernel: ${e.message}")
         }
