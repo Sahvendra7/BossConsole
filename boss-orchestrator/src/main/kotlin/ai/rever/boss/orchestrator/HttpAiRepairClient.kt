@@ -23,8 +23,8 @@ import java.nio.charset.StandardCharsets
  *
  * Configuration via environment variables:
  *   AI_REPAIR_API_URL  — defaults to https://api.openai.com/v1/chat/completions
- *   AI_REPAIR_API_KEY  — required; if blank, all calls return null
- *   AI_REPAIR_MODEL    — defaults to gpt-4o
+ *   AI_REPAIR_API_KEY  — required; falls back to OPENAI_API_KEY if not set
+ *   AI_REPAIR_MODEL    — defaults to gpt-5.4
  *
  * Uses [java.net.HttpURLConnection] — no additional runtime dependencies required.
  */
@@ -34,8 +34,10 @@ class HttpAiRepairClient : AiRepairClient {
 
     private val apiUrl = System.getenv("AI_REPAIR_API_URL")
         ?: "https://api.openai.com/v1/chat/completions"
-    private val apiKey = System.getenv("AI_REPAIR_API_KEY") ?: ""
-    private val model = System.getenv("AI_REPAIR_MODEL") ?: "gpt-4o"
+    private val apiKey = System.getenv("AI_REPAIR_API_KEY")
+        ?: System.getenv("OPENAI_API_KEY")
+        ?: ""
+    private val model = System.getenv("AI_REPAIR_MODEL") ?: "gpt-5.4"
 
     private val json = Json { ignoreUnknownKeys = true }
 

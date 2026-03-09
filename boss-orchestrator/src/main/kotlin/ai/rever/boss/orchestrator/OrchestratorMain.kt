@@ -61,12 +61,14 @@ fun main() {
         val snapshotManager = SnapshotManager(dataDir)
         val analyzer = CrashAnalyzer()
 
-        // Use AI-powered repairs when AI_REPAIR_API_KEY is configured
-        val aiClient: AiRepairClient? = if (!System.getenv("AI_REPAIR_API_KEY").isNullOrBlank()) {
-            logger.info("AI repair client enabled (model={})", System.getenv("AI_REPAIR_MODEL") ?: "gpt-4o")
+        // Use AI-powered repairs when AI_REPAIR_API_KEY or OPENAI_API_KEY is configured
+        val repairApiKey = System.getenv("AI_REPAIR_API_KEY")
+            ?: System.getenv("OPENAI_API_KEY")
+        val aiClient: AiRepairClient? = if (!repairApiKey.isNullOrBlank()) {
+            logger.info("AI repair client enabled (model={})", System.getenv("AI_REPAIR_MODEL") ?: "gpt-5.4")
             HttpAiRepairClient()
         } else {
-            logger.info("AI_REPAIR_API_KEY not set — AI repair proposals disabled")
+            logger.info("AI_REPAIR_API_KEY / OPENAI_API_KEY not set — AI repair proposals disabled")
             null
         }
 

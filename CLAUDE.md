@@ -53,6 +53,7 @@ SUPABASE_URL=https://api.risaboss.com
 SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_FUNCTION_URL=https://api.risaboss.com/functions/v1
 GITHUB_TOKEN=ghp_your_token_here  # Optional, 60 req/hr without
+OPENAI_API_KEY=sk-your-key-here  # Optional, enables AI self-healing in RepairEngine
 ```
 
 **Priority**: Environment variables > System properties > local.properties > Fallbacks
