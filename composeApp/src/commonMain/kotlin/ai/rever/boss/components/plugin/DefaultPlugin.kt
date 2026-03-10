@@ -235,13 +235,91 @@ class DefaultPlugin(
      * Use this to install, uninstall, enable, or disable plugins dynamically.
      */
     val dynamicPluginManager: DynamicPluginManager by lazy {
+        // Wire out-of-process plugin spawner when running in KERNEL mode.
+        // Uses reflection to avoid hard dependency on boss-process-manager
+        // (which is excluded on Windows ARM64).
+        val oopSpawner: OutOfProcessPluginSpawner? = try {
+            val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
+            // KernelBootstrap is a singleton-like — check if processSpawner is available
+            val spawnerCls = Class.forName("ai.rever.boss.components.plugin.OutOfProcessPluginSpawnerImpl")
+            val processSpawnerCls = Class.forName("ai.rever.boss.process.ProcessSpawner")
+
+            // Only wire if BOSS_MODE=KERNEL
+            val bossMode = System.getenv("BOSS_MODE")
+                ?: try {
+                    val cfgCls = Class.forName("ai.rever.boss.config.ConfigLoader")
+                    val cfgInstance = cfgCls.getDeclaredField("INSTANCE").get(null)
+                    cfgCls.getMethod("getConfig", String::class.java, String::class.java).invoke(cfgInstance, "BOSS_MODE", null) as? String
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.SYSTEM, "OOP spawner: ConfigLoader failed", mapOf("error" to e.toString()))
+                    null
+                }
+            logger.info(LogCategory.SYSTEM, "OOP spawner: BOSS_MODE resolved", mapOf("bossMode" to (bossMode ?: "null")))
+            if (bossMode == "KERNEL") {
+                // Get kernel IPC address from KernelBootstrap.instance (not env var,
+                // since BOSS_KERNEL_IPC_ADDR is only set for child processes)
+                val kernelAddr = System.getenv("BOSS_KERNEL_IPC_ADDR")
+                    ?: try {
+                        val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
+                        val companion = bootstrapCls.getDeclaredField("Companion").get(null)
+                        val getInstance = companionCls.getMethod("getInstance")
+                        val kernelInstance = getInstance.invoke(companion)
+                        logger.info(LogCategory.SYSTEM, "OOP spawner: KernelBootstrap.instance", mapOf("isNull" to (kernelInstance == null)))
+                        if (kernelInstance != null) {
+                            bootstrapCls.getMethod("getKernelAddress").invoke(kernelInstance) as? String
+                        } else null
+                    } catch (e: Exception) {
+                        logger.warn(LogCategory.SYSTEM, "OOP spawner: kernel addr failed", mapOf("error" to e.toString()))
+                        null
+                    }
+                    ?: ""
+                logger.info(LogCategory.SYSTEM, "OOP spawner: kernelAddr resolved", mapOf("addr" to kernelAddr))
+                if (kernelAddr.isNotEmpty()) {
+                    val processSpawner = processSpawnerCls.getConstructor(String::class.java, java.io.File::class.java)
+                        .newInstance(kernelAddr, java.io.File(
+                            try {
+                                val dirsCls2 = Class.forName("ai.rever.boss.plugin.pathutils.BossDirectories")
+                                val dirsInst2 = dirsCls2.getDeclaredField("INSTANCE").get(null)
+                                (dirsCls2.getMethod("getRootDir").invoke(dirsInst2) as java.io.File).absolutePath
+                            } catch (_: Exception) { "${System.getProperty("user.home")}/.boss" },
+                            "logs"
+                        ))
+                    spawnerCls.getConstructor(
+                        processSpawnerCls,
+                        String::class.java,
+                        String::class.java
+                    ).newInstance(
+                        processSpawner,
+                        windowId ?: "",
+                        windowProjectState?.selectedProject?.value?.path ?: ""
+                    ) as OutOfProcessPluginSpawner
+                } else null
+            } else null
+        } catch (e: ClassNotFoundException) {
+            logger.warn(LogCategory.SYSTEM, "OOP spawner: class not found", mapOf("error" to e.message))
+            null
+        } catch (e: NoClassDefFoundError) {
+            logger.warn(LogCategory.SYSTEM, "OOP spawner: class def not found", mapOf("error" to e.message))
+            null
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "OOP spawner: unexpected error", mapOf("error" to e.toString()), e)
+            null
+        }
+
+        if (oopSpawner != null) {
+            logger.info(LogCategory.SYSTEM, "OutOfProcessPluginSpawner created successfully")
+        } else {
+            logger.warn(LogCategory.SYSTEM, "OutOfProcessPluginSpawner is null — OOP plugins will run in-process")
+        }
+
         val manager = DynamicPluginManager(
             panelRegistry = panelRegistry,
             tabRegistry = tabRegistry,
             sandboxManager = sandboxManager,
             createSandboxedContext = { pluginId, config ->
                 createSandboxedContext(pluginId, config)
-            }
+            },
+            outOfProcessSpawner = oopSpawner,
         )
 
         // Load persisted plugins on first access (only once globally)
@@ -725,6 +803,11 @@ class DefaultPlugin(
         // ============================================================
         loadExternalPlugins()
 
+        // ============================================================
+        // KERNEL MODE: Register gRPC services for out-of-process plugins
+        // ============================================================
+        registerKernelPluginServices()
+
         logger.info(LogCategory.SYSTEM, "DefaultPlugin initialization complete", mapOf(
             "sandboxedPlugins" to sandboxManager.getAllSandboxes().size
         ))
@@ -816,6 +899,78 @@ class DefaultPlugin(
     // - registerRoleCreationPlugin()
     // - registerGitPanels()
     // ============================================================
+
+    /**
+     * Register kernel-side gRPC services when running in KERNEL mode.
+     * Uses reflection to avoid hard dependency on boss-process-manager
+     * (excluded on Windows ARM64).
+     */
+    private fun registerKernelPluginServices() {
+        try {
+            val bossMode = System.getenv("BOSS_MODE")
+                ?: try {
+                    val configCls = Class.forName("ai.rever.boss.config.ConfigLoader")
+                    val cfgInst = configCls.getDeclaredField("INSTANCE").get(null)
+                    configCls.getMethod("getConfig", String::class.java, String::class.java).invoke(cfgInst, "BOSS_MODE", null) as? String
+                } catch (_: Exception) { null }
+            if (bossMode != "KERNEL") return
+
+            val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
+            val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
+            val companion = bootstrapCls.getDeclaredField("Companion").get(null)
+            val getInstance = companionCls.getMethod("getInstance")
+            val kernelBootstrap = getInstance.invoke(companion) ?: run {
+                logger.info(LogCategory.SYSTEM, "KernelBootstrap not yet initialized — skipping service registration")
+                return
+            }
+
+            val registerMethod = bootstrapCls.getMethod(
+                "registerPluginServices",
+                ai.rever.boss.plugin.api.PerformanceDataProvider::class.java,
+                ai.rever.boss.plugin.api.DownloadDataProvider::class.java,
+                ai.rever.boss.plugin.api.GitDataProvider::class.java,
+                ai.rever.boss.plugin.api.LogDataProvider::class.java,
+                ai.rever.boss.plugin.api.ActiveTabsProvider::class.java,
+                ai.rever.boss.plugin.api.SecretDataProvider::class.java,
+                ai.rever.boss.plugin.api.SupabaseDataProvider::class.java,
+                ai.rever.boss.plugin.api.SplitViewOperations::class.java,
+                ai.rever.boss.plugin.api.ContextMenuProvider::class.java,
+                ai.rever.boss.plugin.api.RunConfigurationDataProvider::class.java,
+                ai.rever.boss.plugin.api.PanelEventProvider::class.java,
+                ai.rever.boss.plugin.api.RoleManagementProvider::class.java,
+                ai.rever.boss.plugin.api.DirectoryPickerProvider::class.java,
+                ai.rever.boss.plugin.api.ProjectDataProvider::class.java,
+                ai.rever.boss.plugin.api.NotificationProvider::class.java,
+            )
+
+            registerMethod.invoke(
+                kernelBootstrap,
+                performanceDataProvider,
+                downloadDataProvider,
+                gitDataProvider,
+                logDataProvider,
+                activeTabsProvider,
+                secretDataProvider,
+                supabaseDataProvider,
+                splitViewOperations,
+                contextMenuProvider,
+                runConfigurationDataProvider,
+                panelEventProvider,
+                roleManagementProvider,
+                directoryPickerProvider,
+                projectDataProvider,
+                notificationProvider,
+            )
+
+            logger.info(LogCategory.SYSTEM, "Kernel plugin gRPC services registered")
+        } catch (_: ClassNotFoundException) {
+            // Not in KERNEL mode or boss-process-manager not on classpath
+        } catch (_: NoClassDefFoundError) {
+            // Missing dependency
+        } catch (e: Exception) {
+            logger.warn(LogCategory.SYSTEM, "Failed to register kernel plugin services", error = e)
+        }
+    }
 }
 
 

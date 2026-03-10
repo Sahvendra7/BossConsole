@@ -260,7 +260,7 @@ class DynamicPluginManager(
                 val loadedPlugin = loadResult.getOrThrow()
                 val manifest = loadedPlugin.manifest
 
-                // ---- Out-of-process branch ----
+                // ---- Out-of-process branch (split-brain) ----
                 if (manifest.isolationMode == "out-of-process") {
                     val spawner = outOfProcessSpawner
                     if (spawner == null) {
@@ -269,30 +269,64 @@ class DynamicPluginManager(
                         ))
                         // Fall through to in-process path below
                     } else {
-                        // Unload from classloader — the child process owns execution
-                        pluginLoader.unloadPlugin(manifest.pluginId)
-
+                        // Split-brain model:
+                        // 1. Keep plugin loaded in kernel for UI rendering
+                        // 2. Spawn child process for state management
                         val spawnResult = spawner.spawn(manifest, jarPath)
                         if (spawnResult.isFailure) {
-                            notifyListeners { it.pluginLoadFailed(manifest, spawnResult.exceptionOrNull()!!) }
-                            return@withLock Result.failure(spawnResult.exceptionOrNull()!!)
+                            logger.warn(LogCategory.SYSTEM, "Out-of-process spawn failed; falling back to in-process", mapOf(
+                                "pluginId" to manifest.pluginId,
+                                "error" to (spawnResult.exceptionOrNull()?.message ?: "unknown")
+                            ))
+                            // Fall through to in-process path below
+                        } else {
+                            // Child process started — register plugin normally in kernel
+                            // The plugin's UI runs in-process, state management runs in child
+                            val loadResult2 = pluginLoader.loadPlugin(jarPath)
+                            if (loadResult2.isSuccess) {
+                                notifyListeners { it.beforePluginLoaded(manifest) }
+
+                                val sandboxConfig = SandboxConfig(
+                                    maxThreads = manifest.sandbox.maxThreads,
+                                    maxRestartAttempts = manifest.sandbox.maxRestartAttempts,
+                                    heartbeatIntervalMs = manifest.sandbox.heartbeatIntervalMs
+                                )
+
+                                val baseContext = createSandboxedContext(manifest.pluginId, sandboxConfig)
+                                val trackingContext = TrackingPluginContext(
+                                    pluginId = manifest.pluginId,
+                                    delegate = baseContext,
+                                    tracker = registrationTracker,
+                                    pluginManifest = manifest
+                                )
+                                trackingContexts[manifest.pluginId] = trackingContext
+
+                                val plugin = loadResult2.getOrThrow()
+                                try {
+                                    plugin.instance.register(trackingContext)
+                                } catch (e: Exception) {
+                                    logger.error(LogCategory.SYSTEM, "Plugin registration failed in split-brain mode", mapOf(
+                                        "pluginId" to manifest.pluginId
+                                    ), e)
+                                }
+                            }
+
+                            val info = DynamicPluginInfo(
+                                manifest = manifest,
+                                jarPath = jarPath,
+                                state = if (enabled) PluginState.LOADED else PluginState.DISABLED,
+                                loadedAt = System.currentTimeMillis(),
+                                enabled = enabled,
+                            )
+                            updatePluginState(manifest.pluginId, info)
+                            notifyListeners { it.pluginLoaded(manifest) }
+
+                            logger.info(LogCategory.SYSTEM, "Split-brain plugin loaded: UI in-process, state out-of-process", mapOf(
+                                "pluginId" to manifest.pluginId,
+                                "jarPath" to jarPath,
+                            ))
+                            return@withLock Result.success(info)
                         }
-
-                        val info = DynamicPluginInfo(
-                            manifest = manifest,
-                            jarPath = jarPath,
-                            state = if (enabled) PluginState.LOADED else PluginState.DISABLED,
-                            loadedAt = System.currentTimeMillis(),
-                            enabled = enabled,
-                        )
-                        updatePluginState(manifest.pluginId, info)
-                        notifyListeners { it.pluginLoaded(manifest) }
-
-                        logger.info(LogCategory.SYSTEM, "Out-of-process plugin spawned", mapOf(
-                            "pluginId" to manifest.pluginId,
-                            "jarPath" to jarPath,
-                        ))
-                        return@withLock Result.success(info)
                     }
                 }
 

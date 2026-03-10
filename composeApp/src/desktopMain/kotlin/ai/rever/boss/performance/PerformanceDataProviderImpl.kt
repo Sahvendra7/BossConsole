@@ -1,5 +1,6 @@
 package ai.rever.boss.performance
 
+import ai.rever.boss.plugin.api.ChildProcessData
 import ai.rever.boss.plugin.api.GcCollectorData
 import ai.rever.boss.plugin.api.MemoryPoolData
 import ai.rever.boss.plugin.api.PerformanceDataProvider
@@ -125,8 +126,80 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
                     collectionCount = collector.collectionCount,
                     collectionTimeMs = collector.collectionTimeMs
                 )
-            }
+            },
+            childProcesses = collectChildProcesses()
         )
+    }
+
+    /**
+     * Collect metrics from out-of-process plugin child JVMs.
+     * Uses the process registry from KernelBootstrap (if running in KERNEL mode).
+     */
+    private fun collectChildProcesses(): List<ChildProcessData> {
+        return try {
+            val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
+            val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
+            val companion = bootstrapCls.getDeclaredField("Companion").get(null)
+            val getInstance = companionCls.getMethod("getInstance")
+            val kernel = getInstance.invoke(companion) ?: return emptyList()
+
+            val registry = bootstrapCls.getMethod("getProcessRegistry").invoke(kernel) ?: return emptyList()
+            val registryCls = registry::class.java
+            val getAllProcesses = registryCls.getMethod("getAllProcesses")
+            @Suppress("UNCHECKED_CAST")
+            val processes = getAllProcesses.invoke(registry) as? List<*> ?: return emptyList()
+
+            processes.mapNotNull { process ->
+                try {
+                    val processCls = process!!::class.java
+                    val config = processCls.getMethod("getConfig").invoke(process)
+                    val configCls = config::class.java
+
+                    val processType = configCls.getMethod("getProcessType").invoke(config).toString()
+                    if (processType != "PLUGIN") return@mapNotNull null
+
+                    val processId = configCls.getMethod("getProcessId").invoke(config) as String
+                    val displayName = configCls.getMethod("getDisplayName").invoke(config) as String
+                    val pid = (processCls.getMethod("getPid").invoke(process) as? Long) ?: -1L
+                    val isAlive = processCls.getMethod("isAlive").invoke(process) as Boolean
+                    val lastMetrics = try {
+                        processCls.getMethod("getLastHealthMetrics").invoke(process)
+                    } catch (_: Exception) { null }
+
+                    val heapUsed = try {
+                        lastMetrics?.let { it::class.java.getMethod("getHeapUsedBytes").invoke(it) as Long } ?: 0L
+                    } catch (_: Exception) { 0L }
+
+                    val heapMax = try {
+                        lastMetrics?.let { it::class.java.getMethod("getHeapMaxBytes").invoke(it) as Long } ?: 0L
+                    } catch (_: Exception) { 0L }
+
+                    val activeThreads = try {
+                        lastMetrics?.let { it::class.java.getMethod("getActiveThreads").invoke(it) as Int } ?: 0
+                    } catch (_: Exception) { 0 }
+
+                    val uptimeMs = try {
+                        lastMetrics?.let { it::class.java.getMethod("getUptimeMs").invoke(it) as Long } ?: 0L
+                    } catch (_: Exception) { 0L }
+
+                    ChildProcessData(
+                        processId = processId,
+                        pluginId = processId.removePrefix("plugin-"),
+                        displayName = displayName,
+                        pid = pid,
+                        state = if (isAlive) "RUNNING" else "STOPPED",
+                        heapUsedBytes = heapUsed,
+                        heapMaxBytes = heapMax,
+                        activeThreads = activeThreads,
+                        uptimeMs = uptimeMs,
+                    )
+                } catch (_: Exception) { null }
+            }
+        } catch (_: ClassNotFoundException) {
+            emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     /**

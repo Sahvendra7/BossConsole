@@ -90,6 +90,18 @@ class PluginUIServiceImpl : PluginUIServiceGrpcKt.PluginUIServiceCoroutineImplBa
         _uiEvents.emit(event)
     }
 
+    /**
+     * Register a UI surface locally (called by RemotePluginContext before the kernel connects).
+     * The registration is stored and will be served when the kernel calls [registerUI].
+     */
+    fun registerSurface(registration: UIRegistration) {
+        registrations[registration.surfaceId] = registration
+        logger.info(
+            "Pre-registered UI surface: id={}, type={}, name={}",
+            registration.surfaceId, registration.surfaceType, registration.displayName,
+        )
+    }
+
     fun getRegistration(surfaceId: String): UIRegistration? = registrations[surfaceId]
     fun getAllRegistrations(): List<UIRegistration> = registrations.values.toList()
 }

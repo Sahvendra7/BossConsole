@@ -5,6 +5,8 @@ import ai.rever.boss.ipc.IpcAddressResolver
 import ai.rever.boss.ipc.services.EventBusServiceImpl
 import ai.rever.boss.ipc.services.KernelServiceImpl
 import ai.rever.boss.ipc.services.StateServiceImpl
+import ai.rever.boss.kernel.services.*
+import ai.rever.boss.plugin.api.*
 import ai.rever.boss.process.ManagedProcess
 import ai.rever.boss.process.ProcessConfig
 import ai.rever.boss.process.ProcessMode
@@ -14,6 +16,7 @@ import ai.rever.boss.process.ProcessSpawner
 import ai.rever.boss.process.ProcessType
 import ai.rever.boss.process.RestartPolicy
 import ai.rever.boss.ipc.proto.ProcessState
+import io.grpc.BindableService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +37,13 @@ import java.util.concurrent.TimeUnit
  * 5. Provides graceful shutdown cascade
  */
 class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
+
+    companion object {
+        /** Singleton instance, set during initialize(). Access from DefaultPlugin via reflection. */
+        @Volatile
+        var instance: KernelBootstrap? = null
+            private set
+    }
 
     private val logger = LoggerFactory.getLogger(KernelBootstrap::class.java)
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -141,6 +151,9 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
         // Spawn child services (M7 fix — structure in place)
         spawnServices(registry, spawner)
 
+        // Store singleton for DefaultPlugin to access via reflection
+        instance = this
+
         logger.info("KERNEL mode initialized. IPC server at: {}", kernelAddress)
     }
 
@@ -154,7 +167,11 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
      */
     private fun spawnServices(registry: ProcessRegistry, spawner: ProcessSpawner) {
         val bossDataDir = System.getenv("BOSS_DATA_DIR")
-            ?: "${System.getProperty("user.home")}/.boss"
+            ?: try {
+                ai.rever.boss.plugin.pathutils.BossDirectories.rootDir.absolutePath
+            } catch (_: Exception) {
+                "${System.getProperty("user.home")}/.boss"
+            }
 
         val orchestratorJar = "$bossDataDir/services/boss-orchestrator-all.jar"
         val authJar = "$bossDataDir/services/boss-service-auth-all.jar"
@@ -382,4 +399,55 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
     }
 
     val isKernelMode: Boolean get() = mode == ProcessMode.KERNEL
+
+    /**
+     * Register the 15 kernel-side gRPC services that expose in-process providers
+     * to out-of-process plugin child processes.
+     *
+     * Called from DefaultPlugin after all providers are initialized, since the
+     * service bridges wrap the same provider instances used by in-process plugins.
+     */
+    fun registerPluginServices(
+        performanceDataProvider: PerformanceDataProvider? = null,
+        downloadDataProvider: DownloadDataProvider? = null,
+        gitDataProvider: GitDataProvider? = null,
+        logDataProvider: LogDataProvider? = null,
+        activeTabsProvider: ActiveTabsProvider? = null,
+        secretDataProvider: SecretDataProvider? = null,
+        supabaseDataProvider: SupabaseDataProvider? = null,
+        splitViewOperations: SplitViewOperations? = null,
+        contextMenuProvider: ContextMenuProvider? = null,
+        runConfigurationDataProvider: RunConfigurationDataProvider? = null,
+        panelEventProvider: PanelEventProvider? = null,
+        roleManagementProvider: RoleManagementProvider? = null,
+        directoryPickerProvider: DirectoryPickerProvider? = null,
+        projectDataProvider: ProjectDataProvider? = null,
+        notificationProvider: NotificationProvider? = null,
+    ) {
+        if (mode == ProcessMode.MONOLITH || ipcServer == null) return
+
+        val services = mutableListOf<BindableService>()
+
+        performanceDataProvider?.let { services += PerformanceServiceBridge(it) }
+        downloadDataProvider?.let { services += DownloadServiceBridge(it) }
+        gitDataProvider?.let { services += GitServiceBridge(it) }
+        logDataProvider?.let { services += LogServiceBridge(it) }
+        activeTabsProvider?.let { services += ActiveTabsServiceBridge(it) }
+        secretDataProvider?.let { services += SecretServiceBridge(it) }
+        supabaseDataProvider?.let { services += SupabaseServiceBridge(it) }
+        splitViewOperations?.let { services += SplitViewServiceBridge(it) }
+        contextMenuProvider?.let { services += ContextMenuServiceBridge() }
+        runConfigurationDataProvider?.let { services += RunConfigServiceBridge(it) }
+        panelEventProvider?.let { services += PanelEventServiceBridge(it) }
+        roleManagementProvider?.let { services += RoleManagementServiceBridge(it) }
+        directoryPickerProvider?.let { services += DirectoryPickerServiceBridge(it) }
+        projectDataProvider?.let { services += ProjectDataServiceBridge(it) }
+        notificationProvider?.let { services += NotificationServiceBridge(it) }
+
+        services.forEach { service ->
+            ipcServer!!.addService(service)
+        }
+
+        logger.info("Registered {} plugin gRPC services on kernel IPC server", services.size)
+    }
 }

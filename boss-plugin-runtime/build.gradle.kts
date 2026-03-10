@@ -39,6 +39,19 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
+
+    // Plugin API + IPC proxies for RemotePluginContext
+    implementation(project(":plugins:plugin-api-core")) {
+        // Only need the JVM target for commonMain interfaces
+        targetConfiguration = "desktopRuntimeElements"
+    }
+    implementation(project(":plugins:plugin-api-ipc")) {
+        targetConfiguration = "desktopRuntimeElements"
+    }
+
+    // Testing
+    testImplementation(libs.kotlin.test.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 tasks.jar {
@@ -53,6 +66,10 @@ tasks.register<Jar>("fatJar") {
     manifest {
         attributes["Main-Class"] = "ai.rever.boss.plugin.runtime.PluginProcessMainKt"
     }
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    // Our merged service files first (EXCLUDE ensures these win over deps)
+    from("src/main/resources")
+    // Then our compiled classes
     with(tasks.jar.get())
+    // Then dependencies
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
 }

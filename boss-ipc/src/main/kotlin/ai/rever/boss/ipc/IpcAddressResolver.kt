@@ -34,7 +34,15 @@ object IpcAddressResolver {
     private val ipcDir: File by lazy {
         val bossDataDir = System.getenv("BOSS_DATA_DIR")
             ?: System.getProperty("boss.data.dir")
-            ?: "${System.getProperty("user.home")}/.boss"
+            ?: try {
+                // Use BossDirectories to respect .boss_debug in dev mode
+                val dirsCls = Class.forName("ai.rever.boss.plugin.pathutils.BossDirectories")
+                val dirsInst = dirsCls.getDeclaredField("INSTANCE").get(null)
+                val rootDir = dirsCls.getMethod("getRootDir").invoke(dirsInst) as File
+                rootDir.absolutePath
+            } catch (_: Exception) {
+                "${System.getProperty("user.home")}/.boss"
+            }
         File(bossDataDir, "ipc").also { it.mkdirs() }
     }
 

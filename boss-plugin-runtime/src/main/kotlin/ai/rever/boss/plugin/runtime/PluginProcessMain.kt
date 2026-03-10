@@ -23,6 +23,8 @@ private data class PluginJsonManifest(
     val version: String = "1.0.0",
     val mainClass: String = "",
     val description: String = "",
+    val stateHolderClass: String = "",
+    val isolationMode: String = "",
 )
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -83,6 +85,68 @@ fun main() = runBlocking {
 
     val uiService = PluginUIServiceImpl()
     connection.processServer.addService(uiService)
+
+    // 5. Create RemotePluginContext with kernel channel for data provider access
+    val remoteContext = RemotePluginContext(
+        processId = bootstrap.processId,
+        uiService = uiService,
+        kernelChannel = connection.kernelClient.channel,
+    )
+
+    // 6. Load and initialize the plugin's state holder (if declared)
+    val stateHolderClass = pluginManifest.stateHolderClass
+    if (stateHolderClass.isNotEmpty()) {
+        try {
+            val holderClazz = Class.forName(stateHolderClass)
+            val stateHolder = try {
+                // Try constructor(CoroutineScope, RemotePluginContext)
+                holderClazz
+                    .getConstructor(kotlinx.coroutines.CoroutineScope::class.java, RemotePluginContext::class.java)
+                    .newInstance(remoteContext.pluginScope, remoteContext)
+            } catch (_: NoSuchMethodException) {
+                // Fall back to constructor(CoroutineScope)
+                holderClazz
+                    .getConstructor(kotlinx.coroutines.CoroutineScope::class.java)
+                    .newInstance(remoteContext.pluginScope)
+            }
+
+            logger.info("State holder loaded: {}", stateHolderClass)
+
+            // Wire PluginStateSyncService if the holder extends PluginStateHolder
+            @Suppress("UNCHECKED_CAST")
+            if (stateHolder is PluginStateHolder<*, *, *>) {
+                val syncService = createStateSyncService(
+                    pluginId = pluginManifest.pluginId,
+                    instanceId = bootstrap.processId,
+                    stateHolder = stateHolder as PluginStateHolder<Any, Any, Any>,
+                    scope = remoteContext.pluginScope,
+                )
+                connection.processServer.addService(syncService)
+                logger.info("PluginStateSyncService wired for: {}", pluginManifest.pluginId)
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to load state holder: {}", stateHolderClass, e)
+        }
+    } else {
+        // Try loading mainClass and calling registerRemote via reflection
+        if (pluginManifest.mainClass.isNotEmpty()) {
+            try {
+                val pluginClazz = Class.forName(pluginManifest.mainClass)
+                val pluginInstance = pluginClazz.getDeclaredConstructor().newInstance()
+
+                // Check for registerRemote(RemotePluginContext) method
+                val registerMethod = pluginClazz.getMethod("registerRemote", RemotePluginContext::class.java)
+                registerMethod.invoke(pluginInstance, remoteContext)
+                logger.info("Plugin registered via registerRemote: {}", pluginManifest.mainClass)
+            } catch (_: NoSuchMethodException) {
+                logger.info("Plugin {} has no registerRemote method — running in UI-only mode", pluginManifest.pluginId)
+            } catch (e: Exception) {
+                logger.error("Failed to load plugin class: {}", pluginManifest.mainClass, e)
+            }
+        }
+    }
+
+    // 7. Start gRPC server
     connection.startServer()
 
     logger.info(
@@ -90,8 +154,104 @@ fun main() = runBlocking {
         bootstrap.processId, bootstrap.processAddress,
     )
 
-    // 5. Await termination
+    // 8. Await termination
     connection.awaitTermination()
+
+    // Cleanup
+    remoteContext.dispose()
+}
+
+/**
+ * Create a PluginStateSyncService with generic serialization using JSON.
+ * Uses kotlinx.serialization for state and intent type resolution.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun createStateSyncService(
+    pluginId: String,
+    instanceId: String,
+    stateHolder: PluginStateHolder<Any, Any, Any>,
+    scope: kotlinx.coroutines.CoroutineScope,
+): PluginStateSyncService<Any, Any> {
+    return PluginStateSyncService(
+        pluginId = pluginId,
+        instanceId = instanceId,
+        stateHolder = stateHolder,
+        serializeState = { state ->
+            // Default: use toString() for non-serializable states, JSON for @Serializable
+            try {
+                kotlinx.serialization.json.Json.encodeToString(
+                    kotlinx.serialization.serializer(state!!::class.java),
+                    state,
+                ).toByteArray()
+            } catch (_: Exception) {
+                state.toString().toByteArray()
+            }
+        },
+        deserializeIntent = { intentType, payloadBytes ->
+            resolveIntentDeserializer(stateHolder, intentType, payloadBytes)
+        },
+        stateTypeName = stateHolder::class.java.simpleName,
+        scope = scope,
+    )
+}
+
+/**
+ * Resolve intent deserialization based on the state holder type.
+ * Maps intent type strings to concrete intent objects for each known state holder.
+ */
+private fun resolveIntentDeserializer(
+    stateHolder: PluginStateHolder<*, *, *>,
+    intentType: String,
+    payloadBytes: ByteArray,
+): Any? {
+    val payloadStr = if (payloadBytes.isNotEmpty()) String(payloadBytes) else ""
+
+    return when (stateHolder) {
+        is ai.rever.boss.plugin.runtime.stateholders.ConsoleStateHolder -> {
+            when (intentType) {
+                "SetFilter" -> ai.rever.boss.plugin.runtime.stateholders.ConsoleIntent.SetFilter(
+                    ai.rever.boss.plugin.runtime.stateholders.ConsoleLogFilter.valueOf(payloadStr.ifEmpty { "ALL" })
+                )
+                "SetSearchQuery" -> ai.rever.boss.plugin.runtime.stateholders.ConsoleIntent.SetSearchQuery(payloadStr)
+                "ToggleAutoScroll" -> ai.rever.boss.plugin.runtime.stateholders.ConsoleIntent.ToggleAutoScroll
+                "ClearLogs" -> ai.rever.boss.plugin.runtime.stateholders.ConsoleIntent.ClearLogs
+                else -> null
+            }
+        }
+        is ai.rever.boss.plugin.runtime.stateholders.PerformanceStateHolder -> {
+            when (intentType) {
+                "RequestGC" -> ai.rever.boss.plugin.runtime.stateholders.PerformanceIntent.RequestGC
+                "ExportMetrics" -> ai.rever.boss.plugin.runtime.stateholders.PerformanceIntent.ExportMetrics
+                else -> null
+            }
+        }
+        is ai.rever.boss.plugin.runtime.stateholders.DownloadsStateHolder -> {
+            when (intentType) {
+                "Pause" -> ai.rever.boss.plugin.runtime.stateholders.DownloadsIntent.Pause(payloadStr)
+                "Resume" -> ai.rever.boss.plugin.runtime.stateholders.DownloadsIntent.Resume(payloadStr)
+                "Cancel" -> ai.rever.boss.plugin.runtime.stateholders.DownloadsIntent.Cancel(payloadStr)
+                "Remove" -> ai.rever.boss.plugin.runtime.stateholders.DownloadsIntent.Remove(payloadStr)
+                "ClearCompleted" -> ai.rever.boss.plugin.runtime.stateholders.DownloadsIntent.ClearCompleted
+                else -> null
+            }
+        }
+        is ai.rever.boss.plugin.runtime.stateholders.GitStateHolder -> {
+            when (intentType) {
+                "RefreshStatus" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.RefreshStatus
+                "RefreshLog" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.RefreshLog()
+                "Stage" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.Stage(payloadStr)
+                "Unstage" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.Unstage(payloadStr)
+                "StageAll" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.StageAll
+                "UnstageAll" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.UnstageAll
+                "DiscardChanges" -> ai.rever.boss.plugin.runtime.stateholders.GitIntent.DiscardChanges(payloadStr)
+                else -> null
+            }
+        }
+        else -> {
+            logger.debug("No intent deserializer for {}: {}", stateHolder::class.java.simpleName, intentType)
+            null
+        }
+    }
 }
 
 private fun readPluginManifest(jarPath: String): PluginJsonManifest? {
