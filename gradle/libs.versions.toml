@@ -35,7 +35,7 @@ grpc = "1.72.0"
 grpc-kotlin = "1.4.3"
 protobuf = "4.31.1"
 protobuf-gradle-plugin = "0.9.6"
-graalvm-native-plugin = "0.10.6"
+graalvm-native-plugin = "0.11.5"
 # IntelliJ PSI for code navigation
 intellij-platform = "243.21565.199"
 
