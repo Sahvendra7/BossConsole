@@ -328,14 +328,14 @@ fun ApplicationScope.BossWindow(
                             val envFile = ai.rever.boss.plugin.pathutils.BossDirectories.resolve("env_vars")
                             envFile.parentFile?.mkdirs()
                             if (!envFile.exists()) {
-                                envFile.writeText(if (it) "BOSS_MODE=KERNEL\n" else "# BOSS_MODE=KERNEL\n")
+                                envFile.writeText(if (it) "BOSS_MODE=KERNEL\n" else "# BOSS_MODE=KERNEL\n", Charsets.UTF_8)
                             } else {
-                                val lines = envFile.readLines().toMutableList()
+                                val lines = envFile.readLines(Charsets.UTF_8).toMutableList()
                                 val idx = lines.indexOfFirst { l -> l.trimStart('#', ' ').startsWith("BOSS_MODE") }
                                 val newLine = if (it) "BOSS_MODE=KERNEL" else "# BOSS_MODE=KERNEL"
                                 if (idx >= 0) lines[idx] = newLine
                                 else { lines.add(""); lines.add(newLine) }
-                                envFile.writeText(lines.joinToString("\n") + "\n")
+                                envFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
                             }
                         }
                     }

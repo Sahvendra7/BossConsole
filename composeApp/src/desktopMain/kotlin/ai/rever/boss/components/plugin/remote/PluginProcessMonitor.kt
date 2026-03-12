@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.remote
 
 import ai.rever.boss.components.plugin.OutOfProcessPluginSpawnerImpl
 import ai.rever.boss.components.plugin.PluginStateBridge
+import ai.rever.boss.plugin.api.PluginManifest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,10 +55,22 @@ class PluginProcessMonitor(
     /** Plugins that have been switched to in-process fallback. Thread-safe. */
     private val inProcessFallbacks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
+    /** Stored manifests and jar paths for re-spawning after crash. */
+    private val pluginSpawnInfo = java.util.concurrent.ConcurrentHashMap<String, Pair<PluginManifest, String>>()
+
     /**
      * Start monitoring a plugin process.
      */
-    fun monitor(pluginId: String, displayName: String, maxRestarts: Int = 3) {
+    fun monitor(
+        pluginId: String,
+        displayName: String,
+        maxRestarts: Int = 3,
+        manifest: PluginManifest? = null,
+        jarPath: String? = null,
+    ) {
+        if (manifest != null && jarPath != null) {
+            pluginSpawnInfo[pluginId] = manifest to jarPath
+        }
         val info = PluginHealthInfo(
             pluginId = pluginId,
             displayName = displayName,
@@ -94,20 +107,31 @@ class PluginProcessMonitor(
      */
     suspend fun restartPlugin(pluginId: String) {
         val current = _healthStates.value[pluginId] ?: return
+        val spawnInfo = pluginSpawnInfo[pluginId]
+        if (spawnInfo == null) {
+            logger.error("Cannot restart plugin {}: no stored manifest/jarPath", pluginId)
+            updateState(pluginId, current.copy(
+                processState = PluginProcessState.FAILED,
+                lastError = "No spawn info stored for restart",
+            ))
+            return
+        }
+
         updateState(pluginId, current.copy(processState = PluginProcessState.RESTARTING))
-        logger.info("Restart requested for plugin: {}", pluginId)
+        logger.info("Restarting plugin: {}", pluginId)
 
         try {
-            // Terminate old process, then re-spawn
+            val (manifest, jarPath) = spawnInfo
             spawner.terminate(pluginId)
-            // The spawner's terminate clears the old process.
-            // Re-spawning is triggered by DynamicPluginManager on next health check
-            // or can be initiated by calling spawner.spawn() with the original manifest.
+            spawner.spawn(manifest, jarPath).getOrThrow()
             updateState(pluginId, current.copy(
                 processState = PluginProcessState.RUNNING,
+                pid = spawner.getManagedProcess(pluginId)?.pid,
                 restartCount = current.restartCount + 1,
                 lastError = null,
+                connected = true,
             ))
+            logger.info("Plugin restarted successfully: {}", pluginId)
         } catch (e: Exception) {
             logger.error("Failed to restart plugin: {}", pluginId, e)
             updateState(pluginId, current.copy(

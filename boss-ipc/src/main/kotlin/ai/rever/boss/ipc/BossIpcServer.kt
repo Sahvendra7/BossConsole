@@ -37,18 +37,18 @@ class BossIpcServer(private val address: String) {
 
     /**
      * Rebuild the running server with the current service list.
-     * Used when services are added after start().
+     * Must stop old server first to release the Unix socket address.
      */
     private fun rebuildServer() {
         val oldServer = server
-        buildAndStart()
-        // Shut down old server after new one is listening
+        // Stop old server FIRST to release the socket address
         oldServer?.let { s ->
             s.shutdown()
             if (!s.awaitTermination(2, TimeUnit.SECONDS)) {
                 s.shutdownNow()
             }
         }
+        buildAndStart()
         logger.info("IPC server rebuilt with {} services on: {}", services.size, address)
     }
 
