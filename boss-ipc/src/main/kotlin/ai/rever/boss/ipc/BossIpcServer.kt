@@ -23,20 +23,41 @@ class BossIpcServer(private val address: String) {
 
     fun addService(service: BindableService): BossIpcServer {
         services.add(service)
+        // If server is already running, rebuild it with the new service
+        if (server != null && server?.isShutdown == false) {
+            rebuildServer()
+        }
         return this
     }
 
     fun start(): BossIpcServer {
+        buildAndStart()
+        return this
+    }
+
+    /**
+     * Rebuild the running server with the current service list.
+     * Used when services are added after start().
+     */
+    private fun rebuildServer() {
+        val oldServer = server
+        buildAndStart()
+        // Shut down old server after new one is listening
+        oldServer?.let { s ->
+            s.shutdown()
+            if (!s.awaitTermination(2, TimeUnit.SECONDS)) {
+                s.shutdownNow()
+            }
+        }
+        logger.info("IPC server rebuilt with {} services on: {}", services.size, address)
+    }
+
+    private fun buildAndStart() {
         val builder = IpcAddressResolver.configureServerBuilder(address)
-
         services.forEach { builder.addService(it) }
-
         server = builder.build().start()
         logger.info("IPC server started on: {}", address)
-        // Set owner-only permissions on Unix socket to prevent other local users from connecting
         IpcAddressResolver.secureSocketFile(address)
-
-        return this
     }
 
     fun stop(timeoutMs: Long = 5000) {

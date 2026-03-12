@@ -58,7 +58,7 @@ class PluginStateBridge(
 
     /** Side effects emitted by the plugin for the kernel to handle. */
     private val _effects = MutableSharedFlow<Pair<String, ByteArray>>(extraBufferCapacity = 16)
-    val effects: MutableSharedFlow<Pair<String, ByteArray>> = _effects
+    val effects: kotlinx.coroutines.flow.SharedFlow<Pair<String, ByteArray>> = _effects
 
     /**
      * Start the state sync connection. Call once after construction.
@@ -155,18 +155,14 @@ class PluginStateBridge(
                 applyState(fullState.stateBytes.toByteArray(), fullState.version)
             }
             update.hasDeltaState() -> {
-                val delta = update.deltaState
-                if (delta.baseVersion == _version.value) {
-                    // Apply delta patch
-                    applyState(delta.patchBytes.toByteArray(), delta.newVersion)
-                } else {
-                    // Version mismatch — request full state
-                    logger.warn(
-                        "Version mismatch for plugin={}: expected={}, got={}. Requesting full state.",
-                        pluginId, _version.value, delta.baseVersion
-                    )
-                    fetchCurrentState()
-                }
+                // TODO: Implement actual JSON Merge Patch for delta state.
+                // For now, request full state since applying raw patch bytes
+                // as a replacement would corrupt state.
+                logger.debug(
+                    "Delta state received for plugin={}, requesting full state instead",
+                    pluginId
+                )
+                fetchCurrentState()
             }
             update.hasEffect() -> {
                 val effect = update.effect

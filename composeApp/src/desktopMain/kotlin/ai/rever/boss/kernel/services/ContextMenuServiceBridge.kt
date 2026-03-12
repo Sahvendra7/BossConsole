@@ -2,6 +2,7 @@ package ai.rever.boss.kernel.services
 
 import ai.rever.boss.ipc.proto.Empty
 import ai.rever.boss.ipc.proto.services.*
+import ai.rever.boss.plugin.api.ContextMenuProvider
 
 /**
  * Kernel-side bridge for ContextMenuService.
@@ -11,7 +12,9 @@ import ai.rever.boss.ipc.proto.services.*
  * the host's native context menu system. Action callbacks are forwarded back
  * to the plugin process.
  */
-class ContextMenuServiceBridge : ContextMenuServiceGrpcKt.ContextMenuServiceCoroutineImplBase() {
+class ContextMenuServiceBridge(
+    private val provider: ContextMenuProvider,
+) : ContextMenuServiceGrpcKt.ContextMenuServiceCoroutineImplBase() {
 
     private val registeredMenus = java.util.concurrent.ConcurrentHashMap<String, RegisterContextMenuRequest>()
     private val actionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (String) -> Unit>()

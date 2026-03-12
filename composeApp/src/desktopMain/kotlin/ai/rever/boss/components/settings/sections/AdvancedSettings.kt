@@ -178,7 +178,7 @@ private suspend fun readBossMode(): Boolean = withContext(Dispatchers.IO) {
     val envFile = BossDirectories.resolve("env_vars")
     if (!envFile.exists()) return@withContext false
     try {
-        envFile.readLines()
+        envFile.readLines(Charsets.UTF_8)
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .any { line ->
                 val parts = line.split("=", limit = 2)
@@ -196,12 +196,13 @@ private suspend fun writeBossMode(enabled: Boolean) = withContext(Dispatchers.IO
     if (!envFile.exists()) {
         // Create with just BOSS_MODE
         envFile.writeText(
-            if (enabled) "BOSS_MODE=KERNEL\n" else "# BOSS_MODE=KERNEL\n"
+            if (enabled) "BOSS_MODE=KERNEL\n" else "# BOSS_MODE=KERNEL\n",
+            Charsets.UTF_8
         )
         return@withContext
     }
 
-    val lines = envFile.readLines().toMutableList()
+    val lines = envFile.readLines(Charsets.UTF_8).toMutableList()
     val modeLineIndex = lines.indexOfFirst { line ->
         val trimmed = line.trimStart('#', ' ')
         trimmed.startsWith("BOSS_MODE")
@@ -218,5 +219,5 @@ private suspend fun writeBossMode(enabled: Boolean) = withContext(Dispatchers.IO
         lines.add(newLine)
     }
 
-    envFile.writeText(lines.joinToString("\n") + "\n")
+    envFile.writeText(lines.joinToString("\n") + "\n", Charsets.UTF_8)
 }

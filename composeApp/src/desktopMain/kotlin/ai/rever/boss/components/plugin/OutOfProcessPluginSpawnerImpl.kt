@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin
 
 import ai.rever.boss.ipc.BossIpcClient
+import ai.rever.boss.kernel.KernelBootstrap
 import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.process.ManagedProcess
 import ai.rever.boss.process.ProcessConfig
@@ -187,25 +188,13 @@ class OutOfProcessPluginSpawnerImpl(
     fun isAlive(pluginId: String): Boolean = managedProcesses[pluginId]?.isAlive == true
 
     private fun buildJvmArgs(manifest: PluginManifest): List<String> = buildList {
-        // Read heap settings from PerformanceSettingsManager
-        val (heapMax, heapInit) = try {
-            val settingsCls = Class.forName("ai.rever.boss.performance.PerformanceSettingsManager")
-            val instance = settingsCls.getDeclaredField("INSTANCE").get(null)
-            val getCurrentSettings = settingsCls.getMethod("getCurrentSettings")
-            val flow = getCurrentSettings.invoke(instance)
-            val getValue = flow.javaClass.getMethod("getValue")
-            val settings = getValue.invoke(flow)
-            val settingsClass = settings.javaClass
-            val maxMb = settingsClass.getMethod("getPluginJvmHeapMb").invoke(settings) as Int
-            val initMb = settingsClass.getMethod("getPluginJvmInitialHeapMb").invoke(settings) as Int
-            maxMb to initMb
-        } catch (_: Exception) {
-            512 to 64
-        }
+        val settings = try {
+            ai.rever.boss.performance.PerformanceSettingsManager.currentSettings.value
+        } catch (_: Exception) { null }
+        val heapMax = settings?.pluginJvmHeapMb ?: 512
+        val heapInit = settings?.pluginJvmInitialHeapMb ?: 64
         add("-Xmx${heapMax}m")
         add("-Xms${heapInit}m")
-        // Enable virtual threads on Java 21+
-        add("--enable-preview")
     }
 
     private fun buildEnvironment(pluginId: String, jarPath: String): Map<String, String> = buildMap {
@@ -223,28 +212,8 @@ class OutOfProcessPluginSpawnerImpl(
         timeoutMs: Long,
     ) {
         withTimeout(timeoutMs) {
-            // Wait for the child process to register with the kernel via gRPC.
-            // The kernel's KernelServiceImpl.onProcessRegistered callback is called
-            // when the child connects. We check the kernel's process registry
-            // rather than the local ManagedProcess.manifest (which is a different object).
-            val kernelRegistryCheck: () -> Boolean = try {
-                val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
-                val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
-                val companion = bootstrapCls.getDeclaredField("Companion").get(null)
-                val getInstance = companionCls.getMethod("getInstance")
-                val kernelInstance = getInstance.invoke(companion)
-                if (kernelInstance != null) {
-                    val registry = bootstrapCls.getMethod("getProcessRegistry").invoke(kernelInstance)
-                    val registryCls = registry!!::class.java
-                    val getManifest = registryCls.getMethod("getManifest", String::class.java)
-                    val processId = "plugin-$pluginId";
-                    { getManifest.invoke(registry, processId) != null }
-                } else {
-                    { process.manifest != null }
-                }
-            } catch (_: Exception) {
-                { process.manifest != null }
-            }
+            val processId = "plugin-$pluginId"
+            val registry = KernelBootstrap.instance?.processRegistry
 
             while (true) {
                 if (!process.isAlive) {
@@ -252,7 +221,8 @@ class OutOfProcessPluginSpawnerImpl(
                         "Plugin process died during startup: $pluginId (exit=${process.process.exitValue()})"
                     )
                 }
-                if (kernelRegistryCheck()) {
+                // Check kernel's process registry (populated by gRPC registration from child)
+                if (registry?.getManifest(processId) != null) {
                     break
                 }
                 delay(100)
