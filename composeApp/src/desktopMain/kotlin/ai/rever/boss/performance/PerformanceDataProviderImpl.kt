@@ -137,17 +137,35 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
      */
     private fun collectChildProcesses(): List<ChildProcessData> {
         return try {
+            // Query the OutOfProcessPluginSpawnerImpl which tracks all spawned plugin processes
+            val spawnerCls = Class.forName("ai.rever.boss.components.plugin.OutOfProcessPluginSpawnerImpl")
+
+            // Get the DynamicPluginManager's spawner instance via DefaultPlugin reflection chain
+            // The spawner tracks managedProcesses internally
             val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
             val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
             val companion = bootstrapCls.getDeclaredField("Companion").get(null)
             val getInstance = companionCls.getMethod("getInstance")
             val kernel = getInstance.invoke(companion) ?: return emptyList()
 
+            // Get processes from kernel's process registry (populated by gRPC registration)
             val registry = bootstrapCls.getMethod("getProcessRegistry").invoke(kernel) ?: return emptyList()
             val registryCls = registry::class.java
-            val getAllProcesses = registryCls.getMethod("getAllProcesses")
+
+            // Use getProcessesByType if available, otherwise getAllProcesses
             @Suppress("UNCHECKED_CAST")
-            val processes = getAllProcesses.invoke(registry) as? List<*> ?: return emptyList()
+            val processes = try {
+                val protoTypeCls = Class.forName("ai.rever.boss.process.ProcessType")
+                val pluginType = protoTypeCls.enumConstants?.find { it.toString() == "PLUGIN" }
+                if (pluginType != null) {
+                    registryCls.getMethod("getProcessesByType", protoTypeCls)
+                        .invoke(registry, pluginType) as? List<*> ?: emptyList<Any>()
+                } else {
+                    registryCls.getMethod("getAllProcesses").invoke(registry) as? List<*> ?: emptyList<Any>()
+                }
+            } catch (_: Exception) {
+                registryCls.getMethod("getAllProcesses").invoke(registry) as? List<*> ?: emptyList<Any>()
+            }
 
             processes.mapNotNull { process ->
                 try {
@@ -155,32 +173,10 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
                     val config = processCls.getMethod("getConfig").invoke(process)
                     val configCls = config::class.java
 
-                    val processType = configCls.getMethod("getProcessType").invoke(config).toString()
-                    if (processType != "PLUGIN") return@mapNotNull null
-
                     val processId = configCls.getMethod("getProcessId").invoke(config) as String
                     val displayName = configCls.getMethod("getDisplayName").invoke(config) as String
-                    val pid = (processCls.getMethod("getPid").invoke(process) as? Long) ?: -1L
-                    val isAlive = processCls.getMethod("isAlive").invoke(process) as Boolean
-                    val lastMetrics = try {
-                        processCls.getMethod("getLastHealthMetrics").invoke(process)
-                    } catch (_: Exception) { null }
-
-                    val heapUsed = try {
-                        lastMetrics?.let { it::class.java.getMethod("getHeapUsedBytes").invoke(it) as Long } ?: 0L
-                    } catch (_: Exception) { 0L }
-
-                    val heapMax = try {
-                        lastMetrics?.let { it::class.java.getMethod("getHeapMaxBytes").invoke(it) as Long } ?: 0L
-                    } catch (_: Exception) { 0L }
-
-                    val activeThreads = try {
-                        lastMetrics?.let { it::class.java.getMethod("getActiveThreads").invoke(it) as Int } ?: 0
-                    } catch (_: Exception) { 0 }
-
-                    val uptimeMs = try {
-                        lastMetrics?.let { it::class.java.getMethod("getUptimeMs").invoke(it) as Long } ?: 0L
-                    } catch (_: Exception) { 0L }
+                    val pid = try { processCls.getMethod("getPid").invoke(process) as Long } catch (_: Exception) { -1L }
+                    val isAlive = try { processCls.getMethod("isAlive").invoke(process) as Boolean } catch (_: Exception) { false }
 
                     ChildProcessData(
                         processId = processId,
@@ -188,10 +184,6 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
                         displayName = displayName,
                         pid = pid,
                         state = if (isAlive) "RUNNING" else "STOPPED",
-                        heapUsedBytes = heapUsed,
-                        heapMaxBytes = heapMax,
-                        activeThreads = activeThreads,
-                        uptimeMs = uptimeMs,
                     )
                 } catch (_: Exception) { null }
             }
