@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.23](v8.17.23.md) | 2026-03-12 | Compiler warnings cleanup across 10 files and five dependency updates including Compose Multiplatform 1.10.2, Ktor 3.4.1, and Netty 4.2.x |
 | [v8.17.22](v8.17.22.md) | 2026-03-12 | Full split-brain microkernel OOP isolation with 15 gRPC service bridges, parallel plugin spawning (16x faster startup), configurable heap, and comprehensive thread-safety fixes |
 | [v8.17.21](v8.17.21.md) | 2026-03-09 | Windows ARM64 build fix: exclude microkernel modules where protoc is unavailable, with reflection-based KernelBootstrap loading |
 | [v8.17.20](v8.17.20.md) | 2026-03-08 | Microkernel architecture foundation with gRPC IPC, AI-powered self-healing orchestration, and Supabase Realtime stability fixes |
