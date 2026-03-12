@@ -177,13 +177,15 @@ private fun createStateSyncService(
         instanceId = instanceId,
         stateHolder = stateHolder,
         serializeState = { state ->
-            // Default: use toString() for non-serializable states, JSON for @Serializable
             try {
                 kotlinx.serialization.json.Json.encodeToString(
                     kotlinx.serialization.serializer(state!!::class.java),
                     state,
                 ).toByteArray()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                org.slf4j.LoggerFactory.getLogger("PluginProcessMain")
+                    .warn("State serialization failed for {}, falling back to toString(): {}",
+                        state?.javaClass?.simpleName, e.message)
                 state.toString().toByteArray()
             }
         },

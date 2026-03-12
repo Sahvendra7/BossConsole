@@ -70,8 +70,9 @@ class ConsoleStateHolder : PluginStateHolder<ConsoleState, ConsoleIntent, Consol
 
     private val logger = LoggerFactory.getLogger(ConsoleStateHolder::class.java)
 
-    /** Backing store of all log entries before any filter/search is applied. */
-    private val allLogs = mutableListOf<ConsoleLogEntry>()
+    /** Backing store of all log entries before any filter/search is applied. Thread-safe. */
+    private val allLogs = java.util.concurrent.CopyOnWriteArrayList<ConsoleLogEntry>()
+    private val maxLogEntries = 10_000
 
     /**
      * In-process constructor — state management only, no auto log collection.
@@ -132,6 +133,10 @@ class ConsoleStateHolder : PluginStateHolder<ConsoleState, ConsoleIntent, Consol
 
             is ConsoleIntent.NewLogs -> {
                 allLogs.addAll(intent.entries)
+                // Cap at maxLogEntries to prevent unbounded growth
+                while (allLogs.size > maxLogEntries) {
+                    allLogs.removeAt(0)
+                }
                 updateState { copy(logs = filterLogs(allLogs, filter, searchQuery)) }
             }
         }

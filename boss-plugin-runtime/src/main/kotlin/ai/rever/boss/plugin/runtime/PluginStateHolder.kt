@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Base class for plugin state holders used in the split-brain out-of-process model.
@@ -68,9 +69,9 @@ abstract class PluginStateHolder<S, I, E>(
     private val _effects = MutableStateFlow<E?>(null)
     val effects: StateFlow<E?> = _effects.asStateFlow()
 
-    /** Current state version — incremented on every state change. */
-    private var _version: Long = 0
-    val version: Long get() = _version
+    /** Current state version — incremented atomically on every state change. */
+    private val _version = AtomicLong(0)
+    val version: Long get() = _version.get()
 
     /**
      * Handle an intent (user action) from the kernel UI.
@@ -84,7 +85,7 @@ abstract class PluginStateHolder<S, I, E>(
      */
     protected fun updateState(transform: S.() -> S) {
         _state.value = transform(_state.value)
-        _version++
+        _version.incrementAndGet()
     }
 
     /**

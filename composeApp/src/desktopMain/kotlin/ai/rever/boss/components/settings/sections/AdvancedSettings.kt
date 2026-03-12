@@ -126,12 +126,14 @@ fun AdvancedSettings() {
                     shape = RoundedCornerShape(6.dp),
                     elevation = 0.dp
                 ) {
-                    val totalSystemMb = try {
-                        val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
-                        val method = osBean.javaClass.getMethod("getTotalPhysicalMemorySize")
-                        method.isAccessible = true
-                        (method.invoke(osBean) as Long) / (1024 * 1024)
-                    } catch (_: Exception) { 0L }
+                    val totalSystemMb = remember {
+                        try {
+                            val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+                            val method = osBean.javaClass.getMethod("getTotalPhysicalMemorySize")
+                            method.isAccessible = true
+                            (method.invoke(osBean) as Long) / (1024 * 1024)
+                        } catch (_: Exception) { 0L }
+                    }
                     val totalPluginMb = pluginHeap.toLong() * 16
                     Text(
                         text = "System RAM: ${"%.1f".format(totalSystemMb / 1024f)} GB  •  " +

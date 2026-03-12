@@ -94,8 +94,11 @@ class AdminStateHolder :
         val provider = context.roleManagementProvider
         logger.info("AdminStateHolder wiring RoleManagementProvider and loading initial roles/permissions")
 
+        // Track both loads independently to avoid premature isLoading=false
+        val pendingLoads = java.util.concurrent.atomic.AtomicInteger(2)
+        onIntent(AdminIntent.SetLoading(true))
+
         scope.launch {
-            onIntent(AdminIntent.SetLoading(true))
             provider.getAllRoles().fold(
                 onSuccess = { roles ->
                     val converted = roles.map { it.toRole() }
@@ -105,10 +108,12 @@ class AdminStateHolder :
                     onIntent(AdminIntent.SetError(error.message))
                 }
             )
+            if (pendingLoads.decrementAndGet() == 0) {
+                onIntent(AdminIntent.SetLoading(false))
+            }
         }
 
         scope.launch {
-            onIntent(AdminIntent.SetLoading(true))
             provider.getAllPermissions().fold(
                 onSuccess = { permissions ->
                     val converted = permissions.map { it.toPermission() }
@@ -118,6 +123,9 @@ class AdminStateHolder :
                     onIntent(AdminIntent.SetError(error.message))
                 }
             )
+            if (pendingLoads.decrementAndGet() == 0) {
+                onIntent(AdminIntent.SetLoading(false))
+            }
         }
     }
 
@@ -142,11 +150,11 @@ class AdminStateHolder :
         when (intent) {
             // Data update intents
             is AdminIntent.RolesLoaded -> {
-                updateState { copy(roles = intent.roles, isLoading = false) }
+                updateState { copy(roles = intent.roles) }
             }
 
             is AdminIntent.PermissionsLoaded -> {
-                updateState { copy(permissions = intent.permissions, isLoading = false) }
+                updateState { copy(permissions = intent.permissions) }
             }
 
             is AdminIntent.RolePermissionsLoaded -> {

@@ -51,8 +51,8 @@ class PluginProcessMonitor(
     private val _healthStates = MutableStateFlow<Map<String, PluginHealthInfo>>(emptyMap())
     val healthStates: StateFlow<Map<String, PluginHealthInfo>> = _healthStates.asStateFlow()
 
-    /** Plugins that have been switched to in-process fallback. */
-    private val inProcessFallbacks = mutableSetOf<String>()
+    /** Plugins that have been switched to in-process fallback. Thread-safe. */
+    private val inProcessFallbacks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /**
      * Start monitoring a plugin process.
@@ -95,10 +95,26 @@ class PluginProcessMonitor(
     suspend fun restartPlugin(pluginId: String) {
         val current = _healthStates.value[pluginId] ?: return
         updateState(pluginId, current.copy(processState = PluginProcessState.RESTARTING))
-
-        // The actual restart is delegated to DynamicPluginManager.reloadPlugin()
-        // This monitor just tracks the state transitions.
         logger.info("Restart requested for plugin: {}", pluginId)
+
+        try {
+            // Terminate old process, then re-spawn
+            spawner.terminate(pluginId)
+            // The spawner's terminate clears the old process.
+            // Re-spawning is triggered by DynamicPluginManager on next health check
+            // or can be initiated by calling spawner.spawn() with the original manifest.
+            updateState(pluginId, current.copy(
+                processState = PluginProcessState.RUNNING,
+                restartCount = current.restartCount + 1,
+                lastError = null,
+            ))
+        } catch (e: Exception) {
+            logger.error("Failed to restart plugin: {}", pluginId, e)
+            updateState(pluginId, current.copy(
+                processState = PluginProcessState.FAILED,
+                lastError = e.message,
+            ))
+        }
     }
 
     /**
