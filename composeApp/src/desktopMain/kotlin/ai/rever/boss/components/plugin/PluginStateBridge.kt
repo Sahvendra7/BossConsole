@@ -54,10 +54,10 @@ class PluginStateBridge(
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
     /** Intent flow: kernel UI -> child process. */
-    private val intentFlow = MutableSharedFlow<PluginIntentEnvelope>(extraBufferCapacity = 256)
+    private val intentFlow = MutableSharedFlow<PluginIntentEnvelope>(extraBufferCapacity = 32)
 
     /** Side effects emitted by the plugin for the kernel to handle. */
-    private val _effects = MutableSharedFlow<Pair<String, ByteArray>>(extraBufferCapacity = 64)
+    private val _effects = MutableSharedFlow<Pair<String, ByteArray>>(extraBufferCapacity = 16)
     val effects: MutableSharedFlow<Pair<String, ByteArray>> = _effects
 
     /**
@@ -110,7 +110,7 @@ class PluginStateBridge(
      * Main sync loop with exponential backoff reconnection.
      */
     private suspend fun syncLoop() {
-        var backoffMs = 1_000L
+        var backoffMs = 200L
 
         while (scope.isActive) {
             try {
@@ -131,7 +131,7 @@ class PluginStateBridge(
 
                 // Stream ended cleanly — reconnect immediately
                 _connected.value = false
-                backoffMs = 1_000L
+                backoffMs = 200L
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -140,8 +140,10 @@ class PluginStateBridge(
                     "State sync disconnected for plugin={}: {}. Reconnecting in {}ms",
                     pluginId, e.message, backoffMs
                 )
-                delay(backoffMs)
-                backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
+                // Jittered exponential backoff to prevent thundering herd
+                val jitter = (Math.random() * backoffMs * 0.3).toLong()
+                delay(backoffMs + jitter)
+                backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
             }
         }
     }

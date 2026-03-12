@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
+import java.time.Instant
 
 /**
  * Implementation of PerformanceDataProvider that adapts PerformanceMonitor
@@ -23,12 +25,18 @@ import kotlinx.coroutines.launch
  * allowing the Performance panel to be extracted as a separate module.
  */
 class PerformanceDataProviderImpl : PerformanceDataProvider {
+    private val logger = LoggerFactory.getLogger(PerformanceDataProviderImpl::class.java)
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _currentSnapshot = MutableStateFlow<PerformanceSnapshotData?>(null)
     override val currentSnapshot: StateFlow<PerformanceSnapshotData?> = _currentSnapshot.asStateFlow()
 
     private val _history = MutableStateFlow<List<PerformanceSnapshotData>>(emptyList())
+
+    /** Cache child process data to avoid spawning ps every sample tick. Refresh every 5s. */
+    @Volatile private var cachedChildProcesses: List<ChildProcessData> = emptyList()
+    @Volatile private var childProcessCacheTime: Long = 0L
+    private val childProcessCacheIntervalMs = 5_000L
     override val history: StateFlow<List<PerformanceSnapshotData>> = _history.asStateFlow()
 
     private val _settings = MutableStateFlow(PerformanceSettingsData())
@@ -75,7 +83,9 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
             cpuCriticalThresholdPercent = settings.cpuCriticalThresholdPercent,
             memorySampleIntervalMs = settings.memorySampleIntervalMs,
             cpuSampleIntervalMs = settings.cpuSampleIntervalMs,
-            historyRetentionMinutes = settings.historyRetentionMinutes
+            historyRetentionMinutes = settings.historyRetentionMinutes,
+            pluginJvmHeapMb = settings.pluginJvmHeapMb,
+            pluginJvmInitialHeapMb = settings.pluginJvmInitialHeapMb,
         )
         PerformanceSettingsManager.updateSettings(internalSettings)
     }
@@ -133,26 +143,163 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
 
     /**
      * Collect metrics from out-of-process plugin child JVMs.
-     * Uses the process registry from KernelBootstrap (if running in KERNEL mode).
+     * Uses a 5-second cache to avoid spawning ps processes every sample tick.
      */
     private fun collectChildProcesses(): List<ChildProcessData> {
-        return try {
-            // Query the OutOfProcessPluginSpawnerImpl which tracks all spawned plugin processes
-            val spawnerCls = Class.forName("ai.rever.boss.components.plugin.OutOfProcessPluginSpawnerImpl")
+        val now = System.currentTimeMillis()
+        if (now - childProcessCacheTime < childProcessCacheIntervalMs) {
+            // Update uptime on cached entries without re-querying OS
+            return cachedChildProcesses.map { it.copy(uptimeMs = it.uptimeMs + (now - childProcessCacheTime)) }
+        }
 
-            // Get the DynamicPluginManager's spawner instance via DefaultPlugin reflection chain
-            // The spawner tracks managedProcesses internally
+        val result = collectViaProcessHandle().ifEmpty { collectViaKernelRegistry() }
+        cachedChildProcesses = result
+        childProcessCacheTime = now
+        return result
+    }
+
+    /**
+     * Find plugin child JVMs via Java ProcessHandle API.
+     * Searches all descendants of the current process for PluginProcessMainKt.
+     * Enriches with uptime from startInstant() and RSS memory from OS query.
+     */
+    private fun collectViaProcessHandle(): List<ChildProcessData> {
+        return try {
+            val current = ProcessHandle.current()
+            val descendants = current.descendants().toList()
+            val now = Instant.now()
+
+            // Batch query RSS and thread counts for all PIDs via ps
+            val pids = descendants.mapNotNull { h ->
+                if (h.info().commandLine().orElse("").contains("PluginProcessMainKt")) h.pid() else null
+            }
+            val processMetrics = if (pids.isNotEmpty()) queryProcessMetrics(pids) else emptyMap()
+
+            descendants.mapNotNull { handle ->
+                try {
+                    val cmdLine = handle.info().commandLine().orElse("")
+                    if (!cmdLine.contains("PluginProcessMainKt")) return@mapNotNull null
+
+                    // Extract plugin ID from classpath: ...boss-plugin-{name}-{version}.jar
+                    val pluginJarRegex = Regex("""boss-plugin-([a-z\-]+)-\d+""")
+                    val match = pluginJarRegex.find(cmdLine)
+                    val pluginId = match?.groupValues?.get(1) ?: "unknown-${handle.pid()}"
+                    val displayName = pluginId.split("-").joinToString(" ") { part ->
+                        part.replaceFirstChar { it.uppercase() }
+                    }
+
+                    // Compute uptime from process start time
+                    val startInstant = handle.info().startInstant().orElse(null)
+                    val uptimeMs = if (startInstant != null) {
+                        java.time.Duration.between(startInstant, now).toMillis()
+                    } else 0L
+
+                    // Get OS-level metrics (RSS memory, thread count) from ps query
+                    val metrics = processMetrics[handle.pid()]
+
+                    val configuredHeapMb = PerformanceSettingsManager.currentSettings.value.pluginJvmHeapMb
+
+                    ChildProcessData(
+                        processId = "plugin-$pluginId",
+                        pluginId = pluginId,
+                        displayName = displayName,
+                        pid = handle.pid(),
+                        state = if (handle.isAlive) "RUNNING" else "STOPPED",
+                        heapUsedBytes = metrics?.rssBytes ?: 0L,
+                        heapMaxBytes = configuredHeapMb.toLong() * 1024 * 1024,
+                        activeThreads = metrics?.threadCount ?: 0,
+                        uptimeMs = uptimeMs,
+                    )
+                } catch (e: Exception) {
+                    logger.warn("Failed to read process handle {}: {}", handle.pid(), e.message)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("ProcessHandle approach failed: {}", e.message)
+            emptyList()
+        }
+    }
+
+    private data class OsProcessMetrics(val rssBytes: Long, val threadCount: Int)
+
+    /**
+     * Query RSS memory (bytes) and thread count for a batch of PIDs using two `ps` calls.
+     */
+    private fun queryProcessMetrics(pids: List<Long>): Map<Long, OsProcessMetrics> {
+        return try {
+            val pidStr = pids.joinToString(",")
+
+            // Single ps call for RSS (KB)
+            val rssProcess = ProcessBuilder("ps", "-o", "pid=,rss=", "-p", pidStr)
+                .redirectErrorStream(true).start()
+            val rssOutput = rssProcess.inputStream.bufferedReader().readText()
+            rssProcess.waitFor()
+
+            val rssMap = mutableMapOf<Long, Long>()
+            for (line in rssOutput.lines()) {
+                val parts = line.trim().split(Regex("\\s+"))
+                if (parts.size >= 2) {
+                    val pid = parts[0].toLongOrNull() ?: continue
+                    val rssKb = parts[1].toLongOrNull() ?: continue
+                    rssMap[pid] = rssKb * 1024
+                }
+            }
+
+            // Single ps -M call for all PIDs, count thread lines per PID
+            // macOS ps -M ignores -o formatting, so parse PID from output columns
+            val threadProcess = ProcessBuilder("ps", "-M", "-p", pidStr)
+                .redirectErrorStream(true).start()
+            val threadOutput = threadProcess.inputStream.bufferedReader().readText()
+            threadProcess.waitFor()
+
+            val threadMap = mutableMapOf<Long, Int>()
+            for (line in threadOutput.lines().drop(1)) { // skip header
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) continue
+                val tokens = trimmed.split(Regex("\\s+"))
+                // PID is first token if numeric (thread lines), second token if first is username
+                val pid = tokens[0].toLongOrNull()
+                    ?: tokens.getOrNull(1)?.toLongOrNull()
+                    ?: continue
+                threadMap[pid] = (threadMap[pid] ?: 0) + 1
+            }
+
+            pids.associateWith { pid ->
+                OsProcessMetrics(
+                    rssBytes = rssMap[pid] ?: 0L,
+                    threadCount = threadMap[pid] ?: 0,
+                )
+            }
+        } catch (e: Exception) {
+            logger.debug("Failed to query process metrics: {}", e.message)
+            emptyMap()
+        }
+    }
+
+    /**
+     * Fallback: query kernel ProcessRegistry via reflection.
+     */
+    private fun collectViaKernelRegistry(): List<ChildProcessData> {
+        return try {
             val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
             val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
             val companion = bootstrapCls.getDeclaredField("Companion").get(null)
             val getInstance = companionCls.getMethod("getInstance")
-            val kernel = getInstance.invoke(companion) ?: return emptyList()
+            val kernel = getInstance.invoke(companion)
+            if (kernel == null) {
+                logger.debug("KernelBootstrap.getInstance() returned null — not in KERNEL mode")
+                return emptyList()
+            }
 
-            // Get processes from kernel's process registry (populated by gRPC registration)
-            val registry = bootstrapCls.getMethod("getProcessRegistry").invoke(kernel) ?: return emptyList()
+            val registry = bootstrapCls.getMethod("getProcessRegistry").invoke(kernel)
+            if (registry == null) {
+                logger.warn("KernelBootstrap.getProcessRegistry() returned null")
+                return emptyList()
+            }
             val registryCls = registry::class.java
+            logger.debug("ProcessRegistry class: {}", registryCls.name)
 
-            // Use getProcessesByType if available, otherwise getAllProcesses
             @Suppress("UNCHECKED_CAST")
             val processes = try {
                 val protoTypeCls = Class.forName("ai.rever.boss.process.ProcessType")
@@ -161,11 +308,15 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
                     registryCls.getMethod("getProcessesByType", protoTypeCls)
                         .invoke(registry, pluginType) as? List<*> ?: emptyList<Any>()
                 } else {
+                    logger.warn("PLUGIN enum value not found in ProcessType")
                     registryCls.getMethod("getAllProcesses").invoke(registry) as? List<*> ?: emptyList<Any>()
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                logger.warn("getProcessesByType failed, trying getAllProcesses: {}", e.message)
                 registryCls.getMethod("getAllProcesses").invoke(registry) as? List<*> ?: emptyList<Any>()
             }
+
+            logger.debug("ProcessRegistry returned {} processes", processes.size)
 
             processes.mapNotNull { process ->
                 try {
@@ -185,11 +336,16 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
                         pid = pid,
                         state = if (isAlive) "RUNNING" else "STOPPED",
                     )
-                } catch (_: Exception) { null }
+                } catch (e: Exception) {
+                    logger.warn("Failed to read process entry: {}", e.message)
+                    null
+                }
             }
-        } catch (_: ClassNotFoundException) {
+        } catch (e: ClassNotFoundException) {
+            logger.debug("Kernel classes not available: {}", e.message)
             emptyList()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            logger.warn("Kernel registry reflection failed: {}", e.message, e)
             emptyList()
         }
     }
@@ -207,7 +363,9 @@ class PerformanceDataProviderImpl : PerformanceDataProvider {
             cpuCriticalThresholdPercent = cpuCriticalThresholdPercent,
             memorySampleIntervalMs = memorySampleIntervalMs,
             cpuSampleIntervalMs = cpuSampleIntervalMs,
-            historyRetentionMinutes = historyRetentionMinutes
+            historyRetentionMinutes = historyRetentionMinutes,
+            pluginJvmHeapMb = pluginJvmHeapMb,
+            pluginJvmInitialHeapMb = pluginJvmInitialHeapMb,
         )
     }
 }

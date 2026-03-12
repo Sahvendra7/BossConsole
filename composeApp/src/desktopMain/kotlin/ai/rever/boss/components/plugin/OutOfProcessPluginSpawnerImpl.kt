@@ -129,8 +129,14 @@ class OutOfProcessPluginSpawnerImpl(
                 // Dispose state bridge
                 stateBridges.remove(pluginId)?.dispose()
 
-                // Shutdown gRPC channel
-                pluginChannels.remove(pluginId)?.shutdown()
+                // Shutdown gRPC channel with timeout
+                pluginChannels.remove(pluginId)?.let { channel ->
+                    channel.shutdown()
+                    if (!channel.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                        logger.warn("gRPC channel shutdown timeout for {}, forcing", pluginId)
+                        channel.shutdownNow()
+                    }
+                }
 
                 // Destroy process
                 val process = managedProcesses.remove(pluginId)
@@ -181,8 +187,23 @@ class OutOfProcessPluginSpawnerImpl(
     fun isAlive(pluginId: String): Boolean = managedProcesses[pluginId]?.isAlive == true
 
     private fun buildJvmArgs(manifest: PluginManifest): List<String> = buildList {
-        add("-Xmx256m")
-        add("-Xms64m")
+        // Read heap settings from PerformanceSettingsManager
+        val (heapMax, heapInit) = try {
+            val settingsCls = Class.forName("ai.rever.boss.performance.PerformanceSettingsManager")
+            val instance = settingsCls.getDeclaredField("INSTANCE").get(null)
+            val getCurrentSettings = settingsCls.getMethod("getCurrentSettings")
+            val flow = getCurrentSettings.invoke(instance)
+            val getValue = flow.javaClass.getMethod("getValue")
+            val settings = getValue.invoke(flow)
+            val settingsClass = settings.javaClass
+            val maxMb = settingsClass.getMethod("getPluginJvmHeapMb").invoke(settings) as Int
+            val initMb = settingsClass.getMethod("getPluginJvmInitialHeapMb").invoke(settings) as Int
+            maxMb to initMb
+        } catch (_: Exception) {
+            512 to 64
+        }
+        add("-Xmx${heapMax}m")
+        add("-Xms${heapInit}m")
         // Enable virtual threads on Java 21+
         add("--enable-preview")
     }

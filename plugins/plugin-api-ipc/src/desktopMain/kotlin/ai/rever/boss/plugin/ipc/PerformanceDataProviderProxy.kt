@@ -2,6 +2,7 @@ package ai.rever.boss.plugin.ipc
 
 import ai.rever.boss.ipc.proto.Empty
 import ai.rever.boss.ipc.proto.services.*
+import ai.rever.boss.plugin.api.ChildProcessData
 import ai.rever.boss.plugin.api.PerformanceDataProvider
 import ai.rever.boss.plugin.api.PerformanceSettingsData
 import ai.rever.boss.plugin.api.PerformanceSnapshotData
@@ -121,6 +122,21 @@ class PerformanceDataProviderProxy(
         editorTabCount = editorTabCount,
         panelCount = panelCount,
         windowCount = windowCount,
+        childProcesses = childProcessesList.map { it.toData() },
+    )
+
+    private fun ChildProcessProto.toData() = ChildProcessData(
+        processId = processId,
+        pluginId = pluginId,
+        displayName = displayName,
+        pid = pid,
+        state = state,
+        heapUsedBytes = heapUsedBytes,
+        heapMaxBytes = heapMaxBytes,
+        activeThreads = activeThreads,
+        uptimeMs = uptimeMs,
+        restartCount = restartCount,
+        bridgeConnected = bridgeConnected,
     )
 
     private fun PerformanceSettingsProto.toSettingsData() = PerformanceSettingsData(
@@ -133,6 +149,8 @@ class PerformanceDataProviderProxy(
         memorySampleIntervalMs = memorySampleIntervalMs,
         cpuSampleIntervalMs = cpuSampleIntervalMs,
         historyRetentionMinutes = historyRetentionMinutes,
+        pluginJvmHeapMb = pluginJvmHeapMb,
+        pluginJvmInitialHeapMb = pluginJvmInitialHeapMb,
     )
 
     private fun PerformanceSettingsData.toProto(): PerformanceSettingsProto =
@@ -146,5 +164,7 @@ class PerformanceDataProviderProxy(
             .setMemorySampleIntervalMs(memorySampleIntervalMs)
             .setCpuSampleIntervalMs(cpuSampleIntervalMs)
             .setHistoryRetentionMinutes(historyRetentionMinutes)
+            .setPluginJvmHeapMb(pluginJvmHeapMb)
+            .setPluginJvmInitialHeapMb(pluginJvmInitialHeapMb)
             .build()
 }

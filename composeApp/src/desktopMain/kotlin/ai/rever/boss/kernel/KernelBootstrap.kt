@@ -77,6 +77,23 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
         processSpawner = spawner
         processMonitor = ProcessMonitor(registry, scope)
 
+        // Register JVM shutdown hook to kill child processes on exit/crash
+        Runtime.getRuntime().addShutdownHook(Thread({
+            try {
+                logger.info("JVM shutdown hook: cleaning up child processes...")
+                processRegistry?.getAllProcesses()?.forEach { process ->
+                    try {
+                        process.destroy()
+                        process.process.waitFor(2, TimeUnit.SECONDS)
+                        if (process.isAlive) process.destroyForcibly()
+                    } catch (_: Exception) {
+                        process.destroyForcibly()
+                    }
+                }
+                ipcServer?.stop()
+            } catch (_: Exception) {}
+        }, "kernel-shutdown-hook"))
+
         // Create gRPC services
         kernelService = KernelServiceImpl(
             onProcessRegistered = { id, manifest, _ ->
@@ -374,10 +391,12 @@ class KernelBootstrap(private val mode: ProcessMode = ProcessMode.MONOLITH) {
         processRegistry?.getProcessesByType(ProcessType.ORCHESTRATOR)?.forEach { it.destroy() }
         processRegistry?.getProcessesByType(ProcessType.SERVICE)?.forEach { it.destroy() }
 
-        // 4. Wait for graceful shutdown (mn4 fix — per-process waitFor instead of Thread.sleep)
+        // 4. Wait for graceful shutdown with 2s per-process timeout
         processRegistry?.getAllProcesses()?.forEach { process ->
             try {
-                process.process.waitFor(500, TimeUnit.MILLISECONDS)
+                if (!process.process.waitFor(2, TimeUnit.SECONDS)) {
+                    logger.warn("Process did not exit in 2s: {}", process.config.processId)
+                }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
             }

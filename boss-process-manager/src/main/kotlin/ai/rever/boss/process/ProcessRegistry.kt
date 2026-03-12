@@ -33,6 +33,7 @@ class ProcessRegistry {
     fun unregister(id: String) {
         processes.remove(id)
         manifests.remove(id)
+        restartCounts.remove(id)
         _processCount.value = processes.size
         logger.info("Unregistered process: id={}", id)
     }

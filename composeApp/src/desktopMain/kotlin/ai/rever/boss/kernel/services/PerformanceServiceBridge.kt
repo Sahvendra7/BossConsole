@@ -2,6 +2,7 @@ package ai.rever.boss.kernel.services
 
 import ai.rever.boss.ipc.proto.Empty
 import ai.rever.boss.ipc.proto.services.*
+import ai.rever.boss.plugin.api.ChildProcessData
 import ai.rever.boss.plugin.api.PerformanceDataProvider
 import ai.rever.boss.plugin.api.PerformanceSettingsData
 import ai.rever.boss.plugin.api.PerformanceSnapshotData
@@ -85,6 +86,22 @@ class PerformanceServiceBridge(
             .setEditorTabCount(editorTabCount)
             .setPanelCount(panelCount)
             .setWindowCount(windowCount)
+            .addAllChildProcesses(childProcesses.map { it.toProto() })
+            .build()
+
+    private fun ChildProcessData.toProto(): ChildProcessProto =
+        ChildProcessProto.newBuilder()
+            .setProcessId(processId)
+            .setPluginId(pluginId)
+            .setDisplayName(displayName)
+            .setPid(pid)
+            .setState(state)
+            .setHeapUsedBytes(heapUsedBytes)
+            .setHeapMaxBytes(heapMaxBytes)
+            .setActiveThreads(activeThreads)
+            .setUptimeMs(uptimeMs)
+            .setRestartCount(restartCount)
+            .setBridgeConnected(bridgeConnected)
             .build()
 
     private fun PerformanceSettingsData.toProto(): PerformanceSettingsProto =
@@ -98,6 +115,8 @@ class PerformanceServiceBridge(
             .setMemorySampleIntervalMs(memorySampleIntervalMs)
             .setCpuSampleIntervalMs(cpuSampleIntervalMs)
             .setHistoryRetentionMinutes(historyRetentionMinutes)
+            .setPluginJvmHeapMb(pluginJvmHeapMb)
+            .setPluginJvmInitialHeapMb(pluginJvmInitialHeapMb)
             .build()
 
     private fun PerformanceSettingsProto.toData(): PerformanceSettingsData =
@@ -111,5 +130,7 @@ class PerformanceServiceBridge(
             memorySampleIntervalMs = memorySampleIntervalMs,
             cpuSampleIntervalMs = cpuSampleIntervalMs,
             historyRetentionMinutes = historyRetentionMinutes,
+            pluginJvmHeapMb = pluginJvmHeapMb,
+            pluginJvmInitialHeapMb = pluginJvmInitialHeapMb,
         )
 }

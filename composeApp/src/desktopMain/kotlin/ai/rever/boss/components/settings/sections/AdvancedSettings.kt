@@ -1,10 +1,12 @@
 package ai.rever.boss.components.settings.sections
 
 import ai.rever.boss.components.settings.shared.SettingsSection
+import ai.rever.boss.components.settings.shared.SettingsSlider
 import ai.rever.boss.components.settings.shared.SettingsToggle
 import ai.rever.boss.components.settings.shared.SettingsTheme.AccentColor
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextPrimary
 import ai.rever.boss.components.settings.shared.SettingsTheme.TextSecondary
+import ai.rever.boss.performance.PerformanceSettingsManager
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,7 +20,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 @Composable
 fun AdvancedSettings() {
@@ -66,6 +67,77 @@ fun AdvancedSettings() {
                         fontSize = 11.sp,
                         color = AccentColor,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        }
+
+        // Plugin JVM Settings (only visible in KERNEL mode)
+        if (kernelMode) {
+            val perfSettings by PerformanceSettingsManager.currentSettings.collectAsState()
+            var pluginHeap by remember(perfSettings) { mutableStateOf(perfSettings.pluginJvmHeapMb.toFloat()) }
+            var pluginInitHeap by remember(perfSettings) { mutableStateOf(perfSettings.pluginJvmInitialHeapMb.toFloat()) }
+
+            SettingsSection(title = "Plugin JVM Resources") {
+                SettingsSlider(
+                    label = "Max Heap per Plugin",
+                    value = pluginHeap,
+                    onValueChange = { pluginHeap = it },
+                    onValueChangeFinished = {
+                        coroutineScope.launch {
+                            PerformanceSettingsManager.updateSettings(
+                                perfSettings.copy(pluginJvmHeapMb = pluginHeap.toInt())
+                            )
+                        }
+                    },
+                    valueRange = 128f..8192f,
+                    steps = 31,
+                    valueDisplay = {
+                        val mb = it.toInt()
+                        if (mb >= 1024) "${"%.1f".format(mb / 1024f)} GB" else "$mb MB"
+                    },
+                    description = "Maximum heap size for each plugin child JVM. Requires plugin restart."
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SettingsSlider(
+                    label = "Initial Heap per Plugin",
+                    value = pluginInitHeap,
+                    onValueChange = { pluginInitHeap = it },
+                    onValueChangeFinished = {
+                        coroutineScope.launch {
+                            PerformanceSettingsManager.updateSettings(
+                                perfSettings.copy(pluginJvmInitialHeapMb = pluginInitHeap.toInt())
+                            )
+                        }
+                    },
+                    valueRange = 32f..pluginHeap.coerceAtLeast(64f),
+                    steps = 15,
+                    valueDisplay = {
+                        val mb = it.toInt()
+                        if (mb >= 1024) "${"%.1f".format(mb / 1024f)} GB" else "$mb MB"
+                    },
+                    description = "Initial heap allocation. Higher values reduce GC during startup."
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = AccentColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(6.dp),
+                    elevation = 0.dp
+                ) {
+                    val totalSystemMb = try {
+                        val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+                        val method = osBean.javaClass.getMethod("getTotalPhysicalMemorySize")
+                        method.isAccessible = true
+                        (method.invoke(osBean) as Long) / (1024 * 1024)
+                    } catch (_: Exception) { 0L }
+                    val totalPluginMb = pluginHeap.toLong() * 16
+                    Text(
+                        text = "System RAM: ${"%.1f".format(totalSystemMb / 1024f)} GB  •  " +
+                                "Max plugin allocation: ${"%.1f".format(totalPluginMb / 1024f)} GB (16 plugins × ${pluginHeap.toInt()} MB)",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
                         modifier = Modifier.padding(12.dp)
                     )
                 }

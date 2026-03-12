@@ -18,8 +18,27 @@ data class PerformanceSettings(
     val cpuSampleIntervalMs: Long = 2000,
     val resourceSampleIntervalMs: Long = 5000,
     val gcSampleIntervalMs: Long = 10000,
-    val historyRetentionMinutes: Int = 30
+    val historyRetentionMinutes: Int = 30,
+    /** Max heap per plugin child JVM in MB. Applied on next plugin restart. */
+    val pluginJvmHeapMb: Int = DEFAULT_PLUGIN_HEAP_MB,
+    /** Initial heap per plugin child JVM in MB. */
+    val pluginJvmInitialHeapMb: Int = 64,
 ) {
+    companion object {
+        /** Auto-detect: 2% of system RAM per plugin, clamped 256–4096 MB. */
+        val DEFAULT_PLUGIN_HEAP_MB: Int = run {
+            val totalMemMb = try {
+                val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+                val method = osBean.javaClass.getMethod("getTotalPhysicalMemorySize")
+                method.isAccessible = true
+                (method.invoke(osBean) as Long) / (1024 * 1024)
+            } catch (_: Exception) {
+                16_384L // fallback 16 GB
+            }
+            (totalMemMb / 50).toInt().coerceIn(256, 4096)
+        }
+    }
+
     /**
      * Returns a validated copy of settings with values clamped to valid ranges.
      */
@@ -32,9 +51,9 @@ data class PerformanceSettings(
         cpuSampleIntervalMs = cpuSampleIntervalMs.coerceAtLeast(100),
         resourceSampleIntervalMs = resourceSampleIntervalMs.coerceAtLeast(100),
         gcSampleIntervalMs = gcSampleIntervalMs.coerceAtLeast(100),
-        // Cap retention at 180 minutes (3 hours) to fit within history buffer limits
-        // At 1s intervals: 180 min * 60 = 10,800 entries (buffer size is 10,000)
-        historyRetentionMinutes = historyRetentionMinutes.coerceIn(1, 180)
+        historyRetentionMinutes = historyRetentionMinutes.coerceIn(1, 180),
+        pluginJvmHeapMb = pluginJvmHeapMb.coerceIn(128, 8192),
+        pluginJvmInitialHeapMb = pluginJvmInitialHeapMb.coerceIn(32, pluginJvmHeapMb),
     )
 }
 
