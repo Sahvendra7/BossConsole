@@ -106,9 +106,9 @@ grpc-services = { module = "io.grpc:grpc-services", version.ref = "grpc" }
 protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
 # Netty transport for Unix domain sockets
-netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version = "4.1.119.Final" }
-netty-transport-native-kqueue = { module = "io.netty:netty-transport-native-kqueue", version = "4.1.119.Final" }
-netty-transport-native-unix-common = { module = "io.netty:netty-transport-native-unix-common", version = "4.1.119.Final" }
+netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version = "4.2.10.Final" }
+netty-transport-native-kqueue = { module = "io.netty:netty-transport-native-kqueue", version = "4.2.10.Final" }
+netty-transport-native-unix-common = { module = "io.netty:netty-transport-native-unix-common", version = "4.2.10.Final" }
 
 # K1 PSI dependencies for code navigation
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
