@@ -270,35 +270,31 @@ class DynamicPluginManager(
                         // Fall through to in-process path below
                     } else {
                         // Split-brain model:
-                        // 1. Register UI immediately in kernel (no waiting)
+                        // 1. Register UI immediately in kernel using already-loaded plugin
                         // 2. Spawn child process for state management in background
-                        val loadResult2 = pluginLoader.loadPlugin(jarPath)
-                        if (loadResult2.isSuccess) {
-                            notifyListeners { it.beforePluginLoaded(manifest) }
+                        notifyListeners { it.beforePluginLoaded(manifest) }
 
-                            val sandboxConfig = SandboxConfig(
-                                maxThreads = manifest.sandbox.maxThreads,
-                                maxRestartAttempts = manifest.sandbox.maxRestartAttempts,
-                                heartbeatIntervalMs = manifest.sandbox.heartbeatIntervalMs
-                            )
+                        val sandboxConfig = SandboxConfig(
+                            maxThreads = manifest.sandbox.maxThreads,
+                            maxRestartAttempts = manifest.sandbox.maxRestartAttempts,
+                            heartbeatIntervalMs = manifest.sandbox.heartbeatIntervalMs
+                        )
 
-                            val baseContext = createSandboxedContext(manifest.pluginId, sandboxConfig)
-                            val trackingContext = TrackingPluginContext(
-                                pluginId = manifest.pluginId,
-                                delegate = baseContext,
-                                tracker = registrationTracker,
-                                pluginManifest = manifest
-                            )
-                            trackingContexts[manifest.pluginId] = trackingContext
+                        val baseContext = createSandboxedContext(manifest.pluginId, sandboxConfig)
+                        val trackingContext = TrackingPluginContext(
+                            pluginId = manifest.pluginId,
+                            delegate = baseContext,
+                            tracker = registrationTracker,
+                            pluginManifest = manifest
+                        )
+                        trackingContexts[manifest.pluginId] = trackingContext
 
-                            val plugin = loadResult2.getOrThrow()
-                            try {
-                                plugin.instance.register(trackingContext)
-                            } catch (e: Exception) {
-                                logger.error(LogCategory.SYSTEM, "Plugin registration failed in split-brain mode", mapOf(
-                                    "pluginId" to manifest.pluginId
-                                ), e)
-                            }
+                        try {
+                            loadedPlugin.instance.register(trackingContext)
+                        } catch (e: Exception) {
+                            logger.error(LogCategory.SYSTEM, "Plugin registration failed in split-brain mode", mapOf(
+                                "pluginId" to manifest.pluginId
+                            ), e)
                         }
 
                         // Spawn child process in background — don't block plugin loading
