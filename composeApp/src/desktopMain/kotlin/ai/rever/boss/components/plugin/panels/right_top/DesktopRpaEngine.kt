@@ -115,8 +115,8 @@ class DesktopRpaEngineComponent(
                     logger.debug(LogCategory.SYSTEM, "Executing action", mapOf(
                         "step" to "${index + 1}/${config.actions.size}",
                         "name" to action.name,
-                        "type" to action.type.toString(),
-                        "selectorType" to action.selector.type.toString(),
+                        "type" to "${action.type}",
+                        "selectorType" to "${action.selector.type}",
                         "selectorValue" to (action.selector.value ?: "none"),
                         "value" to (action.value ?: "none")
                     ))

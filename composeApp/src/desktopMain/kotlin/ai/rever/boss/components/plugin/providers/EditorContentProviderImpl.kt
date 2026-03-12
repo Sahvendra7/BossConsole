@@ -168,6 +168,7 @@ class EditorContentProviderImpl : EditorContentProvider {
         navigationEnabled = enabled
     }
 
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     override fun navigateToDefinition(filePath: String, line: Int, column: Int) {
         GlobalScope.launch(Dispatchers.Main) {
             // Use empty string as sourceWindowId for plugin API calls where windowId is unknown
@@ -189,6 +190,7 @@ class EditorContentProviderImpl : EditorContentProvider {
         }
     }
 
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     override fun executeMainFunction(mainFunction: MainFunctionInfo, projectPath: String, windowId: String?) {
         if (windowId == null) return
 

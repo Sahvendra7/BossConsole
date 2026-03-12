@@ -1231,7 +1231,7 @@ class BossTabsComponent(
         }
 
         override fun openNewTab(url: String): String? {
-            val newTabId = "browser_${kotlinx.datetime.Clock.System.now().toEpochMilliseconds()}"
+            val newTabId = "browser_${System.currentTimeMillis()}"
             val newTab = FluckTabInfo(
                 id = newTabId,
                 typeId = ai.rever.boss.plugin.api.TabTypeId("fluck"),

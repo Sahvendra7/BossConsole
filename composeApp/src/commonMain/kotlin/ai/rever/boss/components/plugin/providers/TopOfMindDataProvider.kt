@@ -97,6 +97,6 @@ object TopOfMindDataProvider {
      * Get fallback icon for an ActiveTab.
      */
     fun getFallbackIcon(activeTab: ActiveTab): ImageVector {
-        return activeTab.tabInfo.icon ?: Icons.Outlined.Tab
+        return activeTab.tabInfo.icon
     }
 }

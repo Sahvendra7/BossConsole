@@ -153,7 +153,7 @@ class NavigationResolverProviderImpl : NavigationResolverProvider {
                         NavigationResolveResult.NotFound
                     }
                     is NavigationResult.Error -> {
-                        logger.warn(LogCategory.EDITOR, "[NAV-DEBUG] Navigation error: ${(result as NavigationResult.Error).message}")
+                        logger.warn(LogCategory.EDITOR, "[NAV-DEBUG] Navigation error: ${result.message}")
                         NavigationResolveResult.NotFound
                     }
                 }

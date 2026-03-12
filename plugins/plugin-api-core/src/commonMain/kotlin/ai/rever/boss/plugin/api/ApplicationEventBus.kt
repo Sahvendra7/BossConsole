@@ -39,8 +39,7 @@ interface ApplicationEventBus {
      * @return Flow of file change events
      */
     fun fileChanges(): Flow<FileChangeEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(FileChangeEvent::class.java as Class<FileChangeEvent>)
+        eventsOfType(FileChangeEvent::class.java)
 
     /**
      * Subscribe to project selection events.
@@ -48,8 +47,7 @@ interface ApplicationEventBus {
      * @return Flow of project selection events
      */
     fun projectChanges(): Flow<ProjectChangeEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(ProjectChangeEvent::class.java as Class<ProjectChangeEvent>)
+        eventsOfType(ProjectChangeEvent::class.java)
 
     /**
      * Subscribe to window focus events.
@@ -57,8 +55,7 @@ interface ApplicationEventBus {
      * @return Flow of window focus events
      */
     fun windowFocusChanges(): Flow<WindowFocusEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(WindowFocusEvent::class.java as Class<WindowFocusEvent>)
+        eventsOfType(WindowFocusEvent::class.java)
 
     /**
      * Subscribe to plugin lifecycle events.
@@ -66,8 +63,7 @@ interface ApplicationEventBus {
      * @return Flow of plugin lifecycle events
      */
     fun pluginLifecycleEvents(): Flow<PluginLifecycleEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(PluginLifecycleEvent::class.java as Class<PluginLifecycleEvent>)
+        eventsOfType(PluginLifecycleEvent::class.java)
 
     /**
      * Subscribe to tab events.
@@ -75,8 +71,7 @@ interface ApplicationEventBus {
      * @return Flow of tab events
      */
     fun tabEvents(): Flow<TabEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(TabEvent::class.java as Class<TabEvent>)
+        eventsOfType(TabEvent::class.java)
 
     /**
      * Subscribe to authentication events.
@@ -84,8 +79,7 @@ interface ApplicationEventBus {
      * @return Flow of authentication events
      */
     fun authEvents(): Flow<AuthEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(AuthEvent::class.java as Class<AuthEvent>)
+        eventsOfType(AuthEvent::class.java)
 
     /**
      * Subscribe to terminal session events.
@@ -93,8 +87,7 @@ interface ApplicationEventBus {
      * @return Flow of terminal session events
      */
     fun terminalSessionEvents(): Flow<TerminalSessionEvent> =
-        @Suppress("UNCHECKED_CAST")
-        eventsOfType(TerminalSessionEvent::class.java as Class<TerminalSessionEvent>)
+        eventsOfType(TerminalSessionEvent::class.java)
 }
 
 /**

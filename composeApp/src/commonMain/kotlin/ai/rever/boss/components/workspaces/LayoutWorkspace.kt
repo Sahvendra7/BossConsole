@@ -20,7 +20,7 @@ typealias WorkspaceSerializer = ai.rever.boss.plugin.workspace.WorkspaceSerializ
 
 // Re-export extension function
 fun SplitConfig.extractPanels(prefix: String = ""): List<Pair<String, String>> =
-    (this as ai.rever.boss.plugin.workspace.SplitConfig).pluginExtractPanels(prefix)
+    this.pluginExtractPanels(prefix)
 
 /**
  * Predefined workspaces matching the split templates.

@@ -49,6 +49,7 @@ data class SystemPluginInfo(
 object PluginStoreSetup {
     private val logger = BossLogger.forComponent("PluginStoreSetup")
 
+    private val manifestJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
     private var initialized = false
 
     /**
@@ -742,8 +743,7 @@ object PluginStoreSetup {
                 val entry = jar.getJarEntry("META-INF/boss-plugin/plugin.json")
                     ?: return null
                 val content = jar.getInputStream(entry).bufferedReader().readText()
-                kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                    .decodeFromString<ai.rever.boss.plugin.api.PluginManifest>(content)
+                manifestJson.decodeFromString<ai.rever.boss.plugin.api.PluginManifest>(content)
             }
         } catch (e: Exception) {
             logger.error(LogCategory.SYSTEM, "Failed to read plugin manifest", mapOf(

@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // Netty EventLoopGroup constructors deprecated in 4.2.x, required for UDS transport
+
 package ai.rever.boss.ipc
 
 import io.grpc.netty.NettyChannelBuilder

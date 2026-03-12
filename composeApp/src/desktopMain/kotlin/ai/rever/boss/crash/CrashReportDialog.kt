@@ -62,6 +62,7 @@ fun CrashReportDialog(
     var isSubmitting by remember { mutableStateOf(false) }
     var submitResult by remember { mutableStateOf<CrashReportService.SubmitResult?>(null) }
 
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
