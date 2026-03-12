@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v8.17.22](v8.17.22.md) | 2026-03-12 | Full split-brain microkernel OOP isolation with 15 gRPC service bridges, parallel plugin spawning (16x faster startup), configurable heap, and comprehensive thread-safety fixes |
 | [v8.17.21](v8.17.21.md) | 2026-03-09 | Windows ARM64 build fix: exclude microkernel modules where protoc is unavailable, with reflection-based KernelBootstrap loading |
 | [v8.17.20](v8.17.20.md) | 2026-03-08 | Microkernel architecture foundation with gRPC IPC, AI-powered self-healing orchestration, and Supabase Realtime stability fixes |
 | [v8.17.19](v8.17.19.md) | 2026-03-08 | Fix intra-JAR false positives in plugin binary compatibility validator |
