@@ -533,9 +533,14 @@ kotlin {
     sourceSets {
         val desktopMain by getting {
             if (isWindowsArm64Build) {
-                // Exclude kernel/remote source files that depend on boss-ipc (unavailable on Windows ARM64)
+                // Exclude kernel/OOP source files that depend on boss-ipc (unavailable on Windows ARM64)
                 kotlin.srcDirs.forEach { srcDir ->
-                    kotlin.exclude("**/kernel/**", "**/plugin/remote/**")
+                    kotlin.exclude(
+                        "**/kernel/**",
+                        "**/plugin/remote/**",
+                        "**/plugin/OutOfProcessPluginSpawnerImpl.kt",
+                        "**/plugin/PluginStateBridge.kt",
+                    )
                 }
             }
         }
