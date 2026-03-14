@@ -72,8 +72,11 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       return ctx.json({ error: 'No versions available' }, 404)
     }
 
-    // Generate signed download URL
-    const downloadUrl = await getSignedDownloadUrl(supabase, version.jarPath)
+    // Generate download URL — external URLs (GitHub-hosted) are returned directly
+    const isExternal = version.jarPath.startsWith('https://')
+    const downloadUrl = isExternal
+      ? version.jarPath
+      : await getSignedDownloadUrl(supabase, version.jarPath)
 
     // Track download (optional - don't fail if this errors)
     try {
@@ -81,7 +84,7 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       const user = await getUserFromToken(supabase, authHeader)
       const ip = ctx.req.header('x-forwarded-for') || ctx.req.header('x-real-ip') || ''
       const ipHash = ip ? await hashIp(ip) : null
-      
+
       await recordDownload(supabase, plugin.id, version.id, user?.userId || null, ipHash)
     } catch (e) {
       console.error('Error tracking download:', e)
@@ -90,7 +93,7 @@ download.openapi(downloadLatestRoute, async (ctx) => {
 
     return ctx.json({
       downloadUrl,
-      sha256: version.sha256,
+      sha256: (version.sha256 === 'pending' || version.sha256 === 'external') ? '' : version.sha256,
       version: version.version,
       size: version.jarSize,
       versionId: version.id
@@ -162,8 +165,11 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       return ctx.json({ error: 'Version not found' }, 404)
     }
 
-    // Generate signed download URL
-    const downloadUrl = await getSignedDownloadUrl(supabase, version.jarPath)
+    // Generate download URL — external URLs (GitHub-hosted) are returned directly
+    const isExternal = version.jarPath.startsWith('https://')
+    const downloadUrl = isExternal
+      ? version.jarPath
+      : await getSignedDownloadUrl(supabase, version.jarPath)
 
     // Track download
     try {
@@ -171,7 +177,7 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       const user = await getUserFromToken(supabase, authHeader)
       const ip = ctx.req.header('x-forwarded-for') || ctx.req.header('x-real-ip') || ''
       const ipHash = ip ? await hashIp(ip) : null
-      
+
       await recordDownload(supabase, plugin.id, version.id, user?.userId || null, ipHash)
     } catch (e) {
       console.error('Error tracking download:', e)
@@ -179,7 +185,7 @@ download.openapi(downloadVersionRoute, async (ctx) => {
 
     return ctx.json({
       downloadUrl,
-      sha256: version.sha256,
+      sha256: (version.sha256 === 'pending' || version.sha256 === 'external') ? '' : version.sha256,
       version: version.version,
       size: version.jarSize,
       versionId: version.id

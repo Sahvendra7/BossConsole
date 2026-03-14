@@ -23,13 +23,13 @@ java {
 }
 
 dependencies {
-    // Plugin API (provided by boss-plugin-runtime at runtime — don't bundle)
+    // Plugin API (provided by boss-microkernel-runtime at runtime — don't bundle)
     compileOnly(project(":plugins:plugin-api-core")) {
         targetConfiguration = "desktopRuntimeElements"
     }
 
     // Plugin runtime (provided — contains PluginStateHolder, RemotePluginContext, etc.)
-    compileOnly(project(":boss-plugin-runtime"))
+    compileOnly(project(":boss-microkernel-runtime"))
 
     // Your plugin's own dependencies
     implementation(libs.kotlinx.serialization.json)
@@ -44,10 +44,10 @@ tasks.shadowJar {
         attributes["Main-Class"] = "ai.rever.boss.plugin.runtime.PluginProcessMainKt"
     }
 
-    // Exclude plugin-api-core and boss-plugin-runtime (provided by the runtime)
+    // Exclude plugin-api-core and boss-microkernel-runtime (provided by the runtime)
     dependencies {
         exclude(dependency("ai.rever.boss.plugin:plugin-api-core"))
-        exclude(dependency("ai.rever.boss.plugin.runtime:boss-plugin-runtime"))
+        exclude(dependency("ai.rever.boss.plugin.runtime:boss-microkernel-runtime"))
     }
 }
 

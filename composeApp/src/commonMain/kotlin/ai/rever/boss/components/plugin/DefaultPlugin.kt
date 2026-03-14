@@ -843,6 +843,8 @@ class DefaultPlugin(
 
         val jarFiles = pluginDir.listFiles { file ->
             file.isFile && file.extension == "jar"
+                    // Skip microkernel runtime — it's a classpath dependency for OOP plugins, not a loadable plugin
+                    && !file.name.startsWith("boss-microkernel-runtime")
         } ?: emptyArray()
 
         if (jarFiles.isEmpty()) {

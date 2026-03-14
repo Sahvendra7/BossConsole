@@ -150,6 +150,179 @@ export async function downloadJar(downloadUrl: string): Promise<ArrayBuffer> {
 }
 
 /**
+ * Download a byte range from a URL.
+ * Returns the bytes and the total file size (from Content-Range header).
+ */
+async function downloadRange(
+  url: string,
+  start: number,
+  end: number
+): Promise<{ data: Uint8Array; totalSize: number }> {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "BOSS-Plugin-Store/1.0",
+      Range: `bytes=${start}-${end}`,
+    },
+  })
+
+  if (response.status !== 206 && response.status !== 200) {
+    throw new Error(`Range request failed: ${response.status}`)
+  }
+
+  const data = new Uint8Array(await response.arrayBuffer())
+
+  // Parse total size from Content-Range: bytes 0-999/12345
+  let totalSize = data.length
+  const contentRange = response.headers.get("Content-Range")
+  if (contentRange) {
+    const match = contentRange.match(/\/(\d+)/)
+    if (match) totalSize = parseInt(match[1], 10)
+  }
+
+  return { data, totalSize }
+}
+
+/**
+ * Extract plugin manifest from a remote JAR using range requests.
+ * Only downloads ~128 KB instead of the full JAR.
+ *
+ * 1. Fetch the last 65 KB to find the End of Central Directory.
+ * 2. Locate plugin.json in the central directory.
+ * 3. Fetch just the local file header + data for that entry.
+ */
+export async function extractManifestFromRemoteJar(
+  downloadUrl: string
+): Promise<{ manifest: PluginManifest; totalSize: number }> {
+  // Step 1: fetch the tail of the JAR to find EOCD
+  const tailSize = 65_536
+  // We don't know the file size yet, so request the last tailSize bytes
+  const tailResp = await fetch(downloadUrl, {
+    headers: {
+      "User-Agent": "BOSS-Plugin-Store/1.0",
+      Range: `bytes=-${tailSize}`,
+    },
+  })
+
+  if (!tailResp.ok && tailResp.status !== 206) {
+    throw new Error(`Range request for EOCD failed: ${tailResp.status}`)
+  }
+
+  const tailData = new Uint8Array(await tailResp.arrayBuffer())
+  let totalSize = tailData.length
+  const contentRange = tailResp.headers.get("Content-Range")
+  if (contentRange) {
+    const match = contentRange.match(/\/(\d+)/)
+    if (match) totalSize = parseInt(match[1], 10)
+  }
+
+  // The tail starts at this absolute offset in the file
+  const tailOffset = totalSize - tailData.length
+
+  // Find EOCD in the tail
+  const tailView = new DataView(tailData.buffer)
+  let eocdPos = -1
+  for (let i = tailData.length - 22; i >= 0; i--) {
+    if (tailView.getUint32(i, true) === 0x06054b50) {
+      eocdPos = i
+      break
+    }
+  }
+
+  if (eocdPos === -1) {
+    throw new Error("Cannot find EOCD in JAR (range request)")
+  }
+
+  const cdSize = tailView.getUint32(eocdPos + 12, true)
+  const cdOffset = tailView.getUint32(eocdPos + 16, true) // absolute offset in file
+
+  // Step 2: fetch the central directory (if not already in tail)
+  let cdData: Uint8Array
+  let cdBaseOffset: number
+
+  if (cdOffset >= tailOffset) {
+    // Central directory is within the tail we already fetched
+    const relStart = cdOffset - tailOffset
+    cdData = tailData.slice(relStart, relStart + cdSize)
+    cdBaseOffset = 0
+  } else {
+    // Need a separate range request for the central directory
+    const { data } = await downloadRange(downloadUrl, cdOffset, cdOffset + cdSize - 1)
+    cdData = data
+    cdBaseOffset = 0
+  }
+
+  // Walk the central directory looking for plugin.json
+  const cdView = new DataView(cdData.buffer, cdData.byteOffset, cdData.byteLength)
+  const manifestPath = "META-INF/boss-plugin/plugin.json"
+  let offset = cdBaseOffset
+
+  while (offset < cdData.length - 46) {
+    const sig = cdView.getUint32(offset, true)
+    if (sig !== 0x02014b50) break
+
+    const compressionMethod = cdView.getUint16(offset + 10, true)
+    const compressedSize = cdView.getUint32(offset + 20, true)
+    const fileNameLength = cdView.getUint16(offset + 28, true)
+    const extraFieldLength = cdView.getUint16(offset + 30, true)
+    const commentLength = cdView.getUint16(offset + 32, true)
+    const localHeaderOffset = cdView.getUint32(offset + 42, true)
+
+    const fnBytes = cdData.slice(offset + 46, offset + 46 + fileNameLength)
+    const fileName = new TextDecoder().decode(fnBytes)
+    offset += 46 + fileNameLength + extraFieldLength + commentLength
+
+    if (fileName !== manifestPath) continue
+
+    // Step 3: fetch just this file's local header + data
+    // Local header is 30 bytes + filename + extra, then compressed data
+    const fetchSize = 30 + fileNameLength + 256 + compressedSize // 256 extra for safety
+    const { data: localData } = await downloadRange(
+      downloadUrl,
+      localHeaderOffset,
+      localHeaderOffset + fetchSize - 1
+    )
+    const localView = new DataView(localData.buffer, localData.byteOffset, localData.byteLength)
+    const lhFnLen = localView.getUint16(26, true)
+    const lhExtraLen = localView.getUint16(28, true)
+    const dataStart = 30 + lhFnLen + lhExtraLen
+    const fileData = localData.slice(dataStart, dataStart + compressedSize)
+
+    let content: string
+    if (compressionMethod === 0) {
+      content = new TextDecoder().decode(fileData)
+    } else if (compressionMethod === 8) {
+      const ds = new DecompressionStream("deflate-raw")
+      const writer = ds.writable.getWriter()
+      writer.write(fileData)
+      writer.close()
+      const reader = ds.readable.getReader()
+      const chunks: Uint8Array[] = []
+      let len = 0
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        len += value.length
+      }
+      const result = new Uint8Array(len)
+      let pos = 0
+      for (const c of chunks) { result.set(c, pos); pos += c.length }
+      content = new TextDecoder().decode(result)
+    } else {
+      throw new Error(`Unsupported compression: ${compressionMethod}`)
+    }
+
+    const manifest = JSON.parse(content) as PluginManifest
+    validateManifest(manifest)
+    return { manifest, totalSize }
+  }
+
+  throw new Error(
+    `Plugin manifest not found at ${manifestPath}. Make sure your plugin JAR contains a valid plugin.json.`
+  )
+}
+
+/**
  * Extract plugin.json from a JAR file (which is a ZIP)
  */
 export async function extractManifestFromJar(jarData: ArrayBuffer): Promise<PluginManifest> {
@@ -179,50 +352,138 @@ export async function extractManifestFromJar(jarData: ArrayBuffer): Promise<Plug
 }
 
 /**
- * Extract a file from a ZIP archive (simplified implementation)
+ * Extract a file from a ZIP archive using the central directory.
+ *
+ * Reads the End of Central Directory record at the tail of the ZIP to locate
+ * the central directory, then looks up the target file by name. This is
+ * reliable for large JARs (e.g., 95 MB fat JARs with 35k+ entries) where a
+ * linear scan of local file headers can break on data descriptors or ZIP64
+ * extended fields.
  */
 async function extractFileFromZip(
   zipData: Uint8Array,
   targetPath: string
 ): Promise<string | null> {
-  // ZIP file structure:
-  // - Local file headers followed by file data
-  // - Central directory at the end
+  const view = new DataView(zipData.buffer)
 
+  // --- Locate End of Central Directory (EOCD) record ---
+  // Signature: 0x06054b50.  The EOCD is at most 65535 + 22 bytes from the end.
+  const eocdMinSize = 22
+  const maxCommentLen = 65535
+  const searchStart = Math.max(0, zipData.length - eocdMinSize - maxCommentLen)
+  let eocdOffset = -1
+
+  for (let i = zipData.length - eocdMinSize; i >= searchStart; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+
+  if (eocdOffset === -1) {
+    // Fallback: try the linear scan for small JARs
+    return extractFileFromZipLinear(zipData, targetPath)
+  }
+
+  const cdEntries = view.getUint16(eocdOffset + 10, true)
+  const cdSize = view.getUint32(eocdOffset + 12, true)
+  const cdOffset = view.getUint32(eocdOffset + 16, true)
+
+  // --- Walk the central directory to find our file ---
+  let offset = cdOffset
+  for (let i = 0; i < cdEntries; i++) {
+    if (offset + 46 > zipData.length) break
+    const sig = view.getUint32(offset, true)
+    if (sig !== 0x02014b50) break // not a central dir entry
+
+    const compressionMethod = view.getUint16(offset + 10, true)
+    const compressedSize = view.getUint32(offset + 20, true)
+    const fileNameLength = view.getUint16(offset + 28, true)
+    const extraFieldLength = view.getUint16(offset + 30, true)
+    const commentLength = view.getUint16(offset + 32, true)
+    const localHeaderOffset = view.getUint32(offset + 42, true)
+
+    const fileNameBytes = zipData.slice(offset + 46, offset + 46 + fileNameLength)
+    const fileName = new TextDecoder().decode(fileNameBytes)
+
+    offset += 46 + fileNameLength + extraFieldLength + commentLength
+
+    if (fileName !== targetPath) continue
+
+    // --- Read from the local file header to get the actual data ---
+    const lhOffset = localHeaderOffset
+    if (lhOffset + 30 > zipData.length) return null
+    const lhFileNameLen = view.getUint16(lhOffset + 26, true)
+    const lhExtraLen = view.getUint16(lhOffset + 28, true)
+    const dataOffset = lhOffset + 30 + lhFileNameLen + lhExtraLen
+    const fileData = zipData.slice(dataOffset, dataOffset + compressedSize)
+
+    if (compressionMethod === 0) {
+      return new TextDecoder().decode(fileData)
+    } else if (compressionMethod === 8) {
+      try {
+        const ds = new DecompressionStream("deflate-raw")
+        const writer = ds.writable.getWriter()
+        writer.write(fileData)
+        writer.close()
+
+        const reader = ds.readable.getReader()
+        const chunks: Uint8Array[] = []
+        let totalLength = 0
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          totalLength += value.length
+        }
+
+        const result = new Uint8Array(totalLength)
+        let position = 0
+        for (const chunk of chunks) {
+          result.set(chunk, position)
+          position += chunk.length
+        }
+
+        return new TextDecoder().decode(result)
+      } catch {
+        throw new Error("Failed to decompress plugin.json from JAR")
+      }
+    } else {
+      throw new Error(`Unsupported compression method: ${compressionMethod}`)
+    }
+  }
+
+  return null
+}
+
+/**
+ * Legacy linear scan fallback for small JARs without a valid EOCD.
+ */
+async function extractFileFromZipLinear(
+  zipData: Uint8Array,
+  targetPath: string
+): Promise<string | null> {
   const view = new DataView(zipData.buffer)
   let offset = 0
 
   while (offset < zipData.length - 4) {
-    // Look for local file header signature (0x04034b50)
     const signature = view.getUint32(offset, true)
-    if (signature !== 0x04034b50) {
-      // Not a local file header, might be central directory
-      break
-    }
+    if (signature !== 0x04034b50) break
 
-    // Parse local file header
     const compressionMethod = view.getUint16(offset + 8, true)
     const compressedSize = view.getUint32(offset + 18, true)
-    const uncompressedSize = view.getUint32(offset + 22, true)
     const fileNameLength = view.getUint16(offset + 26, true)
     const extraFieldLength = view.getUint16(offset + 28, true)
-
-    // Read filename
     const fileNameBytes = zipData.slice(offset + 30, offset + 30 + fileNameLength)
     const fileName = new TextDecoder().decode(fileNameBytes)
-
-    // Calculate data offset
     const dataOffset = offset + 30 + fileNameLength + extraFieldLength
 
     if (fileName === targetPath) {
-      // Found our file
       const fileData = zipData.slice(dataOffset, dataOffset + compressedSize)
-
       if (compressionMethod === 0) {
-        // Stored (no compression)
         return new TextDecoder().decode(fileData)
       } else if (compressionMethod === 8) {
-        // Deflate compression - use DecompressionStream
         try {
           const ds = new DecompressionStream("deflate-raw")
           const writer = ds.writable.getWriter()
@@ -251,12 +512,9 @@ async function extractFileFromZip(
         } catch {
           throw new Error("Failed to decompress plugin.json from JAR")
         }
-      } else {
-        throw new Error(`Unsupported compression method: ${compressionMethod}`)
       }
     }
 
-    // Move to next entry
     offset = dataOffset + compressedSize
   }
 
@@ -310,6 +568,10 @@ export async function calculateSha256(data: ArrayBuffer): Promise<string> {
 /**
  * Fetch plugin from GitHub - main entry point
  *
+ * For small JARs (< 50 MB), downloads the full JAR into memory.
+ * For large JARs (>= 50 MB), uses range requests to extract the manifest
+ * without downloading the full file, then streams the download for upload.
+ *
  * @param githubUrl - GitHub repository URL
  * @returns Plugin manifest, JAR data, and metadata
  */
@@ -333,17 +595,34 @@ export async function fetchPluginFromGitHub(githubUrl: string): Promise<GitHubPl
     )
   }
 
-  // Download JAR
+  const LARGE_JAR_THRESHOLD = 50 * 1024 * 1024 // 50 MB
+
+  if (jarAsset.size >= LARGE_JAR_THRESHOLD) {
+    // Large JAR: use range requests for manifest, then download full JAR
+    console.log(`Large JAR detected (${jarAsset.size} bytes), using range requests for manifest`)
+
+    const { manifest, totalSize } = await extractManifestFromRemoteJar(
+      jarAsset.browser_download_url
+    )
+
+    // Still need to download the full JAR for storage upload and SHA-256
+    const jarData = await downloadJar(jarAsset.browser_download_url)
+    const sha256 = await calculateSha256(jarData)
+
+    return {
+      manifest,
+      jarData,
+      jarSize: jarData.byteLength,
+      sha256,
+      releaseNotes: release.body || "",
+      version: manifest.version,
+    }
+  }
+
+  // Small JAR: download fully and extract manifest from memory
   const jarData = await downloadJar(jarAsset.browser_download_url)
-
-  // Extract manifest
   const manifest = await extractManifestFromJar(jarData)
-
-  // Calculate SHA-256
   const sha256 = await calculateSha256(jarData)
-
-  // Extract version from tag (remove 'v' prefix if present)
-  const version = manifest.version
 
   return {
     manifest,
@@ -351,6 +630,6 @@ export async function fetchPluginFromGitHub(githubUrl: string): Promise<GitHubPl
     jarSize: jarData.byteLength,
     sha256,
     releaseNotes: release.body || "",
-    version,
+    version: manifest.version,
   }
 }

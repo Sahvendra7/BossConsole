@@ -9,13 +9,15 @@ import {
   FinalizeVersionResponseSchema,
   PublishFromGitHubRequestSchema,
   PublishFromGitHubResponseSchema,
+  PublishFromGitHubMetadataRequestSchema,
+  PublishFromGitHubMetadataResponseSchema,
   ErrorResponseSchema
 } from "../types/schemas.ts"
 import { getPlugin, createPlugin, setPluginTags, getPluginById, updatePlugin } from "../services/plugins.ts"
 import { createVersion, versionExists, finalizeVersion, getVersionById } from "../services/versions.ts"
 import { getSignedUploadUrl, generateJarPath, uploadJar } from "../services/storage.ts"
 import { getAuthenticatedUser, getUserDisplayName, logApiKeyAction } from "../utils/auth.ts"
-import { fetchPluginFromGitHub } from "../services/github.ts"
+import { fetchPluginFromGitHub, parseGitHubUrl, fetchLatestRelease, findJarAsset } from "../services/github.ts"
 
 const publish = new OpenAPIHono<{ Variables: PluginStoreContext }>()
 
@@ -535,7 +537,7 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
         description: manifest.description,
         homepageUrl: manifest.url || manifest.homepageUrl,
         iconUrl: manifest.iconUrl,
-        type: manifest.type as string,
+        type: (manifest.type as string || 'panel').toLowerCase(),
         apiVersion: manifest.apiVersion
       })
     } else {
@@ -552,7 +554,7 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
         manifest.description || '',
         manifest.url || manifest.homepageUrl || body.githubUrl, // Fall back to GitHub URL if no homepage
         manifest.iconUrl || '',
-        (manifest.type as string) || 'panel',
+        ((manifest.type as string) || 'panel').toLowerCase(),
         manifest.apiVersion
       )
 
@@ -616,6 +618,195 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
     }, 201)
   } catch (error) {
     console.error('Error publishing from GitHub:', error)
+    return ctx.json({
+      success: false,
+      error: (error as Error).message
+    }, 500)
+  }
+})
+
+// ============================================================================
+// POST /github/metadata - Metadata-only publish from GitHub (for large JARs)
+// ============================================================================
+
+const publishFromGitHubMetadataRoute = createRoute({
+  method: 'post',
+  path: '/github/metadata',
+  tags: ['Publish'],
+  summary: 'Publish plugin metadata from GitHub release (no JAR upload)',
+  description: 'Registers a plugin using a pre-extracted manifest and the GitHub release download URL. No JAR download by the server. Ideal for large JARs (>50 MB) that exceed edge function memory limits.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: PublishFromGitHubMetadataRequestSchema
+        }
+      }
+    }
+  },
+  responses: {
+    201: {
+      description: 'Plugin published successfully',
+      content: {
+        'application/json': {
+          schema: PublishFromGitHubMetadataResponseSchema
+        }
+      }
+    },
+    400: {
+      description: 'Invalid request or GitHub URL',
+      content: { 'application/json': { schema: ErrorResponseSchema } }
+    },
+    401: {
+      description: 'Authentication required',
+      content: { 'application/json': { schema: ErrorResponseSchema } }
+    },
+    403: {
+      description: 'Not authorized to publish to this plugin',
+      content: { 'application/json': { schema: ErrorResponseSchema } }
+    },
+    500: {
+      description: 'Internal server error',
+      content: { 'application/json': { schema: ErrorResponseSchema } }
+    }
+  }
+})
+
+publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
+  try {
+    const supabase = ctx.get("supabase")
+    const body = ctx.req.valid('json')
+
+    // Verify authentication
+    const authHeader = ctx.req.header('Authorization')
+    const apiKeyHeader = ctx.req.header('X-API-Key')
+    const user = await getAuthenticatedUser(supabase, authHeader, apiKeyHeader, {
+      allowApiKey: true,
+      requiredScopes: ['publish'],
+    })
+
+    if (!user) {
+      return ctx.json({ success: false, error: 'Authentication required' }, 401)
+    }
+
+    const manifest = body.manifest
+
+    // Resolve the GitHub download URL for the JAR
+    const parsed = parseGitHubUrl(body.githubUrl)
+    if (!parsed) {
+      return ctx.json({ success: false, error: 'Invalid GitHub URL' }, 400)
+    }
+
+    const release = await fetchLatestRelease(parsed.owner, parsed.repo, parsed.tag)
+    const jarAsset = findJarAsset(release)
+    if (!jarAsset) {
+      return ctx.json({
+        success: false,
+        error: `No JAR file found in release ${release.tag_name}`
+      }, 400)
+    }
+
+    console.log(`Metadata-only publish: ${manifest.pluginId} v${manifest.version}`)
+
+    // Check if plugin already exists
+    const existingPlugin = await getPlugin(supabase, manifest.pluginId)
+    let pluginUuid: string
+    let isNewPlugin = false
+
+    if (existingPlugin) {
+      if (existingPlugin.authorId !== user.userId) {
+        return ctx.json({
+          success: false,
+          error: 'Not authorized to publish to this plugin. You are not the owner.'
+        }, 403)
+      }
+      pluginUuid = existingPlugin.id
+
+      await updatePlugin(supabase, pluginUuid, {
+        displayName: manifest.displayName,
+        description: manifest.description,
+        homepageUrl: body.githubUrl,
+        type: (manifest.type || 'panel').toLowerCase(),
+        apiVersion: manifest.apiVersion
+      })
+    } else {
+      isNewPlugin = true
+      const authorName = await getUserDisplayName(supabase, user.userId)
+
+      const result = await createPlugin(
+        supabase,
+        user.userId,
+        authorName,
+        manifest.pluginId,
+        manifest.displayName,
+        manifest.description || '',
+        body.githubUrl,
+        '',
+        (manifest.type || 'panel').toLowerCase(),
+        manifest.apiVersion || '1.0.0'
+      )
+      pluginUuid = result.id
+    }
+
+    // Set tags
+    const tags = body.tags?.length ? body.tags : []
+    if (tags.length > 0) {
+      await setPluginTags(supabase, pluginUuid, tags)
+    }
+
+    const version = manifest.version
+
+    // Check if version already exists
+    if (await versionExists(supabase, pluginUuid, version)) {
+      return ctx.json({
+        success: false,
+        error: `Version ${version} already exists for ${manifest.pluginId}`
+      }, 400)
+    }
+
+    // Store the GitHub download URL directly as jar_path
+    const jarPath = jarAsset.browser_download_url
+
+    const changelog = body.changelog || release.body || ''
+    const versionResult = await createVersion(
+      supabase,
+      pluginUuid,
+      version,
+      changelog,
+      '1.0.0',
+      [],
+      jarPath
+    )
+
+    // Finalize with the JAR size from the request
+    // SHA-256 not available (JAR not downloaded server-side). Store 'pending' so
+    // clients that check isNotBlank() will fail verification and fall back.
+    // The PluginManagerAPIImpl skips verification when sha256 is blank.
+    await finalizeVersion(supabase, versionResult.id, 'pending', body.jarSize)
+
+    // Log API key usage
+    if (user.apiKeyId) {
+      await logApiKeyAction(
+        supabase,
+        user.apiKeyId,
+        'publish',
+        manifest.pluginId,
+        ctx.req.raw,
+        true
+      )
+    }
+
+    console.log(`Successfully published ${manifest.pluginId} v${version} (metadata-only, GitHub-hosted JAR)`)
+
+    return ctx.json({
+      success: true,
+      pluginId: manifest.pluginId,
+      displayName: manifest.displayName,
+      version,
+      created: isNewPlugin
+    }, 201)
+  } catch (error) {
+    console.error('Error publishing metadata from GitHub:', error)
     return ctx.json({
       success: false,
       error: (error as Error).message

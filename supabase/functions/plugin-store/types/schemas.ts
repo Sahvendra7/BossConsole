@@ -4,7 +4,7 @@ import { z } from "zod"
 // Plugin Type Schema
 // ============================================================================
 
-export const PluginTypeSchema = z.enum(['panel', 'tab', 'hybrid'])
+export const PluginTypeSchema = z.enum(['panel', 'tab', 'hybrid', 'mixed', 'service'])
 
 // ============================================================================
 // Browse Route Schemas
@@ -193,6 +193,38 @@ export const PublishFromGitHubResponseSchema = z.object({
   displayName: z.string().optional(),
   version: z.string().optional(),
   created: z.boolean().optional(), // true if new plugin, false if updated
+  error: z.string().optional()
+})
+
+// ============================================================================
+// GitHub Metadata-Only Publish Schema (for large JARs)
+// ============================================================================
+
+export const PublishFromGitHubMetadataRequestSchema = z.object({
+  githubUrl: z.string().url('Must be a valid GitHub URL').refine(
+    (url) => url.includes('github.com'),
+    'URL must be a GitHub repository URL'
+  ),
+  manifest: z.object({
+    pluginId: z.string(),
+    displayName: z.string(),
+    version: z.string(),
+    apiVersion: z.string().optional().default('1.0.0'),
+    mainClass: z.string().optional().default(''),
+    type: z.string().optional().default('panel'),
+    description: z.string().optional().default(''),
+  }),
+  jarSize: z.number().int().positive(),
+  changelog: z.string().max(5000).optional(),
+  tags: z.array(z.string().max(50)).max(10).optional().default([])
+})
+
+export const PublishFromGitHubMetadataResponseSchema = z.object({
+  success: z.boolean(),
+  pluginId: z.string().optional(),
+  displayName: z.string().optional(),
+  version: z.string().optional(),
+  created: z.boolean().optional(),
   error: z.string().optional()
 })
 

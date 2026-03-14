@@ -4,7 +4,7 @@ plugins {
     id("org.graalvm.buildtools.native") version "0.11.5"
 }
 
-group = "ai.rever.boss.plugin.runtime"
+group = "ai.rever.boss.microkernel.runtime"
 version = "1.0.0"
 
 java {

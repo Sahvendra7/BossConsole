@@ -56,7 +56,7 @@ class OutOfProcessPluginSpawnerImpl(
         System.getenv("BOSS_PLUGIN_RUNTIME_JAR")
             ?: findRuntimeJar()
             ?: throw IllegalStateException(
-                "Cannot find boss-plugin-runtime JAR. Set BOSS_PLUGIN_RUNTIME_JAR env var."
+                "Cannot find boss-microkernel-runtime JAR. Set BOSS_PLUGIN_RUNTIME_JAR env var."
             )
     }
 
@@ -232,6 +232,7 @@ class OutOfProcessPluginSpawnerImpl(
 
     /**
      * Find the plugin runtime fat JAR in standard locations.
+     * Searches the plugins directory (where all plugins live) and dev build output.
      */
     private fun findRuntimeJar(): String? {
         val bossDataDir = try {
@@ -239,14 +240,17 @@ class OutOfProcessPluginSpawnerImpl(
         } catch (_: Exception) {
             System.getenv("BOSS_DATA_DIR") ?: "${System.getProperty("user.home")}/.boss"
         }
-        val candidates = listOf(
+        val pluginDir = "$bossDataDir/plugins"
+
+        val candidates = buildList {
             // Development: build output
-            "boss-plugin-runtime/build/libs/boss-plugin-runtime-all.jar",
-            // Production: alongside the app
-            "lib/boss-plugin-runtime-all.jar",
-            // Data directory (respects .boss_debug in dev mode)
-            "$bossDataDir/lib/boss-plugin-runtime-all.jar",
-        )
+            add("boss-microkernel-runtime/build/libs/boss-microkernel-runtime-all.jar")
+            // Production: in plugins directory
+            File(pluginDir).listFiles()
+                ?.filter { it.name.startsWith("boss-microkernel-runtime") && it.name.endsWith(".jar") }
+                ?.sortedByDescending { it.lastModified() }
+                ?.forEach { add(it.absolutePath) }
+        }
         return candidates.firstOrNull { File(it).exists() }
     }
 }

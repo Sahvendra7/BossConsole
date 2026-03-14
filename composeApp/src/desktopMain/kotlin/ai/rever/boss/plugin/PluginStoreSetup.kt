@@ -35,7 +35,11 @@ data class SystemPluginInfo(
     /** Artifact prefix for JAR files (e.g., "boss-plugin-api") */
     val artifactPrefix: String,
     /** Load priority (lower = loads first) */
-    val loadPriority: Int
+    val loadPriority: Int,
+    /** If true, the JAR is downloaded but not registered for plugin loading.
+     *  Used for runtime dependencies (e.g., microkernel runtime) that live in
+     *  the plugins directory but are not loadable UI/service plugins. */
+    val downloadOnly: Boolean = false
 )
 
 /**
@@ -69,48 +73,70 @@ object PluginStoreSetup {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     /**
+     * Whether microkernel mode is active (OOP plugins need the runtime JAR).
+     */
+    private val isKernelMode: Boolean by lazy {
+        try {
+            ai.rever.boss.kernel.KernelBootstrap.instance?.isKernelMode == true
+        } catch (_: Exception) {
+            val mode = System.getenv("BOSS_MODE") ?: System.getProperty("boss.mode", "")
+            mode.equals("KERNEL", ignoreCase = true)
+        }
+    }
+
+    /**
      * List of system plugins that must always be installed.
      * These are auto-downloaded from GitHub releases if missing.
      * Ordered by load priority (lower = loads first).
      */
-    private val systemPlugins = listOf(
-        SystemPluginInfo(
+    private val systemPlugins: List<SystemPluginInfo> by lazy { buildList {
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.api",
             githubRepo = "risa-labs-inc/boss-plugin-api",
             artifactPrefix = "boss-plugin-api",
             loadPriority = 0
-        ),
-        SystemPluginInfo(
+        ))
+        // Microkernel runtime JAR is only needed when kernel mode is active (OOP plugins)
+        if (isKernelMode) {
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.microkernel.runtime",
+                githubRepo = "risa-labs-inc/boss-microkernel-runtime",
+                artifactPrefix = "boss-microkernel-runtime",
+                loadPriority = 1,
+                downloadOnly = true
+            ))
+        }
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
             githubRepo = "risa-labs-inc/boss-plugin-plugin-manager",
             artifactPrefix = "boss-plugin-plugin-manager",
             loadPriority = 5
-        ),
-        SystemPluginInfo(
+        ))
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.terminaltab",
             githubRepo = "risa-labs-inc/boss-plugin-terminal-tab",
             artifactPrefix = "boss-plugin-terminal-tab",
             loadPriority = 10
-        ),
-        SystemPluginInfo(
+        ))
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.terminal",
             githubRepo = "risa-labs-inc/boss-plugin-terminal",
             artifactPrefix = "boss-plugin-terminal",
             loadPriority = 10
-        ),
-        SystemPluginInfo(
+        ))
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
             githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
             artifactPrefix = "boss-plugin-fluck-browser",
             loadPriority = 10
-        ),
-        SystemPluginInfo(
+        ))
+        add(SystemPluginInfo(
             pluginId = "ai.rever.boss.plugin.dynamic.editortab",
             githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
             artifactPrefix = "boss-plugin-editor-tab",
             loadPriority = 10
-        )
-    )
+        ))
+    } }
 
     // Plugin infrastructure components
     private var _downloadCache: PluginDownloadCache? = null
@@ -350,15 +376,28 @@ object PluginStoreSetup {
 
         for (systemPlugin in systemPlugins) {
             try {
-                // Check if plugin JAR exists
-                val existingEntry = installedPlugins.find { it.pluginId == systemPlugin.pluginId }
-                val jarExists = existingEntry?.let { File(it.jarPath).exists() } ?: false
+                // For download-only plugins, check if JAR exists on disk (not in persistence)
+                if (systemPlugin.downloadOnly) {
+                    val existsOnDisk = _pluginDir.listFiles()?.any {
+                        it.name.startsWith(systemPlugin.artifactPrefix) && it.name.endsWith(".jar")
+                    } ?: false
+                    if (existsOnDisk) {
+                        logger.debug(LogCategory.SYSTEM, "Download-only plugin already present", mapOf(
+                            "pluginId" to systemPlugin.pluginId
+                        ))
+                        continue
+                    }
+                } else {
+                    // Check if plugin JAR exists in persistence
+                    val existingEntry = installedPlugins.find { it.pluginId == systemPlugin.pluginId }
+                    val jarExists = existingEntry?.let { File(it.jarPath).exists() } ?: false
 
-                if (installedIds.contains(systemPlugin.pluginId) && jarExists) {
-                    logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
-                        "pluginId" to systemPlugin.pluginId
-                    ))
-                    continue
+                    if (installedIds.contains(systemPlugin.pluginId) && jarExists) {
+                        logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
+                            "pluginId" to systemPlugin.pluginId
+                        ))
+                        continue
+                    }
                 }
 
                 logger.info(LogCategory.SYSTEM, "System plugin missing - downloading from GitHub", mapOf(
@@ -471,13 +510,15 @@ object PluginStoreSetup {
                     "size" to destFile.length()
                 ))
 
-                // Register in persistence
-                PluginPersistence.addInstalledPlugin(
-                    pluginId = plugin.pluginId,
-                    jarPath = destFile.absolutePath,
-                    enabled = true,
-                    installedVersion = tagName.removePrefix("v")
-                )
+                // Register in persistence (skip for download-only plugins like microkernel runtime)
+                if (!plugin.downloadOnly) {
+                    PluginPersistence.addInstalledPlugin(
+                        pluginId = plugin.pluginId,
+                        jarPath = destFile.absolutePath,
+                        enabled = true,
+                        installedVersion = tagName.removePrefix("v")
+                    )
+                }
 
                 true
             } catch (e: Exception) {
