@@ -194,14 +194,22 @@ jobs:
           if [[ -n "${{ secrets.MACOS_P12_CERTIFICATE }}" ]]; then
             echo "🔐 Setting up macOS code signing..."
             echo "${{ secrets.MACOS_P12_CERTIFICATE }}" | base64 --decode > certificate.p12
-            security create-keychain -p temp_password temp_keychain
-            trap 'security delete-keychain temp_keychain 2>/dev/null || true' EXIT
-            security default-keychain -s temp_keychain
-            security unlock-keychain -p temp_password temp_keychain
-            security set-keychain-settings -lut 3600 temp_keychain
-            security import certificate.p12 -k temp_keychain -P "${{ secrets.MACOS_P12_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/security
-            security set-key-partition-list -S apple-tool:,apple: -s -k temp_password temp_keychain
-            security list-keychains -s temp_keychain
+
+            # Use .keychain-db extension — required by Keychain Services API on modern macOS
+            KEYCHAIN_NAME="build.keychain-db"
+            KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+            trap 'security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true' EXIT
+            security default-keychain -s "$KEYCHAIN_NAME"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+            security set-keychain-settings -lut 3600 "$KEYCHAIN_NAME"
+            security import certificate.p12 -k "$KEYCHAIN_NAME" -P "${{ secrets.MACOS_P12_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/security
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+
+            # Append to search list — do NOT replace (Compose Desktop JVM signing needs login.keychain-db present)
+            security list-keychains -d user -s "$KEYCHAIN_NAME" login.keychain-db
+
             echo "DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
             echo "MACOS_DEVELOPER_ID=${{ secrets.MACOS_DEVELOPER_ID }}" >> $GITHUB_ENV
             echo "TEAM_ID=${{ secrets.MACOS_TEAM_ID }}" >> $GITHUB_ENV
@@ -209,7 +217,7 @@ jobs:
             echo "APP_PASSWORD=${{ secrets.MACOS_APP_PASSWORD }}" >> $GITHUB_ENV
             echo "DISABLE_MACOS_SIGNING=false" >> $GITHUB_ENV
             rm certificate.p12
-            security find-identity -v -p codesigning temp_keychain
+            security find-identity -v -p codesigning "$KEYCHAIN_NAME"
             echo "✅ macOS code signing configured"
           else
             echo "⚠️ MACOS_P12_CERTIFICATE not found — building unsigned"
