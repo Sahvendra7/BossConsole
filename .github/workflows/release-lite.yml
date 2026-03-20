@@ -43,6 +43,11 @@ env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTION_URL }}
 
+# Prevent concurrent releases from racing to bump the version in BossConsoleLite
+concurrency:
+  group: boss-lite-release
+  cancel-in-progress: false
+
 jobs:
   # ── 1. Bump version in BossConsoleLite ───────────────────────────────────────
   prepare-version:
@@ -105,7 +110,9 @@ jobs:
           sed -i "s/^app.version=.*/app.version=${FULL_VERSION}/" version.properties
           sed -i "s/^app.bundle.version=.*/app.bundle.version=${FULL_VERSION}/" version.properties
           sed -i "s/^app.prerelease.suffix=.*/app.prerelease.suffix=${PRERELEASE_SUFFIX}/" version.properties
-          sed -i "s/^app.lite.build=.*/app.lite.build=true/" version.properties
+          grep -q "^app.lite.build=" version.properties \
+            && sed -i "s/^app.lite.build=.*/app.lite.build=true/" version.properties \
+            || echo "app.lite.build=true" >> version.properties
 
           grep "^app\." version.properties
 
@@ -188,6 +195,7 @@ jobs:
             echo "🔐 Setting up macOS code signing..."
             echo "${{ secrets.MACOS_P12_CERTIFICATE }}" | base64 --decode > certificate.p12
             security create-keychain -p temp_password temp_keychain
+            trap 'security delete-keychain temp_keychain 2>/dev/null || true' EXIT
             security default-keychain -s temp_keychain
             security unlock-keychain -p temp_password temp_keychain
             security set-keychain-settings -lut 3600 temp_keychain
