@@ -200,7 +200,6 @@ jobs:
             KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
 
             security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-            trap 'security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true' EXIT
             security default-keychain -s "$KEYCHAIN_NAME"
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
             security set-keychain-settings -lut 3600 "$KEYCHAIN_NAME"
