@@ -378,14 +378,35 @@ object PluginStoreSetup {
             try {
                 // For download-only plugins, check if JAR exists on disk (not in persistence)
                 if (systemPlugin.downloadOnly) {
-                    val existsOnDisk = _pluginDir.listFiles()?.any {
-                        it.name.startsWith(systemPlugin.artifactPrefix) && it.name.endsWith(".jar")
-                    } ?: false
-                    if (existsOnDisk) {
-                        logger.debug(LogCategory.SYSTEM, "Download-only plugin already present", mapOf(
-                            "pluginId" to systemPlugin.pluginId
+                    val existingJar = _pluginDir.listFiles()?.firstOrNull {
+                        it.name.startsWith("${systemPlugin.artifactPrefix}-") && it.name.endsWith(".jar")
+                    }
+                    if (existingJar != null) {
+                        // Compare installed vs. latest release so the runtime JAR auto-updates.
+                        // If GitHub is unreachable or the version can't be determined we keep
+                        // the existing JAR rather than break startup.
+                        val installedVersion = extractVersionFromJarFileName(existingJar.name, systemPlugin.artifactPrefix)
+                        val latestVersion = fetchLatestReleaseVersion(systemPlugin.githubRepo)
+                        if (installedVersion != null && latestVersion != null && installedVersion == latestVersion) {
+                            logger.debug(LogCategory.SYSTEM, "Download-only plugin up-to-date", mapOf(
+                                "pluginId" to systemPlugin.pluginId,
+                                "version" to installedVersion
+                            ))
+                            continue
+                        }
+                        if (latestVersion == null) {
+                            logger.debug(LogCategory.SYSTEM, "Download-only plugin present, skipping update check (offline or rate-limited)", mapOf(
+                                "pluginId" to systemPlugin.pluginId,
+                                "installedVersion" to (installedVersion ?: "unknown")
+                            ))
+                            continue
+                        }
+                        logger.info(LogCategory.SYSTEM, "Download-only plugin outdated - will update", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to (installedVersion ?: "unknown"),
+                            "latestVersion" to latestVersion
                         ))
-                        continue
+                        // Fall through — downloadSystemPluginFromGitHub deletes old versions
                     }
                 } else {
                     // Check if plugin JAR exists in persistence
@@ -423,6 +444,50 @@ object PluginStoreSetup {
                 ), e)
             }
         }
+    }
+
+    /**
+     * Fetch the latest release's version string (tag name with the leading
+     * "v" stripped) from a GitHub repository. Returns null if the call fails.
+     */
+    private suspend fun fetchLatestReleaseVersion(githubRepo: String): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val apiUrl = "https://api.github.com/repos/$githubRepo/releases/latest"
+                val connection = URL(apiUrl).openConnection().apply {
+                    setRequestProperty("Accept", "application/vnd.github.v3+json")
+                    setRequestProperty("User-Agent", "BossConsole")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                val responseText = connection.getInputStream().bufferedReader().readText()
+                Regex(""""tag_name"\s*:\s*"([^"]+)"""")
+                    .find(responseText)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.removePrefix("v")
+            } catch (e: Exception) {
+                logger.debug(LogCategory.SYSTEM, "Failed to fetch latest release version", mapOf(
+                    "repo" to githubRepo,
+                    "error" to (e.message ?: "unknown")
+                ))
+                null
+            }
+        }
+    }
+
+    /**
+     * Extract the semver component from a plugin JAR filename.
+     * Handles the `{prefix}-{version}.jar` and `{prefix}-{version}-all.jar`
+     * patterns produced by Gradle. Returns null if the filename doesn't match.
+     */
+    private fun extractVersionFromJarFileName(fileName: String, artifactPrefix: String): String? {
+        val withoutPrefix = fileName.removePrefix("$artifactPrefix-")
+        if (withoutPrefix == fileName) return null
+        val version = withoutPrefix
+            .removeSuffix(".jar")
+            .removeSuffix("-all")
+        return version.takeIf { it.matches(Regex("""\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.]+)*""")) }
     }
 
     /**

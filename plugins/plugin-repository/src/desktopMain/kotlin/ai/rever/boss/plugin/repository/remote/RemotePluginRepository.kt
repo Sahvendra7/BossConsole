@@ -225,14 +225,22 @@ class RemotePluginRepository(
                     }
                 }
 
-                // Verify SHA-256
-                val actualSha256 = File(targetPath).sha256()
-                if (!actualSha256.equals(downloadInfo.sha256, ignoreCase = true)) {
-                    File(targetPath).delete()
-                    throw DownloadException(
-                        "SHA-256 mismatch. Expected: ${downloadInfo.sha256}, Got: $actualSha256",
-                        pluginId, id
-                    )
+                // Verify SHA-256 — skipped when the server returns a blank hash
+                // (e.g., externally-hosted JARs we don't control).
+                if (downloadInfo.sha256.isNotBlank()) {
+                    val actualSha256 = File(targetPath).sha256()
+                    if (!actualSha256.equals(downloadInfo.sha256, ignoreCase = true)) {
+                        File(targetPath).delete()
+                        throw DownloadException(
+                            "SHA-256 mismatch. Expected: ${downloadInfo.sha256}, Got: $actualSha256",
+                            pluginId, id
+                        )
+                    }
+                } else {
+                    logger.debug(LogCategory.NETWORK, "Skipping SHA-256 verification (no hash provided)", mapOf(
+                        "pluginId" to pluginId,
+                        "version" to downloadInfo.version
+                    ))
                 }
 
                 // Cache the downloaded JAR

@@ -778,10 +778,12 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       jarPath
     )
 
-    // Finalize with the JAR size from the request
-    // SHA-256 not available (JAR not downloaded server-side). Store 'pending' so
-    // clients that check isNotBlank() will fail verification and fall back.
-    // The PluginManagerAPIImpl skips verification when sha256 is blank.
+    // Finalize with the JAR size from the request.
+    // SHA-256 is unavailable because the server never downloads the JAR (that's
+    // the point of this endpoint — the JAR stays on GitHub). We store 'pending'
+    // as a sentinel; the /download endpoint translates 'pending' and 'external'
+    // to an empty string, and the client skips SHA-256 verification when the
+    // hash is blank. Integrity is therefore delegated to HTTPS + GitHub.
     await finalizeVersion(supabase, versionResult.id, 'pending', body.jarSize)
 
     // Log API key usage
