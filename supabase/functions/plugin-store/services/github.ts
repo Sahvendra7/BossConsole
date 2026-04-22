@@ -40,12 +40,26 @@ export function isAllowedExternalJarUrl(url: string): boolean {
 }
 
 /**
+ * Upper bound on the byte count we'll hash for a single publish request.
+ * Chosen at 500 MB: well above any realistic plugin JAR (including the
+ * ~100 MB microkernel runtime) and below what the edge function's CPU-time
+ * and network budgets can handle. Guards against a publisher submitting a
+ * URL that points to a pathologically large artifact (or a redirect target
+ * that starts streaming indefinitely).
+ */
+const MAX_HASHABLE_BYTES = 500 * 1024 * 1024 // 500 MB
+
+/**
  * Stream-compute the SHA-256 of a remote JAR without buffering it in memory.
  *
  * Used by /github/metadata to derive the authoritative hash server-side
  * instead of trusting the publisher's submitted value. Streaming keeps peak
  * memory bounded (one fetch chunk at a time — typically 16–64 KB), so this
  * works for JARs that exceed the edge function's ArrayBuffer limits.
+ *
+ * Throws if the stream exceeds {@link MAX_HASHABLE_BYTES}; the reader is
+ * cancelled before the full body transfers so we don't burn CPU on a
+ * runaway response.
  *
  * @param downloadUrl URL of the JAR (must be on an allowed host)
  * @returns The hex-encoded SHA-256 and the number of bytes streamed
@@ -73,8 +87,15 @@ export async function computeRemoteSha256(
       const { done, value } = await reader.read()
       if (done) break
       if (value && value.length > 0) {
-        hash.update(value)
         totalBytes += value.length
+        if (totalBytes > MAX_HASHABLE_BYTES) {
+          // Cancel so the remainder of the response isn't transferred.
+          try { await reader.cancel() } catch { /* ignore */ }
+          throw new Error(
+            `Remote JAR exceeds ${MAX_HASHABLE_BYTES}-byte limit at ${totalBytes} bytes; refusing to hash`
+          )
+        }
+        hash.update(value)
       }
     }
   } finally {

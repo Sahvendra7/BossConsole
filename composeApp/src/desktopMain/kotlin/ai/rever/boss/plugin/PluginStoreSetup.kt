@@ -74,15 +74,32 @@ object PluginStoreSetup {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     /**
+     * Tracks which [downloadOnly] plugins already have an in-flight background
+     * update check on [scope], keyed by `pluginId`. Prevents repeated calls to
+     * [ensureSystemPluginsInstalled] within the same session (e.g. from plugin
+     * manager refreshes) from racing to download the same JAR.
+     */
+    private val inFlightUpdateChecks =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
+
+    /**
      * Whether microkernel mode is active (OOP plugins need the runtime JAR).
+     *
+     * Reads from [KernelBootstrap] when it's initialised, but always consults
+     * the `BOSS_MODE` env var / `boss.mode` system property as a fallback so
+     * that if `systemPlugins` is evaluated before the kernel bootstraps we
+     * don't cache `false` forever and silently skip the runtime install.
      */
     private val isKernelMode: Boolean by lazy {
-        try {
-            ai.rever.boss.kernel.KernelBootstrap.instance?.isKernelMode == true
-        } catch (_: Exception) {
-            val mode = System.getenv("BOSS_MODE") ?: System.getProperty("boss.mode", "")
-            mode.equals("KERNEL", ignoreCase = true)
+        val fromKernel = try {
+            ai.rever.boss.kernel.KernelBootstrap.instance?.isKernelMode
+        } catch (_: Throwable) {
+            null
         }
+        if (fromKernel != null) return@lazy fromKernel
+
+        val mode = System.getenv("BOSS_MODE") ?: System.getProperty("boss.mode", "")
+        mode.equals("KERNEL", ignoreCase = true)
     }
 
     /**
@@ -442,6 +459,18 @@ object PluginStoreSetup {
         systemPlugin: SystemPluginInfo,
         existingJar: File,
     ) {
+        // Dedup: only one background update check per pluginId at a time.
+        // compareAndSet gives us a lock-free test-and-set; if another coroutine
+        // already holds the flag we skip.
+        val flag = inFlightUpdateChecks.computeIfAbsent(systemPlugin.pluginId) {
+            java.util.concurrent.atomic.AtomicBoolean(false)
+        }
+        if (!flag.compareAndSet(false, true)) {
+            logger.debug(LogCategory.SYSTEM, "Background update check already in flight — skipping", mapOf(
+                "pluginId" to systemPlugin.pluginId
+            ))
+            return
+        }
         scope.launch {
             try {
                 // Authoritative installed version: the JAR's own manifest. Filename
@@ -484,6 +513,8 @@ object PluginStoreSetup {
                     "pluginId" to systemPlugin.pluginId,
                     "error" to (e.message ?: "unknown")
                 ))
+            } finally {
+                flag.set(false)
             }
         }
     }
@@ -640,6 +671,10 @@ object PluginStoreSetup {
                 val jarUrl = jarUrlMatch.groupValues[1]
                 val jarFileName = jarUrl.substringAfterLast("/")
                 val destFile = File(_pluginDir, jarFileName)
+                // Stage the download in a sibling `.tmp` file and atomic-rename
+                // on success so a failed mid-write download can never leave the
+                // plugins directory with the old JAR deleted and no replacement.
+                val tmpFile = File(_pluginDir, "$jarFileName.tmp")
 
                 logger.info(LogCategory.SYSTEM, "Downloading system plugin JAR", mapOf(
                     "pluginId" to plugin.pluginId,
@@ -648,18 +683,9 @@ object PluginStoreSetup {
                     "dest" to destFile.absolutePath
                 ))
 
-                // Remove old versions of this plugin
-                _pluginDir.listFiles()?.filter {
-                    it.name.startsWith(plugin.artifactPrefix) && it.name.endsWith(".jar")
-                }?.forEach { oldFile ->
-                    logger.debug(LogCategory.SYSTEM, "Removing old version", mapOf(
-                        "file" to oldFile.name
-                    ))
-                    oldFile.delete()
-                }
-
-                // Download the JAR (authenticated so release-asset fetches from
-                // private/gated repos work and share the 5000/hr pool).
+                // Download the JAR into the tmp file first (authenticated so
+                // release-asset fetches from private/gated repos work and share
+                // the 5000/hr pool).
                 val jarConn = (URL(jarUrl).openConnection() as java.net.HttpURLConnection).apply {
                     applyGitHubAuth()
                     instanceFollowRedirects = true
@@ -668,21 +694,58 @@ object PluginStoreSetup {
                 }
                 try {
                     jarConn.inputStream.use { input ->
-                        destFile.outputStream().use { output ->
+                        tmpFile.outputStream().use { output ->
                             input.copyTo(output)
                         }
                     }
+                } catch (e: Exception) {
+                    tmpFile.delete()
+                    throw e
                 } finally {
                     jarConn.disconnect()
                 }
 
-                // Verify download
-                if (!destFile.exists() || destFile.length() == 0L) {
+                // Verify the staged file before replacing anything
+                if (!tmpFile.exists() || tmpFile.length() == 0L) {
+                    tmpFile.delete()
                     logger.error(LogCategory.SYSTEM, "Downloaded JAR is empty or missing", mapOf(
                         "pluginId" to plugin.pluginId,
-                        "file" to destFile.absolutePath
+                        "file" to tmpFile.absolutePath
                     ))
                     return@withContext false
+                }
+
+                // Only now is it safe to remove the old versions, and only
+                // after we've confirmed a valid download. Keeps the previously
+                // running session's JAR intact if anything above failed.
+                _pluginDir.listFiles()?.filter {
+                    it.name.startsWith(plugin.artifactPrefix) &&
+                        it.name.endsWith(".jar") &&
+                        it.name != jarFileName
+                }?.forEach { oldFile ->
+                    logger.debug(LogCategory.SYSTEM, "Removing old version", mapOf(
+                        "file" to oldFile.name
+                    ))
+                    oldFile.delete()
+                }
+
+                // Atomic rename onto the final path. Overwrite if the file
+                // exists (same version re-download).
+                try {
+                    java.nio.file.Files.move(
+                        tmpFile.toPath(),
+                        destFile.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    // Falls back to a best-effort rename on filesystems that
+                    // don't support atomic moves (rare; typically cross-device).
+                    java.nio.file.Files.move(
+                        tmpFile.toPath(),
+                        destFile.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    )
                 }
 
                 logger.info(LogCategory.SYSTEM, "Downloaded system plugin successfully", mapOf(

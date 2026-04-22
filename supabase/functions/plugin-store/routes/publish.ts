@@ -718,9 +718,10 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
     const release = await fetchLatestRelease(parsed.owner, parsed.repo, parsed.tag)
     const jarAsset = findJarAsset(release)
     if (!jarAsset) {
+      // Deliberately generic — don't echo the resolved tag back to the caller.
       return ctx.json({
         success: false,
-        error: `No JAR file found in release ${release.tag_name}`
+        error: 'No JAR asset found in the requested GitHub release'
       }, 400)
     }
 
