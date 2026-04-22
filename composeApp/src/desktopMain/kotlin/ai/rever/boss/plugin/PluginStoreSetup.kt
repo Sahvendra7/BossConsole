@@ -1,5 +1,6 @@
 package ai.rever.boss.plugin
 
+import ai.rever.boss.config.GitHubConfig
 import ai.rever.boss.config.SupabaseClientConfig
 import ai.rever.boss.plugin.pathutils.BossDirectories
 import ai.rever.boss.services.supabase.SupabaseConfig
@@ -447,20 +448,63 @@ object PluginStoreSetup {
     }
 
     /**
+     * Apply GitHub API auth + standard headers to a connection. When a
+     * `GITHUB_TOKEN` is available (env var, system property, local.properties,
+     * or `gh` CLI) the request uses authenticated rate limits (5000/hr instead
+     * of 60/hr) — otherwise anonymous callers on shared IPs (CI, many BOSS
+     * instances) silently hit 60/hr and the update check degrades to a no-op.
+     */
+    private fun java.net.HttpURLConnection.applyGitHubAuth() {
+        setRequestProperty("Accept", "application/vnd.github.v3+json")
+        setRequestProperty("User-Agent", "BossConsole")
+        val token = try {
+            GitHubConfig.getAuthContext().takeIf { it.isAuthenticated }?.token
+        } catch (_: Exception) {
+            null
+        }
+        if (!token.isNullOrBlank()) {
+            setRequestProperty("Authorization", "Bearer $token")
+        }
+    }
+
+    /**
      * Fetch the latest release's version string (tag name with the leading
      * "v" stripped) from a GitHub repository. Returns null if the call fails.
+     *
+     * A 403 from the API is usually a rate-limit hit — we log it at WARN so
+     * stale-runtime bugs don't hide behind silent fallback.
      */
     private suspend fun fetchLatestReleaseVersion(githubRepo: String): String? {
         return withContext(Dispatchers.IO) {
+            var connection: java.net.HttpURLConnection? = null
             try {
                 val apiUrl = "https://api.github.com/repos/$githubRepo/releases/latest"
-                val connection = URL(apiUrl).openConnection().apply {
-                    setRequestProperty("Accept", "application/vnd.github.v3+json")
-                    setRequestProperty("User-Agent", "BossConsole")
+                connection = (URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
+                    applyGitHubAuth()
                     connectTimeout = 5000
                     readTimeout = 5000
                 }
-                val responseText = connection.getInputStream().bufferedReader().readText()
+                val status = connection.responseCode
+                if (status == 403 || status == 429) {
+                    val remaining = connection.getHeaderField("X-RateLimit-Remaining")
+                    val reset = connection.getHeaderField("X-RateLimit-Reset")
+                    logger.warn(LogCategory.SYSTEM, "GitHub API rate-limited while checking for runtime update", mapOf(
+                        "repo" to githubRepo,
+                        "status" to status,
+                        "remaining" to (remaining ?: "unknown"),
+                        "resetEpoch" to (reset ?: "unknown"),
+                        "hint" to "set GITHUB_TOKEN in env or local.properties to raise the limit from 60/hr to 5000/hr"
+                    ))
+                    return@withContext null
+                }
+                if (status !in 200..299) {
+                    logger.debug(LogCategory.SYSTEM, "GitHub releases API returned non-2xx", mapOf(
+                        "repo" to githubRepo,
+                        "status" to status
+                    ))
+                    return@withContext null
+                }
+                val responseText = connection.inputStream.bufferedReader().readText()
                 Regex(""""tag_name"\s*:\s*"([^"]+)"""")
                     .find(responseText)
                     ?.groupValues
@@ -472,6 +516,8 @@ object PluginStoreSetup {
                     "error" to (e.message ?: "unknown")
                 ))
                 null
+            } finally {
+                connection?.disconnect()
             }
         }
     }
@@ -504,15 +550,34 @@ object PluginStoreSetup {
                     "url" to apiUrl
                 ))
 
-                // Fetch release info
-                val connection = URL(apiUrl).openConnection().apply {
-                    setRequestProperty("Accept", "application/vnd.github.v3+json")
-                    setRequestProperty("User-Agent", "BossConsole")
+                // Fetch release info (authenticated when GITHUB_TOKEN is set)
+                val connection = (URL(apiUrl).openConnection() as java.net.HttpURLConnection).apply {
+                    applyGitHubAuth()
                     connectTimeout = 10000
                     readTimeout = 10000
                 }
 
-                val responseText = connection.getInputStream().bufferedReader().readText()
+                val status = connection.responseCode
+                if (status == 403 || status == 429) {
+                    val remaining = connection.getHeaderField("X-RateLimit-Remaining")
+                    logger.warn(LogCategory.SYSTEM, "GitHub API rate-limited while downloading system plugin", mapOf(
+                        "pluginId" to plugin.pluginId,
+                        "repo" to plugin.githubRepo,
+                        "status" to status,
+                        "remaining" to (remaining ?: "unknown"),
+                        "hint" to "set GITHUB_TOKEN in env or local.properties to raise the limit from 60/hr to 5000/hr"
+                    ))
+                    return@withContext false
+                }
+                if (status !in 200..299) {
+                    logger.warn(LogCategory.SYSTEM, "GitHub releases API returned non-2xx", mapOf(
+                        "pluginId" to plugin.pluginId,
+                        "status" to status
+                    ))
+                    return@withContext false
+                }
+
+                val responseText = connection.inputStream.bufferedReader().readText()
 
                 // Parse JSON to find the JAR asset
                 val tagNameMatch = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(responseText)
@@ -552,12 +617,20 @@ object PluginStoreSetup {
                     oldFile.delete()
                 }
 
-                // Download the JAR
-                URL(jarUrl).openStream().use { input ->
+                // Download the JAR (authenticated so release-asset fetches from
+                // private/gated repos work and share the 5000/hr pool).
+                val jarConn = (URL(jarUrl).openConnection() as java.net.HttpURLConnection).apply {
+                    applyGitHubAuth()
+                    instanceFollowRedirects = true
+                    connectTimeout = 15000
+                    readTimeout = 60000
+                }
+                jarConn.inputStream.use { input ->
                     destFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
                 }
+                jarConn.disconnect()
 
                 // Verify download
                 if (!destFile.exists() || destFile.length() == 0L) {

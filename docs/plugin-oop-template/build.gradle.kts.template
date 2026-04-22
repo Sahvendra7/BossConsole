@@ -47,7 +47,7 @@ tasks.shadowJar {
     // Exclude plugin-api-core and boss-microkernel-runtime (provided by the runtime)
     dependencies {
         exclude(dependency("ai.rever.boss.plugin:plugin-api-core"))
-        exclude(dependency("ai.rever.boss.plugin.runtime:boss-microkernel-runtime"))
+        exclude(dependency("ai.rever.boss.microkernel.runtime:boss-microkernel-runtime"))
     }
 }
 
