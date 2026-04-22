@@ -23,6 +23,8 @@ import {
   fetchLatestRelease,
   findJarAsset,
   extractManifestFromRemoteJar,
+  computeRemoteSha256,
+  isAllowedExternalJarUrl,
 } from "../services/github.ts"
 
 const publish = new OpenAPIHono<{ Variables: PluginStoreContext }>()
@@ -710,20 +712,51 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       }, 400)
     }
 
+    // Defense-in-depth: the JAR URL we're about to store (and clients will
+    // download from) must come from a known GitHub host.
+    if (!isAllowedExternalJarUrl(jarAsset.browser_download_url)) {
+      return ctx.json({
+        success: false,
+        error: `Release JAR URL is not from an allowed GitHub host: ${jarAsset.browser_download_url}`
+      }, 400)
+    }
+
     // Extract the manifest server-side from the actual JAR on GitHub using
     // range requests — this is the authoritative source of truth for pluginId,
     // version, type, etc. Trusting a client-provided manifest would let a
     // publish-scoped caller register a plugin under any pluginId.
     let manifest: Awaited<ReturnType<typeof extractManifestFromRemoteJar>>['manifest']
-    let totalSize: number
     try {
       const extracted = await extractManifestFromRemoteJar(jarAsset.browser_download_url)
       manifest = extracted.manifest
-      totalSize = extracted.totalSize
     } catch (e) {
       return ctx.json({
         success: false,
         error: `Failed to extract manifest from JAR: ${(e as Error).message}`
+      }, 400)
+    }
+
+    // Compute the authoritative SHA-256 by streaming the remote JAR. This is
+    // the integrity anchor stored in the DB; the client-provided `body.sha256`
+    // is a sanity check so a publisher who accidentally uploaded a different
+    // JAR than they built locally gets told immediately.
+    let computedSha256: string
+    let totalBytes: number
+    try {
+      const hashed = await computeRemoteSha256(jarAsset.browser_download_url)
+      computedSha256 = hashed.sha256
+      totalBytes = hashed.totalBytes
+    } catch (e) {
+      return ctx.json({
+        success: false,
+        error: `Failed to compute JAR hash: ${(e as Error).message}`
+      }, 502)
+    }
+
+    if (body.sha256.toLowerCase() !== computedSha256) {
+      return ctx.json({
+        success: false,
+        error: `SHA-256 mismatch: client reported ${body.sha256.toLowerCase()}, server computed ${computedSha256}. The JAR on GitHub may not match what you built locally.`
       }, 400)
     }
 
@@ -799,16 +832,14 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       jarPath
     )
 
-    // Store the client-provided SHA-256 (validated as 64-hex by the schema)
-    // and the JAR size from GitHub's release metadata. The server cannot
-    // recompute the hash without downloading the full JAR, so we trust the
-    // authenticated publisher for the hash while using GitHub as the size
-    // authority. Clients verify against the stored hash on download.
+    // Persist the server-computed SHA-256 as the integrity anchor, paired
+    // with the byte count actually streamed. `jarAsset.size` from the release
+    // API is used only as a fallback (should equal `totalBytes`).
     await finalizeVersion(
       supabase,
       versionResult.id,
-      body.sha256.toLowerCase(),
-      jarAsset.size || totalSize
+      computedSha256,
+      totalBytes || jarAsset.size
     )
 
     // Log API key usage

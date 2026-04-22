@@ -9,6 +9,7 @@ import { getLatestVersion, getVersion } from "../services/versions.ts"
 import { getSignedDownloadUrl } from "../services/storage.ts"
 import { recordDownload, hashIp } from "../services/downloads.ts"
 import { getUserFromToken } from "../utils/auth.ts"
+import { isAllowedExternalJarUrl } from "../services/github.ts"
 
 const download = new OpenAPIHono<{ Variables: PluginStoreContext }>()
 
@@ -72,8 +73,14 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       return ctx.json({ error: 'No versions available' }, 404)
     }
 
-    // Generate download URL — external URLs (GitHub-hosted) are returned directly
+    // Generate download URL — externally-hosted (GitHub) URLs are returned
+    // directly, but only if they're on an allowed host; otherwise a corrupted
+    // jar_path could redirect the client to an arbitrary origin.
     const isExternal = version.jarPath.startsWith('https://')
+    if (isExternal && !isAllowedExternalJarUrl(version.jarPath)) {
+      console.error(`Blocked external JAR URL from disallowed host: ${version.jarPath}`)
+      return ctx.json({ error: 'Stored JAR URL is not from an allowed host' }, 502)
+    }
     const downloadUrl = isExternal
       ? version.jarPath
       : await getSignedDownloadUrl(supabase, version.jarPath)
@@ -165,8 +172,13 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       return ctx.json({ error: 'Version not found' }, 404)
     }
 
-    // Generate download URL — external URLs (GitHub-hosted) are returned directly
+    // Generate download URL — externally-hosted (GitHub) URLs are returned
+    // directly, but only if they're on an allowed host.
     const isExternal = version.jarPath.startsWith('https://')
+    if (isExternal && !isAllowedExternalJarUrl(version.jarPath)) {
+      console.error(`Blocked external JAR URL from disallowed host: ${version.jarPath}`)
+      return ctx.json({ error: 'Stored JAR URL is not from an allowed host' }, 502)
+    }
     const downloadUrl = isExternal
       ? version.jarPath
       : await getSignedDownloadUrl(supabase, version.jarPath)

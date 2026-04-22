@@ -5,6 +5,84 @@
  */
 
 import { PluginManifest } from "../types/plugin.ts"
+import { createHash } from "node:crypto"
+
+/**
+ * Hosts permitted to serve externally-hosted plugin JARs.
+ *
+ * `github.com` is where `browser_download_url` points; GitHub 302-redirects
+ * to `objects.githubusercontent.com` (legacy CDN) or
+ * `release-assets.githubusercontent.com` (current CDN). Redirects are
+ * followed by `fetch` transparently, but we still allow those hosts for
+ * any future code path that stores a resolved URL directly.
+ */
+const ALLOWED_EXTERNAL_JAR_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+])
+
+/**
+ * Returns true if [url] is an HTTPS URL hosted on a GitHub release asset host.
+ * Used as an allowlist for both publish and download paths so a corrupted or
+ * malicious `jar_path` cannot redirect clients to an arbitrary HTTPS origin.
+ */
+export function isAllowedExternalJarUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === "https:" &&
+      ALLOWED_EXTERNAL_JAR_HOSTS.has(parsed.hostname)
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Stream-compute the SHA-256 of a remote JAR without buffering it in memory.
+ *
+ * Used by /github/metadata to derive the authoritative hash server-side
+ * instead of trusting the publisher's submitted value. Streaming keeps peak
+ * memory bounded (one fetch chunk at a time — typically 16–64 KB), so this
+ * works for JARs that exceed the edge function's ArrayBuffer limits.
+ *
+ * @param downloadUrl URL of the JAR (must be on an allowed host)
+ * @returns The hex-encoded SHA-256 and the number of bytes streamed
+ */
+export async function computeRemoteSha256(
+  downloadUrl: string
+): Promise<{ sha256: string; totalBytes: number }> {
+  const response = await fetch(downloadUrl, {
+    headers: { "User-Agent": "BOSS-Plugin-Store/1.0" },
+  })
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch JAR for hashing: ${response.status} ${response.statusText}`
+    )
+  }
+  if (!response.body) {
+    throw new Error("Remote JAR response has no body")
+  }
+
+  const hash = createHash("sha256")
+  const reader = response.body.getReader()
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.length > 0) {
+        hash.update(value)
+        totalBytes += value.length
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return { sha256: hash.digest("hex"), totalBytes }
+}
 
 /**
  * GitHub release asset information
