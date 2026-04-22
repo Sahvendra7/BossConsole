@@ -281,7 +281,7 @@ export async function extractManifestFromRemoteJar(
     },
   })
 
-  if (!tailResp.ok && tailResp.status !== 206) {
+  if (tailResp.status !== 200 && tailResp.status !== 206) {
     throw new Error(`Range request for EOCD failed: ${tailResp.status}`)
   }
 
@@ -310,8 +310,61 @@ export async function extractManifestFromRemoteJar(
     throw new Error("Cannot find EOCD in JAR (range request)")
   }
 
-  const cdSize = tailView.getUint32(eocdPos + 12, true)
-  const cdOffset = tailView.getUint32(eocdPos + 16, true) // absolute offset in file
+  let cdSize: number = tailView.getUint32(eocdPos + 12, true)
+  let cdOffset: number = tailView.getUint32(eocdPos + 16, true) // absolute offset in file
+  let entryCount: number = tailView.getUint16(eocdPos + 10, true)
+
+  // ZIP64 detection — any of these sentinel values means the real numbers
+  // live in the ZIP64 EOCD record reachable via the ZIP64 EOCD locator
+  // (20 bytes immediately before the standard EOCD).
+  const needsZip64 =
+    cdSize === 0xffffffff || cdOffset === 0xffffffff || entryCount === 0xffff
+
+  if (needsZip64) {
+    const locatorPos = eocdPos - 20
+    if (locatorPos < 0 || tailView.getUint32(locatorPos, true) !== 0x07064b50) {
+      throw new Error(
+        "JAR appears to use ZIP64 but the ZIP64 EOCD locator was not found in the tail"
+      )
+    }
+    // ZIP64 EOCD locator: relative offset of ZIP64 EOCD record is a uint64 at
+    // locatorPos+8. JS numbers are safe for byte offsets well under 2^53, so
+    // read high/low 32-bit halves and reject archives that actually need >2^53.
+    const zip64EocdLo = tailView.getUint32(locatorPos + 8, true)
+    const zip64EocdHi = tailView.getUint32(locatorPos + 12, true)
+    if (zip64EocdHi > 0x001fffff) {
+      throw new Error("ZIP64 EOCD offset exceeds JS safe-integer range")
+    }
+    const zip64EocdAbs = zip64EocdHi * 0x1_0000_0000 + zip64EocdLo
+
+    // ZIP64 EOCD may live in the tail we already fetched. If not, pull it.
+    let z64Data: Uint8Array
+    let z64Base: number
+    if (zip64EocdAbs >= tailOffset) {
+      z64Data = tailData
+      z64Base = zip64EocdAbs - tailOffset
+    } else {
+      const { data } = await downloadRange(downloadUrl, zip64EocdAbs, zip64EocdAbs + 55)
+      z64Data = data
+      z64Base = 0
+    }
+    const z64View = new DataView(z64Data.buffer, z64Data.byteOffset, z64Data.byteLength)
+    if (z64View.getUint32(z64Base, true) !== 0x06064b50) {
+      throw new Error("ZIP64 EOCD record not found at locator offset")
+    }
+    // Total entries (uint64) at +32, CD size (uint64) at +40, CD offset (uint64) at +48
+    const readU64 = (off: number): number => {
+      const lo = z64View.getUint32(z64Base + off, true)
+      const hi = z64View.getUint32(z64Base + off + 4, true)
+      if (hi > 0x001fffff) {
+        throw new Error("ZIP64 field exceeds JS safe-integer range")
+      }
+      return hi * 0x1_0000_0000 + lo
+    }
+    entryCount = readU64(32)
+    cdSize = readU64(40)
+    cdOffset = readU64(48)
+  }
 
   // Step 2: fetch the central directory (if not already in tail)
   let cdData: Uint8Array
@@ -339,15 +392,65 @@ export async function extractManifestFromRemoteJar(
     if (sig !== 0x02014b50) break
 
     const compressionMethod = cdView.getUint16(offset + 10, true)
-    const compressedSize = cdView.getUint32(offset + 20, true)
+    let compressedSize: number = cdView.getUint32(offset + 20, true)
     const fileNameLength = cdView.getUint16(offset + 28, true)
     const extraFieldLength = cdView.getUint16(offset + 30, true)
     const commentLength = cdView.getUint16(offset + 32, true)
-    const localHeaderOffset = cdView.getUint32(offset + 42, true)
+    let localHeaderOffset: number = cdView.getUint32(offset + 42, true)
 
     const fnBytes = cdData.slice(offset + 46, offset + 46 + fileNameLength)
     const fileName = new TextDecoder().decode(fnBytes)
-    offset += 46 + fileNameLength + extraFieldLength + commentLength
+    const entryEnd = offset + 46 + fileNameLength + extraFieldLength + commentLength
+
+    // Per-entry ZIP64: if any of compressedSize/uncompressedSize/localHeaderOffset
+    // is 0xFFFFFFFF, the real 64-bit value lives in a ZIP64 extra field
+    // (headerId 0x0001). plugin.json is small, but its localHeaderOffset can
+    // easily exceed 4 GB in a fat JAR even though the file itself is tiny.
+    if (
+      fileName === manifestPath &&
+      (localHeaderOffset === 0xffffffff || compressedSize === 0xffffffff)
+    ) {
+      const extraStart = offset + 46 + fileNameLength
+      const extraEnd = extraStart + extraFieldLength
+      let p = extraStart
+      let resolved = false
+      while (p + 4 <= extraEnd) {
+        const headerId = cdView.getUint16(p, true)
+        const dataSize = cdView.getUint16(p + 2, true)
+        if (headerId === 0x0001) {
+          // Order: uncompressedSize(8), compressedSize(8), localHeaderOffset(8), diskStart(4).
+          // Each field appears only if its corresponding main value was 0xFFFFFFFF.
+          let q = p + 4
+          const uncompressedMain = cdView.getUint32(offset + 24, true)
+          if (uncompressedMain === 0xffffffff) q += 8
+          if (compressedSize === 0xffffffff) {
+            const lo = cdView.getUint32(q, true)
+            const hi = cdView.getUint32(q + 4, true)
+            if (hi > 0x001fffff) {
+              throw new Error("ZIP64 compressedSize exceeds JS safe-integer range")
+            }
+            compressedSize = hi * 0x1_0000_0000 + lo
+            q += 8
+          }
+          if (localHeaderOffset === 0xffffffff) {
+            const lo = cdView.getUint32(q, true)
+            const hi = cdView.getUint32(q + 4, true)
+            if (hi > 0x001fffff) {
+              throw new Error("ZIP64 localHeaderOffset exceeds JS safe-integer range")
+            }
+            localHeaderOffset = hi * 0x1_0000_0000 + lo
+          }
+          resolved = true
+          break
+        }
+        p += 4 + dataSize
+      }
+      if (!resolved) {
+        throw new Error("plugin.json entry has ZIP64 sentinel without a ZIP64 extra field")
+      }
+    }
+
+    offset = entryEnd
 
     if (fileName !== manifestPath) continue
 
@@ -466,6 +569,15 @@ async function extractFileFromZip(
   const cdEntries = view.getUint16(eocdOffset + 10, true)
   const cdSize = view.getUint32(eocdOffset + 12, true)
   const cdOffset = view.getUint32(eocdOffset + 16, true)
+
+  // ZIP64 — sentinel values indicate the real fields live in a ZIP64 EOCD
+  // record. JARs that hit this path in memory are rare (50 MB+ goes through
+  // the range-request path), but fail loudly instead of silently corrupting.
+  if (cdEntries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+    throw new Error(
+      "JAR uses ZIP64 format; use extractManifestFromRemoteJar (range-request path) instead"
+    )
+  }
 
   // --- Walk the central directory to find our file ---
   let offset = cdOffset
@@ -644,11 +756,35 @@ export async function calculateSha256(data: ArrayBuffer): Promise<string> {
 }
 
 /**
+ * Size (in bytes) at which we refuse to buffer a JAR in memory and direct
+ * the caller to the streaming /github/metadata path instead. Supabase edge
+ * functions have ~256 MB of RAM, and a JAR near this threshold plus the
+ * upload buffer plus the runtime itself starts to OOM unpredictably.
+ */
+export const LARGE_JAR_THRESHOLD = 50 * 1024 * 1024 // 50 MB
+
+/**
+ * Thrown by {@link fetchPluginFromGitHub} when the JAR exceeds the buffer
+ * threshold and should be published via /github/metadata instead.
+ */
+export class JarTooLargeError extends Error {
+  constructor(public readonly size: number) {
+    super(
+      `JAR size (${size} bytes) exceeds the ${LARGE_JAR_THRESHOLD}-byte limit ` +
+        `for /github. Use POST /github/metadata — it streams the hash from the ` +
+        `release instead of buffering the JAR server-side.`
+    )
+    this.name = "JarTooLargeError"
+  }
+}
+
+/**
  * Fetch plugin from GitHub - main entry point
  *
- * For small JARs (< 50 MB), downloads the full JAR into memory.
- * For large JARs (>= 50 MB), uses range requests to extract the manifest
- * without downloading the full file, then streams the download for upload.
+ * Buffers the JAR in memory to compute SHA-256 and upload to Supabase Storage,
+ * so callers with JARs ≥ {@link LARGE_JAR_THRESHOLD} get a {@link JarTooLargeError}
+ * and should publish via POST /github/metadata, which streams the hash and keeps
+ * the JAR on GitHub.
  *
  * @param githubUrl - GitHub repository URL
  * @returns Plugin manifest, JAR data, and metadata
@@ -673,31 +809,11 @@ export async function fetchPluginFromGitHub(githubUrl: string): Promise<GitHubPl
     )
   }
 
-  const LARGE_JAR_THRESHOLD = 50 * 1024 * 1024 // 50 MB
-
   if (jarAsset.size >= LARGE_JAR_THRESHOLD) {
-    // Large JAR: use range requests for manifest, then download full JAR
-    console.log(`Large JAR detected (${jarAsset.size} bytes), using range requests for manifest`)
-
-    const { manifest, totalSize } = await extractManifestFromRemoteJar(
-      jarAsset.browser_download_url
-    )
-
-    // Still need to download the full JAR for storage upload and SHA-256
-    const jarData = await downloadJar(jarAsset.browser_download_url)
-    const sha256 = await calculateSha256(jarData)
-
-    return {
-      manifest,
-      jarData,
-      jarSize: jarData.byteLength,
-      sha256,
-      releaseNotes: release.body || "",
-      version: manifest.version,
-    }
+    throw new JarTooLargeError(jarAsset.size)
   }
 
-  // Small JAR: download fully and extract manifest from memory
+  // Download fully and extract manifest from memory
   const jarData = await downloadJar(jarAsset.browser_download_url)
   const manifest = await extractManifestFromJar(jarData)
   const sha256 = await calculateSha256(jarData)

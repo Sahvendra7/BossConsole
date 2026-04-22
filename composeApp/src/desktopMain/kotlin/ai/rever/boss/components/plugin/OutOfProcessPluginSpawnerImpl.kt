@@ -56,7 +56,7 @@ class OutOfProcessPluginSpawnerImpl(
         System.getenv("BOSS_PLUGIN_RUNTIME_JAR")
             ?: findRuntimeJar()
             ?: throw IllegalStateException(
-                "Cannot find boss-microkernel-runtime JAR. Set BOSS_PLUGIN_RUNTIME_JAR env var."
+                "Cannot find ${MicrokernelRuntime.ARTIFACT_PREFIX} JAR. Set BOSS_PLUGIN_RUNTIME_JAR env var."
             )
     }
 
@@ -242,12 +242,13 @@ class OutOfProcessPluginSpawnerImpl(
         }
         val pluginDir = "$bossDataDir/plugins"
 
+        val prefix = MicrokernelRuntime.ARTIFACT_PREFIX
         val candidates = buildList {
             // Development: build output
-            add("boss-microkernel-runtime/build/libs/boss-microkernel-runtime-all.jar")
+            add("$prefix/build/libs/$prefix-all.jar")
             // Production: in plugins directory
             File(pluginDir).listFiles()
-                ?.filter { it.name.startsWith("boss-microkernel-runtime") && it.name.endsWith(".jar") }
+                ?.filter { it.name.startsWith(prefix) && it.name.endsWith(".jar") }
                 ?.sortedByDescending { it.lastModified() }
                 ?.forEach { add(it.absolutePath) }
         }

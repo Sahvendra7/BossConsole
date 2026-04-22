@@ -25,6 +25,7 @@ import {
   extractManifestFromRemoteJar,
   computeRemoteSha256,
   isAllowedExternalJarUrl,
+  JarTooLargeError,
 } from "../services/github.ts"
 
 const publish = new OpenAPIHono<{ Variables: PluginStoreContext }>()
@@ -518,7 +519,18 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
 
     // Fetch plugin from GitHub
     console.log(`Fetching plugin from GitHub: ${body.githubUrl}`)
-    const githubResult = await fetchPluginFromGitHub(body.githubUrl)
+    let githubResult: Awaited<ReturnType<typeof fetchPluginFromGitHub>>
+    try {
+      githubResult = await fetchPluginFromGitHub(body.githubUrl)
+    } catch (e) {
+      if (e instanceof JarTooLargeError) {
+        return ctx.json({
+          success: false,
+          error: e.message
+        }, 400)
+      }
+      throw e
+    }
     const { manifest, jarData, jarSize, sha256, releaseNotes, version } = githubResult
 
     console.log(`Extracted manifest: ${manifest.pluginId} v${version}`)

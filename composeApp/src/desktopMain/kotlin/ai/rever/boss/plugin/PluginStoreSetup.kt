@@ -90,54 +90,56 @@ object PluginStoreSetup {
      * These are auto-downloaded from GitHub releases if missing.
      * Ordered by load priority (lower = loads first).
      */
-    private val systemPlugins: List<SystemPluginInfo> by lazy { buildList {
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.api",
-            githubRepo = "risa-labs-inc/boss-plugin-api",
-            artifactPrefix = "boss-plugin-api",
-            loadPriority = 0
-        ))
-        // Microkernel runtime JAR is only needed when kernel mode is active (OOP plugins)
-        if (isKernelMode) {
+    private val systemPlugins: List<SystemPluginInfo> by lazy {
+        buildList {
             add(SystemPluginInfo(
-                pluginId = "ai.rever.boss.microkernel.runtime",
-                githubRepo = "risa-labs-inc/boss-microkernel-runtime",
-                artifactPrefix = "boss-microkernel-runtime",
-                loadPriority = 1,
-                downloadOnly = true
+                pluginId = "ai.rever.boss.plugin.api",
+                githubRepo = "risa-labs-inc/boss-plugin-api",
+                artifactPrefix = "boss-plugin-api",
+                loadPriority = 0
+            ))
+            // Microkernel runtime JAR is only needed when kernel mode is active (OOP plugins)
+            if (isKernelMode) {
+                add(SystemPluginInfo(
+                    pluginId = ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID,
+                    githubRepo = ai.rever.boss.components.plugin.MicrokernelRuntime.GITHUB_REPO,
+                    artifactPrefix = ai.rever.boss.components.plugin.MicrokernelRuntime.ARTIFACT_PREFIX,
+                    loadPriority = 1,
+                    downloadOnly = true
+                ))
+            }
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
+                githubRepo = "risa-labs-inc/boss-plugin-plugin-manager",
+                artifactPrefix = "boss-plugin-plugin-manager",
+                loadPriority = 5
+            ))
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.plugin.dynamic.terminaltab",
+                githubRepo = "risa-labs-inc/boss-plugin-terminal-tab",
+                artifactPrefix = "boss-plugin-terminal-tab",
+                loadPriority = 10
+            ))
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.plugin.dynamic.terminal",
+                githubRepo = "risa-labs-inc/boss-plugin-terminal",
+                artifactPrefix = "boss-plugin-terminal",
+                loadPriority = 10
+            ))
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
+                githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
+                artifactPrefix = "boss-plugin-fluck-browser",
+                loadPriority = 10
+            ))
+            add(SystemPluginInfo(
+                pluginId = "ai.rever.boss.plugin.dynamic.editortab",
+                githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
+                artifactPrefix = "boss-plugin-editor-tab",
+                loadPriority = 10
             ))
         }
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.dynamic.pluginmanager",
-            githubRepo = "risa-labs-inc/boss-plugin-plugin-manager",
-            artifactPrefix = "boss-plugin-plugin-manager",
-            loadPriority = 5
-        ))
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.dynamic.terminaltab",
-            githubRepo = "risa-labs-inc/boss-plugin-terminal-tab",
-            artifactPrefix = "boss-plugin-terminal-tab",
-            loadPriority = 10
-        ))
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.dynamic.terminal",
-            githubRepo = "risa-labs-inc/boss-plugin-terminal",
-            artifactPrefix = "boss-plugin-terminal",
-            loadPriority = 10
-        ))
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.dynamic.fluckbrowser",
-            githubRepo = "risa-labs-inc/boss-plugin-fluck-browser",
-            artifactPrefix = "boss-plugin-fluck-browser",
-            loadPriority = 10
-        ))
-        add(SystemPluginInfo(
-            pluginId = "ai.rever.boss.plugin.dynamic.editortab",
-            githubRepo = "risa-labs-inc/boss-plugin-editor-tab",
-            artifactPrefix = "boss-plugin-editor-tab",
-            loadPriority = 10
-        ))
-    } }
+    }
 
     // Plugin infrastructure components
     private var _downloadCache: PluginDownloadCache? = null
@@ -383,31 +385,13 @@ object PluginStoreSetup {
                         it.name.startsWith("${systemPlugin.artifactPrefix}-") && it.name.endsWith(".jar")
                     }
                     if (existingJar != null) {
-                        // Compare installed vs. latest release so the runtime JAR auto-updates.
-                        // If GitHub is unreachable or the version can't be determined we keep
-                        // the existing JAR rather than break startup.
-                        val installedVersion = extractVersionFromJarFileName(existingJar.name, systemPlugin.artifactPrefix)
-                        val latestVersion = fetchLatestReleaseVersion(systemPlugin.githubRepo)
-                        if (installedVersion != null && latestVersion != null && installedVersion == latestVersion) {
-                            logger.debug(LogCategory.SYSTEM, "Download-only plugin up-to-date", mapOf(
-                                "pluginId" to systemPlugin.pluginId,
-                                "version" to installedVersion
-                            ))
-                            continue
-                        }
-                        if (latestVersion == null) {
-                            logger.debug(LogCategory.SYSTEM, "Download-only plugin present, skipping update check (offline or rate-limited)", mapOf(
-                                "pluginId" to systemPlugin.pluginId,
-                                "installedVersion" to (installedVersion ?: "unknown")
-                            ))
-                            continue
-                        }
-                        logger.info(LogCategory.SYSTEM, "Download-only plugin outdated - will update", mapOf(
-                            "pluginId" to systemPlugin.pluginId,
-                            "installedVersion" to (installedVersion ?: "unknown"),
-                            "latestVersion" to latestVersion
-                        ))
-                        // Fall through — downloadSystemPluginFromGitHub deletes old versions
+                        // Runtime is already on disk — proceed with startup immediately.
+                        // Kick off the update check in the background so a slow or
+                        // rate-limited GitHub doesn't add up to 5 s to every launch.
+                        // A newer version, if found, replaces the JAR on disk and
+                        // is picked up on the next restart.
+                        scheduleBackgroundUpdateCheck(systemPlugin, existingJar)
+                        continue
                     }
                 } else {
                     // Check if plugin JAR exists in persistence
@@ -443,6 +427,63 @@ object PluginStoreSetup {
                     "pluginId" to systemPlugin.pluginId,
                     "error" to (e.message ?: "unknown")
                 ), e)
+            }
+        }
+    }
+
+    /**
+     * Kick off a non-blocking update check for a [downloadOnly] system plugin.
+     * The existing JAR stays in use for the current session regardless; a
+     * newer release is downloaded in the background and replaces the file on
+     * disk for the next startup. Runs on [scope] so it survives any caller
+     * that cancels mid-startup.
+     */
+    private fun scheduleBackgroundUpdateCheck(
+        systemPlugin: SystemPluginInfo,
+        existingJar: File,
+    ) {
+        scope.launch {
+            try {
+                // Authoritative installed version: the JAR's own manifest. Filename
+                // parsing is a fallback for cases where the JAR was produced by a
+                // non-standard Gradle config that dropped the version from the name.
+                val installedVersion = readPluginManifest(existingJar)?.version
+                    ?: extractVersionFromJarFileName(existingJar.name, systemPlugin.artifactPrefix)
+                val latestVersion = fetchLatestReleaseVersion(systemPlugin.githubRepo)
+                when {
+                    latestVersion == null -> {
+                        logger.debug(LogCategory.SYSTEM, "Background update check skipped (offline or rate-limited)", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to (installedVersion ?: "unknown")
+                        ))
+                    }
+                    installedVersion == null -> {
+                        logger.info(LogCategory.SYSTEM, "Installed runtime version unknown — refreshing in background", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "latestVersion" to latestVersion
+                        ))
+                        downloadSystemPluginFromGitHub(systemPlugin)
+                    }
+                    installedVersion == latestVersion -> {
+                        logger.debug(LogCategory.SYSTEM, "Download-only plugin up-to-date", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "version" to installedVersion
+                        ))
+                    }
+                    else -> {
+                        logger.info(LogCategory.SYSTEM, "Newer runtime version available — updating in background", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to installedVersion,
+                            "latestVersion" to latestVersion
+                        ))
+                        downloadSystemPluginFromGitHub(systemPlugin)
+                    }
+                }
+            } catch (e: Exception) {
+                logger.warn(LogCategory.SYSTEM, "Background update check failed", mapOf(
+                    "pluginId" to systemPlugin.pluginId,
+                    "error" to (e.message ?: "unknown")
+                ))
             }
         }
     }
@@ -625,12 +666,15 @@ object PluginStoreSetup {
                     connectTimeout = 15000
                     readTimeout = 60000
                 }
-                jarConn.inputStream.use { input ->
-                    destFile.outputStream().use { output ->
-                        input.copyTo(output)
+                try {
+                    jarConn.inputStream.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
                     }
+                } finally {
+                    jarConn.disconnect()
                 }
-                jarConn.disconnect()
 
                 // Verify download
                 if (!destFile.exists() || destFile.length() == 0L) {
