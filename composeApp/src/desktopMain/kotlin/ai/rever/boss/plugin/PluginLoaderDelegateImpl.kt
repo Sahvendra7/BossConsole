@@ -1,6 +1,7 @@
 package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
+import ai.rever.boss.components.plugin.MicrokernelRuntime
 import ai.rever.boss.plugin.api.LoadedPluginInfo
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
@@ -24,6 +25,18 @@ class PluginLoaderDelegateImpl(
     private val logger = BossLogger.forComponent("PluginLoaderDelegate")
 
     override suspend fun loadPlugin(jarPath: String): LoadedPluginInfo? {
+        // Never try to load the microkernel runtime via the plugin-install
+        // path — it's a classpath dependency for OOP child JVMs, not a
+        // loadable plugin. DefaultPlugin.loadExternalPlugins already skips
+        // it on directory scan, but plugin-manager install/update flows
+        // reach us directly with a JAR path and would otherwise trip the
+        // binary-compatibility validator on core JDK classes.
+        if (File(jarPath).name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)) {
+            logger.debug(LogCategory.SYSTEM, "Refusing to load microkernel runtime as a plugin", mapOf(
+                "jarPath" to jarPath
+            ))
+            return null
+        }
         return try {
             logger.info(LogCategory.SYSTEM, "Loading plugin via delegate", mapOf("jarPath" to jarPath))
             val result = dynamicPluginManager.installPlugin(jarPath, enabled = true)

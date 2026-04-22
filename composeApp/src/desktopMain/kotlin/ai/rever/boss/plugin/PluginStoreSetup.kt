@@ -473,11 +473,13 @@ object PluginStoreSetup {
         }
         scope.launch {
             try {
-                // Authoritative installed version: the JAR's own manifest. Filename
-                // parsing is a fallback for cases where the JAR was produced by a
-                // non-standard Gradle config that dropped the version from the name.
-                val installedVersion = readPluginManifest(existingJar)?.version
-                    ?: extractVersionFromJarFileName(existingJar.name, systemPlugin.artifactPrefix)
+                // Filename is fast and doesn't log noise. Older JARs shipped with
+                // a non-kotlin-serialization-compatible `type` field in their
+                // plugin.json, so reading the manifest would log an ERROR on
+                // every startup even though the fallback handles it. Manifest
+                // read is therefore only used when the filename lacks a version.
+                val installedVersion = extractVersionFromJarFileName(existingJar.name, systemPlugin.artifactPrefix)
+                    ?: runCatching { readPluginManifest(existingJar)?.version }.getOrNull()
                 val latestVersion = fetchLatestReleaseVersion(systemPlugin.githubRepo)
                 when {
                     latestVersion == null -> {
