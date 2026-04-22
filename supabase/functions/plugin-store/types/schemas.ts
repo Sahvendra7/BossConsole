@@ -205,16 +205,14 @@ export const PublishFromGitHubMetadataRequestSchema = z.object({
     (url) => url.includes('github.com'),
     'URL must be a GitHub repository URL'
   ),
-  manifest: z.object({
-    pluginId: z.string(),
-    displayName: z.string(),
-    version: z.string(),
-    apiVersion: z.string().optional().default('1.0.0'),
-    mainClass: z.string().optional().default(''),
-    type: z.string().optional().default('panel'),
-    description: z.string().optional().default(''),
-  }),
-  jarSize: z.number().int().positive(),
+  // Client-provided SHA-256 of the JAR (hex, 64 chars). The server does not
+  // download the JAR on this path, so the publisher must supply the hash that
+  // clients will verify against. Paired with the server-side manifest
+  // extraction below, this closes both integrity and spoofing gaps.
+  sha256: z.string().regex(
+    /^[0-9a-fA-F]{64}$/,
+    'sha256 must be a 64-character hex string'
+  ),
   changelog: z.string().max(5000).optional(),
   tags: z.array(z.string().max(50)).max(10).optional().default([])
 })

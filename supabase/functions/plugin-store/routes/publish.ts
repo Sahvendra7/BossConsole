@@ -17,7 +17,13 @@ import { getPlugin, createPlugin, setPluginTags, getPluginById, updatePlugin } f
 import { createVersion, versionExists, finalizeVersion, getVersionById } from "../services/versions.ts"
 import { getSignedUploadUrl, generateJarPath, uploadJar } from "../services/storage.ts"
 import { getAuthenticatedUser, getUserDisplayName, logApiKeyAction } from "../utils/auth.ts"
-import { fetchPluginFromGitHub, parseGitHubUrl, fetchLatestRelease, findJarAsset } from "../services/github.ts"
+import {
+  fetchPluginFromGitHub,
+  parseGitHubUrl,
+  fetchLatestRelease,
+  findJarAsset,
+  extractManifestFromRemoteJar,
+} from "../services/github.ts"
 
 const publish = new OpenAPIHono<{ Variables: PluginStoreContext }>()
 
@@ -689,8 +695,6 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       return ctx.json({ success: false, error: 'Authentication required' }, 401)
     }
 
-    const manifest = body.manifest
-
     // Resolve the GitHub download URL for the JAR
     const parsed = parseGitHubUrl(body.githubUrl)
     if (!parsed) {
@@ -703,6 +707,23 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       return ctx.json({
         success: false,
         error: `No JAR file found in release ${release.tag_name}`
+      }, 400)
+    }
+
+    // Extract the manifest server-side from the actual JAR on GitHub using
+    // range requests — this is the authoritative source of truth for pluginId,
+    // version, type, etc. Trusting a client-provided manifest would let a
+    // publish-scoped caller register a plugin under any pluginId.
+    let manifest: Awaited<ReturnType<typeof extractManifestFromRemoteJar>>['manifest']
+    let totalSize: number
+    try {
+      const extracted = await extractManifestFromRemoteJar(jarAsset.browser_download_url)
+      manifest = extracted.manifest
+      totalSize = extracted.totalSize
+    } catch (e) {
+      return ctx.json({
+        success: false,
+        error: `Failed to extract manifest from JAR: ${(e as Error).message}`
       }, 400)
     }
 
@@ -726,12 +747,12 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
         displayName: manifest.displayName,
         description: manifest.description,
         homepageUrl: body.githubUrl,
-        type: (manifest.type || 'panel').toLowerCase(),
+        type: ((manifest.type as string) || 'panel').toLowerCase(),
         apiVersion: manifest.apiVersion
       })
     } else {
       isNewPlugin = true
-      const authorName = await getUserDisplayName(supabase, user.userId)
+      const authorName = manifest.author || await getUserDisplayName(supabase, user.userId)
 
       const result = await createPlugin(
         supabase,
@@ -742,7 +763,7 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
         manifest.description || '',
         body.githubUrl,
         '',
-        (manifest.type || 'panel').toLowerCase(),
+        ((manifest.type as string) || 'panel').toLowerCase(),
         manifest.apiVersion || '1.0.0'
       )
       pluginUuid = result.id
@@ -773,18 +794,22 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       pluginUuid,
       version,
       changelog,
-      '1.0.0',
-      [],
+      manifest.minBossVersion || '1.0.0',
+      manifest.dependencies || [],
       jarPath
     )
 
-    // Finalize with the JAR size from the request.
-    // SHA-256 is unavailable because the server never downloads the JAR (that's
-    // the point of this endpoint — the JAR stays on GitHub). We store 'pending'
-    // as a sentinel; the /download endpoint translates 'pending' and 'external'
-    // to an empty string, and the client skips SHA-256 verification when the
-    // hash is blank. Integrity is therefore delegated to HTTPS + GitHub.
-    await finalizeVersion(supabase, versionResult.id, 'pending', body.jarSize)
+    // Store the client-provided SHA-256 (validated as 64-hex by the schema)
+    // and the JAR size from GitHub's release metadata. The server cannot
+    // recompute the hash without downloading the full JAR, so we trust the
+    // authenticated publisher for the hash while using GitHub as the size
+    // authority. Clients verify against the stored hash on download.
+    await finalizeVersion(
+      supabase,
+      versionResult.id,
+      body.sha256.toLowerCase(),
+      jarAsset.size || totalSize
+    )
 
     // Log API key usage
     if (user.apiKeyId) {

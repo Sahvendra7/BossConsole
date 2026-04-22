@@ -93,7 +93,7 @@ download.openapi(downloadLatestRoute, async (ctx) => {
 
     return ctx.json({
       downloadUrl,
-      sha256: (version.sha256 === 'pending' || version.sha256 === 'external') ? '' : version.sha256,
+      sha256: version.sha256,
       version: version.version,
       size: version.jarSize,
       versionId: version.id
@@ -185,7 +185,7 @@ download.openapi(downloadVersionRoute, async (ctx) => {
 
     return ctx.json({
       downloadUrl,
-      sha256: (version.sha256 === 'pending' || version.sha256 === 'external') ? '' : version.sha256,
+      sha256: version.sha256,
       version: version.version,
       size: version.jarSize,
       versionId: version.id

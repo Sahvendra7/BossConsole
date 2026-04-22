@@ -29,13 +29,9 @@ class PluginDownloadCache(
     /**
      * Get a cached JAR if it exists and matches the expected SHA-256 hash.
      *
-     * When [expectedSha256] is blank, the server did not provide a hash
-     * (e.g., externally-hosted JAR) and the cached file is returned as-is
-     * without verification.
-     *
      * @param pluginId The plugin ID
      * @param version The plugin version
-     * @param expectedSha256 The expected SHA-256 hash, or blank to skip verification
+     * @param expectedSha256 The expected SHA-256 hash (must be non-blank)
      * @return The cached file if valid, null otherwise
      */
     fun getCachedJar(pluginId: String, version: String, expectedSha256: String): File? {
@@ -45,15 +41,8 @@ class PluginDownloadCache(
             return null
         }
 
-        if (expectedSha256.isBlank()) {
-            logger.debug(LogCategory.SYSTEM, "Using cached JAR without SHA-256 verification", mapOf(
-                "pluginId" to pluginId,
-                "version" to version
-            ))
-            return cachedFile
-        }
-
-        // Verify SHA-256
+        // Verify SHA-256. A blank or mismatching hash invalidates the cache —
+        // we never load unhashed or tampered JARs from cache.
         val actualSha256 = cachedFile.sha256()
         if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
             logger.warn(LogCategory.SYSTEM, "Cached JAR SHA-256 mismatch, removing", mapOf(
