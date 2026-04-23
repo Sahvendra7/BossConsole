@@ -31,7 +31,14 @@ class PluginLoaderDelegateImpl(
         // it on directory scan, but plugin-manager install/update flows
         // reach us directly with a JAR path and would otherwise trip the
         // binary-compatibility validator on core JDK classes.
-        if (File(jarPath).name.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)) {
+        //
+        // We check by pluginId (from the manifest) rather than filename
+        // because the plugin store downloads with a pluginId-based name
+        // (`ai_rever_boss_microkernel_runtime_1.0.10.jar`) while the
+        // Gradle build output uses the artifact prefix
+        // (`boss-microkernel-runtime-1.0.10-all.jar`). Either name needs
+        // to be rejected.
+        if (isMicrokernelRuntimeJar(jarPath)) {
             logger.debug(LogCategory.SYSTEM, "Refusing to load microkernel runtime as a plugin", mapOf(
                 "jarPath" to jarPath
             ))
@@ -190,5 +197,26 @@ class PluginLoaderDelegateImpl(
 
     override fun getAccessToken(): String? {
         return PluginStoreConfig.accessToken
+    }
+
+    /**
+     * True if the JAR at [jarPath] is the microkernel runtime. Checks the
+     * filename against both naming conventions (Gradle `{prefix}-…` and
+     * plugin-store `{pluginId-with-underscores}_…`) and falls back to a
+     * manifest read for anything else that manages to slip through — this
+     * is cheap (just reads one file inside the JAR) and it's the last line
+     * of defense before the binary-compatibility validator.
+     */
+    private fun isMicrokernelRuntimeJar(jarPath: String): Boolean {
+        val fileName = File(jarPath).name
+        if (fileName.startsWith(MicrokernelRuntime.ARTIFACT_PREFIX)) return true
+        val pluginIdPrefix = MicrokernelRuntime.PLUGIN_ID.replace('.', '_')
+        if (fileName.startsWith(pluginIdPrefix)) return true
+        return try {
+            val manifest = ai.rever.boss.plugin.loader.PluginManifestReader.readFromJar(jarPath)
+            manifest.pluginId == MicrokernelRuntime.PLUGIN_ID
+        } catch (_: Exception) {
+            false
+        }
     }
 }

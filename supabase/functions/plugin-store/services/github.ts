@@ -285,20 +285,43 @@ async function downloadRange(
  * Extract plugin manifest from a remote JAR using range requests.
  * Only downloads ~128 KB instead of the full JAR.
  *
- * 1. Fetch the last 65 KB to find the End of Central Directory.
- * 2. Locate plugin.json in the central directory.
- * 3. Fetch just the local file header + data for that entry.
+ * 1. HEAD the file to get its total size. (GitHub's
+ *    release-assets.githubusercontent.com CDN returns 501 on suffix
+ *    range requests — `Range: bytes=-N` — but accepts explicit ranges,
+ *    so we need the size up front.)
+ * 2. Fetch the last 65 KB to find the End of Central Directory.
+ * 3. Locate plugin.json in the central directory.
+ * 4. Fetch just the local file header + data for that entry.
  */
 export async function extractManifestFromRemoteJar(
   downloadUrl: string
 ): Promise<{ manifest: PluginManifest; totalSize: number }> {
-  // Step 1: fetch the tail of the JAR to find EOCD
   const tailSize = 65_536
-  // We don't know the file size yet, so request the last tailSize bytes
+
+  // Step 1: HEAD for size (redirects are followed by default).
+  const headResp = await fetch(downloadUrl, {
+    method: "HEAD",
+    headers: { "User-Agent": "BOSS-Plugin-Store/1.0" },
+  })
+  if (!headResp.ok) {
+    throw new Error(`HEAD request for JAR size failed: ${headResp.status}`)
+  }
+  const contentLength = headResp.headers.get("Content-Length")
+  if (!contentLength) {
+    throw new Error("Remote JAR response has no Content-Length header")
+  }
+  const totalSize = parseInt(contentLength, 10)
+  if (!Number.isFinite(totalSize) || totalSize <= 0) {
+    throw new Error(`Invalid Content-Length from remote JAR: ${contentLength}`)
+  }
+
+  // Step 2: explicit range for the tail.
+  const tailStart = Math.max(0, totalSize - tailSize)
+  const tailEnd = totalSize - 1
   const tailResp = await fetch(downloadUrl, {
     headers: {
       "User-Agent": "BOSS-Plugin-Store/1.0",
-      Range: `bytes=-${tailSize}`,
+      Range: `bytes=${tailStart}-${tailEnd}`,
     },
   })
 
@@ -307,12 +330,6 @@ export async function extractManifestFromRemoteJar(
   }
 
   const tailData = new Uint8Array(await tailResp.arrayBuffer())
-  let totalSize = tailData.length
-  const contentRange = tailResp.headers.get("Content-Range")
-  if (contentRange) {
-    const match = contentRange.match(/\/(\d+)/)
-    if (match) totalSize = parseInt(match[1], 10)
-  }
 
   // The tail starts at this absolute offset in the file
   const tailOffset = totalSize - tailData.length
