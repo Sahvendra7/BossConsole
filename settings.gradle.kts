@@ -48,7 +48,6 @@ if (!isWindowsArm64) {
     include(":boss-service-auth")
     include(":boss-ui-sdk")
     include(":boss-orchestrator")
-    include(":boss-microkernel-runtime")
     include(":boss-mastery-sdk")
     include(":boss-mastery-orchestrator")
     include(":boss-service-workspace")

@@ -9,7 +9,16 @@ package ai.rever.boss.components.plugin
  * Any rename must be reflected in three places at once — hence the constant.
  */
 object MicrokernelRuntime {
-    /** File-name and artifact-coordinate prefix produced by `./gradlew :boss-microkernel-runtime:fatJar`. */
+    /**
+     * File-name prefix used for the runtime fatJar.
+     *
+     * Source: standalone repo `risa-labs-inc/boss-microkernel-runtime`,
+     * `./gradlew fatJar`. Output ends up as
+     * `boss-microkernel-runtime-<version>-all.jar`. Distributed via
+     * GitHub Releases of the same repo and registered in the BOSS Plugin
+     * Store; BossConsole's `PluginStoreSetup.scheduleBackgroundUpdateCheck`
+     * keeps `~/.boss/plugins/` up to date.
+     */
     const val ARTIFACT_PREFIX: String = "boss-microkernel-runtime"
 
     /** Plugin ID used by the runtime's `plugin.json` manifest. */

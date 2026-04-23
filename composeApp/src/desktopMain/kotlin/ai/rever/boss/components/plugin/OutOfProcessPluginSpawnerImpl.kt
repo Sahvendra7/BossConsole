@@ -284,15 +284,15 @@ class OutOfProcessPluginSpawnerImpl(
         val pluginDir = "$bossDataDir/plugins"
 
         val prefix = MicrokernelRuntime.ARTIFACT_PREFIX
-        val candidates = buildList {
-            // Development: build output
-            add("$prefix/build/libs/$prefix-all.jar")
-            // Production: in plugins directory
-            File(pluginDir).listFiles()
-                ?.filter { it.name.startsWith(prefix) && it.name.endsWith(".jar") }
-                ?.sortedByDescending { it.lastModified() }
-                ?.forEach { add(it.absolutePath) }
-        }
-        return candidates.firstOrNull { File(it).exists() }
+        // The runtime is now distributed exclusively via the standalone
+        // repo `risa-labs-inc/boss-microkernel-runtime` and lives in
+        // `~/.boss/plugins/`. No more in-tree build output to look at.
+        // For local development on the runtime itself, copy the fatJar
+        // from `boss_plugin/boss-microkernel-runtime/build/libs/` into
+        // `~/.boss/plugins/` (see that repo's dev-setup.sh).
+        return File(pluginDir).listFiles()
+            ?.filter { it.name.startsWith(prefix) && it.name.endsWith(".jar") }
+            ?.maxByOrNull { it.lastModified() }
+            ?.absolutePath
     }
 }
