@@ -717,6 +717,26 @@ object PluginStoreSetup {
                     return@withContext false
                 }
 
+                // IPC-compat gate for the microkernel runtime: if the fetched
+                // JAR declares a minIpcVersion that this host can't satisfy,
+                // discard the tmp file and keep the currently-installed
+                // version. Users will continue to run on the compatible JAR
+                // they already have until BossConsole is updated.
+                if (plugin.pluginId == ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID) {
+                    val fetchedManifest = runCatching { readPluginManifest(tmpFile) }.getOrNull()
+                    val minIpc = fetchedManifest?.minIpcVersion.orEmpty()
+                    val compat = ai.rever.boss.ipc.IpcVersion.isCompatible(minIpc)
+                    if (compat is ai.rever.boss.ipc.IpcVersion.CompatResult.Incompatible) {
+                        tmpFile.delete()
+                        logger.warn(LogCategory.SYSTEM, "Downloaded runtime is IPC-incompatible — keeping existing JAR", mapOf(
+                            "pluginId" to plugin.pluginId,
+                            "reason" to compat.reason,
+                            "hostIpcVersion" to ai.rever.boss.ipc.IpcVersion.CURRENT
+                        ))
+                        return@withContext false
+                    }
+                }
+
                 // Only now is it safe to remove the old versions, and only
                 // after we've confirmed a valid download. Keeps the previously
                 // running session's JAR intact if anything above failed.

@@ -145,6 +145,19 @@ data class PluginManifest(
     @SerialName("minBossVersion")
     val minBossVersion: String = "",
 
+    /**
+     * Minimum IPC contract version this plugin's runtime requires from the
+     * host (semver, e.g. "1.0.0"). Used for out-of-process plugins and the
+     * microkernel runtime JAR itself so a runtime built against a newer IPC
+     * surface cannot silently attach to an older host — the spawner rejects
+     * the launch with a clear "update BossConsole" error.
+     *
+     * Blank means "unknown / not declared" (legacy JARs from before this
+     * field existed); treated as likely-compatible but logged at WARN.
+     */
+    @SerialName("minIpcVersion")
+    val minIpcVersion: String = "",
+
     // ============================================================
     // MICROKERNEL / PROCESS ISOLATION
     // These fields support the OS-like multi-process architecture.
