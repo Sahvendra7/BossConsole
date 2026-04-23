@@ -1438,6 +1438,27 @@ jobs:
         with:
           path: ./artifacts
 
+      - name: ☕ Setup JDK 17 (for upstream-jar assembly)
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 🎯 Setup Gradle (for upstream-jar assembly)
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: 📦 Assemble upstream IPC JARs
+        run: |
+          set -euo pipefail
+          # Phase 1 of microkernel-runtime extraction. Produces
+          # boss-ipc-<ipcVersion>.jar, boss-ui-sdk-<ipcVersion>.jar,
+          # plugin-api-ipc-<ipcVersion>.jar, plugin-api-core-<ipcVersion>.jar
+          # under build/upstream-artifacts/. The standalone runtime repo
+          # downloads these at build time.
+          ./gradlew assembleUpstreamJars --no-daemon
+          echo "Upstream IPC artifacts:"
+          ls -lh build/upstream-artifacts/
+
       - name: 📋 Prepare Release Assets
         env:
           VERSION: ${{ needs.prepare-version.outputs.version }}
@@ -1446,6 +1467,11 @@ jobs:
 
           echo "📋 Preparing release assets..."
           mkdir -p ./release-assets
+
+          # Upstream IPC jars — appended to every BossConsole release.
+          # File names are <module>-<ipcVersion>.jar (independent of
+          # BossConsole's app version) so consumers can pin by IPC version.
+          cp build/upstream-artifacts/*.jar ./release-assets/ 2>/dev/null || true
 
           # Copy and rename artifacts with consistent naming
 
