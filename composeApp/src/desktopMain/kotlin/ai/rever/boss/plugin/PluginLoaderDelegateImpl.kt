@@ -39,10 +39,16 @@ class PluginLoaderDelegateImpl(
         // (`boss-microkernel-runtime-1.0.10-all.jar`). Either name needs
         // to be rejected.
         if (isMicrokernelRuntimeJar(jarPath)) {
-            logger.debug(LogCategory.SYSTEM, "Refusing to load microkernel runtime as a plugin", mapOf(
+            // Clean up the JAR that the installer just downloaded so it doesn't
+            // linger in the plugins directory and confuse a future scan.
+            runCatching { File(jarPath).delete() }
+            logger.info(LogCategory.SYSTEM, "Refusing to install microkernel runtime as a plugin", mapOf(
                 "jarPath" to jarPath
             ))
-            return null
+            throw IllegalArgumentException(
+                "The Microkernel Runtime is a system component, not a user-installable plugin. " +
+                    "It is managed automatically when Microkernel Mode is enabled — no manual install needed."
+            )
         }
         return try {
             logger.info(LogCategory.SYSTEM, "Loading plugin via delegate", mapOf("jarPath" to jarPath))
