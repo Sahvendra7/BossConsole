@@ -321,7 +321,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -640,7 +640,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -813,7 +813,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -998,7 +998,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: 🔧 Setup Build Environment
         run: |
@@ -1281,7 +1281,7 @@ jobs:
           distribution: 'microsoft'  # Temurin doesn't have JDK 17 for Windows ARM64
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: 🔧 Setup Build Environment
         shell: powershell
@@ -1445,7 +1445,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle (for upstream-jar assembly)
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: 📦 Assemble upstream IPC JARs
         run: |

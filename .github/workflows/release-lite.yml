@@ -183,7 +183,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -334,7 +334,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: 🔍 Get JxBrowser Version
         shell: bash
@@ -463,7 +463,7 @@ jobs:
           distribution: 'temurin'
 
       - name: 🎯 Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
