@@ -28,6 +28,38 @@ jobs:
           go-version: '1.21'
           cache: false
 
+      - name: Patch out the (Plugin) helper
+        # Chromium 148+ no longer ships `Chromium Helper (Plugin).app`
+        # (NPAPI/PPAPI plugin support was removed years ago and the helper
+        # finally got dropped from the framework bundle), but the upstream
+        # branding tool still iterates over it in crHelperTypes and
+        # `return err`s on FindHelper failure. The branding step then
+        # exits 255 with:
+        #   "stat .../Helpers/Chromium Helper (Plugin).app: no such file"
+        # Drop the Plugin entries from the helper-type lists so the loop
+        # skips it. Track upstream:
+        #   https://github.com/TeamDev-IP/Chromium-Branding (no fix as of
+        #   2f9f16b2 / 2026-04-29).
+        run: |
+          set -euo pipefail
+          cd chromium-branding-tool
+          target="pkg/mac/chromium_app_bundle.go"
+          # POSIX character class — portable across BSD sed (macOS) and GNU sed (Linux).
+          if ! grep -qE '^[[:space:]]*CrBundleHelperPlugin,$' "$target"; then
+            echo "::error::Expected CrBundleHelperPlugin entry not found in $target — upstream may have already fixed this; remove the patch step."
+            exit 1
+          fi
+          # crHelperTypes []CrBundleType slice
+          sed -i.bak '/^[[:space:]]*CrBundleHelperPlugin,$/d' "$target"
+          # crHelperTypeNames []string slice
+          sed -i.bak '/^[[:space:]]*"Plugin",$/d' "$target"
+          rm -f "$target.bak"
+          echo "✓ Patched out (Plugin) helper. Resulting helper lists:"
+          awk '/^var crHelperTypes/,/^}/' "$target"
+          awk '/^var crHelperTypeNames/,/^}/' "$target"
+          # Sanity: still compiles
+          go vet ./...
+
       - name: Build Branding Tool (all platforms)
         run: |
           cd chromium-branding-tool
