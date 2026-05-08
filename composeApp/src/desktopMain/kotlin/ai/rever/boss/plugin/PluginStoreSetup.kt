@@ -91,8 +91,18 @@ object PluginStoreSetup {
      * don't cache `false` forever and silently skip the runtime install.
      */
     private val isKernelMode: Boolean by lazy {
+        // Reflection access — `ai.rever.boss.kernel.KernelBootstrap` lives in
+        // a module excluded from the Windows-ARM64 build (no protoc binary
+        // for that target, see settings.gradle.kts). A direct reference would
+        // fail compilation there even though it'd run fine on every other
+        // platform. The `BOSS_MODE` env-var fallback also covers the case
+        // where the kernel hasn't bootstrapped yet at first read.
         val fromKernel = try {
-            ai.rever.boss.kernel.KernelBootstrap.instance?.isKernelMode
+            val bootstrapCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap")
+            val companionCls = Class.forName("ai.rever.boss.kernel.KernelBootstrap\$Companion")
+            val companion = bootstrapCls.getDeclaredField("Companion").get(null)
+            val instance = companionCls.getMethod("getInstance").invoke(companion)
+            instance?.let { bootstrapCls.getMethod("isKernelMode").invoke(it) as? Boolean }
         } catch (_: Throwable) {
             null
         }
@@ -722,16 +732,49 @@ object PluginStoreSetup {
                 // discard the tmp file and keep the currently-installed
                 // version. Users will continue to run on the compatible JAR
                 // they already have until BossConsole is updated.
+                //
+                // Reflection access: `ai.rever.boss.ipc.IpcVersion` lives in
+                // `:boss-ipc`, which is excluded from the Windows-ARM64 build
+                // (no protoc binary for that target — see settings.gradle.kts).
+                // When the class isn't on the classpath we skip the compat
+                // check entirely; on Windows ARM64 there's no microkernel
+                // runtime to gate anyway.
                 if (plugin.pluginId == ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID) {
                     val fetchedManifest = runCatching { readPluginManifest(tmpFile) }.getOrNull()
                     val minIpc = fetchedManifest?.minIpcVersion.orEmpty()
-                    val compat = ai.rever.boss.ipc.IpcVersion.isCompatible(minIpc)
-                    if (compat is ai.rever.boss.ipc.IpcVersion.CompatResult.Incompatible) {
+                    val incompatReason: String? = try {
+                        val ipcCls = Class.forName("ai.rever.boss.ipc.IpcVersion")
+                        val isCompatibleMethod = ipcCls.getMethod(
+                            "isCompatible",
+                            String::class.java,
+                            String::class.java,
+                        )
+                        val currentField = ipcCls.getMethod("getCURRENT")
+                        val hostVersion = currentField.invoke(ipcCls.getField("INSTANCE").get(null)) as String
+                        val result = isCompatibleMethod.invoke(
+                            ipcCls.getField("INSTANCE").get(null),
+                            minIpc,
+                            hostVersion,
+                        )
+                        // CompatResult is sealed; Incompatible has a `reason` String property.
+                        val incompatCls = Class.forName("ai.rever.boss.ipc.IpcVersion\$CompatResult\$Incompatible")
+                        if (incompatCls.isInstance(result)) {
+                            incompatCls.getMethod("getReason").invoke(result) as? String
+                        } else null
+                    } catch (_: ClassNotFoundException) {
+                        // boss-ipc not on this build's classpath (Windows ARM64).
+                        null
+                    } catch (e: Throwable) {
+                        logger.warn(LogCategory.SYSTEM, "IPC compat check failed; allowing install", mapOf(
+                            "error" to (e.message ?: "unknown")
+                        ))
+                        null
+                    }
+                    if (incompatReason != null) {
                         tmpFile.delete()
                         logger.warn(LogCategory.SYSTEM, "Downloaded runtime is IPC-incompatible — keeping existing JAR", mapOf(
                             "pluginId" to plugin.pluginId,
-                            "reason" to compat.reason,
-                            "hostIpcVersion" to ai.rever.boss.ipc.IpcVersion.CURRENT
+                            "reason" to incompatReason
                         ))
                         return@withContext false
                     }
