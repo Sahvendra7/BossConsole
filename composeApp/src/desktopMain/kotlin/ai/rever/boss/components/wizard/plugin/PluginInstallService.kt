@@ -62,6 +62,22 @@ class PluginInstallService(
                     "progress" to "${index + 1}/$totalPlugins"
                 ))
 
+                // Defense-in-depth: never wizard-install the microkernel runtime.
+                // PluginListProvider already filters service-type plugins out of
+                // the wizard list, but a stale fallback list or a future
+                // mandatory-GitHub entry could still slip it through. The host
+                // auto-installs it via PluginStoreSetup.ensureSystemPluginsInstalled
+                // when kernel mode is enabled — letting it reach
+                // dynamicPluginManager.installPlugin() trips the binary-compat
+                // validator (cross-classloader kotlin.reflect access).
+                if (plugin.id == ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID) {
+                    logger.info(LogCategory.SYSTEM, "Wizard skipping microkernel runtime — auto-managed by host", mapOf(
+                        "pluginId" to plugin.id
+                    ))
+                    installedIds.add(plugin.id)
+                    continue
+                }
+
                 // Check if already installed
                 if (dynamicPluginManager.isInstalled(plugin.id)) {
                     logger.info(LogCategory.SYSTEM, "Plugin already installed, skipping", mapOf(

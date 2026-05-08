@@ -154,9 +154,19 @@ object PluginListProvider {
                         "count" to pluginsWithSource.size
                     ))
 
-                    val repoPlugins = pluginsWithSource.map { pws: PluginWithSource ->
-                        convertToWizardPluginInfo(pws.plugin)
-                    }
+                    val repoPlugins = pluginsWithSource
+                        // Drop service-type plugins (e.g. the microkernel
+                        // runtime). They ship through the plugin store but
+                        // aren't user-installable — the host's auto-installer
+                        // handles them when needed. Letting them into the
+                        // wizard tries to load them as regular plugins and
+                        // BinaryCompatibilityValidator rejects with a scary
+                        // cross-classloader IllegalAccessError.
+                        .filter { it.plugin.type != ai.rever.boss.plugin.api.PluginType.SERVICE }
+                        .filter { it.plugin.pluginId != ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID }
+                        .map { pws: PluginWithSource ->
+                            convertToWizardPluginInfo(pws.plugin)
+                        }
 
                     // Add mandatory GitHub plugins that aren't in the repository
                     val existingIds = repoPlugins.map { it.id }.toSet()
