@@ -31,7 +31,7 @@ jxbrowser-gradle-plugin = "2.0.0"
 maven-publish = "0.36.0"
 jna = "5.18.1"
 # gRPC + Protobuf for IPC
-grpc = "1.72.0"
+grpc = "1.81.0"
 grpc-kotlin = "1.4.3"
 protobuf = "4.34.1"
 protobuf-gradle-plugin = "0.9.6"
