@@ -551,16 +551,26 @@ jobs:
           if [[ -n "$DMG_PATH" && -f "$DMG_PATH" ]]; then
             echo "📦 Found DMG: $DMG_PATH"
 
-            # Submit for notarization and capture the submission ID
+            # Submit for notarization and capture the submission ID.
+            # `|| true` is required because the surrounding shell runs
+            # under `bash -e`: without it, a non-zero exit from
+            # `notarytool submit` (e.g. auth failure, network error,
+            # rejected submission) propagates immediately at the
+            # command-substitution assignment, killing the step BEFORE
+            # we can echo NOTARIZATION_OUTPUT or fetch the detailed
+            # notarytool log. The exit-code is preserved separately so
+            # later checks can still distinguish success from failure.
             echo "🔐 Submitting DMG for notarization..."
+            set +e
             NOTARIZATION_OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
               --apple-id "$APPLE_ID" \
               --password "$APP_PASSWORD" \
               --team-id "${{ secrets.MACOS_TEAM_ID }}" \
               --wait 2>&1)
-
             NOTARIZATION_EXIT_CODE=$?
+            set -e
             echo "$NOTARIZATION_OUTPUT"
+            echo "📋 notarytool exit code: $NOTARIZATION_EXIT_CODE"
 
             # Extract submission ID from output
             SUBMISSION_ID=$(echo "$NOTARIZATION_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
