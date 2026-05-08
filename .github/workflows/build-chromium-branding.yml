@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       jxbrowser_version:
-        description: 'JxBrowser version (e.g., 8.15.0)'
+        description: 'JxBrowser version (e.g., 9.0.2)'
         required: true
-        default: '8.15.0'
+        default: '9.0.2'
 
 env:
-  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '8.15.0' }}
+  JXBROWSER_VERSION: ${{ github.event.inputs.jxbrowser_version || '9.0.2' }}
 
 jobs:
   # Build the Chromium branding tool first
@@ -49,14 +49,17 @@ jobs:
             echo "::error::Expected CrBundleHelperPlugin entry not found in $target — upstream may have already fixed this; remove the patch step."
             exit 1
           fi
-          # crHelperTypes []CrBundleType slice
+          # ONLY remove from crHelperTypes (the iteration list).
+          # crHelperTypeNames is indexed by the enum value (iota-2:
+          # Alerts=0, GPU=1, Plugin=2, Renderer=3). Removing "Plugin"
+          # from the names slice would shift Renderer to index 2 and panic
+          # `index out of range [3]` when getBrandedCrBundleExeName
+          # accesses crHelperTypeNames[CrBundleHelperRenderer]. The names
+          # slice must stay intact even though Plugin is no longer iterated.
           sed -i.bak '/^[[:space:]]*CrBundleHelperPlugin,$/d' "$target"
-          # crHelperTypeNames []string slice
-          sed -i.bak '/^[[:space:]]*"Plugin",$/d' "$target"
           rm -f "$target.bak"
-          echo "✓ Patched out (Plugin) helper. Resulting helper lists:"
+          echo "✓ Patched out (Plugin) helper from iteration. Resulting:"
           awk '/^var crHelperTypes/,/^}/' "$target"
-          awk '/^var crHelperTypeNames/,/^}/' "$target"
           # Sanity: still compiles
           go vet ./...
 
