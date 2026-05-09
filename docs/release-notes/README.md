@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v9.1.3](v9.1.3.md) | 2026-05-09 | Top-bar git state auto-refreshes on external HEAD changes (CLI checkout, rebase) via coalesced NIO watcher, and the plugin install wizard no longer tries to install the microkernel runtime |
 | [v9.1.2](v9.1.2.md) | 2026-05-08 | Microkernel runtime extracted from tree and distributed as a versioned plugin via GitHub releases with IPC version compat gating, JxBrowser 9.0.2 with branding patch fixes, BOSS Lite release workflow, and major dependency updates (Kotlin 2.3.21, gRPC 1.81.0, protobuf 4.34.1, Gradle 9.5.0) |
 | [v8.17.24](v8.17.24.md) | 2026-03-12 | Windows ARM64 build fix: exclude OOP plugin files from compilation on ARM64 |
 | [v8.17.23](v8.17.23.md) | 2026-03-12 | Compiler warnings cleanup across 10 files and five dependency updates including Compose Multiplatform 1.10.2, Ktor 3.4.1, and Netty 4.2.x |
