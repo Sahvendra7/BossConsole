@@ -1285,4 +1285,105 @@ actual object GitService {
             GitError(errorMessage)
         }
     }
+
+    /**
+     * Watches `<projectPath>/.git/HEAD` and `<projectPath>/.git/refs/heads`
+     * via `WatchService` and refreshes [windowGitState] when an external
+     * checkout, switch, or rebase changes the current branch / SHA.
+     *
+     * Suspends until the surrounding coroutine is cancelled. Catches and
+     * coalesces fast bursts (a checkout typically writes HEAD, ORIG_HEAD,
+     * index, …) so we only do one refresh per ~150 ms quiet period.
+     */
+    actual suspend fun watchGitHeadForWindow(
+        projectPath: String,
+        windowGitState: WindowGitState?,
+    ) {
+        val gitDir = File(projectPath, ".git")
+        if (!gitDir.exists() || !gitDir.isDirectory) return
+
+        withContext(Dispatchers.IO) {
+            val watcher = try {
+                java.nio.file.FileSystems.getDefault().newWatchService()
+            } catch (e: Exception) {
+                logger.warn(LogCategory.SYSTEM, "Could not create FS watcher; HEAD updates won't auto-refresh", error = e)
+                return@withContext
+            }
+            try {
+                val gitPath = gitDir.toPath()
+                val refsHeadsPath = gitDir.resolve("refs").resolve("heads").toPath()
+                val keys = mutableMapOf<java.nio.file.WatchKey, java.nio.file.Path>()
+                fun register(p: java.nio.file.Path) {
+                    if (!java.nio.file.Files.isDirectory(p)) return
+                    runCatching {
+                        val k = p.register(
+                            watcher,
+                            java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
+                            java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY,
+                            java.nio.file.StandardWatchEventKinds.ENTRY_DELETE,
+                        )
+                        keys[k] = p
+                    }
+                }
+                // .git itself (HEAD lives here) and refs/heads (branch tips).
+                register(gitPath)
+                register(refsHeadsPath)
+
+                // Coalesce: capture the first event in a window, drain the
+                // queue for ~150 ms, then refresh once.
+                val coalesceWindowMs = 150L
+                while (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == true) {
+                    val key = try {
+                        watcher.take()
+                    } catch (_: InterruptedException) {
+                        break
+                    } catch (_: java.nio.file.ClosedWatchServiceException) {
+                        break
+                    }
+                    var sawHeadOrRef = false
+                    fun consumeKey(k: java.nio.file.WatchKey) {
+                        val parent = keys[k] ?: return
+                        for (ev in k.pollEvents()) {
+                            val ctx = ev.context() ?: continue
+                            val name = ctx.toString()
+                            // .git/HEAD, .git/packed-refs, .git/refs/heads/<branch>
+                            if (parent == gitPath && (name == "HEAD" || name == "packed-refs")) {
+                                sawHeadOrRef = true
+                            } else if (parent == refsHeadsPath) {
+                                sawHeadOrRef = true
+                            }
+                        }
+                        k.reset()
+                    }
+                    consumeKey(key)
+                    // Drain bursty events.
+                    val deadline = System.currentTimeMillis() + coalesceWindowMs
+                    while (true) {
+                        val remaining = deadline - System.currentTimeMillis()
+                        if (remaining <= 0) break
+                        val next = watcher.poll(remaining, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
+                        consumeKey(next)
+                    }
+                    if (sawHeadOrRef) {
+                        try {
+                            refreshForWindow(projectPath, windowGitState)
+                            // Keep the rest of the git UI consistent with
+                            // the new HEAD: file status (working tree),
+                            // commit log (visible history), stash list.
+                            // The git-status / git-log plugins observe
+                            // these via GitDataProvider, so they re-render
+                            // automatically.
+                            getStatusForWindow(windowGitState)
+                            getLogForWindow(windowGitState, 100)
+                            refreshStashListForWindow(windowGitState)
+                        } catch (e: Exception) {
+                            logger.warn(LogCategory.SYSTEM, "HEAD-watcher refresh failed", error = e)
+                        }
+                    }
+                }
+            } finally {
+                runCatching { watcher.close() }
+            }
+        }
+    }
 }

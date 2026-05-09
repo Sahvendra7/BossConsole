@@ -420,6 +420,16 @@ fun BossDraggableComponent.BossTopLeftBar(
         }
     }
 
+    // Watch .git/HEAD for external mutations (CLI / filesystem checkouts)
+    // and refresh window git state on change. Cancelled automatically when
+    // the project changes (LaunchedEffect re-keys) or the composition
+    // leaves the tree.
+    LaunchedEffect(selectedProject.path, windowGitState) {
+        if (selectedProject.path.isNotEmpty() && windowGitState != null) {
+            GitService.watchGitHeadForWindow(selectedProject.path, windowGitState)
+        }
+    }
+
     // Update PR URL when branch changes
     LaunchedEffect(currentBranch) {
         if (isGitRepo && currentBranch != null) {

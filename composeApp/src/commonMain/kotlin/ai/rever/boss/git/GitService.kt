@@ -387,4 +387,24 @@ expect object GitService {
      * @return List of commits
      */
     suspend fun getLogForWindow(windowGitState: ai.rever.boss.window.WindowGitState?, limit: Int = 100): List<GitCommitInfo>
+
+    /**
+     * Watch the project's `.git/HEAD` (and refs) for external mutations and
+     * refresh [windowGitState] whenever an external `git checkout`,
+     * `git switch`, or rebase changes the current branch / SHA. Suspends
+     * forever; cancel the surrounding job to stop watching (e.g. when the
+     * selected project changes or the window closes).
+     *
+     * Without this watcher BossTopBar only refreshes git state on project
+     * change, so a CLI/filesystem checkout leaves the top-bar branch label
+     * stale until the user does something that triggers a refresh inside
+     * the app.
+     *
+     * @param projectPath The root path of the project (must be a git repo).
+     * @param windowGitState The window-specific git state to refresh on change.
+     */
+    suspend fun watchGitHeadForWindow(
+        projectPath: String,
+        windowGitState: ai.rever.boss.window.WindowGitState?,
+    )
 }
