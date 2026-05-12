@@ -4,6 +4,7 @@ import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import com.teamdev.jxbrowser.browser.Browser
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
  * Desktop implementation of [BrowserService] that wraps [FluckEngine].
@@ -21,8 +22,11 @@ object BrowserServiceImpl : BrowserService {
     private val activeBrowsers = ConcurrentHashMap<String, BrowserHandleImpl>()
 
     // POST bodies captured from popup handoffs, awaiting consumption by the next
-    // createBrowser call for the same URL. See [stashPopupPost].
-    private val pendingPopupPosts = ConcurrentHashMap<String, PendingPopupPost>()
+    // createBrowser call for the same URL. A FIFO queue per URL so that two
+    // popups to the same destination (e.g. clicking Print twice in OncoEMR
+    // before the first new tab finishes loading) don't clobber each other.
+    // See [stashPopupPost].
+    private val pendingPopupPosts = ConcurrentHashMap<String, ConcurrentLinkedDeque<PendingPopupPost>>()
     private const val PENDING_POPUP_TTL_MS = 10_000L
 
     private data class PendingPopupPost(
@@ -32,16 +36,53 @@ object BrowserServiceImpl : BrowserService {
     )
 
     override fun stashPopupPost(url: String, postData: ByteArray, contentType: String) {
-        pendingPopupPosts[url] = PendingPopupPost(postData, contentType, System.currentTimeMillis())
-        // Cheap opportunistic GC of stale entries.
         val now = System.currentTimeMillis()
-        pendingPopupPosts.entries.removeIf { now - it.value.createdAtMs > PENDING_POPUP_TTL_MS }
+        // compute (not computeIfAbsent + addLast) so the append is atomic with
+        // the queue's membership in the map. Otherwise a concurrent consume or
+        // GC that just observed an empty queue could remove the entry between
+        // computeIfAbsent returning and addLast appending — orphaning the body
+        // and reintroducing the regression this fix exists for.
+        pendingPopupPosts.compute(url) { _, existing ->
+            (existing ?: ConcurrentLinkedDeque()).also {
+                it.addLast(PendingPopupPost(postData, contentType, now))
+            }
+        }
+        // Opportunistic GC. Stash is infrequent (one call per popup), so the
+        // map walk here is cheap relative to the cost of a background sweeper.
+        gcStalePopupPosts(now)
     }
 
     private fun consumePopupPost(url: String): PendingPopupPost? {
-        val entry = pendingPopupPosts.remove(url) ?: return null
-        if (System.currentTimeMillis() - entry.createdAtMs > PENDING_POPUP_TTL_MS) return null
+        val now = System.currentTimeMillis()
+        var entry: PendingPopupPost? = null
+        // The whole drain-and-poll runs inside compute so a racing stash for
+        // the same URL serializes on this key — preventing TOCTOU where we'd
+        // remove a queue from the map after another thread had just appended.
+        pendingPopupPosts.compute(url) { _, q ->
+            if (q == null) return@compute null
+            dropStaleHeads(q, now)
+            entry = q.pollFirst()
+            if (q.isEmpty()) null else q
+        }
         return entry
+    }
+
+    private fun gcStalePopupPosts(now: Long) {
+        for (key in pendingPopupPosts.keys) {
+            pendingPopupPosts.compute(key) { _, q ->
+                if (q == null) return@compute null
+                dropStaleHeads(q, now)
+                if (q.isEmpty()) null else q
+            }
+        }
+    }
+
+    private fun dropStaleHeads(queue: ConcurrentLinkedDeque<PendingPopupPost>, now: Long) {
+        while (true) {
+            val head = queue.peekFirst() ?: return
+            if (now - head.createdAtMs <= PENDING_POPUP_TTL_MS) return
+            queue.pollFirst()
+        }
     }
 
     override fun isAvailable(): Boolean {
