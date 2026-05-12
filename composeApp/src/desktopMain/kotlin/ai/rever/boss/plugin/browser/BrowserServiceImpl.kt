@@ -20,6 +20,30 @@ object BrowserServiceImpl : BrowserService {
     // Track active browser handles for resource management
     private val activeBrowsers = ConcurrentHashMap<String, BrowserHandleImpl>()
 
+    // POST bodies captured from popup handoffs, awaiting consumption by the next
+    // createBrowser call for the same URL. See [stashPopupPost].
+    private val pendingPopupPosts = ConcurrentHashMap<String, PendingPopupPost>()
+    private const val PENDING_POPUP_TTL_MS = 10_000L
+
+    private data class PendingPopupPost(
+        val postData: ByteArray,
+        val contentType: String,
+        val createdAtMs: Long
+    )
+
+    override fun stashPopupPost(url: String, postData: ByteArray, contentType: String) {
+        pendingPopupPosts[url] = PendingPopupPost(postData, contentType, System.currentTimeMillis())
+        // Cheap opportunistic GC of stale entries.
+        val now = System.currentTimeMillis()
+        pendingPopupPosts.entries.removeIf { now - it.value.createdAtMs > PENDING_POPUP_TTL_MS }
+    }
+
+    private fun consumePopupPost(url: String): PendingPopupPost? {
+        val entry = pendingPopupPosts.remove(url) ?: return null
+        if (System.currentTimeMillis() - entry.createdAtMs > PENDING_POPUP_TTL_MS) return null
+        return entry
+    }
+
     override fun isAvailable(): Boolean {
         return try {
             val initErr = FluckEngine.initError
@@ -55,8 +79,21 @@ object BrowserServiceImpl : BrowserService {
             // Get current engine generation for staleness detection
             val generation = FluckEngine.currentEngineGeneration
 
+            // If a popup handed off a POST body for this URL (form-submit target="_blank"),
+            // consume it and replay on first navigation. Explicit config wins if set.
+            val effectiveConfig = if (config.initialPostData == null && config.url.isNotBlank()) {
+                consumePopupPost(config.url)?.let { entry ->
+                    config.copy(
+                        initialPostData = entry.postData,
+                        initialPostContentType = entry.contentType
+                    )
+                } ?: config
+            } else {
+                config
+            }
+
             // Create handle wrapper
-            val handle = BrowserHandleImpl(browser, config, generation)
+            val handle = BrowserHandleImpl(browser, effectiveConfig, generation)
 
             // Track active browser
             activeBrowsers[handle.id] = handle

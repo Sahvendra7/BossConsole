@@ -26,10 +26,15 @@ import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
 import com.teamdev.jxbrowser.browser.event.TitleChanged
+import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.event.Subscription
+import com.teamdev.jxbrowser.navigation.LoadUrlParams
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.navigation.event.NavigationStarted
+import com.teamdev.jxbrowser.net.ByteData
+import com.teamdev.jxbrowser.net.HttpHeader
+import com.teamdev.jxbrowser.net.callback.BeforeSendUploadDataCallback
 import com.teamdev.jxbrowser.ui.Rect
 import com.teamdev.jxbrowser.zoom.ZoomLevel
 import com.teamdev.jxbrowser.view.compose.BrowserView
@@ -47,9 +52,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.awt.Window
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Desktop implementation of [BrowserHandle] that wraps a JxBrowser [Browser] instance.
@@ -86,6 +95,10 @@ internal class BrowserHandleImpl(
     // Callback for opening links in new tabs (cmd+click, target="_blank", window.open)
     private var openInNewTabCallback: ((String) -> Unit)? = null
 
+    // Callback variant that also carries POST body for form-submit popups.
+    // When set, this wins over [openInNewTabCallback].
+    private var openInNewTabWithDataCallback: ((PopupNavigation) -> Unit)? = null
+
     // BrowserViewState for Compose rendering - managed per Content() call
     private var currentViewState: BrowserViewState? = null
 
@@ -107,7 +120,18 @@ internal class BrowserHandleImpl(
 
         // Load initial URL
         if (config.url.isNotBlank()) {
-            browser.navigation().loadUrl(config.url)
+            val postData = config.initialPostData
+            val contentType = config.initialPostContentType
+            if (postData != null && contentType != null) {
+                // Replay a form-submit popup as POST on first navigation.
+                val params = LoadUrlParams.newBuilder(config.url)
+                    .uploadData(ByteData.of(postData))
+                    .addExtraHeader(HttpHeader.of("Content-Type", contentType))
+                    .build()
+                browser.navigation().loadUrl(params)
+            } else {
+                browser.navigation().loadUrl(config.url)
+            }
         }
     }
 
@@ -605,6 +629,11 @@ internal class BrowserHandleImpl(
         setupPopupHandler()
     }
 
+    override fun setOpenInNewTabWithDataCallback(callback: (PopupNavigation) -> Unit) {
+        openInNewTabWithDataCallback = callback
+        setupPopupHandler()
+    }
+
     /**
      * Sets up JxBrowser popup handlers to route target="_blank" links and window.open()
      * calls to new tabs instead of spawning popup windows.
@@ -632,54 +661,87 @@ internal class BrowserHandleImpl(
             val isEmptyBounds = initialBounds == Rect.empty()
 
             if (isEmptyBounds) {
-                // No dimensions = regular link (target="_blank", cmd+click)
-                // Open as tab in BOSS instead of OS window
-                if (targetUrl.isEmpty() || targetUrl == "about:blank") {
-                    // Use LoadStarted for immediate response when URL isn't ready yet
-                    val cleanedUp = AtomicBoolean(false)
-                    var subscription: Subscription? = null
-                    val scope = CoroutineScope(Dispatchers.Default + Job())
+                // No dimensions = regular link (target="_blank", cmd+click, form.submit with target="_blank")
+                // Open as tab in BOSS instead of OS window. Race-resolve a destination URL and
+                // (for POST navigations) the upload body, then dispatch via the data-aware
+                // callback if registered, else the legacy URL-only one.
+                installUploadCallbackIfNeeded(popupBrowser.engine())
+                val captureDeferred = CompletableDeferred<PopupCapture?>()
+                pendingPopupCaptures[popupBrowser] = captureDeferred
 
+                val urlDeferred = CompletableDeferred<String>()
+                val cleanedUp = AtomicBoolean(false)
+                var subscription: Subscription? = null
+                val scope = CoroutineScope(Dispatchers.Default + Job())
+
+                fun resolveUrlIfReady() {
+                    if (urlDeferred.isCompleted) return
+                    val u = try { popupBrowser.url() } catch (_: Exception) { "" }
+                    if (u.isNotEmpty() && u != "about:blank") urlDeferred.complete(u)
+                }
+
+                if (targetUrl.isNotEmpty() && targetUrl != "about:blank") {
+                    urlDeferred.complete(targetUrl)
+                } else {
                     subscription = popupBrowser.navigation().on(LoadStarted::class.java) {
-                        try {
-                            val loadedUrl = popupBrowser.url()
-                            if (loadedUrl.isNotEmpty() && loadedUrl != "about:blank") {
-                                // Only cleanup if we're the first handler to run
-                                if (cleanedUp.compareAndSet(false, true)) {
-                                    logger.debug(LogCategory.BROWSER, "Popup LoadStarted", mapOf("url" to loadedUrl))
-                                    openInNewTabCallback?.invoke(loadedUrl)
-                                    subscription?.unsubscribe()
-                                    scope.cancel()
-                                    if (!popupBrowser.isClosed) {
-                                        popupBrowser.close()
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            // Popup browser was closed - cleanup and exit
-                            if (cleanedUp.compareAndSet(false, true)) {
-                                subscription?.unsubscribe()
-                                scope.cancel()
-                            }
-                        }
+                        resolveUrlIfReady()
                     }
+                }
 
-                    // Timeout fallback: cleanup after 3 seconds
-                    scope.launch {
-                        delay(3_000)
+                scope.launch {
+                    try {
+                        // Wait up to 3s for a real URL.
+                        val url = withTimeoutOrNull(3_000) { urlDeferred.await() } ?: ""
+                        // Brief grace period for the POST upload callback to fire after URL is known.
+                        // For POST navigations the upload typically fires within tens of ms of LoadStarted.
+                        val capture = withTimeoutOrNull(500) { captureDeferred.await() }
+
                         if (cleanedUp.compareAndSet(false, true)) {
                             subscription?.unsubscribe()
+                            pendingPopupCaptures.remove(popupBrowser)
                             if (!popupBrowser.isClosed) {
                                 popupBrowser.close()
                             }
-                            logger.warn(LogCategory.BROWSER, "Popup navigation timed out after 3s, closing browser")
                         }
+
+                        val finalUrl = capture?.url?.takeIf { it.isNotEmpty() } ?: url
+                        if (finalUrl.isEmpty() || finalUrl == "about:blank") {
+                            logger.warn(LogCategory.BROWSER, "Popup navigation produced no URL, dropping")
+                            return@launch
+                        }
+
+                        val withDataCb = openInNewTabWithDataCallback
+                        if (withDataCb != null) {
+                            val nav = PopupNavigation(
+                                url = finalUrl,
+                                postData = capture?.body,
+                                contentType = capture?.contentType
+                            )
+                            withContext(Dispatchers.Main) { withDataCb(nav) }
+                        } else {
+                            withContext(Dispatchers.Main) { openInNewTabCallback?.invoke(finalUrl) }
+                        }
+
+                        logger.debug(
+                            LogCategory.BROWSER,
+                            "Popup dispatched",
+                            mapOf(
+                                "url" to finalUrl,
+                                "hasPost" to (capture != null).toString()
+                            )
+                        )
+                    } catch (e: Exception) {
+                        if (cleanedUp.compareAndSet(false, true)) {
+                            subscription?.unsubscribe()
+                            pendingPopupCaptures.remove(popupBrowser)
+                            if (!popupBrowser.isClosed) {
+                                popupBrowser.close()
+                            }
+                        }
+                        logger.warn(LogCategory.BROWSER, "Popup handler error", error = e)
+                    } finally {
+                        scope.cancel()
                     }
-                } else {
-                    // URL is already available
-                    logger.debug(LogCategory.BROWSER, "Popup with immediate URL", mapOf("url" to targetUrl))
-                    openInNewTabCallback?.invoke(targetUrl)
-                    popupBrowser.close()
                 }
             } else {
                 // Has dimensions = OAuth/payment popup (window.open with features)
@@ -1061,5 +1123,70 @@ internal class BrowserHandleImpl(
         }
 
         logger.debug(LogCategory.BROWSER, "Browser handle disposed", mapOf("handleId" to id))
+    }
+
+    /**
+     * Captured details of a POST upload made by a popup browser, used to replay
+     * the same POST when the popup is adopted as a new tab.
+     */
+    private data class PopupCapture(
+        val url: String,
+        val body: ByteArray,
+        val contentType: String
+    )
+
+    companion object {
+        /**
+         * Popup browsers we are currently waiting to capture an upload body for.
+         * Populated by the popup handler before [BeforeSendUploadDataCallback] fires;
+         * the callback completes the deferred and removes the entry.
+         */
+        private val pendingPopupCaptures =
+            ConcurrentHashMap<Browser, CompletableDeferred<PopupCapture?>>()
+
+        private val uploadCallbackInstalled = AtomicBoolean(false)
+        private val staticLogger = BossLogger.forComponent("BrowserHandleImpl")
+
+        /**
+         * Install an engine-wide [BeforeSendUploadDataCallback] that captures
+         * POST bodies for popup browsers we're tracking. Idempotent — installs once.
+         *
+         * The callback proceeds unchanged for every request; it only diverts when
+         * a request originates from a browser registered in [pendingPopupCaptures].
+         * That popup is closed before its upload is sent, so the captured POST
+         * is replayed exactly once from the adopted new tab.
+         */
+        private fun installUploadCallbackIfNeeded(engine: Engine) {
+            if (!uploadCallbackInstalled.compareAndSet(false, true)) return
+            try {
+                engine.network().set(
+                    BeforeSendUploadDataCallback::class.java,
+                    BeforeSendUploadDataCallback { params ->
+                        try {
+                            val req = params.urlRequest()
+                            val popupBrowser = req.browser().orElse(null)
+                            if (popupBrowser != null) {
+                                val deferred = pendingPopupCaptures.remove(popupBrowser)
+                                if (deferred != null) {
+                                    val bytes = params.uploadData().bytes() ?: ByteArray(0)
+                                    val contentType = params.httpHeaders()
+                                        .firstOrNull { it.name().equals("Content-Type", ignoreCase = true) }
+                                        ?.value()
+                                        ?: "application/x-www-form-urlencoded"
+                                    deferred.complete(PopupCapture(req.url(), bytes, contentType))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            staticLogger.warn(LogCategory.BROWSER, "Upload capture failed", error = e)
+                        }
+                        BeforeSendUploadDataCallback.Response.proceed()
+                    }
+                )
+                staticLogger.debug(LogCategory.BROWSER, "BeforeSendUploadDataCallback installed")
+            } catch (e: Exception) {
+                uploadCallbackInstalled.set(false)
+                staticLogger.warn(LogCategory.BROWSER, "Failed to install upload callback", error = e)
+            }
+        }
     }
 }
