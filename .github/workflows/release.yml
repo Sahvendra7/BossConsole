@@ -1,3 +1,7 @@
+# NOTE: The exact `name:` below is referenced by .github/workflows/sync-release.yml
+# in its `workflow_run.workflows` filter. If you rename this workflow, update the
+# sync-release trigger too — there is no compile-time check and a mismatch will
+# silently stop auto-syncing public releases.
 name: 🚀 Release Build
 
 on:

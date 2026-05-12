@@ -3,6 +3,17 @@ name: 🔄 Sync Release to Public Repository
 on:
   release:
     types: [published]
+  # Backup trigger: when the Release Build workflow completes successfully,
+  # sync the latest matching release. In practice we have observed the
+  # `release: published` trigger above silently skipping the last several
+  # releases — root cause not yet confirmed (GitHub's recursive-trigger
+  # suppression for GITHUB_TOKEN events is one plausible explanation despite
+  # release.yml explicitly using PUBLIC_REPO_TOKEN, but other causes like
+  # draft→publish flow or PAT scope are not ruled out). Either way, hooking
+  # off the upstream workflow's completion is a reliable secondary path.
+  workflow_run:
+    workflows: ["🚀 Release Build"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       release_tag:
@@ -22,16 +33,35 @@ jobs:
       - run: echo "Skipping sync-release on push event (only runs on release publish)"
 
   sync-release:
-    if: github.event_name != 'push'
+    # Run for every trigger except push, and for workflow_run only when the
+    # upstream Release Build succeeded.
+    if: |
+      github.event_name != 'push' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    
+    # Serialise ALL sync-release runs with a single static group key.
+    #
+    # The double-fire we're guarding against (release: published AND
+    # workflow_run both reaching this job for the same release) cannot be
+    # collapsed via a payload-derived key: the release event exposes
+    # target_commitish (which is the branch name "main", not a SHA), while
+    # the workflow_run event exposes head_sha — they never naturally agree.
+    # Resolving the tag in a pre-job would let us key on it, but at the cost
+    # of an extra job and another moving part. Sync runs are infrequent (one
+    # per release at most), brief, and only ever write to a single public
+    # repo, so serialising globally costs nothing meaningful and is simply
+    # correct.
+    concurrency:
+      group: sync-release-global
+      cancel-in-progress: false
+
     steps:
     - name: Checkout private repo
       uses: actions/checkout@v6
       with:
         token: ${{ secrets.PUBLIC_REPO_TOKEN }}
         fetch-depth: 0
-    
+
     - name: Download release assets
       id: download
       env:
@@ -42,11 +72,13 @@ jobs:
         EVENT_RELEASE_NAME: ${{ github.event.release.name }}
         EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         EVENT_RELEASE_BODY: ${{ github.event.release.body }}
+        WORKFLOW_RUN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         set -euo pipefail
 
-        # Get release information (handle both release event and manual dispatch)
+        # Get release information (handle release event, manual dispatch, and
+        # workflow_run fallback when the upstream Release Build completed).
         if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
           # Trim whitespace from input
           RELEASE_TAG="$(echo "$INPUT_RELEASE_TAG" | xargs)"
@@ -62,6 +94,80 @@ jobs:
           RELEASE_INFO=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")
           RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
           RELEASE_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.prerelease')
+        elif [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
+          # No release payload on workflow_run, so discover the release this
+          # upstream run produced. A Release Build with `create_release: false`
+          # (build-only verification) still fires workflow_run.completed, so
+          # naively picking the latest release would re-sync a stale one —
+          # corrupting the public README's date.
+          #
+          # Discovery strategy: pick the latest release whose created_at is
+          # at/after the upstream workflow_run started.
+          #
+          # NOTE on target_commitish: we deliberately do NOT filter by SHA
+          # here, because softprops/action-gh-release is invoked without a
+          # target_commitish input and the tag does not pre-exist, so GitHub
+          # defaults target_commitish to the branch name ("main") rather
+          # than a SHA. A SHA match would always be empty.
+          #
+          # KNOWN LIMITATION: if an unrelated release happens to be published
+          # *during* this workflow's run window (e.g. an alpha cut from a
+          # parallel pipeline, a manual hand-cut release for testing), this
+          # discovery will pick that release instead of the one our upstream
+          # build produced. Today there is only one release pipeline, so this
+          # is acceptable; if that changes, add a tag-resolution pre-job and
+          # pass the tag explicitly via workflow_call.
+          if [[ -z "${WORKFLOW_RUN_STARTED_AT}" ]]; then
+            echo "❌ workflow_run event missing run_started_at — cannot gate on freshness."
+            exit 1
+          fi
+          echo "🔍 workflow_run trigger — locating release created at/after ${WORKFLOW_RUN_STARTED_AT}..."
+          RUN_STARTED_EPOCH=$(date -d "$WORKFLOW_RUN_STARTED_AT" +%s)
+          RELEASE_INFO=""
+          # 6 attempts × 10s = 60s grace for API consistency. The upstream
+          # build takes many minutes, so the release is virtually always
+          # visible immediately; the loop is purely a defensive cushion.
+          # If you see "no fresh release visible yet" flakes in real runs,
+          # bumping this budget is cheap.
+          for attempt in 1 2 3 4 5 6; do
+            # First page only: per_page=10 is more than enough since we just
+            # need the most recent release. Don't swallow stderr — a 401 or
+            # 403 should fail loudly, not be silently treated as no releases.
+            ALL_RELEASES=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=10")
+            LATEST=$(echo "$ALL_RELEASES" | jq -c '.[0]' || echo "null")
+            if [[ "$LATEST" != "null" && -n "$LATEST" ]]; then
+              LATEST_CREATED=$(echo "$LATEST" | jq -r '.created_at')
+              LATEST_EPOCH=$(date -d "$LATEST_CREATED" +%s)
+              # The window is loose by design: run_started_at is when the
+              # upstream workflow began, typically many minutes before the
+              # release is actually published. Any release stamped within
+              # that window from "now" is treated as the one this run made.
+              if [[ "$LATEST_EPOCH" -ge "$RUN_STARTED_EPOCH" ]]; then
+                RELEASE_INFO="$LATEST"
+                echo "  matched latest release (${LATEST_CREATED} >= run start ${WORKFLOW_RUN_STARTED_AT})"
+                break
+              fi
+            fi
+            echo "  attempt ${attempt}/6: no fresh release visible yet, waiting 10s..."
+            sleep 10
+          done
+          if [[ -z "$RELEASE_INFO" || "$RELEASE_INFO" == "null" ]]; then
+            echo "ℹ️  No release was produced by this Release Build run (likely a"
+            echo "    create_release=false verification build); nothing to sync."
+            exit 0
+          fi
+          RELEASE_TAG=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
+          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
+          RELEASE_PRERELEASE=$(echo "$RELEASE_INFO" | jq -r '.prerelease')
+
+          # Defense-in-depth: validate the discovered tag the same way the
+          # manual-dispatch branch does, in case a malformed release ever
+          # bubbles through (e.g. someone manually created a test release).
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "❌ workflow_run discovered release with invalid tag format: $RELEASE_TAG"
+            echo "   Expected format: v8.16.10 or v8.16.10-beta.1"
+            exit 1
+          fi
         else
           # Trim whitespace from event values
           RELEASE_TAG="$(echo "$EVENT_RELEASE_TAG" | xargs)"
@@ -124,7 +230,7 @@ jobs:
         fi
 
         # Save release body to file safely
-        if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+        if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
           echo "$RELEASE_INFO" | jq -r '.body' > release-assets/release-body-raw.txt
         else
           printf '%s\n' "$EVENT_RELEASE_BODY" > release-assets/release-body-raw.txt
