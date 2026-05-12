@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.kotlinSerialization)
-    id("org.graalvm.buildtools.native") version "0.11.5"
+    id("org.graalvm.buildtools.native") version "1.1.0"
 }
 
 group = "ai.rever.boss.mastery.orchestrator"
