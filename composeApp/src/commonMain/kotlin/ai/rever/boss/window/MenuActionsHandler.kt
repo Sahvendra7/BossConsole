@@ -1,11 +1,15 @@
 package ai.rever.boss.window
 
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 
 /**
  * Handler for menu actions that need to be processed by BossApp.
@@ -18,6 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * decouple the menu UI from the business logic.
  */
 object MenuActionsHandler {
+    private val logger = BossLogger.forComponent("MenuActionsHandler")
+
     private val _newTabEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val newTabEvents: SharedFlow<String> = _newTabEvents.asSharedFlow()
 
@@ -87,6 +93,33 @@ object MenuActionsHandler {
     private val _navigatePanelDownEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val navigatePanelDownEvents: SharedFlow<String> = _navigatePanelDownEvents.asSharedFlow()
 
+    // Customize-Sidebar pending triggers, keyed by windowId. We use a
+    // StateFlow rather than a SharedFlow so the request survives the brief
+    // window between "menu item clicked" and "sidebar (and the
+    // SidebarCustomizeMenu inside it) finishes composing" — relevant in
+    // focus mode where the sidebar is hidden until BossApp force-reveals
+    // it on receipt of the same trigger.
+    //
+    // The map is keyed by windowId (rather than a single Pair) so a click
+    // in window A can't overwrite a still-pending request in window B —
+    // each window has its own slot.
+    //
+    // The Long value is a monotonic request id (see [_customizeRequestId]);
+    // StateFlow collapses identical values, so without a unique payload a
+    // re-trigger of the same windowId between clears wouldn't re-fire.
+    // Subscribers don't compare ids — presence in the map is what they act
+    // on, and [clearCustomizeSidebarTrigger] removes the entry once
+    // handled.
+    private val _customizeSidebarTriggers = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val customizeSidebarTriggers: StateFlow<Map<String, Long>> = _customizeSidebarTriggers.asStateFlow()
+
+    // Monotonic counter for customize-sidebar request ids. Using a
+    // counter (atomic via updateAndGet) instead of wall-clock millis
+    // removes the (vanishingly rare but real) collision risk of two
+    // triggers fired in the same millisecond producing the same value
+    // and being collapsed by StateFlow equality.
+    private val _customizeRequestId = MutableStateFlow(0L)
+
     // State for enabling/disabling split menu items per window (windowId -> hasActiveTabs)
     private val _splitEnabledState = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val splitEnabledState: StateFlow<Map<String, Boolean>> = _splitEnabledState.asStateFlow()
@@ -141,6 +174,10 @@ object MenuActionsHandler {
     fun cleanupWindow(windowId: String) {
         _splitEnabledState.value = _splitEnabledState.value - windowId
         _panelCountState.value = _panelCountState.value - windowId
+        // If the window was closed before the customize-sidebar request
+        // it triggered was handled, drop the orphaned entry so it doesn't
+        // accumulate in the map across the session.
+        _customizeSidebarTriggers.update { it - windowId }
     }
 
     /**
@@ -364,6 +401,32 @@ object MenuActionsHandler {
      */
     fun triggerNavigatePanelDown(windowId: String) {
         _navigatePanelDownEvents.tryEmit(windowId)
+    }
+
+    /**
+     * Trigger the "Customize Sidebar" action for the specified window.
+     * Opens the in-app customize popup anchored to the three-dot button.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     */
+    fun triggerCustomizeSidebar(windowId: String) {
+        val id = _customizeRequestId.updateAndGet { it + 1 }
+        _customizeSidebarTriggers.update { it + (windowId to id) }
+        logger.debug(LogCategory.UI, "Customize-sidebar trigger fired", mapOf(
+            "windowId" to windowId,
+            "requestId" to id.toString()
+        ))
+    }
+
+    /**
+     * Acknowledge that the customize-sidebar request for [windowId] has
+     * been handled. Called by SidebarCustomizeMenu after opening its popup
+     * so that subsequent recompositions (e.g. sidebar hide/reveal in focus
+     * mode) don't re-open the menu. BossApp's force-reveal subscriber does
+     * not clear — it only ever reveals sidebars and is idempotent.
+     */
+    fun clearCustomizeSidebarTrigger(windowId: String) {
+        _customizeSidebarTriggers.update { it - windowId }
     }
 
     private val _showShortcutHelpEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)

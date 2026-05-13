@@ -60,12 +60,20 @@ fun BossDraggableComponent.DraggableSidebarSection(
     slot: Panel,
     modifier: Modifier = Modifier
 ) {
+    // Observe sidebar visibility and pass the hidden set explicitly into
+    // getItemsForSlot — that's what registers the Compose snapshot
+    // observation that re-renders this section when a checkbox toggle in
+    // the customize menu mutates the set. Reading .value inside the model
+    // method wouldn't, so the parameter is the contract.
+    val visibility by ai.rever.boss.components.sidebar.SidebarVisibilitySettingsManager
+        .currentSettings.collectAsState()
+
     SidebarSlotContainer(
         slot = slot,
         sidebarModel = this,
         modifier = modifier
     ) {
-        val items = getItemsForSlot(slot)
+        val items = getItemsForSlot(slot, visibility.hiddenPanelIds)
         items.forEachIndexed { index, item ->
 
             key (item.id) {

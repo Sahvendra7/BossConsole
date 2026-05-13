@@ -72,12 +72,13 @@ data class ContextMenuItem(
 fun ContextMenu(
     items: List<ContextMenuItem>,
     offset: IntOffset = IntOffset.Zero,
+    alignment: Alignment = Alignment.TopStart,
     modifier: Modifier = Modifier,
     onDismissRequest: () -> Unit
 ) {
     Popup(
         onDismissRequest = onDismissRequest,
-        alignment = Alignment.TopStart,
+        alignment = alignment,
         offset = offset,
         properties = PopupProperties(focusable = true)
     ) {
@@ -374,7 +375,8 @@ private fun SubMenuContent(
                         text = subItem.text,
                         color = Color.White,
                         fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
+                            .padding(bottom = 4.dp)
                     )
 
                     // Show arrow for nested submenu
@@ -385,6 +387,22 @@ private fun SubMenuContent(
                             color = Color(0xFF888888),
                             fontSize = 16.sp
                         )
+                    }
+
+                    // Trailing icon (e.g., checkmark for visibility state)
+                    if (subItem.trailingIcon != null) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier.size(20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = subItem.trailingIcon,
+                                contentDescription = "Action",
+                                tint = subItem.trailingIconColor ?: Color(0xFF888888),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
 

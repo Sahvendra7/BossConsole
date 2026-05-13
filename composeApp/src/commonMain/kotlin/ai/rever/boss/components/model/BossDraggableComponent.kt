@@ -130,10 +130,36 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
             .keys.first()
 
 
-    // Get items for a specific slot, returning an empty list if the slot is unknown
-    fun getItemsForSlot(slot: Panel): List<SidebarItem> {
-        return itemsBySlot[slot] ?: emptyList()
+    /**
+     * Items in [slot], with any panel id in [hidden] filtered out.
+     *
+     * Callers must supply [hidden] from an observed source
+     * (typically a `collectAsState` on
+     * [SidebarVisibilitySettingsManager.currentSettings]) so the
+     * resulting list invalidates the composition when the hide-set
+     * changes. Reading the StateFlow's `.value` inside this method would
+     * not register a snapshot observation, leaving stale lists in the
+     * sidebar until something else triggered recomposition.
+     *
+     * No default for [hidden]: omitting it would silently produce an
+     * unfiltered list — identical to calling [getItemsForSlotUnfiltered]
+     * — and the caller would only notice the bug when hide-toggles
+     * stopped taking effect. If you genuinely want the unfiltered list,
+     * call [getItemsForSlotUnfiltered] explicitly.
+     */
+    fun getItemsForSlot(slot: Panel, hidden: Set<String>): List<SidebarItem> {
+        val items = itemsBySlot[slot] ?: return emptyList()
+        if (hidden.isEmpty()) return items
+        return items.filter { it.id !in hidden }
     }
+
+    /**
+     * Unfiltered items for [slot]. Like [getItemsForSlot] but ignores
+     * the user's hidden-set so the customize menu can list panels the
+     * user has hidden (and let them un-hide).
+     */
+    fun getItemsForSlotUnfiltered(slot: Panel): List<SidebarItem> =
+        itemsBySlot[slot].orEmpty()
 
     // Called when dragging starts
     fun startDragging(item: SidebarItem, sourceSlot: Panel, startPosition: Offset) {
@@ -166,6 +192,20 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         if (dropTargetSlot != newTarget) {
             dropTargetSlot = newTarget
         }
+    }
+
+    /**
+     * Cancel an in-flight drag without mutating slot membership. Used by
+     * synthetic / non-panel sidebar items (e.g. the sidebar customize
+     * three-dot menu) whose icons participate in the drag overlay only
+     * for visual consistency — letting [stopDragging] run would inject
+     * the synthetic id into [itemsBySlot] when a drop target was set.
+     */
+    fun cancelDragSnapBack() {
+        draggingItem = null
+        dragStartPosition = null
+        dragDelta = Offset.Zero
+        dropTargetSlot = null
     }
 
     // Called when dragging ends
@@ -291,6 +331,20 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     fun setPanelVisible(panel: Panel, isVisible: Boolean) {
         panelsData[panel]?.let {
             panelsData[panel] = it.copy(visibility = isVisible)
+        }
+    }
+
+    /**
+     * If any panel area is currently displaying the [SidebarItem] with the
+     * given id, close it. Called by the customize menu when a panel's icon
+     * is hidden, so the user doesn't end up with an open panel content area
+     * but no icon left to dismiss it.
+     */
+    fun closePanelForItem(itemId: String) {
+        panelsData.keys.toList().forEach { panel ->
+            if (panelsData[panel]?.sidebarItem?.id == itemId) {
+                setPanelVisible(panel, false)
+            }
         }
     }
 

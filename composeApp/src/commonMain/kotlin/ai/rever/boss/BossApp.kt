@@ -59,6 +59,8 @@ import ai.rever.boss.window.LocalWindowGitState
 import ai.rever.boss.window.MenuActionsHandler
 import ai.rever.boss.window.WindowOperations
 import ai.rever.boss.window.WindowProjectState
+import ai.rever.boss.components.sidebar.SidebarVisibilitySettings
+import ai.rever.boss.components.sidebar.SidebarVisibilitySettingsManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -914,6 +916,24 @@ fun ComponentContext.BossApp(
         }
     }
 
+    // Force-reveal the sidebar containing the customize button when
+    // "View → Customize Sidebar…" fires. Without this, focus mode keeps
+    // the sidebar (and the SidebarCustomizeMenu inside it) un-composed and
+    // the OS-menu click has nowhere to land. Triggers are keyed by
+    // windowId, so once we reveal the sidebar the now-composed
+    // SidebarCustomizeMenu still picks up the same request (and is
+    // responsible for clearing the entry once handled).
+    val customizeTriggers by MenuActionsHandler.customizeSidebarTriggers.collectAsState()
+    val sidebarVisibilitySettings by SidebarVisibilitySettingsManager.currentSettings.collectAsState()
+    LaunchedEffect(customizeTriggers, windowId) {
+        if (customizeTriggers.containsKey(windowId)) {
+            if (SidebarVisibilitySettings.isLeftSide(sidebarVisibilitySettings.customizeButtonSlotId)) {
+                showLeftSidebar = true
+            } else {
+                showRightSidebar = true
+            }
+        }
+    }
 
     // Request focus when auth session resolves (event-driven, no delays)
     val isSessionResolved by CoreAuthService.isSessionResolved.collectAsState()
@@ -1513,7 +1533,10 @@ fun ComponentContext.BossApp(
 
                     if (panelInfo != null) {
                         val panelSlot = panelInfo.defaultSlotPosition
-                        val panelItems = draggablePanelComponent.getItemsForSlot(panelSlot)
+                        // Use the unfiltered listing — this path activates a
+                        // panel by id from an event, so we should still find
+                        // it even if the user has hidden its sidebar icon.
+                        val panelItems = draggablePanelComponent.getItemsForSlotUnfiltered(panelSlot)
                         val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
 
                         if (targetItem != null) {
@@ -1886,7 +1909,10 @@ fun ComponentContext.BossApp(
 
                         if (panelInfo != null) {
                             val panelSlot = panelInfo.defaultSlotPosition
-                            val panelItems = draggablePanelComponent.getItemsForSlot(panelSlot)
+                            // Use the unfiltered listing — programmatic
+                            // activation should work even if the user has
+                            // hidden the panel's icon.
+                            val panelItems = draggablePanelComponent.getItemsForSlotUnfiltered(panelSlot)
                             val targetItem = panelItems.find { it.pluginContentId.panelId == event.panelId.panelId }
 
                             if (targetItem != null) {

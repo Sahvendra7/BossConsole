@@ -541,6 +541,15 @@ fun ApplicationScope.BossWindow(
                 Separator()
 
                 Item(
+                    "Customize Sidebar…",
+                    onClick = {
+                        MenuActionsHandler.triggerCustomizeSidebar(windowState.id)
+                    }
+                )
+
+                Separator()
+
+                Item(
                     if (isFullScreen) "Exit Full Screen" else "Enter Full Screen",
                     onClick = {
                         // Toggle between Fullscreen and Floating window placements
