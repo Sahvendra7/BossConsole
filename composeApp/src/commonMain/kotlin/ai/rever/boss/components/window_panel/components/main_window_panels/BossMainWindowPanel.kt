@@ -16,6 +16,7 @@ import ai.rever.boss.components.model.ScrollDirection
 import ai.rever.boss.components.model.TabDraggableComponent
 import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
+import ai.rever.boss.plugin.api.LocalIsPanelActive
 import ai.rever.boss.plugin.api.TabComponentWithUI
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabIcon
@@ -712,14 +713,22 @@ fun BossTabsComponent.BossMainPanel(
             onTabDropResult = onTabDropResult
         )
         Divider(color = BossDarkBorder)
-        BossMainPanelContent(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            splitViewState = splitViewState,
-            currentPanelId = currentPanelId,
-            onShowSettings = onShowSettings,
-            onOpenProjectDialog = onOpenProjectDialog,
-            onNewProject = onNewProject
-        )
+        // Expose `isActivePanel` to nested plugin composables via a
+        // CompositionLocal. Plugins that embed widgets sensitive to
+        // host focus transitions (e.g. the BossTerm-backed terminal-tab
+        // plugin) read this and forward it into their widget so the
+        // widget can re-issue its internal focus requester when the
+        // surrounding panel regains user attention.
+        CompositionLocalProvider(LocalIsPanelActive provides isActivePanel) {
+            BossMainPanelContent(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                splitViewState = splitViewState,
+                currentPanelId = currentPanelId,
+                onShowSettings = onShowSettings,
+                onOpenProjectDialog = onOpenProjectDialog,
+                onNewProject = onNewProject
+            )
+        }
     }
 }
 
