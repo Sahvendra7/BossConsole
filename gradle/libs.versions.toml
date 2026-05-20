@@ -32,7 +32,7 @@ maven-publish = "0.36.0"
 jna = "5.18.1"
 # gRPC + Protobuf for IPC
 grpc = "1.81.0"
-grpc-kotlin = "1.4.3"
+grpc-kotlin = "1.5.0"
 protobuf = "4.34.1"
 protobuf-gradle-plugin = "0.9.6"
 graalvm-native-plugin = "1.1.0"
