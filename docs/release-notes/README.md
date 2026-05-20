@@ -12,6 +12,7 @@ This directory contains detailed release notes for each version of BOSS.
 <!-- RELEASE_INDEX_START -->
 | Version | Date | Summary |
 |---------|------|---------|
+| [v9.1.10](v9.1.10.md) | 2026-05-20 | Background auto-update for non-downloadOnly system plugins (plugin-manager, terminal-tab, fluck-browser, editor-tab, terminal, boss-plugin-api) so long-running installs stop pinning to first-launch versions, and a `Key.Home` → `Key.MoveHome` fix that unblocks Compose Multiplatform 1.11.0 (also bumps BossTerm 1.1.96, grpc-kotlin 1.5.0, androidx-lifecycle 2.10.0, Netty 4.2.13, slf4j 2.0.18) |
 | [v9.1.8](v9.1.8.md) | 2026-05-14 | Customize Sidebar menu with per-slot hide/show submenus, draggable three-dot button that relocates between all five sidebar slots, View → Customize Sidebar… entry, and a main-panel terminal focus fix via the new `LocalIsPanelActive` composition local (BossTerm 1.0.94) |
 | [v9.1.6](v9.1.6.md) | 2026-05-12 | Auto-trigger public-repo release sync via `workflow_run` fallback with timestamp-gated discovery and a static global concurrency group, plus dependency bumps (Ktor 3.4.3, Supabase 3.6.0, GraalVM Native Build Tools 1.1.0, kotlinx-datetime 0.8.0, BossTerm 1.0.93) |
 | [v9.1.5](v9.1.5.md) | 2026-05-12 | Queue concurrent form-submit POST stashes FIFO and make stash/consume atomic under `ConcurrentHashMap.compute`, fixing the double-print regression where a second OncoEMR Print before the first tab finished constructing would clobber the first popup's body |
