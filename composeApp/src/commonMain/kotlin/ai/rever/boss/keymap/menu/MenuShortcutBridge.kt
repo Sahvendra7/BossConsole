@@ -154,7 +154,7 @@ class MenuShortcutBridge(
             "ESCAPE", "ESC" -> Key.Escape
             "BACKSPACE" -> Key.Backspace
             "DELETE" -> Key.Delete
-            "HOME" -> Key.Home
+            "HOME" -> Key.MoveHome
             "END" -> Key.MoveEnd
             "PAGEUP" -> Key.PageUp
             "PAGEDOWN" -> Key.PageDown
