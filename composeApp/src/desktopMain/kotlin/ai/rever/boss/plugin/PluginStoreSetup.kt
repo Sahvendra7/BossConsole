@@ -426,6 +426,13 @@ object PluginStoreSetup {
                     val jarExists = existingEntry?.let { File(it.jarPath).exists() } ?: false
 
                     if (installedIds.contains(systemPlugin.pluginId) && jarExists) {
+                        // Plugin is on disk — proceed with startup using the
+                        // current JAR. Kick off a background update check so
+                        // newer releases are pulled in for the *next* launch
+                        // (the running session keeps its already-loaded
+                        // classloader — replacing on the fly would break
+                        // anything currently holding a class reference).
+                        scheduleBackgroundUpdateCheck(systemPlugin, File(existingEntry.jarPath))
                         logger.debug(LogCategory.SYSTEM, "System plugin already installed", mapOf(
                             "pluginId" to systemPlugin.pluginId
                         ))
@@ -459,11 +466,15 @@ object PluginStoreSetup {
     }
 
     /**
-     * Kick off a non-blocking update check for a [downloadOnly] system plugin.
-     * The existing JAR stays in use for the current session regardless; a
-     * newer release is downloaded in the background and replaces the file on
-     * disk for the next startup. Runs on [scope] so it survives any caller
-     * that cancels mid-startup.
+     * Kick off a non-blocking update check for a system plugin.
+     *
+     * The existing JAR stays in use for the current session regardless — we
+     * never swap a JAR out from under a live classloader. A newer release is
+     * downloaded in the background and replaces the file on disk for the next
+     * startup. `PluginPersistence` is updated by [downloadSystemPluginFromGitHub]
+     * for non-downloadOnly plugins so the new path is picked up automatically.
+     *
+     * Runs on [scope] so it survives any caller that cancels mid-startup.
      */
     private fun scheduleBackgroundUpdateCheck(
         systemPlugin: SystemPluginInfo,
@@ -499,20 +510,20 @@ object PluginStoreSetup {
                         ))
                     }
                     installedVersion == null -> {
-                        logger.info(LogCategory.SYSTEM, "Installed runtime version unknown — refreshing in background", mapOf(
+                        logger.info(LogCategory.SYSTEM, "Installed system plugin version unknown — refreshing in background", mapOf(
                             "pluginId" to systemPlugin.pluginId,
                             "latestVersion" to latestVersion
                         ))
                         downloadSystemPluginFromGitHub(systemPlugin)
                     }
                     installedVersion == latestVersion -> {
-                        logger.debug(LogCategory.SYSTEM, "Download-only plugin up-to-date", mapOf(
+                        logger.debug(LogCategory.SYSTEM, "System plugin up-to-date", mapOf(
                             "pluginId" to systemPlugin.pluginId,
                             "version" to installedVersion
                         ))
                     }
                     else -> {
-                        logger.info(LogCategory.SYSTEM, "Newer runtime version available — updating in background", mapOf(
+                        logger.info(LogCategory.SYSTEM, "Newer system plugin version available — updating in background", mapOf(
                             "pluginId" to systemPlugin.pluginId,
                             "installedVersion" to installedVersion,
                             "latestVersion" to latestVersion
@@ -780,22 +791,11 @@ object PluginStoreSetup {
                     }
                 }
 
-                // Only now is it safe to remove the old versions, and only
-                // after we've confirmed a valid download. Keeps the previously
-                // running session's JAR intact if anything above failed.
-                _pluginDir.listFiles()?.filter {
-                    it.name.startsWith(plugin.artifactPrefix) &&
-                        it.name.endsWith(".jar") &&
-                        it.name != jarFileName
-                }?.forEach { oldFile ->
-                    logger.debug(LogCategory.SYSTEM, "Removing old version", mapOf(
-                        "file" to oldFile.name
-                    ))
-                    oldFile.delete()
-                }
-
                 // Atomic rename onto the final path. Overwrite if the file
-                // exists (same version re-download).
+                // exists (same version re-download). We move the new JAR into
+                // place *before* deleting old versions and *before* updating
+                // persistence so there's never a window where persistence
+                // points to a JAR we've already unlinked.
                 try {
                     java.nio.file.Files.move(
                         tmpFile.toPath(),
@@ -813,6 +813,23 @@ object PluginStoreSetup {
                     )
                 }
 
+                // Register in persistence (skip for download-only plugins like microkernel runtime).
+                // Preserve the user's existing `enabled` choice and `sourceUrl` —
+                // `addInstalledPlugin` does removeIf+add, so passing the defaults
+                // would silently re-enable a user-disabled plugin and wipe sourceUrl
+                // on every background update.
+                if (!plugin.downloadOnly) {
+                    val existing = PluginPersistence.getInstalledPlugins()
+                        .find { it.pluginId == plugin.pluginId }
+                    PluginPersistence.addInstalledPlugin(
+                        pluginId = plugin.pluginId,
+                        jarPath = destFile.absolutePath,
+                        enabled = existing?.enabled ?: true,
+                        sourceUrl = existing?.sourceUrl,
+                        installedVersion = tagName.removePrefix("v")
+                    )
+                }
+
                 logger.info(LogCategory.SYSTEM, "Downloaded system plugin successfully", mapOf(
                     "pluginId" to plugin.pluginId,
                     "version" to tagName,
@@ -820,14 +837,21 @@ object PluginStoreSetup {
                     "size" to destFile.length()
                 ))
 
-                // Register in persistence (skip for download-only plugins like microkernel runtime)
-                if (!plugin.downloadOnly) {
-                    PluginPersistence.addInstalledPlugin(
-                        pluginId = plugin.pluginId,
-                        jarPath = destFile.absolutePath,
-                        enabled = true,
-                        installedVersion = tagName.removePrefix("v")
-                    )
+                // Clean up older versioned JARs *after* the new JAR is on disk
+                // and persistence is updated. On Windows the JVM may hold a
+                // lock on a JAR loaded earlier in this process; delete() will
+                // return false silently. The new versioned JAR has a different
+                // filename so it's unaffected; the stale file just lingers.
+                _pluginDir.listFiles()?.filter {
+                    it.name.startsWith(plugin.artifactPrefix) &&
+                        it.name.endsWith(".jar") &&
+                        it.name != jarFileName
+                }?.forEach { oldFile ->
+                    val deleted = oldFile.delete()
+                    logger.debug(LogCategory.SYSTEM, "Removed old version", mapOf(
+                        "file" to oldFile.name,
+                        "deleted" to deleted
+                    ))
                 }
 
                 true
@@ -1062,11 +1086,15 @@ object PluginStoreSetup {
                     "fileSize" to destFile.length()
                 ))
 
-                // Register in persistence (addInstalledPlugin handles both add and update)
+                // Register in persistence (addInstalledPlugin handles both add and update).
+                // Preserve sourceUrl in addition to enabled — addInstalledPlugin does
+                // removeIf+add, so omitting these would wipe whatever the user / store
+                // workflow had written previously.
                 PluginPersistence.addInstalledPlugin(
                     pluginId = pluginId,
                     jarPath = destFile.absolutePath,
                     enabled = existingPlugin?.enabled ?: true,
+                    sourceUrl = existingPlugin?.sourceUrl,
                     installedVersion = bundledVersion
                 )
 
