@@ -129,8 +129,21 @@ object BinaryCompatibilityValidator {
             errors.add("$sourceClass -> ${ref.ownerClassName}: ${e.javaClass.simpleName} - ${e.message}")
             return
         } catch (e: ClassNotFoundException) {
-            // Only flag missing classes from the shared API packages, not JDK/Kotlin stdlib
-            if (ref.ownerClassName.startsWith("ai.rever.boss.plugin.")) {
+            // Only flag missing classes from the shared API packages, not JDK/Kotlin stdlib.
+            //
+            // `ai.rever.boss.plugin.runtime.*` classes live only on OOP plugin
+            // child-JVM classpaths (via boss-microkernel-runtime's fatJar), not
+            // on the host. OOP-aware plugins legitimately reference these from
+            // their main class so the child runtime can find them reflectively.
+            // Treat references into that package as soft — the host doesn't
+            // need to resolve them — but log so a later debug session can
+            // find the trail if the plugin actually does fail at child-JVM load.
+            if (isSoftFailReference(ref.ownerClassName)) {
+                logger.debug(LogCategory.SYSTEM, "Soft-skipping runtime-package ref", mapOf(
+                    "sourceClass" to sourceClass,
+                    "ref" to ref.ownerClassName,
+                ))
+            } else if (ref.ownerClassName.startsWith("ai.rever.boss.plugin.")) {
                 errors.add("$sourceClass -> ${ref.ownerClassName}: class not found")
             }
             return
@@ -164,8 +177,34 @@ object BinaryCompatibilityValidator {
         }
     }
 
-    /** Check the class and its superclasses/interfaces for the method. */
-    private fun hasMethod(clazz: Class<*>, name: String, paramTypes: Array<Class<*>>): Boolean {
+    /**
+     * `ai.rever.boss.plugin.runtime.*` classes ship in the OOP plugin
+     * child JVM's classpath (via `boss-microkernel-runtime`), never the
+     * host. References from a plugin's host-side class to those names
+     * resolve in the child but not the host; treat them as soft-fail
+     * during host-side validation so an OOP plugin's `register()` path
+     * can statically reference `RemotePluginContext` (etc.) without
+     * being rejected.
+     *
+     * Exposed `internal` for unit tests.
+     */
+    internal fun isSoftFailReference(ownerClassName: String): Boolean {
+        return ownerClassName.startsWith("ai.rever.boss.plugin.runtime.")
+    }
+
+    /**
+     * Check the class and its superclasses/interfaces for the method.
+     *
+     * Interfaces have no `Object` in their superclass chain, but every
+     * Object method (toString/equals/hashCode/getClass/wait/notify*) is
+     * callable on any interface reference at runtime via dynamic dispatch.
+     * When [clazz] is an interface we additionally check `Object`'s
+     * declared methods so legitimate `interfaceRef.toString()` calls
+     * don't surface as binary-compat false positives.
+     *
+     * Exposed `internal` for unit tests.
+     */
+    internal fun hasMethod(clazz: Class<*>, name: String, paramTypes: Array<Class<*>>): Boolean {
         return try {
             clazz.getMethod(name, *paramTypes)
             true
@@ -180,6 +219,20 @@ object BinaryCompatibilityValidator {
                     // continue
                 }
                 current = current.superclass
+            }
+            // Interfaces have no `Object` in their superclass chain (the walk
+            // above terminates immediately), but at runtime every Object
+            // method is callable on any interface ref via dynamic dispatch
+            // (`list.toString()`, `list.equals(x)`, etc.). Check Object too
+            // so legitimate interface-method-refs against Object's methods
+            // don't flag as missing.
+            if (clazz.isInterface) {
+                try {
+                    Any::class.java.getDeclaredMethod(name, *paramTypes)
+                    return true
+                } catch (_: NoSuchMethodException) {
+                    // fall through
+                }
             }
             false
         }

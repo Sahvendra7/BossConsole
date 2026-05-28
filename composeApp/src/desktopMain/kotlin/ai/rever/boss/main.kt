@@ -24,8 +24,6 @@ import ai.rever.boss.window.BossWindow
 import ai.rever.boss.logging.GlobalLogCapture
 import ai.rever.boss.plugin.PluginStoreSetup
 import ai.rever.boss.performance.PerformanceDataProviderImpl
-import ai.rever.boss.terminal.render.TerminalRenderDevWindow
-import ai.rever.boss.terminal.render.TerminalRenderFlag
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -554,15 +552,6 @@ fun main(args: Array<String>) {
                         }
                     )
                 }
-            }
-
-            // Phase B preview: standalone window mounting the OOP terminal
-            // grid renderer against a canned StubTerminalGridSource. Opens
-            // only when boss.terminal.oopRenderer is enabled (env / sysprop
-            // / local.properties).
-            var devRendererOpen by remember { mutableStateOf(TerminalRenderFlag.isOopRendererEnabled()) }
-            if (devRendererOpen) {
-                TerminalRenderDevWindow(onCloseRequest = { devRendererOpen = false })
             }
         }
         } // CompositionLocalProvider

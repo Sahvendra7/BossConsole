@@ -644,8 +644,11 @@ kotlin {
             }
             implementation(libs.compose.mp.components.resources)
 
-            // BossTerm - runtime only, accessed via terminal-tab plugin
-            runtimeOnly(libs.bossterm.compose)
+            // BossTerm is not a host dependency. The terminal-tab plugin
+            // bundles bossterm-compose privately inside its own JAR; the
+            // plugin's classloader resolves bossterm classes from its own
+            // URLs while sharing the host's Compose runtime via parent
+            // classloader delegation.
 
             // Logging
             implementation(libs.slf4j.api)
