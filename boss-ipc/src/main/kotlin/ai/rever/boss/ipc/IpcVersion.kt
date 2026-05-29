@@ -33,13 +33,15 @@ object IpcVersion {
      * Current IPC contract version of this host build.
      *
      * History:
-     * - 1.0.0 — initial Phase 0 contract.
-     * - 1.1.0 — additive: terminal grid/cursor/scrollback/shell-event
-     *   streaming + modifier-aware key/composition/mouse input + theme
-     *   push (see `services/terminal.proto`). Runtimes built against
-     *   1.0.x stay compatible.
+     * - 1.0.0 — initial Phase 0 contract. Current. The terminal grid /
+     *   cursor / scrollback / shell-event / modifier-aware-input / theme
+     *   RPCs are defined in `services/terminal.proto` as reserved
+     *   scaffolding but are not implemented by the host. A future minor
+     *   bump (1.1.0) is required before any plugin may rely on them; see
+     *   issue #743 for the rollback rationale (terminal-tab pivoted to
+     *   in-process in PR #742).
      */
-    const val CURRENT: String = "1.1.0"
+    const val CURRENT: String = "1.0.0"
 
     /**
      * Parse a semver string into (major, minor, patch). Trailing

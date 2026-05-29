@@ -15,10 +15,17 @@ service TerminalService {
   rpc CloseSession(CloseSessionRequest) returns (boss.ipc.v1.Empty);
   rpc ListSessions(boss.ipc.v1.Empty) returns (ListSessionsResponse);
 
-  // ---- Rendering RPCs (IPC v1.1.0) ----
-  // Added for the out-of-process terminal plugin: child JVM owns the cell
-  // grid (TerminalTextBuffer + IncrementalSnapshotBuilder from bossterm-core);
-  // host subscribes to deltas and renders with a pure-Compose widget.
+  // ---- Rendering RPCs (reserved scaffolding) ----
+  // Originally added for an out-of-process terminal plugin: child JVM owns
+  // the cell grid (TerminalTextBuffer + IncrementalSnapshotBuilder from
+  // bossterm-core); host subscribes to deltas and renders with a pure-Compose
+  // widget. PR #742 pivoted terminal-tab back to in-process, so the host
+  // does not implement any of the RPCs below today and IpcVersion.CURRENT
+  // stays at 1.0.0. The messages and RPC declarations are kept generated
+  // (proto3 additive) so a future minor bump can re-enable them without
+  // re-running the proto changes. Do not rely on these from a plugin until
+  // IpcVersion.CURRENT advances to at least 1.1.0 and the host gains a
+  // concrete TerminalService implementation.
 
   // Server-stream of cell deltas for the session's screen + visible viewport.
   // Each TerminalGridDelta carries either an incremental change set or a

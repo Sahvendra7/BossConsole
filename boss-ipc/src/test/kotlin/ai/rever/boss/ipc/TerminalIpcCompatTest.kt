@@ -13,24 +13,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Locks the IPC v1.1.0 contract for the out-of-process terminal plugin.
+ * Locks the terminal-proto scaffolding and the 1.0.x ↔ 1.1.x compatibility
+ * envelope.
  *
  * Two responsibilities:
  *  1. Pin the cross-version compatibility behaviour at the 1.0.x ↔ 1.1.x
  *     boundary so a future minor bump cannot silently break plugin loading.
- *  2. Round-trip the new proto messages to confirm `terminal.proto`
- *     generated correctly and exposes the fields the host/child rely on.
+ *  2. Round-trip the reserved terminal grid / cursor / shell-event proto
+ *     messages to confirm `services/terminal.proto` still generates
+ *     correctly. The host does not implement the matching RPCs today
+ *     (see issue #743) — `IpcVersion.CURRENT` is intentionally 1.0.0 —
+ *     but the bindings remain so re-enabling the streaming surface in a
+ *     future minor bump is a one-line change.
  */
 class TerminalIpcCompatTest {
-
-    @Test
-    fun `host CURRENT is at least 1_1_0 to carry terminal grid RPCs`() {
-        val v = IpcVersion.parse(IpcVersion.CURRENT)!!
-        assertTrue(
-            v.first > 1 || (v.first == 1 && v.second >= 1),
-            "Terminal grid RPCs landed in IPC 1.1.0 but CURRENT=${IpcVersion.CURRENT}",
-        )
-    }
 
     @Test
     fun `legacy terminal plugin built against 1_0_0 still loads on 1_1_x host`() {
