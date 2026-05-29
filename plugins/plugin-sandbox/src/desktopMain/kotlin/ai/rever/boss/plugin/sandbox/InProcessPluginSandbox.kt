@@ -16,6 +16,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -170,7 +171,7 @@ class InProcessPluginSandbox(
             _state.value = SandboxState.RESTARTING
 
             // Record the crash
-            _healthMetrics.value = _healthMetrics.value.withCrash()
+            _healthMetrics.update { it.withCrash() }
 
             // Cancel heartbeat job
             heartbeatJob?.cancel()
@@ -201,7 +202,7 @@ class InProcessPluginSandbox(
             }
 
             // Mark as running with successful restart metrics
-            _healthMetrics.value = _healthMetrics.value.withSuccessfulRestart()
+            _healthMetrics.update { it.withSuccessfulRestart() }
             _state.value = SandboxState.RUNNING
             isRunning.set(true)
 
@@ -215,11 +216,11 @@ class InProcessPluginSandbox(
     }
 
     override fun recordHeartbeat() {
-        _healthMetrics.value = _healthMetrics.value.withHeartbeat()
+        _healthMetrics.update { it.withHeartbeat() }
     }
 
     override fun recordSuccess() {
-        _healthMetrics.value = _healthMetrics.value.withSuccess()
+        _healthMetrics.update { it.withSuccess() }
     }
 
     override fun recordError(error: Throwable) {
@@ -232,7 +233,7 @@ class InProcessPluginSandbox(
             "errorType" to error.javaClass.simpleName
         ), wrappedError)
 
-        _healthMetrics.value = _healthMetrics.value.withError()
+        _healthMetrics.update { it.withError() }
 
         // Binary incompatibility is deterministic — restart will never fix it.
         // Skip the restart loop and disable immediately.
@@ -269,10 +270,12 @@ class InProcessPluginSandbox(
         logger.info(LogCategory.SYSTEM, "Resetting plugin sandbox health", mapOf(
             "pluginId" to pluginId
         ))
-        _healthMetrics.value = _healthMetrics.value.copy(
-            consecutiveErrors = 0,
-            lastHeartbeat = System.currentTimeMillis()
-        )
+        _healthMetrics.update {
+            it.copy(
+                consecutiveErrors = 0,
+                lastHeartbeat = System.currentTimeMillis()
+            )
+        }
         // If sandbox was unhealthy, mark it as running again
         if (_state.value == SandboxState.UNHEALTHY) {
             _state.value = SandboxState.RUNNING

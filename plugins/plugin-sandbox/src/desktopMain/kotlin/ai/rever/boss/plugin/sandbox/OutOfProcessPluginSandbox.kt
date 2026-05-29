@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Out-of-process sandbox implementation.
@@ -80,10 +81,10 @@ class OutOfProcessPluginSandbox(
             mapOf("pluginId" to pluginId, "restartAttempt" to (_healthMetrics.value.restartAttempts + 1))
         )
         _state.value = SandboxState.RESTARTING
-        _healthMetrics.value = _healthMetrics.value.withCrash()
+        _healthMetrics.update { it.withCrash() }
         return onRestart(pluginId).also { result ->
             if (result.isSuccess) {
-                _healthMetrics.value = _healthMetrics.value.withSuccessfulRestart()
+                _healthMetrics.update { it.withSuccessfulRestart() }
                 _state.value = SandboxState.RUNNING
             } else {
                 _state.value = SandboxState.CRASHED
@@ -92,11 +93,11 @@ class OutOfProcessPluginSandbox(
     }
 
     override fun recordHeartbeat() {
-        _healthMetrics.value = _healthMetrics.value.withHeartbeat()
+        _healthMetrics.update { it.withHeartbeat() }
     }
 
     override fun recordSuccess() {
-        _healthMetrics.value = _healthMetrics.value.withSuccess()
+        _healthMetrics.update { it.withSuccess() }
     }
 
     override fun recordError(error: Throwable) {
@@ -104,7 +105,7 @@ class OutOfProcessPluginSandbox(
             LogCategory.SYSTEM, "Error in out-of-process plugin",
             mapOf("pluginId" to pluginId, "errorType" to error.javaClass.simpleName), error
         )
-        _healthMetrics.value = _healthMetrics.value.withError()
+        _healthMetrics.update { it.withError() }
         if (_healthMetrics.value.consecutiveErrors >= config.maxConsecutiveErrors) {
             markUnhealthy()
         }
@@ -122,10 +123,12 @@ class OutOfProcessPluginSandbox(
 
     override fun resetHealth() {
         logger.info(LogCategory.SYSTEM, "Resetting out-of-process sandbox health", mapOf("pluginId" to pluginId))
-        _healthMetrics.value = _healthMetrics.value.copy(
-            consecutiveErrors = 0,
-            lastHeartbeat = System.currentTimeMillis()
-        )
+        _healthMetrics.update {
+            it.copy(
+                consecutiveErrors = 0,
+                lastHeartbeat = System.currentTimeMillis()
+            )
+        }
         if (_state.value == SandboxState.UNHEALTHY) {
             _state.value = SandboxState.RUNNING
         }
