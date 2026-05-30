@@ -226,6 +226,12 @@ object PluginStoreSetup {
         try {
             logger.info(LogCategory.SYSTEM, "Initializing plugin store infrastructure")
 
+            // Publish the host IPC contract version so in-process plugins (e.g.
+            // the plugin-manager) can judge store-version compatibility without
+            // depending on :boss-ipc. Null on Windows-ARM64 (boss-ipc excluded),
+            // where there are no out-of-process plugins to gate anyway.
+            IpcCompatibility.hostVersion?.let { System.setProperty("boss.ipc.version", it) }
+
             // Create download cache
             _downloadCache = PluginDownloadCache(_cacheDir)
 
@@ -245,7 +251,11 @@ object PluginStoreSetup {
                 repositoryManager = _repositoryManager!!,
                 config = UpdateCheckerConfig(
                     checkIntervalMs = 3600000L // Check every hour
-                )
+                ),
+                // Gate store updates by host IPC compatibility so an
+                // incompatible newer version is reported, never auto-installed.
+                hostIpcVersion = IpcCompatibility.hostVersion ?: "1.0.0",
+                isIpcCompatible = { IpcCompatibility.isInstallable(it) }
             )
 
             // Create and start realtime service for live updates

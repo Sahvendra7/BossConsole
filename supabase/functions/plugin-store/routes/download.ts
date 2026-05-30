@@ -103,7 +103,8 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       sha256: version.sha256,
       version: version.version,
       size: version.jarSize,
-      versionId: version.id
+      versionId: version.id,
+      minIpcVersion: version.minIpcVersion
     }, 200)
   } catch (error) {
     console.error('Error generating download URL:', error)
@@ -200,7 +201,8 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       sha256: version.sha256,
       version: version.version,
       size: version.jarSize,
-      versionId: version.id
+      versionId: version.id,
+      minIpcVersion: version.minIpcVersion
     }, 200)
   } catch (error) {
     console.error('Error generating download URL:', error)

@@ -223,6 +223,7 @@ browse.openapi(getPluginRoute, async (ctx) => {
         version: v.version,
         changelog: v.changelog,
         minBossVersion: v.minBossVersion,
+        minIpcVersion: v.minIpcVersion,
         jarSize: v.jarSize,
         sha256: v.sha256,
         dependencies: v.dependencies,

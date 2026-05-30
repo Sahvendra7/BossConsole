@@ -24,6 +24,7 @@ export async function getPluginVersions(
     version: row.version as string,
     changelog: row.changelog as string,
     minBossVersion: row.min_boss_version as string,
+    minIpcVersion: (row.min_ipc_version as string) ?? '1.0.0',
     jarPath: row.jar_path as string,
     jarSize: Number(row.jar_size) || 0,
     sha256: row.sha256 as string,
@@ -60,6 +61,7 @@ export async function getLatestVersion(
     version: data.version,
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
+    minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -95,6 +97,7 @@ export async function getVersion(
     version: data.version,
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
+    minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -128,6 +131,7 @@ export async function getVersionById(
     version: data.version,
     changelog: data.changelog,
     minBossVersion: data.min_boss_version,
+    minIpcVersion: (data.min_ipc_version as string) ?? '1.0.0',
     jarPath: data.jar_path,
     jarSize: Number(data.jar_size) || 0,
     sha256: data.sha256,
@@ -145,6 +149,7 @@ export async function createVersion(
   version: string,
   changelog: string,
   minBossVersion: string,
+  minIpcVersion: string,
   dependencies: PluginDependency[],
   jarPath: string
 ): Promise<{ id: string }> {
@@ -155,6 +160,7 @@ export async function createVersion(
       version,
       changelog,
       min_boss_version: minBossVersion,
+      min_ipc_version: minIpcVersion,
       dependencies,
       jar_path: jarPath,
       sha256: 'pending', // Will be updated after upload

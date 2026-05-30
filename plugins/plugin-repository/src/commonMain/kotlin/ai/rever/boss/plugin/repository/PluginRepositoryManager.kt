@@ -203,6 +203,31 @@ class PluginRepositoryManager {
     }
 
     /**
+     * Get the full version history of a plugin from its source repository.
+     *
+     * Resolves the source the same way [getPlugin] does (local first, then
+     * remote). Each returned [PluginInfo] carries that version's metadata,
+     * including `minIpcVersion`, so callers can render compatibility per
+     * version and offer downgrades.
+     *
+     * @param pluginId The plugin ID
+     * @return Result with the list of versions (newest first), or empty if not found
+     */
+    suspend fun getPluginVersions(pluginId: String): Result<List<PluginInfo>> = coroutineScope {
+        runCatching {
+            val orderedRepos = repositories.values.filter { it.isLocal } +
+                repositories.values.filter { !it.isLocal }
+            for (repo in orderedRepos) {
+                val versions = repo.getPluginVersions(pluginId).getOrNull()
+                if (!versions.isNullOrEmpty()) {
+                    return@runCatching versions
+                }
+            }
+            emptyList()
+        }
+    }
+
+    /**
      * Download a plugin from its source repository.
      *
      * @param pluginId The plugin ID

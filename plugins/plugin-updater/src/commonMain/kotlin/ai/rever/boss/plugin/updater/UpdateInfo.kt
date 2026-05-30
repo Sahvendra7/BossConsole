@@ -70,6 +70,32 @@ data class UpdateInfo(
 )
 
 /**
+ * A newer version of an installed plugin exists in the repository but the
+ * running host cannot load it (its `minIpcVersion` exceeds the host's IPC
+ * contract). Surfaced instead of an installable [UpdateInfo] so the UI can
+ * tell the user "an update exists but requires a host upgrade" rather than
+ * silently installing a plugin that would fail at load.
+ */
+@Serializable
+data class IncompatibleNotice(
+    @SerialName("pluginId")
+    val pluginId: String,
+    @SerialName("displayName")
+    val displayName: String,
+    @SerialName("currentVersion")
+    val currentVersion: String,
+    /** The newer version that exists but the host can't load. */
+    @SerialName("advertisedLatest")
+    val advertisedLatest: String,
+    /** IPC contract version that [advertisedLatest] requires. */
+    @SerialName("requiredIpcVersion")
+    val requiredIpcVersion: String,
+    /** The host's current IPC contract version. */
+    @SerialName("hostIpcVersion")
+    val hostIpcVersion: String
+)
+
+/**
  * State of an update operation.
  */
 sealed class UpdateState {
@@ -114,6 +140,17 @@ sealed class UpdateState {
         val error: String,
         val exception: Throwable? = null
     ) : UpdateState()
+
+    /**
+     * A newer version was found but is incompatible with the host's IPC
+     * contract, so it was not installed.
+     */
+    data class HostIncompatible(
+        val pluginId: String,
+        val newVersion: String,
+        val requiredIpcVersion: String,
+        val hostIpcVersion: String
+    ) : UpdateState()
 }
 
 /**
@@ -129,6 +166,12 @@ data class UpdateCheckResult(
      * Plugins that failed to check.
      */
     val failedChecks: Map<String, String>,
+
+    /**
+     * Newer versions that exist but the host can't load (IPC-incompatible).
+     * These are reported, never auto-installed.
+     */
+    val incompatibleNotices: List<IncompatibleNotice> = emptyList(),
 
     /**
      * Timestamp when the check was performed.

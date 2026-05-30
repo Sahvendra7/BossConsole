@@ -45,6 +45,12 @@ interface UpdateListener {
      * Called when an update fails.
      */
     fun onUpdateFailed(pluginId: String, error: String) {}
+
+    /**
+     * Called when a newer version was found but rejected because it is
+     * incompatible with the host's IPC contract (not installed).
+     */
+    fun onUpdateRejectedAsIncompatible(notice: IncompatibleNotice) {}
 }
 
 /**
@@ -59,7 +65,16 @@ interface UpdateListener {
  */
 class PluginUpdateManager(
     private val repositoryManager: PluginRepositoryManager,
-    private val config: UpdateCheckerConfig = UpdateCheckerConfig()
+    private val config: UpdateCheckerConfig = UpdateCheckerConfig(),
+    /** Host IPC contract version, surfaced in incompatibility notices. */
+    private val hostIpcVersion: String = "1.0.0",
+    /**
+     * Returns true if a plugin declaring [minIpcVersion] can be loaded by this
+     * host. Injected by the host (which owns `IpcVersion`); defaults to "always
+     * compatible" so a manager constructed without IPC awareness is a no-op
+     * gate rather than blocking every update.
+     */
+    private val isIpcCompatible: (minIpcVersion: String) -> Boolean = { true }
 ) {
     private val logger = BossLogger.forComponent("PluginUpdateManager")
 
@@ -83,6 +98,13 @@ class PluginUpdateManager(
      */
     private val _availableUpdates = MutableStateFlow<List<UpdateInfo>>(emptyList())
     val availableUpdates: StateFlow<List<UpdateInfo>> = _availableUpdates.asStateFlow()
+
+    /**
+     * Newer versions that exist but the host can't load (IPC-incompatible).
+     * Populated by [checkForUpdates]; surfaced by the plugin manager UI.
+     */
+    private val _incompatibleNotices = MutableStateFlow<List<IncompatibleNotice>>(emptyList())
+    val incompatibleNotices: StateFlow<List<IncompatibleNotice>> = _incompatibleNotices.asStateFlow()
 
     /**
      * Update listeners.
@@ -152,20 +174,35 @@ class PluginUpdateManager(
         try {
             val updates = mutableListOf<UpdateInfo>()
             val failed = mutableMapOf<String, String>()
+            val notices = mutableListOf<IncompatibleNotice>()
 
             for ((pluginId, installedVersion) in installedPlugins) {
                 try {
                     val pluginResult = repositoryManager.getPlugin(pluginId)
-                    val pluginWithSource = pluginResult.getOrNull()
+                    val candidate = pluginResult.getOrNull()?.plugin
 
-                    if (pluginWithSource != null) {
-                        val latestVersion = pluginWithSource.plugin.version
-
-                        if (isNewerVersion(latestVersion, installedVersion)) {
-                            updates.add(createUpdateInfo(
-                                pluginWithSource.plugin,
-                                installedVersion
+                    if (candidate != null && isNewerVersion(candidate.version, installedVersion)) {
+                        if (isIpcCompatible(candidate.minIpcVersion)) {
+                            updates.add(createUpdateInfo(candidate, installedVersion))
+                        } else {
+                            // Newer version exists but the host can't load it.
+                            // Report it as an advisory; never auto-install.
+                            val notice = IncompatibleNotice(
+                                pluginId = pluginId,
+                                displayName = candidate.displayName,
+                                currentVersion = installedVersion,
+                                advertisedLatest = candidate.version,
+                                requiredIpcVersion = candidate.minIpcVersion,
+                                hostIpcVersion = hostIpcVersion
+                            )
+                            notices.add(notice)
+                            logger.info(LogCategory.SYSTEM, "Skipping IPC-incompatible plugin update", mapOf(
+                                "pluginId" to pluginId,
+                                "advertisedLatest" to candidate.version,
+                                "requiredIpcVersion" to candidate.minIpcVersion,
+                                "hostIpcVersion" to hostIpcVersion
                             ))
+                            listeners.forEach { it.onUpdateRejectedAsIncompatible(notice) }
                         }
                     }
                 } catch (e: Exception) {
@@ -179,11 +216,13 @@ class PluginUpdateManager(
 
             val result = UpdateCheckResult(
                 availableUpdates = updates,
-                failedChecks = failed
+                failedChecks = failed,
+                incompatibleNotices = notices
             )
 
             _lastCheckResult.value = result
             _availableUpdates.value = updates
+            _incompatibleNotices.value = notices
             _state.value = UpdateState.Idle
 
             if (updates.isNotEmpty()) {

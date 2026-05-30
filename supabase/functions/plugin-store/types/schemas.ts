@@ -62,6 +62,7 @@ export const PluginVersionSchema = z.object({
   version: z.string(),
   changelog: z.string(),
   minBossVersion: z.string(),
+  minIpcVersion: z.string().default('1.0.0'),
   jarSize: z.number(),
   sha256: z.string(),
   dependencies: z.array(z.object({
@@ -104,7 +105,8 @@ export const DownloadInfoResponseSchema = z.object({
   sha256: z.string(),
   version: z.string(),
   size: z.number(),
-  versionId: z.string().uuid()
+  versionId: z.string().uuid(),
+  minIpcVersion: z.string().default('1.0.0')
 })
 
 // ============================================================================
@@ -150,6 +152,7 @@ export const PublishVersionRequestSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Version must be in semver format (e.g., 1.0.0)'),
   changelog: z.string().max(5000).optional().default(''),
   minBossVersion: z.string().optional().default('1.0.0'),
+  minIpcVersion: z.string().optional().default('1.0.0'),
   dependencies: z.array(z.object({
     pluginId: z.string(),
     versionRange: z.string()

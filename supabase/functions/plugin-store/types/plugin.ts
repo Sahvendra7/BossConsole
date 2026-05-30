@@ -27,6 +27,7 @@ export interface PluginVersion {
   version: string
   changelog: string
   minBossVersion: string
+  minIpcVersion: string
   jarPath: string
   jarSize: number
   sha256: string
@@ -119,6 +120,7 @@ export interface PluginManifest {
   iconUrl?: string
   tags?: string[]
   minBossVersion?: string
+  minIpcVersion?: string
   dependencies?: PluginDependency[]
   sandbox?: {
     maxThreads?: number

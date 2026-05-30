@@ -64,6 +64,13 @@ data class PluginInfo(
     val minBossVersion: String = "",
 
     /**
+     * Minimum host IPC contract version required to load this version.
+     * Blank/"1.0.0" means broadly compatible. See IpcVersion in :boss-ipc.
+     */
+    @SerialName("minIpcVersion")
+    val minIpcVersion: String = "1.0.0",
+
+    /**
      * Download URL for the plugin JAR.
      */
     @SerialName("downloadUrl")

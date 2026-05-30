@@ -274,6 +274,7 @@ publish.openapi(publishVersionRoute, async (ctx) => {
       body.version,
       body.changelog,
       body.minBossVersion,
+      body.minIpcVersion,
       body.dependencies,
       jarPath
     )
@@ -608,6 +609,7 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
       version,
       changelog,
       manifest.minBossVersion || '1.0.0',
+      manifest.minIpcVersion || '1.0.0',
       manifest.dependencies || [],
       jarPath
     )
@@ -841,6 +843,7 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
       version,
       changelog,
       manifest.minBossVersion || '1.0.0',
+      manifest.minIpcVersion || '1.0.0',
       manifest.dependencies || [],
       jarPath
     )

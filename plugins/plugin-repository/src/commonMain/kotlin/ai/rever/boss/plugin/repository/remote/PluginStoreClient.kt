@@ -589,6 +589,7 @@ data class PluginDetailResponse(
         url = homepageUrl,
         type = parsePluginType(type),
         apiVersion = apiVersion,
+        minIpcVersion = versions.firstOrNull { it.version == latestVersion }?.minIpcVersion ?: "1.0.0",
         iconUrl = iconUrl,
         screenshots = screenshots.map { it.url },
         rating = avgRating,
@@ -628,6 +629,7 @@ data class VersionInfo(
     val version: String,
     val changelog: String = "",
     val minBossVersion: String = "1.0.0",
+    val minIpcVersion: String = "1.0.0",
     val jarSize: Long = 0,
     val sha256: String = "",
     val dependencies: List<DependencyInfo> = emptyList(),
@@ -647,7 +649,8 @@ data class DownloadInfoResponse(
     val sha256: String,
     val version: String,
     val size: Long,
-    val versionId: String
+    val versionId: String,
+    val minIpcVersion: String = "1.0.0"
 )
 
 @Serializable
