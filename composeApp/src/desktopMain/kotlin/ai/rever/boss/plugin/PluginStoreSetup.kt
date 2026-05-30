@@ -738,57 +738,34 @@ object PluginStoreSetup {
                     return@withContext false
                 }
 
-                // IPC-compat gate for the microkernel runtime: if the fetched
-                // JAR declares a minIpcVersion that this host can't satisfy,
-                // discard the tmp file and keep the currently-installed
-                // version. Users will continue to run on the compatible JAR
-                // they already have until BossConsole is updated.
+                // IPC-compat gate: if the fetched JAR declares a minIpcVersion
+                // this host can't satisfy, discard the tmp file and keep the
+                // currently-installed version. Applies to every system plugin
+                // (terminal-tab, microkernel runtime, …) — a plugin that moved
+                // to a newer IPC contract must not be auto-installed onto an
+                // older host that would then fail to load it at spawn time and
+                // leave the user with a broken tab. Users keep the compatible
+                // JAR they already have until BossConsole is updated. A blank
+                // minIpcVersion (legacy JARs from before the field existed)
+                // skips the check.
                 //
                 // Reflection access: `ai.rever.boss.ipc.IpcVersion` lives in
                 // `:boss-ipc`, which is excluded from the Windows-ARM64 build
                 // (no protoc binary for that target — see settings.gradle.kts).
                 // When the class isn't on the classpath we skip the compat
-                // check entirely; on Windows ARM64 there's no microkernel
-                // runtime to gate anyway.
-                if (plugin.pluginId == ai.rever.boss.components.plugin.MicrokernelRuntime.PLUGIN_ID) {
-                    val fetchedManifest = runCatching { readPluginManifest(tmpFile) }.getOrNull()
-                    val minIpc = fetchedManifest?.minIpcVersion.orEmpty()
-                    val incompatReason: String? = try {
-                        val ipcCls = Class.forName("ai.rever.boss.ipc.IpcVersion")
-                        val isCompatibleMethod = ipcCls.getMethod(
-                            "isCompatible",
-                            String::class.java,
-                            String::class.java,
-                        )
-                        val currentField = ipcCls.getMethod("getCURRENT")
-                        val hostVersion = currentField.invoke(ipcCls.getField("INSTANCE").get(null)) as String
-                        val result = isCompatibleMethod.invoke(
-                            ipcCls.getField("INSTANCE").get(null),
-                            minIpc,
-                            hostVersion,
-                        )
-                        // CompatResult is sealed; Incompatible has a `reason` String property.
-                        val incompatCls = Class.forName("ai.rever.boss.ipc.IpcVersion\$CompatResult\$Incompatible")
-                        if (incompatCls.isInstance(result)) {
-                            incompatCls.getMethod("getReason").invoke(result) as? String
-                        } else null
-                    } catch (_: ClassNotFoundException) {
-                        // boss-ipc not on this build's classpath (Windows ARM64).
-                        null
-                    } catch (e: Throwable) {
-                        logger.warn(LogCategory.SYSTEM, "IPC compat check failed; allowing install", mapOf(
-                            "error" to (e.message ?: "unknown")
-                        ))
-                        null
-                    }
-                    if (incompatReason != null) {
-                        tmpFile.delete()
-                        logger.warn(LogCategory.SYSTEM, "Downloaded runtime is IPC-incompatible — keeping existing JAR", mapOf(
-                            "pluginId" to plugin.pluginId,
-                            "reason" to incompatReason
-                        ))
-                        return@withContext false
-                    }
+                // check entirely; on Windows ARM64 there are no out-of-process
+                // plugins to gate anyway.
+                val minIpc = runCatching { readPluginManifest(tmpFile)?.minIpcVersion }
+                    .getOrNull().orEmpty()
+                val ipcReason = ipcIncompatibilityReason(minIpc)
+                if (ipcReason != null) {
+                    tmpFile.delete()
+                    logger.warn(LogCategory.SYSTEM, "Downloaded plugin is IPC-incompatible — keeping existing JAR", mapOf(
+                        "pluginId" to plugin.pluginId,
+                        "minIpcVersion" to minIpc,
+                        "reason" to ipcReason
+                    ))
+                    return@withContext false
                 }
 
                 // Atomic rename onto the final path. Overwrite if the file
@@ -1128,6 +1105,52 @@ object PluginStoreSetup {
             logger.error(LogCategory.SYSTEM, "Failed to read plugin manifest", mapOf(
                 "file" to jarFile.name
             ), e)
+            null
+        }
+    }
+
+    /**
+     * Returns a human-readable reason if a plugin declaring [minIpcVersion]
+     * is incompatible with this host's IPC contract, or null when it is
+     * compatible / unknown / unenforceable.
+     *
+     * Used to gate auto-downloads of system plugins (terminal-tab, microkernel
+     * runtime, …): an incompatible JAR is discarded so the user keeps a working
+     * version instead of one the spawner would reject at load time.
+     *
+     * - Blank [minIpcVersion] (legacy JARs from before the field existed)
+     *   returns null — nothing to enforce.
+     * - Reflection is used because `ai.rever.boss.ipc.IpcVersion` lives in
+     *   `:boss-ipc`, which is excluded from the Windows-ARM64 build (no protoc
+     *   binary — see settings.gradle.kts). When the class is absent we return
+     *   null; that target has no out-of-process plugins to gate. Any other
+     *   reflection failure also returns null (never block an install on a
+     *   check we couldn't run) but is logged.
+     */
+    internal fun ipcIncompatibilityReason(minIpcVersion: String): String? {
+        if (minIpcVersion.isBlank()) return null
+        return try {
+            val ipcCls = Class.forName("ai.rever.boss.ipc.IpcVersion")
+            val instance = ipcCls.getField("INSTANCE").get(null)
+            // CURRENT is a `const val`, exposed as a static field — there is no
+            // `getCURRENT()` getter to reflect on.
+            val hostVersion = ipcCls.getField("CURRENT").get(null) as String
+            val result = ipcCls
+                .getMethod("isCompatible", String::class.java, String::class.java)
+                .invoke(instance, minIpcVersion, hostVersion)
+            // CompatResult is sealed; Incompatible carries a `reason` String.
+            val incompatCls = Class.forName("ai.rever.boss.ipc.IpcVersion\$CompatResult\$Incompatible")
+            if (incompatCls.isInstance(result)) {
+                incompatCls.getMethod("getReason").invoke(result) as? String
+            } else null
+        } catch (_: ClassNotFoundException) {
+            // boss-ipc not on this build's classpath (Windows ARM64).
+            null
+        } catch (e: Throwable) {
+            logger.warn(LogCategory.SYSTEM, "IPC compat check failed; allowing install", mapOf(
+                "minIpcVersion" to minIpcVersion,
+                "error" to (e.message ?: "unknown")
+            ))
             null
         }
     }
