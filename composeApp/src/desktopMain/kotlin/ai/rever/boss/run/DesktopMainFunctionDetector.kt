@@ -108,7 +108,11 @@ class DesktopMainFunctionDetector : MainFunctionDetector {
                                     lineNumber = mainFunc.lineNumber,
                                     language = mainFunc.language,
                                     command = generateCommand(mainFunc, projectPath),
-                                    workingDirectory = projectPath,
+                                    // Run at the script's own project root (where the
+                                    // generated command — e.g. relative ./gradlew — must
+                                    // execute), not the scanned workspace path which may
+                                    // differ and leave the command without its ./gradlew.
+                                    workingDirectory = findProjectRoot(file.absolutePath),
                                     isAutoDetected = true
                                 )
                             )
