@@ -92,6 +92,9 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import com.arkivanov.decompose.ComponentContext
 import com.arkivanov.decompose.DefaultComponentContext
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
@@ -308,11 +311,14 @@ fun BossTabsComponent.BossMainTabBar(
                             result?.let { onTabDropResult(it) }
                         },
                         contextMenuItems = buildList {
-                            // Track interaction when context menu is opened
-                            if (splitViewState != null && currentPanelId != null) {
-                                // Track this tab interaction when right-clicking
-                                splitViewState.trackTabInteraction(currentPanelId, config.id)
-                            }
+                            // NOTE: Do NOT call trackTabInteraction/setActivePanel here.
+                            // buildList runs during composition (every tab-bar
+                            // recomposition, e.g. on every terminal output line), so
+                            // doing it here flips the active panel away from whichever
+                            // split the user is actually in — stealing focus back to the
+                            // output-producing panel. Panel activation on right-click is
+                            // already handled by the panel's pointerInput press handler;
+                            // left-click activation by the tab onClick above.
 
                             // Split operations (if split state is available)
                             if (splitViewState != null && currentPanelId != null) {
@@ -695,8 +701,22 @@ fun BossTabsComponent.BossMainPanel(
                 }
             }
             .focusable()
+            // Detect pointer presses to mark this panel active even when child content
+            // (JxBrowser, native AWT components) doesn't propagate Compose focus events
+            // upward. PointerEventPass.Initial observes without consuming, so children
+            // still receive the press unchanged.
+            .pointerInput(currentPanelId, splitViewState) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press && currentPanelId != null) {
+                            splitViewState?.setActivePanel(currentPanelId)
+                        }
+                    }
+                }
+            }
             // Removed .clickable() - it was stealing focus from child components (terminals)
-            // Panel activation is handled by .onFocusChanged() above
+            // Panel activation is handled by .onFocusChanged() above and .pointerInput() above
             .then(
                 if (isActivePanel) {
                     Modifier.border(2.dp, MaterialTheme.colors.primary.copy(alpha = 0.5f))
