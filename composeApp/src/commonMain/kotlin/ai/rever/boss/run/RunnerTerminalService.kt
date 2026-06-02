@@ -141,4 +141,28 @@ expect object RunnerTerminalService {
         tabTitle: String,
         isRerun: Boolean = false
     ): Boolean
+
+    /**
+     * Register an externally-opened sidebar run (e.g. the MCP `run_in_sidebar` tool
+     * driven from a Claude session) with the runner so the top-bar runner reflects it:
+     * adds the config to run history, selects it in the given window's dropdown, and
+     * marks it running (keyed to SIDEBAR_TERMINAL_ID, like [openInSidebarTerminal]).
+     *
+     * Unlike [openInSidebarTerminal], this does NOT open the terminal tab — the caller
+     * already opened it. The running state is cleared by the existing removeTerminal /
+     * removeConfig close-callbacks when the sidebar tab closes.
+     *
+     * @param windowId The window the run belongs to
+     * @param configId Stable id for the run (reused across re-runs)
+     * @param command The command being run (stored on the synthesized configuration)
+     * @param workingDirectory Optional working directory
+     * @param name Display name for the top-bar dropdown entry
+     */
+    fun registerSidebarRun(
+        windowId: String,
+        configId: String,
+        command: String,
+        workingDirectory: String?,
+        name: String
+    )
 }

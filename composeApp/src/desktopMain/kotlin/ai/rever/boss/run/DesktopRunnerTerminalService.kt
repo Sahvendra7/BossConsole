@@ -2,13 +2,20 @@ package ai.rever.boss.run
 
 import ai.rever.boss.components.events.RunnerTerminalEventBus
 import ai.rever.boss.plugin.api.SIDEBAR_TERMINAL_ID
+import ai.rever.boss.plugin.run.Language
 import ai.rever.boss.services.terminal.TerminalAPIAccess
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.window.WindowRunnerStateRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -147,7 +154,7 @@ actual object RunnerTerminalService {
             command = command,
             configId = config.id,
             configName = config.name,
-            workingDirectory = config.workingDirectory.ifBlank { null },
+            workingDirectory = resolveWorkingDirectory(config).ifBlank { null },
             isRerun = isRerun,
             sourceWindowId = windowId
         )
@@ -275,7 +282,7 @@ actual object RunnerTerminalService {
             command = command,
             configId = config.id,
             configName = config.name,
-            workingDirectory = config.workingDirectory.ifBlank { null },
+            workingDirectory = resolveWorkingDirectory(config).ifBlank { null },
             isRerun = true,
             sourceWindowId = windowId
         )
@@ -445,12 +452,89 @@ actual object RunnerTerminalService {
         return success
     }
 
+    // Scope for fire-and-forget history persistence from registerSidebarRun (the
+    // public entry is non-suspend so it's reflection-friendly for the MCP host tools).
+    private val registrationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    actual fun registerSidebarRun(
+        windowId: String,
+        configId: String,
+        command: String,
+        workingDirectory: String?,
+        name: String
+    ) {
+        // Synthesize an ad-hoc run configuration. A stable filePath keyed by configId
+        // makes addConfiguration() dedupe re-runs to a single history entry, and keeps
+        // the dropdown selection and the running-state map keyed by the same id.
+        val config = RunConfiguration(
+            id = configId,
+            name = name,
+            type = RunConfigurationType.CUSTOM,
+            filePath = "mcp-run:$configId",
+            lineNumber = 0,
+            language = Language.UNKNOWN,
+            command = command,
+            workingDirectory = workingDirectory ?: "",
+            isAutoDetected = false
+        )
+
+        // Add to run history (top-bar dropdown entries) — addConfiguration is suspend
+        // and dedupes by filePath, so fire it on a scope.
+        registrationScope.launch {
+            try {
+                RunConfigurationManager.addConfiguration(config)
+            } catch (e: Exception) {
+                logger.warn(LogCategory.TERMINAL, "registerSidebarRun: addConfiguration failed", error = e)
+            }
+        }
+
+        // Select it in this window's top-bar dropdown.
+        WindowRunnerStateRegistry.get(windowId)?.selectConfiguration(config)
+
+        // Mark running — same state block as openInSidebarTerminal, minus opening the
+        // tab (the caller already opened the sidebar terminal). Cleared on tab close
+        // via the existing removeTerminal / removeConfig callbacks.
+        stateLock.withLock {
+            _configToTerminal.update { it + (configId to SIDEBAR_TERMINAL_ID) }
+            addConfigToTerminal(SIDEBAR_TERMINAL_ID, configId)
+            _runningConfigs.update { it + configId }
+            addWindowToConfig(configId, windowId)
+        }
+
+        logger.debug(
+            LogCategory.TERMINAL,
+            "Registered sidebar run with runner",
+            mapOf("windowId" to windowId, "configId" to configId, "name" to name)
+        )
+    }
+
+    // Detector used to re-resolve a config's project root from its source file.
+    private val projectRootDetector by lazy { createMainFunctionDetector() }
+
+    /**
+     * Resolve the directory the runner should execute in. Re-derives the script's own
+     * project root from [RunConfiguration.filePath] at run time (e.g. the inner repo
+     * holding ./gradlew), so the runner always runs at the script location rather than
+     * a stale or workspace-root path stored on a saved config. Run configs are
+     * auto-detected (there is no user-set working dir to preserve), so deriving from the
+     * file is safe and also corrects configs saved before the detection fix. Falls back
+     * to the stored working directory when the file isn't available.
+     */
+    private fun resolveWorkingDirectory(config: RunConfiguration): String {
+        val filePath = config.filePath
+        if (filePath.isNotBlank() && File(filePath).exists()) {
+            val root = projectRootDetector.findProjectRoot(filePath)
+            if (root.isNotBlank()) return root
+        }
+        return config.workingDirectory
+    }
+
     /**
      * Build the full command including cd to working directory.
      * Working directory is quoted and escaped to handle paths with spaces,
      * quotes, and other special characters safely.
      */
     private fun buildFullCommand(config: RunConfiguration): String {
-        return ShellUtils.buildCommandWithWorkingDirectory(config.command, config.workingDirectory)
+        return ShellUtils.buildCommandWithWorkingDirectory(config.command, resolveWorkingDirectory(config))
     }
 }
