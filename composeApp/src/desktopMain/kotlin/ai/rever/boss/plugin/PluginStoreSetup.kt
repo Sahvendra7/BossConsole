@@ -532,6 +532,18 @@ object PluginStoreSetup {
                             "version" to installedVersion
                         ))
                     }
+                    !isNewerVersion(latestVersion, installedVersion) -> {
+                        // Installed version is NEWER than the latest published release —
+                        // e.g. a local dev build ahead of the store. Do NOT downgrade:
+                        // downloadSystemPluginFromGitHub deletes other versions, which
+                        // would clobber the local build. Only update when the published
+                        // release is strictly newer (the else branch below).
+                        logger.debug(LogCategory.SYSTEM, "Local system plugin newer than published — keeping local build", mapOf(
+                            "pluginId" to systemPlugin.pluginId,
+                            "installedVersion" to installedVersion,
+                            "latestVersion" to latestVersion
+                        ))
+                    }
                     else -> {
                         logger.info(LogCategory.SYSTEM, "Newer system plugin version available — updating in background", mapOf(
                             "pluginId" to systemPlugin.pluginId,

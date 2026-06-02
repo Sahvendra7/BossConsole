@@ -245,11 +245,11 @@ val copyBundledPluginsLocal = tasks.register("copyBundledPluginsLocal") {
     group = "build"
     description = "Copies bundled plugin JARs from local build (for development), keeping only the latest version"
 
-    val bossPluginApiDir = layout.projectDirectory.dir("../../boss_plugin/boss-plugin-api/build/libs")
-    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugin/plugin-manager/build/libs")
-    val bookmarksDir = layout.projectDirectory.dir("../../boss_plugin/bookmarks/build/libs")
-    val terminalTabDir = layout.projectDirectory.dir("../../boss_plugin/terminal-tab/build/libs")
-    val terminalDir = layout.projectDirectory.dir("../../boss_plugin/terminal/build/libs")
+    val bossPluginApiDir = layout.projectDirectory.dir("../../boss_plugins/boss-plugin-api/build/libs")
+    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugins/plugin-manager/build/libs")
+    val bookmarksDir = layout.projectDirectory.dir("../../boss_plugins/bookmarks/build/libs")
+    val terminalTabDir = layout.projectDirectory.dir("../../boss_plugins/terminal-tab/build/libs")
+    val terminalDir = layout.projectDirectory.dir("../../boss_plugins/terminal/build/libs")
     val destDir = layout.buildDirectory.dir("bundled-plugins")
 
     doLast {
@@ -344,7 +344,7 @@ val copyPluginManagerToDev = tasks.register("copyPluginManagerToDev") {
     group = "build"
     description = "Copies local plugin-manager build to ~/.boss/plugins for development testing"
 
-    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugin/plugin-manager/build/libs")
+    val pluginManagerDir = layout.projectDirectory.dir("../../boss_plugins/plugin-manager/build/libs")
     val userHome = System.getProperty("user.home")
     val destDir = File("$userHome/.boss/plugins")
 
@@ -384,7 +384,7 @@ val copyPluginManagerToDev = tasks.register("copyPluginManagerToDev") {
             }
         } else {
             logger.warn("⚠️  No plugin-manager JAR found in: ${sourceDir.absolutePath}")
-            logger.warn("   Build it first: cd ~/Development/boss_plugin/plugin-manager && ./gradlew build")
+            logger.warn("   Build it first: cd ~/Development/Boss/boss_plugins/plugin-manager && ./gradlew build")
         }
     }
 }
