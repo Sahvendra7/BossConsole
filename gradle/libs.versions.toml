@@ -15,8 +15,13 @@ essenty = "2.5.0"
 kotlin = "2.3.21"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0-0.6.x-compat"
-kotlinx-serialization = "1.10.0"
-ktor = "3.5.0"
+# Pinned to the stack the MCP Kotlin SDK supports (ktor <= 3.3/3.4 → serialization 1.9.x).
+# The terminal-tab plugin bundles ktor 3.3 + mcp-sdk, but resolves kotlinx-serialization
+# parent-first from the host; ktor 3.5 / serialization 1.11 break the bundled MCP server
+# (encodeToSink / sse signature drift). Revert when the MCP SDK supports ktor 3.5+.
+# (ktor 3.5.0 was an automated bump in #736; 3.4.3 was the prior known-good version.)
+kotlinx-serialization = "1.9.0"
+ktor = "3.4.3"
 logback = "1.5.32"
 bosseditor = "1.0.3"
 foundationLayoutAndroid = "1.8.2"

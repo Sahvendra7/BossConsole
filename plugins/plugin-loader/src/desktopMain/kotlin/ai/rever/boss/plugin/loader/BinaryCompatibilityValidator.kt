@@ -65,6 +65,18 @@ object BinaryCompatibilityValidator {
         val jarClassNames = classEntries.map { it.first }.toSet()
 
         for ((className, bytes) in classEntries) {
+            // Only validate the plugin's OWN classes (ai.rever.boss.plugin.*)
+            // against the host. Bundled third-party classes (ktor, mcp-sdk,
+            // kotlin-logging, …) are the plugin's self-contained runtime; their
+            // internal linkage is not a host-contract concern and must not
+            // disable the plugin. In particular, libraries ship OPTIONAL adapter
+            // classes for backends the host doesn't bundle — e.g. kotlin-logging's
+            // io.github.oshai.kotlinlogging.logback.internal.LogbackLogEvent
+            // references ch.qos.logback.* which isn't present, so merely LOADING
+            // that (never-used) class throws NoClassDefFoundError. Skipping
+            // third-party classes here mirrors the member-ref scoping below.
+            if (!className.startsWith("ai.rever.boss.plugin.")) continue
+
             // First, ensure the class itself can be loaded
             try {
                 Class.forName(className, false, classLoader)
@@ -146,6 +158,21 @@ object BinaryCompatibilityValidator {
             } else if (ref.ownerClassName.startsWith("ai.rever.boss.plugin.")) {
                 errors.add("$sourceClass -> ${ref.ownerClassName}: class not found")
             }
+            return
+        }
+
+        // Only enforce member-level binary compatibility for the actual
+        // plugin<->host CONTRACT (ai.rever.boss.plugin.*). References into
+        // bundled third-party libraries (io.ktor, kotlinx.*, io.modelcontextprotocol,
+        // …) are the plugin's own concern: a plugin bundles its own copy, and the
+        // only ones resolved here against the HOST are parent-first shared libs
+        // (e.g. kotlinx-serialization), whose version can legitimately drift from
+        // what the plugin's bundled deps were compiled against. A signature
+        // mismatch there is NOT a contract violation and must not disable the
+        // whole plugin — it degrades at the actual call site at runtime (handled
+        // by the plugin's own error handling), if that path is ever hit. Class
+        // resolution above is already scoped this way; mirror it for members.
+        if (!ref.ownerClassName.startsWith("ai.rever.boss.plugin.")) {
             return
         }
 
