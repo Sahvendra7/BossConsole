@@ -80,9 +80,13 @@ object PluginCrashRegistry {
         activeTabMappings[pluginId] = tabId to closeAction
     }
 
-    /** Unregister the active tab mapping for a plugin (called on dispose). */
-    fun unregisterActiveTab(pluginId: String) {
-        activeTabMappings.remove(pluginId)
+    /** Unregister the active tab mapping for a plugin's tab (called on dispose). */
+    fun unregisterActiveTab(pluginId: String, tabId: String) {
+        // Only clear the mapping if it still points at this tab — a newer tab of the
+        // same plugin may have replaced it before this (older) tab's dispose runs.
+        activeTabMappings.computeIfPresent(pluginId) { _, current ->
+            if (current.first == tabId) null else current
+        }
     }
 
     /**

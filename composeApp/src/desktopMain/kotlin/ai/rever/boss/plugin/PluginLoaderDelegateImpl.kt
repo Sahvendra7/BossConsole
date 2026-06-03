@@ -2,15 +2,20 @@ package ai.rever.boss.plugin
 
 import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
+import ai.rever.boss.components.window_panel.SplitViewStateRegistry
+import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
 import ai.rever.boss.plugin.api.LoadedPluginInfo
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
 import ai.rever.boss.plugin.repository.remote.PluginStoreConfig
+import ai.rever.boss.plugin.sandbox.TabSandboxRegistry
 import ai.rever.boss.plugin.sandbox.ui.PluginCrashRegistry
 import ai.rever.boss.services.auth.AuthStateManager
+import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import java.io.File
+import javax.swing.SwingUtilities
 
 /**
  * Implementation of PluginLoaderDelegate that wraps DynamicPluginManager.
@@ -203,6 +208,72 @@ class PluginLoaderDelegateImpl(
 
     override fun getAccessToken(): String? {
         return PluginStoreConfig.accessToken
+    }
+
+    override fun getRunningInstanceCount(pluginId: String): Int {
+        return findOpenTabs(pluginId).size
+    }
+
+    override suspend fun resetPluginInstances(pluginId: String): Int {
+        return try {
+            // Enumerate every open tab of this plugin across all panels/windows BEFORE
+            // touching the loaded plugin, so the typeId → sandbox mapping is still intact.
+            val tabs = findOpenTabs(pluginId)
+            logger.info(LogCategory.SYSTEM, "Resetting plugin instances", mapOf(
+                "pluginId" to pluginId,
+                "instances" to tabs.size.toString()
+            ))
+            // Close the stale tab UIs on the EDT and wait for them to detach, then reload
+            // so the freshly-installed version is what's loaded when the user reopens.
+            // removeTabById is host-side and doesn't touch plugin classes.
+            if (tabs.isNotEmpty()) {
+                runOnEdtAndWait {
+                    tabs.forEach { (component, tabId) ->
+                        try {
+                            component.removeTabById(tabId)
+                        } catch (e: Throwable) {
+                            logger.warn(LogCategory.SYSTEM, "removeTabById threw during reset", mapOf(
+                                "pluginId" to pluginId,
+                                "tabId" to tabId
+                            ), e)
+                        }
+                    }
+                }
+            }
+            reloadPlugin(pluginId)
+            tabs.size
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "Exception resetting plugin instances", error = e)
+            0
+        }
+    }
+
+    override fun restartApplication() {
+        logger.info(LogCategory.SYSTEM, "Restarting application to apply plugin update")
+        ApplicationRestarter.scheduleRestart()
+    }
+
+    /**
+     * All currently-open tabs belonging to [pluginId], across every panel and window,
+     * as (owning tabs component, tabId) pairs. A tab belongs to the plugin when its
+     * type is sandboxed by that plugin (see [TabSandboxRegistry]). This counts inactive
+     * (background) tabs too — not just the visible one in each panel.
+     */
+    private fun findOpenTabs(pluginId: String): List<Pair<BossTabsComponent, String>> {
+        return SplitViewStateRegistry.getAllStates().values.flatMap { state ->
+            state.getAllPanels().flatMap { panel ->
+                val component = panel.tabsComponent
+                component.tabsState.value.tabs
+                    .filter { tab -> TabSandboxRegistry.getSandbox(tab.typeId)?.pluginId == pluginId }
+                    .map { tab -> component to tab.id }
+            }
+        }
+    }
+
+    /** Run [block] on the Swing EDT and block until it completes. Safe to call off-EDT. */
+    private fun runOnEdtAndWait(block: () -> Unit) {
+        if (SwingUtilities.isEventDispatchThread()) block()
+        else SwingUtilities.invokeAndWait(block)
     }
 
     /**

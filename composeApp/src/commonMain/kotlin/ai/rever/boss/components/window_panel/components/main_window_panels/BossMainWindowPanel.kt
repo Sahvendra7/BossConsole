@@ -805,7 +805,7 @@ fun BossTabsComponent.BossMainPanelContent(
                 }
                 DisposableEffect(tabIdToClose, pluginIdToRegister) {
                     onDispose {
-                        PluginCrashRegistry.unregisterActiveTab(pluginIdToRegister)
+                        PluginCrashRegistry.unregisterActiveTab(pluginIdToRegister, tabIdToClose)
                     }
                 }
             }
