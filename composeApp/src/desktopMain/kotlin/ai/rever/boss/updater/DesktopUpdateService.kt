@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.io.FileOutputStream
 import java.util.*
 
 actual class UpdateService {
@@ -273,94 +272,16 @@ actual class UpdateService {
                 "size" to updateInfo.assetSize
             ))
 
-            val response = downloadClient.get(downloadUrl)
-            if (response.status.value !in 200..299) {
-                logger.error(LogCategory.NETWORK, "Download failed", mapOf(
-                    "status" to response.status.value,
-                    "description" to response.status.description
-                ))
-                return null
-            }
-            
-            // Get total size from response headers if not available from GitHub API
-            val totalSize = response.headers["Content-Length"]?.toLongOrNull() ?: updateInfo.assetSize
             val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates")
             tempDir.mkdirs()
-            
+
             val downloadFile = File(tempDir, updateInfo.assetName)
             if (downloadFile.exists()) {
                 downloadFile.delete()
             }
 
-            logger.trace(LogCategory.SYSTEM, "Download info", mapOf("totalSize" to totalSize, "expectedSize" to updateInfo.assetSize))
-            
-            withContext(Dispatchers.IO) {
-                val channel = response.bodyAsChannel()
-                val outputStream = FileOutputStream(downloadFile)
-                
-                var downloadedBytes = 0L
-                val buffer = ByteArray(8192)
-                var lastProgressUpdate = 0L
-                var progressUpdateCount = 0
-                
-                while (!channel.isClosedForRead) {
-                    val bytesRead = channel.readAvailable(buffer)
-                    if (bytesRead > 0) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
-                        
-                        // Update progress for smooth UI feedback without being too frequent
-                        val shouldUpdateProgress = if (totalSize > 0) {
-                            // Update every 256KB or every 5% progress change, whichever comes first
-                            val bytesThreshold = downloadedBytes - lastProgressUpdate >= 262144 // 256KB
-                            val currentProgress = downloadedBytes.toFloat() / totalSize.toFloat()
-                            val lastProgress = lastProgressUpdate.toFloat() / totalSize.toFloat()
-                            val progressThreshold = (currentProgress - lastProgress) >= 0.05f // 5%
-                            bytesThreshold || progressThreshold
-                        } else {
-                            // Update every 128KB for indeterminate progress
-                            downloadedBytes - lastProgressUpdate >= 131072
-                        }
-                        
-                        if (shouldUpdateProgress) {
-                            val progress = if (totalSize > 0) {
-                                val currentProgress = (downloadedBytes.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
-                                // Log only major progress milestones (every 25%)
-                                val progressPct = (currentProgress * 100).toInt()
-                                if (progressPct % 25 == 0 && progressPct > 0) {
-                                    logger.trace(LogCategory.SYSTEM, "Download progress", mapOf(
-                                        "percent" to progressPct,
-                                        "downloadedKB" to (downloadedBytes / 1024),
-                                        "totalKB" to (totalSize / 1024)
-                                    ))
-                                }
-                                currentProgress
-                            } else {
-                                // Indeterminate progress - cycle between 0.1 and 0.9
-                                val cyclicProgress = 0.1f + (downloadedBytes / 1048576f % 0.8f)
-                                cyclicProgress
-                            }
-                            
-                            // Ensure progress updates happen on main thread for UI updates
-                            withContext(Dispatchers.Main) {
-                                onProgress(progress)
-                            }
-                            lastProgressUpdate = downloadedBytes
-                        }
-                        
-                        progressUpdateCount++
-                    }
-                }
-                
-                outputStream.close()
-                channel.cancel()
-                
-                // Ensure 100% progress is reported on completion on main thread
-                withContext(Dispatchers.Main) {
-                    onProgress(1f)
-                }
-            }
-            
+            streamToFile(downloadUrl, updateInfo.assetSize, downloadFile, onProgress)
+
             if (downloadFile.exists() && downloadFile.length() > 0) {
                 logger.info(LogCategory.SYSTEM, "Update downloaded successfully", mapOf("path" to downloadFile.absolutePath))
                 downloadFile.absolutePath
@@ -381,6 +302,88 @@ actual class UpdateService {
         }
     }
     
+    /**
+     * Stream a download to [destFile], reporting throttled progress.
+     *
+     * Uses Ktor's [prepareGet]/[execute] streaming API and reads the body channel
+     * INSIDE the execute lambda, so progress reflects bytes arriving off the socket.
+     * The non-streaming `get()` would buffer the whole body into memory before
+     * returning, making the bar jump straight to 100% at the end (issue #751). This
+     * mirrors the existing streaming download in RemotePluginRepository.
+     */
+    private suspend fun streamToFile(
+        url: String,
+        expectedSize: Long,
+        destFile: File,
+        onProgress: (progress: Float) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        downloadClient.prepareGet(url).execute { response ->
+            check(response.status.value in 200..299) {
+                "Download failed (HTTP ${response.status.value} ${response.status.description})"
+            }
+
+            // Prefer the actual Content-Length; fall back to the size from the GitHub API.
+            val totalSize = response.headers["Content-Length"]?.toLongOrNull() ?: expectedSize
+            logger.trace(LogCategory.SYSTEM, "Download info", mapOf("totalSize" to totalSize, "expectedSize" to expectedSize))
+
+            val channel = response.bodyAsChannel()
+            destFile.outputStream().use { output ->
+                var downloadedBytes = 0L
+                val buffer = ByteArray(8192)
+                var lastProgressUpdate = 0L
+
+                while (!channel.isClosedForRead) {
+                    val bytesRead = channel.readAvailable(buffer)
+                    if (bytesRead > 0) {
+                        output.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+
+                        // Throttle UI updates: every 256KB or every 5% progress, whichever comes first.
+                        val shouldUpdateProgress = if (totalSize > 0) {
+                            downloadedBytes - lastProgressUpdate >= 262144 ||
+                                (downloadedBytes.toFloat() / totalSize -
+                                    lastProgressUpdate.toFloat() / totalSize) >= 0.05f
+                        } else {
+                            downloadedBytes - lastProgressUpdate >= 131072
+                        }
+
+                        if (shouldUpdateProgress) {
+                            val progress = if (totalSize > 0) {
+                                val currentProgress = (downloadedBytes.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
+                                // Log only major progress milestones (every 25%).
+                                val progressPct = (currentProgress * 100).toInt()
+                                if (progressPct % 25 == 0 && progressPct > 0) {
+                                    logger.trace(LogCategory.SYSTEM, "Download progress", mapOf(
+                                        "percent" to progressPct,
+                                        "downloadedKB" to (downloadedBytes / 1024),
+                                        "totalKB" to (totalSize / 1024)
+                                    ))
+                                }
+                                currentProgress
+                            } else {
+                                // Unknown total size: monotonic curve, asymptotic toward <1
+                                // (never decreases; the explicit onProgress(1f) below finishes it).
+                                val mb = downloadedBytes / 1_048_576f
+                                (1f - 1f / (1f + mb / 8f)).coerceIn(0f, 0.95f)
+                            }
+
+                            // Progress updates must happen on the main thread for UI updates.
+                            withContext(Dispatchers.Main) {
+                                onProgress(progress)
+                            }
+                            lastProgressUpdate = downloadedBytes
+                        }
+                    }
+                }
+            }
+
+            // Ensure 100% is reported on completion, on the main thread.
+            withContext(Dispatchers.Main) {
+                onProgress(1f)
+            }
+        }
+    }
+
     actual suspend fun installUpdate(downloadPath: String): Boolean {
         // Delegate to UpdateInstaller
         val result = UpdateInstaller.installUpdate(downloadPath)
