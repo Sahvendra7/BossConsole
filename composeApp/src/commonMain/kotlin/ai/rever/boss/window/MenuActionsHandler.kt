@@ -521,6 +521,9 @@ object MenuActionsHandler {
     private val _reloadPluginEvents = MutableSharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>>(extraBufferCapacity = 10)
     val reloadPluginEvents: SharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>> = _reloadPluginEvents.asSharedFlow()
 
+    private val _checkPluginUpdatesEvents = MutableSharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>>(extraBufferCapacity = 10)
+    val checkPluginUpdatesEvents: SharedFlow<Pair<String, ai.rever.boss.plugin.api.PanelId>> = _checkPluginUpdatesEvents.asSharedFlow()
+
     /**
      * Trigger a "Reload All Plugins" action for the specified window.
      *
@@ -538,6 +541,16 @@ object MenuActionsHandler {
      */
     fun triggerReloadPlugin(windowId: String, panelId: ai.rever.boss.plugin.api.PanelId) {
         _reloadPluginEvents.tryEmit(Pair(windowId, panelId))
+    }
+
+    /**
+     * Trigger a "Check for Updates" action for the plugin owning a specific panel.
+     *
+     * @param windowId The ID of the window where the action was triggered
+     * @param panelId The PanelId used to look up the owning plugin
+     */
+    fun triggerCheckPluginUpdates(windowId: String, panelId: ai.rever.boss.plugin.api.PanelId) {
+        _checkPluginUpdatesEvents.tryEmit(Pair(windowId, panelId))
     }
 
     // ========== Plugin Wizard Events ==========

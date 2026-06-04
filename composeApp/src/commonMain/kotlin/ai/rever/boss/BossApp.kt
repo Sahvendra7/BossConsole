@@ -8,6 +8,7 @@ import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.components.bars.vertical.BossLeftSideBar
 import ai.rever.boss.components.bars.vertical.BossRightSideBar
 import ai.rever.boss.components.model.BossDraggableComponent
+import ai.rever.boss.components.plugin.tab_types.registerPanelHostTab
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
 import ai.rever.boss.plugin.api.Panel.Companion.right
@@ -564,6 +565,14 @@ fun ComponentContext.BossApp(
     val draggablePanelComponent = remember { BossDraggableComponent(panelRegistry) }
     val tabDragComponent = remember { TabDraggableComponent() }
     val tabsComponent = remember { BossTabsComponent(this, tabRegistry, windowId) }
+
+    // Register the host-internal "panel host" tab type so a sidebar plugin can be
+    // opened as a main tab (header "Open as Tab" / drag-out). Idempotent. Also let the
+    // header drag-out resolve the same per-panel split zones the tab drag uses.
+    LaunchedEffect(tabRegistry) {
+        tabRegistry.registerPanelHostTab(panelComponentStore, draggablePanelComponent)
+        draggablePanelComponent.panelDropZonesProvider = { tabDragComponent.panelDropZones }
+    }
     
     // Create split view state that manages all tab panels
     val splitViewState = rememberSplitViewState(
@@ -2306,6 +2315,8 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    var pluginUpdatePrompt by remember { mutableStateOf<ai.rever.boss.components.plugin.AvailablePluginUpdate?>(null) }
+
     // Handle Reload Plugin (by panel ID) menu events
     LaunchedEffect(windowId) {
         MenuActionsHandler.reloadPluginEvents
@@ -2327,6 +2338,46 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // One-time plugin update check after plugins load (populates header update badges).
+    LaunchedEffect(isFirstWindow, currentDefaultPlugin) {
+        if (!isFirstWindow) return@LaunchedEffect
+        val manager = currentDefaultPlugin?.dynamicPluginManager ?: return@LaunchedEffect
+        val refs = manager.getInstalledPlugins().map {
+            ai.rever.boss.components.plugin.InstalledPluginRef(it.manifest.pluginId, it.manifest.displayName, it.manifest.version)
+        }
+        if (refs.isNotEmpty()) {
+            ai.rever.boss.components.plugin.PluginUpdateBridge.refreshAll(refs)
+        }
+    }
+
+    // Handle "Check for Updates" (by panel ID) menu / header-badge events
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.checkPluginUpdatesEvents
+            .onEach { (eventWindowId, panelId) ->
+                if (eventWindowId == windowId) {
+                    val manager = currentDefaultPlugin?.dynamicPluginManager ?: return@onEach
+                    val pluginId = manager.getRegistrationTracker().getPluginIdForPanel(panelId) ?: return@onEach
+                    val info = manager.getPluginInfo(pluginId) ?: return@onEach
+                    val ref = ai.rever.boss.components.plugin.InstalledPluginRef(
+                        pluginId, info.manifest.displayName, info.manifest.version
+                    )
+                    when (val outcome = ai.rever.boss.components.plugin.PluginUpdateBridge.checkOne(ref)) {
+                        is ai.rever.boss.components.plugin.UpdateCheckOutcome.Available ->
+                            pluginUpdatePrompt = ai.rever.boss.components.plugin.AvailablePluginUpdate(
+                                pluginId, outcome.displayName, outcome.currentVersion, outcome.newVersion
+                            )
+                        ai.rever.boss.components.plugin.UpdateCheckOutcome.UpToDate ->
+                            StatusMessageManager.showMessage("${info.manifest.displayName} is up to date")
+                        is ai.rever.boss.components.plugin.UpdateCheckOutcome.Incompatible ->
+                            StatusMessageManager.showMessage("Update v${outcome.advertisedLatest} needs a newer BOSS")
+                        is ai.rever.boss.components.plugin.UpdateCheckOutcome.Error ->
+                            StatusMessageManager.showMessage("Couldn't check for updates: ${outcome.message}")
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
     with(draggablePanelComponent) {
         BossTheme {
             // Create window provider implementations for plugins
@@ -2335,6 +2386,9 @@ fun ComponentContext.BossApp(
 
             CompositionLocalProvider(
                 LocalWindowId provides windowId,
+                ai.rever.boss.components.plugin.LocalPanelPluginIdResolver provides { panelId ->
+                    currentDefaultPlugin?.dynamicPluginManager?.getRegistrationTracker()?.getPluginIdForPanel(panelId)
+                },
                 LocalSplitViewState provides splitViewState,
                 LocalSplitViewOperations provides splitViewOperations,
                 LocalWorkspaceManager provides workspaceManager,
@@ -2609,6 +2663,30 @@ fun ComponentContext.BossApp(
                 tabDragComponent.TabDraggingOverlay()
             }
             
+            // Plugin update confirmation prompt (from "Check for Updates" or the header badge).
+            pluginUpdatePrompt?.let { prompt ->
+                ai.rever.boss.components.dialogs.ConfirmationDialog(
+                    title = "Update Available",
+                    message = "Update \"${prompt.displayName}\" from v${prompt.currentVersion} to v${prompt.newVersion}?",
+                    confirmText = "Update",
+                    onDismiss = { pluginUpdatePrompt = null },
+                    onConfirm = {
+                        val mgr = currentDefaultPlugin?.dynamicPluginManager
+                        if (mgr != null) {
+                            coroutineScope.launch {
+                                StatusMessageManager.showMessage("Updating ${prompt.displayName}…")
+                                val r = ai.rever.boss.components.plugin.PluginUpdateBridge.performUpdate(prompt.pluginId, mgr)
+                                if (r.isSuccess) {
+                                    StatusMessageManager.showMessage("Updated ${prompt.displayName} to v${r.getOrNull()}")
+                                } else {
+                                    StatusMessageManager.showMessage("Update failed: ${r.exceptionOrNull()?.message}")
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+
             // Show new tab dialog
             if (showNewTabDialog) {
                 NewTabDialog(

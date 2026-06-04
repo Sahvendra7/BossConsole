@@ -3,6 +3,8 @@ package ai.rever.boss.components.window_panel.components.side_panel
 import BossDarkBackground
 import BossDarkBorder
 import ai.rever.boss.components.model.BossDraggableComponent
+import ai.rever.boss.components.plugin.LocalPanelPluginIdResolver
+import ai.rever.boss.components.plugin.PluginUpdateRegistry
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.components.registery.PanelComponentStore
 import ai.rever.boss.components.window_panel.components.BossPanelTopBar
@@ -15,6 +17,7 @@ import ai.rever.boss.components.bars.horizontal.StatusMessageManager
 import ai.rever.boss.window.LocalWindowId
 import ai.rever.boss.window.MenuActionsHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -23,11 +26,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Divider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import kotlinx.coroutines.launch
 
 @Composable
@@ -39,7 +49,16 @@ fun BossDraggableComponent.SidePanel(
     val isHovered by interactionSource.collectIsHoveredAsState()
 
     val pluginContentId = getPanelContentId(panel)
+
+    // While this plugin is hosted in a main tab, don't also render it in the sidebar
+    // (a panel must compose in exactly one place — see panelsHostedAsTab).
+    if (isHostedAsTab(pluginContentId)) return
+
     val component = pluginContentId?.let { panelComponentStore.getOrCreateComponent(it) }
+
+    // For dragging the panel by its header: the sidebar item shown here + its source slot.
+    val draggedItem = getSidebarItemForPanel(panel)
+    val sourceSlot = draggedItem?.let { slotForItem(it) }
 
     Column(
         modifier = Modifier
@@ -49,6 +68,36 @@ fun BossDraggableComponent.SidePanel(
     ) {
         val title = component?.panelInfo?.displayName ?: "Default title"//getPanelTitle(panel)
         val windowId = LocalWindowId.current
+
+        // Plugin update availability for this panel's owning plugin (host-compatible updates only).
+        val pluginId = pluginContentId?.let { LocalPanelPluginIdResolver.current(it) }
+        val availableUpdates by PluginUpdateRegistry.updates.collectAsState()
+        val updateForPlugin = pluginId?.let { availableUpdates[it] }
+        val checkForUpdates: (() -> Unit)? =
+            if (pluginContentId != null && windowId != null) {
+                { MenuActionsHandler.triggerCheckPluginUpdates(windowId, pluginContentId) }
+            } else null
+
+        // Drag the panel by its header: reorder/move between sidebar slots, or drop on
+        // the central area to open it as a main tab. Reuses the sidebar drag system.
+        var headerWindowPos by remember { mutableStateOf(Offset.Zero) }
+        val headerDragModifier = if (draggedItem != null && sourceSlot != null) {
+            Modifier
+                .onGloballyPositioned { headerWindowPos = it.positionInWindow() }
+                .pointerInput(draggedItem.id, sourceSlot) {
+                    detectDragGestures(
+                        onDragStart = { offset -> startDragging(draggedItem, sourceSlot, headerWindowPos + offset) },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            updateDragDelta(dragAmount)
+                        },
+                        onDragEnd = { stopDragging() },
+                        onDragCancel = { stopDragging() }
+                    )
+                }
+        } else {
+            Modifier
+        }
 
         BossPanelTopBar(
             title = title,
@@ -68,9 +117,16 @@ fun BossDraggableComponent.SidePanel(
                     }
                 }
             },
+            onOpenAsTab = pluginContentId?.let { panelId ->
+                { requestPromoteToTab(panelId) }
+            },
+            onCheckForUpdates = checkForUpdates,
             onMinimize = {
                 setPanelVisible(panel, false)
-            }
+            },
+            updateAvailable = updateForPlugin,
+            onUpdateClick = checkForUpdates,
+            dragModifier = headerDragModifier
         )
         Divider(color = BossDarkBorder)
 
@@ -99,9 +155,11 @@ fun BossDraggableComponent.SidePanel(
  * Renders panel content with optional error boundary wrapping.
  * If the panel has an associated sandbox, wraps content with PluginErrorBoundary
  * to catch errors and show a restart button.
+ *
+ * `internal` so the panel-host tab type can render the same panel inside a main tab.
  */
 @Composable
-private fun RenderPanelContent(
+internal fun RenderPanelContent(
     component: ai.rever.boss.plugin.api.PanelComponentWithUI?,
     panelId: ai.rever.boss.plugin.api.PanelId?
 ) {

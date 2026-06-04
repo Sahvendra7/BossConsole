@@ -37,6 +37,7 @@ import kotlin.random.Random
 import androidx.compose.material.icons.outlined.Code
 import kotlinx.coroutines.delay
 import com.arkivanov.decompose.extensions.compose.subscribeAsState
+import ai.rever.boss.components.plugin.tab_types.PanelHostTabInfo
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
 import ai.rever.boss.plugin.tab.terminal.TerminalTabInfo
@@ -478,10 +479,25 @@ class SplitViewState(
                     )
                 is TerminalTabInfo ->
                     freshTab.copy(id = "terminal-${Random.nextLong()}")
+                // PanelHostTabInfo deliberately falls through uncopied: its id is fixed
+                // ("panel-tab:<panelId>") and it renders the panel's single cached component
+                // instance, so a copy would compose that instance in two tabs at once.
+                // Splitting MOVES it instead — see below.
                 else -> freshTab
             }
 
-            newComponent.addTab(copiedTab).takeIf { it >= 0 }?.let(newComponent::selectTab)
+            val newIndex = newComponent.addTab(copiedTab)
+            if (newIndex >= 0) newComponent.selectTab(newIndex)
+
+            // Move semantics for panel-host tabs: remove the original (still present for
+            // context-menu Split Right/Down and same-panel edge drops; the cross-panel drag
+            // handler removed it before calling splitPanel) only AFTER the new hosting tab
+            // was created, so the hosted-as-tab count never transiently drops to zero and
+            // unhides the sidebar panel. newComponent isn't in the split tree yet, so the
+            // search below can only ever find the original.
+            if (copiedTab is PanelHostTabInfo && newIndex >= 0) {
+                findPanelContainingTab(copiedTab.id)?.tabsComponent?.removeTabById(copiedTab.id)
+            }
         }
         
         // Create new panel node

@@ -1354,13 +1354,20 @@ class BossTabsComponent(
     fun removeTab(index: Int) {
         val config = tabsState.value.tabs.getOrNull(index)
         config?.let {
-            // Unregister tab from TabUpdateRegistry
-            TabUpdateRegistry.unregisterTab(it.id)
+            // Unregister tab from TabUpdateRegistry (ownership-checked: a no-op if a move
+            // already re-registered this tab id to its destination component)
+            TabUpdateRegistry.unregisterTab(it.id, componentId)
 
             // Dispose the component if it has a dispose method
             val component = tabComponents.remove(it.id)
             if (component is ai.rever.boss.components.plugin.tab_types.fluck.FluckTabComponent) {
                 component.dispose()
+            }
+            // Panel-host tabs share the window lifecycle, so notify on close explicitly:
+            // decrements the hosted-as-tab count so the sidebar icon reopens the plugin
+            // in its sidebar location once the last hosting tab is closed.
+            if (component is ai.rever.boss.components.plugin.tab_types.PanelHostTabComponent) {
+                component.onClosed()
             }
 
             // If this is a runner terminal, notify the service to clean up tracking

@@ -38,8 +38,12 @@ fun extractCurrentWorkspace(
 private fun extractSplitConfig(node: SplitNode): SplitConfig {
     return when (node) {
         is SplitNode.Panel -> {
-            val tabs = node.tabsComponent.tabsState.value.tabs.map { tab ->
+            val tabs = node.tabsComponent.tabsState.value.tabs.mapNotNull { tab ->
                 when (tab) {
+                    // Transient sidebar-promoted panel — never persist it. It would
+                    // serialize as an "unknown" tab type and crash WorkspaceApplier on
+                    // restore; on next launch the plugin simply returns to its sidebar.
+                    is ai.rever.boss.components.plugin.tab_types.PanelHostTabInfo -> null
                     is FluckTabInfo -> TabConfig(
                         type = "browser",
                         title = tab.title,

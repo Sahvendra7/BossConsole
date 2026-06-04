@@ -81,8 +81,7 @@ private suspend fun applyWorkspaceNode(
             // Add tabs to current panel
             val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
             node.panel.tabs.forEach { tabConfig ->
-                val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
-                tabsComponent?.addTab(tab)
+                createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
             }
         }
 
@@ -93,8 +92,7 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     leftNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
-                        tabsComponent?.addTab(tab)
+                        createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
                     }
                 }
                 else -> {
@@ -104,12 +102,15 @@ private suspend fun applyWorkspaceNode(
             }
 
             // Then create vertical split for right side
-            val firstRightTab = getFirstTab(node.right)
-            if (firstRightTab != null) {
+            // Resolve the first tab up front; if it doesn't map to a supported tab type
+            // (e.g. a legacy panel-host entry in a recovered workspace), skip the split
+            // instead of creating an empty "ghost" panel via splitPanel(tabToMove = null).
+            val firstRightTabInfo = getFirstTab(node.right)?.let { createTabFromWorkspaceConfig(it, projectPath) }
+            if (firstRightTabInfo != null) {
                 val rightPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.VERTICAL,
-                    tabToMove = createTabFromWorkspaceConfig(firstRightTab, projectPath)
+                    tabToMove = firstRightTabInfo
                 )
 
                 // Add remaining tabs or process splits for right side
@@ -118,8 +119,7 @@ private suspend fun applyWorkspaceNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(rightPanelId)
                         rightNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
-                            tabsComponent?.addTab(tab)
+                            createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
                         }
                     }
                     else -> {
@@ -137,8 +137,7 @@ private suspend fun applyWorkspaceNode(
                     // Add tabs to current panel
                     val tabsComponent = splitViewState.getPanelTabsComponent(currentPanelId)
                     topNode.panel.tabs.forEach { tabConfig ->
-                        val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
-                        tabsComponent?.addTab(tab)
+                        createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
                     }
                 }
                 else -> {
@@ -148,12 +147,14 @@ private suspend fun applyWorkspaceNode(
             }
 
             // Then create horizontal split for bottom side
-            val firstBottomTab = getFirstTab(node.bottom)
-            if (firstBottomTab != null) {
+            // Resolve the first tab up front (see the VerticalSplit note) — never create an
+            // empty split panel for an unsupported first tab.
+            val firstBottomTabInfo = getFirstTab(node.bottom)?.let { createTabFromWorkspaceConfig(it, projectPath) }
+            if (firstBottomTabInfo != null) {
                 val bottomPanelId = splitViewState.splitPanel(
                     panelId = currentPanelId,
                     orientation = SplitOrientation.HORIZONTAL,
-                    tabToMove = createTabFromWorkspaceConfig(firstBottomTab, projectPath)
+                    tabToMove = firstBottomTabInfo
                 )
 
                 // Add remaining tabs or process splits for bottom side
@@ -162,8 +163,7 @@ private suspend fun applyWorkspaceNode(
                         // Add remaining tabs
                         val tabsComponent = splitViewState.getPanelTabsComponent(bottomPanelId)
                         bottomNode.panel.tabs.drop(1).forEach { tabConfig ->
-                            val tab = createTabFromWorkspaceConfig(tabConfig, projectPath)
-                            tabsComponent?.addTab(tab)
+                            createTabFromWorkspaceConfig(tabConfig, projectPath)?.let { tabsComponent?.addTab(it) }
                         }
                     }
                     else -> {
@@ -184,7 +184,7 @@ private fun getFirstTab(workspaceConfig: SplitConfig): TabConfig? {
     }
 }
 
-private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: String): TabInfo {
+private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: String): TabInfo? {
     // Resolve project path for placeholder resolution
     val resolvedProjectPath = projectPath.ifEmpty {
         System.getProperty("user.home") ?: ""
@@ -244,6 +244,9 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 filePath = filePath
             )
         }
-        else -> throw IllegalArgumentException("Unknown tab type: ${tabConfig.type}")
+        // Unsupported/legacy/transient tab type (e.g. a sidebar-promoted "panel-host"
+        // tab that should never have been persisted) — skip it instead of crashing
+        // the whole workspace restore.
+        else -> null
     }
 }

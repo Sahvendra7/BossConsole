@@ -57,12 +57,16 @@ object TabUpdateRegistry : TabUpdateProviderFactory {
     }
 
     /**
-     * Unregister a tab.
+     * Unregister a tab mapping owned by [componentId]. Atomically a no-op if the tab id has
+     * already been re-registered to another component — e.g. a move that adds the tab to its
+     * destination before removing it from the source (panel-host tabs share a fixed id), where
+     * the source's close must not wipe the destination's fresh mapping.
      *
      * @param tabId The tab ID to unregister
+     * @param componentId The component that owned the tab
      */
-    fun unregisterTab(tabId: String) {
-        tabToComponent.remove(tabId)
+    fun unregisterTab(tabId: String, componentId: String) {
+        tabToComponent.remove(tabId, componentId)
     }
 
     /**

@@ -8,6 +8,7 @@ import ai.rever.boss.plugin.api.Panel.Companion.top
 import ai.rever.boss.plugin.api.PanelId
 import ai.rever.boss.plugin.api.PanelRegistry
 import ai.rever.boss.plugin.api.SidebarItem
+import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import androidx.compose.runtime.*
@@ -88,6 +89,73 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     var pendingPanelOpen by mutableStateOf<Pair<Panel, SidebarItem>?>(null)
         private set
 
+    // --- Open-as-tab / drag-out support ---
+
+    // Live-tab count per panel hosted in a main tab. A plugin is opened as a tab at most
+    // ONCE (PanelHostTabInfo.id is "panel-tab:<panelId>", so a second host tab would
+    // collide and double-compose the same cached component). The single-instance invariant
+    // is enforced here + at the promote sites + in SplitView.splitPanel (which MOVES a
+    // panel-host tab instead of copying it): while hosted, the sidebar hides the panel and
+    // re-promotion focuses the existing tab instead of creating another. A true count (not
+    // a presence set) so move sequences where create/close overlap can't drop the hosted
+    // state while a hosting tab still lives: splitPanel creates the new hosting tab BEFORE
+    // closing the original (count 1→2→1, never 0). The remaining remove-then-add path
+    // (cross-panel center drop in handleTabDropResult.MoveToPanel) does dip to 0, but only
+    // inside one synchronous handler — recomposition never observes it. When the last
+    // hosting tab closes, the sidebar icon reopens the plugin in its sidebar location.
+    private val panelsHostedAsTab = mutableStateMapOf<PanelId, Int>()
+    fun isHostedAsTab(panelId: PanelId?): Boolean = panelId != null && (panelsHostedAsTab[panelId] ?: 0) > 0
+    fun markHostedAsTab(panelId: PanelId) { panelsHostedAsTab[panelId] = (panelsHostedAsTab[panelId] ?: 0) + 1 }
+    fun unmarkHostedAsTab(panelId: PanelId) {
+        val next = (panelsHostedAsTab[panelId] ?: 0) - 1
+        if (next <= 0) panelsHostedAsTab.remove(panelId) else panelsHostedAsTab[panelId] = next
+    }
+
+    // Bounds (window coords) of the central tab area — used as the origin for the
+    // drop highlight overlay during a header drag-out.
+    var mainAreaBounds: Rect? = null
+
+    // Reads the per-panel split drop zones registered by the tab-drag system, so a
+    // header drag-out resolves the same center/edge targets that dragging a tab does.
+    var panelDropZonesProvider: (() -> Map<String, PanelDropZones>)? = null
+
+    // Resolved main-area drop target for the current header drag (null when over a
+    // sidebar slot or empty space), plus the region to highlight for it (window coords).
+    var mainAreaDropTarget by mutableStateOf<TabDropTarget?>(null)
+        private set
+    var mainAreaHighlight by mutableStateOf<Rect?>(null)
+        private set
+
+    // Deferred "promote this panel to a main tab" request (mirrors pendingPanelOpen);
+    // performed by ProcessPendingPromoteToTab(), which has SplitView access. [target]
+    // selects the destination panel/split (null = the active panel, used by the menu).
+    data class PromoteRequest(val panelId: PanelId, val target: TabDropTarget?)
+    var pendingPromoteToTab by mutableStateOf<PromoteRequest?>(null)
+        private set
+    fun requestPromoteToTab(panelId: PanelId, target: TabDropTarget? = null) {
+        pendingPromoteToTab = PromoteRequest(panelId, target)
+    }
+    fun clearPendingPromoteToTab() { pendingPromoteToTab = null }
+
+    private fun leftHalf(r: Rect) = Rect(r.left, r.top, r.left + r.width / 2f, r.bottom)
+    private fun rightHalf(r: Rect) = Rect(r.left + r.width / 2f, r.top, r.right, r.bottom)
+    private fun topHalf(r: Rect) = Rect(r.left, r.top, r.right, r.top + r.height / 2f)
+    private fun bottomHalf(r: Rect) = Rect(r.left, r.top + r.height / 2f, r.right, r.bottom)
+
+    // Deferred "focus the existing main tab hosting this panel" request — set when the
+    // sidebar icon is clicked while the plugin is already open as a tab.
+    var pendingFocusHostedTab by mutableStateOf<PanelId?>(null)
+        private set
+    fun requestFocusHostedTab(panelId: PanelId) { pendingFocusHostedTab = panelId }
+    fun clearPendingFocusHostedTab() { pendingFocusHostedTab = null }
+
+    /** The sidebar item currently shown in [panel]'s display area, if any. */
+    fun getSidebarItemForPanel(panel: Panel): SidebarItem? = panelsData[panel]?.sidebarItem
+
+    /** The icon-rail slot that owns [item], or null if not found. */
+    fun slotForItem(item: SidebarItem): Panel? =
+        itemsBySlot.entries.firstOrNull { (_, items) -> items.any { it.id == item.id } }?.key
+
     fun update() {
         // Only update itemsBySlot - do NOT update panelsData here
         // panelsData should only be modified by toggleVisibility when panels are explicitly opened
@@ -99,12 +167,19 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     }
 
     val onClick: SidebarItem.() -> Unit = {
-        when(slot) {
-            left.bottom -> toggleVisibility(bottom)
-            left.top.top -> toggleVisibility(left.top)
-            right.top.top -> toggleVisibility(right.top)
-            left.top.bottom -> toggleVisibility(left.bottom)
-            right.top.bottom -> toggleVisibility(right.bottom)
+        // If the plugin is already open as a main tab, focus that tab instead of
+        // (re)opening it in the sidebar.
+        val pid = pluginContentId
+        if (isHostedAsTab(pid)) {
+            requestFocusHostedTab(pid)
+        } else {
+            when(slot) {
+                left.bottom -> toggleVisibility(bottom)
+                left.top.top -> toggleVisibility(left.top)
+                right.top.top -> toggleVisibility(right.top)
+                left.top.bottom -> toggleVisibility(left.bottom)
+                right.top.bottom -> toggleVisibility(right.bottom)
+            }
         }
     }
 
@@ -192,6 +267,39 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         if (dropTargetSlot != newTarget) {
             dropTargetSlot = newTarget
         }
+
+        // Not over a sidebar slot → resolve a main-area drop target from the same
+        // per-panel split zones the tab drag uses: edges create a split, center adds
+        // to that panel's tab bar.
+        var dropTgt: TabDropTarget? = null
+        var highlight: Rect? = null
+        if (newTarget == null) {
+            val zones = panelDropZonesProvider?.invoke()
+            if (zones != null) {
+                for ((panelId, z) in zones) {
+                    when {
+                        z.leftZone.contains(currentPosition) -> {
+                            dropTgt = TabDropTarget.SplitPanel(panelId, SplitOrientation.VERTICAL); highlight = leftHalf(z.panelBounds)
+                        }
+                        z.rightZone.contains(currentPosition) -> {
+                            dropTgt = TabDropTarget.SplitPanel(panelId, SplitOrientation.VERTICAL); highlight = rightHalf(z.panelBounds)
+                        }
+                        z.topZone.contains(currentPosition) -> {
+                            dropTgt = TabDropTarget.SplitPanel(panelId, SplitOrientation.HORIZONTAL); highlight = topHalf(z.panelBounds)
+                        }
+                        z.bottomZone.contains(currentPosition) -> {
+                            dropTgt = TabDropTarget.SplitPanel(panelId, SplitOrientation.HORIZONTAL); highlight = bottomHalf(z.panelBounds)
+                        }
+                        z.panelBounds.contains(currentPosition) -> {
+                            dropTgt = TabDropTarget.ExistingPanel(panelId); highlight = z.panelBounds
+                        }
+                    }
+                    if (dropTgt != null) break
+                }
+            }
+        }
+        if (mainAreaDropTarget != dropTgt) mainAreaDropTarget = dropTgt
+        if (mainAreaHighlight != highlight) mainAreaHighlight = highlight
     }
 
     /**
@@ -212,6 +320,7 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
     fun stopDragging() {
         val currentDraggingItem = draggingItem
         val currentDropTarget = dropTargetSlot
+        val mainTarget = mainAreaDropTarget
 
         val finalDropPosition = if (dragStartPosition != null) dragStartPosition!! + dragDelta else null
 
@@ -220,6 +329,19 @@ class BossDraggableComponent(val panelRegistry: PanelRegistry) {
         dragStartPosition = null // Reset start position
         dragDelta = Offset.Zero // Reset delta
         dropTargetSlot = null
+        mainAreaDropTarget = null
+        mainAreaHighlight = null
+
+        // Dropped on the central area → promote to a main tab (move) at the resolved
+        // panel/split target. The sidebar icon stays put; ProcessPendingPromoteToTab
+        // opens the tab and hides the sidebar panel. If the plugin is already hosted in
+        // a tab (e.g. dragging its still-visible icon out again), focus that tab instead
+        // of creating a duplicate (single-instance — see panelsHostedAsTab).
+        if (currentDraggingItem != null && mainTarget != null && currentDropTarget == null) {
+            val pid = currentDraggingItem.first.pluginContentId
+            if (isHostedAsTab(pid)) requestFocusHostedTab(pid) else requestPromoteToTab(pid, mainTarget)
+            return
+        }
 
         if (currentDraggingItem != null) {
             val (item, sourceSlot) = currentDraggingItem
