@@ -886,7 +886,18 @@ object PluginStoreSetup {
         // 2. Ensure all system plugins are installed (auto-download if missing)
         ensureSystemPluginsInstalled()
 
-        // 3. Load persisted plugins (including bundled ones now in plugin dir)
+        // 3. Remove stale duplicate versions of the same plugin and repoint
+        //    installed.json at the kept JAR — different writers use different
+        //    filename conventions, so multiple versions can accumulate and an
+        //    older JAR could otherwise shadow a newer one at scan time.
+        runCatching { PluginJarReconciler.reconcilePluginDir(_pluginDir) }
+            .onFailure { e ->
+                logger.warn(LogCategory.SYSTEM, "Plugin dir reconcile failed", mapOf(
+                    "error" to (e.message ?: "unknown")
+                ))
+            }
+
+        // 4. Load persisted plugins (including bundled ones now in plugin dir)
         val persistedPlugins = PluginPersistence.getInstalledPlugins()
 
         if (persistedPlugins.isEmpty()) {

@@ -94,6 +94,13 @@ actual object PluginUpdateBridge {
         )
         return if (result.isSuccess) {
             PluginUpdateRegistry.clear(pluginId)
+            // Remove the previous version's JAR (and any other stale duplicates).
+            // Matching is by manifest pluginId, so it handles every filename
+            // convention; the just-installed JAR is the highest version and is kept.
+            runCatching { ai.rever.boss.plugin.PluginJarReconciler.reconcilePluginDir(pluginDir) }
+                .onFailure { e ->
+                    logger.warn(LogCategory.SYSTEM, "Post-update plugin dir reconcile failed: ${e.message}")
+                }
             Result.success(update.newVersion)
         } else {
             Result.failure(result.exceptionOrNull() ?: Exception("Update failed"))
