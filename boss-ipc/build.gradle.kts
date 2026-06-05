@@ -65,7 +65,7 @@ if (protocAvailable) {
     // Normal build: generate gRPC stubs from .proto files
     protobuf {
         protoc {
-            artifact = "com.google.protobuf:protoc:4.31.1"
+            artifact = "com.google.protobuf:protoc:4.35.0"
         }
         plugins {
             create("grpc") {
@@ -102,7 +102,7 @@ if (protocAvailable) {
     protobuf {
         protoc {
             // Use a placeholder — protoc tasks are disabled below
-            artifact = "com.google.protobuf:protoc:4.31.1"
+            artifact = "com.google.protobuf:protoc:4.35.0"
         }
     }
     tasks.matching { it.name.startsWith("generateProto") || it.name.startsWith("extract") && it.name.contains("Proto") }.configureEach {
