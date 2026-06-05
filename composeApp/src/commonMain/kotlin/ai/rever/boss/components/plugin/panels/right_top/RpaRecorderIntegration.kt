@@ -24,7 +24,12 @@ interface BrowserIntegration {
      * Execute JavaScript in the browser
      */
     suspend fun executeJavaScript(script: String): Any?
-    
+
+    /**
+     * Navigate the tab to [url]. Best-effort; default is a no-op.
+     */
+    suspend fun navigate(url: String) {}
+
     /**
      * Check if browser is available
      */

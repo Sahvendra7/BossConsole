@@ -659,7 +659,55 @@ object FluckEngine {
             // Try to initialize
             initializeEngine()
         }
-    
+
+    // ---- RPA profile helpers (used by BrowserServiceImpl's managed profiles) ----
+    // JxBrowser profiles are isolated cookie/storage/network contexts inside
+    // the single shared engine. They are the isolation primitive for running
+    // multiple RPAs with different credentials concurrently.
+
+    /** Create a fresh isolated profile for an RPA run. Caller must delete it when done. */
+    fun newRpaProfile(name: String): com.teamdev.jxbrowser.profile.Profile =
+        synchronized(engineLock) { engine.profiles().newProfile(name) }
+
+    /** Look up an existing profile by name, or null. */
+    fun findProfile(name: String): com.teamdev.jxbrowser.profile.Profile? =
+        try {
+            synchronized(engineLock) { engine.profiles().list().firstOrNull { it.name() == name } }
+        } catch (e: Exception) {
+            null
+        }
+
+    /** Delete an RPA profile and its on-disk data. Safe to call if already gone. */
+    fun deleteRpaProfile(profile: com.teamdev.jxbrowser.profile.Profile) {
+        try {
+            synchronized(engineLock) { engine.profiles().delete(profile) }
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Error deleting RPA profile", mapOf("error" to (e.message ?: "unknown")))
+        }
+    }
+
+    /**
+     * Delete leftover profiles whose name starts with [prefix] (e.g. ephemeral
+     * "rpa-eph-" profiles orphaned by a previous/crashed session). Returns the
+     * number removed. Never touches the default profile.
+     */
+    fun cleanupOrphanedRpaProfiles(prefix: String): Int {
+        return try {
+            synchronized(engineLock) {
+                val profiles = engine.profiles()
+                val orphans = profiles.list().filter { !it.isDefault && it.name().startsWith(prefix) }
+                orphans.forEach { profiles.delete(it) }
+                if (orphans.isNotEmpty()) {
+                    logger.info(LogCategory.BROWSER, "Cleaned up orphaned RPA profiles", mapOf("count" to orphans.size))
+                }
+                orphans.size
+            }
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Error cleaning orphaned RPA profiles", mapOf("error" to (e.message ?: "unknown")))
+            0
+        }
+    }
+
     private fun initializeEngine(): Engine {
         attemptCount++
 

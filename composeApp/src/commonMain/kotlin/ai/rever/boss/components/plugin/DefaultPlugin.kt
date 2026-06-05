@@ -361,7 +361,9 @@ class DefaultPlugin(
     // No sandbox for the default context (backward compatibility)
     override val sandbox: PluginSandboxRef? = null
 
-    // Browser service for plugins needing embedded browser capabilities
+    // Browser service for plugins needing embedded browser capabilities.
+    // Automation (isolated/headless sessions, auth seeding, named profiles) is
+    // folded into this same service — see BrowserConfig.profileName/ephemeralProfile/auth.
     override val browserService: BrowserService? = getBrowserServiceInstance()
 
     // Git data provider for plugins that display git information
@@ -1080,26 +1082,58 @@ private class ApiActiveTabsProviderAdapter(
 
     override fun createBrowserTab(url: String, title: String): String? {
         return try {
-            val activeComponent = splitViewState.getActiveTabsComponent() ?: return null
-            val timestamp = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            val tabId = "plugin-tab-$timestamp"
-
-            val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
-                id = tabId,
-                typeId = ai.rever.boss.plugin.tab.fluck.FluckTabType.typeId,
-                _title = title,
-                _icon = androidx.compose.material.icons.Icons.Outlined.Language,
-                url = url
-            )
-
-            val tabIndex = activeComponent.addTab(fluckTab)
-            if (tabIndex >= 0) {
-                activeComponent.selectTab(tabIndex)
-                tabId
-            } else {
-                null
-            }
+            val component = splitViewState.getActiveTabsComponent() ?: return null
+            openFluckTabIn(component, url, title)
         } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun createBrowserTabInRightSplit(url: String, title: String): String? {
+        return try {
+            // Split the active panel left/right; the new (right) panel hosts the browser.
+            val activePanelId = splitViewState.activePanelId
+            val newPanelId = splitViewState.splitPanel(
+                activePanelId,
+                ai.rever.boss.components.window_panel.SplitOrientation.VERTICAL
+            )
+            val newPanel = splitViewState.getAllPanels().firstOrNull { it.id == newPanelId } ?: return null
+            val tabId = openFluckTabIn(newPanel.tabsComponent, url, title)
+            if (tabId == null && newPanelId != activePanelId) {
+                // Open failed — collapse the empty split we just created so a failed
+                // open doesn't leave an orphan pane in the layout.
+                splitViewState.closePanel(newPanelId)
+            }
+            tabId
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Build a Fluck browser tab, add it to [component], select it, and return its
+     * id. The single place that knows how to open a browser tab — shared by
+     * [createBrowserTab] (active panel) and [createBrowserTabInRightSplit] (a new
+     * split pane).
+     */
+    private fun openFluckTabIn(
+        component: ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent,
+        url: String,
+        title: String,
+    ): String? {
+        val tabId = "plugin-tab-${kotlin.time.Clock.System.now().toEpochMilliseconds()}"
+        val fluckTab = ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo(
+            id = tabId,
+            typeId = ai.rever.boss.plugin.tab.fluck.FluckTabType.typeId,
+            _title = title,
+            _icon = androidx.compose.material.icons.Icons.Outlined.Language,
+            url = url
+        )
+        val tabIndex = component.addTab(fluckTab)
+        return if (tabIndex >= 0) {
+            component.selectTab(tabIndex)
+            tabId
+        } else {
             null
         }
     }
@@ -1178,6 +1212,10 @@ private class BrowserIntegrationAdapter(
 
     override suspend fun executeJavaScript(script: String): Any? {
         return internal.executeJavaScript(script)
+    }
+
+    override suspend fun navigate(url: String) {
+        internal.navigate(url)
     }
 
     override fun isBrowserAvailable(): Boolean {

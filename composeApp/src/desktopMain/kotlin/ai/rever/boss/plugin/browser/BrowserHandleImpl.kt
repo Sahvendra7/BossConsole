@@ -29,6 +29,7 @@ import com.teamdev.jxbrowser.browser.event.TitleChanged
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.event.Subscription
 import com.teamdev.jxbrowser.navigation.LoadUrlParams
+import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
 import com.teamdev.jxbrowser.navigation.event.NavigationStarted
@@ -466,6 +467,36 @@ internal class BrowserHandleImpl(
             return
         }
         browser.navigation().loadUrl(url)
+    }
+
+    override suspend fun loadUrlAndWait(url: String) {
+        if (!isValid) {
+            logger.warn(LogCategory.BROWSER, "Cannot load URL - browser invalid", mapOf("handleId" to id))
+            return
+        }
+        withContext(Dispatchers.Main) {
+            val done = CompletableDeferred<Boolean>()
+            val sub = browser.navigation().on(LoadFinished::class.java) { done.complete(true) }
+            try {
+                browser.navigation().loadUrl(url)
+                // Best-effort: returns null on timeout (no throw); real cancellation still propagates.
+                withTimeoutOrNull(LOAD_TIMEOUT_MS) { done.await() }
+            } finally {
+                sub.unsubscribe()
+            }
+        }
+    }
+
+    override suspend fun executeJavaScript(script: String): Any? {
+        if (!isValid) return null
+        return withContext(Dispatchers.Main) {
+            try {
+                browser.mainFrame().map { it.executeJavaScript<Any?>(script) }.orElse(null)
+            } catch (e: Exception) {
+                logger.warn(LogCategory.BROWSER, "JS execution error", mapOf("handleId" to id, "error" to (e.message ?: "unknown")))
+                null
+            }
+        }
     }
 
     override fun getCurrentUrl(): String {
@@ -1146,6 +1177,9 @@ internal class BrowserHandleImpl(
 
         private val uploadCallbackInstalled = AtomicBoolean(false)
         private val staticLogger = BossLogger.forComponent("BrowserHandleImpl")
+
+        /** Best-effort cap on [loadUrlAndWait]; returns (no throw) if a load runs long. */
+        private const val LOAD_TIMEOUT_MS = 30_000L
 
         /**
          * Install an engine-wide [BeforeSendUploadDataCallback] that captures

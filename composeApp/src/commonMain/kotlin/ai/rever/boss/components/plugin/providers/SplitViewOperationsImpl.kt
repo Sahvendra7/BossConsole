@@ -7,6 +7,7 @@ import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.plugin.api.SplitViewOperations
+import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabsComponent
 import ai.rever.boss.plugin.workspace.LayoutWorkspace
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +76,19 @@ class SplitViewOperationsImpl(
 
     override fun selectTabInPanel(tabId: String, panelId: String) {
         splitViewState.selectTabInPanel(tabId, panelId)
+    }
+
+    override fun openTab(tabInfo: TabInfo) {
+        // addTab mutates Compose state, so marshal onto Main — a plugin may call
+        // this from a background thread. (scope is Dispatchers.Main.)
+        scope.launch {
+            val component = splitViewState.getActiveTabsComponent()
+            if (component == null) {
+                logger.debug(LogCategory.UI, "openTab: no active tabs component", mapOf("windowId" to windowId))
+                return@launch
+            }
+            component.addTab(tabInfo)
+        }
     }
 }
 

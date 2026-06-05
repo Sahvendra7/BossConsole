@@ -19,27 +19,35 @@ actual class BrowserAccessor {
     actual fun getActiveBrowserIntegration(): BrowserIntegration? {
         // Direct implementation - don't rely on ConnectToFluckBrowser being called
         val tabId = selectedTabId ?: return null
-        
-        // Get the browser directly from the stored reference if available
-        if (currentBrowserIntegration != null && currentBrowserIntegration!!.isBrowserAvailable()) {
-            return currentBrowserIntegration
+
+        // Reuse the cached integration only if it is for *this* tab and still live.
+        // The cache is keyed by tab id: without that check a still-available
+        // integration from a previously-requested tab would be returned here,
+        // silently driving the wrong browser (e.g. a plugin that opens a new
+        // browser tab per run would keep driving the first run's tab).
+        val cached = currentBrowserIntegration
+        if (cached != null && currentIntegrationTabId == tabId && cached.isBrowserAvailable()) {
+            return cached
         }
-        
+
         // Try to find browser directly if we have access to split view state
         val splitViewState = lastKnownSplitViewState
         if (splitViewState != null) {
             val browser = findBrowserForTab(splitViewState, tabId)
             if (browser != null) {
                 currentBrowserIntegration = DesktopBrowserIntegration(browser)
+                currentIntegrationTabId = tabId
                 return currentBrowserIntegration
             }
         }
-        
+
         return null
     }
-    
+
     actual companion object {
         var currentBrowserIntegration: BrowserIntegration? = null
+        /** Tab id [currentBrowserIntegration] was resolved for (cache key). */
+        var currentIntegrationTabId: String? = null
         actual var selectedTabId: String? = null
         var lastKnownSplitViewState: ai.rever.boss.components.window_panel.SplitViewState? = null
     }
@@ -62,6 +70,16 @@ class DesktopBrowserIntegration(
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    override suspend fun navigate(url: String) {
+        withContext(Dispatchers.Main) {
+            try {
+                browser.navigation().loadUrl(url)
+            } catch (e: Exception) {
+                browserAccessorLogger.warn(LogCategory.BROWSER, "navigate failed", mapOf("error" to (e.message ?: "unknown")))
+            }
         }
     }
 
