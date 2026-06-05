@@ -494,7 +494,8 @@ fun UpdateSettingsSection(
                     TextButton(
                         onClick = {
                             coroutineScope.launch {
-                                updateManager.checkForUpdates()
+                                // Manual check: bypass per-version dismissal
+                                updateManager.checkForUpdates(force = true)
                             }
                         },
                         enabled = updateState !is UpdateState.CheckingForUpdates,
@@ -565,9 +566,8 @@ fun UpdateSettingsSection(
                             )
                             TextButton(
                                 onClick = {
-                                    coroutineScope.launch {
-                                        updateManager.downloadUpdate(currentState.updateInfo)
-                                    }
+                                    // Manager-owned scope: survives the settings window closing
+                                    updateManager.downloadUpdateInBackground(currentState.updateInfo)
                                 },
                                 colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF4CAF50))
                             ) {

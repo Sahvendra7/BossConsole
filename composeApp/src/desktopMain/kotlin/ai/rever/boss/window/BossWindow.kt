@@ -691,7 +691,8 @@ fun ApplicationScope.BossWindow(
                     "Check for Updates...",
                     onClick = {
                         menuScope.launch {
-                            UpdateManager.instance.checkForUpdates()
+                            // Manual check: bypass per-version dismissal
+                            UpdateManager.instance.checkForUpdates(force = true)
                         }
                     }
                 )

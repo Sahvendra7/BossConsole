@@ -29,6 +29,11 @@ class UpdateManager {
     
     private val _updateInfo = MutableStateFlow<UpdateInfo?>(null)
 
+    // Whether the "update available" dialog should be visible.
+    // Set when a check (auto or forced) surfaces a non-dismissed update.
+    private val _showUpdateDialog = MutableStateFlow(false)
+    val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
     // Background job for periodic checks
     private var periodicCheckJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,24 +69,48 @@ class UpdateManager {
     }
     
     /**
-     * Manually check for updates
+     * Check for updates.
+     *
+     * @param force When true (manual "Check for Updates" actions), bypasses the
+     * persisted per-version dismissal so the prompt is shown even for a version
+     * the user previously dismissed. Automatic (startup/periodic) checks use false.
      */
-    suspend fun checkForUpdates(): UpdateResult {
-        return checkForUpdatesInternal()
+    suspend fun checkForUpdates(force: Boolean = false): UpdateResult {
+        return checkForUpdatesInternal(force)
     }
-    
-    private suspend fun checkForUpdatesInternal(): UpdateResult {
+
+    private suspend fun checkForUpdatesInternal(force: Boolean = false): UpdateResult {
+        // An update flow is already in progress — don't clobber its state or
+        // re-pop the dialog. Covers a periodic check firing mid-download, while
+        // a downloaded update waits for install, during install, and after an
+        // install that's pending a restart (where the version still reads as
+        // "newer" than the running build).
+        val current = _updateState.value
+        if (current is UpdateState.Downloading || current is UpdateState.ReadyToInstall ||
+            current is UpdateState.Installing || current is UpdateState.RestartRequired
+        ) {
+            val info = _updateInfo.value
+            return if (info != null) UpdateResult.UpdateAvailable(info) else UpdateResult.NoUpdateAvailable
+        }
+
         return try {
             _updateState.value = UpdateState.CheckingForUpdates
             _lastCheckTime.value = Clock.System.now()
-            
+
             val updateInfo = updateService.checkForUpdates()
             _updateInfo.value = updateInfo
-            
+
             when {
                 updateInfo.isNewerVersionAvailable -> {
-                    _updateState.value = UpdateState.UpdateAvailable(updateInfo)
-                    UpdateResult.UpdateAvailable(updateInfo)
+                    if (!force && isVersionDismissed(updateInfo.latestVersion)) {
+                        // User dismissed this exact version: stay quiet (no banner, no dialog)
+                        _updateState.value = UpdateState.Idle
+                        UpdateResult.NoUpdateAvailable
+                    } else {
+                        _updateState.value = UpdateState.UpdateAvailable(updateInfo)
+                        _showUpdateDialog.value = true
+                        UpdateResult.UpdateAvailable(updateInfo)
+                    }
                 }
                 else -> {
                     _updateState.value = UpdateState.UpToDate
@@ -93,7 +122,48 @@ class UpdateManager {
             UpdateResult.Error("Failed to check for updates", e)
         }
     }
+
+    private fun isVersionDismissed(latest: Version): Boolean {
+        val dismissed = UpdateSettings.lastDismissedVersion ?: return false
+        val parsed = Version.parse(dismissed)
+        return if (parsed != null) parsed == latest else dismissed == latest.toString()
+    }
+
+    /**
+     * Hide both the dialog and the banner, then persist the dismissal for
+     * [version]. Used by the dialog's "Later" action and the banner's
+     * "Dismiss" button. Automatic checks won't re-surface this exact version;
+     * any different available version (normally a newer release) will prompt
+     * again.
+     */
+    suspend fun dismissVersion(version: Version) {
+        // Hide the UI first so dismissal is instant (and can't be re-tapped);
+        // the disk write follows. saveSettings() swallows IO failures — worst
+        // case the dismissal doesn't survive a restart and re-prompts.
+        _showUpdateDialog.value = false
+        _updateState.value = UpdateState.Idle
+        UpdateSettings.lastDismissedVersion = version.toString()
+        UpdateSettingsManager.saveSettings()
+    }
+
+    /**
+     * Close only the dialog (e.g. after "Update Now") — the banner keeps
+     * showing download/install progress.
+     */
+    fun dismissDialogOnly() {
+        _showUpdateDialog.value = false
+    }
     
+    /**
+     * Launch [downloadUpdate] on the manager's own long-lived scope so the
+     * download survives the window that started it — the update dialog lives
+     * in one specific window, and closing that window must not cancel an
+     * in-flight download.
+     */
+    fun downloadUpdateInBackground(updateInfo: UpdateInfo) {
+        scope.launch { downloadUpdate(updateInfo) }
+    }
+
     /**
      * Download the available update
      */
@@ -195,10 +265,11 @@ class UpdateManager {
     }
     
     /**
-     * Reset update state to idle
+     * Reset update state to idle. Does NOT persist dismissal (see [dismissVersion]).
      */
     fun resetState() {
         _updateState.value = UpdateState.Idle
+        _showUpdateDialog.value = false
     }
     
     /**

@@ -23,6 +23,15 @@ expect object UpdateSettings {
      * When true, or when the current version is a pre-release, pre-releases are included.
      */
     var includePreReleases: Boolean
+
+    /**
+     * The version string the user last dismissed an update prompt for.
+     * Automatic checks won't re-surface this exact version; any different
+     * available version (normally a newer release, but also a server-side
+     * rollback) or a manual/forced check will prompt again. Null when nothing
+     * is dismissed.
+     */
+    var lastDismissedVersion: String?
 }
 
 /**

@@ -179,6 +179,9 @@ import ai.rever.boss.components.plugin.panels.right_top.LLMSettingsManager
 import ai.rever.boss.updater.UpdateManager
 import ai.rever.boss.updater.UpdateBanner
 import ai.rever.boss.updater.UpdateSettings
+import ai.rever.boss.updater.UpdateState
+import ai.rever.boss.updater.UpdateAvailableDialog
+import ai.rever.boss.updater.rememberUpdateDialogOwnership
 import androidx.compose.runtime.collectAsState
 import kotlin.time.Clock
 import ai.rever.boss.services.auth.CoreAuthService
@@ -2431,13 +2434,13 @@ fun ComponentContext.BossApp(
                         updateState = updateState,
                         onCheckForUpdates = {
                             coroutineScope.launch {
-                                UpdateManager.instance.checkForUpdates()
+                                // Manual retry: bypass per-version dismissal
+                                UpdateManager.instance.checkForUpdates(force = true)
                             }
                         },
                         onDownloadUpdate = { updateInfo ->
-                            coroutineScope.launch {
-                                UpdateManager.instance.downloadUpdate(updateInfo)
-                            }
+                            // Manager-owned scope: the download must survive this window closing
+                            UpdateManager.instance.downloadUpdateInBackground(updateInfo)
                         },
                         onInstallUpdate = { downloadPath ->
                             coroutineScope.launch {
@@ -2449,9 +2452,39 @@ fun ComponentContext.BossApp(
                             }
                         },
                         onDismiss = {
-                            UpdateManager.instance.resetState()
+                            val state = updateState
+                            if (state is UpdateState.UpdateAvailable) {
+                                // Persist dismissal so this version doesn't re-prompt
+                                coroutineScope.launch {
+                                    UpdateManager.instance.dismissVersion(state.updateInfo.latestVersion)
+                                }
+                            } else {
+                                UpdateManager.instance.resetState()
+                            }
                         }
                     )
+
+                    // Update dialog - dismissible prompt for a new app version,
+                    // rendered by exactly one window (ownership is reactive)
+                    val showUpdateDialog by UpdateManager.instance.showUpdateDialog.collectAsState()
+                    val isUpdateDialogOwner = rememberUpdateDialogOwnership(windowId)
+                    val updateStateForDialog = updateState
+                    if (showUpdateDialog && isUpdateDialogOwner && updateStateForDialog is UpdateState.UpdateAvailable) {
+                        UpdateAvailableDialog(
+                            updateInfo = updateStateForDialog.updateInfo,
+                            onUpdateNow = {
+                                UpdateManager.instance.dismissDialogOnly()
+                                // Manager-owned scope: the dialog lives only in the owner
+                                // window — closing it must not cancel the download
+                                UpdateManager.instance.downloadUpdateInBackground(updateStateForDialog.updateInfo)
+                            },
+                            onLater = {
+                                coroutineScope.launch {
+                                    UpdateManager.instance.dismissVersion(updateStateForDialog.updateInfo.latestVersion)
+                                }
+                            }
+                        )
+                    }
 
                     // Top bar - hidden in focus mode with smooth expand/shrink animation
                     AnimatedVisibility(

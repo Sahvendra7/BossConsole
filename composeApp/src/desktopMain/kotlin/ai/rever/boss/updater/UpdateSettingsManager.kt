@@ -14,25 +14,40 @@ import java.io.File
  *
  * Controls automatic update checking behavior.
  * Settings are persisted to ~/.boss/update-settings.json
+ *
+ * Fields are written from UI/IO coroutines (e.g. [UpdateManager.dismissVersion])
+ * and read from Dispatchers.Default (periodic checks), hence @Volatile for
+ * cross-thread visibility. Each field is an independent flag — no invariant
+ * spans multiple fields, so per-field volatility is sufficient.
  */
 actual object UpdateSettings {
     /**
      * Whether automatic update checks are enabled
      * Default: true (preserves current behavior)
      */
+    @Volatile
     actual var autoCheckEnabled: Boolean = true
 
     /**
      * Interval between automatic update checks in hours
      * Default: 6 hours
      */
+    @Volatile
     actual var checkIntervalHours: Long = 6
 
     /**
      * Whether to include pre-release versions in update checks
      * Default: false (stable users won't see prereleases unless they opt in)
      */
+    @Volatile
     actual var includePreReleases: Boolean = false
+
+    /**
+     * Version string last dismissed by the user (update prompt suppressed for it)
+     * Default: null (nothing dismissed)
+     */
+    @Volatile
+    actual var lastDismissedVersion: String? = null
 }
 
 /**
@@ -42,7 +57,8 @@ actual object UpdateSettings {
 data class UpdateSettingsData(
     val autoCheckEnabled: Boolean = true,
     val checkIntervalHours: Long = 6,
-    val includePreReleases: Boolean = false
+    val includePreReleases: Boolean = false,
+    val lastDismissedVersion: String? = null
 )
 
 /**
@@ -81,6 +97,7 @@ actual object UpdateSettingsManager {
                 UpdateSettings.autoCheckEnabled = settings.autoCheckEnabled
                 UpdateSettings.checkIntervalHours = settings.checkIntervalHours
                 UpdateSettings.includePreReleases = settings.includePreReleases
+                UpdateSettings.lastDismissedVersion = settings.lastDismissedVersion
 
                 logger.debug(LogCategory.SYSTEM, "Loaded update settings", mapOf(
                     "autoCheck" to settings.autoCheckEnabled,
@@ -104,7 +121,8 @@ actual object UpdateSettingsManager {
             val settings = UpdateSettingsData(
                 autoCheckEnabled = UpdateSettings.autoCheckEnabled,
                 checkIntervalHours = UpdateSettings.checkIntervalHours,
-                includePreReleases = UpdateSettings.includePreReleases
+                includePreReleases = UpdateSettings.includePreReleases,
+                lastDismissedVersion = UpdateSettings.lastDismissedVersion
             )
 
             val content = json.encodeToString(UpdateSettingsData.serializer(), settings)
