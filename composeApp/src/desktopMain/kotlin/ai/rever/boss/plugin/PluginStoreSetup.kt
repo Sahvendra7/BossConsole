@@ -837,14 +837,18 @@ object PluginStoreSetup {
                 ))
 
                 // Clean up older versioned JARs *after* the new JAR is on disk
-                // and persistence is updated. On Windows the JVM may hold a
-                // lock on a JAR loaded earlier in this process; delete() will
-                // return false silently. The new versioned JAR has a different
-                // filename so it's unaffected; the stale file just lingers.
+                // and persistence is updated. Match by manifest pluginId, NOT
+                // filename prefix: artifact prefixes can be prefixes of each
+                // other (e.g. "boss-plugin-terminal" matches
+                // "boss-plugin-terminal-tab-*.jar" and would delete the other
+                // plugin's JAR). On Windows the JVM may hold a lock on a JAR
+                // loaded earlier in this process; delete() will return false
+                // silently. The new versioned JAR has a different filename so
+                // it's unaffected; the stale file just lingers.
                 _pluginDir.listFiles()?.filter {
-                    it.name.startsWith(plugin.artifactPrefix) &&
-                        it.name.endsWith(".jar") &&
-                        it.name != jarFileName
+                    it.name.endsWith(".jar") &&
+                        it.name != jarFileName &&
+                        readPluginManifest(it)?.pluginId == plugin.pluginId
                 }?.forEach { oldFile ->
                     val deleted = oldFile.delete()
                     logger.debug(LogCategory.SYSTEM, "Removed old version", mapOf(
@@ -1002,16 +1006,18 @@ object PluginStoreSetup {
                     "totalInstalledPlugins" to installedPlugins.size
                 ))
 
-                // Find ALL existing JARs for this plugin in the plugin directory (by artifact prefix)
-                // This handles cases where user manually added a newer version with different filename
-                val artifactPrefix = jarFile.name.substringBeforeLast("-").substringBeforeLast("-")
+                // Find ALL existing JARs for this plugin in the plugin directory, matched by
+                // manifest pluginId — NOT filename prefix. Filename-derived prefixes collide
+                // ("boss-plugin-terminal" is a prefix of "boss-plugin-terminal-tab-*.jar"),
+                // which made one plugin's version checks and "remove old versions" step
+                // operate on a *different* plugin's JARs.
+                // This handles cases where user manually added a newer version with different filename.
                 val existingJarsInPluginDir = _pluginDir.listFiles()?.filter {
-                    it.name.startsWith(artifactPrefix) && it.name.endsWith(".jar")
+                    it.name.endsWith(".jar") && readPluginManifest(it)?.pluginId == pluginId
                 } ?: emptyList()
 
                 logger.info(LogCategory.SYSTEM, "Bundled plugin installation check", mapOf(
                     "pluginId" to pluginId,
-                    "artifactPrefix" to artifactPrefix,
                     "existsInPersistence" to (existingPlugin != null),
                     "existingJarsInDir" to existingJarsInPluginDir.map { it.name }
                 ))
