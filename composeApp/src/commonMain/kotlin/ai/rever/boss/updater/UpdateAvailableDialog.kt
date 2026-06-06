@@ -3,14 +3,13 @@ package ai.rever.boss.updater
 import BossDarkBackground
 import BossDarkTextPrimary
 import BossDarkTextSecondary
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
@@ -67,16 +66,21 @@ fun UpdateAvailableDialog(
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(Modifier.height(4.dp))
-                    Box(
-                        Modifier
-                            .heightIn(max = 220.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        Text(
-                            updateInfo.releaseNotes,
-                            color = BossDarkTextSecondary,
-                            fontSize = 12.sp
-                        )
+                    // LazyColumn, NOT Box+verticalScroll: the desktop material
+                    // AlertDialog sizes its popup via intrinsic measurements, and
+                    // verticalScroll reports the FULL content height as intrinsic
+                    // (heightIn(max) clamps layout, not intrinsics) — scrolling
+                    // re-measures and the dialog grows. Lazy layouts don't leak
+                    // content height through intrinsics (same pattern as
+                    // GenericDialogHost's choice dialogs).
+                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
+                        items(updateInfo.releaseNotes.lines()) { line ->
+                            Text(
+                                line,
+                                color = BossDarkTextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }
