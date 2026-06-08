@@ -215,9 +215,9 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
             } ?: resolvedProjectPath.ifEmpty { null }
 
-            // Process initial command placeholder
+            // Process initial command placeholder (shell command → quote {projectPath})
             val initialCmd = tabConfig.initialCommand?.let {
-                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
+                SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null, quoteProjectPath = true)
             }
 
             TerminalTabInfo(

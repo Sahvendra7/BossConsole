@@ -327,6 +327,29 @@ object SplitTemplatesManager {
     }
 
     /**
+     * Substitute `{projectPath}` with [pathValue].
+     *
+     * When [quote] is false (raw paths: workingDirectory/filePath/url) every
+     * occurrence is replaced verbatim. When true (shell command context),
+     * *bare* occurrences are shell-quoted so spaces/quotes survive as one
+     * argument — but occurrences a template already wraps in a quote (e.g. a
+     * user who worked around the bug with `cd "{projectPath}"`) are left raw,
+     * to avoid double-quoting like `cd "'…'"`.
+     */
+    internal fun substituteProjectPath(content: String, pathValue: String, quote: Boolean): String {
+        if (!quote) return content.replace("{projectPath}", pathValue)
+        val quoted = CommandProcessor.quotePath(pathValue)
+        // Quote only occurrences NOT already adjacent to a quote char. The
+        // lambda form does literal replacement (no $-group interpretation),
+        // so `quoted` containing quotes/backslashes is inserted as-is.
+        val bare = Regex("(?<![\"'])\\{projectPath\\}(?![\"'])")
+        var result = bare.replace(content) { quoted }
+        // Any leftover {projectPath} was already quote-wrapped by the template → raw.
+        result = result.replace("{projectPath}", pathValue)
+        return result
+    }
+
+    /**
      * Process placeholders in template content.
      *
      * Available placeholders:
@@ -337,21 +360,27 @@ object SplitTemplatesManager {
      * @param content The content string with placeholders
      * @param projectPath The current project path
      * @param currentFile The currently open file (optional)
+     * @param quoteProjectPath When true, {projectPath} is substituted as a
+     *   shell-quoted argument. Pass true ONLY for shell command content
+     *   (e.g. `cd {projectPath} && claude`) so a path with spaces/quotes —
+     *   like `AI Workflow Tools' Exports` — survives as one argument. Leave
+     *   false for raw paths (workingDirectory, filePath, url), which are NOT
+     *   shell-parsed and must not be quoted. When true, {projectPath} should
+     *   stand alone as a whole argument (`{projectPath}/sub` becomes `'…'/sub`,
+     *   which POSIX concatenates but PowerShell does not).
      * @return The content with placeholders replaced
      */
     fun processPlaceholders(
         content: String,
         projectPath: String?,
-        currentFile: String? = null
+        currentFile: String? = null,
+        quoteProjectPath: Boolean = false
     ): String {
         var result = content
 
-        // Replace project path
-        if (projectPath != null) {
-            result = result.replace("{projectPath}", projectPath)
-        } else {
-            result = result.replace("{projectPath}", System.getProperty("user.home"))
-        }
+        // Replace project path (shell-quoted when used inside a command)
+        val pathValue = projectPath ?: System.getProperty("user.home")
+        result = substituteProjectPath(result, pathValue, quoteProjectPath)
 
         // Replace git remote URL
         val gitUrl = projectPath?.let { getGitRemoteUrl(it) } ?: "https://google.com"

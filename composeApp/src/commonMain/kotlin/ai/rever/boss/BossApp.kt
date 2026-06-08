@@ -3153,7 +3153,8 @@ private fun createTabFromTemplateConfig(
     return when (panelConfig.type) {
         "terminal" -> {
             val command = panelConfig.content.command?.let {
-                SplitTemplatesManager.processPlaceholders(it, projectPath, null)
+                // shell command → quote {projectPath} so paths with spaces/quotes survive
+                SplitTemplatesManager.processPlaceholders(it, projectPath, null, quoteProjectPath = true)
             }
             TerminalTabInfo(
                 id = "terminal-$timestamp",
