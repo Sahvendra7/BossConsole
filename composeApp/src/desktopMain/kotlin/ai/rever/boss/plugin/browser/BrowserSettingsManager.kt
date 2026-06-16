@@ -19,7 +19,9 @@ data class BrowserSettingsData(
     val maxInitRetries: Int = 3,
     val maxRecoveryAttempts: Int = 3,
     // Secret Manager settings
-    val discretePasswordFill: Boolean = true
+    val discretePasswordFill: Boolean = true,
+    // Tab sharing — show the co-browse share (QR) button in the browser toolbar (off by default)
+    val showShareButton: Boolean = false
 )
 
 object BrowserSettingsManager {
@@ -33,10 +35,19 @@ object BrowserSettingsManager {
     init {
         // Ensure directory exists
         settingsFile.parentFile?.mkdirs()
-        
+
         // Load settings on initialization
         loadSettingsSync()
     }
+
+    /**
+     * No-op whose only purpose is to force this object's `init` (which loads the
+     * persisted settings into [BrowserSettings] and mirrors the share-button toggle
+     * to its system property) to run early — before the first browser/toolbar is
+     * created. Without an early touch, settings only loaded when the Settings UI was
+     * first opened, so a persisted "show share button = true" wouldn't apply on boot.
+     */
+    fun ensureLoaded() { /* referencing this object already ran loadSettingsSync() */ }
     
     private fun loadSettingsSync() {
         try {
@@ -53,6 +64,8 @@ object BrowserSettingsManager {
                 BrowserSettings.maxRecoveryAttempts = settings.maxRecoveryAttempts.coerceIn(1, 10)
                 // Secret Manager settings
                 BrowserSettings.discretePasswordFill = settings.discretePasswordFill
+                // Tab sharing (setter mirrors to the system property the plugin reads)
+                BrowserSettings.showShareButton = settings.showShareButton
 
                 // Update available profiles if we have more
                 if (settings.availableProfiles.isNotEmpty()) {
@@ -74,7 +87,8 @@ object BrowserSettingsManager {
                 availableProfiles = BrowserSettings.availableProfiles.toList(),
                 maxInitRetries = BrowserSettings.maxInitRetries,
                 maxRecoveryAttempts = BrowserSettings.maxRecoveryAttempts,
-                discretePasswordFill = BrowserSettings.discretePasswordFill
+                discretePasswordFill = BrowserSettings.discretePasswordFill,
+                showShareButton = BrowserSettings.showShareButton
             )
 
             val content = json.encodeToString(settings)

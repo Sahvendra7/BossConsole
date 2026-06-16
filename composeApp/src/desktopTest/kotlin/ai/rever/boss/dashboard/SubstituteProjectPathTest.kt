@@ -1,18 +1,20 @@
 package ai.rever.boss.dashboard
 
-import ai.rever.boss.components.workspaces.ShellPathQuoting
+import ai.rever.boss.components.workspaces.CommandProcessor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
  * Verifies [SplitTemplatesManager.substituteProjectPath] — the {projectPath}
- * substitution that decides raw vs shell-quoted. Runs on a POSIX host, so the
- * quoted form is the POSIX single-quote literal.
+ * substitution that decides raw vs shell-quoted. The expected quoted form is
+ * computed via the platform-aware [CommandProcessor.quotePath] (POSIX single-quote
+ * literal on macOS/Linux; PowerShell single-quote literal on Windows), so the
+ * assertions hold on any CI host rather than only a POSIX one.
  */
 class SubstituteProjectPathTest {
 
     private val spaced = "/Users/foo/AI Workflow Tools' Exports/claude-exports"
-    private val quoted = ShellPathQuoting.posix(spaced)
+    private val quoted = CommandProcessor.quotePath(spaced)
 
     @Test
     fun rawSubstitutionWhenNotQuoting() {

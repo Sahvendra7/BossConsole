@@ -985,6 +985,28 @@ fun ApplicationScope.BossWindow(
                 }
             )
         }
+
+        // Screen Recording permission rationale — explains why, before the macOS prompt.
+        val permissionRationale by ScreenCaptureNotifier.permissionRationale.collectAsState()
+        if (permissionRationale != null) {
+            AlertDialog(
+                onDismissRequest = { ScreenCaptureNotifier.resolvePermissionRationale(false) },
+                title = { Text("Allow screen sharing?") },
+                text = {
+                    Text(
+                        "To share a screen, window, or browser tab, BOSS needs macOS " +
+                            "Screen Recording permission. macOS will now ask you to allow \u201CBOSS\u201D. " +
+                            "You can change this anytime in System Settings \u203A Privacy & Security \u203A Screen Recording."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { ScreenCaptureNotifier.resolvePermissionRationale(true) }) { Text("Continue") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { ScreenCaptureNotifier.resolvePermissionRationale(false) }) { Text("Not now") }
+                }
+            )
+        }
     }
 }
 

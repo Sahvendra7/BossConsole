@@ -23,6 +23,17 @@ object BrowserSettings {
 
     // Secret Manager settings (configurable via Settings > Browser > Secret Manager)
     var discretePasswordFill: Boolean = true  // Hide filled passwords with blur effect for privacy
+
+    // Tab sharing (configurable via Settings > Browser > Tab Sharing). OFF by default:
+    // the co-browse share (QR) button stays hidden in the browser toolbar until the
+    // user opts in. The toolbar is rendered by the fluck-browser plugin in a separate
+    // classloader, so the value is mirrored to a JVM system property the plugin reads.
+    const val SHOW_SHARE_BUTTON_PROP = "boss.fluck.showShareButton"
+    var showShareButton: Boolean = false
+        set(value) {
+            field = value
+            System.setProperty(SHOW_SHARE_BUTTON_PROP, value.toString())
+        }
 }
 
 /**

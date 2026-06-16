@@ -69,6 +69,7 @@ import ai.rever.boss.plugin.api.UrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createZoomSettingsProvider
 import ai.rever.boss.components.plugin.providers.createUrlHistoryProvider
 import ai.rever.boss.components.plugin.providers.createScreenCaptureProvider
+import ai.rever.boss.components.plugin.providers.createCoBrowseRtcProvider
 import ai.rever.boss.components.plugin.providers.createEditorContentProvider
 import ai.rever.boss.plugin.api.EditorContentProvider
 import ai.rever.boss.plugin.api.NotificationProvider
@@ -535,6 +536,11 @@ class DefaultPlugin(
     // Screen capture provider for browser plugins
     override val screenCaptureProvider: ScreenCaptureProvider by lazy {
         createScreenCaptureProvider()
+    }
+
+    // WebRTC peer provider for low-latency co-browse transport (null if unsupported)
+    override val coBrowseRtcProvider: ai.rever.boss.plugin.api.CoBrowseRtcProvider? by lazy {
+        createCoBrowseRtcProvider()
     }
 
     // Editor content provider for code editor tab plugins

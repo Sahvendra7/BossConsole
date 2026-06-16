@@ -135,3 +135,8 @@ private val screenCaptureProviderInstance by lazy { DesktopScreenCaptureProvider
  * Actual implementation for creating ScreenCaptureProvider on desktop.
  */
 actual fun createScreenCaptureProvider(): ScreenCaptureProvider = screenCaptureProviderInstance
+
+private val coBrowseRtcProviderInstance by lazy { ai.rever.boss.plugin.browser.CoBrowseRtcProviderImpl() }
+
+/** WebRTC peer provider — backed by an offscreen JxBrowser page on desktop. */
+actual fun createCoBrowseRtcProvider(): ai.rever.boss.plugin.api.CoBrowseRtcProvider? = coBrowseRtcProviderInstance

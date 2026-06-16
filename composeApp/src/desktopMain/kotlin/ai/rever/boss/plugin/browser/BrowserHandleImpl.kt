@@ -21,14 +21,36 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import ai.rever.boss.cache.FaviconCache
 import com.teamdev.jxbrowser.browser.Browser
 import com.teamdev.jxbrowser.browser.callback.CreatePopupCallback
+import com.teamdev.jxbrowser.browser.callback.InjectJsCallback
 import com.teamdev.jxbrowser.browser.callback.OpenPopupCallback
 import com.teamdev.jxbrowser.browser.callback.ShowContextMenuCallback
 import com.teamdev.jxbrowser.browser.event.BrowserClosed
+import com.teamdev.jxbrowser.frame.Frame
+import com.teamdev.jxbrowser.js.JsObject
 import com.teamdev.jxbrowser.browser.event.FaviconChanged
 import com.teamdev.jxbrowser.browser.event.TitleChanged
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.event.Subscription
 import com.teamdev.jxbrowser.navigation.LoadUrlParams
+import com.teamdev.jxbrowser.ui.KeyCode
+import com.teamdev.jxbrowser.ui.KeyModifiers
+import com.teamdev.jxbrowser.ui.MouseButton
+import com.teamdev.jxbrowser.ui.Point
+import com.teamdev.jxbrowser.ui.ScrollType
+import com.teamdev.jxbrowser.ui.event.KeyPressed
+import com.teamdev.jxbrowser.ui.event.KeyReleased
+import com.teamdev.jxbrowser.ui.event.KeyTyped
+import com.teamdev.jxbrowser.ui.event.MouseDragged
+import com.teamdev.jxbrowser.ui.event.MouseMoved
+import com.teamdev.jxbrowser.ui.event.MousePressed
+import com.teamdev.jxbrowser.ui.event.MouseReleased
+import com.teamdev.jxbrowser.ui.event.MouseWheel
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import com.teamdev.jxbrowser.navigation.event.LoadFinished
 import com.teamdev.jxbrowser.navigation.event.LoadStarted
 import com.teamdev.jxbrowser.navigation.event.NavigationFinished
@@ -48,6 +70,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,6 +125,22 @@ internal class BrowserHandleImpl(
 
     // BrowserViewState for Compose rendering - managed per Content() call
     private var currentViewState: BrowserViewState? = null
+
+    // --- Co-browse / tab sharing (DOM state-sync) ---
+    // Whether the rrweb recorder is actively streaming this tab to viewers.
+    @Volatile private var coBrowseCapturing = false
+    // Whether a remote viewer is allowed to actuate this tab (gates applyCoBrowseControl).
+    @Volatile private var coBrowseControlGranted = false
+    // Whether rrweb masks form-input values (maskAllInputs) for this capture.
+    @Volatile private var coBrowseMaskInputs = false
+    // Sink for rrweb events (set by the plugin's share manager). MUST be non-blocking.
+    @Volatile private var coBrowseSink: ((String) -> Unit)? = null
+    // True once the InjectJsCallback is registered (kept inert when not capturing).
+    @Volatile private var coBrowseInjectRegistered = false
+    // Page→host bridge injected onto window.__bossCoBrowse; its onEvent is repointed per capture.
+    private val coBrowseBridge = CoBrowseBridge()
+    // Main-thread scope for injection/teardown (rrweb inject + executeJavaScript run on Main).
+    private val coBrowseScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Lock for thread-safe browser operations
     private val browserLock = ReentrantReadWriteLock()
@@ -252,6 +291,10 @@ internal class BrowserHandleImpl(
         subscriptions += browser.on(BrowserClosed::class.java) {
             logger.debug(LogCategory.BROWSER, "Browser closed", mapOf("handleId" to id))
             _disposed = true
+            // Stop streaming: the underlying page is gone.
+            coBrowseCapturing = false
+            coBrowseSink = null
+            coBrowseBridge.onEvent = null
         }
     }
 
@@ -453,6 +496,230 @@ internal class BrowserHandleImpl(
                 logger.debug(LogCategory.BROWSER, "Context menu and navigation trackers injected", mapOf("handleId" to id))
             } catch (e: Exception) {
                 logger.warn(LogCategory.BROWSER, "Failed to inject context menu trackers", error = e)
+            }
+        }
+    }
+
+    // ============================================================
+    // CO-BROWSE / TAB SHARING (DOM state-sync)
+    // ============================================================
+
+    /**
+     * Inject the rrweb recorder + page→host bridge into [frame] (main frame only).
+     * rrweb captures same-origin iframes natively, so we never start a second
+     * recorder in subframes. Must run on the JxBrowser/Main thread.
+     */
+    private fun injectCoBrowseRecorder(frame: Frame) {
+        try {
+            // Expose the page→host bridge on window, then start the recorder.
+            val window = frame.executeJavaScript<JsObject>("window")
+            window?.putProperty("__bossCoBrowse", coBrowseBridge)
+            frame.executeJavaScript<Any?>(CoBrowseScripts.recordInjection(coBrowseMaskInputs))
+            // Re-assert the control guard for this fresh JS context.
+            frame.executeJavaScript<Any?>(CoBrowseScripts.setControlGuard(coBrowseControlGranted))
+        } catch (e: Exception) {
+            logger.warn(LogCategory.BROWSER, "Co-browse recorder injection failed", mapOf("handleId" to id), error = e)
+        }
+    }
+
+    /**
+     * Register the script-context-creation hook once. It re-injects the recorder
+     * into every future main-frame navigation while capture is active, and is
+     * inert otherwise (gated by [coBrowseCapturing]). Left registered after
+     * [stopCoBrowseCapture] to avoid re-register races; removed in [dispose].
+     */
+    private fun ensureCoBrowseInjectCallback() {
+        if (coBrowseInjectRegistered) return
+        coBrowseInjectRegistered = true
+        try {
+            browser.set(InjectJsCallback::class.java, InjectJsCallback { params ->
+                try {
+                    if (coBrowseCapturing && params.frame().isMain) {
+                        injectCoBrowseRecorder(params.frame())
+                    }
+                } catch (e: Exception) {
+                    logger.warn(LogCategory.BROWSER, "InjectJsCallback failed", error = e)
+                }
+                InjectJsCallback.Response.proceed()
+            })
+        } catch (e: Exception) {
+            coBrowseInjectRegistered = false
+            logger.warn(LogCategory.BROWSER, "Failed to register InjectJsCallback", error = e)
+        }
+    }
+
+    override fun startCoBrowseCapture(onEvent: (String) -> Unit, maskInputs: Boolean) {
+        if (!isValid) return
+        if (CoBrowseScripts.recorderLib.isBlank()) {
+            logger.error(LogCategory.BROWSER, "Co-browse recorder bundle missing; capture not started", mapOf("handleId" to id))
+            return
+        }
+        coBrowseMaskInputs = maskInputs
+        coBrowseBridge.onEvent = onEvent
+        coBrowseSink = onEvent
+        coBrowseCapturing = true
+        ensureCoBrowseInjectCallback()
+        // InjectJsCallback only fires on future contexts, so inject into the page that's already loaded.
+        coBrowseScope.launch {
+            try {
+                browser.mainFrame().ifPresent { frame -> injectCoBrowseRecorder(frame) }
+            } catch (e: Exception) {
+                logger.warn(LogCategory.BROWSER, "Co-browse immediate injection failed", error = e)
+            }
+        }
+        logger.debug(LogCategory.BROWSER, "Co-browse capture started", mapOf("handleId" to id))
+    }
+
+    override fun stopCoBrowseCapture() {
+        if (!coBrowseCapturing && coBrowseSink == null) return
+        coBrowseCapturing = false
+        coBrowseControlGranted = false
+        coBrowseSink = null
+        coBrowseBridge.onEvent = null
+        coBrowseScope.launch {
+            try {
+                browser.mainFrame().ifPresent { frame ->
+                    frame.executeJavaScript<Any?>(CoBrowseScripts.recordStop)
+                    frame.executeJavaScript<Any?>(CoBrowseScripts.setControlGuard(false))
+                }
+            } catch (_: Exception) {
+                // Page may already be gone; nothing to tear down.
+            }
+        }
+        logger.debug(LogCategory.BROWSER, "Co-browse capture stopped", mapOf("handleId" to id))
+    }
+
+    override fun isCoBrowseCapturing(): Boolean = coBrowseCapturing
+
+    override fun setCoBrowseControlEnabled(granted: Boolean) {
+        coBrowseControlGranted = granted
+        coBrowseScope.launch {
+            try {
+                browser.mainFrame().ifPresent { it.executeJavaScript<Any?>(CoBrowseScripts.setControlGuard(granted)) }
+            } catch (_: Exception) {
+            }
+        }
+        logger.debug(LogCategory.BROWSER, "Co-browse control ${if (granted) "granted" else "revoked"}", mapOf("handleId" to id))
+    }
+
+    override fun dispatchCoBrowseInput(inputJson: String) {
+        if (!isValid || !coBrowseControlGranted) return
+        val o = try {
+            kotlinx.serialization.json.Json.parseToJsonElement(inputJson).jsonObject
+        } catch (e: Exception) {
+            logger.warn(LogCategory.BROWSER, "Co-browse input unparsable", mapOf("handleId" to id), error = e)
+            return
+        }
+        fun int(k: String, d: Int = 0) = o[k]?.jsonPrimitive?.intOrNull ?: d
+        fun fl(k: String, d: Float = 0f) = o[k]?.jsonPrimitive?.floatOrNull ?: d
+        fun str(k: String) = o[k]?.jsonPrimitive?.contentOrNull ?: ""
+        fun bool(k: String) = o[k]?.jsonPrimitive?.booleanOrNull ?: false
+        val kind = str("kind")
+        coBrowseScope.launch {
+            try {
+                val point = Point.of(int("x"), int("y"))
+                when (kind) {
+                    "down", "up" -> {
+                        val button = when (int("button")) {
+                            1 -> MouseButton.MIDDLE
+                            2 -> MouseButton.SECONDARY
+                            else -> MouseButton.PRIMARY
+                        }
+                        val clicks = int("clicks", 1)
+                        if (kind == "down") {
+                            browser.dispatch(MousePressed.newBuilder(point).button(button).clickCount(clicks).build())
+                        } else {
+                            browser.dispatch(MouseReleased.newBuilder(point).button(button).clickCount(clicks).build())
+                        }
+                    }
+                    "move" -> browser.dispatch(MouseMoved.newBuilder(point).build())
+                    "drag" -> browser.dispatch(MouseDragged.newBuilder(point).button(MouseButton.PRIMARY).build())
+                    "wheel" -> browser.dispatch(
+                        MouseWheel.newBuilder(point)
+                            .deltaX(fl("dx"))
+                            .deltaY(fl("dy"))
+                            .scrollType(ScrollType.UNIT_SCROLL)
+                            .build()
+                    )
+                    "keydown", "keyup" -> {
+                        val keyCode = jsKeyToKeyCode(str("key"), str("code"))
+                        val ch = str("ch").firstOrNull() ?: ' '
+                        val mods = KeyModifiers.newBuilder()
+                            .shiftDown(bool("shift"))
+                            .controlDown(bool("ctrl"))
+                            .altDown(bool("alt"))
+                            .metaDown(bool("meta"))
+                            .build()
+                        if (kind == "keydown") {
+                            browser.dispatch(KeyPressed.newBuilder(keyCode).keyChar(ch).keyModifiers(mods).build())
+                            // KeyTyped delivers the character to the focused field; only for
+                            // printable input (modifier chords and control keys must not type).
+                            if (ch != ' ' && !ch.isISOControl() && !bool("ctrl") && !bool("meta")) {
+                                browser.dispatch(KeyTyped.newBuilder(keyCode).keyChar(ch).keyModifiers(mods).build())
+                            }
+                        } else {
+                            browser.dispatch(KeyReleased.newBuilder(keyCode).keyModifiers(mods).build())
+                        }
+                    }
+                    else -> logger.warn(LogCategory.BROWSER, "Co-browse input unknown kind", mapOf("handleId" to id, "kind" to kind))
+                }
+            } catch (e: Exception) {
+                logger.warn(LogCategory.BROWSER, "Co-browse input dispatch failed", mapOf("handleId" to id, "kind" to kind), error = e)
+            }
+        }
+    }
+
+    /** Map a JS KeyboardEvent key/code pair onto the engine's key codes. */
+    private fun jsKeyToKeyCode(key: String, code: String): KeyCode = when {
+        code.length == 4 && code.startsWith("Key") -> runCatching { KeyCode.valueOf("KEY_CODE_${code[3]}") }.getOrDefault(KeyCode.UNKNOWN)
+        code.length == 6 && code.startsWith("Digit") -> runCatching { KeyCode.valueOf("KEY_CODE_${code[5]}") }.getOrDefault(KeyCode.UNKNOWN)
+        else -> when (key) {
+            "Enter" -> KeyCode.KEY_CODE_RETURN
+            "Backspace" -> KeyCode.KEY_CODE_BACK
+            "Tab" -> KeyCode.KEY_CODE_TAB
+            "Escape" -> KeyCode.KEY_CODE_ESCAPE
+            " ", "Spacebar" -> KeyCode.KEY_CODE_SPACE
+            "ArrowLeft" -> KeyCode.KEY_CODE_LEFT
+            "ArrowRight" -> KeyCode.KEY_CODE_RIGHT
+            "ArrowUp" -> KeyCode.KEY_CODE_UP
+            "ArrowDown" -> KeyCode.KEY_CODE_DOWN
+            "Delete" -> KeyCode.KEY_CODE_DELETE
+            "Home" -> KeyCode.KEY_CODE_HOME
+            "End" -> KeyCode.KEY_CODE_END
+            "PageUp" -> KeyCode.KEY_CODE_PRIOR
+            "PageDown" -> KeyCode.KEY_CODE_NEXT
+            "Shift" -> KeyCode.KEY_CODE_SHIFT
+            "Control" -> KeyCode.KEY_CODE_CONTROL
+            "Alt" -> KeyCode.KEY_CODE_MENU
+            else -> KeyCode.UNKNOWN
+        }
+    }
+
+    override suspend fun applyCoBrowseControl(eventJson: String): String? {
+        if (!isValid || !coBrowseControlGranted) {
+            logger.warn(
+                LogCategory.BROWSER, "Co-browse control refused by handle guard",
+                mapOf("handleId" to id, "valid" to isValid.toString(), "granted" to coBrowseControlGranted.toString())
+            )
+            return null
+        }
+        return withContext(Dispatchers.Main) {
+            try {
+                val status = browser.mainFrame().map { frame ->
+                    frame.executeJavaScript<String?>(CoBrowseScripts.applyControl(eventJson))
+                }.orElse(null)
+                if (status != "ok") {
+                    // Non-ok statuses ("stale"/"denied"/"nomirror"/"err:…") are how
+                    // control failures surface — keep them visible for live debugging.
+                    logger.warn(
+                        LogCategory.BROWSER, "Co-browse control not applied",
+                        mapOf("handleId" to id, "status" to (status ?: "null"), "event" to eventJson.take(120))
+                    )
+                }
+                status
+            } catch (e: Exception) {
+                logger.warn(LogCategory.BROWSER, "Co-browse control apply failed", mapOf("handleId" to id), error = e)
+                "err"
             }
         }
     }
@@ -1129,6 +1396,17 @@ internal class BrowserHandleImpl(
         if (_disposed) return
 
         _disposed = true
+
+        // Stop co-browse capture so a disposed tab can never keep streaming.
+        coBrowseCapturing = false
+        coBrowseControlGranted = false
+        coBrowseSink = null
+        coBrowseBridge.onEvent = null
+        coBrowseScope.cancel()
+        if (coBrowseInjectRegistered) {
+            try { browser.remove(InjectJsCallback::class.java) } catch (_: Exception) {}
+            coBrowseInjectRegistered = false
+        }
 
         // Unsubscribe from all events
         subscriptions.forEach { it.unsubscribe() }

@@ -2694,6 +2694,15 @@ fun ComponentContext.BossApp(
 
                 // Draw the tab dragging overlay (ghost tab) if a tab is being dragged
                 tabDragComponent.TabDraggingOverlay()
+
+                // Plugin notification toasts — the render surface for every plugin's
+                // PluginContext.notificationProvider.showToast().
+                currentDefaultPlugin?.pluginToastState?.let { toastState ->
+                    ai.rever.boss.plugin.sandbox.notification.PluginToastHost(
+                        toastState = toastState,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
+                }
             }
             
             // Plugin update confirmation prompt (from "Check for Updates" or the header badge).

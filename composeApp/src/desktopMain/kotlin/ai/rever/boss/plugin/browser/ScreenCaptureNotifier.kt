@@ -12,6 +12,9 @@ import com.teamdev.jxbrowser.capture.CaptureSources
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -64,6 +67,35 @@ object ScreenCaptureNotifier {
     val captureRequest: StateFlow<CaptureRequest?> = _captureRequest.asStateFlow()
 
     private val pendingRequests = ConcurrentHashMap<String, PendingRequest>()
+
+    // --- Screen-recording permission rationale (shown before the macOS prompt) ---
+    private val rationaleSlot = java.util.concurrent.atomic.AtomicReference<CompletableDeferred<Boolean>?>(null)
+    private val _permissionRationale = MutableStateFlow<CompletableDeferred<Boolean>?>(null)
+    /** Non-null while an in-app rationale dialog should be shown. */
+    val permissionRationale: StateFlow<CompletableDeferred<Boolean>?> = _permissionRationale.asStateFlow()
+
+    /**
+     * Block the (JxBrowser) caller thread while an in-app rationale dialog is shown,
+     * so the macOS screen-recording prompt is only triggered after the user agrees.
+     * Returns true to proceed. Times out to false after [timeoutMs] so a missed
+     * dialog never wedges the capture callback.
+     */
+    fun awaitPermissionRationale(timeoutMs: Long = 60_000): Boolean {
+        val deferred = CompletableDeferred<Boolean>()
+        if (!rationaleSlot.compareAndSet(null, deferred)) return false // one at a time
+        _permissionRationale.value = deferred
+        return try {
+            runBlocking { withTimeoutOrNull(timeoutMs) { deferred.await() } } ?: false
+        } finally {
+            rationaleSlot.set(null)
+            _permissionRationale.value = null
+        }
+    }
+
+    /** Called by the UI when the user responds to the rationale dialog. */
+    fun resolvePermissionRationale(proceed: Boolean) {
+        rationaleSlot.get()?.complete(proceed)
+    }
 
     /**
      * Called by JxBrowser callback to request screen capture.

@@ -248,6 +248,50 @@ fun FluckBrowserSettings() {
             }
         }
 
+        // Tab Sharing
+        SettingsSection(title = "Tab Sharing") {
+            var showShareButton by remember { mutableStateOf(BrowserSettings.showShareButton) }
+
+            SettingsToggle(
+                label = "Show share (QR) button",
+                checked = showShareButton,
+                onCheckedChange = { enabled ->
+                    showShareButton = enabled
+                    BrowserSettings.showShareButton = enabled
+                    coroutineScope.launch {
+                        BrowserSettingsManager.saveSettings()
+                    }
+                },
+                description = "Adds the co-browse QR / share button to the browser toolbar. Off by default."
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = AccentColor.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(6.dp),
+                elevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        tint = AccentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "When on, each browser tab shows a QR/share button to start a co-browse session. " +
+                            "Open a new browser tab for the change to take effect.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
         // Profile Management
         ProfileManagementSection(
             currentProfile = currentProfile,

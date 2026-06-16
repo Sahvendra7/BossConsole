@@ -306,6 +306,9 @@ class TrackingPluginContext(
     // Screen capture provider - delegate to underlying context
     override val screenCaptureProvider: ScreenCaptureProvider? get() = delegate.screenCaptureProvider
 
+    // WebRTC peer provider for co-browse - delegate to underlying context
+    override val coBrowseRtcProvider: ai.rever.boss.plugin.api.CoBrowseRtcProvider? get() = delegate.coBrowseRtcProvider
+
     // Editor content provider - delegate to underlying context
     override val editorContentProvider: EditorContentProvider? get() = delegate.editorContentProvider
 

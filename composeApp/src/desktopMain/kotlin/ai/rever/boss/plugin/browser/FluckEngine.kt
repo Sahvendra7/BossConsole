@@ -49,6 +49,12 @@ sealed class EngineInitError {
 object FluckEngine {
     private val logger = BossLogger.forComponent("FluckEngine")
 
+    init {
+        // Load persisted browser settings (user agent, profile, share-button toggle…)
+        // before the first browser/toolbar is created, so saved values apply on boot.
+        BrowserSettingsManager.ensureLoaded()
+    }
+
     /**
      * Swing-based find bar that overlays the browser window.
      * Uses JxBrowser's TextFinder API for searching (no focus stealing).
@@ -711,12 +717,10 @@ object FluckEngine {
     private fun initializeEngine(): Engine {
         attemptCount++
 
-        // Request screen capture permission proactively on macOS
-        // This ensures permission is granted before user tries to screen share,
-        // preventing repeated permission dialogs while still allowing native picker
-        if (!MacOSScreenCapture.hasPermission()) {
-            MacOSScreenCapture.requestPermission()
-        }
+        // NOTE: screen-recording permission is intentionally NOT requested here.
+        // Asking at engine startup is an unexplained, abrupt OS prompt. It is now
+        // requested lazily on the first user-initiated screen share, after an in-app
+        // rationale dialog (see setupCaptureSessionHandler + ScreenCaptureNotifier).
 
         // Get user's home directory dynamically
         val userHome = System.getProperty("user.home")
@@ -1123,8 +1127,14 @@ object FluckEngine {
      */
     fun setupCaptureSessionHandler(browser: com.teamdev.jxbrowser.browser.Browser) {
         browser.set(StartCaptureSessionCallback::class.java, StartCaptureSessionCallback { params, tell ->
-            // On macOS, check and request screen recording permission
+            // On macOS, explain BEFORE triggering the OS prompt: show an in-app
+            // rationale dialog and only request permission if the user agrees. This
+            // callback runs off the Compose UI thread, so blocking on it is safe.
             if (!MacOSScreenCapture.hasPermission()) {
+                if (!ScreenCaptureNotifier.awaitPermissionRationale()) {
+                    tell.cancel()
+                    return@StartCaptureSessionCallback
+                }
                 val granted = MacOSScreenCapture.requestPermission()
                 if (!granted) {
                     tell.cancel()

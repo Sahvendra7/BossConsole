@@ -926,6 +926,10 @@ tasks.withType<JavaExec>().configureEach {
         systemProperty("boss.log.level", bossLogLevel)
     }
     systemProperty("boss.dev.mode", "true")
+    // Dev runs are unbundled, so macOS shows the bare process/version (e.g. in the
+    // Screen Recording list). Name the AWT app "BOSS" as a best-effort; the packaged
+    // BOSS.app already reports "BOSS" via its bundle CFBundleName.
+    systemProperty("apple.awt.application.name", "BOSS")
 }
 
 // Configure run task based on which wrapper task will execute
