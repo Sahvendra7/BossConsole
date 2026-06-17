@@ -2,6 +2,7 @@ package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.plugin.api.ApplicationEvent
 import ai.rever.boss.plugin.api.ApplicationEventBus
+import ai.rever.boss.plugin.api.ApplicationEventBusRegistry
 import ai.rever.boss.plugin.api.AuthEvent
 import ai.rever.boss.plugin.api.CustomPluginEvent
 import ai.rever.boss.plugin.api.FileChangeEvent
@@ -18,9 +19,21 @@ import kotlinx.coroutines.flow.filterIsInstance
 
 /**
  * Desktop implementation of ApplicationEventBus factory.
+ *
+ * Prefers the process-global [ApplicationEventBusRegistry] instance if one already exists,
+ * so the host and every in-process plugin share a single bus regardless of which classloader
+ * first creates it.
  */
 actual fun createApplicationEventBus(scope: CoroutineScope): ApplicationEventBus {
+    ApplicationEventBusRegistry.bus?.let { return it }
     return ApplicationEventBusImpl.getInstance(scope)
+}
+
+actual fun publishSystemEvent(event: ApplicationEvent) {
+    // Route through the shared registry rather than this classloader's own singleton, so host
+    // system events reach the same bus instance that (possibly different-classloader) plugins
+    // subscribe to. No-op until the bus has been created by the first subscriber.
+    ApplicationEventBusRegistry.systemPublisher?.invoke(event)
 }
 
 /**
@@ -39,15 +52,17 @@ class ApplicationEventBusImpl private constructor(
 
         fun getInstance(scope: CoroutineScope): ApplicationEventBusImpl {
             return instance ?: synchronized(this) {
-                instance ?: ApplicationEventBusImpl(scope).also { instance = it }
+                instance ?: ApplicationEventBusImpl(scope).also {
+                    instance = it
+                    // Publish to the process-global registry so the host's publishSystemEvent and
+                    // in-process plugins share this exact instance regardless of classloader.
+                    if (ApplicationEventBusRegistry.bus == null) {
+                        ApplicationEventBusRegistry.bus = it
+                        ApplicationEventBusRegistry.systemPublisher = { event -> it.publishInternal(event) }
+                    }
+                }
             }
         }
-
-        /**
-         * Get the current instance if it exists.
-         * Used by internal components to publish events.
-         */
-        fun getInstanceOrNull(): ApplicationEventBusImpl? = instance
     }
 
     // Replay = 0 means events are only delivered to active subscribers

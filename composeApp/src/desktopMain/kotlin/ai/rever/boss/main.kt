@@ -674,7 +674,13 @@ private fun extractPty4jNatives(targetDir: File) {
         }
 
         if (!extracted) {
-            logger.warn(LogCategory.SYSTEM, "Could not extract PTY4J native libraries", mapOf(
+            // Expected in normal operation: BossTerm/pty4j is intentionally NOT a host
+            // dependency (see composeApp/build.gradle.kts). The terminal-tab plugin bundles
+            // pty4j inside its own JAR and extracts its natives from its own classloader, so
+            // the host classpath has no pty4j resources to extract. The pty4j.tmpdir /
+            // pty4j.preferred.native.folder system properties set above are still honored by
+            // the plugin. Logged at debug to avoid a misleading "terminal is broken" warning.
+            logger.debug(LogCategory.SYSTEM, "PTY4J natives not on host classpath (handled by terminal-tab plugin)", mapOf(
                 "platform" to platformPath,
                 "searchedResources" to nativeResources.joinToString()
             ))

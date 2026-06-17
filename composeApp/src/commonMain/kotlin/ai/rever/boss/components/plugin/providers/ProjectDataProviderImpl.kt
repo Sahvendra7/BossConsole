@@ -1,6 +1,7 @@
 package ai.rever.boss.components.plugin.providers
 
 import ai.rever.boss.components.plugin.panels.left_top.ProjectState
+import ai.rever.boss.plugin.api.ProjectChangeEvent
 import ai.rever.boss.plugin.api.ProjectData
 import ai.rever.boss.plugin.api.ProjectDataProvider
 import ai.rever.boss.window.Project
@@ -45,7 +46,15 @@ class ProjectDataProviderImpl(
     }
 
     override fun selectProject(project: ProjectData) {
+        val previousPath = windowProjectState?.selectedProject?.value?.path
         selectProjectInWindow(windowProjectState, project.toProject())
+        publishSystemEvent(
+            ProjectChangeEvent(
+                projectPath = project.path,
+                previousProjectPath = previousPath,
+                windowId = windowProjectState?.windowId ?: "",
+            )
+        )
     }
 
     // Extension functions for type conversion

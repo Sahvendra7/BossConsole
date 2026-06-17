@@ -18,7 +18,10 @@ import ai.rever.boss.components.model.TabDropResult
 import ai.rever.boss.components.model.TabDropTarget
 import ai.rever.boss.plugin.api.LocalIsPanelActive
 import ai.rever.boss.plugin.api.TabComponentWithUI
+import ai.rever.boss.plugin.api.TabEvent
+import ai.rever.boss.plugin.api.TabEventType
 import ai.rever.boss.plugin.api.TabInfo
+import ai.rever.boss.components.plugin.providers.publishSystemEvent
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.api.TabTypeId
@@ -1345,7 +1348,9 @@ class BossTabsComponent(
             TabUpdateRegistry.registerTab(config.id, componentId)
 
             // Add to navigation
-            return tabsNavigation.addTab(config)
+            val index = tabsNavigation.addTab(config)
+            publishSystemEvent(TabEvent(tabId = config.id, tabType = TabEventType.OPENED, windowId = windowId))
+            return index
         }
 
         return -1 // Failed to create component
@@ -1358,6 +1363,7 @@ class BossTabsComponent(
             // Unregister tab from TabUpdateRegistry (ownership-checked: a no-op if a move
             // already re-registered this tab id to its destination component)
             TabUpdateRegistry.unregisterTab(it.id, componentId)
+            publishSystemEvent(TabEvent(tabId = it.id, tabType = TabEventType.CLOSED, windowId = windowId))
 
             // Dispose the component if it has a dispose method
             val component = tabComponents.remove(it.id)

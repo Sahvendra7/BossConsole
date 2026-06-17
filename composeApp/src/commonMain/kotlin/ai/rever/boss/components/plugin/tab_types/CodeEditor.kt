@@ -8,6 +8,9 @@ import ai.rever.boss.components.plugin.DefaultPlugin
 import ai.rever.boss.plugin.api.TabComponentWithUI
 import ai.rever.boss.plugin.api.TabInfo
 import ai.rever.boss.plugin.api.TabTypeId
+import ai.rever.boss.plugin.api.FileChangeEvent
+import ai.rever.boss.plugin.api.FileChangeType
+import ai.rever.boss.components.plugin.providers.publishSystemEvent
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.tab.codeeditor.CodeEditorTabType
 import ai.rever.boss.plugin.tab.codeeditor.EditorTabInfo
@@ -518,7 +521,19 @@ class CodeEditorTabComponent(
             projectPath = projectPath,
             modifier = Modifier.fillMaxSize(),
             onModifiedStateChange = { /* TODO: Update EditorTabInfo.isModified */ },
-            onSaveRequested = { writeFileContent(currentFilePath, _content.value) }
+            onSaveRequested = {
+                val saved = writeFileContent(currentFilePath, _content.value)
+                if (saved) {
+                    publishSystemEvent(
+                        FileChangeEvent(
+                            filePath = currentFilePath,
+                            changeType = FileChangeType.MODIFIED,
+                            projectPath = projectPath,
+                        )
+                    )
+                }
+                saved
+            }
         )
     }
 

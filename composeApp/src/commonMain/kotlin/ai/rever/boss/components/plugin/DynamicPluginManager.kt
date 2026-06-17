@@ -8,7 +8,10 @@ import ai.rever.boss.plugin.api.PluginContext
 import ai.rever.boss.plugin.api.PluginManifest
 import ai.rever.boss.plugin.api.PluginSandboxRef
 import ai.rever.boss.plugin.api.PluginState
+import ai.rever.boss.plugin.api.PluginLifecycleEvent
+import ai.rever.boss.plugin.api.PluginLifecycleState
 import ai.rever.boss.plugin.api.PluginUnloadAware
+import ai.rever.boss.components.plugin.providers.publishSystemEvent
 import ai.rever.boss.plugin.api.TabRegistry
 import ai.rever.boss.plugin.loader.DynamicPluginLoaderImpl
 import ai.rever.boss.plugin.loader.PluginBinaryIncompatibilityException
@@ -321,6 +324,7 @@ class DynamicPluginManager(
                         )
                         updatePluginState(manifest.pluginId, info)
                         notifyListeners { it.pluginLoaded(manifest) }
+                        emitPluginLifecycle(manifest.pluginId, PluginLifecycleState.LOADED)
 
                         logger.info(LogCategory.SYSTEM, "Split-brain plugin loaded: UI in-process, state out-of-process", mapOf(
                             "pluginId" to manifest.pluginId,
@@ -414,6 +418,7 @@ class DynamicPluginManager(
 
                 // Notify listeners
                 notifyListeners { it.pluginLoaded(manifest) }
+                emitPluginLifecycle(manifest.pluginId, PluginLifecycleState.LOADED)
 
                 logger.info(LogCategory.SYSTEM, "Plugin installed successfully", mapOf(
                     "pluginId" to manifest.pluginId,
@@ -582,6 +587,7 @@ class DynamicPluginManager(
 
                 // Notify listeners
                 notifyListeners { it.pluginUnloaded(manifest) }
+                emitPluginLifecycle(manifest.pluginId, PluginLifecycleState.UNLOADED)
 
                 logger.info(LogCategory.SYSTEM, "Plugin uninstalled successfully", mapOf(
                     "pluginId" to pluginId
@@ -1047,6 +1053,14 @@ class DynamicPluginManager(
 
     private fun <T> cleanupDeadReferences(list: CopyOnWriteArrayList<WeakReference<T>>) {
         list.removeIf { it.get() == null }
+    }
+
+    /**
+     * Emit a [PluginLifecycleEvent] onto the shared application event bus so analytics and
+     * other subscribers observe plugin load/unload. Best-effort; never throws.
+     */
+    private fun emitPluginLifecycle(pluginId: String, state: PluginLifecycleState) {
+        publishSystemEvent(PluginLifecycleEvent(pluginId = pluginId, lifecycleState = state))
     }
 
     private fun notifyListeners(action: (DynamicPluginListener) -> Unit) {
