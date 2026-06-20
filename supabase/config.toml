@@ -122,7 +122,11 @@ enabled = true
 # in emails.
 site_url = "boss://auth/verify"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["boss://auth/verify", "http://127.0.0.1:3000", "https://127.0.0.1:3000"]
+# bossterm://auth/verify: BossTerm signs in against this project (#787) — without the
+# allow-list entry GoTrue silently drops its redirect_to, and the email template /
+# redirect function can't tell the apps apart. PRODUCTION: add the same URL under
+# Dashboard -> Auth -> URL Configuration -> Redirect URLs.
+additional_redirect_urls = ["boss://auth/verify", "bossterm://auth/verify", "http://127.0.0.1:3000", "https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
