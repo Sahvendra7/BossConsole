@@ -481,6 +481,9 @@ jobs:
   build-windows-x64:
     needs: build-branding-tool
     runs-on: windows-latest
+    # Backstop so a stalled step can't sit until GitHub's 6h limit and silently drop
+    # this platform from the release (which is exactly what happened for chromium-v9.1.2).
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -501,14 +504,27 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Download JxBrowser Chromium
+        # Cap the download: a transient stall here previously hung the job for ~6h
+        # (auto-cancelled at the runner limit), so windows-x64 never produced its zip
+        # and upload-to-releases shipped an incomplete release.
+        timeout-minutes: 30
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         shell: pwsh
         run: |
           $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
-          # Use the main project's downloadChromium task (has proper license)
-          ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
+          # Retry transient failures (the download is large and occasionally flaky on
+          # the windows runner). The step timeout above bounds a hard hang.
+          $ok = $false
+          for ($i = 1; $i -le 3; $i++) {
+            Write-Host "downloadChromium attempt $i of 3..."
+            ./gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "attempt $i failed (exit $LASTEXITCODE); retrying in 15s..."
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ok) { Write-Error "downloadChromium failed after 3 attempts"; exit 1 }
 
           Write-Host "Chromium directory contents:"
           Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
@@ -565,6 +581,9 @@ jobs:
     needs: build-branding-tool
     runs-on: windows_arm64
     continue-on-error: true  # Graceful failure if ARM runners unavailable
+    # Bound it like windows-x64 — continue-on-error tolerates a FAILURE, but a 6h hang
+    # would still make upload-to-releases (which `needs` this job) wait the full limit.
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -612,14 +631,24 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Download JxBrowser Chromium
+        # Same bound + retry as windows-x64: a transient stall here must fail fast
+        # rather than hang until the runner limit.
+        timeout-minutes: 30
         env:
           JXBROWSER_LICENSE_KEY: ${{ secrets.JXBROWSER_LICENSE_KEY }}
         shell: powershell
         run: |
           $chromiumDir = "$env:USERPROFILE\chromium-binaries"
 
-          # Use the main project's downloadChromium task (has proper license)
-          .\gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
+          $ok = $false
+          for ($i = 1; $i -le 3; $i++) {
+            Write-Host "downloadChromium attempt $i of 3..."
+            .\gradlew.bat :composeApp:downloadChromium "-PchromiumDir=$chromiumDir" "-PjxBrowserVersion=$env:JXBROWSER_VERSION" --no-daemon
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "attempt $i failed (exit $LASTEXITCODE); retrying in 15s..."
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ok) { Write-Error "downloadChromium failed after 3 attempts"; exit 1 }
 
           Write-Host "Chromium directory contents:"
           Get-ChildItem -Path $chromiumDir -ErrorAction SilentlyContinue
@@ -880,7 +909,13 @@ jobs:
   # Upload to BossConsole-Releases
   upload-to-releases:
     needs: [build-macos-arm64, build-macos-x64, build-windows-x64, build-windows-arm64, build-linux-x64, build-linux-arm64]
-    if: always() && (needs.build-macos-arm64.result == 'success' || needs.build-macos-x64.result == 'success' || needs.build-windows-x64.result == 'success' || needs.build-windows-arm64.result == 'success' || needs.build-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
+    # Require every MANDATORY platform to succeed. This job deletes + recreates the
+    # release from the artifacts present, so an OR-of-any here silently publishes an
+    # INCOMPLETE release when a platform fails — which is how chromium-v9.1.2 lost
+    # windows-x64. windows-arm64 is intentionally excluded: it's continue-on-error
+    # (the windows_arm64 runner may be unavailable), so it stays OPTIONAL — its zip is
+    # uploaded when present, but its absence must not block the release.
+    if: ${{ needs.build-macos-arm64.result == 'success' && needs.build-macos-x64.result == 'success' && needs.build-windows-x64.result == 'success' && needs.build-linux-x64.result == 'success' && needs.build-linux-arm64.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download All Artifacts
