@@ -355,7 +355,12 @@ entrypoint = "./functions/passkey/index.ts"
 
 [functions.redirect]
 enabled = true
-verify_jwt = true
+# MUST be false: this function is the target of magic-link EMAIL clicks — header-less browser
+# GETs that carry no Authorization header. With verify_jwt=true the edge gateway 401s every
+# email click (UNAUTHORIZED_NO_AUTH_HEADER), breaking sign-in for BOTH apps. It's a pure
+# redirect (no data access; token is already a bearer secret in the URL), so public is correct,
+# same as the other email/public-facing functions (passkey, plugin-store). Do NOT set true.
+verify_jwt = false
 import_map = "./functions/redirect/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
