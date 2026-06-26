@@ -134,9 +134,25 @@ data class PluginManifest(
     /**
      * Whether this plugin requires admin privileges.
      * If true, the plugin will only be visible and active for admin users.
+     *
+     * Legacy gate, superseded by [requiredPermissions]. Still honored: a plugin
+     * with `requiresAdmin = true` additionally requires the user to be an admin.
      */
     @SerialName("requiresAdmin")
     val requiresAdmin: Boolean = false,
+
+    /**
+     * Effective permissions the user must hold for this plugin to be visible and
+     * active (granular RBAC). The host shows/registers the plugin only if the
+     * user's effective permissions (from the JWT `user_permissions` claim, which
+     * includes permissions inherited via the role hierarchy) contain ALL of these.
+     *
+     * Empty (the default, and the case for legacy plugins that predate this field)
+     * means no special permission is required — the plugin is available to every
+     * authenticated user (baseline `user` level).
+     */
+    @SerialName("requiredPermissions")
+    val requiredPermissions: List<String> = emptyList(),
 
     /**
      * Minimum BOSS version required to run this plugin (e.g., "8.16.27").

@@ -53,8 +53,21 @@ data class UserInfo(
         get() = roleClaims?.isAdmin ?: false
 
     /**
+     * Effective permissions (own + inherited via the role hierarchy)
+     */
+    val permissions: List<String>
+        get() = roleClaims?.permissions ?: emptyList()
+
+    /**
      * Check if user has a specific role
      */
     fun hasRole(role: String): Boolean =
         roleClaims?.hasRole(role) ?: (role == "user")
+
+    /**
+     * Check if user has a specific effective permission.
+     * Admins implicitly hold every permission.
+     */
+    fun hasPermission(permission: String): Boolean =
+        isAdmin || (roleClaims?.hasPermission(permission) ?: false)
 }

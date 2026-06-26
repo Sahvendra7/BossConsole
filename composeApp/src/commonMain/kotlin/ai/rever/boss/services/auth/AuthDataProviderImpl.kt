@@ -31,7 +31,9 @@ class AuthDataProviderImpl : AuthDataProvider {
             AuthStateManager.currentUser.collect { userInfo ->
                 _currentUser.value = userInfo?.toPluginData()
                 _isAdmin.value = userInfo?.isAdmin == true
-                _userPermissions.value = userInfo?.roles?.toSet() ?: emptySet()
+                // Effective permissions from the JWT (own + inherited via the role
+                // hierarchy) — NOT the user's role names.
+                _userPermissions.value = userInfo?.permissions?.toSet() ?: emptySet()
             }
         }
     }
@@ -47,8 +49,8 @@ class AuthDataProviderImpl : AuthDataProvider {
 
     override fun hasPermission(permission: String): Boolean {
         val user = AuthStateManager.currentUser.value ?: return false
-        // Check if user has the specific role/permission
-        return user.hasRole(permission) || user.isAdmin
+        // Check the user's effective permissions (admins implicitly hold all).
+        return user.hasPermission(permission)
     }
 
     override fun hasAnyPermission(vararg permissions: String): Boolean {

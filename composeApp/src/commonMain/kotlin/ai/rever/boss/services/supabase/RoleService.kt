@@ -140,7 +140,10 @@ object RoleService {
                 "user_roles" to jsonObject["user_roles"]?.jsonArray?.map {
                     it.jsonPrimitive.content
                 },
-                "is_admin" to jsonObject["is_admin"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+                "is_admin" to jsonObject["is_admin"]?.jsonPrimitive?.content?.toBooleanStrictOrNull(),
+                "user_permissions" to jsonObject["user_permissions"]?.jsonArray?.map {
+                    it.jsonPrimitive.content
+                }
             )
         } catch (e: Exception) {
             logger.warn(LogCategory.AUTH, "Failed to decode JWT", error = e)

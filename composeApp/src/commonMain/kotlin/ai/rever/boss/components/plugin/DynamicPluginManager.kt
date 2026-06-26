@@ -158,28 +158,57 @@ class DynamicPluginManager(
     private val _isAdmin = MutableStateFlow(false)
 
     /**
-     * Admin-only plugins that are hidden due to non-admin status.
-     * These plugins are loaded but not registered in the panel registry.
+     * Current effective permissions of the user (own + inherited via the role
+     * hierarchy), from the JWT `user_permissions` claim. Drives permission-based
+     * plugin visibility.
      */
-    private val hiddenAdminPlugins = ConcurrentHashMap<String, DynamicPluginInfo>()
+    private val _userPermissions = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * Plugins that are loaded but NOT registered because the current user does
+     * not satisfy their access requirements (admin status and/or required
+     * permissions). They are re-registered if the user's access later qualifies.
+     */
+    private val hiddenPlugins = ConcurrentHashMap<String, DynamicPluginInfo>()
 
     init {
-        // Observe admin status changes
+        // Observe access changes (admin status + effective permissions) and
+        // reconcile plugin visibility whenever either changes.
         managerScope.launch(Dispatchers.Main) {
             AuthStateManager.currentUser
-                .map { user -> user?.isAdmin == true }
+                .map { user -> AccessSnapshot(user?.isAdmin == true, user?.permissions?.toSet() ?: emptySet()) }
                 .distinctUntilChanged()
-                .collect { isAdmin ->
-                    val wasAdmin = _isAdmin.value
-                    _isAdmin.value = isAdmin
+                .collect { access ->
+                    val changed = _isAdmin.value != access.isAdmin || _userPermissions.value != access.permissions
+                    _isAdmin.value = access.isAdmin
+                    _userPermissions.value = access.permissions
 
-                    // Only handle change if it actually changed
-                    if (wasAdmin != isAdmin) {
-                        handleAdminStatusChange(isAdmin)
+                    if (changed) {
+                        handleAccessChange()
                     }
                 }
         }
     }
+
+    /** Snapshot of the inputs that determine plugin visibility. */
+    private data class AccessSnapshot(val isAdmin: Boolean, val permissions: Set<String>)
+
+    /**
+     * Whether the current user may see/run a plugin with the given manifest.
+     *
+     * - Admins implicitly hold every permission.
+     * - `requiresAdmin` (legacy) still requires admin status.
+     * - Otherwise the user's effective permissions must contain ALL of the
+     *   plugin's [PluginManifest.requiredPermissions]. An empty list (legacy
+     *   plugins) means "available to any authenticated user".
+     */
+    private fun canAccess(manifest: PluginManifest): Boolean =
+        pluginAccessAllowed(
+            isAdmin = _isAdmin.value,
+            userPermissions = _userPermissions.value,
+            requiresAdmin = manifest.requiresAdmin,
+            requiredPermissions = manifest.requiredPermissions,
+        )
 
     /**
      * Add a listener for plugin lifecycle events.
@@ -353,13 +382,13 @@ class DynamicPluginManager(
                 )
                 trackingContexts[manifest.pluginId] = trackingContext
 
-                // Check if plugin requires admin and user is not admin
-                val isAdmin = _isAdmin.value
-                val shouldHideAdminPlugin = manifest.requiresAdmin && !isAdmin
+                // Check whether the current user satisfies the plugin's access
+                // requirements (admin status and/or required permissions).
+                val accessible = canAccess(manifest)
 
-                // Register the plugin (unless it's an admin-only plugin and user is not admin)
+                // Register the plugin (unless the user lacks access to it)
                 var registrationFailed = false
-                if (enabled && !shouldHideAdminPlugin) {
+                if (enabled && accessible) {
                     try {
                         loadedPlugin.instance.register(trackingContext)
                     } catch (e: Throwable) {
@@ -394,7 +423,7 @@ class DynamicPluginManager(
                 // Create plugin info
                 val pluginState = when {
                     registrationFailed -> PluginState.DISABLED
-                    enabled && !shouldHideAdminPlugin -> PluginState.LOADED
+                    enabled && accessible -> PluginState.LOADED
                     else -> PluginState.DISABLED
                 }
                 val info = DynamicPluginInfo(
@@ -405,11 +434,14 @@ class DynamicPluginManager(
                     enabled = enabled && !registrationFailed
                 )
 
-                // Track hidden admin plugins
-                if (shouldHideAdminPlugin && enabled) {
-                    hiddenAdminPlugins[manifest.pluginId] = info
-                    logger.info(LogCategory.SYSTEM, "Admin-only plugin hidden (user is not admin)", mapOf(
-                        "pluginId" to manifest.pluginId
+                // Track plugins hidden because the user lacks access (admin and/or
+                // required permissions). They are re-registered if access qualifies.
+                if (!accessible && enabled) {
+                    hiddenPlugins[manifest.pluginId] = info
+                    logger.info(LogCategory.SYSTEM, "Plugin hidden (insufficient access)", mapOf(
+                        "pluginId" to manifest.pluginId,
+                        "requiresAdmin" to manifest.requiresAdmin,
+                        "requiredPermissions" to manifest.requiredPermissions.joinToString(",")
                     ))
                 }
 
@@ -760,12 +792,11 @@ class DynamicPluginManager(
 
     /**
      * Get installed plugins visible to the current user.
-     * Filters out admin-only plugins if the user is not an admin.
+     * Filters out plugins the user lacks access to (admin and/or permissions).
      */
     fun getVisibleInstalledPlugins(): List<DynamicPluginInfo> {
-        val isAdmin = _isAdmin.value
         return _pluginStates.value.values.filter { info ->
-            !info.manifest.requiresAdmin || isAdmin
+            canAccess(info.manifest)
         }
     }
 
@@ -986,58 +1017,49 @@ class DynamicPluginManager(
     }
 
     /**
-     * Handle admin status change - show/hide admin plugins accordingly.
+     * Reconcile plugin visibility after the user's access (admin status and/or
+     * effective permissions) changes. Re-registers previously-hidden plugins the
+     * user can now access, and unregisters/hides plugins they can no longer access.
      */
-    private suspend fun handleAdminStatusChange(isAdmin: Boolean) {
+    private suspend fun handleAccessChange() {
         mutex.withLock {
-            if (isAdmin) {
-                // User became admin - re-register hidden admin plugins
-                logger.info(LogCategory.SYSTEM, "User gained admin status, re-registering hidden admin plugins", mapOf(
-                    "hiddenCount" to hiddenAdminPlugins.size
-                ))
-
-                for ((pluginId, info) in hiddenAdminPlugins) {
-                    if (info.enabled) {
-                        val trackingContext = trackingContexts[pluginId]
-                        val loadedPlugin = pluginLoader.getPlugin(pluginId)
-
-                        if (trackingContext != null && loadedPlugin != null) {
-                            try {
-                                loadedPlugin.instance.register(trackingContext)
-                                // Update state to reflect active status
-                                updatePluginState(pluginId, info.copy(state = PluginState.LOADED))
-                                logger.info(LogCategory.SYSTEM, "Re-registered admin plugin", mapOf(
-                                    "pluginId" to pluginId
-                                ))
-                            } catch (e: Throwable) {
-                                logger.error(LogCategory.SYSTEM, "Failed to re-register admin plugin", mapOf(
-                                    "pluginId" to pluginId,
-                                    "errorType" to e.javaClass.simpleName
-                                ), e)
-                            }
-                        }
-                    }
-                }
-                hiddenAdminPlugins.clear()
-            } else {
-                // User lost admin status - unregister and hide admin plugins
-                logger.info(LogCategory.SYSTEM, "User lost admin status, hiding admin plugins")
-
-                val adminPlugins = _pluginStates.value.filter { (_, info) ->
-                    info.manifest.requiresAdmin && info.enabled
-                }
-
-                for ((pluginId, info) in adminPlugins) {
-                    val trackingContext = trackingContexts[pluginId]
-                    if (trackingContext != null) {
-                        trackingContext.unregisterAll()
-                        hiddenAdminPlugins[pluginId] = info
-                        // Update state to reflect hidden status
-                        updatePluginState(pluginId, info.copy(state = PluginState.DISABLED))
-                        logger.info(LogCategory.SYSTEM, "Hidden admin plugin", mapOf(
+            // 1. Re-register previously-hidden plugins the user can now access.
+            val nowVisible = hiddenPlugins.filterValues { info ->
+                info.enabled && canAccess(info.manifest)
+            }
+            for ((pluginId, info) in nowVisible) {
+                val trackingContext = trackingContexts[pluginId]
+                val loadedPlugin = pluginLoader.getPlugin(pluginId)
+                if (trackingContext != null && loadedPlugin != null) {
+                    try {
+                        loadedPlugin.instance.register(trackingContext)
+                        updatePluginState(pluginId, info.copy(state = PluginState.LOADED))
+                        hiddenPlugins.remove(pluginId)
+                        logger.info(LogCategory.SYSTEM, "Re-registered plugin after access gained", mapOf(
                             "pluginId" to pluginId
                         ))
+                    } catch (e: Throwable) {
+                        logger.error(LogCategory.SYSTEM, "Failed to re-register plugin", mapOf(
+                            "pluginId" to pluginId,
+                            "errorType" to e.javaClass.simpleName
+                        ), e)
                     }
+                }
+            }
+
+            // 2. Unregister and hide plugins the user can no longer access.
+            val nowHidden = _pluginStates.value.filter { (pluginId, info) ->
+                info.enabled && !hiddenPlugins.containsKey(pluginId) && !canAccess(info.manifest)
+            }
+            for ((pluginId, info) in nowHidden) {
+                val trackingContext = trackingContexts[pluginId]
+                if (trackingContext != null) {
+                    trackingContext.unregisterAll()
+                    hiddenPlugins[pluginId] = info
+                    updatePluginState(pluginId, info.copy(state = PluginState.DISABLED))
+                    logger.info(LogCategory.SYSTEM, "Hid plugin after access lost", mapOf(
+                        "pluginId" to pluginId
+                    ))
                 }
             }
         }
@@ -1080,4 +1102,24 @@ class DynamicPluginManager(
             }
         }
     }
+}
+
+/**
+ * Pure access predicate for permission-based plugin gating. Extracted from
+ * [DynamicPluginManager.canAccess] so it can be unit-tested in isolation.
+ *
+ * - Admins implicitly hold every permission.
+ * - `requiresAdmin` (legacy gate) still requires admin status.
+ * - Otherwise the user's effective permissions must contain ALL of
+ *   [requiredPermissions]. An empty list (legacy plugins) means any authenticated user.
+ */
+internal fun pluginAccessAllowed(
+    isAdmin: Boolean,
+    userPermissions: Set<String>,
+    requiresAdmin: Boolean,
+    requiredPermissions: List<String>,
+): Boolean {
+    if (requiresAdmin && !isAdmin) return false
+    if (isAdmin) return true
+    return userPermissions.containsAll(requiredPermissions)
 }

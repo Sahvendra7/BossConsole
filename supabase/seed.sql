@@ -12,6 +12,11 @@
 -- - 'user': Assigned automatically to all new signups via handle_new_user() trigger
 -- - 'admin': Must be manually assigned to specific users (see instructions below)
 
+-- The full role/permission matrix (incl. boss_admin, finance_admin and all
+-- role.*/finance.* permissions + assignments) is seeded idempotently by
+-- migration 20260625000000_role_hierarchy_and_granular_rbac.sql, which is the
+-- single source of truth and runs in BOTH local and production. Only the two
+-- base system roles are kept here for clarity / legacy parity.
 INSERT INTO public.roles (name, description, is_system)
 VALUES
     ('user', 'Default role for all authenticated users', true),

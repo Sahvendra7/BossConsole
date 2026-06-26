@@ -40,7 +40,12 @@ data class RolePermission(
 data class RoleClaims(
     val userRole: String,
     val userRoles: List<String>,
-    val isAdmin: Boolean
+    val isAdmin: Boolean,
+    /**
+     * Effective permissions (own + inherited via the role hierarchy), injected
+     * into the JWT by the custom_access_token_hook as the `user_permissions` claim.
+     */
+    val permissions: List<String> = emptyList()
 ) {
     companion object {
         /**
@@ -50,15 +55,18 @@ data class RoleClaims(
             val userRoleStr = claims["user_role"] as? String
             val userRolesArray = claims["user_roles"] as? List<*>
             val isAdmin = claims["is_admin"] as? Boolean ?: false
+            val userPermissionsArray = claims["user_permissions"] as? List<*>
 
             val primaryRole = userRoleStr ?: "user"
 
             val roles = userRolesArray?.mapNotNull { it as? String } ?: listOf(primaryRole)
+            val permissions = userPermissionsArray?.mapNotNull { it as? String } ?: emptyList()
 
             return RoleClaims(
                 userRole = primaryRole,
                 userRoles = roles,
-                isAdmin = isAdmin
+                isAdmin = isAdmin,
+                permissions = permissions
             )
         }
     }
@@ -67,6 +75,11 @@ data class RoleClaims(
      * Check if user has a specific role
      */
     fun hasRole(role: String): Boolean = userRoles.contains(role)
+
+    /**
+     * Check if user has a specific effective permission
+     */
+    fun hasPermission(permission: String): Boolean = permissions.contains(permission)
 
     /**
      * Check if user has any of the specified roles
