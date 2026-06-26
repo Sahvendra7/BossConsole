@@ -7,6 +7,8 @@ import ai.rever.boss.plugin.api.TabInfo
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -244,6 +246,44 @@ object WindowManager {
      */
     val windowCount: Int
         get() = _windows.size
+
+    /**
+     * Grow/shrink a window by a **physical-pixel** delta so an embedded terminal
+     * pane can be fit to a remote viewer's grid ("Fit host to my screen" in
+     * BossTerm session sharing). BossTerm computes the delta as cellPx × grid-delta
+     * in physical px; the BossWindow composable divides it by this window's display
+     * scale to get the logical dp that Compose's `WindowState.size` expects (so the
+     * fit is correct on HiDPI/scaled displays) and stashes the pre-fit size +
+     * placement so [restoreWindowSize] can undo it when sharing stops or the host
+     * user interacts with the pane.
+     *
+     * **Contract:** the delta is applied to the window's *then-current* size, so
+     * each call is incremental — the caller must compute it against the host's
+     * current size (BossTerm does: `(targetCols − currentCols) × cellPx`), not
+     * re-derive it from a stale baseline, or repeated calls will overshoot/drift.
+     *
+     * Reached by the terminal-tab plugin via reflection (it has the window id);
+     * a no-op if the window is unknown. Safe to call off the UI thread — it only
+     * emits an event the composable applies on the composition thread.
+     */
+    fun fitWindowByDelta(windowId: String, deltaWidthPx: Float, deltaHeightPx: Float) {
+        val window = _windows.toList().find { it.id == windowId } ?: return
+        window.sizeRequests.tryEmit(WindowSizeRequest.FitByDelta(deltaWidthPx, deltaHeightPx))
+        logger.debug(LogCategory.UI, "Fit window by delta", mapOf(
+            "windowId" to windowId, "dWpx" to deltaWidthPx, "dHpx" to deltaHeightPx
+        ))
+    }
+
+    /**
+     * Restore a window to the size and placement captured before the first
+     * [fitWindowByDelta], if any. No-op when nothing was fit. Safe to call off the
+     * UI thread (emits an event applied on the composition thread).
+     */
+    fun restoreWindowSize(windowId: String) {
+        val window = _windows.toList().find { it.id == windowId } ?: return
+        window.sizeRequests.tryEmit(WindowSizeRequest.Restore)
+        logger.debug(LogCategory.UI, "Restore window size", mapOf("windowId" to windowId))
+    }
 }
 
 /**
@@ -265,4 +305,41 @@ data class BossWindowState(
     var title: String,
     val position: WindowPosition?,
     val windowType: WindowType = WindowType.MAIN
-)
+) {
+    /**
+     * Stream of programmatic resize requests (BossTerm "Fit host to my screen").
+     * An event stream — not a value — so a fit and a restore (or two fits) can't
+     * conflate or clobber each other the way a `MutableStateFlow` would; buffered
+     * with [BufferOverflow.DROP_OLDEST] so emitting from a background thread never
+     * suspends. Consumed by the BossWindow composable, which owns the live window
+     * size, placement, and display scale and applies each request on the
+     * composition thread.
+     *
+     * `replay = 1`: a window is in [_windows] (so addressable by id) slightly
+     * before its composable starts collecting, so an early fit would otherwise be
+     * dropped. Replaying the last request closes that startup race. The collector
+     * is keyed on a stable window state and never restarts, so there is no stale
+     * re-delivery on recomposition.
+     */
+    val sizeRequests: MutableSharedFlow<WindowSizeRequest> = MutableSharedFlow(
+        replay = 1,
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+}
+
+/**
+ * A programmatic window-resize request emitted by [WindowManager] and applied by
+ * the BossWindow composable on the composition thread.
+ */
+sealed interface WindowSizeRequest {
+    /**
+     * Grow/shrink the window by a **physical-pixel** delta. The composable divides
+     * by the window's display scale to get the logical dp Compose expects, so the
+     * fit stays correct on HiDPI / scaled displays.
+     */
+    data class FitByDelta(val deltaWidthPx: Float, val deltaHeightPx: Float) : WindowSizeRequest
+
+    /** Undo the most recent fit, restoring the pre-fit size and placement. */
+    data object Restore : WindowSizeRequest
+}

@@ -29,6 +29,8 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -47,6 +49,45 @@ import boss_kotlin.composeapp.generated.resources.boss_icon
 import androidx.compose.ui.window.*
 import java.awt.Color
 import java.awt.Frame
+
+/** Floor for a programmatic window fit ("Fit host to my screen"), in dp. Keeps a
+ *  fit from collapsing the window below a usable size if a remote viewer reports a
+ *  tiny grid; the host can still be resized smaller by hand afterwards. */
+internal const val MIN_FIT_WIDTH_DP = 480f
+internal const val MIN_FIT_HEIGHT_DP = 320f
+
+/**
+ * Pure math for a programmatic window fit ("Fit host to my screen"): grow/shrink
+ * [current] (dp) by a **physical-pixel** delta, converting to dp via the window's
+ * display scale ([scaleX]/[scaleY], non-positive or unknown → treated as 1×), then
+ * clamping into the usable screen area ([maxWidthDp] × [maxHeightDp], dp). The lower
+ * bound is `min(floor, screen)` so a usable area below the min-fit floor yields the
+ * screen size instead of inverting the range (which would make `coerceIn` throw).
+ *
+ * Extracted from the BossWindow collector so the scale / clamp / floor branches are
+ * unit-testable without a live window — see WindowFitMathTest.
+ */
+internal fun computeFitSize(
+    current: DpSize,
+    deltaWidthPx: Float,
+    deltaHeightPx: Float,
+    scaleX: Float,
+    scaleY: Float,
+    maxWidthDp: Float,
+    maxHeightDp: Float,
+    minWidthDp: Float = MIN_FIT_WIDTH_DP,
+    minHeightDp: Float = MIN_FIT_HEIGHT_DP,
+): DpSize {
+    val sx = scaleX.takeIf { it > 0f } ?: 1f
+    val sy = scaleY.takeIf { it > 0f } ?: 1f
+    val newW = (current.width.value + deltaWidthPx / sx)
+        .coerceAtMost(maxWidthDp)
+        .coerceAtLeast(minOf(minWidthDp, maxWidthDp))
+    val newH = (current.height.value + deltaHeightPx / sy)
+        .coerceAtMost(maxHeightDp)
+        .coerceAtLeast(minOf(minHeightDp, maxHeightDp))
+    return DpSize(newW.dp, newH.dp)
+}
 
 /**
  * Individual BOSS window composable
@@ -94,6 +135,68 @@ fun ApplicationScope.BossWindow(
         state = composeWindowState,
         icon = painterResource(Res.drawable.boss_icon)
     ) {
+        // Apply programmatic resize requests (BossTerm "Fit host to my screen").
+        // Lives inside Window {} so it can read this window's `window` (AWT
+        // ComposeWindow) for the display scale + per-monitor bounds, and runs on
+        // the composition thread, so it owns the live window size + placement —
+        // no cross-thread window-state access, and successive fits stay cumulative.
+        // Keyed on the stable window id (not the mutable BossWindowState data-class
+        // instance) so the collector never restarts on recomposition — a restart
+        // would, via sizeRequests' replay = 1, re-apply the last fit and re-capture
+        // preFit from the already-fitted size.
+        LaunchedEffect(windowState.id) {
+            // Size + placement captured on the first fit, so Restore returns a
+            // Maximized MAIN window to Maximized (not leaving it Floating).
+            var preFit: Pair<DpSize, WindowPlacement>? = null
+            windowState.sizeRequests.collect { req ->
+                when (req) {
+                    is WindowSizeRequest.FitByDelta -> {
+                        if (preFit == null) {
+                            preFit = composeWindowState.size to composeWindowState.placement
+                        }
+                        // BossTerm sends a physical-px delta; convert to dp via this
+                        // window's display scale and clamp to its screen. defaultTransform
+                        // is per-GraphicsConfiguration, so this is correct on multi-
+                        // monitor / mixed-DPI setups. Math lives in computeFitSize so it
+                        // is unit-tested.
+                        val gc = window.graphicsConfiguration
+                        val tf = gc?.defaultTransform
+                        // Usable area of THIS window's screen, in logical points
+                        // (same units as WindowState.size dp).
+                        val usable = runCatching {
+                            val b = gc!!.bounds
+                            val insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc)
+                            (b.width - insets.left - insets.right).toFloat() to
+                                (b.height - insets.top - insets.bottom).toFloat()
+                        }.getOrNull()
+                        val target = computeFitSize(
+                            current = composeWindowState.size,
+                            deltaWidthPx = req.deltaWidthPx,
+                            deltaHeightPx = req.deltaHeightPx,
+                            scaleX = tf?.scaleX?.toFloat() ?: 1f,
+                            scaleY = tf?.scaleY?.toFloat() ?: 1f,
+                            maxWidthDp = usable?.first ?: 100_000f,
+                            maxHeightDp = usable?.second ?: 100_000f,
+                        )
+                        // Maximized ignores an explicit size — drop to Floating first.
+                        if (composeWindowState.placement != WindowPlacement.Floating) {
+                            composeWindowState.placement = WindowPlacement.Floating
+                        }
+                        composeWindowState.size = target
+                    }
+                    WindowSizeRequest.Restore -> {
+                        preFit?.let { (size, placement) ->
+                            // Restore size first (so a re-maximized window also gets
+                            // the right un-maximize size back), then placement.
+                            composeWindowState.size = size
+                            composeWindowState.placement = placement
+                            preFit = null
+                        }
+                    }
+                }
+            }
+        }
+
         // Test crash handler (Issue #543) - must be inside Window block to access `window`
         if (shouldTriggerTestCrash) {
             shouldTriggerTestCrash = false
