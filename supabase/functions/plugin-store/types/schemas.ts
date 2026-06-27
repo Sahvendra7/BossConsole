@@ -138,7 +138,15 @@ export const PublishPluginRequestSchema = z.object({
   iconUrl: z.union([z.string().url(), z.literal('')]).optional().default(''),
   type: PluginTypeSchema.optional().default('panel'),
   apiVersion: z.string().optional().default('1.0'),
-  tags: z.array(z.string().max(50)).max(10).optional().default([])
+  tags: z.array(z.string().max(50)).max(10).optional().default([]),
+  // Permissions the plugin requires (gated host-side) and the NEW ones it
+  // introduces (auto-registered ungranted at publish). Optional; the GitHub
+  // publish paths read these from the jar manifest instead.
+  requiredPermissions: z.array(z.string().max(64)).max(50).optional().default([]),
+  definedPermissions: z.array(z.object({
+    name: z.string().max(64),
+    description: z.string().max(500).optional().default('')
+  })).max(50).optional().default([])
 })
 
 export const PublishPluginResponseSchema = z.object({

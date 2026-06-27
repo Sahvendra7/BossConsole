@@ -15,7 +15,7 @@ import type { PluginManifest } from "../types/plugin.ts"
  */
 export async function validateDeclaredPermissions(
   supabase: SupabaseClient,
-  manifest: PluginManifest,
+  manifest: Pick<PluginManifest, "pluginId" | "requiredPermissions" | "definedPermissions">,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const required = manifest.requiredPermissions ?? []
   if (required.length === 0) return { ok: true }
@@ -60,7 +60,7 @@ export async function validateDeclaredPermissions(
  */
 export async function registerDefinedPermissions(
   supabase: SupabaseClient,
-  manifest: PluginManifest,
+  manifest: Pick<PluginManifest, "pluginId" | "requiredPermissions" | "definedPermissions">,
 ): Promise<string[]> {
   const defined = manifest.definedPermissions ?? []
   if (defined.length === 0) return []

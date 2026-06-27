@@ -103,6 +103,12 @@ publish.openapi(publishPluginRoute, async (ctx) => {
       return ctx.json({ success: false, error: 'Authentication required' }, 401)
     }
 
+    // Reject dangling required permissions before creating any rows.
+    const permCheck = await validateDeclaredPermissions(supabase, body)
+    if (!permCheck.ok) {
+      return ctx.json({ success: false, error: permCheck.error }, 400)
+    }
+
     // Check if plugin ID already exists
     const existing = await getPlugin(supabase, body.pluginId)
     if (existing) {
@@ -125,6 +131,9 @@ publish.openapi(publishPluginRoute, async (ctx) => {
       body.type,
       body.apiVersion
     )
+
+    // Auto-register the permissions this plugin introduces (ungranted; admin grants later).
+    await registerDefinedPermissions(supabase, body)
 
     // Set tags
     if (body.tags.length > 0) {
