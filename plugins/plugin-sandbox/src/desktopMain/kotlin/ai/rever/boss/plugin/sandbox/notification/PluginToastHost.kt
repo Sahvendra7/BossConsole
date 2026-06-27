@@ -5,13 +5,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,13 +35,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import ai.rever.boss.plugin.ui.BossThemeColors
 
 /**
  * Host composable for displaying plugin toast notifications.
  *
  * Place this at the root of your composition (e.g., in a Box with alignment)
  * to display toast notifications from the plugin sandbox system.
+ *
+ * Toasts use the shared BOSS theme ([BossThemeColors]) so they match the
+ * Settings window and other BOSS dialogs: a single dark surface with a thin
+ * border and 12.dp corners. The toast *type* is conveyed by the icon color
+ * rather than a fully-colored background.
  *
  * @param toastState The toast state manager
  * @param modifier Modifier for the host container
@@ -87,24 +94,26 @@ fun PluginToast(
     message: ToastMessage,
     onDismiss: () -> Unit
 ) {
-    val (backgroundColor, contentColor, icon) = getToastColors(message.type)
+    val (accentColor, icon) = toastAccent(message.type)
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = backgroundColor,
-        shadowElevation = 4.dp
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BossThemeColors.BorderColor, RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        color = BossThemeColors.SurfaceColor,
+        shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier
-                .padding(12.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Icon
+            // Type icon (the only colored element)
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = contentColor,
+                tint = accentColor,
                 modifier = Modifier.size(20.dp)
             )
 
@@ -116,13 +125,15 @@ fun PluginToast(
             ) {
                 Text(
                     text = message.title,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = contentColor
+                    color = BossThemeColors.TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = message.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentColor.copy(alpha = 0.8f)
+                    color = BossThemeColors.TextSecondary,
+                    fontSize = 12.sp
                 )
 
                 // Action button
@@ -136,14 +147,15 @@ fun PluginToast(
                     ) {
                         Text(
                             text = action.label,
-                            color = contentColor,
-                            style = MaterialTheme.typography.labelSmall
+                            color = BossThemeColors.AccentColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
             }
 
-            // Dismiss button (only for indefinite toasts or all toasts for better UX)
+            // Dismiss button
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier.size(24.dp)
@@ -151,7 +163,7 @@ fun PluginToast(
                 Icon(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = "Dismiss",
-                    tint = contentColor.copy(alpha = 0.6f),
+                    tint = BossThemeColors.TextMuted,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -160,31 +172,15 @@ fun PluginToast(
 }
 
 /**
- * Get colors and icon for a toast type.
+ * Accent color + icon for a toast type. The surface and text colors are uniform
+ * (BOSS dialog palette); only the icon is tinted to signal the type.
  */
-@Composable
-private fun getToastColors(type: ToastType): Triple<Color, Color, ImageVector> {
+private fun toastAccent(type: ToastType): Pair<Color, ImageVector> {
     return when (type) {
-        ToastType.INFO -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            Icons.Outlined.Info
-        )
-        ToastType.SUCCESS -> Triple(
-            Color(0xFF1B5E20).copy(alpha = 0.9f), // Dark green
-            Color.White,
-            Icons.Outlined.CheckCircle
-        )
-        ToastType.WARNING -> Triple(
-            Color(0xFFF57C00).copy(alpha = 0.9f), // Orange
-            Color.White,
-            Icons.Outlined.Warning
-        )
-        ToastType.ERROR -> Triple(
-            MaterialTheme.colorScheme.errorContainer,
-            MaterialTheme.colorScheme.onErrorContainer,
-            Icons.Outlined.Error
-        )
+        ToastType.INFO -> BossThemeColors.AccentColor to Icons.Outlined.Info
+        ToastType.SUCCESS -> BossThemeColors.SuccessColor to Icons.Outlined.CheckCircle
+        ToastType.WARNING -> BossThemeColors.WarningColor to Icons.Outlined.Warning
+        ToastType.ERROR -> BossThemeColors.ErrorColor to Icons.Outlined.Error
     }
 }
 
@@ -199,11 +195,14 @@ fun CompactPluginToast(
     message: ToastMessage,
     onDismiss: () -> Unit
 ) {
-    val (backgroundColor, contentColor, icon) = getToastColors(message.type)
+    val (accentColor, icon) = toastAccent(message.type)
 
     Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = backgroundColor
+        modifier = Modifier
+            .border(1.dp, BossThemeColors.BorderColor, RoundedCornerShape(8.dp)),
+        shape = RoundedCornerShape(8.dp),
+        color = BossThemeColors.SurfaceColor,
+        shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -212,7 +211,7 @@ fun CompactPluginToast(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = contentColor,
+                tint = accentColor,
                 modifier = Modifier.size(16.dp)
             )
 
@@ -220,8 +219,8 @@ fun CompactPluginToast(
 
             Text(
                 text = message.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = contentColor,
+                color = BossThemeColors.TextPrimary,
+                fontSize = 12.sp,
                 modifier = Modifier.weight(1f)
             )
 
@@ -235,8 +234,9 @@ fun CompactPluginToast(
                 ) {
                     Text(
                         text = action.label,
-                        color = contentColor,
-                        style = MaterialTheme.typography.labelSmall
+                        color = BossThemeColors.AccentColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -248,7 +248,7 @@ fun CompactPluginToast(
                 Icon(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = "Dismiss",
-                    tint = contentColor.copy(alpha = 0.6f),
+                    tint = BossThemeColors.TextMuted,
                     modifier = Modifier.size(14.dp)
                 )
             }
