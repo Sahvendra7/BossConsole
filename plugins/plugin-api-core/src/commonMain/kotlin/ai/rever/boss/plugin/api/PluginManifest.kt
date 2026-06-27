@@ -155,6 +155,21 @@ data class PluginManifest(
     val requiredPermissions: List<String> = emptyList(),
 
     /**
+     * NEW permissions this plugin *introduces* to the RBAC system — distinct from
+     * [requiredPermissions], which lists what the user must already hold (and may
+     * reference existing system permissions like `role.read`).
+     *
+     * When the plugin is published to the store, each of these is auto-registered
+     * into the permission catalog as a non-system, **ungranted** entry; an admin
+     * then grants them to roles. Names must be namespaced `domain.action` and must
+     * NOT use a reserved system domain (role, user, api_key, rpa, secret, plugins).
+     * Any [requiredPermissions] entry that is not already a catalog permission
+     * should be declared here too, or publishing rejects it as a dangling requirement.
+     */
+    @SerialName("definedPermissions")
+    val definedPermissions: List<DefinedPermission> = emptyList(),
+
+    /**
      * Minimum BOSS version required to run this plugin (e.g., "8.16.27").
      * The plugin will not load if the host BOSS version is lower.
      */
@@ -356,6 +371,27 @@ data class PluginDependency(
      */
     @SerialName("optional")
     val optional: Boolean = false
+)
+
+/**
+ * A permission a plugin introduces to the RBAC system. Registered into the
+ * permission catalog (non-system, ungranted) when the plugin is published, then
+ * granted to roles by an admin. See [PluginManifest.definedPermissions].
+ */
+@Serializable
+data class DefinedPermission(
+    /**
+     * Permission name in `domain.action` form (e.g. "invoices.read").
+     * Must be namespaced and must not use a reserved system domain.
+     */
+    @SerialName("name")
+    val name: String,
+
+    /**
+     * Human-readable description shown in the role-management UI.
+     */
+    @SerialName("description")
+    val description: String = ""
 )
 
 /**

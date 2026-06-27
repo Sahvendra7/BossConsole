@@ -133,4 +133,10 @@ export interface PluginManifest {
     order?: number
   }
   requiresAdmin?: boolean
+  // Effective permissions the user must hold to use the plugin (may reference
+  // existing system permissions). Gated host-side; not stored by the store.
+  requiredPermissions?: string[]
+  // NEW permissions this plugin introduces. Auto-registered into the catalog
+  // (non-system, ungranted) at publish time via register_plugin_permission.
+  definedPermissions?: { name: string; description?: string }[]
 }

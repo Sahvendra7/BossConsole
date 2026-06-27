@@ -27,6 +27,7 @@ import {
   isAllowedExternalJarUrl,
   JarTooLargeError,
 } from "../services/github.ts"
+import { registerDefinedPermissions, validateDeclaredPermissions } from "../utils/permissions.ts"
 
 const publish = new OpenAPIHono<{ Variables: PluginStoreContext }>()
 
@@ -536,6 +537,12 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
 
     console.log(`Extracted manifest: ${manifest.pluginId} v${version}`)
 
+    // Reject dangling required permissions before creating any rows.
+    const permCheck = await validateDeclaredPermissions(supabase, manifest)
+    if (!permCheck.ok) {
+      return ctx.json({ success: false, error: permCheck.error }, 400)
+    }
+
     // Check if plugin already exists
     const existingPlugin = await getPlugin(supabase, manifest.pluginId)
     let pluginUuid: string
@@ -630,6 +637,9 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
     }
 
     console.log(`Successfully published ${manifest.pluginId} v${version}`)
+
+    // Auto-register the permissions this plugin introduces (ungranted; admin grants later).
+    await registerDefinedPermissions(supabase, manifest)
 
     return ctx.json({
       success: true,
@@ -777,6 +787,12 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
 
     console.log(`Metadata-only publish: ${manifest.pluginId} v${manifest.version}`)
 
+    // Reject dangling required permissions before creating any rows.
+    const permCheck = await validateDeclaredPermissions(supabase, manifest)
+    if (!permCheck.ok) {
+      return ctx.json({ success: false, error: permCheck.error }, 400)
+    }
+
     // Check if plugin already exists
     const existingPlugin = await getPlugin(supabase, manifest.pluginId)
     let pluginUuid: string
@@ -871,6 +887,9 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
     }
 
     console.log(`Successfully published ${manifest.pluginId} v${version} (metadata-only, GitHub-hosted JAR)`)
+
+    // Auto-register the permissions this plugin introduces (ungranted; admin grants later).
+    await registerDefinedPermissions(supabase, manifest)
 
     return ctx.json({
       success: true,

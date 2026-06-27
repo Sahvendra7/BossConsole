@@ -211,6 +211,17 @@ class DynamicPluginManager(
         )
 
     /**
+     * The subset of a plugin's [PluginManifest.requiredPermissions] the current
+     * (non-admin) user does NOT hold — i.e. exactly what an admin must grant for
+     * the plugin to become visible. Empty for admins (they bypass the gate).
+     * Surfaced in the "plugin hidden" diagnostics so it's clear *why* a plugin is
+     * missing and *which* permissions to ask an admin to grant.
+     */
+    private fun missingPermissions(manifest: PluginManifest): List<String> =
+        if (_isAdmin.value) emptyList()
+        else manifest.requiredPermissions.filter { it !in _userPermissions.value }
+
+    /**
      * Add a listener for plugin lifecycle events.
      */
     fun addListener(listener: DynamicPluginListener) {
@@ -438,10 +449,15 @@ class DynamicPluginManager(
                 // required permissions). They are re-registered if access qualifies.
                 if (!accessible && enabled) {
                     hiddenPlugins[manifest.pluginId] = info
+                    val missing = missingPermissions(manifest)
                     logger.info(LogCategory.SYSTEM, "Plugin hidden (insufficient access)", mapOf(
                         "pluginId" to manifest.pluginId,
                         "requiresAdmin" to manifest.requiresAdmin,
-                        "requiredPermissions" to manifest.requiredPermissions.joinToString(",")
+                        "requiredPermissions" to manifest.requiredPermissions.joinToString(","),
+                        "missingPermissions" to missing.joinToString(","),
+                        "hint" to if (missing.isNotEmpty())
+                            "Ask an admin to grant: ${missing.joinToString(", ")}"
+                        else "Requires admin"
                     ))
                 }
 
@@ -1057,8 +1073,13 @@ class DynamicPluginManager(
                     trackingContext.unregisterAll()
                     hiddenPlugins[pluginId] = info
                     updatePluginState(pluginId, info.copy(state = PluginState.DISABLED))
+                    val missing = missingPermissions(info.manifest)
                     logger.info(LogCategory.SYSTEM, "Hid plugin after access lost", mapOf(
-                        "pluginId" to pluginId
+                        "pluginId" to pluginId,
+                        "missingPermissions" to missing.joinToString(","),
+                        "hint" to if (missing.isNotEmpty())
+                            "Ask an admin to grant: ${missing.joinToString(", ")}"
+                        else "Requires admin"
                     ))
                 }
             }
