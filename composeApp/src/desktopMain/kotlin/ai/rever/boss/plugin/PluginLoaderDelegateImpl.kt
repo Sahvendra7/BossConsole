@@ -4,6 +4,7 @@ import ai.rever.boss.components.plugin.DynamicPluginManager
 import ai.rever.boss.components.plugin.MicrokernelRuntime
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.plugin.api.InaccessiblePluginInfo
 import ai.rever.boss.plugin.api.LoadedPluginInfo
 import ai.rever.boss.plugin.api.PluginLoaderDelegate
 import ai.rever.boss.plugin.api.PluginState
@@ -251,6 +252,15 @@ class PluginLoaderDelegateImpl(
     override fun restartApplication() {
         logger.info(LogCategory.SYSTEM, "Restarting application to apply plugin update")
         ApplicationRestarter.scheduleRestart()
+    }
+
+    override fun getInaccessiblePlugins(): List<InaccessiblePluginInfo> {
+        return try {
+            dynamicPluginManager.getInaccessiblePlugins()
+        } catch (e: Exception) {
+            logger.error(LogCategory.SYSTEM, "Exception getting inaccessible plugins", error = e)
+            emptyList()
+        }
     }
 
     /**

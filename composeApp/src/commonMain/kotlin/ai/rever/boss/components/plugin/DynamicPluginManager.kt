@@ -817,6 +817,26 @@ class DynamicPluginManager(
     }
 
     /**
+     * Installed plugins the current (non-admin) user can't see because they lack
+     * required permissions, each with the specific missing permissions an admin
+     * would need to grant. Empty for admins (they bypass the permission gate) and
+     * for plugins hidden only by the legacy `requiresAdmin` flag (no permission to
+     * grant). Powers the Plugin Manager's "ask an admin" banner.
+     */
+    fun getInaccessiblePlugins(): List<ai.rever.boss.plugin.api.InaccessiblePluginInfo> {
+        if (_isAdmin.value) return emptyList()
+        return hiddenPlugins.values.mapNotNull { info ->
+            val missing = missingPermissions(info.manifest)
+            if (missing.isEmpty()) null
+            else ai.rever.boss.plugin.api.InaccessiblePluginInfo(
+                pluginId = info.manifest.pluginId,
+                displayName = info.manifest.displayName,
+                missingPermissions = missing
+            )
+        }
+    }
+
+    /**
      * Get the current admin status.
      */
     fun isCurrentUserAdmin(): Boolean {
