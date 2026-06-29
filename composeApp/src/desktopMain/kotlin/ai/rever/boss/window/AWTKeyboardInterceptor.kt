@@ -5,6 +5,7 @@ import ai.rever.boss.keymap.handler.KeymapMatcher
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapActions
 import ai.rever.boss.keymap.model.ShortcutContext
+import ai.rever.boss.keymap.model.TabSwitchMode
 import ai.rever.boss.utils.SystemUtils
 import java.awt.KeyEventDispatcher
 import java.awt.KeyboardFocusManager
@@ -46,6 +47,16 @@ object AWTKeyboardInterceptor {
     private var shiftPressCount: Int = 0
     // 500ms threshold follows accessibility guidelines for double-tap gestures (typically 500-800ms)
     private const val DOUBLE_SHIFT_THRESHOLD_MS = 500
+
+    // MRU tab-cycle tracking. Set when Ctrl+Tab starts a cycle in MRU mode, alongside the
+    // physical keycode of the modifier sustaining it; the cycle commits only when THAT
+    // modifier is released. This avoids (a) emitting a commit on every unrelated Ctrl/Cmd
+    // keyup, and (b) committing early when a different modifier is released mid-cycle.
+    // Accessed only from the AWT event dispatch thread. Process-global (like the double-
+    // shift state above): cycling in one window then focusing another without releasing the
+    // modifier is a benign mismatch — the stray release just no-ops downstream.
+    private var tabCycleActive = false
+    private var tabCycleModifierKeyCode = -1
     // Minimum time shift must be released to count as a clean release (prevents false positives from held shift)
     private const val MIN_SHIFT_RELEASE_MS = 50
 
@@ -151,6 +162,17 @@ object AWTKeyboardInterceptor {
                 lastShiftReleaseTime = 0
             }
 
+            // Commit an in-progress MRU tab cycle when its own cycling modifier is released.
+            // Only fires while a cycle is active and only for that specific modifier, so
+            // unrelated modifier keyups don't churn the UI thread or commit prematurely.
+            // The release itself is not consumed.
+            if (event.id == KeyEvent.KEY_RELEASED && tabCycleActive && event.keyCode == tabCycleModifierKeyCode) {
+                tabCycleActive = false
+                val focusedWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusedWindow
+                findWindowId(focusedWindow)?.let { MenuActionsHandler.triggerCommitTabCycle(it) }
+                return@KeyEventDispatcher false
+            }
+
             // Only intercept KEY_PRESSED events for other shortcuts
             if (event.id != KeyEvent.KEY_PRESSED) {
                 return@KeyEventDispatcher false
@@ -181,6 +203,17 @@ object AWTKeyboardInterceptor {
                 // Dispatch the action through MenuActionsHandler
                 val handled = dispatchAction(binding.actionId, windowId)
                 if (handled) {
+                    // Begin (or continue) an MRU tab cycle: remember which modifier is
+                    // sustaining it so its release — and only its release — commits the cycle.
+                    // This arms even when the focused panel has <=1 tab (the component-side
+                    // switchTab/commit then no-op), so the interceptor may briefly believe a
+                    // cycle is active when none is — harmless, and Tab stays swallowed.
+                    if ((binding.actionId == KeymapActions.TAB_NEXT || binding.actionId == KeymapActions.TAB_PREVIOUS) &&
+                        KeymapSettingsManager.currentSettings.value.tabSwitchMode == TabSwitchMode.MRU
+                    ) {
+                        tabCycleActive = true
+                        tabCycleModifierKeyCode = cyclingModifierKeyCode(binding)
+                    }
                     // Consume the event to prevent it from reaching BossTerm
                     event.consume()
                     return@KeyEventDispatcher true
@@ -219,6 +252,20 @@ object AWTKeyboardInterceptor {
             current = current.owner
         }
         return null
+    }
+
+    /**
+     * The physical modifier keycode that sustains an MRU tab cycle for [binding], mirroring
+     * the platform-aware mapping in findMatchingBinding: a "Ctrl" binding is the Control key
+     * on macOS but the Meta key on Windows/Linux (and vice-versa for a "Cmd" binding).
+     */
+    private fun cyclingModifierKeyCode(binding: KeyBinding): Int {
+        val hasCmd = binding.modifiers.any { it.equals("Cmd", true) || it.equals("Meta", true) }
+        return if (SystemUtils.isMacOS) {
+            if (hasCmd) KeyEvent.VK_META else KeyEvent.VK_CONTROL
+        } else {
+            if (hasCmd) KeyEvent.VK_CONTROL else KeyEvent.VK_META
+        }
     }
 
     /**
@@ -445,6 +492,14 @@ object AWTKeyboardInterceptor {
             }
             KeymapActions.TAB_CLOSE -> {
                 MenuActionsHandler.triggerCloseTab(windowId)
+                true
+            }
+            KeymapActions.TAB_NEXT -> {
+                MenuActionsHandler.triggerNextTab(windowId)
+                true
+            }
+            KeymapActions.TAB_PREVIOUS -> {
+                MenuActionsHandler.triggerPreviousTab(windowId)
                 true
             }
 

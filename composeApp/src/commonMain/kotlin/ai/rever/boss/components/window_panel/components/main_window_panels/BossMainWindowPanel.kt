@@ -2,6 +2,8 @@ package ai.rever.boss.components.window_panel.components.main_window_panels
 
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
+import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.keymap.model.TabSwitchMode
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
@@ -1098,6 +1100,15 @@ private fun createTabFromConfig(
 val createBossAppContext get() = DefaultComponentContext(LifecycleRegistry())
 
 /**
+ * Snapshot of an in-progress MRU tab cycle, used to render the tab-switcher overlay:
+ * the open tabs in cycle order plus the index of the currently-highlighted candidate.
+ */
+data class TabCycleOverlayData(
+    val tabs: List<TabInfo>,
+    val highlightedIndex: Int
+)
+
+/**
  * Root component for the BOSS app using Decompose for navigation
  *
  * @param windowId The window ID for per-window terminal isolation (Issue #498)
@@ -1116,6 +1127,14 @@ class BossTabsComponent(
 
     // Expose tab state for UI
     val tabsState: Value<TabsNavigation.TabsState<TabInfo>> = tabsNavigation.state
+
+    // --- Ctrl+Tab tab switching state ---
+    // Most-recently-used order of tab ids (most recent first), used by MRU switch mode.
+    private val mruTabIds = mutableListOf<String>()
+    // Snapshot of the cycle order while an MRU cycle is in progress (hold-modifier,
+    // tap-Tab, commit on release); null when no cycle is active.
+    private var tabCycleOrder: List<String>? = null
+    private var tabCyclePointer: Int = 0
 
     // Listener for tab type unregistration
     private val unregisterListener: (ai.rever.boss.plugin.api.TabTypeId) -> Unit = { typeId ->
@@ -1349,6 +1368,10 @@ class BossTabsComponent(
 
             // Add to navigation
             val index = tabsNavigation.addTab(config)
+            // A newly opened tab becomes active; record it as most-recently-used and end
+            // any in-progress MRU cycle.
+            recordTabUsage(config.id)
+            tabCycleOrder = null
             publishSystemEvent(TabEvent(tabId = config.id, tabType = TabEventType.OPENED, windowId = windowId))
             return index
         }
@@ -1382,6 +1405,9 @@ class BossTabsComponent(
             if (it.id.startsWith(RUNNER_TERMINAL_PREFIX)) {
                 RunnerTerminalService.removeTerminal(windowId, it.id)
             }
+            // Drop the closed tab from MRU tracking and abandon any in-progress cycle.
+            mruTabIds.remove(it.id)
+            tabCycleOrder = null
         }
         tabsNavigation.removeTab(index)
     }
@@ -1396,7 +1422,83 @@ class BossTabsComponent(
 
     // Select a tab
     fun selectTab(index: Int) {
+        // A direct selection (tab click, programmatic open) ends any in-progress MRU
+        // cycle and marks the tab as most-recently-used.
+        tabCycleOrder = null
         tabsNavigation.selectTab(index)
+        tabsState.value.tabs.getOrNull(index)?.let { recordTabUsage(it.id) }
+    }
+
+    /**
+     * Switch to the next tab via Ctrl+Tab. Behavior follows the configured
+     * [TabSwitchMode]: positional (next in tab-bar order) or MRU (Alt+Tab style).
+     */
+    fun switchToNextTab() = switchTab(forward = true)
+
+    /** Switch to the previous tab via Ctrl+Shift+Tab. See [switchToNextTab]. */
+    fun switchToPreviousTab() = switchTab(forward = false)
+
+    private fun switchTab(forward: Boolean) {
+        val tabs = tabsState.value.tabs
+        if (tabs.size <= 1) return
+        when (KeymapSettingsManager.currentSettings.value.tabSwitchMode) {
+            TabSwitchMode.POSITIONAL -> {
+                val cur = tabsState.value.activeIndex.coerceAtLeast(0)
+                val step = if (forward) 1 else -1
+                val next = ((cur + step) % tabs.size + tabs.size) % tabs.size
+                selectTab(next)
+            }
+            TabSwitchMode.MRU -> stepMruCycle(forward)
+        }
+    }
+
+    private fun stepMruCycle(forward: Boolean) {
+        val tabs = tabsState.value.tabs
+        // Build the cycle order once at the start of a cycle: MRU order first, then any
+        // open tabs not yet tracked (in tab-bar order) so every tab stays reachable.
+        var order = tabCycleOrder
+        if (order == null) {
+            val tabIds = tabs.map { it.id }
+            val tracked = tabIds.filter { mruTabIds.contains(it) }.sortedBy { mruTabIds.indexOf(it) }
+            val untracked = tabIds.filter { !mruTabIds.contains(it) }
+            order = tracked + untracked
+            tabCycleOrder = order
+            tabCyclePointer = order.indexOf(tabsState.value.activeTab?.id).coerceAtLeast(0)
+        }
+        if (order.isEmpty()) return
+        val step = if (forward) 1 else -1
+        tabCyclePointer = ((tabCyclePointer + step) % order.size + order.size) % order.size
+        val targetIndex = tabs.indexOfFirst { it.id == order[tabCyclePointer] }
+        // Move selection without reordering MRU; commitTabCycle() promotes the landed tab.
+        if (targetIndex >= 0) tabsNavigation.selectTab(targetIndex)
+    }
+
+    /**
+     * Commit an in-progress MRU cycle (called when the cycling modifier is released):
+     * promote the landed tab to the front of the MRU order and end the cycle.
+     * No-op when no cycle is active (e.g. positional mode).
+     */
+    fun commitTabCycle() {
+        tabCycleOrder ?: return
+        tabCycleOrder = null
+        tabsState.value.activeTab?.let { recordTabUsage(it.id) }
+    }
+
+    /**
+     * Snapshot of the in-progress MRU cycle for the switcher overlay, or null when no
+     * cycle is active (e.g. positional mode or after commit).
+     */
+    fun currentCycleOverlay(): TabCycleOverlayData? {
+        val order = tabCycleOrder ?: return null
+        val byId = tabsState.value.tabs.associateBy { it.id }
+        val tabs = order.mapNotNull { byId[it] }
+        if (tabs.isEmpty()) return null
+        return TabCycleOverlayData(tabs = tabs, highlightedIndex = tabCyclePointer.coerceIn(0, tabs.size - 1))
+    }
+
+    private fun recordTabUsage(tabId: String) {
+        mruTabIds.remove(tabId)
+        mruTabIds.add(0, tabId)
     }
 
     // Move a tab from one position to another

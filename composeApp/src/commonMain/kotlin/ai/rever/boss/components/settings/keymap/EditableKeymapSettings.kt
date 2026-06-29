@@ -37,6 +37,7 @@ import ai.rever.boss.keymap.KeymapSettingsManager
 import ai.rever.boss.keymap.handler.KeymapValidator
 import ai.rever.boss.keymap.model.KeyBinding
 import ai.rever.boss.keymap.model.KeymapSettings
+import ai.rever.boss.keymap.model.TabSwitchMode
 import ai.rever.boss.keymap.lifecycle.ShortcutLifecycleManager
 import kotlinx.coroutines.launch
 
@@ -162,6 +163,22 @@ fun EditableKeymapSettings() {
                     Text("Test All", fontSize = 13.sp)
                 }
             }
+        }
+
+        // Tab switching behavior (Ctrl+Tab)
+        item {
+            TabSwitchModeSelector(
+                selected = keymapSettings.tabSwitchMode,
+                onSelect = { mode ->
+                    if (mode != keymapSettings.tabSwitchMode) {
+                        coroutineScope.launch {
+                            KeymapSettingsManager.updateSettings(
+                                keymapSettings.copy(tabSwitchMode = mode)
+                            )
+                        }
+                    }
+                }
+            )
         }
 
         item {
@@ -351,6 +368,88 @@ fun EditableKeymapSettings() {
 /**
  * Category header for grouping shortcuts.
  */
+@Composable
+private fun TabSwitchModeSelector(
+    selected: TabSwitchMode,
+    onSelect: (TabSwitchMode) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(BossDarkBackground)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column {
+            Text(
+                text = "Tab switching (Ctrl+Tab)",
+                color = BossDarkTextPrimary,
+                fontSize = 13.sp
+            )
+            Text(
+                text = "How Ctrl+Tab and Ctrl+Shift+Tab move between tabs in the active panel",
+                color = BossDarkTextSecondary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TabSwitchModeChip(
+                label = "Positional",
+                description = "Next / previous in tab order",
+                isSelected = selected == TabSwitchMode.POSITIONAL,
+                onClick = { onSelect(TabSwitchMode.POSITIONAL) },
+                modifier = Modifier.weight(1f)
+            )
+            TabSwitchModeChip(
+                label = "Most recently used",
+                description = "Alt+Tab style, commit on release",
+                isSelected = selected == TabSwitchMode.MRU,
+                onClick = { onSelect(TabSwitchMode.MRU) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TabSwitchModeChip(
+    label: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(
+                if (isSelected) BossDarkAccent.copy(alpha = 0.15f) else BossDarkContentBackground
+            )
+            .border(
+                width = 1.dp,
+                color = if (isSelected) BossDarkAccent else BossDarkBorder,
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = label,
+            color = if (isSelected) BossDarkAccent else BossDarkTextPrimary,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+        )
+        Text(
+            text = description,
+            color = BossDarkTextSecondary,
+            fontSize = 10.sp
+        )
+    }
+}
+
 @Composable
 private fun CategoryHeader(category: String, count: Int) {
     Row(

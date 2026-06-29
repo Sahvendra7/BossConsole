@@ -46,6 +46,8 @@ import ai.rever.boss.terminal.TerminalLinkOpenMode
 import ai.rever.boss.terminal.TerminalLinkSettingsManager
 import ai.rever.boss.components.window_panel.BossWindow
 import ai.rever.boss.components.window_panel.components.main_window_panels.BossTabsComponent
+import ai.rever.boss.components.window_panel.components.main_window_panels.TabCycleOverlayData
+import ai.rever.boss.components.window_panel.components.main_window_panels.TabCycleOverlayHost
 import ai.rever.boss.components.window_panel.rememberSplitViewState
 import ai.rever.boss.components.window_panel.SplitNode
 import ai.rever.boss.components.window_panel.SplitViewStateRegistry
@@ -975,6 +977,9 @@ fun ComponentContext.BossApp(
     val handlersMarked = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var showTopOfMindDialog by remember { mutableStateOf(false) }
     var showGlobalSearchDialog by remember { mutableStateOf(false) }
+    // Snapshot of the in-progress MRU tab cycle, drives the Ctrl+Tab switcher overlay
+    // (null in positional mode and whenever no cycle is active).
+    var tabCycleOverlay by remember { mutableStateOf<TabCycleOverlayData?>(null) }
     var showProjectDialog by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showCloneProjectDialog by remember { mutableStateOf(false) }
@@ -1988,6 +1993,33 @@ fun ComponentContext.BossApp(
             .launchIn(this)
     }
 
+    // Tab switching (Ctrl+Tab). Next/previous "steps" and the MRU "commit" share ONE ordered
+    // stream so a step (Tab keydown) is always applied before its commit (modifier keyup) —
+    // a single collector preserves emission order; separate flows would not guarantee it.
+    LaunchedEffect(windowId) {
+        MenuActionsHandler.tabSwitchEvents
+            .onEach { (eventWindowId, action) ->
+                if (eventWindowId != windowId) return@onEach
+                val comp = splitViewState.getPanelTabsComponent(splitViewState.activePanelId)
+                when (action) {
+                    MenuActionsHandler.TabSwitchAction.NEXT -> {
+                        comp?.switchToNextTab()
+                        // Non-null only during an MRU cycle; drives the switcher overlay.
+                        tabCycleOverlay = comp?.currentCycleOverlay()
+                    }
+                    MenuActionsHandler.TabSwitchAction.PREVIOUS -> {
+                        comp?.switchToPreviousTab()
+                        tabCycleOverlay = comp?.currentCycleOverlay()
+                    }
+                    MenuActionsHandler.TabSwitchAction.COMMIT -> {
+                        comp?.commitTabCycle()
+                        tabCycleOverlay = null
+                    }
+                }
+            }
+            .launchIn(this)
+    }
+
     // Listen for zoom menu actions
     LaunchedEffect(windowId) {
         MenuActionsHandler.zoomInEvents
@@ -2703,6 +2735,12 @@ fun ComponentContext.BossApp(
                         modifier = Modifier.align(Alignment.TopEnd)
                     )
                 }
+
+                // MRU tab-switcher overlay (Ctrl+Tab in most-recently-used mode)
+                TabCycleOverlayHost(
+                    data = tabCycleOverlay,
+                    modifier = Modifier.align(Alignment.Center)
+                )
             }
             
             // Plugin update confirmation prompt (from "Check for Updates" or the header badge).

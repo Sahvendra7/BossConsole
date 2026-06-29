@@ -3,11 +3,25 @@ package ai.rever.boss.keymap.model
 import kotlinx.serialization.Serializable
 
 /**
+ * How Ctrl+Tab / Ctrl+Shift+Tab cycle between tabs in the active panel.
+ *
+ * - [POSITIONAL]: move to the next/previous tab in tab-bar order, wrapping at the ends.
+ * - [MRU]: cycle in most-recently-used order (Alt+Tab style); the landed tab is promoted
+ *   to the front when the cycling modifier is released.
+ */
+@Serializable
+enum class TabSwitchMode {
+    POSITIONAL,
+    MRU
+}
+
+/**
  * Container for all keyboard shortcut settings.
  *
  * @property shortcuts Map of action ID to KeyBinding
  * @property presetName Name of the preset being used (e.g., "BOSS Default", "VS Code", "IntelliJ")
  * @property customized Whether this keymap has been customized from the preset
+ * @property tabSwitchMode How Ctrl+Tab cycles between tabs (positional vs. most-recently-used)
  * @property version Schema version for future migrations
  */
 @Serializable
@@ -15,6 +29,7 @@ data class KeymapSettings(
     val shortcuts: Map<String, KeyBinding> = emptyMap(),
     val presetName: String = "BOSS Default",
     val customized: Boolean = false,
+    val tabSwitchMode: TabSwitchMode = TabSwitchMode.MRU,
     val version: Int = 1
 ) {
     /**
