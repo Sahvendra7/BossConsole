@@ -42,7 +42,8 @@ export const PluginListItemSchema = z.object({
   ratingCount: z.number(),
   downloadCount: z.number(),
   tags: z.array(z.string()),
-  updatedAt: z.string()
+  updatedAt: z.string(),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 export const PluginListResponseSchema = z.object({
@@ -93,7 +94,8 @@ export const PluginDetailResponseSchema = z.object({
   downloadCount: z.number(),
   tags: z.array(z.string()),
   screenshots: z.array(PluginScreenshotSchema),
-  versions: z.array(PluginVersionSchema)
+  versions: z.array(PluginVersionSchema),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 // ============================================================================
@@ -106,7 +108,8 @@ export const DownloadInfoResponseSchema = z.object({
   version: z.string(),
   size: z.number(),
   versionId: z.string().uuid(),
-  minIpcVersion: z.string().default('1.0.0')
+  minIpcVersion: z.string().default('1.0.0'),
+  requiredPermissions: z.array(z.string()).optional().default([])
 })
 
 // ============================================================================
@@ -164,7 +167,11 @@ export const PublishVersionRequestSchema = z.object({
   dependencies: z.array(z.object({
     pluginId: z.string(),
     versionRange: z.string()
-  })).optional().default([])
+  })).optional().default([]),
+  // Optional (no default): when present, refreshes the plugin's install gate to
+  // this version's manifest value ("latest wins"). Absent ⇒ leave unchanged, so
+  // older clients that don't send it don't wipe an existing gate.
+  requiredPermissions: z.array(z.string().max(64)).max(50).optional()
 })
 
 export const PublishVersionResponseSchema = z.object({

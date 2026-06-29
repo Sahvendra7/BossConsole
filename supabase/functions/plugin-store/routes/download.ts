@@ -13,6 +13,25 @@ import { isAllowedExternalJarUrl } from "../services/github.ts"
 
 const download = new OpenAPIHono<{ Variables: PluginStoreContext }>()
 
+/**
+ * Install-permission gate. A plugin's `requiredPermissions` lists the effective
+ * permissions a user must hold to install/use it (the same list the host uses to
+ * gate visibility after install). Empty ⇒ open to all (the `user.read` baseline).
+ * Admins bypass. Returns a human-readable error string to deny with (403), or
+ * null if the caller is allowed.
+ */
+function installGateError(
+  required: string[] | undefined,
+  user: { isAdmin: boolean, permissions: string[] } | null
+): string | null {
+  if (!required || required.length === 0) return null // open (legacy / baseline)
+  if (user?.isAdmin) return null
+  const held = new Set(user?.permissions ?? [])
+  const missing = required.filter(p => !held.has(p))
+  if (missing.length === 0) return null
+  return `This plugin requires permission(s): ${missing.join(', ')}. Ask an admin to grant them.`
+}
+
 // ============================================================================
 // GET /:pluginId/download - Download latest version
 // ============================================================================
@@ -37,8 +56,24 @@ const downloadLatestRoute = createRoute({
         }
       }
     },
+    403: {
+      description: 'Caller lacks the permissions required to install this plugin',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema
+        }
+      }
+    },
     404: {
       description: 'Plugin or version not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema
+        }
+      }
+    },
+    502: {
+      description: 'Stored JAR URL is not from an allowed host',
       content: {
         'application/json': {
           schema: ErrorResponseSchema
@@ -67,6 +102,14 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       return ctx.json({ error: 'Plugin not found' }, 404)
     }
 
+    // Install-permission gate: deny if this plugin requires permissions the
+    // caller doesn't hold (admins bypass; empty requiredPermissions = open).
+    const user = await getUserFromToken(supabase, ctx.req.header('Authorization'))
+    const gateError = installGateError(plugin.requiredPermissions, user)
+    if (gateError) {
+      return ctx.json({ error: gateError }, 403)
+    }
+
     // Get latest version
     const version = await getLatestVersion(supabase, plugin.id)
     if (!version) {
@@ -87,8 +130,6 @@ download.openapi(downloadLatestRoute, async (ctx) => {
 
     // Track download (optional - don't fail if this errors)
     try {
-      const authHeader = ctx.req.header('Authorization')
-      const user = await getUserFromToken(supabase, authHeader)
       const ip = ctx.req.header('x-forwarded-for') || ctx.req.header('x-real-ip') || ''
       const ipHash = ip ? await hashIp(ip) : null
 
@@ -104,7 +145,8 @@ download.openapi(downloadLatestRoute, async (ctx) => {
       version: version.version,
       size: version.jarSize,
       versionId: version.id,
-      minIpcVersion: version.minIpcVersion
+      minIpcVersion: version.minIpcVersion,
+      requiredPermissions: plugin.requiredPermissions
     }, 200)
   } catch (error) {
     console.error('Error generating download URL:', error)
@@ -137,8 +179,24 @@ const downloadVersionRoute = createRoute({
         }
       }
     },
+    403: {
+      description: 'Caller lacks the permissions required to install this plugin',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema
+        }
+      }
+    },
     404: {
       description: 'Plugin or version not found',
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema
+        }
+      }
+    },
+    502: {
+      description: 'Stored JAR URL is not from an allowed host',
       content: {
         'application/json': {
           schema: ErrorResponseSchema
@@ -167,6 +225,13 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       return ctx.json({ error: 'Plugin not found' }, 404)
     }
 
+    // Install-permission gate (admins bypass; empty requiredPermissions = open).
+    const user = await getUserFromToken(supabase, ctx.req.header('Authorization'))
+    const gateError = installGateError(plugin.requiredPermissions, user)
+    if (gateError) {
+      return ctx.json({ error: gateError }, 403)
+    }
+
     // Get specific version
     const version = await getVersion(supabase, plugin.id, versionStr)
     if (!version) {
@@ -186,8 +251,6 @@ download.openapi(downloadVersionRoute, async (ctx) => {
 
     // Track download
     try {
-      const authHeader = ctx.req.header('Authorization')
-      const user = await getUserFromToken(supabase, authHeader)
       const ip = ctx.req.header('x-forwarded-for') || ctx.req.header('x-real-ip') || ''
       const ipHash = ip ? await hashIp(ip) : null
 
@@ -202,7 +265,8 @@ download.openapi(downloadVersionRoute, async (ctx) => {
       version: version.version,
       size: version.jarSize,
       versionId: version.id,
-      minIpcVersion: version.minIpcVersion
+      minIpcVersion: version.minIpcVersion,
+      requiredPermissions: plugin.requiredPermissions
     }, 200)
   } catch (error) {
     console.error('Error generating download URL:', error)

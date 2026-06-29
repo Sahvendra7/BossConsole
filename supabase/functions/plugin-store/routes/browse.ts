@@ -218,6 +218,7 @@ browse.openapi(getPluginRoute, async (ctx) => {
       downloadCount: plugin.downloadCount,
       tags: plugin.tags,
       screenshots: plugin.screenshots,
+      requiredPermissions: plugin.requiredPermissions,
       versions: versions.map(v => ({
         id: v.id,
         version: v.version,

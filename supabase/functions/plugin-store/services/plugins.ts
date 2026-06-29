@@ -119,7 +119,8 @@ export async function getPlugin(
     ratingCount: Number(row.rating_count) || 0,
     downloadCount: Number(row.download_count) || 0,
     tags: row.tags || [],
-    screenshots: row.screenshots || []
+    screenshots: row.screenshots || [],
+    requiredPermissions: row.required_permissions || []
   }
 }
 
@@ -162,7 +163,8 @@ export async function createPlugin(
   homepageUrl: string,
   iconUrl: string,
   type: string,
-  apiVersion: string
+  apiVersion: string,
+  requiredPermissions: string[] = []
 ): Promise<{ id: string }> {
   const { data, error } = await supabase
     .from('plugins')
@@ -176,6 +178,7 @@ export async function createPlugin(
       icon_url: iconUrl,
       type,
       api_version: apiVersion,
+      required_permissions: requiredPermissions,
       published: true
     })
     .select('id')
@@ -255,6 +258,7 @@ export async function updatePlugin(
     iconUrl?: string
     type?: string
     apiVersion?: string
+    requiredPermissions?: string[]
   }
 ): Promise<void> {
   const updateData: Record<string, unknown> = {}
@@ -265,6 +269,7 @@ export async function updatePlugin(
   if (updates.iconUrl !== undefined) updateData.icon_url = updates.iconUrl
   if (updates.type !== undefined) updateData.type = updates.type
   if (updates.apiVersion !== undefined) updateData.api_version = updates.apiVersion
+  if (updates.requiredPermissions !== undefined) updateData.required_permissions = updates.requiredPermissions
 
   if (Object.keys(updateData).length === 0) {
     return // Nothing to update

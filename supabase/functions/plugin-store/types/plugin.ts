@@ -49,6 +49,8 @@ export interface PluginWithStats extends Plugin {
   downloadCount: number
   tags: string[]
   screenshots: PluginScreenshot[]
+  /** Permissions a user must hold to install/use this plugin. Empty = open. */
+  requiredPermissions: string[]
 }
 
 export interface PluginScreenshot {
@@ -73,6 +75,8 @@ export interface PluginListItem {
   downloadCount: number
   tags: string[]
   updatedAt: string
+  /** Permissions a user must hold to install/use this plugin. Empty = open. */
+  requiredPermissions: string[]
 }
 
 export interface PluginSearchResult {

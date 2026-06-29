@@ -45,7 +45,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export async function getUserFromToken(
   supabase: SupabaseClient,
   authHeader: string | undefined
-): Promise<{ userId: string, email: string, isAdmin: boolean } | null> {
+): Promise<{ userId: string, email: string, isAdmin: boolean, permissions: string[] } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null
   }
@@ -60,14 +60,20 @@ export async function getUserFromToken(
       return null
     }
 
-    // Decode JWT to get is_admin claim
+    // Decode JWT to get is_admin + user_permissions claims (injected by the
+    // custom_access_token_hook; same claim the desktop client reads).
     const payload = decodeJwtPayload(token)
     const isAdmin = payload?.is_admin === true
+    const rawPerms = payload?.user_permissions
+    const permissions = Array.isArray(rawPerms)
+      ? rawPerms.filter((p): p is string => typeof p === 'string')
+      : []
 
     return {
       userId: user.id,
       email: user.email || '',
-      isAdmin
+      isAdmin,
+      permissions
     }
   } catch (e) {
     console.error('Exception verifying token:', e)

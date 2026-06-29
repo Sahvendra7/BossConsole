@@ -129,7 +129,8 @@ publish.openapi(publishPluginRoute, async (ctx) => {
       body.homepageUrl,
       body.iconUrl,
       body.type,
-      body.apiVersion
+      body.apiVersion,
+      body.requiredPermissions
     )
 
     // Auto-register the permissions this plugin introduces (ungranted; admin grants later).
@@ -291,6 +292,12 @@ publish.openapi(publishVersionRoute, async (ctx) => {
 
     // Generate upload URL
     const uploadUrl = await getSignedUploadUrl(supabase, jarPath)
+
+    // Refresh the install gate to this version's manifest value ("latest wins").
+    // Only when explicitly provided — absent leaves the existing gate untouched.
+    if (body.requiredPermissions !== undefined) {
+      await updatePlugin(supabase, plugin.id, { requiredPermissions: body.requiredPermissions })
+    }
 
     // Log API key usage if applicable
     if (user.apiKeyId) {
@@ -575,7 +582,8 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
         homepageUrl: manifest.url || manifest.homepageUrl,
         iconUrl: manifest.iconUrl,
         type: (manifest.type as string || 'panel').toLowerCase(),
-        apiVersion: manifest.apiVersion
+        apiVersion: manifest.apiVersion,
+        requiredPermissions: manifest.requiredPermissions || []
       })
     } else {
       // Create new plugin
@@ -592,7 +600,8 @@ publish.openapi(publishFromGitHubRoute, async (ctx) => {
         manifest.url || manifest.homepageUrl || body.githubUrl, // Fall back to GitHub URL if no homepage
         manifest.iconUrl || '',
         ((manifest.type as string) || 'panel').toLowerCase(),
-        manifest.apiVersion
+        manifest.apiVersion,
+        manifest.requiredPermissions || []
       )
 
       pluginUuid = result.id
@@ -704,6 +713,10 @@ const publishFromGitHubMetadataRoute = createRoute({
     },
     403: {
       description: 'Not authorized to publish to this plugin',
+      content: { 'application/json': { schema: ErrorResponseSchema } }
+    },
+    502: {
+      description: 'Failed to fetch or hash the JAR from GitHub',
       content: { 'application/json': { schema: ErrorResponseSchema } }
     },
     500: {
@@ -821,7 +834,8 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
         description: manifest.description,
         homepageUrl: body.githubUrl,
         type: ((manifest.type as string) || 'panel').toLowerCase(),
-        apiVersion: manifest.apiVersion
+        apiVersion: manifest.apiVersion,
+        requiredPermissions: manifest.requiredPermissions || []
       })
     } else {
       isNewPlugin = true
@@ -837,7 +851,8 @@ publish.openapi(publishFromGitHubMetadataRoute, async (ctx) => {
         body.githubUrl,
         '',
         ((manifest.type as string) || 'panel').toLowerCase(),
-        manifest.apiVersion || '1.0.0'
+        manifest.apiVersion || '1.0.0',
+        manifest.requiredPermissions || []
       )
       pluginUuid = result.id
     }
