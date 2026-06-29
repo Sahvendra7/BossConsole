@@ -32,14 +32,14 @@ uiAndroid = "1.8.2"
 zxing = "3.5.4"
 jxbrowser = "9.1.2"
 jxbrowser-gradle-plugin = "2.1.0"
-maven-publish = "0.36.0"
+maven-publish = "0.37.0"
 jna = "5.19.1"
 # gRPC + Protobuf for IPC
-grpc = "1.81.0"
+grpc = "1.82.1"
 grpc-kotlin = "1.5.0"
 protobuf = "4.35.0"
 protobuf-gradle-plugin = "0.10.0"
-graalvm-native-plugin = "1.1.0"
+graalvm-native-plugin = "1.1.3"
 # IntelliJ PSI for code navigation
 intellij-platform = "243.21565.199"
 

@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinJvm)
-    id("org.graalvm.buildtools.native") version "1.1.0"
+    id("org.graalvm.buildtools.native") version "1.1.3"
 }
 
 group = "ai.rever.boss.orchestrator"
