@@ -4,7 +4,11 @@ package ai.rever.boss.components.settings.sections
 
 import BossDarkAccent
 import BossDarkBorder
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
+import BossDarkTextMuted
+import BossDarkTextPrimary
 import ai.rever.boss.components.settings.shared.SettingsSection
 import ai.rever.bosseditor.lsp.config.*
 import ai.rever.bosseditor.lsp.logging.LogLevel
@@ -271,9 +275,9 @@ fun LspSettings() {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color(0xFFE05555)
+                    contentColor = BossDarkError
                 ),
-                border = BorderStroke(1.dp, Color(0xFFE05555).copy(alpha = 0.5f))
+                border = BorderStroke(1.dp, BossDarkError.copy(alpha = 0.5f))
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Refresh,
@@ -423,8 +427,8 @@ private fun BuiltInServerRow(
             colors = SwitchDefaults.colors(
                 checkedThumbColor = BossDarkAccent,
                 checkedTrackColor = BossDarkAccent.copy(alpha = 0.5f),
-                disabledCheckedThumbColor = Color.Gray,
-                disabledCheckedTrackColor = Color.Gray.copy(alpha = 0.3f)
+                disabledCheckedThumbColor = BossDarkTextMuted,
+                disabledCheckedTrackColor = BossDarkTextMuted.copy(alpha = 0.3f)
             )
         )
     }
@@ -432,7 +436,7 @@ private fun BuiltInServerRow(
 
 @Composable
 private fun StatusBadge(isAvailable: Boolean) {
-    val color = if (isAvailable) Color(0xFF59A869) else Color(0xFFE05555)
+    val color = if (isAvailable) BossDarkSuccess else BossDarkError
     val text = if (isAvailable) "Installed" else "Not Found"
 
     Box(
@@ -504,7 +508,7 @@ private fun CustomServerCard(
                     Icon(
                         imageVector = Icons.Outlined.Delete,
                         contentDescription = "Delete",
-                        tint = Color(0xFFE05555),
+                        tint = BossDarkError,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -779,7 +783,7 @@ private fun AddEditServerDialog(
                         Text(
                             text = error,
                             fontSize = 12.sp,
-                            color = Color(0xFFE05555)
+                            color = BossDarkError
                         )
                     }
 
@@ -1051,21 +1055,21 @@ private fun AdvancedSettingsDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFE05555).copy(alpha = 0.1f))
+                        .background(BossDarkError.copy(alpha = 0.1f))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFE05555),
+                        tint = BossDarkError,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "Changing these settings may affect stability. Only modify if you know what you're doing.",
                         fontSize = 12.sp,
-                        color = Color(0xFFE05555)
+                        color = BossDarkError
                     )
                 }
 
@@ -1097,11 +1101,11 @@ private fun AdvancedSettingsDialog(
 
 @Composable
 private fun textFieldColors() = TextFieldDefaults.outlinedTextFieldColors(
-    textColor = Color.White,
+    textColor = BossDarkTextPrimary,
     focusedBorderColor = BossDarkAccent,
     unfocusedBorderColor = BossDarkBorder,
     focusedLabelColor = BossDarkAccent,
-    unfocusedLabelColor = Color.Gray,
-    placeholderColor = Color.Gray,
+    unfocusedLabelColor = BossDarkTextMuted,
+    placeholderColor = BossDarkTextMuted,
     cursorColor = BossDarkAccent
 )

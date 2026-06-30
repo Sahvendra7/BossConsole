@@ -1,6 +1,8 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.window.Project
 import androidx.compose.foundation.layout.*
@@ -60,7 +62,7 @@ fun ProjectOpenModeDialog(
                     Icon(
                         imageVector = Icons.Outlined.FolderOpen,
                         contentDescription = "Open Project",
-                        tint = Color(0xFF4A9EFF),
+                        tint = BossDarkAccent,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -68,7 +70,7 @@ fun ProjectOpenModeDialog(
                         text = "Open Project",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = BossDarkTextPrimary
                     )
                 }
 
@@ -79,7 +81,7 @@ fun ProjectOpenModeDialog(
                     text = project.name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
                 Text(
                     text = project.path,
@@ -114,7 +116,7 @@ fun ProjectOpenModeDialog(
                             .weight(1f)
                             .height(40.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
+                            contentColor = BossDarkTextPrimary
                         ),
                         shape = RoundedCornerShape(6.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
@@ -138,7 +140,7 @@ fun ProjectOpenModeDialog(
                             .weight(1f)
                             .height(40.dp),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF4A9EFF),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(6.dp),

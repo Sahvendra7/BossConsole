@@ -266,6 +266,10 @@ fun main(args: Array<String>) {
     // This ensures Cmd+N, Cmd+W, etc. work even when terminal has focus
     AWTKeyboardInterceptor.install()
     
+    // Apply the persisted app theme before any UI composes, so the app opens
+    // in the user's chosen look (Operator / Daylight / Clean).
+    ai.rever.boss.theme.AppThemeSettingsManager.ensureInitialized()
+
     // Initialize passkey service for desktop platforms
     PasskeyPlatformInit.initialize()
 

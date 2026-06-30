@@ -2,6 +2,8 @@ package ai.rever.boss.components.dialogs
 
 import BossDarkBackground
 import BossDarkSurface
+import BossDarkTextMuted
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.workspaces.WorkspaceManager
 import ai.rever.boss.icons.FileIcons
@@ -68,10 +70,10 @@ private val AccentGreen = Color(0xFF4CAF50)
 private val AccentOrange = Color(0xFFFF9800)
 private val AccentPurple = Color(0xFF9C27B0)
 private val AccentCyan = Color(0xFF00BCD4)
-private val HoverBackground = Color(0xFF2A2D30)
+private val HoverBackground get() = BossDarkSurface
 private val CardShape = RoundedCornerShape(12.dp)
 private val SmallCardShape = RoundedCornerShape(8.dp)
-private val SectionTitleColor = Color(0xFF8B8B8B)
+private val SectionTitleColor get() = BossDarkTextMuted
 
 /**
  * Global search dialog for BOSS Spotlight - quickly find files, tabs, bookmarks, and run configs.
@@ -443,7 +445,7 @@ private fun SearchDialogHeader(
                 ) {
                     Text(
                         text = "BOSS Search",
-                        color = Color.White,
+                        color = BossDarkTextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -610,7 +612,7 @@ private fun SearchInputField(
                 .weight(1f)
                 .focusRequester(focusRequester),
             textStyle = TextStyle(
-                color = Color.White,
+                color = BossDarkTextPrimary,
                 fontSize = 16.sp
             ),
             singleLine = true,
@@ -676,7 +678,7 @@ private fun EmptySearchState() {
 
         Text(
             text = "Search Everything",
-            color = Color.White,
+            color = BossDarkTextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium
         )
@@ -768,7 +770,7 @@ private fun IndexingState() {
 
         Text(
             text = "Indexing Project",
-            color = Color.White,
+            color = BossDarkTextPrimary,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
@@ -804,7 +806,7 @@ private fun NoResultsState(query: String, category: SearchCategory) {
 
         Text(
             text = if (category == SearchCategory.ALL) "No Results Found" else "No ${category.displayName} Found",
-            color = Color.White,
+            color = BossDarkTextPrimary,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
@@ -1260,7 +1262,7 @@ private fun CommandResultItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = result.description,
-                color = if (isSelected || isHovered) Color.White else Color(0xFFE6E6E6),
+                color = if (isSelected || isHovered) BossDarkTextPrimary else BossDarkTextSecondary,
                 fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1323,7 +1325,7 @@ private fun KeyboardHint(key: String, action: String) {
             Text(
                 text = key,
                 fontSize = 10.sp,
-                color = Color.White,
+                color = BossDarkTextPrimary,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -1343,7 +1345,7 @@ private fun highlightMatches(
     matchRanges: List<MatchRange>,
     isHighlighted: Boolean
 ): AnnotatedString {
-    val textColor = if (isHighlighted) Color.White else Color(0xFFE6E6E6)
+    val textColor = if (isHighlighted) BossDarkTextPrimary else BossDarkTextSecondary
 
     if (matchRanges.isEmpty()) {
         return buildAnnotatedString {

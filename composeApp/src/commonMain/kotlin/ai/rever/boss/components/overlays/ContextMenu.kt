@@ -3,6 +3,7 @@ package ai.rever.boss.components.overlays
 import ContextMenuBackground
 import ContextMenuBorder
 import ContextMenuHover
+import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.platform.ContextMenuHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -98,6 +99,7 @@ private fun ContextMenuContent(
 ) {
     var expandedSubMenuIndex by remember { mutableStateOf<Int?>(null) }
     var isSubMenuHovered by remember { mutableStateOf(false) }
+    val colors = BossTheme.colors
 
     Column(
         modifier = modifier
@@ -168,14 +170,14 @@ private fun ContextMenuContent(
                             Icon(
                                 imageVector = item.icon,
                                 contentDescription = item.text,
-                                tint = Color.White,
+                                tint = colors.textPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         Text(
                             text = item.text,
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 13.sp,
                             modifier = Modifier.weight(1f).align(Alignment.CenterVertically)
                                 .padding(bottom = 4.dp)
@@ -186,7 +188,7 @@ private fun ContextMenuContent(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "›",
-                                color = Color(0xFF888888),
+                                color = colors.textSecondary,
                                 fontSize = 16.sp
                             )
                         }
@@ -213,7 +215,7 @@ private fun ContextMenuContent(
                                 Icon(
                                     imageVector = item.trailingIcon,
                                     contentDescription = "Action",
-                                    tint = item.trailingIconColor ?: Color(0xFF888888),
+                                    tint = item.trailingIconColor ?: colors.textSecondary,
                                     modifier = Modifier.size(if (item.onTrailingClick != null) 16.dp else 8.dp) // Smaller for indicator dots
                                 )
                             }
@@ -236,7 +238,7 @@ private fun ContextMenuContent(
                                 Icon(
                                     imageVector = item.secondaryTrailingIcon,
                                     contentDescription = "Delete",
-                                    tint = item.secondaryTrailingIconColor ?: Color(0xFF888888),
+                                    tint = item.secondaryTrailingIconColor ?: colors.textSecondary,
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
@@ -312,6 +314,7 @@ private fun SubMenuContent(
     onDismissRequest: () -> Unit
 ) {
     var expandedSubMenuIndex by remember { mutableStateOf<Int?>(null) }
+    val colors = BossTheme.colors
 
     items.forEachIndexed { index, subItem ->
         if (subItem.isDivider) {
@@ -366,7 +369,7 @@ private fun SubMenuContent(
                         Icon(
                             imageVector = subItem.icon,
                             contentDescription = subItem.text,
-                            tint = Color.White,
+                            tint = colors.textPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -384,7 +387,7 @@ private fun SubMenuContent(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "›",
-                            color = Color(0xFF888888),
+                            color = colors.textSecondary,
                             fontSize = 16.sp
                         )
                     }
@@ -399,7 +402,7 @@ private fun SubMenuContent(
                             Icon(
                                 imageVector = subItem.trailingIcon,
                                 contentDescription = "Action",
-                                tint = subItem.trailingIconColor ?: Color(0xFF888888),
+                                tint = subItem.trailingIconColor ?: colors.textSecondary,
                                 modifier = Modifier.size(16.dp),
                             )
                         }

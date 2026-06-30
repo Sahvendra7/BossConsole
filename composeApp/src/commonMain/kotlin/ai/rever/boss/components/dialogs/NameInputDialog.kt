@@ -1,7 +1,9 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,7 +47,7 @@ fun NewCollectionDialog(
                     text = "New Collection",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -57,9 +59,9 @@ fun NewCollectionDialog(
                     label = { Text("Collection Name", color = BossDarkTextSecondary) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = Color(0xFFFBBF24),
-                        focusedBorderColor = Color(0xFFFBBF24),
+                        textColor = BossDarkTextPrimary,
+                        cursorColor = BossDarkAccent,
+                        focusedBorderColor = BossDarkAccent,
                         unfocusedBorderColor = BossDarkBorder
                     ),
                     singleLine = true
@@ -87,7 +89,7 @@ fun NewCollectionDialog(
                         onClick = { onCreate(collectionName.trim()) },
                         enabled = collectionName.trim().isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black,
                             disabledBackgroundColor = BossDarkBorder,
                             disabledContentColor = BossDarkTextSecondary
@@ -132,7 +134,7 @@ fun NewWorkspaceDialog(
                     text = "New Workspace",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -144,9 +146,9 @@ fun NewWorkspaceDialog(
                     label = { Text("Workspace Name", color = BossDarkTextSecondary) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
-                        cursorColor = Color(0xFFFBBF24),
-                        focusedBorderColor = Color(0xFFFBBF24),
+                        textColor = BossDarkTextPrimary,
+                        cursorColor = BossDarkAccent,
+                        focusedBorderColor = BossDarkAccent,
                         unfocusedBorderColor = BossDarkBorder
                     ),
                     singleLine = true
@@ -174,7 +176,7 @@ fun NewWorkspaceDialog(
                         onClick = { onCreate(workspaceName.trim()) },
                         enabled = workspaceName.trim().isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black,
                             disabledBackgroundColor = BossDarkBorder,
                             disabledContentColor = BossDarkTextSecondary

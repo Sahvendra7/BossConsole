@@ -1,8 +1,6 @@
 package ai.rever.boss.components.buttons
 
-import BossDarkAccent
-import BossDarkBorder
-import BossDarkTextPrimary
+import ai.rever.boss.plugin.ui.BossTheme
 import ai.rever.boss.plugin.api.Panel
 import ai.rever.boss.plugin.api.Panel.Companion.bottom
 import ai.rever.boss.plugin.api.Panel.Companion.left
@@ -69,7 +67,7 @@ fun BossActionButton(
     leftIcon: ImageVector? = null,
     text: String,
     fontSize: TextUnit = 13.sp,
-    color: Color = BossDarkTextPrimary,
+    color: Color = BossTheme.colors.textPrimary,
     iconColor: Color? = null, // Optional separate icon color (defaults to color if null)
     iconSize: Dp = 20.dp, // Icon size for imageVector mode
     maxTextWidth: Dp? = null, // Optional max width for text (truncates with ellipsis)
@@ -85,6 +83,9 @@ fun BossActionButton(
 ) {
     // Resolved icon color - use iconColor if provided, otherwise fall back to color
     val resolvedIconColor = iconColor ?: color
+    // BOSS design-system tokens — semantic accessors over BossDesignSystem.kt.
+    val colors = BossTheme.colors
+    val radii = BossTheme.radius
     // State for context menu
     var showContextMenu by remember { mutableStateOf(false) }
     // Non-observable holders: avoid triggering remeasure during the layout phase.
@@ -192,8 +193,8 @@ fun BossActionButton(
                         hintPopupSizeRef[0] = coordinates.size.width
                         hintPopupSizeRef[1] = coordinates.size.height
                     },
-                color = BossDarkBorder,
-                shape = RoundedCornerShape(4.dp)
+                color = colors.raised,
+                shape = RoundedCornerShape(radii.input)
             ) {
                 Row(modifier = Modifier.defaultMinSize(2.dp)
                     .padding(vertical = 0.dp, horizontal = 12.dp),
@@ -201,7 +202,7 @@ fun BossActionButton(
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = displayHintText,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -262,7 +263,7 @@ fun BossActionButton(
         colors = ButtonDefaults.buttonColors(
             backgroundColor = if (isSelected) {
                 if (isFocused) {
-                    BossDarkAccent
+                    colors.signal
                 } else {
                     color.copy(alpha = 0.1f)
                 }

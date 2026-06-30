@@ -2,8 +2,10 @@ package ai.rever.boss.updater
 
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkError
 import BossDarkTextPrimary
 import BossDarkTextSecondary
+import BossDarkWarning
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +15,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +49,7 @@ fun DowngradeWarningDialog(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color(0xFFFFC107),
+                        tint = BossDarkWarning,
                         modifier = Modifier.size(32.dp)
                     )
                     Text(
@@ -94,9 +95,9 @@ fun DowngradeWarningDialog(
 
                 // Backup reminder
                 Card(
-                    backgroundColor = Color(0xFFFFC107).copy(alpha = 0.1f),
+                    backgroundColor = BossDarkWarning.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFFC107).copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, BossDarkWarning.copy(alpha = 0.3f))
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -105,13 +106,13 @@ fun DowngradeWarningDialog(
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = null,
-                            tint = Color(0xFFFFC107),
+                            tint = BossDarkWarning,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
                             "Make sure you have backups before proceeding.",
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFC107),
+                            color = BossDarkWarning,
                             fontSize = 13.sp
                         )
                     }
@@ -141,7 +142,7 @@ fun DowngradeWarningDialog(
                         onClick = onConfirm,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFF44336),
+                            backgroundColor = BossDarkError,
                             contentColor = BossDarkTextPrimary
                         )
                     ) {
@@ -167,7 +168,7 @@ private fun WarningItem(text: String) {
     ) {
         Text(
             "•",
-            color = Color(0xFFF44336),
+            color = BossDarkError,
             fontSize = 14.sp
         )
         Text(

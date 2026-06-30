@@ -1,8 +1,12 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkError
+import BossDarkSuccess
 import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.window.Project
 import ai.rever.boss.platform.rememberDirectoryPicker
@@ -47,10 +51,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 
 // Dashboard-style accent color
-private val AccentBlue = Color(0xFF4A9EFF)
-private val HoverBackground = Color(0xFF2A2D30)
-private val SuccessGreen = Color(0xFF4CAF50)
-private val ErrorRed = Color(0xFFF44336)
+private val AccentBlue get() = BossDarkAccent
+private val HoverBackground get() = BossDarkSurface
+private val SuccessGreen get() = BossDarkSuccess
+private val ErrorRed get() = BossDarkError
 
 /**
  * Multi-step wizard dialog for creating new projects from templates.
@@ -158,7 +162,7 @@ private fun TemplateSelectionStep(
                     text = "New Project",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
                 Text(
                     text = "Select a project template to get started",
@@ -265,7 +269,7 @@ private fun TemplateCard(
 
     val iconColor = when {
         isSelected -> AccentBlue
-        isHovered -> Color.White
+        isHovered -> BossDarkTextPrimary
         else -> BossDarkTextSecondary
     }
 
@@ -321,7 +325,7 @@ private fun TemplateCard(
                 text = template.name,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (isSelected || isHovered) Color.White else BossDarkTextSecondary,
+                color = if (isSelected || isHovered) BossDarkTextPrimary else BossDarkTextSecondary,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -405,7 +409,7 @@ private fun ConfigurationStep(
                     text = "New ${template.name} Project",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
                 Text(
                     text = template.description,
@@ -422,7 +426,7 @@ private fun ConfigurationStep(
             text = "Project Name",
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -433,7 +437,7 @@ private fun ConfigurationStep(
             placeholder = { Text("my-project", color = BossDarkTextSecondary.copy(alpha = 0.5f)) },
             modifier = Modifier.fillMaxWidth(),
             colors = TextFieldDefaults.outlinedTextFieldColors(
-                textColor = Color.White,
+                textColor = BossDarkTextPrimary,
                 cursorColor = AccentBlue,
                 focusedBorderColor = AccentBlue,
                 unfocusedBorderColor = BossDarkBorder,
@@ -452,7 +456,7 @@ private fun ConfigurationStep(
             text = "Location",
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -466,7 +470,7 @@ private fun ConfigurationStep(
                 onValueChange = { projectLocation = it },
                 modifier = Modifier.weight(1f),
                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                    textColor = Color.White,
+                    textColor = BossDarkTextPrimary,
                     cursorColor = AccentBlue,
                     focusedBorderColor = AccentBlue,
                     unfocusedBorderColor = BossDarkBorder,
@@ -482,7 +486,7 @@ private fun ConfigurationStep(
                 onClick = { directoryPicker.pickDirectory() },
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = BossDarkSurface,
-                    contentColor = Color.White
+                    contentColor = BossDarkTextPrimary
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.height(56.dp)
@@ -605,7 +609,7 @@ private fun CreatingStep(
             text = "Creating Project",
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -658,7 +662,7 @@ private fun SuccessStep(
             text = "Project Created!",
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -667,7 +671,7 @@ private fun SuccessStep(
             text = project.name,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -725,7 +729,7 @@ private fun ErrorStep(
             text = "Project Creation Failed",
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White
+            color = BossDarkTextPrimary
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -740,7 +744,7 @@ private fun ErrorStep(
             Text(
                 text = message,
                 fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.9f),
+                color = BossDarkTextPrimary.copy(alpha = 0.9f),
                 lineHeight = 20.sp
             )
         }

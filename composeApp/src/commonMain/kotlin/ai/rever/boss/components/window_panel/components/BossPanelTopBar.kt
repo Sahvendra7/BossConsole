@@ -1,6 +1,7 @@
 package ai.rever.boss.components.window_panel.components
 
 import BossDarkSurface
+import ai.rever.boss.plugin.ui.BossThemeColors
 import ai.rever.boss.components.buttons.BossActionButton
 import ai.rever.boss.components.overlays.ContextMenu
 import ai.rever.boss.components.overlays.ContextMenuItem
@@ -33,7 +34,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val UpdateBadgeColor = Color(0xFF4CAF50)
+private val UpdateBadgeColor: Color get() = BossThemeColors.SuccessColor
 
 @Composable
 fun BossPanelTopBar(
@@ -72,7 +73,7 @@ fun BossPanelTopBar(
 
         Text(
             text = title ?: "",
-            color = Color.White,
+            color = BossThemeColors.TextPrimary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier
@@ -130,7 +131,7 @@ fun BossPanelTopBar(
                     BossActionButton(
                         imageVector = Icons.Outlined.MoreVert,
                         text = "More",
-                        color = Color.White,
+                        color = BossThemeColors.TextPrimary,
                         onClick = { showMenu = true }
                     )
 
@@ -146,7 +147,7 @@ fun BossPanelTopBar(
                 BossActionButton(
                     imageVector = Icons.Outlined.Remove,
                     text = "Minimize",
-                    color = Color.White,
+                    color = BossThemeColors.TextPrimary,
                     onClick = onMinimize
                 )
             }

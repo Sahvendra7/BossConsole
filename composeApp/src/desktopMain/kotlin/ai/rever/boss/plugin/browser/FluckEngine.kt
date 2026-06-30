@@ -20,6 +20,7 @@ import com.teamdev.jxbrowser.download.event.*
 import com.teamdev.jxbrowser.engine.Engine
 import com.teamdev.jxbrowser.engine.EngineOptions
 import com.teamdev.jxbrowser.engine.ProprietaryFeature
+import com.teamdev.jxbrowser.engine.Theme
 import com.teamdev.jxbrowser.engine.UserDataDirectoryAlreadyInUseException
 import com.teamdev.jxbrowser.permission.PermissionType
 import com.teamdev.jxbrowser.permission.callback.RequestPermissionCallback
@@ -31,6 +32,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import androidx.compose.runtime.snapshotFlow
+import ai.rever.boss.plugin.ui.BossThemeController
+import ai.rever.boss.plugin.ui.BossThemes
 import java.awt.Toolkit
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -49,10 +54,46 @@ sealed class EngineInitError {
 object FluckEngine {
     private val logger = BossLogger.forComponent("FluckEngine")
 
+    // --- Host-theme-driven Chromium color scheme (prefers-color-scheme) ---
+    // NOTE: declared BEFORE the init {} block below, so themeScope is non-null
+    // when startHostThemeObserver() runs during object initialization.
+
+    @Volatile
+    private var preferredColorSchemeDark: Boolean = true
+    private val themeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     init {
         // Load persisted browser settings (user agent, profile, share-button toggle…)
         // before the first browser/toolbar is created, so saved values apply on boot.
         BrowserSettingsManager.ensureLoaded()
+        startHostThemeObserver()
+    }
+
+    /**
+     * Mirror the active BOSS host theme into the live Chromium engine so web
+     * content's `prefers-color-scheme` matches the app (Daylight → light;
+     * Operator/Clean dark themes → dark). Emits the current value immediately,
+     * then on every host theme switch.
+     */
+    private fun startHostThemeObserver() {
+        themeScope.launch {
+            snapshotFlow { BossThemes.byId(BossThemeController.currentId).isLight }
+                .collect { isLight -> setColorScheme(dark = !isLight) }
+        }
+    }
+
+    /**
+     * Set Chromium's theme (drives `prefers-color-scheme`) to match the host.
+     * Applied live to the running engine and re-applied on engine (re)creation.
+     * Safe to call before the engine exists.
+     */
+    fun setColorScheme(dark: Boolean) {
+        preferredColorSchemeDark = dark
+        try {
+            _engine?.setTheme(if (dark) Theme.DARK else Theme.LIGHT)
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Failed to apply engine color scheme", mapOf("error" to (e.message ?: "unknown")))
+        }
     }
 
     /**
@@ -1080,6 +1121,12 @@ object FluckEngine {
 
         _engine = newEngine
 
+        // Match Chromium's theme to the active BOSS host theme on (re)creation.
+        try {
+            newEngine.setTheme(if (preferredColorSchemeDark) Theme.DARK else Theme.LIGHT)
+        } catch (e: Exception) {
+            logger.debug(LogCategory.BROWSER, "Failed to set initial engine theme", mapOf("error" to (e.message ?: "unknown")))
+        }
 
         return newEngine
     }

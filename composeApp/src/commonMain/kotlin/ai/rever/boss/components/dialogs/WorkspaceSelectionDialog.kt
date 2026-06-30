@@ -1,8 +1,10 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.workspaces.extractPanels
 import androidx.compose.foundation.background
@@ -70,7 +72,7 @@ fun WorkspaceSelectionDialog(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -160,7 +162,7 @@ fun WorkspaceSelectionDialog(
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black
                         ),
                         shape = RoundedCornerShape(6.dp)
@@ -202,7 +204,7 @@ private fun WorkspaceSelectionItem(
             shape = RoundedCornerShape(8.dp),
             color = if (isSelected) BossDarkSurface else Color.Transparent,
             border = if (isSelected) {
-                androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24))
+                androidx.compose.foundation.BorderStroke(1.dp, BossDarkAccent)
             } else {
                 androidx.compose.foundation.BorderStroke(1.dp, BossDarkBorder)
             }
@@ -215,7 +217,7 @@ private fun WorkspaceSelectionItem(
                 Icon(
                     imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                     contentDescription = if (isSelected) "Selected" else "Not selected",
-                    tint = if (isSelected) Color(0xFFFBBF24) else Color(0xFF9CA3AF),
+                    tint = if (isSelected) BossDarkAccent else BossDarkTextSecondary,
                     modifier = Modifier.size(20.dp)
                 )
 
@@ -225,7 +227,7 @@ private fun WorkspaceSelectionItem(
                 Icon(
                     imageVector = Icons.Outlined.Folder,
                     contentDescription = null,
-                    tint = Color(0xFF9CA3AF),
+                    tint = BossDarkTextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
 
@@ -240,7 +242,7 @@ private fun WorkspaceSelectionItem(
                     },
                     fontSize = 14.sp,
                     fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                    color = Color.White,
+                    color = BossDarkTextPrimary,
                     modifier = Modifier.weight(1f)
                 )
 
@@ -254,7 +256,7 @@ private fun WorkspaceSelectionItem(
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
                             contentDescription = "Select Panel",
-                            tint = Color(0xFF9CA3AF)
+                            tint = BossDarkTextSecondary
                         )
                     }
                 }
@@ -323,7 +325,7 @@ private fun PanelOption(
             text = displayName,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-            color = if (isSelected) Color(0xFFFBBF24) else Color.White
+            color = if (isSelected) BossDarkAccent else BossDarkTextPrimary
         )
     }
 }

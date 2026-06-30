@@ -1,7 +1,6 @@
 package ai.rever.boss.components.dialogs
 
-import BossDarkBackground
-import BossDarkTextSecondary
+import ai.rever.boss.plugin.ui.BossTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
@@ -33,12 +32,14 @@ fun ConfirmationDialog(
     title: String,
     message: String,
     icon: ImageVector? = null,
-    iconTint: Color = Color(0xFFFBBF24),
+    iconTint: Color = BossTheme.colors.warn,
     confirmText: String = "Confirm",
-    confirmColor: Color = Color(0xFFEF4444), // Red for destructive actions
+    confirmColor: Color = BossTheme.colors.alert, // destructive
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    val colors = BossTheme.colors
+    val radii = BossTheme.radius
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -50,8 +51,8 @@ fun ConfirmationDialog(
             modifier = Modifier
                 .width(400.dp)
                 .wrapContentHeight(),
-            shape = RoundedCornerShape(8.dp),
-            color = BossDarkBackground
+            shape = RoundedCornerShape(radii.dialog),
+            color = colors.panel
         ) {
             Column(
                 modifier = Modifier.padding(24.dp)
@@ -74,7 +75,7 @@ fun ConfirmationDialog(
                         text = title,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = colors.textPrimary
                     )
                 }
 
@@ -84,7 +85,7 @@ fun ConfirmationDialog(
                 Text(
                     text = message,
                     fontSize = 14.sp,
-                    color = BossDarkTextSecondary,
+                    color = colors.textSecondary,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -98,7 +99,7 @@ fun ConfirmationDialog(
                     TextButton(
                         onClick = onDismiss,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = BossDarkTextSecondary
+                            contentColor = colors.textSecondary
                         )
                     ) {
                         Text("Cancel")
@@ -115,7 +116,7 @@ fun ConfirmationDialog(
                             backgroundColor = confirmColor,
                             contentColor = Color.White
                         ),
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(radii.button)
                     ) {
                         Text(confirmText, fontWeight = FontWeight.Medium)
                     }

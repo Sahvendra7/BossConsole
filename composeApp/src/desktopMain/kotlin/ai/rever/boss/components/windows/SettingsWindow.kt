@@ -1,5 +1,6 @@
 package ai.rever.boss.components.windows
 
+import BossDarkError
 import ai.rever.boss.components.settings.sections.*
 import ai.rever.boss.components.settings.keymap.EditableKeymapSettings
 import ai.rever.boss.components.settings.sidebar.SettingsSection
@@ -31,7 +32,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -157,7 +157,7 @@ private fun SettingsContent(initialSection: String? = null) {
                         showResetConfirmation = false
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFE04040)
+                        backgroundColor = BossDarkError
                     )
                 ) {
                     Text("Reset", color = TextPrimary)
@@ -260,6 +260,7 @@ SettingsSection.RUNNER -> RunnerSettings()
                 SettingsSection.STARTUP -> StartupSettingsSection()
                 SettingsSection.SCROLLBAR -> ScrollbarSettings()
                 SettingsSection.ADVANCED -> AdvancedSettings()
+                SettingsSection.THEME -> ThemeSettings()
                 else -> {}
             }
         }

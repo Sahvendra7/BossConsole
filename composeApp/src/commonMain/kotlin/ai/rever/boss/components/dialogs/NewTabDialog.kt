@@ -1,5 +1,12 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
+import BossDarkBackground
+import BossDarkBorder
+import BossDarkSurface
+import BossDarkTextMuted
+import BossDarkTextPrimary
+import BossDarkTextSecondary
 import ContextMenuBackground
 import ContextMenuBorder
 import ai.rever.boss.plugin.api.TabRegistry
@@ -254,7 +261,7 @@ fun NewTabDialog(
                     text = "New Tab",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = BossDarkTextPrimary,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
                 
@@ -268,7 +275,7 @@ fun NewTabDialog(
                     ) {
                         Text(
                             text = "No tab types available. Enable a tab plugin or install one from the Plugin Store.",
-                            color = Color(0xFF999999),
+                            color = BossDarkTextSecondary,
                             fontSize = 13.sp
                         )
                     }
@@ -355,13 +362,13 @@ fun NewTabDialog(
                             label = {
                                 Text(
                                     "Initial command (optional)",
-                                    color = Color(0xFF999999)
+                                    color = BossDarkTextSecondary
                                 )
                             },
                             placeholder = {
                                 Text(
                                     "e.g., npm run dev",
-                                    color = Color(0xFF666666)
+                                    color = BossDarkTextMuted
                                 )
                             },
                             modifier = Modifier
@@ -374,11 +381,11 @@ fun NewTabDialog(
                                     } else false
                                 },
                             colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFF4A9EFF),
-                                unfocusedBorderColor = Color(0xFF555555),
-                                backgroundColor = Color(0xFF1E1F22)
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
                             ),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -456,8 +463,8 @@ fun NewTabDialog(
                                 Button(
                                     onClick = { directoryPicker.pickDirectory() },
                                     colors = ButtonDefaults.buttonColors(
-                                        backgroundColor = Color(0xFF4A9EFF),
-                                        contentColor = Color.White
+                                        backgroundColor = BossDarkAccent,
+                                        contentColor = BossDarkTextPrimary
                                     ),
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
@@ -481,30 +488,30 @@ fun NewTabDialog(
                                             buttonHeight = coordinates.size.height
                                         },
                                     colors = ButtonDefaults.outlinedButtonColors(
-                                        backgroundColor = Color(0xFF1E1F22),
-                                        contentColor = Color.White
+                                        backgroundColor = BossDarkBackground,
+                                        contentColor = BossDarkTextPrimary
                                     ),
                                     border = ButtonDefaults.outlinedBorder.copy(
-                                        brush = androidx.compose.ui.graphics.SolidColor(Color(0xFF555555))
+                                        brush = androidx.compose.ui.graphics.SolidColor(BossDarkBorder)
                                     ),
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Folder,
                                         contentDescription = "Folder",
-                                        tint = Color(0xFF6B9EFF),
+                                        tint = BossDarkAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = selectedProject.name,
-                                        color = Color.White,
+                                        color = BossDarkTextPrimary,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Icon(
                                         imageVector = Icons.Default.ArrowDropDown,
                                         contentDescription = "Expand",
-                                        tint = Color(0xFF999999)
+                                        tint = BossDarkTextSecondary
                                     )
                                 }
 
@@ -548,7 +555,7 @@ fun NewTabDialog(
                                 .fillMaxWidth()
                                 .height(200.dp)
                                 .background(
-                                    color = Color(0xFF1E1F22),
+                                    color = BossDarkBackground,
                                     shape = RoundedCornerShape(4.dp)
                                 )
                                 .border(
@@ -564,7 +571,7 @@ fun NewTabDialog(
                                 ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
-                                        color = Color(0xFF4A9EFF),
+                                        color = BossDarkAccent,
                                         strokeWidth = 2.dp
                                     )
                                 }
@@ -645,12 +652,12 @@ fun NewTabDialog(
                                     ) {
                                         Text(
                                             text = "No visible files",
-                                            color = Color(0xFF999999),
+                                            color = BossDarkTextSecondary,
                                             fontSize = 13.sp
                                         )
                                         Text(
                                             text = "(hidden files and build folders are excluded)",
-                                            color = Color(0xFF666666),
+                                            color = BossDarkTextMuted,
                                             fontSize = 11.sp
                                         )
                                     }
@@ -662,7 +669,7 @@ fun NewTabDialog(
                                 ) {
                                     Text(
                                         text = "Unable to load files",
-                                        color = Color(0xFF999999),
+                                        color = BossDarkTextSecondary,
                                         fontSize = 13.sp
                                     )
                                 }
@@ -685,13 +692,13 @@ fun NewTabDialog(
                                 label = {
                                     Text(
                                         "File path",
-                                        color = Color(0xFF999999)
+                                        color = BossDarkTextSecondary
                                     )
                                 },
                                 placeholder = {
                                     Text(
                                         "Select a file above or enter path",
-                                        color = Color(0xFF666666)
+                                        color = BossDarkTextMuted
                                     )
                                 },
                                 modifier = Modifier
@@ -704,11 +711,11 @@ fun NewTabDialog(
                                         } else false
                                     },
                                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    textColor = Color.White,
-                                    cursorColor = Color.White,
-                                    focusedBorderColor = Color(0xFF4A9EFF),
-                                    unfocusedBorderColor = Color(0xFF555555),
-                                    backgroundColor = Color(0xFF1E1F22)
+                                    textColor = BossDarkTextPrimary,
+                                    cursorColor = BossDarkTextPrimary,
+                                    focusedBorderColor = BossDarkAccent,
+                                    unfocusedBorderColor = BossDarkBorder,
+                                    backgroundColor = BossDarkBackground
                                 ),
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -726,7 +733,7 @@ fun NewTabDialog(
                                 Icon(
                                     imageVector = Icons.Default.FolderOpen,
                                     contentDescription = "Browse files",
-                                    tint = Color(0xFF999999)
+                                    tint = BossDarkTextSecondary
                                 )
                             }
                         }
@@ -742,13 +749,13 @@ fun NewTabDialog(
                             label = {
                                 Text(
                                     "Enter URL or search term",
-                                    color = Color(0xFF999999)
+                                    color = BossDarkTextSecondary
                                 )
                             },
                             placeholder = {
                                 Text(
                                     "https://example.com or search...",
-                                    color = Color(0xFF666666)
+                                    color = BossDarkTextMuted
                                 )
                             },
                             modifier = Modifier
@@ -792,11 +799,11 @@ fun NewTabDialog(
                                     } else false
                                 },
                             colors = TextFieldDefaults.outlinedTextFieldColors(
-                                textColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFF4A9EFF),
-                                unfocusedBorderColor = Color(0xFF555555),
-                                backgroundColor = Color(0xFF1E1F22)
+                                textColor = BossDarkTextPrimary,
+                                cursorColor = BossDarkTextPrimary,
+                                focusedBorderColor = BossDarkAccent,
+                                unfocusedBorderColor = BossDarkBorder,
+                                backgroundColor = BossDarkBackground
                             ),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -834,9 +841,9 @@ fun NewTabDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .background(
-                                                    if (index == selectedSuggestionIndex) 
-                                                        Color(0xFF4A9EFF).copy(alpha = 0.2f)
-                                                    else 
+                                                    if (index == selectedSuggestionIndex)
+                                                        BossDarkAccent.copy(alpha = 0.2f)
+                                                    else
                                                         Color.Transparent
                                                 )
                                                 .clickable {
@@ -852,21 +859,21 @@ fun NewTabDialog(
                                                 imageVector = if (suggestion.isSearchSuggestion) Icons.Default.Search else Icons.Default.History,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(18.dp),
-                                                tint = Color(0xFF999999)
+                                                tint = BossDarkTextSecondary
                                             )
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = suggestion.title.ifEmpty { suggestion.url },
                                                     fontSize = 14.sp,
-                                                    color = Color.White,
+                                                    color = BossDarkTextPrimary,
                                                     maxLines = 1
                                                 )
                                                 if (suggestion.title.isNotEmpty()) {
                                                     Text(
                                                         text = suggestion.url,
                                                         fontSize = 12.sp,
-                                                        color = Color(0xFF999999),
+                                                        color = BossDarkTextSecondary,
                                                         maxLines = 1
                                                     )
                                                 }
@@ -886,7 +893,7 @@ fun NewTabDialog(
                                                     imageVector = Icons.Default.Close,
                                                     contentDescription = "Delete",
                                                     modifier = Modifier.size(16.dp),
-                                                    tint = Color(0xFF999999)
+                                                    tint = BossDarkTextSecondary
                                                 )
                                             }
                                         }
@@ -909,14 +916,14 @@ fun NewTabDialog(
                     TextButton(
                         onClick = onDismiss,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = Color(0xFF999999)
+                            contentColor = BossDarkTextSecondary
                         )
                     ) {
                         Text("Cancel")
                     }
-                    
+
                     Spacer(modifier = Modifier.width(8.dp))
-                    
+
                     Button(
                         onClick = {
                             val input = if (selectedType == TabType.TERMINAL) terminalCommand else inputText
@@ -924,10 +931,10 @@ fun NewTabDialog(
                         },
                         enabled = availableTypes.isNotEmpty() && (selectedType == TabType.TERMINAL || inputText.isNotBlank()),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF4A9EFF),
-                            contentColor = Color.White,
-                            disabledBackgroundColor = Color(0xFF3A3A3A),
-                            disabledContentColor = Color(0xFF666666)
+                            backgroundColor = BossDarkAccent,
+                            contentColor = BossDarkTextPrimary,
+                            disabledBackgroundColor = BossDarkSurface,
+                            disabledContentColor = BossDarkTextMuted
                         )
                     ) {
                         Text(
@@ -957,12 +964,12 @@ private fun TabTypeOption(
         modifier = modifier
             .height(80.dp)
             .background(
-                color = if (isSelected) Color(0xFF4A9EFF).copy(alpha = 0.2f) else ContextMenuBorder,
+                color = if (isSelected) BossDarkAccent.copy(alpha = 0.2f) else ContextMenuBorder,
                 shape = RoundedCornerShape(4.dp)
             )
             .border(
                 width = 1.dp,
-                color = if (isSelected) Color(0xFF4A9EFF) else ContextMenuBorder,
+                color = if (isSelected) BossDarkAccent else ContextMenuBorder,
                 shape = RoundedCornerShape(4.dp)
             )
             .clickable { onClick() }
@@ -977,14 +984,14 @@ private fun TabTypeOption(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isSelected) Color(0xFF4A9EFF) else Color(0xFF999999),
+                tint = if (isSelected) BossDarkAccent else BossDarkTextSecondary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 fontSize = 13.sp,
-                color = if (isSelected) Color.White else Color(0xFF999999)
+                color = if (isSelected) BossDarkTextPrimary else BossDarkTextSecondary
             )
         }
     }
@@ -1087,7 +1094,7 @@ private fun DialogFileTreeItem(
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
                     contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = Color(0xFF999999),
+                    tint = BossDarkTextSecondary,
                     modifier = Modifier.size(14.dp)
                 )
             } else {
@@ -1115,7 +1122,7 @@ private fun DialogFileTreeItem(
             Text(
                 text = node.name,
                 fontSize = 12.sp,
-                color = Color(0xFFCCCCCC)
+                color = BossDarkTextPrimary
             )
         }
 

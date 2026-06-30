@@ -1,8 +1,10 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.components.bookmarks.BookmarkCollection
 import androidx.compose.foundation.background
@@ -84,7 +86,7 @@ fun CollectionSelectionDialog(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -173,7 +175,7 @@ fun CollectionSelectionDialog(
                         },
                         enabled = selectedCollections.isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFBBF24),
+                            backgroundColor = BossDarkAccent,
                             contentColor = Color.Black,
                             disabledBackgroundColor = BossDarkBorder,
                             disabledContentColor = BossDarkTextSecondary
@@ -209,7 +211,7 @@ private fun CollectionSelectionItem(
         shape = RoundedCornerShape(8.dp),
         color = if (isSelected) BossDarkSurface else Color.Transparent,
         border = if (isSelected) {
-            androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24))
+            androidx.compose.foundation.BorderStroke(1.dp, BossDarkAccent)
         } else {
             androidx.compose.foundation.BorderStroke(1.dp, BossDarkBorder)
         }
@@ -228,7 +230,7 @@ private fun CollectionSelectionItem(
                     if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked
                 },
                 contentDescription = if (isSelected) "Selected" else "Not selected",
-                tint = if (isSelected) Color(0xFFFBBF24) else Color(0xFF9CA3AF),
+                tint = if (isSelected) BossDarkAccent else BossDarkTextSecondary,
                 modifier = Modifier.size(20.dp)
             )
 
@@ -238,7 +240,7 @@ private fun CollectionSelectionItem(
             Icon(
                 imageVector = if (collection.isFavorite) Icons.Outlined.Star else Icons.Outlined.Folder,
                 contentDescription = null,
-                tint = if (collection.isFavorite) Color(0xFFFBBF24) else Color(0xFF9CA3AF),
+                tint = if (collection.isFavorite) BossDarkAccent else BossDarkTextSecondary,
                 modifier = Modifier.size(18.dp)
             )
 
@@ -250,7 +252,7 @@ private fun CollectionSelectionItem(
                     text = collection.name,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
                 Text(
                     text = "${collection.bookmarks.size} bookmarks",

@@ -1,5 +1,6 @@
 package ai.rever.boss.components.plugin.panels.left_top
 
+import BossDarkError
 import ai.rever.boss.components.dialogs.BookmarkDialog
 import ai.rever.boss.components.dialogs.CollectionSelectionDialog
 import ai.rever.boss.components.dialogs.CollectionSelectionMode
@@ -16,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 
 /**
  * Implementation of BookmarksDialogProvider that wraps composeApp's dialog implementations.
@@ -54,7 +54,7 @@ object BookmarksDialogProviderImpl : BookmarksDialogProvider {
             title = title,
             message = message,
             icon = Icons.Outlined.DeleteSweep,
-            iconTint = Color(0xFFEF4444),
+            iconTint = BossDarkError,
             confirmText = confirmText,
             onDismiss = onDismiss,
             onConfirm = onConfirm

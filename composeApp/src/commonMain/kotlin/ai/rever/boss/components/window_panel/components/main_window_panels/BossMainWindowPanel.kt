@@ -7,6 +7,7 @@ import ai.rever.boss.keymap.model.TabSwitchMode
 import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkSurface
 import BossDarkTextSecondary
 import ai.rever.boss.components.bars.ScrollbarConfig
 import ai.rever.boss.components.bars.horizontal.HorizontalBar
@@ -465,7 +466,7 @@ fun BossTabsComponent.BossMainTabBar(
                                 .width(32.dp)
                                 .padding(4.dp)
                                 .background(
-                                    color = Color(0xFF3C3F41),
+                                    color = BossDarkSurface,
                                     shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                                 )
                                 .clickable {
@@ -480,7 +481,7 @@ fun BossTabsComponent.BossMainTabBar(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "New Tab",
-                                tint = Color(0xFF999999),
+                                tint = BossDarkTextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -496,7 +497,7 @@ fun BossTabsComponent.BossMainTabBar(
                         .width(32.dp)
                         .padding(4.dp)
                         .background(
-                            color = Color(0xFF3C3F41),
+                            color = BossDarkSurface,
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                         )
                         .clickable {
@@ -511,7 +512,7 @@ fun BossTabsComponent.BossMainTabBar(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "New Tab",
-                        tint = Color(0xFF999999),
+                        tint = BossDarkTextSecondary,
                         modifier = Modifier.size(16.dp)
                     )
                 }

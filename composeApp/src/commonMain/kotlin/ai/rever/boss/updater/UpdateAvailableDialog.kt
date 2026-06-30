@@ -1,6 +1,8 @@
 package ai.rever.boss.updater
 
+import BossDarkAccent
 import BossDarkBackground
+import BossDarkTextMuted
 import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.Column
@@ -15,14 +17,13 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // Matches the banner colors in UpdateUI.kt
-private val AccentBlue = Color(0xFF4A90E2)
-private val TextGray = Color(0xFF808080)
+private val AccentBlue get() = BossDarkAccent
+private val TextGray get() = BossDarkTextMuted
 
 /**
  * Dismissible dialog shown when a new BossConsole version is available.

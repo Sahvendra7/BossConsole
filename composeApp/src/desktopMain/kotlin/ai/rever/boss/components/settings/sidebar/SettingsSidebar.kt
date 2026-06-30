@@ -86,6 +86,11 @@ enum class SettingsSection(
         description = "Hide UI elements and minimize distractions",
         icon = Icons.Outlined.Visibility
     ),
+    THEME(
+        displayName = "Theme",
+        description = "App color theme — Operator, Daylight, or Clean",
+        icon = Icons.Outlined.Palette
+    ),
     WINDOW_APPEARANCE(
         displayName = "Appearance",
         description = "Title bar, window decorations, and theming",

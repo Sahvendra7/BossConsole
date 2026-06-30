@@ -1,7 +1,10 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
+import BossDarkError
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +14,6 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +51,7 @@ fun RemoveBookmarkConfirmationDialog(
                     Icon(
                         imageVector = Icons.Outlined.Star,
                         contentDescription = "Remove Bookmark",
-                        tint = Color(0xFFFBBF24),
+                        tint = BossDarkAccent,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -57,7 +59,7 @@ fun RemoveBookmarkConfirmationDialog(
                         text = "Remove Bookmark?",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = BossDarkTextPrimary
                     )
                 }
 
@@ -95,8 +97,8 @@ fun RemoveBookmarkConfirmationDialog(
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFEF4444), // Red color for destructive action
-                            contentColor = Color.White
+                            backgroundColor = BossDarkError, // Red color for destructive action
+                            contentColor = BossDarkTextPrimary
                         ),
                         shape = RoundedCornerShape(6.dp)
                     ) {

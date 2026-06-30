@@ -2,9 +2,11 @@ package ai.rever.boss.plugin.browser
 
 import ai.rever.boss.components.plugin.tab_types.fluck.FluckTabInfo
 
+import BossDarkAccent
 import BossDarkBackground
 import BossDarkBorder
 import BossDarkSurface
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import ai.rever.boss.cache.loadHighQualityFavicon
 import ai.rever.boss.components.common.rememberFaviconLoader
@@ -147,7 +149,7 @@ private fun DialogHeader(title: String, subtitle: String, onDismiss: () -> Unit)
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(text = title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Text(text = title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = BossDarkTextPrimary)
             Text(text = subtitle, fontSize = 13.sp, color = BossDarkTextSecondary, modifier = Modifier.padding(top = 2.dp))
         }
         IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
@@ -178,9 +180,9 @@ private fun TabBar(
 
 @Composable
 private fun TabItem(title: String, count: Int, isSelected: Boolean, onClick: () -> Unit) {
-    val backgroundColor = if (isSelected) Color(0xFFFBBF24) else Color.Transparent
+    val backgroundColor = if (isSelected) BossDarkAccent else Color.Transparent
     val textColor = if (isSelected) Color.Black else BossDarkTextSecondary
-    val borderColor = if (isSelected) Color(0xFFFBBF24) else BossDarkBorder
+    val borderColor = if (isSelected) BossDarkAccent else BossDarkBorder
 
     Surface(
         modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick),
@@ -223,8 +225,8 @@ private fun SourceListItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val backgroundColor = if (isSelected) Color(0xFFFBBF24).copy(alpha = 0.15f) else Color.Transparent
-    val borderColor = if (isSelected) Color(0xFFFBBF24) else BossDarkBorder
+    val backgroundColor = if (isSelected) BossDarkAccent.copy(alpha = 0.15f) else Color.Transparent
+    val borderColor = if (isSelected) BossDarkAccent else BossDarkBorder
     val isLoading = source.name == "Loading..."
 
     // Get favicon cache key from FluckTabInfo
@@ -248,7 +250,7 @@ private fun SourceListItem(
         }
     }
 
-    val textColor = if (isLoading) BossDarkTextSecondary else Color.White
+    val textColor = if (isLoading) BossDarkTextSecondary else BossDarkTextPrimary
 
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick),
@@ -271,7 +273,7 @@ private fun SourceListItem(
             Text(text = source.name, fontSize = 14.sp, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (isSelected) {
                 Spacer(modifier = Modifier.width(8.dp))
-                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Selected", tint = Color(0xFFFBBF24), modifier = Modifier.size(20.dp))
+                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Selected", tint = BossDarkAccent, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -305,9 +307,9 @@ private fun DialogFooter(
             Checkbox(
                 checked = includeAudio,
                 onCheckedChange = onAudioToggle,
-                colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFBBF24), uncheckedColor = BossDarkTextSecondary, checkmarkColor = Color.Black)
+                colors = CheckboxDefaults.colors(checkedColor = BossDarkAccent, uncheckedColor = BossDarkTextSecondary, checkmarkColor = Color.Black)
             )
-            Text(text = "Share audio", fontSize = 14.sp, color = Color.White)
+            Text(text = "Share audio", fontSize = 14.sp, color = BossDarkTextPrimary)
         }
         Row {
             TextButton(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = BossDarkTextSecondary)) {
@@ -318,7 +320,7 @@ private fun DialogFooter(
                 onClick = onShare,
                 enabled = selectedSource != null,
                 colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color(0xFFFBBF24),
+                    backgroundColor = BossDarkAccent,
                     contentColor = Color.Black,
                     disabledBackgroundColor = BossDarkSurface,
                     disabledContentColor = BossDarkTextSecondary

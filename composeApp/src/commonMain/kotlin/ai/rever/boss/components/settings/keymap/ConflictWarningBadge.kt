@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import BossDarkError
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +41,7 @@ fun ConflictWarningBadge(
         Surface(
             modifier = modifier,
             shape = RoundedCornerShape(12.dp),
-            color = Color(0xFFFF5252).copy(alpha = 0.9f),
+            color = BossDarkError.copy(alpha = 0.9f),
             elevation = 2.dp
         ) {
             Row(
@@ -84,7 +85,7 @@ private fun ConflictTooltip(conflicts: List<KeyBinding>) {
                 text = "⚠️ Shortcut Conflicts",
                 style = MaterialTheme.typography.subtitle2,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFF5252)
+                color = BossDarkError
             )
 
             Divider()
@@ -141,7 +142,7 @@ fun CompactConflictBadge(
     Box(
         modifier = modifier
             .size(20.dp)
-            .background(Color(0xFFFF5252), CircleShape),
+            .background(BossDarkError, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Text(

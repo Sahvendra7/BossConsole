@@ -1,6 +1,8 @@
 package ai.rever.boss.components.dialogs
 
+import BossDarkAccent
 import BossDarkBackground
+import BossDarkTextPrimary
 import BossDarkTextSecondary
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,7 +10,6 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,7 +52,7 @@ fun InfoDialog(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = BossDarkTextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -74,8 +75,8 @@ fun InfoDialog(
                     Button(
                         onClick = onDismiss,
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF3B82F6), // Blue
-                            contentColor = Color.White
+                            backgroundColor = BossDarkAccent, // Blue
+                            contentColor = BossDarkTextPrimary
                         ),
                         shape = RoundedCornerShape(6.dp)
                     ) {
