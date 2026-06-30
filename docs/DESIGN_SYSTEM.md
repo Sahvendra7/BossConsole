@@ -1,9 +1,9 @@
 # BOSS Design System — "Operator's Console"
 
 One visual language shared by **BossConsole** (the host) and **BossTerm** (the
-terminal surface). This is the canonical spec; the live, visual styleguide is the
-companion reference, and the tokens themselves ship as code (see
-[Where it lives](#where-it-lives)).
+terminal surface). This is the canonical spec; the [**visual styleguide**](design-system.html)
+(a self-contained HTML reference — open it in a browser) is the companion reference,
+and the tokens themselves ship as code (see [Where it lives](#where-it-lives)).
 
 ---
 

@@ -44,6 +44,15 @@ For detailed installation instructions, system requirements, and troubleshooting
 
 ---
 
+## Design System
+
+BOSS and BossTerm share one visual language — **"Operator's Console"**: an amber **signal** (`#F2A93B`) for what's live/now on a calm **ink** floor (`#0E1217`), cyan **data** accents, and a MesloLGS mono voice. The whole app re-skins live across three themes — **Operator** (the signature dark identity), **Daylight** (light), and **Clean** (neutral charcoal) — and every dynamic plugin follows along.
+
+- 📖 **[Design System spec](docs/DESIGN_SYSTEM.md)** — tokens, themes, and where they ship in code
+- 🎨 **[Visual styleguide](docs/design-system.html)** — a self-contained HTML reference for colors / type / components (open it in a browser)
+
+---
+
 ## Development
 
 This repository contains the source code for BOSS. For building from source and contributing, follow the instructions below.
@@ -171,6 +180,7 @@ boss --help                    # Show help
 ## Documentation
 
 - [Core Subsystems](docs/SUBSYSTEMS.md) - Auth, UI, keyboard shortcuts, threading
+- [Design System](docs/DESIGN_SYSTEM.md) - "Operator's Console" tokens, themes, and the live styleguide
 - [BossEditor Module](docs/BOSSEDITOR.md) - LSP, PSI, editor features
 - [Application Features](docs/FEATURES.md) - Performance monitoring, dashboard, downloads
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md) - Detailed shortcuts reference
