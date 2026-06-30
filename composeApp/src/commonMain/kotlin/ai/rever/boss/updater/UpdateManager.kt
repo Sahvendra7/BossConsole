@@ -5,6 +5,8 @@ import ai.rever.boss.utils.Version
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,7 +45,13 @@ class UpdateManager {
     }
     
     /**
-     * Start periodic update checks
+     * Start periodic update checks.
+     *
+     * Note: the primary trigger for update checks is now Supabase Realtime push
+     * (see AppUpdateRealtimeService) — the app is notified the moment a new release
+     * row is published and calls [checkForUpdates] directly. This periodic loop is
+     * retained only as a long-interval safety net for when Realtime is unavailable
+     * (offline, websocket down) and to perform the one initial check at startup.
      */
     fun startPeriodicChecks() {
         periodicCheckJob?.cancel()
@@ -79,7 +87,34 @@ class UpdateManager {
         return checkForUpdatesInternal(force)
     }
 
+    // Coalesces concurrent checks so the startup stampede doesn't fire 2-3 network
+    // checks at once (and possibly double-pop the dialog).
+    private val checkMutex = Mutex()
+
     private suspend fun checkForUpdatesInternal(force: Boolean = false): UpdateResult {
+        // Startup fires several checks near-simultaneously (BossApp startup, the periodic
+        // loop's first tick, the Realtime on-connect catch-up), and each Realtime event
+        // launches its own. A forced manual check waits its turn; an automatic check is
+        // dropped if one is already running.
+        if (force) {
+            return checkMutex.withLock { runCheck(force) }
+        }
+        if (!checkMutex.tryLock()) {
+            val info = _updateInfo.value
+            return if (info != null && info.isNewerVersionAvailable) {
+                UpdateResult.UpdateAvailable(info)
+            } else {
+                UpdateResult.NoUpdateAvailable
+            }
+        }
+        return try {
+            runCheck(force)
+        } finally {
+            checkMutex.unlock()
+        }
+    }
+
+    private suspend fun runCheck(force: Boolean): UpdateResult {
         // An update flow is already in progress — don't clobber its state or
         // re-pop the dialog. Covers a periodic check firing mid-download, while
         // a downloaded update waits for install, during install, and after an
@@ -205,7 +240,8 @@ class UpdateManager {
                 releaseNotes = versionInfo.releaseNotes,
                 downloadUrl = versionInfo.downloadUrl,
                 assetSize = versionInfo.downloadSize,
-                assetName = updateService.getExpectedAssetName(versionInfo.version)
+                assetName = updateService.getExpectedAssetName(versionInfo.version),
+                sha256 = versionInfo.sha256
             )
 
             val downloadPath = updateService.downloadUpdate(updateInfo) { progress ->

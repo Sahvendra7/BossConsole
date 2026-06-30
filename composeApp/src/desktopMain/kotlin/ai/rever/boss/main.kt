@@ -202,6 +202,12 @@ fun main(args: Array<String>) {
             System.err.println("Error uninstalling keyboard interceptor: ${e.message}")
         }
         try {
+            // Stop app-update realtime subscription
+            ai.rever.boss.updater.AppUpdateRealtimeService.instance.dispose()
+        } catch (e: Exception) {
+            System.err.println("Error stopping app update realtime: ${e.message}")
+        }
+        try {
             // Shutdown plugin store
             PluginStoreSetup.shutdown()
         } catch (e: Exception) {
@@ -275,6 +281,13 @@ fun main(args: Array<String>) {
 
     // Initialize plugin store (remote repository, download cache, update manager)
     PluginStoreSetup.initialize()
+
+    // Start app-update Realtime push (Supabase) so the app learns about new releases
+    // instantly instead of polling; route events into the existing update manager.
+    ai.rever.boss.updater.AppUpdateRealtimeService.instance.apply {
+        onReleaseChanged = { ai.rever.boss.updater.UpdateManager.instance.checkForUpdates() }
+        start()
+    }
 
     // Set up the persisted plugins loader for DefaultPlugin
     ai.rever.boss.components.plugin.DefaultPlugin.Companion.loadPersistedPluginsInternal = { manager ->

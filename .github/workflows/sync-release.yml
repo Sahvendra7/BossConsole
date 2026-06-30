@@ -320,6 +320,36 @@ jobs:
           echo "✅ Release ${RELEASE_TAG} created in public repository"
         fi
     
+    - name: Publish release to Supabase Storage
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        BOSS_UPDATE_BUCKET: ${{ vars.BOSS_UPDATE_BUCKET }}
+        RELEASE_TAG: ${{ steps.download.outputs.RELEASE_TAG }}
+        RELEASE_PRERELEASE: ${{ steps.download.outputs.RELEASE_PRERELEASE }}
+      run: |
+        set -euo pipefail
+
+        # Non-breaking: until the Supabase service-role secret is configured this
+        # step is a silent no-op, so adding it can't break existing releases.
+        if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+          echo "ℹ️  SUPABASE_SERVICE_ROLE_KEY not set; skipping Supabase publish."
+          exit 0
+        fi
+        export SUPABASE_URL="${SUPABASE_URL:-https://api.risaboss.com}"
+
+        BUCKET="${BOSS_UPDATE_BUCKET:-app-releases}"
+        VERSION="${RELEASE_TAG#v}"
+        if [[ "${RELEASE_PRERELEASE}" == "true" ]]; then
+          CHANNEL="$(printf '%s' "$VERSION" | sed -nE 's/.*-([a-zA-Z]+).*/\1/p')"
+          [[ -z "$CHANNEL" ]] && CHANNEL="alpha"
+        else
+          CHANNEL="stable"
+        fi
+
+        echo "📤 Publishing BOSS $VERSION (channel=$CHANNEL) to Supabase bucket '$BUCKET'"
+        bash scripts/publish-supabase-release.sh boss "$VERSION" "$CHANNEL" release-assets "$BUCKET"
+
     - name: Update public repository README
       env:
         GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}

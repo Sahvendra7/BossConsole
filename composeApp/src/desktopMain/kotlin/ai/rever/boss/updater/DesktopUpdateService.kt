@@ -1,49 +1,50 @@
 package ai.rever.boss.updater
 
-import ai.rever.boss.config.GitHubConfig
+import ai.rever.boss.config.UpdateSourceConfig
+import ai.rever.boss.updater.source.FallbackUpdateSource
+import ai.rever.boss.updater.source.GitHubUpdateSource
+import ai.rever.boss.updater.source.SupabaseUpdateSource
+import ai.rever.boss.updater.source.UpdateSource
 import ai.rever.boss.utils.ApplicationRestarter
 import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.Version
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.network.sockets.*
 import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import java.io.File
-import java.util.*
+import java.security.MessageDigest
 
 actual class UpdateService {
 
     private val logger = BossLogger.forComponent("UpdateService")
-    
-    // HTTP client for GitHub API calls - fast timeouts
-    private val apiClient = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
-        }
 
-        install(HttpTimeout) {
-            // API calls should complete quickly or fail fast
-            requestTimeoutMillis = 30_000   // 30 seconds for entire API request
-            connectTimeoutMillis = 15_000   // 15 seconds to establish connection
-            socketTimeoutMillis = 15_000    // 15 seconds between data packets
-        }
+    /**
+     * Where release metadata comes from. Supabase is primary (Realtime-fed catalog
+     * in the `app_releases` table); GitHub is the automatic backup. Overridable via
+     * BOSS_UPDATE_PRIMARY_SOURCE for testing/rollback.
+     */
+    private val source: UpdateSource = buildSource()
+
+    /** Dedicated GitHub source used only to recover a download if the primary URL fails. */
+    private val gitHubSource = GitHubUpdateSource()
+
+    private fun buildSource(): UpdateSource = when (UpdateSourceConfig.primarySource) {
+        "github" -> GitHubUpdateSource()
+        "supabase-only" -> SupabaseUpdateSource()
+        else -> FallbackUpdateSource(primary = SupabaseUpdateSource(), backup = GitHubUpdateSource())
+    }.also {
+        logger.info(LogCategory.SYSTEM, "Update source configured", mapOf("source" to it.name))
     }
 
     // HTTP client for file downloads - long timeouts for large files
@@ -61,102 +62,18 @@ actual class UpdateService {
             socketTimeoutMillis = 60_000    // 60 seconds
         }
     }
-    
-    companion object {
-        private const val GITHUB_API_BASE = "https://api.github.com"
-        private const val RELEASES_REPO = "risa-labs-inc/BossConsole-Releases"
-        private const val RELEASES_ENDPOINT = "$GITHUB_API_BASE/repos/$RELEASES_REPO/releases"
-    }
 
-    /**
-     * Make GitHub API request with automatic fallback to unauthenticated access.
-     * Since BossConsole-Releases is a public repo, authentication is optional.
-     * If authenticated request fails with 401, automatically retry without token.
-     */
-    private suspend fun makeGitHubRequest(
-        url: String,
-        authContext: GitHubConfig.GitHubAuthContext
-    ): HttpResponse {
-        // Try authenticated request first if token available
-        if (authContext.isAuthenticated) {
-            val authenticatedResponse = apiClient.get(url) {
-                headers {
-                    append("Accept", "application/vnd.github.v3+json")
-                    append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
-                    append("Authorization", "Bearer ${authContext.token}")
-                }
-            }
-
-            // If authenticated request succeeds, return it
-            if (authenticatedResponse.status.value in 200..299) {
-                return authenticatedResponse
-            }
-
-            // If 401 error with token, fall back to unauthenticated
-            if (authenticatedResponse.status.value == 401) {
-                logger.warn(LogCategory.NETWORK, "Authenticated request failed - retrying without auth")
-                // Fall through to unauthenticated request
-            } else {
-                // Other error, return it
-                return authenticatedResponse
-            }
-        }
-
-        // Make unauthenticated request (or fallback after 401)
-        return apiClient.get(url) {
-            headers {
-                append("Accept", "application/vnd.github.v3+json")
-                append("User-Agent", "BOSS-Desktop-${AppVersion.CURRENT}")
-            }
-        }
-    }
+    /** Safe "no update" result used when the catalog is empty or a check fails. */
+    private fun upToDate(): UpdateInfo = UpdateInfo(
+        available = false,
+        currentVersion = AppVersion.CURRENT,
+        latestVersion = AppVersion.CURRENT,
+        releaseNotes = ""
+    )
 
     actual suspend fun checkForUpdates(): UpdateInfo {
         return try {
-            // Single token retrieval with validation
-            val authContext = GitHubConfig.getAuthContext()
-
-            // Log API status
-            when {
-                authContext.isAuthenticated -> {
-                    logger.debug(LogCategory.NETWORK, "Using authenticated GitHub API", mapOf(
-                        "rateLimit" to authContext.rateLimit,
-                        "source" to authContext.source
-                    ))
-                }
-                authContext.token != null && !authContext.isValid -> {
-                    logger.warn(LogCategory.NETWORK, "GitHub token found but format is invalid", mapOf(
-                        "source" to authContext.source
-                    ))
-                }
-                else -> {
-                    logger.debug(LogCategory.NETWORK, "Using unauthenticated GitHub API (60 req/hr)")
-                }
-            }
-
-            // Use helper function with automatic fallback for public repo
-            val response = makeGitHubRequest(RELEASES_ENDPOINT, authContext)
-
-            // Check for error responses (rate limits, etc.)
-            if (response.status.value !in 200..299) {
-                val errorBody = response.bodyAsText()
-                val errorMessage = when {
-                    response.status.value == 401 ->
-                        "GitHub API authentication failed. This is unexpected for public repository access."
-                    errorBody.contains("rate limit", ignoreCase = true) ->
-                        "GitHub API rate limit exceeded. Please try again later."
-                    else -> "Unable to check for updates (HTTP ${response.status.value})"
-                }
-                logger.warn(LogCategory.NETWORK, "Update check failed", mapOf("error" to errorMessage))
-                return UpdateInfo(
-                    available = false,
-                    currentVersion = AppVersion.CURRENT,
-                    latestVersion = AppVersion.CURRENT,
-                    releaseNotes = ""
-                )
-            }
-
-            val releases = response.body<List<GitHubRelease>>()
+            val releases = source.listReleases()
 
             // Determine whether to include pre-releases:
             // 1. If user explicitly enabled prerelease updates, include them
@@ -174,28 +91,11 @@ actual class UpdateService {
                 }
                 .maxByOrNull { it.second }
                 ?.first
-            
-            if (latestRelease == null) {
-                return UpdateInfo(
-                    available = false,
-                    currentVersion = AppVersion.CURRENT,
-                    latestVersion = AppVersion.CURRENT,
-                    releaseNotes = ""
-                )
-            }
-            
-            val latestVersion = Version.parse(latestRelease.tag_name)
-            if (latestVersion == null) {
-                return UpdateInfo(
-                    available = false,
-                    currentVersion = AppVersion.CURRENT,
-                    latestVersion = AppVersion.CURRENT,
-                    releaseNotes = ""
-                )
-            }
-            
+                ?: return upToDate()
+
+            val latestVersion = Version.parse(latestRelease.tag_name) ?: return upToDate()
             val isUpdateAvailable = latestVersion.isNewerThan(AppVersion.CURRENT)
-            
+
             // Find the appropriate asset for the current platform
             val platform = getCurrentPlatform()
             val expectedAssetName = getExpectedAssetName(latestVersion)
@@ -223,7 +123,7 @@ actual class UpdateService {
             } else {
                 logger.debug(LogCategory.SYSTEM, "Found update asset", mapOf("name" to asset.name))
             }
-            
+
             UpdateInfo(
                 available = isUpdateAvailable,
                 currentVersion = AppVersion.CURRENT,
@@ -231,65 +131,96 @@ actual class UpdateService {
                 releaseNotes = latestRelease.body,
                 downloadUrl = asset?.browser_download_url,
                 assetSize = asset?.size ?: 0,
-                assetName = asset?.name ?: ""
+                assetName = asset?.name ?: "",
+                sha256 = asset?.sha256
             )
-            
+
         } catch (e: Exception) {
-            // Handle JSON parsing errors (rate limits, malformed responses, etc.)
             val errorMessage = when {
                 e.message?.contains("rate limit", ignoreCase = true) == true ->
-                    "GitHub API rate limit exceeded. Please try again later."
-                e.message?.contains("Expected start of the array", ignoreCase = true) == true ->
-                    "Unexpected API response format. Please try again later."
+                    "Update API rate limit exceeded. Please try again later."
                 e.message?.contains("JSON", ignoreCase = true) == true ->
                     "Error parsing update information. Please try again later."
                 else -> "Unable to check for updates: ${e.message?.take(100) ?: "Unknown error"}"
             }
             logger.error(LogCategory.NETWORK, "Error checking for updates", mapOf("error" to errorMessage))
-
-            UpdateInfo(
-                available = false,
-                currentVersion = AppVersion.CURRENT,
-                latestVersion = AppVersion.CURRENT,
-                releaseNotes = ""
-            )
+            upToDate()
         }
     }
-    
+
     actual suspend fun downloadUpdate(
-        updateInfo: UpdateInfo, 
+        updateInfo: UpdateInfo,
+        onProgress: (progress: Float) -> Unit
+    ): String? {
+        val primaryUrl = updateInfo.downloadUrl
+        if (primaryUrl == null) {
+            logger.error(LogCategory.NETWORK, "No download URL available", mapOf("asset" to updateInfo.assetName))
+            return null
+        }
+
+        // Try the source-provided URL first (Supabase Storage when Supabase is primary).
+        downloadFrom(primaryUrl, updateInfo.assetName, updateInfo.assetSize, updateInfo.sha256, onProgress)
+            ?.let { return it }
+
+        // The fallback chain is metadata-only: once Supabase serves the catalog, the
+        // download URL is a Storage URL with no automatic recovery. If that download
+        // fails (e.g. the bucket isn't public/reachable) recover via the GitHub asset
+        // for the same version — unless that's already the URL we just tried.
+        val gitHubUrl = gitHubAssetUrlFor(updateInfo.latestVersion)
+        if (gitHubUrl != null && gitHubUrl != primaryUrl) {
+            logger.warn(LogCategory.NETWORK, "Primary download failed; falling back to GitHub asset", mapOf(
+                "asset" to updateInfo.assetName
+            ))
+            return downloadFrom(gitHubUrl, updateInfo.assetName, updateInfo.assetSize, sha256 = null, onProgress)
+        }
+        return null
+    }
+
+    /** Download [url] to a temp file, verifying [sha256] when provided. Returns the path or null. */
+    private suspend fun downloadFrom(
+        url: String,
+        assetName: String,
+        assetSize: Long,
+        sha256: String?,
         onProgress: (progress: Float) -> Unit
     ): String? {
         return try {
-            val downloadUrl = updateInfo.downloadUrl
-            if (downloadUrl == null) {
-                logger.error(LogCategory.NETWORK, "No download URL available", mapOf("asset" to updateInfo.assetName))
-                return null
-            }
-
-            logger.info(LogCategory.SYSTEM, "Starting update download", mapOf(
-                "asset" to updateInfo.assetName,
-                "size" to updateInfo.assetSize
-            ))
+            logger.info(LogCategory.SYSTEM, "Starting update download", mapOf("asset" to assetName, "size" to assetSize))
 
             val tempDir = File(System.getProperty("java.io.tmpdir"), "boss-updates")
             tempDir.mkdirs()
 
-            val downloadFile = File(tempDir, updateInfo.assetName)
+            val downloadFile = File(tempDir, assetName)
             if (downloadFile.exists()) {
                 downloadFile.delete()
             }
 
-            streamToFile(downloadUrl, updateInfo.assetSize, downloadFile, onProgress)
+            streamToFile(url, assetSize, downloadFile, onProgress)
 
             if (downloadFile.exists() && downloadFile.length() > 0) {
-                logger.info(LogCategory.SYSTEM, "Update downloaded successfully", mapOf("path" to downloadFile.absolutePath))
-                downloadFile.absolutePath
+                // Integrity check, NOT authenticity: the hash and URL come from the same
+                // app_releases row, so this guards against Storage/CDN corruption, not a
+                // compromised catalog. Update authenticity still rests on OS code-signing.
+                val actualSha = if (sha256 != null) sha256Of(downloadFile) else null
+                if (sha256 != null && !sha256.equals(actualSha, ignoreCase = true)) {
+                    logger.error(LogCategory.SYSTEM, "Update checksum mismatch; discarding download", mapOf(
+                        "asset" to assetName,
+                        "expected" to sha256,
+                        "actual" to (actualSha ?: "")
+                    ))
+                    downloadFile.delete()
+                    null
+                } else {
+                    if (sha256 != null) {
+                        logger.info(LogCategory.SYSTEM, "Update checksum verified", mapOf("asset" to assetName))
+                    }
+                    logger.info(LogCategory.SYSTEM, "Update downloaded successfully", mapOf("path" to downloadFile.absolutePath))
+                    downloadFile.absolutePath
+                }
             } else {
                 logger.error(LogCategory.SYSTEM, "Download failed - file is empty or doesn't exist")
                 null
             }
-
         } catch (e: Exception) {
             val errorMessage = when (e) {
                 is HttpRequestTimeoutException -> "Download timeout: File too large or connection too slow"
@@ -301,7 +232,31 @@ actual class UpdateService {
             null
         }
     }
-    
+
+    /** Resolve the GitHub Releases asset URL for [version] — the download-time backup. */
+    private suspend fun gitHubAssetUrlFor(version: Version): String? = try {
+        val release = gitHubSource.getReleaseByTag("v$version")
+        val expected = getExpectedAssetName(version)
+        release?.assets?.find { it.name.equals(expected, ignoreCase = true) }?.browser_download_url
+    } catch (e: Exception) {
+        logger.warn(LogCategory.NETWORK, "Could not resolve GitHub fallback asset", error = e)
+        null
+    }
+
+    /** Compute the lowercase hex SHA-256 of [file]. */
+    private fun sha256Of(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     /**
      * Stream a download to [destFile], reporting throttled progress.
      *
@@ -322,7 +277,7 @@ actual class UpdateService {
                 "Download failed (HTTP ${response.status.value} ${response.status.description})"
             }
 
-            // Prefer the actual Content-Length; fall back to the size from the GitHub API.
+            // Prefer the actual Content-Length; fall back to the size from the catalog.
             val totalSize = response.headers["Content-Length"]?.toLongOrNull() ?: expectedSize
             logger.trace(LogCategory.SYSTEM, "Download info", mapOf("totalSize" to totalSize, "expectedSize" to expectedSize))
 
@@ -415,7 +370,7 @@ actual class UpdateService {
             }
         }
     }
-    
+
     actual fun getCurrentPlatform(): String {
         return UpdateInstaller.getCurrentPlatform()
     }
@@ -443,34 +398,11 @@ actual class UpdateService {
     }
 
     /**
-     * Fetch all releases from GitHub with pagination support
+     * Fetch all releases from the configured source (Supabase primary, GitHub backup).
      */
     actual suspend fun fetchAllReleases(): List<VersionInfo> = withContext(Dispatchers.IO) {
         try {
-            val authContext = GitHubConfig.getAuthContext()
-            val allReleases = mutableListOf<GitHubRelease>()
-            var page = 1
-            val perPage = 100 // GitHub max per page
-
-            // Fetch all pages until we get an empty response
-            while (true) {
-                val url = "$RELEASES_ENDPOINT?page=$page&per_page=$perPage"
-                val response = makeGitHubRequest(url, authContext)
-
-                if (response.status.value !in 200..299) {
-                    logger.warn(LogCategory.NETWORK, "Failed to fetch releases page", mapOf("page" to page, "status" to response.status.value))
-                    break
-                }
-
-                val releases = response.body<List<GitHubRelease>>()
-                if (releases.isEmpty()) break
-
-                allReleases.addAll(releases)
-
-                // If we got fewer than perPage, we've reached the last page
-                if (releases.size < perPage) break
-                page++
-            }
+            val allReleases = source.listReleases()
 
             // Convert to VersionInfo
             allReleases.mapNotNull { release ->
@@ -489,7 +421,8 @@ actual class UpdateService {
                             releaseNotes = release.body,
                             downloadUrl = asset.browser_download_url ?: "",
                             isDraft = release.draft,
-                            isPrerelease = release.prerelease
+                            isPrerelease = release.prerelease,
+                            sha256 = asset.sha256
                         )
                     } else null
                 } catch (e: Exception) {
@@ -508,16 +441,7 @@ actual class UpdateService {
      */
     actual suspend fun fetchVersionDetails(version: Version): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val authContext = GitHubConfig.getAuthContext()
-            val tagName = "v$version"
-            val response = makeGitHubRequest("$RELEASES_ENDPOINT/tags/$tagName", authContext)
-
-            if (response.status.value !in 200..299) {
-                logger.warn(LogCategory.NETWORK, "Failed to fetch version details", mapOf("version" to version.toString(), "status" to response.status.value))
-                return@withContext null
-            }
-
-            val release = response.body<GitHubRelease>()
+            val release = source.getReleaseByTag("v$version") ?: return@withContext null
             val expectedAssetName = getExpectedAssetName(version)
             val asset = release.assets.find {
                 it.name.equals(expectedAssetName, ignoreCase = true)
@@ -530,7 +454,8 @@ actual class UpdateService {
                 releaseNotes = release.body,
                 downloadUrl = asset?.browser_download_url,
                 assetSize = asset?.size ?: 0,
-                assetName = asset?.name ?: ""
+                assetName = asset?.name ?: "",
+                sha256 = asset?.sha256
             )
         } catch (e: Exception) {
             logger.error(LogCategory.NETWORK, "Error fetching version details", mapOf("version" to version.toString()), error = e)

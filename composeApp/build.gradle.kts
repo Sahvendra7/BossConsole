@@ -754,6 +754,17 @@ compose.desktop {
         }
         jvmArgs(*platformJvmArgs.toTypedArray())
 
+        // Bake Supabase config into the packaged app launcher so the shared Supabase
+        // client AND the self-updater use the CI-provided values at runtime (via
+        // ConfigLoader's system-property lookup, which outranks the hardcoded
+        // SupabaseClientConfig fallback — see issue #33). CI supplies these via env from
+        // repo secrets (release.yml top-level env); local `./gradlew run` leaves them
+        // unset and uses the run-task systemProperty block / config defaults. The anon
+        // key is the public, RLS-gated key.
+        System.getenv("SUPABASE_ANON_KEY")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_ANON_KEY=$it") }
+        System.getenv("SUPABASE_URL")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_URL=$it") }
+        System.getenv("SUPABASE_FUNCTION_URL")?.takeIf { it.isNotBlank() }?.let { jvmArgs("-DSUPABASE_FUNCTION_URL=$it") }
+
         nativeDistributions {
             targetFormats(
                 TargetFormat.Dmg,           // macOS
