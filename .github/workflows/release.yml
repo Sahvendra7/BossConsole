@@ -86,7 +86,7 @@ jobs:
       should-create-tag: ${{ steps.commit-version.outputs.should-create-tag }}
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
 
@@ -314,7 +314,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -643,7 +643,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -816,7 +816,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -1001,7 +1001,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -1284,7 +1284,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 
@@ -1443,7 +1443,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare-version.outputs.updated-sha }}
 

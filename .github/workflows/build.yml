@@ -25,7 +25,7 @@ jobs:
       build-number: ${{ steps.get-version.outputs.build-number }}
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -58,7 +58,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -124,7 +124,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -160,7 +160,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: ☕ Setup JDK
         uses: actions/setup-java@v4
@@ -212,7 +212,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🟩 Setup Supabase CLI
         uses: supabase/setup-cli@v2

@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Chromium-Branding Tool
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: TeamDev-IP/Chromium-Branding
           path: chromium-branding-tool
@@ -89,7 +89,7 @@ jobs:
     runs-on: macos-14
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
@@ -294,7 +294,7 @@ jobs:
     runs-on: macos-15-large
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
@@ -486,7 +486,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
@@ -586,7 +586,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
@@ -710,7 +710,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
@@ -806,7 +806,7 @@ jobs:
     continue-on-error: true  # Graceful failure if ARM runners unavailable
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Branding Tool
         uses: actions/download-artifact@v8
