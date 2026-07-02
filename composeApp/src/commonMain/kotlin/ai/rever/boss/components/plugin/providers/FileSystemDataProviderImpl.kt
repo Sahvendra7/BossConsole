@@ -27,11 +27,15 @@ class FileSystemDataProviderImpl : FileSystemDataProvider {
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
     override suspend fun scanDirectory(path: String): FileNodeData? {
-        return ai.rever.boss.components.plugin.panels.left_top.scanDirectory(path)
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            ai.rever.boss.components.plugin.panels.left_top.scanDirectory(path)
+        }
     }
 
     override suspend fun scanDirectoryWithDepth(path: String, maxDepth: Int, startDepth: Int): FileNodeData? {
-        return platformScanDirectoryWithDepth(path, maxDepth, startDepth)
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            platformScanDirectoryWithDepth(path, maxDepth, startDepth)
+        }
     }
 
     override fun directoryHasChildren(path: String): Boolean {
