@@ -9,6 +9,8 @@ import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
 import ai.rever.boss.plugin.api.LogDataProvider
+import ai.rever.boss.plugin.api.McpToolProvider
+import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
@@ -73,6 +75,11 @@ class PluginRegistrationTracker {
     private val tabTypesByPlugin = ConcurrentHashMap<String, MutableSet<TabTypeId>>()
 
     /**
+     * MCP tool provider ids registered by each plugin.
+     */
+    private val mcpToolProvidersByPlugin = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /**
      * Record a panel registration.
      */
     fun recordPanelRegistration(pluginId: String, panelId: PanelId) {
@@ -87,10 +94,24 @@ class PluginRegistrationTracker {
     }
 
     /**
+     * Record an MCP tool provider registration.
+     */
+    fun recordMcpToolProviderRegistration(pluginId: String, providerId: String) {
+        mcpToolProvidersByPlugin.getOrPut(pluginId) { ConcurrentHashMap.newKeySet() }.add(providerId)
+    }
+
+    /**
      * Get all panels registered by a plugin.
      */
     fun getPanelsForPlugin(pluginId: String): Set<PanelId> {
         return panelsByPlugin[pluginId]?.toSet() ?: emptySet()
+    }
+
+    /**
+     * Get all MCP tool provider ids registered by a plugin.
+     */
+    fun getMcpToolProvidersForPlugin(pluginId: String): Set<String> {
+        return mcpToolProvidersByPlugin[pluginId]?.toSet() ?: emptySet()
     }
 
     /**
@@ -108,6 +129,7 @@ class PluginRegistrationTracker {
     fun clearPlugin(pluginId: String) {
         panelsByPlugin.remove(pluginId)
         tabTypesByPlugin.remove(pluginId)
+        mcpToolProvidersByPlugin.remove(pluginId)
     }
 
     /**
@@ -351,6 +373,25 @@ class TrackingPluginContext(
     // Diagnostic provider - delegate to underlying context
     override val diagnosticProvider: DiagnosticProvider? get() = delegate.diagnosticProvider
 
+    // MCP tool provider registration - track per plugin so tools are removed
+    // automatically in unregisterAll() when the plugin is disabled/unloaded.
+    override fun registerMcpToolProvider(provider: McpToolProvider) {
+        tracker.recordMcpToolProviderRegistration(pluginId, provider.providerId)
+        delegate.registerMcpToolProvider(provider)
+    }
+
+    // Deliberately does NOT remove providerId from the tracker (unlike a plugin
+    // explicitly unregistering a panel/tab type, which also isn't untracked
+    // individually — same convention). unregisterAll() reads the tracker to know
+    // which ids to unregister and clears everything at once at plugin teardown,
+    // so a stale tracker entry here just means unregisterAll() calls the
+    // (idempotent) registry unregister a second time for that id — harmless.
+    override fun unregisterMcpToolProvider(providerId: String) {
+        delegate.unregisterMcpToolProvider(providerId)
+    }
+
+    override val mcpToolRegistry: McpToolRegistry? get() = delegate.mcpToolRegistry
+
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)
     override fun registerPluginAPI(api: Any) = delegate.registerPluginAPI(api)
@@ -384,6 +425,13 @@ class TrackingPluginContext(
         for (tabTypeId in tabTypes) {
             println("[TrackingPluginContext] Unregistering tab type: ${tabTypeId.typeId}")
             delegate.tabRegistry.unregisterTabType(tabTypeId)
+        }
+
+        // Unregister all MCP tool providers — this is what makes a plugin's
+        // `mcp__boss__*` tools disappear when the plugin is disabled/unloaded.
+        val toolProviders = tracker.getMcpToolProvidersForPlugin(pluginId)
+        for (providerId in toolProviders) {
+            delegate.unregisterMcpToolProvider(providerId)
         }
 
         // Clear tracking records

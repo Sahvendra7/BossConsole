@@ -449,6 +449,29 @@ class DefaultPlugin(
         ))
     }
 
+    // ============================================================
+    // MCP TOOL PROVIDER REGISTRATION
+    // Plugins contribute tools to the `boss` MCP server; the terminal-tab
+    // plugin bridges McpToolRegistryImpl onto the live MCP server.
+    // ============================================================
+
+    override fun registerMcpToolProvider(provider: ai.rever.boss.plugin.api.McpToolProvider) {
+        ai.rever.boss.mcp.McpToolRegistryImpl.registerProvider(provider)
+        logger.debug(LogCategory.SYSTEM, "MCP tool provider registered", mapOf(
+            "providerId" to provider.providerId
+        ))
+    }
+
+    override fun unregisterMcpToolProvider(providerId: String) {
+        ai.rever.boss.mcp.McpToolRegistryImpl.unregisterProvider(providerId)
+        logger.debug(LogCategory.SYSTEM, "MCP tool provider unregistered", mapOf(
+            "providerId" to providerId
+        ))
+    }
+
+    override val mcpToolRegistry: ai.rever.boss.plugin.api.McpToolRegistry
+        get() = ai.rever.boss.mcp.McpToolRegistryImpl
+
     // Split view operations for plugins that need tab/panel operations
     override val splitViewOperations: SplitViewOperations? by lazy {
         if (splitViewState != null && _windowId != null) {

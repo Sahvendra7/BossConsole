@@ -9,6 +9,8 @@ import ai.rever.boss.plugin.api.DownloadDataProvider
 import ai.rever.boss.plugin.api.FileSystemDataProvider
 import ai.rever.boss.plugin.api.GitDataProvider
 import ai.rever.boss.plugin.api.LogDataProvider
+import ai.rever.boss.plugin.api.McpToolProvider
+import ai.rever.boss.plugin.api.McpToolRegistry
 import ai.rever.boss.plugin.api.PanelEventProvider
 import ai.rever.boss.plugin.api.RoleManagementProvider
 import ai.rever.boss.plugin.api.SettingsProvider
@@ -242,6 +244,12 @@ class SandboxedPluginContext(
     // Diagnostic provider - delegate to underlying context
     override val diagnosticProvider: DiagnosticProvider?
         get() = delegate.diagnosticProvider
+
+    // MCP tool provider registration - delegate to underlying context so
+    // plugin-contributed MCP tools reach the host McpToolRegistry.
+    override fun registerMcpToolProvider(provider: McpToolProvider) = delegate.registerMcpToolProvider(provider)
+    override fun unregisterMcpToolProvider(providerId: String) = delegate.unregisterMcpToolProvider(providerId)
+    override val mcpToolRegistry: McpToolRegistry? get() = delegate.mcpToolRegistry
 
     // Plugin-to-plugin API access - delegate to underlying context
     override fun <T : Any> getPluginAPI(apiClass: Class<T>): T? = delegate.getPluginAPI(apiClass)

@@ -183,6 +183,10 @@ class DynamicPluginManager(
                     _isAdmin.value = access.isAdmin
                     _userPermissions.value = access.permissions
 
+                    // Keep the MCP tool registry's RBAC view in sync so permission-gated
+                    // tools appear/disappear with the user's admin status and permissions.
+                    ai.rever.boss.mcp.McpToolRegistryImpl.updateAccess(access.isAdmin, access.permissions)
+
                     if (changed) {
                         handleAccessChange()
                     }
@@ -690,6 +694,10 @@ class DynamicPluginManager(
                     "pluginId" to pluginId,
                     "errorType" to e.javaClass.simpleName
                 ), e)
+                // register() may have partially succeeded (panels/tab types/MCP tool
+                // providers already registered) before throwing — tear those down so a
+                // "disabled" plugin can't leave agent-callable MCP tools live.
+                runCatching { trackingContexts[pluginId]?.unregisterAll() }
                 Result.failure(e)
             }
         }
@@ -1079,6 +1087,9 @@ class DynamicPluginManager(
                             "pluginId" to pluginId,
                             "errorType" to e.javaClass.simpleName
                         ), e)
+                        // Partial register() must not leave stray registrations (incl.
+                        // agent-callable MCP tool providers) for a plugin still hidden.
+                        runCatching { trackingContext.unregisterAll() }
                     }
                 }
             }
