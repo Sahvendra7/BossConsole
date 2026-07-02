@@ -882,27 +882,34 @@ object PluginStoreSetup {
     suspend fun loadPersistedPlugins(
         dynamicPluginManager: ai.rever.boss.components.plugin.DynamicPluginManager
     ): Map<String, Result<ai.rever.boss.components.plugin.DynamicPluginInfo>> {
+        val loadBeganMs = System.currentTimeMillis()
         val results = mutableMapOf<String, Result<ai.rever.boss.components.plugin.DynamicPluginInfo>>()
 
-        // 1. Copy bundled plugins to ~/.boss/plugins if not already present
-        copyBundledPluginsToPluginDir(dynamicPluginManager)
+        // Steps 1-4 are JAR scans, copies, downloads, and the installed.json
+        // read; callers arrive on Dispatchers.Main, so keep the disk churn off
+        // the UI thread. The actual plugin loading below stays on the caller:
+        // loadPlugin self-dispatches to IO and register() needs Main.
+        val persistedPlugins = withContext(Dispatchers.IO) {
+            // 1. Copy bundled plugins to ~/.boss/plugins if not already present
+            copyBundledPluginsToPluginDir(dynamicPluginManager)
 
-        // 2. Ensure all system plugins are installed (auto-download if missing)
-        ensureSystemPluginsInstalled()
+            // 2. Ensure all system plugins are installed (auto-download if missing)
+            ensureSystemPluginsInstalled()
 
-        // 3. Remove stale duplicate versions of the same plugin and repoint
-        //    installed.json at the kept JAR — different writers use different
-        //    filename conventions, so multiple versions can accumulate and an
-        //    older JAR could otherwise shadow a newer one at scan time.
-        runCatching { PluginJarReconciler.reconcilePluginDir(_pluginDir) }
-            .onFailure { e ->
-                logger.warn(LogCategory.SYSTEM, "Plugin dir reconcile failed", mapOf(
-                    "error" to (e.message ?: "unknown")
-                ))
-            }
+            // 3. Remove stale duplicate versions of the same plugin and repoint
+            //    installed.json at the kept JAR — different writers use different
+            //    filename conventions, so multiple versions can accumulate and an
+            //    older JAR could otherwise shadow a newer one at scan time.
+            runCatching { PluginJarReconciler.reconcilePluginDir(_pluginDir) }
+                .onFailure { e ->
+                    logger.warn(LogCategory.SYSTEM, "Plugin dir reconcile failed", mapOf(
+                        "error" to (e.message ?: "unknown")
+                    ))
+                }
 
-        // 4. Load persisted plugins (including bundled ones now in plugin dir)
-        val persistedPlugins = PluginPersistence.getInstalledPlugins()
+            // 4. Read persisted plugins (including bundled ones now in plugin dir)
+            PluginPersistence.getInstalledPlugins()
+        }
 
         if (persistedPlugins.isEmpty()) {
             logger.info(LogCategory.SYSTEM, "No persisted plugins to load")
@@ -924,6 +931,10 @@ object PluginStoreSetup {
         val persistedResults = dynamicPluginManager.loadPersistedPlugins(entries)
         results.putAll(persistedResults)
 
+        logger.info(LogCategory.SYSTEM, "Persisted plugin load complete", mapOf(
+            "count" to results.size.toString(),
+            "elapsedMs" to (System.currentTimeMillis() - loadBeganMs).toString()
+        ))
         return results
     }
 

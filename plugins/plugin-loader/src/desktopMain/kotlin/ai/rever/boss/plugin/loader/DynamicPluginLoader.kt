@@ -10,6 +10,8 @@ import ai.rever.boss.plugin.logging.BossLogger
 import ai.rever.boss.plugin.logging.LogCategory
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Interface for loading and unloading plugins dynamically.
@@ -77,8 +79,10 @@ class DynamicPluginLoaderImpl(
      */
     var currentBossVersion: String? = null
 
-    override suspend fun loadPlugin(jarPath: String): Result<LoadedPlugin> {
-        return try {
+    // JAR reading, bytecode validation, classloading, and instantiation are
+    // heavy; callers typically run on Dispatchers.Main, so keep it all on IO.
+    override suspend fun loadPlugin(jarPath: String): Result<LoadedPlugin> = withContext(Dispatchers.IO) {
+        try {
             logger.info(LogCategory.SYSTEM, "Loading plugin from JAR", mapOf(
                 "jarPath" to jarPath
             ))
@@ -89,7 +93,7 @@ class DynamicPluginLoaderImpl(
 
             // Check if already loaded
             if (loadedPlugins.containsKey(pluginId)) {
-                return Result.failure(PluginLoadException(
+                return@withContext Result.failure(PluginLoadException(
                     "Plugin already loaded: $pluginId",
                     pluginId
                 ))
@@ -97,7 +101,7 @@ class DynamicPluginLoaderImpl(
 
             // Check API version compatibility
             if (!isApiVersionCompatible(manifest.apiVersion)) {
-                return Result.failure(PluginApiVersionException(
+                return@withContext Result.failure(PluginApiVersionException(
                     "Plugin requires API version ${manifest.apiVersion}, but current version is ${PluginManifestConstants.CURRENT_API_VERSION}",
                     pluginId,
                     manifest.apiVersion,
@@ -115,7 +119,7 @@ class DynamicPluginLoaderImpl(
                         "requiredVersion" to minBossVersion
                     ))
                 } else if (!isBossVersionCompatible(minBossVersion, currentVersion)) {
-                    return Result.failure(PluginBossVersionException(
+                    return@withContext Result.failure(PluginBossVersionException(
                         "Plugin requires BOSS version $minBossVersion or later, but current version is $currentVersion",
                         pluginId,
                         minBossVersion,
@@ -131,7 +135,7 @@ class DynamicPluginLoaderImpl(
             val validation = BinaryCompatibilityValidator.validate(classLoader, jarPath)
             if (!validation.isCompatible) {
                 classLoaderManager.closeClassLoader(pluginId, classLoader)
-                return Result.failure(PluginBinaryIncompatibilityException(
+                return@withContext Result.failure(PluginBinaryIncompatibilityException(
                     "Plugin '$pluginId' has binary incompatibilities: ${validation.errors.first()}",
                     pluginId,
                     manifest
@@ -143,7 +147,7 @@ class DynamicPluginLoaderImpl(
                 classLoader.loadClass(manifest.mainClass)
             } catch (e: ClassNotFoundException) {
                 classLoaderManager.closeClassLoader(pluginId, classLoader)
-                return Result.failure(PluginClassException(
+                return@withContext Result.failure(PluginClassException(
                     "Plugin main class not found: ${manifest.mainClass}",
                     pluginId,
                     manifest.mainClass,
@@ -154,7 +158,7 @@ class DynamicPluginLoaderImpl(
             // Verify it implements Plugin interface
             if (!Plugin::class.java.isAssignableFrom(pluginClass)) {
                 classLoaderManager.closeClassLoader(pluginId, classLoader)
-                return Result.failure(PluginClassException(
+                return@withContext Result.failure(PluginClassException(
                     "Main class does not implement Plugin interface: ${manifest.mainClass}",
                     pluginId,
                     manifest.mainClass
@@ -179,7 +183,7 @@ class DynamicPluginLoaderImpl(
                 }
             } catch (e: Exception) {
                 classLoaderManager.closeClassLoader(pluginId, classLoader)
-                return Result.failure(PluginClassException(
+                return@withContext Result.failure(PluginClassException(
                     "Failed to instantiate plugin: ${e.message}",
                     pluginId,
                     manifest.mainClass,

@@ -8,6 +8,7 @@
 import ai.rever.boss.plugin.ui.BossTheme as PluginBossTheme
 import ai.rever.boss.plugin.ui.bossTypography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -28,14 +29,24 @@ import boss_kotlin.composeapp.generated.resources.meslolgs_nf_bold_italic
  */
 @Composable
 fun BossTheme(content: @Composable () -> Unit) {
-    val mono = FontFamily(
-        Font(Res.font.meslolgs_nf_regular, FontWeight.Normal, FontStyle.Normal),
-        Font(Res.font.meslolgs_nf_bold, FontWeight.Bold, FontStyle.Normal),
-        Font(Res.font.meslolgs_nf_italic, FontWeight.Normal, FontStyle.Italic),
-        Font(Res.font.meslolgs_nf_bold_italic, FontWeight.Bold, FontStyle.Italic),
-    )
+    val regular = Font(Res.font.meslolgs_nf_regular, FontWeight.Normal, FontStyle.Normal)
+    val bold = Font(Res.font.meslolgs_nf_bold, FontWeight.Bold, FontStyle.Normal)
+    val italic = Font(Res.font.meslolgs_nf_italic, FontWeight.Normal, FontStyle.Italic)
+    val boldItalic = Font(Res.font.meslolgs_nf_bold_italic, FontWeight.Bold, FontStyle.Italic)
+    // Remember the typography: a fresh instance per recomposition changes the
+    // LocalBossTypography value, and a static composition local recomposes the
+    // entire subtree below the theme root whenever its value changes.
+    //
+    // The keys ARE stable across recompositions: Res.font.* accessors are
+    // generated `by lazy` (one FontResource instance), and the desktop Font()
+    // composable loads blocking and remembers its result keyed on it. Keep the
+    // keys (don't go keyless): Font() legitimately returns a new instance when
+    // the resource environment changes, and recomputing then is the point.
+    val typography = remember(regular, bold, italic, boldItalic) {
+        bossTypography(mono = FontFamily(regular, bold, italic, boldItalic))
+    }
     PluginBossTheme(
-        typography = bossTypography(mono = mono),
+        typography = typography,
         content = content,
     )
 }
