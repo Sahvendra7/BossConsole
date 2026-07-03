@@ -6,12 +6,12 @@ import ai.rever.boss.components.wizard.WizardStep
  * Categories for organizing plugins in the installation wizard.
  */
 enum class PluginCategory(val displayName: String, val description: String) {
-    ESSENTIAL("Essential", "Core plugins for basic functionality"),
+    ESSENTIAL("Essential", "Core tools for basic functionality"),
     DEVELOPER("Developer Tools", "Tools for code development and version control"),
     PRODUCTIVITY("Productivity", "Tools to enhance your workflow"),
     AUTOMATION("Automation", "Automate repetitive tasks"),
     ADMIN("Admin Tools", "Administrative and management tools"),
-    OTHER("Other", "Additional plugins")
+    OTHER("Other", "Additional tools")
 }
 
 /**
@@ -47,7 +47,7 @@ sealed class PluginInstallStep(
      * These are pre-selected by default.
      */
     data object EssentialPlugins : PluginInstallStep(
-        title = "Essential Plugins",
+        title = "Essential Tools",
         category = PluginCategory.ESSENTIAL,
         canSkip = true
     )
@@ -92,7 +92,7 @@ sealed class PluginInstallStep(
      * Other plugins step (additional plugins from the store).
      */
     data object OtherPlugins : PluginInstallStep(
-        title = "Other Plugins",
+        title = "Other Tools",
         category = PluginCategory.OTHER,
         canSkip = true
     )

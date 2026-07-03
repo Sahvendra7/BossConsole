@@ -38,7 +38,7 @@ import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HomeRepairService
 import androidx.compose.material.icons.filled.Rocket
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
@@ -279,7 +279,7 @@ internal fun WelcomeStepContent() {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Default.Extension,
+            imageVector = Icons.Default.HomeRepairService,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = AccentBlue
@@ -288,7 +288,7 @@ internal fun WelcomeStepContent() {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Welcome to BOSS Plugins",
+            text = "Welcome to the BOSS Toolbox",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
@@ -298,7 +298,7 @@ internal fun WelcomeStepContent() {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Customize your workspace by selecting the plugins you need.\nWe'll help you get started with some recommended essentials.",
+            text = "Customize your workspace by selecting the tools you need.\nWe'll help you get started with some recommended essentials.",
             fontSize = 14.sp,
             color = BossDarkTextSecondary,
             textAlign = TextAlign.Center,
@@ -323,7 +323,7 @@ internal fun WelcomeStepContent() {
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Essential plugins will be pre-selected for you",
+                text = "Essential tools will be pre-selected for you",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary
             )
@@ -371,7 +371,7 @@ internal fun CategoryStepContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No plugins available in this category",
+                    text = "No tools available in this category",
                     color = BossDarkTextSecondary,
                     fontSize = 14.sp
                 )
@@ -398,7 +398,7 @@ internal fun CategoryStepContent(
 
         // Note about Plugin Manager
         WizardNote(
-            text = "You can manage these plugins later in the Plugin Manager"
+            text = "You can manage these tools later in the Toolbox"
         )
     }
 }
@@ -464,7 +464,7 @@ internal fun InstallingStepContent(
             Spacer(modifier = Modifier.height(28.dp))
 
             Text(
-                text = "Installing Plugins",
+                text = "Installing Tools",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
@@ -536,9 +536,9 @@ internal fun CompleteStepContent(
 
         Text(
             text = if (installedCount > 0) {
-                "$installedCount plugin${if (installedCount > 1) "s" else ""} installed successfully"
+                "$installedCount tool${if (installedCount > 1) "s" else ""} installed successfully"
             } else {
-                "No plugins were selected for installation"
+                "No tools were selected for installation"
             },
             fontSize = 14.sp,
             color = BossDarkTextSecondary,
@@ -558,7 +558,7 @@ internal fun CompleteStepContent(
             ) {
                 Column {
                     Text(
-                        text = "${failedPlugins.size} plugin${if (failedPlugins.size > 1) "s" else ""} failed to install:",
+                        text = "${failedPlugins.size} tool${if (failedPlugins.size > 1) "s" else ""} failed to install:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = WarningOrange
@@ -578,7 +578,7 @@ internal fun CompleteStepContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "You can retry installing these plugins from the Plugin Manager",
+                text = "You can retry installing these tools from the Toolbox",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,
@@ -588,7 +588,7 @@ internal fun CompleteStepContent(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                text = "You can install more plugins anytime from the Plugin Manager",
+                text = "You can install more tools anytime from the Toolbox",
                 fontSize = 13.sp,
                 color = BossDarkTextSecondary.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center,

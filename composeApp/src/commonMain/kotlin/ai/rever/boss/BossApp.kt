@@ -3154,7 +3154,7 @@ fun ComponentContext.BossApp(
                             }
                             else -> {
                                 logger.error(LogCategory.SYSTEM, "Plugin manager not available during installation")
-                                Result.failure(Exception("Plugin manager not available"))
+                                Result.failure(Exception("Toolbox not available"))
                             }
                         }
                     }

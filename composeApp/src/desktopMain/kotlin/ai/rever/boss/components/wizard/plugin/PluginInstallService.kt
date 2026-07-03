@@ -42,7 +42,7 @@ class PluginInstallService(
         val failedIds = mutableListOf<Pair<String, String>>() // pluginId to error message
 
         if (plugins.isEmpty()) {
-            onProgress(1f, "No plugins to install")
+            onProgress(1f, "No tools to install")
             return@withContext Result.success(PluginInstallResult(emptyList(), emptyList()))
         }
 
@@ -100,7 +100,7 @@ class PluginInstallService(
 
                 // Otherwise, try to install from repository
                 if (repositoryManager == null) {
-                    failedIds.add(plugin.id to "Plugin repository not initialized")
+                    failedIds.add(plugin.id to "Tool repository not initialized")
                     continue
                 }
 
@@ -112,7 +112,7 @@ class PluginInstallService(
                     logger.warn(LogCategory.SYSTEM, "Plugin not found in repository", mapOf(
                         "pluginId" to plugin.id
                     ))
-                    failedIds.add(plugin.id to "Plugin not found in repository")
+                    failedIds.add(plugin.id to "Tool not found in repository")
                     continue
                 }
 
