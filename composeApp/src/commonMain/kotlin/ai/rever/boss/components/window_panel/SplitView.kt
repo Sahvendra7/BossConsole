@@ -106,7 +106,7 @@ private val splitViewLogger = BossLogger.forComponent("SplitView")
 
 @Stable
 class SplitViewState(
-    private val tabRegistry: TabRegistry,
+    internal val tabRegistry: TabRegistry,
     private val windowId: String,
     initialTabsComponent: BossTabsComponent? = null
 ) {

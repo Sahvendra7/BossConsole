@@ -192,6 +192,7 @@ import ai.rever.boss.services.TerminalHandlerService
 import ai.rever.boss.services.FileHandlerService
 import ai.rever.boss.services.WorkspaceHandlerService
 import ai.rever.boss.utils.WindowFocusManager
+import ai.rever.boss.utils.awaitRegistryCondition
 import ai.rever.boss.utils.CLIVersionManager
 import ai.rever.boss.utils.CLIInstaller
 import ai.rever.boss.utils.Version
@@ -1245,7 +1246,17 @@ fun ComponentContext.BossApp(
                             }
                             // Apply the last session workspace FIRST
                             workspaceManager.loadWorkspace(configWithId)
-                            applyWorkspace(configWithId, splitViewState, windowProjectState)
+                            // A failed restore must not abort this collector: the
+                            // handler-marking below is the only path left once
+                            // loadWorkspace has set currentWorkspace — the fresh-install
+                            // fallback timeout deliberately stands down at that point.
+                            try {
+                                applyWorkspace(configWithId, splitViewState, windowProjectState)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.error(LogCategory.WORKSPACE, "Last Session restore failed - continuing startup", error = e)
+                            }
 
                         } else {
                         }
@@ -1298,7 +1309,11 @@ fun ComponentContext.BossApp(
             // Read timeout from settings (use current value, don't make it a key to avoid restart)
             val timeoutMs = StartupSettingsManager.currentSettings.value.workspaceLoadTimeoutMs
             delay(timeoutMs) // Wait for workspace manager to load from disk
-            if (!workspaceRestorationComplete) {
+            // currentWorkspace != null means Last Session restore is already in
+            // flight (it can outlast this timeout while applyWorkspace waits for
+            // plugin tab types) — let it mark handlers ready itself, otherwise
+            // handler-created tabs get destroyed by the restore's clearAllPanels.
+            if (!workspaceRestorationComplete && workspaceManager.currentWorkspace.value == null) {
                 // Still not complete after timeout - assume fresh install
                 workspaceRestorationComplete = true
 
@@ -1546,9 +1561,28 @@ fun ComponentContext.BossApp(
                 try {
                     // Find the panel info from registry
                     // Compare only panelId and pluginId, ignore defaultOrder (UI metadata)
-                    val panelInfo = panelRegistry.getAllPanels().find {
+                    fun findPanelInfo() = panelRegistry.getAllPanels().find {
                         it.id.panelId == event.panelId.panelId &&
                         it.id.pluginId == event.panelId.pluginId
+                    }
+
+                    var panelInfo = findPanelInfo()
+                    if (panelInfo == null) {
+                        // The plugin providing this panel may still be loading
+                        // (panels are opened reactively on project selection,
+                        // which can beat async plugin registration at startup).
+                        // Wait bounded for it instead of silently dropping the event.
+                        awaitRegistryCondition(
+                            panelRegistry::addChangeListener,
+                            panelRegistry::removeChangeListener
+                        ) { findPanelInfo() != null }
+                        panelInfo = findPanelInfo()
+                        if (panelInfo == null) {
+                            logger.warn(LogCategory.UI, "Dropping panel open event - panel never registered", mapOf(
+                                "panelId" to event.panelId.panelId,
+                                "pluginId" to event.panelId.pluginId
+                            ))
+                        }
                     }
 
                     if (panelInfo != null) {

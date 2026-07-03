@@ -14,13 +14,20 @@ import ai.rever.boss.window.Project
 import ai.rever.boss.window.WindowProjectState
 import ai.rever.boss.plugin.api.TabIcon
 import ai.rever.boss.plugin.api.TabInfo
+import ai.rever.boss.plugin.api.TabRegistry
+import ai.rever.boss.plugin.api.TabTypeId
 import ai.rever.boss.icons.FileIcons
+import ai.rever.boss.utils.awaitRegistryCondition
 import ai.rever.boss.utils.extractFileName
+import ai.rever.boss.utils.logging.BossLogger
+import ai.rever.boss.utils.logging.LogCategory
 import ai.rever.boss.components.window_panel.SplitViewState
 import ai.rever.boss.components.window_panel.SplitOrientation
 import ai.rever.boss.dashboard.SplitTemplatesManager
 import kotlin.random.Random
 import kotlin.time.Clock
+
+private val logger = BossLogger.forComponent("WorkspaceApplier")
 
 /**
  * Applies a layout workspace to the split view
@@ -63,11 +70,65 @@ suspend fun applyWorkspace(
         return
     }
 
-    // No preserved state, apply workspace from scratch
+    // No preserved state, apply workspace from scratch.
+    // Wait (bounded) for the plugin-provided tab types this workspace needs —
+    // at startup the workspace flow emits before the dynamic plugins that own
+    // browser/terminal/editor have registered their factories, and addTab
+    // drops any tab whose type has no factory yet.
+    splitViewState.tabRegistry.awaitTabTypes(collectRequiredTabTypeIds(workspace.layout))
+
     splitViewState.clearAllPanels()
 
     // Apply the workspace recursively
     applyWorkspaceNode(workspace.layout, splitViewState, "main", currentProjectPath)
+}
+
+/**
+ * Suspend until every [typeIds] entry is registered, or until the plugin
+ * registration timeout elapses. On timeout the apply proceeds anyway — tabs of
+ * still-missing types are skipped exactly as before, but a warning is logged
+ * instead of failing silently.
+ */
+private suspend fun TabRegistry.awaitTabTypes(typeIds: Set<TabTypeId>) {
+    fun missing() = typeIds.filterNot { isRegistered(it) }
+    if (missing().isEmpty()) return
+
+    logger.info(LogCategory.WORKSPACE, "Waiting for plugin tab types before applying workspace", mapOf(
+        "missing" to missing().joinToString { it.typeId }
+    ))
+    val registered = awaitRegistryCondition(::addChangeListener, ::removeChangeListener) {
+        missing().isEmpty()
+    }
+    if (!registered) {
+        logger.warn(LogCategory.WORKSPACE, "Tab types still unregistered after wait - their tabs will be skipped", mapOf(
+            "missing" to missing().joinToString { it.typeId }
+        ))
+    }
+}
+
+/** Collect the tab type IDs a workspace layout needs, ignoring unsupported/legacy entries. */
+private fun collectRequiredTabTypeIds(node: SplitConfig): Set<TabTypeId> = when (node) {
+    is SinglePanel -> node.panel.tabs.mapNotNull { tabTypeIdFor(it) }.toSet()
+    is VerticalSplit -> collectRequiredTabTypeIds(node.left) + collectRequiredTabTypeIds(node.right)
+    is HorizontalSplit -> collectRequiredTabTypeIds(node.top) + collectRequiredTabTypeIds(node.bottom)
+}
+
+/**
+ * Single source of truth for which persisted tab types are restorable and
+ * which plugin tab type owns each. Both the pre-apply wait
+ * ([collectRequiredTabTypeIds]) and the construction dispatch in
+ * [createTabFromWorkspaceConfig] key off this mapping, so a new tab type
+ * added here is automatically waited for before restore.
+ *
+ * Returns null for unsupported/legacy/transient types (e.g. a
+ * sidebar-promoted "panel-host" tab that should never have been persisted) —
+ * those are skipped instead of crashing the whole workspace restore.
+ */
+private fun tabTypeIdFor(tabConfig: TabConfig): TabTypeId? = when (tabConfig.type) {
+    "browser" -> FluckTabType.typeId
+    "terminal" -> TerminalTabType.typeId
+    "editor" -> CodeEditorTabType.typeId
+    else -> null
 }
 
 private suspend fun applyWorkspaceNode(
@@ -190,8 +251,11 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
         System.getProperty("user.home") ?: ""
     }
 
-    return when (tabConfig.type) {
-        "browser" -> {
+    // Dispatch on the resolved type id (see tabTypeIdFor) so the mapping that
+    // decides what restore waits for and the mapping that constructs tabs
+    // cannot drift apart.
+    return when (tabTypeIdFor(tabConfig)) {
+        FluckTabType.typeId -> {
             // Load favicon from cache if available (Issue #160)
             val cachedFavicon = loadFaviconFromCache(tabConfig.faviconCacheKey)
 
@@ -209,7 +273,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 faviconCacheKey = tabConfig.faviconCacheKey
             )
         }
-        "terminal" -> {
+        TerminalTabType.typeId -> {
             // Process working directory placeholder
             val workingDir = tabConfig.workingDirectory?.let {
                 SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
@@ -228,7 +292,7 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 initialCommand = initialCmd
             )
         }
-        "editor" -> {
+        CodeEditorTabType.typeId -> {
             // Process file path placeholder
             val filePath = tabConfig.filePath?.let {
                 SplitTemplatesManager.processPlaceholders(it, resolvedProjectPath, null)
@@ -244,9 +308,6 @@ private fun createTabFromWorkspaceConfig(tabConfig: TabConfig, projectPath: Stri
                 filePath = filePath
             )
         }
-        // Unsupported/legacy/transient tab type (e.g. a sidebar-promoted "panel-host"
-        // tab that should never have been persisted) — skip it instead of crashing
-        // the whole workspace restore.
         else -> null
     }
 }

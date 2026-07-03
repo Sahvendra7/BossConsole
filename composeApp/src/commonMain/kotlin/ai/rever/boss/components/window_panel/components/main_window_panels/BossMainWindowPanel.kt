@@ -1377,6 +1377,13 @@ class BossTabsComponent(
             return index
         }
 
+        // No factory for this type — usually the owning plugin hasn't finished
+        // loading. The tab is dropped; workspace restore gates on tab-type
+        // registration to avoid hitting this, so reaching here is worth a log.
+        bossMainWindowPanelLogger.warn(LogCategory.UI, "Dropped tab - no factory registered for its type", mapOf(
+            "typeId" to config.typeId.typeId,
+            "title" to config.title
+        ))
         return -1 // Failed to create component
     }
 
