@@ -74,7 +74,15 @@ class PluginUpdateManager(
      * compatible" so a manager constructed without IPC awareness is a no-op
      * gate rather than blocking every update.
      */
-    private val isIpcCompatible: (minIpcVersion: String) -> Boolean = { true }
+    private val isIpcCompatible: (minIpcVersion: String) -> Boolean = { true },
+    /**
+     * The running host application version (e.g. "9.2.26"), compared against
+     * each candidate's `minBossVersion` so an update requiring a newer host is
+     * reported, never installed over a working older version (the loader would
+     * reject it AFTER the jar swap, leaving the plugin broken — how Toolbox
+     * 1.8.4 on BOSS 9.2.25 died). Blank ("") disables the gate.
+     */
+    private val hostBossVersion: String = ""
 ) {
     private val logger = BossLogger.forComponent("PluginUpdateManager")
 
@@ -182,7 +190,26 @@ class PluginUpdateManager(
                     val candidate = pluginResult.getOrNull()?.plugin
 
                     if (candidate != null && isNewerVersion(candidate.version, installedVersion)) {
-                        if (isIpcCompatible(candidate.minIpcVersion)) {
+                        if (!satisfiesMinBossVersion(candidate.minBossVersion)) {
+                            // Newer version exists but requires a newer host app.
+                            // Report it as an advisory; never auto-install.
+                            val notice = IncompatibleNotice(
+                                pluginId = pluginId,
+                                displayName = candidate.displayName,
+                                currentVersion = installedVersion,
+                                advertisedLatest = candidate.version,
+                                requiredBossVersion = candidate.minBossVersion,
+                                hostBossVersion = hostBossVersion
+                            )
+                            notices.add(notice)
+                            logger.info(LogCategory.SYSTEM, "Skipping plugin update requiring newer BOSS host", mapOf(
+                                "pluginId" to pluginId,
+                                "advertisedLatest" to candidate.version,
+                                "requiredBossVersion" to candidate.minBossVersion,
+                                "hostBossVersion" to hostBossVersion
+                            ))
+                            listeners.forEach { it.onUpdateRejectedAsIncompatible(notice) }
+                        } else if (isIpcCompatible(candidate.minIpcVersion)) {
                             updates.add(createUpdateInfo(candidate, installedVersion))
                         } else {
                             // Newer version exists but the host can't load it.
@@ -427,6 +454,28 @@ class PluginUpdateManager(
         val v1 = SemanticVersion.parse(version1) ?: return false
         val v2 = SemanticVersion.parse(version2) ?: return false
         return v1 > v2
+    }
+
+    /**
+     * True when this host satisfies a candidate's `minBossVersion`.
+     *
+     * Fails OPEN on missing/unparseable versions: a blank [hostBossVersion]
+     * (manager constructed without host awareness, dev builds) or a candidate
+     * without the field must not block every update — the loader's own
+     * minBossVersion check remains the backstop for anything let through.
+     */
+    private fun satisfiesMinBossVersion(minBossVersion: String): Boolean {
+        if (minBossVersion.isBlank() || hostBossVersion.isBlank()) return true
+        val required = SemanticVersion.parse(minBossVersion) ?: return true
+        val host = SemanticVersion.parse(hostBossVersion) ?: return true
+        // Compare the release core only, ignoring prerelease: a host at
+        // 9.2.27-alpha.1 is built from the same source as 9.2.27 and carries
+        // the same plugin API, but semver precedence would rank it BELOW the
+        // requirement and spuriously gate every exact-version update on
+        // prerelease hosts.
+        if (host.major != required.major) return host.major > required.major
+        if (host.minor != required.minor) return host.minor > required.minor
+        return host.patch >= required.patch
     }
 
     /**

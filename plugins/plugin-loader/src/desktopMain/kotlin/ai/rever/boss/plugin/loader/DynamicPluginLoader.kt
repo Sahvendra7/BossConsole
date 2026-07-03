@@ -94,7 +94,7 @@ class DynamicPluginLoaderImpl(
             // Check if already loaded
             if (loadedPlugins.containsKey(pluginId)) {
                 return@withContext Result.failure(PluginLoadException(
-                    "Plugin already loaded: $pluginId",
+                    "${PluginLoadException.ALREADY_LOADED_PREFIX}: $pluginId",
                     pluginId
                 ))
             }

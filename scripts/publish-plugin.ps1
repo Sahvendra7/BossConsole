@@ -366,10 +366,33 @@ Write-Host ""
 # Step 4: Create version and get upload URL
 Write-Step 4 "Creating version entry..."
 
+# minBossVersion drives the host-side update gate (PluginUpdateManager) and the
+# loader check — hardcoding it would let old hosts pull updates they can't load.
+$minBossVersion = "1.0.0"
+try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
+    $pluginJsonEntry = $zip.Entries | Where-Object { $_.FullName -eq "META-INF/boss-plugin/plugin.json" }
+    if ($pluginJsonEntry) {
+        $stream = $pluginJsonEntry.Open()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $pluginJson = $reader.ReadToEnd() | ConvertFrom-Json
+        $reader.Close()
+        $stream.Close()
+        if ($pluginJson.minBossVersion) {
+            $minBossVersion = $pluginJson.minBossVersion
+        }
+    }
+    $zip.Dispose()
+}
+catch {
+    Write-Warning "Could not read minBossVersion from plugin.json, defaulting to 1.0.0"
+}
+
 $versionBody = @{
     version = $Version
     changelog = $Changelog
-    minBossVersion = "1.0.0"
+    minBossVersion = $minBossVersion
 }
 
 $versionResult = Invoke-PluginStoreRequest -Method "POST" -Url "$($script:StoreUrl)/$PluginId/version" -Body $versionBody

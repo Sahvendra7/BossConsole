@@ -153,6 +153,7 @@ class RemotePluginRepository(
                     url = response.homepageUrl,
                     type = parsePluginType(response.type),
                     apiVersion = response.apiVersion,
+                    minBossVersion = version.minBossVersion,
                     minIpcVersion = version.minIpcVersion,
                     size = version.jarSize,
                     sha256 = version.sha256,

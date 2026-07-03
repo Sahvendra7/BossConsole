@@ -7,7 +7,17 @@ open class PluginLoadException(
     message: String,
     val pluginId: String? = null,
     cause: Throwable? = null
-) : Exception(message, cause)
+) : Exception(message, cause) {
+    companion object {
+        /**
+         * Message prefix of the refusal when the plugin is already loaded.
+         * DefaultPlugin's directory scan matches this prefix to downgrade a
+         * duplicate-jar retry to an info-level skip — reference it instead of
+         * retyping the string so the two sides can't drift.
+         */
+        const val ALREADY_LOADED_PREFIX = "Plugin already loaded"
+    }
+}
 
 /**
  * Exception thrown when a plugin manifest is invalid or missing.

@@ -173,6 +173,13 @@ class PluginClassLoaderManager(
             "pluginId" to pluginId
         ))
 
+        // Un-register before closing: leaving the entry in activeClassLoaders
+        // permanently blocked the pluginId ("Classloader already exists") after
+        // any load failure past classloader creation — e.g. a binary-incompatible
+        // update — until app restart. Two-arg remove so a newer registration for
+        // the same id is never clobbered by a late close of an older loader.
+        activeClassLoaders.remove(pluginId, classLoader)
+
         try {
             classLoader.close()
         } catch (e: Exception) {

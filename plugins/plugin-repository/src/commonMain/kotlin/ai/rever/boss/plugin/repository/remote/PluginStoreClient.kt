@@ -589,6 +589,7 @@ data class PluginDetailResponse(
         url = homepageUrl,
         type = parsePluginType(type),
         apiVersion = apiVersion,
+        minBossVersion = versions.firstOrNull { it.version == latestVersion }?.minBossVersion ?: "",
         minIpcVersion = versions.firstOrNull { it.version == latestVersion }?.minIpcVersion ?: "1.0.0",
         iconUrl = iconUrl,
         screenshots = screenshots.map { it.url },

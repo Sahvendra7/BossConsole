@@ -71,10 +71,15 @@ data class UpdateInfo(
 
 /**
  * A newer version of an installed plugin exists in the repository but the
- * running host cannot load it (its `minIpcVersion` exceeds the host's IPC
- * contract). Surfaced instead of an installable [UpdateInfo] so the UI can
- * tell the user "an update exists but requires a host upgrade" rather than
- * silently installing a plugin that would fail at load.
+ * running host cannot load it — either its `minIpcVersion` exceeds the host's
+ * IPC contract, or its `minBossVersion` exceeds the host application version.
+ * Surfaced instead of an installable [UpdateInfo] so the UI can tell the user
+ * "an update exists but requires a host upgrade" rather than silently
+ * installing a plugin that would fail at load.
+ *
+ * Exactly one pair of (requiredIpcVersion/hostIpcVersion,
+ * requiredBossVersion/hostBossVersion) is populated — the one naming the
+ * rejection reason; the other pair is "".
  */
 @Serializable
 data class IncompatibleNotice(
@@ -89,10 +94,16 @@ data class IncompatibleNotice(
     val advertisedLatest: String,
     /** IPC contract version that [advertisedLatest] requires. */
     @SerialName("requiredIpcVersion")
-    val requiredIpcVersion: String,
+    val requiredIpcVersion: String = "",
     /** The host's current IPC contract version. */
     @SerialName("hostIpcVersion")
-    val hostIpcVersion: String
+    val hostIpcVersion: String = "",
+    /** Minimum BOSS host version that [advertisedLatest] requires. */
+    @SerialName("requiredBossVersion")
+    val requiredBossVersion: String = "",
+    /** The running host application version. */
+    @SerialName("hostBossVersion")
+    val hostBossVersion: String = ""
 )
 
 /**

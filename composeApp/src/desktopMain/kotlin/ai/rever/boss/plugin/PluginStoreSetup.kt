@@ -12,6 +12,7 @@ import ai.rever.boss.plugin.repository.remote.PluginStoreRealtimeService
 import ai.rever.boss.plugin.repository.remote.RemotePluginRepository
 import ai.rever.boss.plugin.updater.PluginUpdateManager
 import ai.rever.boss.plugin.updater.UpdateCheckerConfig
+import ai.rever.boss.utils.AppVersion
 import ai.rever.boss.utils.logging.BossLogger
 import ai.rever.boss.utils.logging.LogCategory
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -267,7 +268,11 @@ object PluginStoreSetup {
                 // Gate store updates by host IPC compatibility so an
                 // incompatible newer version is reported, never auto-installed.
                 hostIpcVersion = IpcCompatibility.hostVersion ?: "1.0.0",
-                isIpcCompatible = { IpcCompatibility.isInstallable(it) }
+                isIpcCompatible = { IpcCompatibility.isInstallable(it) },
+                // Gate by minBossVersion too: without this, an update built
+                // against a newer host replaces the working jar and only THEN
+                // gets rejected by the loader (Toolbox 1.8.4 on BOSS 9.2.25).
+                hostBossVersion = AppVersion.currentVersionString()
             )
 
             // Create and start realtime service for live updates

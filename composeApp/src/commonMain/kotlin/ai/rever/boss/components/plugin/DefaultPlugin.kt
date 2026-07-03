@@ -116,8 +116,10 @@ import ai.rever.boss.plugin.sandbox.notification.BossPluginNotificationService
 import ai.rever.boss.plugin.sandbox.notification.PluginSandboxNotificationListener
 import ai.rever.boss.plugin.sandbox.notification.PluginToastState
 import ai.rever.boss.window.WindowGitState
+import ai.rever.boss.plugin.loader.PluginLoadException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
@@ -170,6 +172,17 @@ class DefaultPlugin(
         // Persisted plugins loading state
         @Volatile
         private var persistedPluginsLoaded = false
+
+        /**
+         * The in-flight persisted-plugin load, joined by [loadExternalPlugins]
+         * so the directory scan runs strictly after it. Global (companion) to
+         * match [persistedPluginsLoaded]: the persisted load runs ONCE, into
+         * the first window's manager — a later window's scan still joins it
+         * (its own manager starts empty; populating secondary-window managers
+         * from persistence is a pre-existing open question, not changed here).
+         */
+        @Volatile
+        private var persistedPluginsLoadJob: Job? = null
 
         /**
          * Load persisted plugins. This is called automatically when DynamicPluginManager is first accessed.
@@ -335,10 +348,12 @@ class DefaultPlugin(
             outOfProcessSpawner = oopSpawner,
         )
 
-        // Load persisted plugins on first access (only once globally)
+        // Load persisted plugins on first access (only once globally).
+        // The Job is kept so loadExternalPlugins can sequence after it —
+        // the two passes cover overlapping jar sets and must not race.
         if (!persistedPluginsLoaded) {
             persistedPluginsLoaded = true
-            pluginScope.launch {
+            persistedPluginsLoadJob = pluginScope.launch {
                 loadPersistedPluginsInternal(manager)
             }
         }
@@ -902,15 +917,31 @@ class DefaultPlugin(
             "path" to pluginDir.absolutePath
         ))
 
-        // Load each plugin asynchronously
+        // Scan asynchronously, but strictly AFTER the persisted pass: the two
+        // passes cover overlapping jar sets, and racing them made whichever
+        // pass lost log "Plugin already loaded" as a failure for most plugins
+        // every startup — and let this scan force-load (enabled=true) plugins
+        // whose persisted entry said enabled=false.
         pluginScope.launch {
+            val manager = dynamicPluginManager // first access starts the persisted load
+            persistedPluginsLoadJob?.join()
+
+            // The persisted pass is authoritative for every jar it got into
+            // pluginStates — loaded ones and binary-incompatibility rejections
+            // (tracked as DISABLED); don't retry either. Other load failures
+            // don't land in pluginStates, so the scan may retry those and
+            // re-log the real error. This scan otherwise only picks up jars
+            // dropped into the directory manually.
+            val trackedJarPaths = manager.pluginStates.value.values.map { it.jarPath }.toSet()
+
             for (jarFile in jarFiles) {
+                if (jarFile.absolutePath in trackedJarPaths) continue
                 try {
                     logger.info(LogCategory.SYSTEM, "Installing external plugin", mapOf(
                         "file" to jarFile.name
                     ))
 
-                    val result = dynamicPluginManager.installPlugin(jarFile.absolutePath)
+                    val result = manager.installPlugin(jarFile.absolutePath)
 
                     if (result.isSuccess) {
                         val info = result.getOrThrow()
@@ -918,6 +949,12 @@ class DefaultPlugin(
                             "pluginId" to info.manifest.pluginId,
                             "version" to info.manifest.version,
                             "displayName" to info.manifest.displayName
+                        ))
+                    } else if (result.exceptionOrNull()?.message?.startsWith(PluginLoadException.ALREADY_LOADED_PREFIX) == true) {
+                        // A second jar for a plugin that's already running — a
+                        // stale old version left in the directory, not a failure.
+                        logger.info(LogCategory.SYSTEM, "Skipping duplicate jar for already-loaded plugin", mapOf(
+                            "file" to jarFile.name
                         ))
                     } else {
                         logger.error(LogCategory.SYSTEM, "Failed to load external plugin", mapOf(
