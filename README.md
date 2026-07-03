@@ -14,9 +14,13 @@ BOSS (Business OS + Simulator) is a sophisticated, AI-powered desktop workspace 
 
 | Platform | Architecture | Download |
 |----------|--------------|----------|
-| **macOS** | Universal (Apple Silicon + Intel) | [Homebrew](https://formulae.brew.sh/cask/boss) \| [DMG](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
-| **Windows** | x64 / ARM64 | [MSI](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
-| **Linux** | AMD64 / ARM64 | [DEB](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) \| [RPM](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) \| [JAR](https://github.com/risa-labs-inc/BossConsole-Releases/releases/latest) |
+| **macOS** | Universal (Apple Silicon + Intel) | [Homebrew](https://formulae.brew.sh/cask/boss) \| [DMG](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=dmg) |
+| **Windows** | x64 | [MSI](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=msi) |
+| **Windows** | ARM64 | [MSI](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=msi&arch=arm64) |
+| **Linux** | AMD64 | [DEB](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=deb&arch=amd64) \| [RPM](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=rpm&arch=amd64) \| [JAR](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=jar&arch=amd64) |
+| **Linux** | ARM64 | [DEB](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=deb&arch=arm64) \| [RPM](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=rpm&arch=arm64) \| [JAR](https://api.risaboss.com/functions/v1/latest-release?app=boss&download=jar&arch=arm64) |
+
+Download links always fetch the newest release directly (via the [`latest-release`](supabase/functions/latest-release/app.ts) edge function; the saved file keeps its versioned name). Release metadata as JSON — version, assets, sha256 checksums — is at [`?app=boss`](https://api.risaboss.com/functions/v1/latest-release?app=boss) without the `download` parameter. To browse all versions, use [BossConsole-Releases](https://github.com/risa-labs-inc/BossConsole-Releases/releases).
 
 ### Quick Install
 
