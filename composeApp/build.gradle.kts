@@ -1343,19 +1343,24 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
             // directory found"), which aborts dpkg configure/remove and leaves the
             // package half-installed. Tolerates leading whitespace and covers the
             // whole xdg-* class in case a future jpackage reorders or indents them.
+            // Assumes single-line commands (true of jpackage output); a trailing
+            // backslash continuation would put the appended `||` on the wrong line.
             listOf("postinst", "prerm").forEach { scriptName ->
                 val script = File(workDir, "DEBIAN/$scriptName")
                 if (script.isFile) {
                     val content = script.readText()
-                    if (content.contains("xdg-") && !content.contains("skipping desktop integration")) {
-                        script.writeText(
-                            content.replace(
-                                Regex("(?m)^([ \\t]*)(xdg-\\S+ .*)$"),
-                                "\$1\$2 || echo \"boss: no desktop environment detected, skipping desktop integration\" >&2"
-                            )
+                    // The marker guard keeps this idempotent: without it the regex
+                    // would re-match an already-patched line and append a second `||`.
+                    if (!content.contains("skipping desktop integration")) {
+                        val patched = content.replace(
+                            Regex("(?m)^([ \\t]*)(xdg-\\S+ .*)$"),
+                            "\$1\$2 || echo \"boss: no desktop environment detected, skipping desktop integration\" >&2"
                         )
-                        println("✅ Made xdg-* desktop integration best-effort in $scriptName (headless installs)")
-                        modified = true
+                        if (patched != content) {
+                            script.writeText(patched)
+                            println("✅ Made xdg-* desktop integration best-effort in $scriptName (headless installs)")
+                            modified = true
+                        }
                     }
                 }
             }
@@ -1365,7 +1370,7 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 execOps.exec {
                     commandLine("dpkg-deb", "--build", "--root-owner-group", workDir.absolutePath, debFile.absolutePath)
                 }
-                println("✅ Repacked ${debFile.name} with StartupWMClass")
+                println("✅ Repacked ${debFile.name} with desktop-integration fixes")
             }
         } catch (e: Exception) {
             println("❌ Failed to fix .desktop file: ${e.message}")
