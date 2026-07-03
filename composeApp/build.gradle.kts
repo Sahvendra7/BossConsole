@@ -1336,6 +1336,30 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
                 modified = true
             }
 
+            // Make desktop integration best-effort in the maintainer scripts.
+            // jpackage's generated postinst/prerm run xdg-* tools (xdg-desktop-menu,
+            // xdg-icon-resource, ...) under `set -e`; on headless systems (servers,
+            // containers, CI) those exit non-zero (e.g. "No writable system menu
+            // directory found"), which aborts dpkg configure/remove and leaves the
+            // package half-installed. Tolerates leading whitespace and covers the
+            // whole xdg-* class in case a future jpackage reorders or indents them.
+            listOf("postinst", "prerm").forEach { scriptName ->
+                val script = File(workDir, "DEBIAN/$scriptName")
+                if (script.isFile) {
+                    val content = script.readText()
+                    if (content.contains("xdg-") && !content.contains("skipping desktop integration")) {
+                        script.writeText(
+                            content.replace(
+                                Regex("(?m)^([ \\t]*)(xdg-\\S+ .*)$"),
+                                "\$1\$2 || echo \"boss: no desktop environment detected, skipping desktop integration\" >&2"
+                            )
+                        )
+                        println("✅ Made xdg-* desktop integration best-effort in $scriptName (headless installs)")
+                        modified = true
+                    }
+                }
+            }
+
             if (modified) {
                 // Repack deb using dpkg-deb --build
                 execOps.exec {
@@ -1353,7 +1377,7 @@ abstract class FixLinuxDesktopFileTask : DefaultTask() {
 }
 
 tasks.register<FixLinuxDesktopFileTask>("fixLinuxDesktopFile") {
-    description = "Adds StartupWMClass to .deb package .desktop file for proper Ubuntu/Debian dock integration"
+    description = "Fixes the .deb for desktop integration: StartupWMClass, hicolor icon, and headless-safe maintainer scripts"
     group = "build"
 
     val isLinux = System.getProperty("os.name").lowercase().contains("linux")
